@@ -1,0 +1,138 @@
+{
+  "name": "splitall-desktop",
+  "version": "0.1.0",
+  "description": "Cross-platform desktop app for splitting source material into timestamped knowledge units and simulated QA pairs.",
+  "productName": "SplitAll",
+  "author": "OpenAI Codex",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:renderer": "vite",
+    "build:renderer": "vite build",
+    "serve:browser": "npm run build:renderer && node scripts/serve-browser.mjs",
+    "browser": "npm run build:renderer && electron . --browser",
+    "portable:build": "node scripts/pack-portable-client.mjs",
+    "portable:build:win": "node scripts/pack-portable-client.mjs --target x86_64-pc-windows-msvc",
+    "portable:build:linux:x64": "node scripts/pack-portable-client.mjs --target x86_64-unknown-linux-gnu",
+    "portable:build:linux:arm64": "node scripts/pack-portable-client.mjs --target aarch64-unknown-linux-gnu",
+    "bundle:full-local:mac": "node scripts/bundle-full-local.mjs --mac",
+    "bundle:full-local:linux:x64": "node scripts/bundle-full-local.mjs --linux --x64",
+    "bundle:full-local:linux:arm64": "node scripts/bundle-full-local.mjs --linux --arm64",
+    "bundle:full-local:win": "node scripts/bundle-full-local.mjs --win",
+    "bundle": "npm run build:renderer && electron-builder",
+    "bundle:dir": "npm run build:renderer && electron-builder --dir",
+    "bundle:linux": "npm run build:renderer && electron-builder --linux AppImage deb",
+    "bundle:win": "npm run build:renderer && electron-builder --win nsis portable"
+  },
+  "dependencies": {
+    "docx": "^9.5.1",
+    "mammoth": "^1.9.1",
+    "pdf-parse": "^1.1.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@types/react": "^19.1.5",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react-swc": "^4.0.1",
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.splitall.desktop",
+    "productName": "SplitAll",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "ocr",
+        "to": "ocr",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/tika",
+        "to": "vendor/tika",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "extraMetadata": {
+      "main": "electron/main.mjs"
+    },
+    "afterPack": "scripts/after-pack.mjs",
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "extraResources": [
+        {
+          "from": "vendor/jre/darwin-arm64",
+          "to": "vendor/jre/darwin-arm64",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "category": "Office",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "vendor/jre/linux-x64",
+          "to": "vendor/jre/linux-x64",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "vendor/jre/linux-arm64",
+          "to": "vendor/jre/linux-arm64",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "win": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "vendor/jre/win32-x64",
+          "to": "vendor/jre/win32-x64",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,0 +1,55 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+.venv/
+.venv-paddleocr/
+
+# Logs / crash dumps
+*.log
+hs_err_pid*
+replay_pid*
+crash-*
+
+# App local data
+.splitall-local-data/
+
+# Java / Rust / Node build outputs
+node_modules/
+dist/
+release/
+portable-client/target/
+
+# Generated archives / binaries
+*.app
+*.AppImage
+*.asar
+*.dmg
+*.exe
+*.msi
+*.zip
+*.tar.gz
+*.rar
+
+# Local vendored runtimes and heavy assets
+vendor/downloads/
+vendor/jre/
+vendor/tika/*
+!vendor/tika/.gitkeep
+vendor/ocr-runtime/**
+!vendor/ocr-runtime/
+!vendor/ocr-runtime/README.md
+!vendor/ocr-runtime/**/
+!vendor/ocr-runtime/**/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp

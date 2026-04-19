@@ -1,0 +1,636 @@
+import { HorizontalBox, LineEdit, ListView, ScrollView, TextEdit, VerticalBox } from "std-widgets.slint";
+
+component Panel inherits Rectangle {
+    border-width: 1px;
+    border-color: #24303b;
+    border-radius: 18px;
+    background: #141c24;
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: #22303c;
+}
+
+component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    in property <bool> selected: false;
+    callback clicked;
+
+    min-width: max(96px, content-layer.min-width);
+    min-height: max(34px, content-layer.min-height);
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: 11px;
+    border-width: primary ? 0px : 1px;
+    border-color: selected ? #5b7d76 : #33414e;
+    background: enabled
+        ? (
+            primary ? #7ed9c3
+            : selected ? #182821
+            : #121a22
+        )
+        : (primary ? #355b53 : #12171d);
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    content-layer := HorizontalBox {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+
+        Text {
+            text: root.text;
+            color: root.primary ? #0d1d1a : (root.selected ? #9ee8d6 : #edf2f7);
+            opacity: root.enabled ? 1 : 0.45;
+            width: 100%;
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+component SectionTitle inherits Rectangle {
+    in property <string> title;
+    height: 20px;
+    Text {
+        width: parent.width;
+        text: root.title;
+        color: #edf2f7;
+        font-size: 15px;
+        font-weight: 700;
+        horizontal-alignment: left;
+        vertical-alignment: center;
+    }
+}
+
+component ListRow inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 38px;
+    border-radius: 10px;
+    background: root.selected ? #182821 : transparent;
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: #22303c;
+    }
+
+    Text {
+        x: 12px;
+        width: parent.width - 24px;
+        y: 0px;
+        height: parent.height;
+        text: root.text;
+        color: root.selected ? #9ee8d6 : #d9e2ea;
+        font-size: 13px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component TableHeaderCell inherits Rectangle {
+    in property <string> text;
+    in property <length> cell-width;
+
+    min-width: root.cell-width;
+    horizontal-stretch: 1;
+    height: 34px;
+    background: #10171f;
+    border-width: 1px;
+    border-color: #24303b;
+
+    Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text: root.text;
+        color: #8fa1b3;
+        font-size: 12px;
+        font-weight: 700;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component TableValueCell inherits Rectangle {
+    in property <string> text;
+    in property <length> cell-width;
+
+    min-width: root.cell-width;
+    horizontal-stretch: 1;
+    height: 42px;
+    background: #121920;
+    border-width: 1px;
+    border-color: #24303b;
+
+    Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text: root.text;
+        color: #edf2f7;
+        font-size: 13px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "SplitAll Portable";
+    width: 1200px;
+    height: 780px;
+    background: #0c1218;
+
+    in-out property <string> server-url;
+    in-out property <string> api-base-url;
+    in-out property <string> api-key;
+    in-out property <string> model-name;
+    in-out property <string> system-prompt;
+    in-out property <string> input-text;
+    in property <[string]> file-items;
+    in property <[string]> result-items;
+    in property <string> preview-text;
+    in property <string> status-text;
+    in property <string> result-meta;
+    in property <string> start-button-text;
+    in property <string> task-status;
+    in property <string> task-progress-text;
+    in property <string> task-stage;
+    in property <float> progress-value;
+    in property <bool> busy;
+    in property <bool> has-result;
+    in-out property <int> selected-result-index: -1;
+    in-out property <int> current-page: 0;
+
+    callback choose-files();
+    callback choose-folder();
+    callback clear-files();
+    callback save-config();
+    callback start-job();
+    callback export-json();
+    callback export-md();
+    callback export-docx();
+    callback select-result(index: int);
+
+    Rectangle {
+        background: @linear-gradient(180deg, #090d12 0%, #0c1218 100%);
+
+        VerticalBox {
+            padding: 14px;
+            spacing: 14px;
+
+            Panel {
+                height: 52px;
+
+                HorizontalBox {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
+                    spacing: 10px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 34px;
+
+                        Text {
+                            text: "知识切分台";
+                            width: parent.width;
+                            color: #edf2f7;
+                            font-size: 20px;
+                            font-weight: 700;
+                            height: 34px;
+                            horizontal-alignment: left;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 8px;
+
+                        ActionButton {
+                            text: "工作台";
+                            selected: root.current-page == 0;
+                            clicked => {
+                                root.current-page = 0;
+                            }
+                        }
+
+                        ActionButton {
+                            text: "连接设置";
+                            selected: root.current-page == 1;
+                            clicked => {
+                                root.current-page = 1;
+                            }
+                        }
+
+                        ActionButton {
+                            text: root.start-button-text;
+                            primary: true;
+                            enabled: !root.busy;
+                            clicked => {
+                                root.start-job();
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.current-page == 0 : HorizontalBox {
+                spacing: 16px;
+                vertical-stretch: 1;
+
+                Panel {
+                    width: 390px;
+
+                    VerticalBox {
+                        padding: 16px;
+                        spacing: 12px;
+                        vertical-stretch: 1;
+
+                        SectionTitle {
+                            title: "输入";
+                        }
+
+                        TextEdit {
+                            text <=> root.input-text;
+                            height: 132px;
+                        }
+
+                        Divider {}
+
+                        SectionTitle {
+                            title: "文件";
+                        }
+
+                        Rectangle {
+                            border-width: 1px;
+                            border-color: #324150;
+                            border-radius: 14px;
+                            background: #10171f;
+                            height: 82px;
+
+                            VerticalBox {
+                                padding: 12px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "拖入文件或文件夹";
+                                    color: #d9e2ea;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                }
+
+                                HorizontalBox {
+                                    spacing: 8px;
+
+                                    ActionButton {
+                                        text: "选择文件";
+                                        min-width: 88px;
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.choose-files();
+                                        }
+                                    }
+
+                                    ActionButton {
+                                        text: "选择文件夹";
+                                        min-width: 96px;
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.choose-folder();
+                                        }
+                                    }
+
+                                    ActionButton {
+                                        text: "清空文件";
+                                        min-width: 88px;
+                                        enabled: !root.busy;
+                                        clicked => {
+                                            root.clear-files();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            border-width: 1px;
+                            border-color: #324150;
+                            border-radius: 14px;
+                            background: #10171f;
+                            vertical-stretch: 1;
+                            clip: true;
+
+                            if root.file-items.length == 0 : Text {
+                                text: "暂无文件";
+                                color: #7f90a1;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            if root.file-items.length > 0 : ListView {
+                                for file[index] in root.file-items : ListRow {
+                                    text: file;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                VerticalBox {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    spacing: 14px;
+
+                    Panel {
+                        height: 154px;
+
+                        VerticalBox {
+                            padding: 16px;
+                            spacing: 10px;
+
+                            SectionTitle {
+                                title: "任务";
+                            }
+
+                            HorizontalBox {
+                                spacing: 0px;
+
+                                TableHeaderCell {
+                                    text: "状态";
+                                    cell-width: 104px;
+                                }
+
+                                TableHeaderCell {
+                                    text: "进度";
+                                    cell-width: 90px;
+                                }
+
+                                TableHeaderCell {
+                                    text: "阶段";
+                                    cell-width: 280px;
+                                }
+                            }
+
+                            HorizontalBox {
+                                spacing: 0px;
+
+                                TableValueCell {
+                                    text: root.task-status;
+                                    cell-width: 104px;
+                                }
+
+                                TableValueCell {
+                                    text: root.task-progress-text;
+                                    cell-width: 90px;
+                                }
+
+                                TableValueCell {
+                                    text: root.task-stage;
+                                    cell-width: 280px;
+                                }
+                            }
+                        }
+                    }
+
+                    Panel {
+                        vertical-stretch: 1;
+
+                        VerticalBox {
+                            padding: 16px;
+                            spacing: 14px;
+                            vertical-stretch: 1;
+
+                            SectionTitle {
+                                title: "导出";
+                            }
+
+                            HorizontalBox {
+                                spacing: 14px;
+                                vertical-stretch: 1;
+
+                                Rectangle {
+                                    width: 260px;
+                                    border-width: 1px;
+                                    border-color: #324150;
+                                    border-radius: 14px;
+                                    background: #10171f;
+                                    clip: true;
+
+                                    if root.result-items.length == 0 : Text {
+                                        text: "暂无结果";
+                                        color: #7f90a1;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if root.result-items.length > 0 : ListView {
+                                        for item[index] in root.result-items : ListRow {
+                                            text: item;
+                                            selected: index == root.selected-result-index;
+                                            clicked => {
+                                                root.select-result(index);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    border-width: 1px;
+                                    border-color: #324150;
+                                    border-radius: 14px;
+                                    background: #10171f;
+
+                                    TextEdit {
+                                        x: 12px;
+                                        y: 12px;
+                                        width: parent.width - 24px;
+                                        height: parent.height - 24px;
+                                        text: root.preview-text;
+                                        read-only: true;
+                                    }
+                                }
+                            }
+
+                            HorizontalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    height: 38px;
+
+                                    Text {
+                                        text: root.result-meta;
+                                        color: #8fa1b3;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                ActionButton {
+                                    text: "导出 JSON";
+                                    enabled: root.has-result && !root.busy;
+                                    clicked => {
+                                        root.export-json();
+                                    }
+                                }
+
+                                ActionButton {
+                                    text: "导出 Markdown";
+                                    enabled: root.has-result && !root.busy;
+                                    clicked => {
+                                        root.export-md();
+                                    }
+                                }
+
+                                ActionButton {
+                                    text: "导出 Word";
+                                    enabled: root.has-result && !root.busy;
+                                    clicked => {
+                                        root.export-docx();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.current-page == 1 : Panel {
+                vertical-stretch: 1;
+
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 14px;
+                    vertical-stretch: 1;
+
+                    SectionTitle {
+                        title: "连接设置";
+                    }
+
+                    Text {
+                        text: "服务地址";
+                        color: #c6d2de;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    LineEdit {
+                        text <=> root.server-url;
+                        placeholder-text: "https://splitall-gateway.internal";
+                    }
+
+                    Text {
+                        text: "智能体 API Base URL";
+                        color: #c6d2de;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    LineEdit {
+                        text <=> root.api-base-url;
+                        placeholder-text: "https://api.openai.com/v1";
+                    }
+
+                    Text {
+                        text: "模型";
+                        color: #c6d2de;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    LineEdit {
+                        text <=> root.model-name;
+                        placeholder-text: "gpt-4.1-mini";
+                    }
+
+                    Text {
+                        text: "API Key";
+                        color: #c6d2de;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    LineEdit {
+                        text <=> root.api-key;
+                    }
+
+                    Text {
+                        text: "系统提示词";
+                        color: #c6d2de;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    TextEdit {
+                        text <=> root.system-prompt;
+                        vertical-stretch: 1;
+                    }
+
+                    HorizontalBox {
+                        spacing: 8px;
+
+                        ActionButton {
+                            text: "保存配置";
+                            enabled: !root.busy;
+                            clicked => {
+                                root.save-config();
+                            }
+                        }
+
+                        ActionButton {
+                            text: "返回工作台";
+                            clicked => {
+                                root.current-page = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 34px;
+                border-width: 1px;
+                border-color: #24303b;
+                border-radius: 12px;
+                background: #10171f;
+                clip: true;
+
+                Text {
+                    y: 0px;
+                    height: parent.height;
+                    text: root.status-text;
+                    color: #9fb0c1;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    x: 12px + parent.width - ((self.width + parent.width + 24px) * mod(animation-tick(), 10s) / 10s);
+                }
+            }
+        }
+    }
+}

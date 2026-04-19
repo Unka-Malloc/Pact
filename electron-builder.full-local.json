@@ -1,0 +1,122 @@
+{
+  "appId": "com.splitall.desktop.full-local",
+  "productName": "SplitAll",
+  "asar": true,
+  "directories": {
+    "output": "release/full-local"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "ocr",
+      "to": "ocr",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "vendor/tika",
+      "to": "vendor/tika",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ],
+  "extraMetadata": {
+    "main": "electron/main.mjs"
+  },
+  "afterPack": "scripts/after-pack.mjs",
+  "mac": {
+    "artifactName": "${productName}-full-local-${version}-${arch}.${ext}",
+    "target": [
+      "dir"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/jre/darwin-arm64",
+        "to": "vendor/jre/darwin-arm64",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ocr-runtime/darwin-arm64",
+        "to": "vendor/ocr-runtime/darwin-arm64",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "linux": {
+    "category": "Office",
+    "artifactName": "${productName}-full-local-${version}-${arch}.${ext}",
+    "target": [
+      "AppImage",
+      "deb"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/jre/linux-x64",
+        "to": "vendor/jre/linux-x64",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/jre/linux-arm64",
+        "to": "vendor/jre/linux-arm64",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ocr-runtime/linux-x64",
+        "to": "vendor/ocr-runtime/linux-x64",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ocr-runtime/linux-arm64",
+        "to": "vendor/ocr-runtime/linux-arm64",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "win": {
+    "artifactName": "${productName}-full-local-${version}-${arch}.${ext}",
+    "target": [
+      "nsis",
+      "portable"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/jre/win32-x64",
+        "to": "vendor/jre/win32-x64",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ocr-runtime/win32-x64",
+        "to": "vendor/ocr-runtime/win32-x64",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  }
+}
