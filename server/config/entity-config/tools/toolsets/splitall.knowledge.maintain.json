@@ -1,0 +1,12 @@
+{
+  "id": "splitall.knowledge.maintain",
+  "label": "Knowledge maintenance",
+  "requiredScopes": [
+    "knowledge:read",
+    "knowledge:write",
+    "knowledge:maintain"
+  ],
+  "maxRisk": "repair_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

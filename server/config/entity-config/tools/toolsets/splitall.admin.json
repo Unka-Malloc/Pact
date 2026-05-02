@@ -1,0 +1,13 @@
+{
+  "id": "splitall.admin",
+  "label": "SplitAll admin",
+  "requiredScopes": [
+    "knowledge:admin",
+    "storage:read",
+    "jobs:read",
+    "agent_sync:publish"
+  ],
+  "maxRisk": "repair_write",
+  "grantable": false,
+  "defaultForAgents": false
+}

@@ -1,0 +1,15 @@
+.git
+.DS_Store
+.env
+.env.*
+.gemini
+.playwright-cli
+build
+node_modules
+*.log
+
+client-cli/target
+client-gui
+tests/fixtures
+
+vendor/downloads

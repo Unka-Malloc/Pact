@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "entityType": "splitall.entity-config-root",
+  "description": "Human-maintainable entity configuration bundles for tools, skills, standards, and specs.",
+  "categories": [
+    "tools",
+    "skills",
+    "standards",
+    "specs"
+  ],
+  "lightweightBundlePolicy": {
+    "inlineSmallJson": true,
+    "heavyArtifactsUseManifestOnly": true
+  }
+}

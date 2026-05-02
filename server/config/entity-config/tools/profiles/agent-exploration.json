@@ -1,0 +1,19 @@
+{
+  "id": "agent-exploration",
+  "label": "Agent Exploration",
+  "agentType": "exploration",
+  "toolsets": [
+    "splitall.knowledge.read"
+  ],
+  "toolAllow": [],
+  "toolDeny": [
+    "splitall.admin"
+  ],
+  "maxRisk": "read_only",
+  "approvalPolicy": "deny_repair",
+  "concurrencyLimit": 4,
+  "sandboxPolicy": "knowledge-only",
+  "auditTags": [
+    "agent-exploration"
+  ]
+}

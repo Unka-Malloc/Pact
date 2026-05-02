@@ -1,0 +1,19 @@
+{
+  "name": "EmbeddingRuntime",
+  "version": 1,
+  "description": "Optional splitall.embedding.v1 module with an offline deterministic hashing fallback runtime.",
+  "defaultLoaded": false,
+  "protocol": "splitall.embedding.v1",
+  "components": {
+    "embeddingRuntime": {
+      "path": "./index.mjs",
+      "protocol": "splitall.embedding.v1",
+      "factory": "createEmbeddingRuntime",
+      "providerId": "builtin:hashing-vector-runtime",
+      "providerType": "offline-fallback",
+      "packaging": "optional",
+      "license": "project-internal",
+      "status": "offline-fallback"
+    }
+  }
+}

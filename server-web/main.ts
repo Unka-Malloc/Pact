@@ -1,0 +1,24 @@
+import { createApp } from "vue";
+import { ElButton } from "element-plus/es/components/button/index.mjs";
+import { ElOption, ElSelect } from "element-plus/es/components/select/index.mjs";
+import { ElTable, ElTableColumn } from "element-plus/es/components/table/index.mjs";
+import "element-plus/es/components/button/style/css";
+import "element-plus/es/components/select/style/css";
+import "element-plus/es/components/table/style/css";
+import "element-plus/es/components/table-column/style/css";
+import ServerConsoleApp from "./ServerConsoleApp.vue";
+import "./styles.css";
+
+document.documentElement.lang = "zh-CN";
+document.documentElement.setAttribute("translate", "no");
+document.documentElement.classList.add("notranslate");
+document.body.setAttribute("translate", "no");
+document.body.classList.add("notranslate");
+
+createApp(ServerConsoleApp)
+  .component(ElButton.name ?? "ElButton", ElButton)
+  .component(ElSelect.name ?? "ElSelect", ElSelect)
+  .component(ElOption.name ?? "ElOption", ElOption)
+  .component(ElTable.name ?? "ElTable", ElTable)
+  .component(ElTableColumn.name ?? "ElTableColumn", ElTableColumn)
+  .mount("#root");

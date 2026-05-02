@@ -1,0 +1,11 @@
+{
+  "id": "splitall.knowledge.write",
+  "label": "Knowledge write",
+  "requiredScopes": [
+    "knowledge:read",
+    "knowledge:write"
+  ],
+  "maxRisk": "safe_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

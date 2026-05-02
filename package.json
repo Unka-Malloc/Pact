@@ -1,138 +1,128 @@
 {
-  "name": "splitall-desktop",
+  "name": "splitall",
   "version": "0.1.0",
-  "description": "Cross-platform desktop app for splitting source material into timestamped knowledge units and simulated QA pairs.",
-  "productName": "SplitAll",
+  "description": "SplitAll server, Vue control console, and thin client build tools.",
   "author": "OpenAI Codex",
   "type": "module",
-  "main": "electron/main.mjs",
+  "bin": {
+    "splitall": "server/scripts/splitall.mjs"
+  },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:renderer": "vite",
-    "build:renderer": "vite build",
-    "serve:browser": "npm run build:renderer && node scripts/serve-browser.mjs",
-    "browser": "npm run build:renderer && electron . --browser",
-    "portable:build": "node scripts/pack-portable-client.mjs",
-    "portable:build:win": "node scripts/pack-portable-client.mjs --target x86_64-pc-windows-msvc",
-    "portable:build:linux:x64": "node scripts/pack-portable-client.mjs --target x86_64-unknown-linux-gnu",
-    "portable:build:linux:arm64": "node scripts/pack-portable-client.mjs --target aarch64-unknown-linux-gnu",
-    "bundle:full-local:mac": "node scripts/bundle-full-local.mjs --mac",
-    "bundle:full-local:linux:x64": "node scripts/bundle-full-local.mjs --linux --x64",
-    "bundle:full-local:linux:arm64": "node scripts/bundle-full-local.mjs --linux --arm64",
-    "bundle:full-local:win": "node scripts/bundle-full-local.mjs --win",
-    "bundle": "npm run build:renderer && electron-builder",
-    "bundle:dir": "npm run build:renderer && electron-builder --dir",
-    "bundle:linux": "npm run build:renderer && electron-builder --linux AppImage deb",
-    "bundle:win": "npm run build:renderer && electron-builder --win nsis portable"
+    "dev": "npm run dev:web",
+    "dev:web": "vite",
+    "cli": "node server/scripts/splitall.mjs",
+    "prebuild:renderer": "npm run test:prebuild",
+    "build:renderer": "npm run build:renderer:raw",
+    "build:renderer:raw": "vite build",
+    "serve:browser": "npm run build:renderer && node server/scripts/serve-browser.mjs",
+    "server:setup-runtime": "node server/scripts/setup-local-runtime.mjs",
+    "server:console": "node server/scripts/start-console.mjs",
+    "server:console:restart": "node server/scripts/restart-console-service.mjs",
+    "server:background:supervisor": "node server/scripts/background-supervisor.mjs",
+    "server:background:worker": "node server/scripts/background-worker.mjs",
+    "server:auth": "node server/scripts/console-auth.mjs",
+    "auth:rotate": "npm run server:auth:rotate-password --",
+    "server:auth:rotate-password": "node server/scripts/console-auth.mjs set-password --username owner --generate-password",
+    "server:start": "node server/scripts/start-server.mjs",
+    "server:start:minimal": "node server/scripts/start-server.mjs --profile minimal",
+    "server:start:public": "node server/scripts/start-server.mjs --host 0.0.0.0 --port 8787 --allow-public-console",
+    "server:rebuild-metadata": "node server/scripts/rebuild-metadata.mjs",
+    "server:doctor": "node server/scripts/doctor.mjs",
+    "server:locate": "node server/scripts/locate-storage.mjs",
+    "server:reconcile": "node server/scripts/reconcile-storage.mjs",
+    "server:knowledge:distill-skills": "node server/scripts/distill-existing-knowledge-skills.mjs",
+    "server:verify": "npm run server:verify:language-policy && npm run server:verify:import-file-types && npm run server:verify:entity-config-layout && npm run server:verify:singleton-boundaries && npm run server:verify:headless && npm run server:verify:state-coordination && npm run server:verify:dispatcher-unified && npm run server:verify:trace-context && npm run server:verify:state-mutations && npm run server:verify:runtime-logging && npm run server:verify:continuity && npm run server:verify:checkpoints && npm run server:verify:rebuild && npm run server:verify:ops && npm run server:verify:knowledge && npm run server:verify:knowledge-multimodal && npm run server:verify:knowledge-maintenance && npm run server:verify:knowledge-learning && npm run server:verify:knowledge-evolution && npm run server:verify:knowledge-evolution-loop && npm run server:verify:knowledge-skillization && npm run server:verify:knowledge-golden-distillation && npm run server:verify:knowledge-rule-authoring && npm run server:verify:knowledge-hierarchy && npm run server:verify:agent-workspace && npm run server:verify:context-runtime && npm run server:verify:context-compaction && npm run server:verify:agent-exploration && npm run server:verify:multi-agent-summarization && npm run server:verify:agent-gateway && npm run server:verify:agent-gateway-compaction && npm run server:verify:agent-sync && npm run server:verify:agent-knowledge-tools && npm run server:verify:tool-management && npm run server:verify:console-auth && npm run server:verify:knowledge-console && npm run server:verify:source-evidence && npm run server:verify:operation-policy && npm run server:verify:knowledge-packages && npm run server:verify:maintenance-agent && npm run server:verify:maintenance-agent-compaction",
+    "server:verify:language-policy": "node server/scripts/verify-language-policy.mjs",
+    "server:verify:import-file-types": "node server/scripts/verify-import-file-types.mjs",
+    "server:verify:entity-config-layout": "node server/scripts/verify-entity-config-layout.mjs",
+    "server:verify:singleton-boundaries": "node server/scripts/verify-singleton-boundaries.mjs",
+    "server:verify:headless": "node server/scripts/verify-headless-server.mjs",
+    "server:verify:dispatcher-unified": "node server/scripts/verify-dispatcher-unified.mjs",
+    "server:verify:trace-context": "node server/scripts/verify-trace-context.mjs",
+    "server:verify:state-mutations": "node server/scripts/verify-state-mutations.mjs",
+    "server:verify:runtime-logging": "node server/scripts/verify-runtime-logging.mjs",
+    "server:verify:continuity": "node server/scripts/verify-transaction-continuity.mjs",
+    "server:verify:checkpoints": "node server/scripts/verify-checkpoint-lifecycle.mjs",
+    "server:verify:rebuild": "node server/scripts/verify-rebuild-metadata.mjs",
+    "server:verify:ops": "node server/scripts/verify-ops-tools.mjs",
+    "server:verify:knowledge": "node server/scripts/verify-knowledge-kernel.mjs",
+    "server:verify:knowledge-multimodal": "node server/scripts/verify-knowledge-multimodal.mjs",
+    "server:verify:knowledge-maintenance": "node server/scripts/verify-knowledge-maintenance.mjs",
+    "server:verify:knowledge-learning": "node server/scripts/verify-knowledge-learning.mjs",
+    "server:verify:knowledge-evolution": "node server/scripts/verify-knowledge-evolution.mjs",
+    "server:verify:knowledge-evolution-loop": "node server/scripts/verify-knowledge-evolution-loop.mjs",
+    "server:verify:knowledge-skillization": "node server/scripts/verify-knowledge-skillization.mjs",
+    "server:verify:knowledge-golden-distillation": "node server/scripts/verify-knowledge-golden-distillation.mjs",
+    "server:verify:knowledge-rule-authoring": "node server/scripts/verify-knowledge-rule-authoring.mjs",
+    "server:verify:knowledge-hierarchy": "node server/scripts/verify-knowledge-hierarchy.mjs",
+    "server:verify:agent-workspace": "node server/scripts/verify-agent-workspace.mjs",
+    "server:verify:context-runtime": "node server/scripts/verify-context-runtime.mjs",
+    "server:verify:context-compaction": "node server/scripts/verify-context-compaction.mjs",
+    "server:verify:agent-exploration": "node server/scripts/verify-agent-exploration.mjs",
+    "server:verify:multi-agent-summarization": "node server/scripts/verify-multi-agent-summarization.mjs",
+    "server:verify:agent-gateway": "node server/scripts/verify-agent-gateway.mjs",
+    "server:verify:agent-gateway-compaction": "node server/scripts/verify-agent-gateway-compaction.mjs",
+    "server:verify:agent-sync": "node server/scripts/verify-agent-sync.mjs",
+    "server:verify:agent-knowledge-tools": "node server/scripts/verify-agent-knowledge-tools.mjs",
+    "server:verify:tool-management": "node server/scripts/verify-tool-management-platform.mjs",
+    "server:verify:console-auth": "node server/scripts/verify-console-auth.mjs",
+    "server:verify:knowledge-console": "node server/scripts/verify-knowledge-console.mjs",
+    "server:verify:source-evidence": "node server/scripts/verify-source-evidence-preview.mjs",
+    "server:verify:operation-policy": "node server/scripts/verify-operation-policy.mjs",
+    "server:verify:knowledge-packages": "node server/scripts/verify-knowledge-packages.mjs",
+    "server:verify:maintenance-agent": "node server/scripts/verify-maintenance-agent.mjs",
+    "server:verify:maintenance-agent-compaction": "node server/scripts/verify-maintenance-agent-compaction.mjs",
+    "server:pack:offline:linux:x64": "node server/scripts/pack-offline-server.mjs --target linux-x64",
+    "server:pack:offline:linux:arm64": "node server/scripts/pack-offline-server.mjs --target linux-arm64",
+    "client:get": "cd client-gui && flutter pub get",
+    "client:analyze": "cd client-gui && flutter analyze",
+    "client:test": "cd client-gui && flutter test",
+    "client:test:coverage": "cd client-gui && flutter test --coverage",
+    "client:native:test": "cargo test --manifest-path client-cli/Cargo.toml",
+    "client:verify": "npm run client:analyze && npm run client:test && npm run client:native:test",
+    "client:verify:coverage": "npm run client:analyze && npm run client:test:coverage && npm run client:native:test",
+    "client:run:macos": "cd client-gui && flutter run -d macos",
+    "client:package:plan": "node client-gui/scripts/package-client.mjs --dry-run",
+    "client:build:macos": "node client-gui/scripts/package-client.mjs --platform macos",
+    "client:build:windows": "node client-gui/scripts/package-client.mjs --platform windows",
+    "client:build:linux": "node client-gui/scripts/package-client.mjs --platform linux",
+    "client:linux:smoke": "node client-gui/scripts/smoke-linux-bundle.mjs",
+    "client:linux:gui-smoke": "node client-gui/scripts/gui-smoke-linux-bundle.mjs",
+    "client:ubuntu:verify": "node client-gui/scripts/verify-ubuntu-client.mjs",
+    "repo:hygiene": "node tests/verify-root-hygiene.mjs",
+    "security:hygiene": "node tests/verify-secret-hygiene.mjs",
+    "test": "node tests/run.mjs --profile fast",
+    "test:list": "node tests/run.mjs --list",
+    "test:fast": "node tests/run.mjs --profile fast",
+    "test:standard": "node tests/run.mjs --profile standard",
+    "test:smoke": "node tests/run.mjs --profile smoke",
+    "test:prebuild": "node tests/run.mjs --profile prebuild",
+    "test:full": "node tests/run.mjs --profile release",
+    "test:coverage": "node tests/run.mjs --profile coverage",
+    "test:security": "node tests/run.mjs --profile security",
+    "test:server": "node tests/run.mjs --profile server",
+    "test:client": "node tests/run.mjs --profile client",
+    "test:changed": "node tests/run.mjs --profile changed",
+    "test:regression": "node tests/run.mjs --profile standard",
+    "server:verify:state-coordination": "node server/scripts/verify-state-coordination.mjs"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.2.9",
+    "@openai/codex": "^0.124.0",
+    "better-sqlite3": "^12.9.0",
     "docx": "^9.5.1",
-    "mammoth": "^1.9.1",
-    "pdf-parse": "^1.1.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "element-plus": "^2.13.7",
+    "fflate": "^0.8.2",
+    "marked": "^18.0.2",
+    "p-limit": "^7.3.0",
+    "p-queue": "^9.2.0",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "vue": "^3.5.32"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",
-    "@types/react": "^19.1.5",
-    "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react-swc": "^4.0.1",
-    "electron": "^36.0.0",
-    "electron-builder": "^26.0.12",
+    "@vitejs/plugin-vue": "^6.0.6",
     "typescript": "^5.8.3",
     "vite": "^7.0.0"
-  },
-  "build": {
-    "appId": "com.splitall.desktop",
-    "productName": "SplitAll",
-    "asar": true,
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "ocr",
-        "to": "ocr",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "vendor/tika",
-        "to": "vendor/tika",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "extraMetadata": {
-      "main": "electron/main.mjs"
-    },
-    "afterPack": "scripts/after-pack.mjs",
-    "mac": {
-      "target": [
-        "dir"
-      ],
-      "extraResources": [
-        {
-          "from": "vendor/jre/darwin-arm64",
-          "to": "vendor/jre/darwin-arm64",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
-    },
-    "linux": {
-      "category": "Office",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "extraResources": [
-        {
-          "from": "vendor/jre/linux-x64",
-          "to": "vendor/jre/linux-x64",
-          "filter": [
-            "**/*"
-          ]
-        },
-        {
-          "from": "vendor/jre/linux-arm64",
-          "to": "vendor/jre/linux-arm64",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ],
-      "target": [
-        "AppImage",
-        "deb"
-      ]
-    },
-    "win": {
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "extraResources": [
-        {
-          "from": "vendor/jre/win32-x64",
-          "to": "vendor/jre/win32-x64",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ],
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
   }
 }

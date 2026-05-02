@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "bundleType": "splitall.agent-skill.bundle",
+  "skillId": "splitall.knowledge.agent-skill",
+  "protocolVersion": "splitall.knowledge-agent-skill.v1",
+  "files": {
+    "instructions": "README.md",
+    "dependencies": "dependencies.json"
+  },
+  "lightweightBundle": true
+}

@@ -5,6 +5,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+__pycache__/
+*.py[cod]
 
 # Local env / secrets
 .env
@@ -19,14 +21,14 @@ hs_err_pid*
 replay_pid*
 crash-*
 
-# App local data
-.splitall-local-data/
+# App local data and generated workspace outputs
+/build/*
+!/build/
+!/build/README.md
 
 # Java / Rust / Node build outputs
 node_modules/
-dist/
-release/
-portable-client/target/
+client-cli/target/
 
 # Generated archives / binaries
 *.app

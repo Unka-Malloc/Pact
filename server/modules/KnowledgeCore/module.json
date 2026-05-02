@@ -1,0 +1,24 @@
+{
+  "name": "KnowledgeCore",
+  "version": 1,
+  "description": "Built-in splitall.knowledge.v1 module for multimodal knowledge storage, retrieval, Markdown evidence rendering, and maintenance.",
+  "defaultLoaded": true,
+  "protocol": "splitall.knowledge.v1",
+  "components": {
+    "knowledgeBase": {
+      "path": "./index.mjs",
+      "packaging": "core",
+      "readOnlyRuntime": false
+    },
+    "vectorFallback": {
+      "path": "./index.mjs",
+      "protocol": "splitall.vector.v1",
+      "packaging": "core"
+    },
+    "embeddingFallback": {
+      "path": "./index.mjs",
+      "protocol": "splitall.embedding.v1",
+      "packaging": "core"
+    }
+  }
+}

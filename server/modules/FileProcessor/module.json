@@ -1,0 +1,28 @@
+{
+  "name": "FileProcessor",
+  "version": 1,
+  "description": "High-coupling server module for file routing, parsing, normalization, and source material preparation.",
+  "defaultLoaded": false,
+  "routeTable": "./file-routing-table.mjs",
+  "components": {
+    "documentParser": {
+      "path": "./FileNormalizer/Tika/tika.mjs",
+      "packaging": "optional",
+      "readOnlyRuntime": true
+    },
+    "ocr": {
+      "path": "./FileNormalizer/OCR/paddle-ocr.mjs",
+      "packaging": "optional",
+      "readOnlyRuntime": true
+    },
+    "pdfProcessor": {
+      "path": "./FileNormalizer/PDFProcessor/index.mjs",
+      "packaging": "optional",
+      "uses": ["documentParser"]
+    },
+    "normalizedDocuments": {
+      "path": "./FileNormalizer/NormalizedDocuments/index.mjs",
+      "packaging": "optional"
+    }
+  }
+}

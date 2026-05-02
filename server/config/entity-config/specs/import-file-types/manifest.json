@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "bundleType": "splitall.spec.bundle",
+  "specId": "splitall.import-file-types",
+  "sourceSeed": "server/config/default-import-file-types.json",
+  "runtimeAuthority": "FileProcessor import dictionary",
+  "lightweightBundle": true
+}

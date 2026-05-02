@@ -1,0 +1,22 @@
+{
+  "id": "maintenance-agent",
+  "label": "Maintenance Agent",
+  "agentType": "maintenance",
+  "toolsets": [
+    "splitall.runtime.read",
+    "splitall.storage.read",
+    "splitall.jobs.read",
+    "splitall.knowledge.maintain"
+  ],
+  "toolAllow": [],
+  "toolDeny": [
+    "splitall.admin"
+  ],
+  "maxRisk": "repair_write",
+  "approvalPolicy": "confirm_repair",
+  "concurrencyLimit": 1,
+  "sandboxPolicy": "server-runtime",
+  "auditTags": [
+    "maintenance-agent"
+  ]
+}

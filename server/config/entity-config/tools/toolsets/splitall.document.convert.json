@@ -1,0 +1,10 @@
+{
+  "id": "splitall.document.convert",
+  "label": "Document convert",
+  "requiredScopes": [
+    "knowledge:write"
+  ],
+  "maxRisk": "safe_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

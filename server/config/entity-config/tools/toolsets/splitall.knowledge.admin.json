@@ -1,0 +1,13 @@
+{
+  "id": "splitall.knowledge.admin",
+  "label": "Knowledge admin",
+  "requiredScopes": [
+    "knowledge:read",
+    "knowledge:write",
+    "knowledge:maintain",
+    "knowledge:admin"
+  ],
+  "maxRisk": "repair_write",
+  "grantable": true,
+  "defaultForAgents": false
+}
