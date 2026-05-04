@@ -75,6 +75,7 @@ type Bridge = {
   saveSettings: (settings: AgentSettings) => Promise<AgentSettings>;
   probeModel: (payload: {
     provider: string;
+    modelAlias?: string;
     settings?: AgentSettings;
   }) => Promise<ModelProbeResponse>;
   getAgentGatewayConfig: () => Promise<{ config: AgentGatewayConfig }>;
@@ -156,6 +157,8 @@ type Bridge = {
   saveDiscoveryConfig: (config: DiscoveryConfig) => Promise<DiscoveryConfigResponse>;
   getEmailRules: () => Promise<EmailRuleSetResponse>;
   saveEmailRules: (payload: EmailRuleSetResponse["rules"]) => Promise<EmailRuleSetResponse>;
+  getGoldenRules: () => Promise<Record<string, unknown>>;
+  saveGoldenRules: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getExpertVocabulary: () => Promise<ExpertVocabularyResponse>;
   saveExpertVocabulary: (
     payload: ExpertVocabularyResponse["vocabulary"],
@@ -575,6 +578,12 @@ const browserBridge: Bridge = {
     postJson<EmailRuleSetResponse>("/api/email-rules", {
       rules
     }, { safetyConfirm: true }),
+  getGoldenRules: () =>
+    postJson<Record<string, unknown>>("/api/knowledge/golden-rules?includeRules=true"),
+  saveGoldenRules: (payload) =>
+    postJson<Record<string, unknown>>("/api/knowledge/golden-rules", payload, {
+      safetyConfirm: true
+    }),
   getExpertVocabulary: () =>
     postJson<ExpertVocabularyResponse>("/api/expert-vocabulary"),
   saveExpertVocabulary: (vocabulary) =>

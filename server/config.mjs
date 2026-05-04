@@ -185,6 +185,7 @@ export const DEFAULT_SETTINGS = {
   agentExploreDefaults: DEFAULT_AGENT_EXPLORE_DEFAULTS,
   agentToolExecution: DEFAULT_AGENT_TOOL_EXECUTION,
   moduleModelAssignments: {},
+  moduleAgentProfiles: {},
   moduleIntelligence: defaultModuleIntelligence(),
   openRouterApiKey: process.env.SPLITALL_OPENROUTER_API_KEY || "",
   openRouterBaseUrl:
@@ -420,6 +421,24 @@ function normalizeModelAssignment(value) {
   return null;
 }
 
+function normalizeAgentModuleAccess(value = {}) {
+  const incoming = normalizePlainObject(value);
+  const mode = String(incoming.mode || incoming.scope || "").trim();
+  const moduleIds = normalizeStringList(
+    incoming.moduleIds || incoming.modules || incoming.allowedModuleIds
+  ).filter((item) => MODEL_USAGE_DEFINITIONS.some((definition) => definition.id === item));
+  if (mode === "selected" || mode === "restricted") {
+    return {
+      mode: "selected",
+      moduleIds: [...new Set(moduleIds)]
+    };
+  }
+  return {
+    mode: "all",
+    moduleIds: []
+  };
+}
+
 function modelLibraryModelIdentities(model = {}) {
   return [model.uid, model.instanceId, model.alias]
     .map((item) => String(item || "").trim())
@@ -430,7 +449,15 @@ function modelLibraryModelId(model = {}) {
   return String(model.uid || model.instanceId || model.alias || "").trim();
 }
 
-function resolveModuleModelAssignmentToAgent(assignment, modelLibraryModels = []) {
+function modelAllowsModule(model = {}, moduleId = "") {
+  const access = normalizeAgentModuleAccess(model.moduleAccess);
+  if (access.mode !== "selected") {
+    return true;
+  }
+  return access.moduleIds.includes(moduleId);
+}
+
+function resolveModuleModelAssignmentToAgent(assignment, modelLibraryModels = [], moduleId = "") {
   if (!assignment) {
     return null;
   }
@@ -443,7 +470,7 @@ function resolveModuleModelAssignmentToAgent(assignment, modelLibraryModels = []
     (item) => String(item?.provider || "").trim() === provider
   );
   const directMatch = providerModels.find((item) =>
-    modelLibraryModelIdentities(item).includes(model)
+    modelLibraryModelIdentities(item).includes(model) && modelAllowsModule(item, moduleId)
   );
   if (directMatch) {
     return {
@@ -456,7 +483,7 @@ function resolveModuleModelAssignmentToAgent(assignment, modelLibraryModels = []
     [item.model, item.engine]
       .map((value) => String(value || "").trim())
       .filter(Boolean)
-      .includes(model)
+      .includes(model) && modelAllowsModule(item, moduleId)
   );
   if (legacyModelMatches.length === 1) {
     return {
@@ -465,7 +492,7 @@ function resolveModuleModelAssignmentToAgent(assignment, modelLibraryModels = []
     };
   }
 
-  if (providerModels.length > 0 && provider !== "custom-http") {
+  if (providerModels.some((item) => modelAllowsModule(item, moduleId)) && provider !== "custom-http") {
     return null;
   }
 
@@ -484,9 +511,64 @@ function normalizeModuleModelAssignments(
     const assignment = normalizeModelAssignment(
       incoming[definition.id]
     );
-    const resolved = resolveModuleModelAssignmentToAgent(assignment, models);
+    const resolved = resolveModuleModelAssignmentToAgent(assignment, models, definition.id);
     if (resolved) {
       normalized[definition.id] = resolved;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeModuleAgentProfile(value = {}) {
+  const incoming = normalizePlainObject(value);
+  return {
+    enabled: incoming.enabled !== false,
+    role: String(incoming.role || incoming.roleId || "primary").trim() || "primary",
+    contextProfileId: String(incoming.contextProfileId || incoming.profileId || "").trim(),
+    systemPrompt: String(incoming.systemPrompt || incoming.prompt || "").trim(),
+    parameters: normalizePlainObject(incoming.parameters, {}),
+    dependencyContext: normalizePlainObject(incoming.dependencyContext || incoming.dependencies, {})
+  };
+}
+
+function normalizeModuleAgentProfiles(value = {}, modelLibraryModels = [], moduleModelAssignments = {}) {
+  const incoming = normalizePlainObject(value);
+  const normalized = {};
+  const modelsById = new Map(
+    (Array.isArray(modelLibraryModels) ? modelLibraryModels : [])
+      .map((model) => [modelLibraryModelId(model), model])
+      .filter(([id]) => id)
+  );
+
+  for (const definition of MODEL_USAGE_DEFINITIONS) {
+    const moduleId = definition.id;
+    const group = normalizePlainObject(incoming[moduleId]);
+    const agents = {};
+    const incomingAgents = normalizePlainObject(group.agents);
+    for (const [agentId, profile] of Object.entries(incomingAgents)) {
+      const normalizedAgentId = String(agentId || "").trim();
+      const model = modelsById.get(normalizedAgentId);
+      if (!model || !modelAllowsModule(model, moduleId)) {
+        continue;
+      }
+      agents[normalizedAgentId] = normalizeModuleAgentProfile(profile);
+    }
+
+    const assignment = moduleModelAssignments[moduleId];
+    const primaryAgent = String(group.primaryAgent || assignment?.model || "").trim();
+    if (primaryAgent && modelsById.has(primaryAgent) && modelAllowsModule(modelsById.get(primaryAgent), moduleId)) {
+      agents[primaryAgent] = {
+        ...normalizeModuleAgentProfile({ role: "primary" }),
+        ...(agents[primaryAgent] || {})
+      };
+    }
+
+    if (Object.keys(agents).length > 0 || primaryAgent) {
+      normalized[moduleId] = {
+        primaryAgent: agents[primaryAgent] ? primaryAgent : "",
+        agents
+      };
     }
   }
 
@@ -672,6 +754,7 @@ function normalizeModelLibraryModel(value = {}, index = 0, settings = {}) {
     pluginList: normalizeStringList(incoming.pluginList),
     systemPrompt: String(incoming.systemPrompt || incoming.prompt || "").trim(),
     parameters: normalizePlainObject(incoming.parameters, {}),
+    moduleAccess: normalizeAgentModuleAccess(incoming.moduleAccess),
     timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 120000
   };
 }
@@ -848,6 +931,11 @@ export function normalizeSettings(settings) {
     settings?.moduleModelAssignments,
     modelLibraryModels
   );
+  const moduleAgentProfiles = normalizeModuleAgentProfiles(
+    settings?.moduleAgentProfiles,
+    modelLibraryModels,
+    moduleModelAssignments
+  );
   const moduleIntelligence = normalizeModuleIntelligence(settings?.moduleIntelligence);
 
   return {
@@ -875,6 +963,7 @@ export function normalizeSettings(settings) {
     agentExploreDefaults: normalizeAgentExploreDefaults(settings?.agentExploreDefaults),
     agentToolExecution: normalizeAgentToolExecution(settings?.agentToolExecution),
     moduleModelAssignments,
+    moduleAgentProfiles,
     moduleIntelligence,
     openRouterApiKey: String(
       settings?.openRouterApiKey || DEFAULT_SETTINGS.openRouterApiKey || ""
@@ -965,7 +1054,9 @@ export function resolveModelForModule(settings = {}, moduleId = "") {
     provider: assignment.provider,
     model: assignment.model,
     enabled: normalized.modelIntelligenceEnabled !== false,
-    moduleId
+    moduleId,
+    profile: normalized.moduleAgentProfiles?.[moduleId]?.agents?.[assignment.model] || null,
+    agentProfiles: normalized.moduleAgentProfiles?.[moduleId]?.agents || {}
   };
 }
 

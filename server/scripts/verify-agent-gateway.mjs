@@ -776,6 +776,67 @@ try {
   assert.deepEqual(mockAgent.requests[7].body.chat_template_kwargs, { enable_thinking: false });
   assert.equal(mockAgent.requests[7].body.repetition_penalty, 1.05);
 
+  const layeredAlias = "agent_module_layer_test";
+  const layeredSettings = normalizeSettings({
+    modelLibraryModels: [
+      {
+        uid: layeredAlias,
+        instanceId: layeredAlias,
+        provider: "local-model",
+        label: "Layered Module Agent",
+        model: "module-layer-model",
+        baseUrl: mockAgent.url,
+        moduleAccess: { mode: "selected", moduleIds: ["agentTools"] }
+      },
+      {
+        uid: "agent_taxonomy_only",
+        instanceId: "agent_taxonomy_only",
+        provider: "local-model",
+        label: "Taxonomy Only",
+        model: "taxonomy-model",
+        baseUrl: mockAgent.url,
+        moduleAccess: { mode: "selected", moduleIds: ["knowledgeTaxonomy"] }
+      }
+    ],
+    moduleModelAssignments: {
+      agentTools: { provider: "local-model", model: layeredAlias },
+      graphInsight: { provider: "local-model", model: layeredAlias },
+      knowledgeTaxonomy: { provider: "local-model", model: "agent_taxonomy_only" }
+    },
+    moduleAgentProfiles: {
+      agentTools: {
+        primaryAgent: layeredAlias,
+        agents: {
+          [layeredAlias]: {
+            role: "planner",
+            systemPrompt: "MODULE_AGENT_PROMPT",
+            parameters: { temperature: 0.77, max_tokens: 33 },
+            dependencyContext: { retrievalMode: "hybrid" }
+          }
+        }
+      }
+    }
+  });
+  assert.equal(resolveModelForModule(layeredSettings, "agentTools").model, layeredAlias);
+  assert.equal(resolveModelForModule(layeredSettings, "graphInsight").enabled, false);
+  assert.equal(resolveModelForModule(layeredSettings, "knowledgeTaxonomy").model, "agent_taxonomy_only");
+  await callAgentGateway({
+    settings: layeredSettings,
+    input: {
+      alias: layeredAlias,
+      modelAlias: layeredAlias,
+      moduleId: "agentTools",
+      question: "Layered module call"
+    },
+    userDataPath
+  });
+  assert.equal(mockAgent.requests.length, 9);
+  assert.equal(mockAgent.requests[8].body.model, "module-layer-model");
+  assert.equal(mockAgent.requests[8].body.temperature, 0.77);
+  assert.equal(mockAgent.requests[8].body.max_tokens, 33);
+  assert.equal(mockAgent.requests[8].body.messages[0].content.includes("MODULE_AGENT_PROMPT"), true);
+  assert.equal(mockAgent.requests[8].body.messages[0].content.includes("retrievalMode"), true);
+
   const emptyAnswerProbe = await probeModelConnection({
     provider: "openrouter",
     settings: {
@@ -839,6 +900,66 @@ try {
   });
   assert.equal(contentArrayProbe.ok, true);
   assert.equal(contentArrayProbe.answerSnippet, "SplitAllProbeOK");
+
+  const savedDeepSeekAlias = settings.modelLibraryModels[0].alias;
+  const redactedDeepSeekProbeBefore = mockAgent.requests.length;
+  const redactedDeepSeekProbe = await fetchJson(`${server.url}/api/settings/model-probe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider: "deepseek",
+      modelAlias: savedDeepSeekAlias,
+      settings: {
+        deepSeekBaseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
+        deepSeekApiKey: "",
+        deepSeekApiKeyConfigured: false,
+        deepSeekModel: "deepseek-v4-flash",
+        modelLibraryModels: [
+          {
+            ...settings.modelLibraryModels[0],
+            baseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
+            apiKey: "",
+            apiKeyConfigured: true
+          }
+        ]
+      }
+    })
+  });
+  assert.equal(redactedDeepSeekProbe.ok, true);
+  assert.equal(mockAgent.requests.length, redactedDeepSeekProbeBefore + 1);
+  assert.equal(mockAgent.requests.at(-1).headers.authorization, "Bearer deepseek-secret");
+
+  const unsavedDeepSeekAlias = "agent_unsaved_probe_secret";
+  const missingDeepSeekSecretProbe = await fetchJson(`${server.url}/api/settings/model-probe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider: "deepseek",
+      modelAlias: unsavedDeepSeekAlias,
+      settings: {
+        deepSeekBaseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
+        deepSeekApiKey: "",
+        deepSeekApiKeyConfigured: false,
+        deepSeekModel: "deepseek-v4-flash",
+        modelLibraryModels: [
+          {
+            uid: unsavedDeepSeekAlias,
+            instanceId: unsavedDeepSeekAlias,
+            alias: unsavedDeepSeekAlias,
+            provider: "deepseek",
+            label: "Unsaved DeepSeek",
+            model: "deepseek-v4-flash",
+            baseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
+            apiKey: "",
+            apiKeyConfigured: false
+          }
+        ]
+      }
+    })
+  });
+  assert.equal(missingDeepSeekSecretProbe.ok, false);
+  assert.match(missingDeepSeekSecretProbe.message, /API Key 未配置/);
+  assert.equal(mockAgent.requests.length, redactedDeepSeekProbeBefore + 1);
 
   const afterRemove = await fetchJson(`${server.url}/api/settings`, {
     method: "POST",

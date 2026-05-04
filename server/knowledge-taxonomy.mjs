@@ -174,25 +174,31 @@ function normalizeEmailRulesForGuidance(value = {}) {
     schemaVersion: Number(value.schemaVersion || 1),
     updatedAt: normalizeText(value.updatedAt || ""),
     reportSeries: (Array.isArray(value.reportSeries) ? value.reportSeries : [])
+      .filter((entry) => entry?.enabled !== false)
       .map((entry, index) => ({
         id: normalizeText(entry.id) || `report-series-${index + 1}`,
         label: normalizeText(entry.label) || `报告序列 ${index + 1}`,
+        enabled: entry.enabled === undefined ? true : entry.enabled !== false,
         cadence: normalizeText(entry.cadence || "irregular"),
         keywords: uniqueStrings(entry.keywords || [])
       }))
       .filter((entry) => entry.keywords.length > 0),
     synonymDictionary: (Array.isArray(value.synonymDictionary) ? value.synonymDictionary : [])
+      .filter((entry) => entry?.enabled !== false)
       .map((entry) => {
         const canonical = normalizeText(entry.canonical);
         return {
           canonical,
+          enabled: entry.enabled === undefined ? true : entry.enabled !== false,
           terms: uniqueStrings([canonical, ...(entry.terms || [])])
         };
       })
       .filter((entry) => entry.canonical && entry.terms.length > 0),
     departmentDictionary: (Array.isArray(value.departmentDictionary) ? value.departmentDictionary : [])
+      .filter((entry) => entry?.enabled !== false)
       .map((entry) => ({
         department: normalizeText(entry.department),
+        enabled: entry.enabled === undefined ? true : entry.enabled !== false,
         keywords: uniqueStrings(entry.keywords || []),
         emailKeywords: uniqueStrings(entry.emailKeywords || [])
       }))

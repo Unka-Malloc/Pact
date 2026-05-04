@@ -784,6 +784,66 @@ function createHeaders(config) {
   return headers;
 }
 
+function resolveModuleAgentProfile(settings = {}, input = {}, config = {}) {
+  const moduleId = String(
+    input.moduleId || input.featureId || input.functionId || input.module || ""
+  ).trim();
+  if (!moduleId) {
+    return null;
+  }
+  const alias = String(config.alias || input.alias || input.modelAlias || "").trim();
+  const group = asPlainObject(settings.moduleAgentProfiles?.[moduleId]);
+  const profile = asPlainObject(group.agents?.[alias]);
+  if (!alias || !profile || profile.enabled === false) {
+    return null;
+  }
+  return {
+    moduleId,
+    alias,
+    role: String(profile.role || "primary").trim() || "primary",
+    contextProfileId: String(profile.contextProfileId || "").trim(),
+    systemPrompt: String(profile.systemPrompt || "").trim(),
+    parameters: asPlainObject(profile.parameters),
+    dependencyContext: asPlainObject(profile.dependencyContext || profile.dependencies)
+  };
+}
+
+function withModuleAgentProfileInput(settings = {}, input = {}, config = {}) {
+  const profile = resolveModuleAgentProfile(settings, input, config);
+  if (!profile) {
+    return {
+      input,
+      profile: null
+    };
+  }
+  const dependencyBlock = {
+    moduleId: profile.moduleId,
+    agentAlias: profile.alias,
+    role: profile.role,
+    contextProfileId: profile.contextProfileId,
+    sessionId: String(input.sessionId || "").trim(),
+    taskId: String(input.taskId || input.runId || "").trim(),
+    dependencyContext: profile.dependencyContext
+  };
+  const modulePrompt = [
+    profile.systemPrompt,
+    `模块/功能运行上下文：${JSON.stringify(dependencyBlock)}`
+  ].filter(Boolean).join("\n\n");
+  return {
+    profile,
+    input: {
+      ...input,
+      moduleAgentProfile: dependencyBlock,
+      systemPrompt: [modulePrompt, input.systemPrompt].filter(Boolean).join("\n\n"),
+      parameters: {
+        ...profile.parameters,
+        ...asPlainObject(input.parameters)
+      },
+      contextProfileId: input.contextProfileId || profile.contextProfileId || ""
+    }
+  };
+}
+
 function deepSeekChatCompletionsUrl(baseUrl) {
   const normalized = String(baseUrl || "https://api.deepseek.com").trim()
     .replace(/\/+$/, "");
@@ -1788,9 +1848,11 @@ export async function callAgentGateway({
     contextRuntime,
     source: contextCompactionSource
   });
-  const effectiveInput = prepared.input;
+  let effectiveInput = prepared.input;
   const contextCompaction = publicGatewayCompactionResult(prepared.compaction);
   const config = resolveAgentGatewayConfig(settings, effectiveInput);
+  const moduleProfileLayer = withModuleAgentProfileInput(settings, effectiveInput, config);
+  effectiveInput = moduleProfileLayer.input;
   if (!config.url) {
     throw new Error(`智能体 URL 未配置：${config.alias || "default"}`);
   }

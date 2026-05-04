@@ -323,21 +323,61 @@ async function probeOpenRouter(settings, options) {
   });
 }
 
+function findModelLibraryProbeEntry(settings = {}, { provider = "", modelAlias = "", model = "" } = {}) {
+  const normalizedProvider = String(provider || "").trim();
+  const normalizedAlias = String(modelAlias || "").trim();
+  const normalizedModel = String(model || "").trim();
+  const models = Array.isArray(settings.modelLibraryModels) ? settings.modelLibraryModels : [];
+  if (normalizedAlias) {
+    const byAlias = models.find((entry) =>
+      [entry?.uid, entry?.instanceId, entry?.alias]
+        .map((value) => String(value || "").trim())
+        .includes(normalizedAlias)
+    );
+    if (byAlias) {
+      return byAlias;
+    }
+  }
+  return models.find((entry) => {
+    if (normalizedProvider && String(entry?.provider || "").trim() !== normalizedProvider) {
+      return false;
+    }
+    if (!normalizedModel) {
+      return true;
+    }
+    return [entry?.model, entry?.engine].map((value) => String(value || "").trim()).includes(normalizedModel);
+  });
+}
+
 async function probeDeepSeek(settings, options) {
   const provider = "deepseek";
   const startedAt = Date.now();
   const model = String(settings.deepSeekModel ?? "").trim();
+  const selectedEntry = findModelLibraryProbeEntry(settings, {
+    provider,
+    modelAlias: options.modelAlias,
+    model
+  });
+  const selectedAlias = String(
+    selectedEntry?.uid || selectedEntry?.instanceId || selectedEntry?.alias || ""
+  ).trim();
+  const apiKey = selectedEntry
+    ? String(selectedEntry.apiKey || "").trim()
+    : String(settings.deepSeekApiKey || "").trim();
   if (!model) {
     return failure({ provider, model, startedAt, configured: false, message: "DeepSeek 模型 ID 未配置。" });
   }
-  if (!String(settings.deepSeekApiKey || "").trim()) {
+  if (!apiKey) {
     return failure({ provider, model, startedAt, configured: false, message: "DeepSeek API Key 未配置。" });
   }
   try {
+    const probeSettings = selectedEntry
+      ? { ...settings, deepSeekApiKey: apiKey }
+      : settings;
     const result = await callAgentGateway({
-      settings,
+      settings: probeSettings,
       input: {
-        alias: "deepseek",
+        alias: selectedAlias || "deepseek",
         question: PROBE_PROMPT,
         engine: model,
         parameters: {
@@ -369,13 +409,47 @@ async function probeDeepSeek(settings, options) {
 async function probeCustomHttp(settings, options) {
   const provider = "custom-http";
   const startedAt = Date.now();
-  const model = String(settings.customModelAlias || settings.agentGateway?.alias || "external-agent").trim();
+  const selectedEntry = findModelLibraryProbeEntry(settings, {
+    provider,
+    modelAlias: options.modelAlias,
+    model: settings.customModelAlias || settings.agentGateway?.alias || settings.customHttpAdapter?.alias || ""
+  });
+  const model = String(
+    options.modelAlias ||
+      selectedEntry?.uid ||
+      selectedEntry?.instanceId ||
+      selectedEntry?.alias ||
+      settings.customModelAlias ||
+      settings.agentGateway?.alias ||
+      "external-agent"
+  ).trim();
   if (!String(settings.agentGateway?.url || settings.customHttpAdapter?.url || "").trim()) {
     return failure({ provider, model, startedAt, configured: false, message: "自定义 HTTP Adapter URL 未配置。" });
   }
   try {
+    const selectedToken = String(selectedEntry?.token || selectedEntry?.apiKey || "").trim();
+    const selectedAdapter = selectedEntry
+      ? {
+          ...(settings.agentGateway || {}),
+          ...(settings.customHttpAdapter || {}),
+          ...selectedEntry,
+          alias: model,
+          token: selectedToken,
+          tokenConfigured: Boolean(selectedToken),
+          url: String(selectedEntry.url || settings.agentGateway?.url || settings.customHttpAdapter?.url || "").trim(),
+          engine: String(selectedEntry.engine || selectedEntry.model || "").trim()
+        }
+      : null;
+    const probeSettings = selectedAdapter
+      ? {
+          ...settings,
+          agentGateway: selectedAdapter,
+          customHttpAdapter: selectedAdapter,
+          customHttpAdapters: [selectedAdapter]
+        }
+      : settings;
     const result = await callAgentGateway({
-      settings,
+      settings: probeSettings,
       input: {
         alias: model,
         question: PROBE_PROMPT,
@@ -522,6 +596,7 @@ async function probeOpenAiChatGpt(settings, options) {
 export async function probeModelConnection({
   provider,
   settings,
+  modelAlias = "",
   userDataPath = "",
   fetchImpl = fetch,
   getCodexOAuthStatus: codexStatusProvider = getCodexOAuthStatus,
@@ -531,6 +606,7 @@ export async function probeModelConnection({
   const normalizedSettings = asPlainObject(settings);
   const options = {
     fetchImpl,
+    modelAlias: String(modelAlias || normalizedSettings.modelProbeModelAlias || "").trim(),
     userDataPath,
     getCodexOAuthStatus: codexStatusProvider,
     callCodexChatGptJson: codexCallProvider

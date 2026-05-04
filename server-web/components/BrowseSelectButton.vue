@@ -91,7 +91,7 @@ function onFileChange(event: Event) {
       :disabled="disabled"
       @click="onClick"
     >
-      {{ resolvedButtonText }}
+      <slot>{{ resolvedButtonText }}</slot>
     </el-button>
     <input
       v-if="isLocalDirectory"

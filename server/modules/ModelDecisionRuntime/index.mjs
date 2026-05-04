@@ -724,6 +724,9 @@ export function createModelDecisionRuntime({
       try {
         const result = await agentGatewayCall({
           modelAlias,
+          moduleId: input.moduleId || payload.moduleId || "agentTools",
+          taskId: input.taskId || payload.taskId || "",
+          sessionId: input.sessionId || payload.sessionId || "",
           question: buildPrompt(role, payload),
           parameters: {
             response_format: { type: "json_object" },

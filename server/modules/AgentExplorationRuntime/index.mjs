@@ -1749,6 +1749,9 @@ export function createAgentExplorationRuntime({
         const synthesisResult = await agentGatewayCall({
           alias: input.modelAlias || input.alias || "",
           modelAlias: input.modelAlias || input.alias || "",
+          moduleId: input.moduleId || "agentTools",
+          taskId: runId,
+          sessionId: workspaceId,
           question: query,
           messages: [
             {
@@ -1971,6 +1974,9 @@ export function createAgentExplorationRuntime({
         const agentResult = await agentGatewayCall({
           alias: input.modelAlias || input.alias || "",
           modelAlias: input.modelAlias || input.alias || "",
+          moduleId: input.moduleId || "agentTools",
+          taskId: runId,
+          sessionId: workspaceId,
           question: query,
           messages: callMessages,
           parameters: {

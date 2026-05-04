@@ -55,3 +55,6 @@ vendor/ocr-runtime/**
 # Temporary files
 *.tmp
 *.temp
+
+# Local test source data can contain large/private documents.
+/tests/fixtures/

@@ -87,6 +87,7 @@ function normalizeReportSeries(entries) {
     .map((entry, index) => ({
       id: normalizeText(entry?.id) || `report-series-${index + 1}`,
       label: normalizeText(entry?.label) || `规则 ${index + 1}`,
+      enabled: entry?.enabled === undefined ? true : entry.enabled !== false,
       cadence:
         entry?.cadence === "weekly" || entry?.cadence === "monthly"
           ? entry.cadence
@@ -104,6 +105,7 @@ function normalizeSynonymDictionary(entries) {
 
       return {
         canonical,
+        enabled: entry?.enabled === undefined ? true : entry.enabled !== false,
         terms
       };
     })
@@ -114,6 +116,7 @@ function normalizeDepartmentDictionary(entries) {
   return (entries || [])
     .map((entry) => ({
       department: normalizeText(entry?.department),
+      enabled: entry?.enabled === undefined ? true : entry.enabled !== false,
       keywords: uniqueStrings(entry?.keywords),
       emailKeywords: uniqueStrings(entry?.emailKeywords)
     }))

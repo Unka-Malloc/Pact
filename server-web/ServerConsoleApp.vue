@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import BrowseSelectButton from "./components/BrowseSelectButton.vue";
+import {
+  BinaryCheckbox,
+  BrowseSelectButton,
+  ConfigFoldCard,
+  FeatureToggle,
+  HistorySessionPanel,
+  InfoFeedResultRow,
+  OptionBar,
+  StatusPill,
+} from "./components/common";
 import { bridge } from "./lib/bridge";
 import type {
   AgentSettings,
   AgentModelConfig,
+  AgentModuleAccess,
   BackgroundProcessStatus,
   ClientMigrationState,
   CodexOAuthLogin,
@@ -35,6 +45,7 @@ import type {
   MaintenanceSettings,
   MonitorAlertState,
   ModelProbeResponse,
+  ModuleAgentProfile,
   NormalizedDocumentsManifest,
   ProtocolEvent,
   ServerPathBrowseEntry,
@@ -58,10 +69,12 @@ type DrawerTab =
 type AppView =
   | "dashboard"
   | "feed"
+  | "debug"
   | "sources"
   | "knowledge"
   | "intelligence"
   | "admin";
+type DebugTab = "knowledgeRecall" | "agentRetrieval";
 type RuleAuthoringMode = "chat" | "manual";
 type AdminView =
   | "jobs"
@@ -71,7 +84,13 @@ type AdminView =
   | "clients"
   | "storage"
   | "modules";
-type KnowledgeTab = "overview" | "ingest" | "conflicts" | "logs" | "maintenance";
+type KnowledgeTab = "overview" | "ingest" | "conflicts" | "logs" | "expertRules" | "maintenance";
+type OptionBarValue = string | number | boolean;
+type OptionBarOption = {
+  value: OptionBarValue;
+  label: string;
+  disabled?: boolean;
+};
 type KnowledgeLogRow = {
   logId: string;
   kindLabel: string;
@@ -93,11 +112,35 @@ type AgentExploreSession = {
   query: string;
   modelAlias: string;
   contextProfileId: string;
+  thinkingMode: string;
+  temperature: number;
+  maxTokens: number;
   maxIterations: number;
   limit: number;
+  toolChoice: string;
   status: string;
   answerPreview: string;
   updatedAt: string;
+};
+type KnowledgeRecallDebugRun = {
+  runId: string;
+  label: string;
+  topK: number;
+  status: "queued" | "running" | "completed" | "failed";
+  elapsedMs: number;
+  startedAt: string;
+  response: KnowledgeSearchResponse | null;
+  items: KnowledgeSearchResult[];
+  error: string;
+};
+type HistorySessionPanelItem = {
+  id: string;
+  title: string;
+  meta?: string;
+  preview?: string;
+  active?: boolean;
+  disabled?: boolean;
+  deleteLabel?: string;
 };
 type ModelEntryBinding = {
   bindingId: string;
@@ -410,6 +453,7 @@ const emptySettings: AgentSettings = {
     },
   },
   moduleModelAssignments: {},
+  moduleAgentProfiles: {},
   moduleIntelligence: {
     knowledgeTaxonomy: true,
     graphInsight: true,
@@ -567,11 +611,16 @@ const moduleGroupDefinitions = [
   },
 ];
 
+const debugTabs: Array<{ id: DebugTab; label: string }> = [
+  { id: "knowledgeRecall", label: "知识库召回" },
+  { id: "agentRetrieval", label: "智能体检索" },
+];
+
 const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
-  { id: "overview", label: "知识召回" },
   { id: "ingest", label: "入库同步" },
   { id: "conflicts", label: "冲突审核" },
   { id: "logs", label: "日志记录" },
+  { id: "expertRules", label: "专家规则" },
   { id: "maintenance", label: "知识库配置" },
 ];
 
@@ -592,7 +641,9 @@ const codexOAuthStatus = ref<CodexOAuthStatus | null>(null);
 const codexOAuthLogin = ref<CodexOAuthLogin | null>(null);
 const selectedModelProvider = ref<CloudProvider>("deepseek");
 const modelProbeResults = ref<Record<string, ModelProbeResponse>>({});
+const modelLibrarySaveProbeNotices = ref<Record<string, string>>({});
 const modelLibraryExpandedCards = ref<Record<string, boolean>>({});
+const moduleAgentCandidateDrafts = ref<Record<string, string>>({});
 const agentModelOptionLabelCache = ref<Record<string, string>>({});
 const settingsDraftDirty = ref(false);
 let applyingRemoteSettings = false;
@@ -607,6 +658,7 @@ const filter = ref("");
 const drawerOpen = ref(false);
 const drawerTab = ref<DrawerTab>("discovery");
 const currentView = ref<AppView>("dashboard");
+const debugTab = ref<DebugTab>("knowledgeRecall");
 const adminView = ref<AdminView>("jobs");
 const highlightedConfigTarget = ref("");
 const clientSearchQuery = ref("");
@@ -651,7 +703,7 @@ const oidcDraft = ref<ConsoleOidcConfig & { clientSecret?: string }>({
 });
 const oidcAllowedDomainsText = ref("");
 const oidcRoleMappingText = ref("{}");
-const knowledgeTab = ref<KnowledgeTab>("overview");
+const knowledgeTab = ref<KnowledgeTab>("ingest");
 const knowledgeConsole = ref<KnowledgeConsoleState | null>(null);
 const knowledgeSchema = ref<KnowledgeConfigSchema | null>(null);
 const knowledgeSourceState = ref<KnowledgeSourceState | null>(null);
@@ -664,12 +716,25 @@ const maintenanceResultJson = ref("");
 const knowledgeSearchForm = ref({
   query: "",
 });
+const knowledgeRecallDebugForm = ref({
+  query: "",
+  topKValues: "10 20 30",
+  retrievalMode: "hybrid",
+  keywordOnly: false,
+  learningEnabled: true,
+  explain: true,
+});
+const knowledgeRecallDebugRuns = ref<KnowledgeRecallDebugRun[]>([]);
 const agentExploreForm = ref({
   query: "",
   modelAlias: "",
   contextProfileId: "context-128k",
+  thinkingMode: "default",
+  temperature: 0.2,
+  maxTokens: 1800,
   maxIterations: 4,
   limit: 8,
+  toolChoice: "auto",
   workspaceId: "",
 });
 const agentExploreResult = ref<AgentExploreRunResponse | null>(null);
@@ -696,6 +761,7 @@ const ruleAuthoringForm = ref({
 const ruleCreationMode = ref<RuleAuthoringMode>("chat");
 const ruleAuthoringResult = ref<KnowledgeRuleAuthoringResponse | null>(null);
 const ruleAuthoringHistory = ref<KnowledgeRuleAuthoringResponse[]>([]);
+const goldenRulesState = ref<Record<string, unknown> | null>(null);
 const contextProfilesResponse = ref<Record<string, unknown> | null>(null);
 const contextBuildRecordsResponse = ref<Record<string, unknown> | null>(null);
 const contextPreviewTask = ref("总结最近一个月邮件中的账单风险，必须保留证据编号。");
@@ -714,12 +780,12 @@ const infoFeedParentRunSnapshot = ref<InfoFeedRunState | null>(null);
 const infoFeedHistory = ref<InfoFeedRunState[]>([]);
 const infoFeedAttachments = ref<InfoFeedAttachment[]>([]);
 const infoFeedSummaryStreamText = ref("");
-const infoFeedFileInput = ref<HTMLInputElement | null>(null);
 let infoFeedRunSequence = 0;
 let infoFeedSummaryStreamTimer: ReturnType<typeof window.setTimeout> | null = null;
 const infoFeedKeywordCache = new Map<string, { response: KnowledgeSearchResponse; cachedAt: number }>();
 const INFO_FEED_FETCH_RETRY_LIMIT = 10;
 const INFO_FEED_CONTEXT_CHARS_PER_TOKEN = 3;
+const CLEAR_LOCAL_STATE_PARAM = "clearLocalState";
 const knowledgeLogAdvancedOpen = ref(false);
 const knowledgeLogFilters = ref({
   id: "",
@@ -728,6 +794,62 @@ const knowledgeLogFilters = ref({
   from: "",
   to: "",
 });
+type KnowledgeLogColumnKey =
+  | "kind"
+  | "target"
+  | "status"
+  | "stage"
+  | "progress"
+  | "time"
+  | "detail"
+  | "error";
+const knowledgeLogTableShellRef = ref<HTMLElement | null>(null);
+const knowledgeLogTableScrollLeft = ref(0);
+const knowledgeLogColumnOrder: KnowledgeLogColumnKey[] = [
+  "kind",
+  "target",
+  "status",
+  "stage",
+  "progress",
+  "time",
+  "detail",
+  "error",
+];
+const knowledgeLogColumnLabels: Record<KnowledgeLogColumnKey, string> = {
+  kind: "类型",
+  target: "对象",
+  status: "状态",
+  stage: "阶段",
+  progress: "进度",
+  time: "时间",
+  detail: "详情",
+  error: "错误",
+};
+const knowledgeLogColumnMinWidths: Record<KnowledgeLogColumnKey, number> = {
+  kind: 82,
+  target: 220,
+  status: 96,
+  stage: 150,
+  progress: 78,
+  time: 122,
+  detail: 220,
+  error: 180,
+};
+const knowledgeLogColumnWidths = ref<Record<KnowledgeLogColumnKey, number>>({
+  kind: 110,
+  target: 320,
+  status: 120,
+  stage: 220,
+  progress: 92,
+  time: 142,
+  detail: 380,
+  error: 320,
+});
+const knowledgeLogResizing = ref<{
+  key: KnowledgeLogColumnKey;
+  startX: number;
+  startWidth: number;
+} | null>(null);
 const knowledgeReviewStatus = ref("pending");
 const knowledgeReviewItems = ref<KnowledgeReviewItem[]>([]);
 const selectedKnowledgeReviewId = ref("");
@@ -783,6 +905,7 @@ const serverEventTopics = [
   "settings.current",
   "email_rules.current",
   "expert_vocabulary.current",
+  "knowledge.golden_rules",
   "uploads.session",
   "uploads.trace",
   "jobs.job",
@@ -853,6 +976,18 @@ function modelEntryStringField(entry: Partial<AgentModelConfig>, keys: string[])
   return undefined;
 }
 
+function normalizeAgentModuleAccess(value?: Partial<AgentModuleAccess>): AgentModuleAccess {
+  const record = asRecord(value) || {};
+  const mode = String(record.mode || "").trim() === "selected" ? "selected" : "all";
+  const moduleIds = Array.isArray(record.moduleIds)
+    ? record.moduleIds.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  return {
+    mode,
+    moduleIds: [...new Set(moduleIds)],
+  };
+}
+
 function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): AgentModelConfig {
   const provider = String(entry.provider || "") as CloudProvider;
   const model = modelEntryStringField(entry, ["model", "engine"]) ?? "";
@@ -888,6 +1023,7 @@ function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): Agent
     pluginList: Array.isArray(entry.pluginList) ? entry.pluginList : [],
     systemPrompt: String(entry.systemPrompt || "").trim(),
     parameters: asRecord(entry.parameters) || {},
+    moduleAccess: normalizeAgentModuleAccess(entry.moduleAccess),
     parametersText:
       String(entry.parametersText || "").trim() ||
       JSON.stringify(asRecord(entry.parameters) || {}, null, 2),
@@ -908,6 +1044,94 @@ function modelEntryParameters(entry: AgentModelConfig) {
   } catch {
     return asRecord(entry.parameters) || {};
   }
+}
+
+function moduleAgentProfileJson(value?: string, fallback?: Record<string, unknown>) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return asRecord(parsed) || {};
+  } catch {
+    return fallback || {};
+  }
+}
+
+function normalizeModuleAgentProfile(profile?: Partial<ModuleAgentProfile>): ModuleAgentProfile {
+  const incoming = profile || {};
+  const parameters = moduleAgentProfileJson(incoming.parametersText, asRecord(incoming.parameters) || {});
+  const dependencyContext = moduleAgentProfileJson(
+    incoming.dependencyContextText,
+    asRecord(incoming.dependencyContext) || {},
+  );
+  return {
+    enabled: incoming.enabled !== false,
+    role: String(incoming.role || "primary").trim() || "primary",
+    contextProfileId: String(incoming.contextProfileId || "").trim(),
+    systemPrompt: String(incoming.systemPrompt || "").trim(),
+    parameters,
+    parametersText: String(incoming.parametersText || "").trim() || JSON.stringify(parameters, null, 2),
+    dependencyContext,
+    dependencyContextText:
+      String(incoming.dependencyContextText || "").trim() ||
+      JSON.stringify(dependencyContext, null, 2),
+  };
+}
+
+function normalizeModuleAgentProfilesForDraft(settings: AgentSettings) {
+  const incoming = asRecord(settings.moduleAgentProfiles) || {};
+  const next: AgentSettings["moduleAgentProfiles"] = {};
+  for (const moduleDefinition of moduleGroupDefinitions) {
+    const group = asRecord(incoming[moduleDefinition.id]) || {};
+    const agents = asRecord(group.agents) || {};
+    const nextAgents: Record<string, ModuleAgentProfile> = {};
+    for (const [agentId, profile] of Object.entries(agents)) {
+      const normalizedAgentId = String(agentId || "").trim();
+      if (!normalizedAgentId) {
+        continue;
+      }
+      nextAgents[normalizedAgentId] = normalizeModuleAgentProfile(profile as Partial<ModuleAgentProfile>);
+    }
+    const assignment = settings.moduleModelAssignments?.[moduleDefinition.id];
+    const primaryAgent = String(group.primaryAgent || assignment?.model || "").trim();
+    if (primaryAgent && !nextAgents[primaryAgent]) {
+      nextAgents[primaryAgent] = normalizeModuleAgentProfile({ role: "primary" });
+    }
+    if (primaryAgent || Object.keys(nextAgents).length > 0) {
+      next[moduleDefinition.id] = {
+        primaryAgent,
+        agents: nextAgents,
+      };
+    }
+  }
+  return next;
+}
+
+function moduleAgentProfilesPayload() {
+  const next: AgentSettings["moduleAgentProfiles"] = {};
+  for (const [moduleId, group] of Object.entries(settingsDraft.value.moduleAgentProfiles || {})) {
+    const agents: Record<string, ModuleAgentProfile> = {};
+    for (const [agentId, profile] of Object.entries(group.agents || {})) {
+      const normalizedAgentId = String(agentId || "").trim();
+      if (!normalizedAgentId) {
+        continue;
+      }
+      const normalizedProfile = normalizeModuleAgentProfile(profile);
+      agents[normalizedAgentId] = {
+        enabled: normalizedProfile.enabled,
+        role: normalizedProfile.role,
+        contextProfileId: normalizedProfile.contextProfileId,
+        systemPrompt: normalizedProfile.systemPrompt,
+        parameters: normalizedProfile.parameters,
+        dependencyContext: normalizedProfile.dependencyContext,
+      };
+    }
+    if (Object.keys(agents).length > 0 || group.primaryAgent) {
+      next[moduleId] = {
+        primaryAgent: String(group.primaryAgent || "").trim(),
+        agents,
+      };
+    }
+  }
+  return next;
 }
 
 function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
@@ -957,6 +1181,7 @@ function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
           : emptySettings.agentToolExecution.local.commands,
       },
     },
+    moduleAgentProfiles: normalizeModuleAgentProfilesForDraft(settings),
     customModelAlias: alias,
     customModelLabel: label,
     customHttpAdapter: nextAdapter,
@@ -974,15 +1199,17 @@ function settingsPayloadForSave() {
   normalized.modelLibraryEntries = [
     ...new Set(normalized.modelLibraryModels.map((entry) => String(entry.provider || "").trim()).filter(Boolean)),
   ] as CloudProvider[];
-  const validModuleAssignmentRefs = new Set(agentModelAssignmentOptions.value.map((item) => item.ref));
   normalized.moduleModelAssignments = Object.fromEntries(
     Object.entries(normalized.moduleModelAssignments || {}).filter(([moduleId, assignment]) => {
       if (!moduleNeedsIntelligence(moduleId)) {
         return false;
       }
-      return validModuleAssignmentRefs.has(modelRef(assignment.provider, assignment.model));
+      return moduleModelAssignmentOptions(moduleId).some(
+        (option) => option.ref === modelRef(assignment.provider, assignment.model),
+      );
     }),
   );
+  normalized.moduleAgentProfiles = moduleAgentProfilesPayload();
   return normalized;
 }
 
@@ -992,8 +1219,13 @@ function applyAgentExploreDefaultsFromSettings() {
   }
   agentExploreForm.value = {
     ...agentExploreForm.value,
+    contextProfileId: String(settingsDraft.value.agentExploreDefaults?.contextProfileId || agentExploreForm.value.contextProfileId || "context-128k"),
+    thinkingMode: normalizedAgentExploreThinkingMode(settingsDraft.value.agentExploreDefaults?.thinkingMode),
+    temperature: agentExploreConfiguredTemperature.value,
+    maxTokens: agentExploreConfiguredMaxTokens.value,
     maxIterations: agentExploreConfiguredMaxIterations.value,
     limit: agentExploreConfiguredLimit.value,
+    toolChoice: agentExploreConfiguredToolChoice.value,
   };
 }
 
@@ -1017,6 +1249,25 @@ const agentExploreConfiguredLimit = computed(() =>
     1,
     20,
   ),
+);
+const agentExploreConfiguredTemperature = computed(() =>
+  boundedAgentExploreNumber(
+    settingsDraft.value.agentExploreDefaults?.temperature,
+    emptySettings.agentExploreDefaults.temperature,
+    0,
+    2,
+  ),
+);
+const agentExploreConfiguredMaxTokens = computed(() =>
+  boundedAgentExploreNumber(
+    settingsDraft.value.agentExploreDefaults?.maxTokens,
+    emptySettings.agentExploreDefaults.maxTokens,
+    128,
+    32000,
+  ),
+);
+const agentExploreConfiguredToolChoice = computed(() =>
+  String(settingsDraft.value.agentExploreDefaults?.toolChoice || emptySettings.agentExploreDefaults.toolChoice || "auto").trim() || "auto",
 );
 const agentExploreTabs = computed(() =>
   normalizeAgentExploreHistoryList([
@@ -1091,19 +1342,164 @@ function handleAgentExploreSplitKeydown(event: KeyboardEvent) {
   }
 }
 
+function syncKnowledgeLogTableScrollLeft(fallback?: unknown) {
+  const record = asRecord(fallback);
+  const directValue = Number(record?.scrollLeft);
+  if (Number.isFinite(directValue)) {
+    knowledgeLogTableScrollLeft.value = Math.max(0, directValue);
+    return;
+  }
+  const scrollWrap = knowledgeLogTableShellRef.value?.querySelector<HTMLElement>(".el-scrollbar__wrap");
+  knowledgeLogTableScrollLeft.value = Math.max(0, Number(scrollWrap?.scrollLeft || 0));
+}
+
+function handleKnowledgeLogTableScroll(payload: unknown) {
+  syncKnowledgeLogTableScrollLeft(payload);
+}
+
+function stopKnowledgeLogColumnResize() {
+  if (typeof document !== "undefined") {
+    document.removeEventListener("pointermove", handleKnowledgeLogColumnPointerMove);
+    document.removeEventListener("pointerup", stopKnowledgeLogColumnResize);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }
+  knowledgeLogResizing.value = null;
+}
+
+function handleKnowledgeLogColumnPointerMove(event: PointerEvent) {
+  const resizing = knowledgeLogResizing.value;
+  if (!resizing) {
+    return;
+  }
+  const minWidth = knowledgeLogColumnMinWidths[resizing.key];
+  const nextWidth = Math.max(minWidth, resizing.startWidth + event.clientX - resizing.startX);
+  knowledgeLogColumnWidths.value = {
+    ...knowledgeLogColumnWidths.value,
+    [resizing.key]: Math.round(nextWidth),
+  };
+}
+
+function startKnowledgeLogColumnResize(event: PointerEvent, key: KnowledgeLogColumnKey) {
+  event.preventDefault();
+  event.stopPropagation();
+  syncKnowledgeLogTableScrollLeft();
+  knowledgeLogResizing.value = {
+    key,
+    startX: event.clientX,
+    startWidth: knowledgeLogColumnWidths.value[key],
+  };
+  document.addEventListener("pointermove", handleKnowledgeLogColumnPointerMove);
+  document.addEventListener("pointerup", stopKnowledgeLogColumnResize);
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+}
+
+function handleKnowledgeLogColumnDividerKeydown(event: KeyboardEvent, key: KnowledgeLogColumnKey) {
+  const step = event.shiftKey ? 24 : 8;
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+    return;
+  }
+  event.preventDefault();
+  const direction = event.key === "ArrowLeft" ? -1 : 1;
+  knowledgeLogColumnWidths.value = {
+    ...knowledgeLogColumnWidths.value,
+    [key]: Math.max(
+      knowledgeLogColumnMinWidths[key],
+      knowledgeLogColumnWidths.value[key] + direction * step,
+    ),
+  };
+}
+
 function handleAgentExploreTraceToggle(event: Event) {
   agentExploreTraceOpen.value = Boolean((event.currentTarget as HTMLDetailsElement | null)?.open);
+}
+
+async function clearIndexedDbDatabases() {
+  if (!("indexedDB" in window) || typeof window.indexedDB.databases !== "function") {
+    return [];
+  }
+  const databases = await window.indexedDB.databases();
+  const names = databases
+    .map((database) => String(database.name || "").trim())
+    .filter(Boolean);
+  await Promise.all(
+    names.map(
+      (name) =>
+        new Promise<void>((resolve) => {
+          const request = window.indexedDB.deleteDatabase(name);
+          request.onsuccess = () => resolve();
+          request.onerror = () => resolve();
+          request.onblocked = () => resolve();
+        }),
+    ),
+  );
+  return names;
+}
+
+async function clearBrowserCacheStorage() {
+  if (!("caches" in window)) {
+    return [];
+  }
+  const names = await window.caches.keys();
+  await Promise.all(names.map((name) => window.caches.delete(name)));
+  return names;
+}
+
+async function unregisterServiceWorkers() {
+  if (!("serviceWorker" in navigator)) {
+    return 0;
+  }
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+  return registrations.length;
+}
+
+async function clearBrowserLocalStateFromUrl() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const url = new URL(window.location.href);
+  if (url.searchParams.get(CLEAR_LOCAL_STATE_PARAM) !== "1") {
+    return false;
+  }
+  const report: Record<string, unknown> = {
+    localStorageKeys: Object.keys(window.localStorage || {}),
+    sessionStorageKeys: Object.keys(window.sessionStorage || {}),
+    clearedAt: new Date().toISOString(),
+  };
+  try {
+    report.indexedDbNames = await clearIndexedDbDatabases();
+  } catch (nextError) {
+    report.indexedDbError = nextError instanceof Error ? nextError.message : String(nextError);
+  }
+  try {
+    report.cacheNames = await clearBrowserCacheStorage();
+  } catch (nextError) {
+    report.cacheStorageError = nextError instanceof Error ? nextError.message : String(nextError);
+  }
+  try {
+    report.serviceWorkers = await unregisterServiceWorkers();
+  } catch (nextError) {
+    report.serviceWorkerError = nextError instanceof Error ? nextError.message : String(nextError);
+  }
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  infoFeedKeywordCache.clear();
+  url.searchParams.delete(CLEAR_LOCAL_STATE_PARAM);
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  (window as Window & { __splitallLocalStateClearReport?: Record<string, unknown> }).__splitallLocalStateClearReport = report;
+  return true;
 }
 
 watch(
   settingsDraft,
   () => {
-    modelProbeResults.value = {};
     if (!applyingRemoteSettings) {
       settingsDraftDirty.value = true;
     }
   },
-  { deep: true },
+  { deep: true, flush: "sync" },
 );
 
 watch(
@@ -1432,6 +1828,11 @@ function applyServerEvent(event: ProtocolEvent) {
     return true;
   }
 
+  if (event.topic === "knowledge.golden_rules") {
+    void refreshExpertRules({ silent: true });
+    return true;
+  }
+
   if (event.topic === "tool_platform.grants") {
     const state =
       asRecord(payload.state) ||
@@ -1697,6 +2098,16 @@ function collectModelEntryBindings(entry: AgentModelConfig): ModelEntryBinding[]
         source: "settings",
       });
     }
+    const profileGroup = settingsDraft.value.moduleAgentProfiles?.[moduleDefinition.id];
+    if (profileGroup?.agents?.[modelEntryStatusKey(entry)]) {
+      addModelEntryBinding(bindings, {
+        bindingId: `module-profile:${moduleDefinition.id}:${modelEntryStatusKey(entry)}`,
+        category: "模块专属参数",
+        label: `${moduleDefinition.label} 专属配置`,
+        detail: "该智能体保存了模块/功能专属调用参数或依赖上下文。",
+        source: "settings",
+      });
+    }
   }
   return bindings;
 }
@@ -1753,6 +2164,26 @@ function modelEntryStatusTone(entry: AgentModelConfig) {
   return modelEntryConfigured(entry) ? "neutral" : "muted";
 }
 
+function modelEntryProbeResult(entry: AgentModelConfig) {
+  return modelProbeResults.value[modelEntryStatusKey(entry)] || null;
+}
+
+function modelEntryProbeStatusLabel(entry: AgentModelConfig) {
+  const probe = modelEntryProbeResult(entry);
+  if (!probe) {
+    return "";
+  }
+  return probe.ok ? "探测通过" : "探测失败";
+}
+
+function modelEntryProbeStatusTone(entry: AgentModelConfig) {
+  const probe = modelEntryProbeResult(entry);
+  if (!probe) {
+    return "neutral";
+  }
+  return probe.ok ? "success" : "danger";
+}
+
 function providerStatusLabel(provider: CloudProvider) {
   const probe = modelProbeResults.value[provider];
   if (probe) {
@@ -1781,10 +2212,15 @@ function addModelProvider() {
     baseUrl: provider === "deepseek" ? settingsDraft.value.deepSeekBaseUrl : "",
     timeoutMs: provider === "deepseek" ? settingsDraft.value.deepSeekTimeoutMs : 120000,
   }, Date.now());
+  const key = modelEntryStatusKey(entry);
   settingsDraft.value.modelLibraryModels = [
     entry,
     ...visibleModelEntries.value,
   ];
+  modelLibraryExpandedCards.value = {
+    ...modelLibraryExpandedCards.value,
+    [key]: true,
+  };
 }
 
 async function removeModelProvider(provider: CloudProvider | AgentModelConfig) {
@@ -1830,85 +2266,187 @@ function duplicateModelEntry(entry: AgentModelConfig) {
     apiKey: "",
     token: "",
   }, Date.now());
+  const key = modelEntryStatusKey(copy);
   settingsDraft.value.modelLibraryModels = [copy, ...visibleModelEntries.value];
+  modelLibraryExpandedCards.value = {
+    ...modelLibraryExpandedCards.value,
+    [key]: true,
+  };
+}
+
+function modelProbeFailureResult(entry: AgentModelConfig, message: string): ModelProbeResponse {
+  return {
+    ok: false,
+    configured: modelEntryConfigured(entry),
+    provider: entry.provider,
+    model: String(entry.model || entry.engine || ""),
+    statusCode: 0,
+    latencyMs: 0,
+    checkedAt: new Date().toISOString(),
+    message,
+  };
+}
+
+function modelProbeSettingsForEntry(entry: AgentModelConfig) {
+  const settings = settingsPayloadForSave();
+  const cleanParameters = modelEntryParameters(entry);
+  if (entry.provider === "google-gemini") {
+    settings.googleModel = String(entry.model ?? "");
+  }
+  if (entry.provider === "openai-chatgpt") {
+    settings.openAiModel = String(entry.model ?? "");
+  }
+  if (entry.provider === "deepseek") {
+    settings.deepSeekBaseUrl = entry.baseUrl || settings.deepSeekBaseUrl;
+    settings.deepSeekModel = String(entry.model ?? "");
+    settings.deepSeekApiKey = entry.apiKey || "";
+    settings.deepSeekApiKeyConfigured = Boolean(entry.apiKey || entry.apiKeyConfigured);
+    settings.deepSeekTimeoutMs = Number(entry.timeoutMs || settings.deepSeekTimeoutMs);
+  }
+  if (entry.provider === "openrouter") {
+    settings.openRouterModel = String(entry.model ?? "");
+  }
+  if (entry.provider === "copilot") {
+    settings.copilotModel = String(entry.model ?? "");
+  }
+  if (entry.provider === "local-model") {
+    settings.localModelName = String(entry.model ?? "");
+  }
+  if (entry.provider === "custom-http") {
+    settings.customModelAlias = modelEntryStatusKey(entry);
+    settings.customModelLabel = entry.label || modelEntryStatusKey(entry);
+    settings.agentGateway = {
+      ...settings.agentGateway,
+      alias: modelEntryStatusKey(entry),
+      label: entry.label || modelEntryStatusKey(entry),
+      url: entry.url || "",
+      token: entry.token || "",
+      tokenConfigured: entry.tokenConfigured,
+      tokenHeader: entry.tokenHeader || "token",
+      tokenPrefix: entry.tokenPrefix || "",
+      agentName: entry.label || "",
+      engine: entry.engine || entry.model || "",
+      pluginList: entry.pluginList || [],
+      parameters: cleanParameters,
+      timeoutMs: Number(entry.timeoutMs || 120000),
+    };
+    settings.customHttpAdapter = settings.agentGateway;
+    settings.customHttpAdapters = [settings.agentGateway];
+  }
+  return settings;
+}
+
+async function runModelEntryProbe(entry: AgentModelConfig): Promise<ModelProbeResponse> {
+  if (!modelEntryConfigured(entry)) {
+    return modelProbeFailureResult(entry, "模型配置不完整，未执行远程探测。");
+  }
+  return bridge.probeModel({
+    provider: entry.provider,
+    modelAlias: modelEntryStatusKey(entry),
+    settings: modelProbeSettingsForEntry(entry),
+  });
 }
 
 async function probeModelEntry(entry: AgentModelConfig) {
   const key = modelEntryStatusKey(entry);
   busyKey.value = `model-probe:${key}`;
   error.value = "";
-  const settings = settingsPayloadForSave();
-  const cleanParameters = modelEntryParameters(entry);
   try {
-    if (entry.provider === "google-gemini") {
-      settings.googleModel = String(entry.model ?? "");
-    }
-    if (entry.provider === "openai-chatgpt") {
-      settings.openAiModel = String(entry.model ?? "");
-    }
-    if (entry.provider === "deepseek") {
-      settings.deepSeekBaseUrl = entry.baseUrl || settings.deepSeekBaseUrl;
-      settings.deepSeekModel = String(entry.model ?? "");
-      settings.deepSeekApiKey = entry.apiKey || settings.deepSeekApiKey;
-      settings.deepSeekTimeoutMs = Number(entry.timeoutMs || settings.deepSeekTimeoutMs);
-    }
-    if (entry.provider === "openrouter") {
-      settings.openRouterModel = String(entry.model ?? "");
-    }
-    if (entry.provider === "copilot") {
-      settings.copilotModel = String(entry.model ?? "");
-    }
-    if (entry.provider === "local-model") {
-      settings.localModelName = String(entry.model ?? "");
-    }
-    if (entry.provider === "custom-http") {
-      settings.customModelAlias = modelEntryStatusKey(entry);
-      settings.customModelLabel = entry.label || modelEntryStatusKey(entry);
-      settings.agentGateway = {
-        ...settings.agentGateway,
-        alias: modelEntryStatusKey(entry),
-        label: entry.label || modelEntryStatusKey(entry),
-        url: entry.url || "",
-        token: entry.token || "",
-        tokenConfigured: entry.tokenConfigured,
-        tokenHeader: entry.tokenHeader || "token",
-        tokenPrefix: entry.tokenPrefix || "",
-        agentName: entry.label || "",
-        engine: entry.engine || entry.model || "",
-        pluginList: entry.pluginList || [],
-        parameters: cleanParameters,
-        timeoutMs: Number(entry.timeoutMs || 120000),
-      };
-      settings.customHttpAdapter = settings.agentGateway;
-      settings.customHttpAdapters = [settings.agentGateway];
-    }
-    const result = await bridge.probeModel({
-      provider: entry.provider,
-      settings,
-    });
+    const result = await runModelEntryProbe(entry);
     modelProbeResults.value = {
       ...modelProbeResults.value,
       [key]: result,
     };
   } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "模型探测失败。";
+    const message = nextError instanceof Error ? nextError.message : "模型探测失败。";
+    modelProbeResults.value = {
+      ...modelProbeResults.value,
+      [key]: modelProbeFailureResult(entry, message),
+    };
+    error.value = message;
   } finally {
     busyKey.value = "";
   }
 }
 
+async function probeModelLibraryBeforeSave() {
+  const failures: Array<{ entry: AgentModelConfig; result: ModelProbeResponse }> = [];
+  const nextResults: Record<string, ModelProbeResponse> = {};
+  const nextNotices = { ...modelLibrarySaveProbeNotices.value };
+  for (const entry of visibleModelEntries.value) {
+    const key = modelEntryStatusKey(entry);
+    try {
+      const result = await runModelEntryProbe(entry);
+      nextResults[key] = result;
+      if (result.ok) {
+        nextNotices[key] = "最近一次保存前连通性检测已通过，智能体已返回可用回答。";
+      } else {
+        delete nextNotices[key];
+        failures.push({ entry, result });
+      }
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "模型探测失败。";
+      const result = modelProbeFailureResult(entry, message);
+      nextResults[key] = result;
+      delete nextNotices[key];
+      failures.push({ entry, result });
+    }
+  }
+  modelProbeResults.value = {
+    ...modelProbeResults.value,
+    ...nextResults,
+  };
+  modelLibrarySaveProbeNotices.value = nextNotices;
+  return failures;
+}
+
 const agentModelAssignmentOptions = computed(() =>
   visibleModelEntries.value
-    .filter((entry) => modelEntryConfigured(entry))
     .map((entry) => ({
       provider: entry.provider as CloudProvider,
       value: modelEntryStatusKey(entry),
       label: agentExploreModelOptionLabel(entry),
       ref: modelRef(entry.provider, modelEntryStatusKey(entry)),
-      enabled: true,
+      enabled: modelEntryConfigured(entry),
     })),
 );
+
+function modelEntryModuleAccess(entry: AgentModelConfig): AgentModuleAccess {
+  return normalizeAgentModuleAccess(entry.moduleAccess);
+}
+
+function modelEntryAllowsModule(entry: AgentModelConfig, moduleId: string) {
+  const access = modelEntryModuleAccess(entry);
+  return access.mode !== "selected" || access.moduleIds.includes(moduleId);
+}
+
+function setModelEntryModuleAccessMode(entry: AgentModelConfig, mode: string) {
+  entry.moduleAccess = {
+    ...modelEntryModuleAccess(entry),
+    mode: mode === "selected" ? "selected" : "all",
+  };
+}
+
+function toggleModelEntryModuleAccess(entry: AgentModelConfig, moduleId: string, checked: boolean) {
+  const access = modelEntryModuleAccess(entry);
+  const next = new Set(access.moduleIds);
+  if (checked) {
+    next.add(moduleId);
+  } else {
+    next.delete(moduleId);
+  }
+  entry.moduleAccess = {
+    mode: "selected",
+    moduleIds: [...next],
+  };
+}
+
+function moduleModelAssignmentOptions(moduleId: string) {
+  return agentModelAssignmentOptions.value.filter((option) => {
+    const entry = visibleModelEntries.value.find((model) => modelEntryStatusKey(model) === option.value);
+    return Boolean(entry && modelEntryAllowsModule(entry, moduleId));
+  });
+}
 
 function modelProviderFromRef(refValue: string) {
   return parseModelRef(refValue).provider;
@@ -1925,13 +2463,63 @@ function setModuleNeedsIntelligence(moduleId: string, enabled: boolean) {
   };
 }
 
+function ensureModuleAgentGroup(moduleId: string) {
+  const groups = { ...(settingsDraft.value.moduleAgentProfiles || {}) };
+  const group = groups[moduleId] || { primaryAgent: "", agents: {} };
+  groups[moduleId] = {
+    primaryAgent: String(group.primaryAgent || "").trim(),
+    agents: { ...(group.agents || {}) },
+  };
+  settingsDraft.value.moduleAgentProfiles = groups;
+  return groups[moduleId];
+}
+
+function ensureModuleAgentProfile(moduleId: string, agentId: string, defaults: Partial<ModuleAgentProfile> = {}) {
+  const normalizedAgentId = String(agentId || "").trim();
+  if (!normalizedAgentId) {
+    return null;
+  }
+  const group = ensureModuleAgentGroup(moduleId);
+  group.agents[normalizedAgentId] = normalizeModuleAgentProfile({
+    role: defaults.role || (group.primaryAgent === normalizedAgentId ? "primary" : "assistant"),
+    ...(group.agents[normalizedAgentId] || {}),
+    ...defaults,
+  });
+  return group.agents[normalizedAgentId];
+}
+
+function removeModuleAgentProfile(moduleId: string, agentId: string) {
+  const group = ensureModuleAgentGroup(moduleId);
+  delete group.agents[agentId];
+  if (group.primaryAgent === agentId) {
+    group.primaryAgent = "";
+    const nextAssignments = { ...(settingsDraft.value.moduleModelAssignments || {}) };
+    delete nextAssignments[moduleId];
+    settingsDraft.value.moduleModelAssignments = nextAssignments;
+  }
+}
+
+function moduleAgentProfileRows(moduleId: string) {
+  const group = settingsDraft.value.moduleAgentProfiles?.[moduleId];
+  const agents = group?.agents || {};
+  return Object.entries(agents).map(([agentId, profile]) => {
+    const entry = visibleModelEntries.value.find((model) => modelEntryStatusKey(model) === agentId);
+    return {
+      agentId,
+      label: entry ? agentExploreModelOptionLabel(entry) : currentAgentModelOptionLabel(agentId) || agentId,
+      isPrimary: group?.primaryAgent === agentId,
+      profile,
+    };
+  });
+}
+
 function moduleModelRef(moduleId: string) {
   const assignment = settingsDraft.value.moduleModelAssignments?.[moduleId];
   if (!assignment?.provider || !assignment?.model) {
     return "";
   }
   const refValue = modelRef(assignment.provider, assignment.model);
-  return agentModelAssignmentOptions.value.some((option) => option.ref === refValue)
+  return moduleModelAssignmentOptions(moduleId).some((option) => option.ref === refValue)
     ? refValue
     : "";
 }
@@ -1941,6 +2529,8 @@ function setModuleModelRef(moduleId: string, refValue: string) {
     const nextAssignments = { ...(settingsDraft.value.moduleModelAssignments || {}) };
     delete nextAssignments[moduleId];
     settingsDraft.value.moduleModelAssignments = nextAssignments;
+    const group = ensureModuleAgentGroup(moduleId);
+    group.primaryAgent = "";
     return;
   }
   const parsed = parseModelRef(refValue);
@@ -1951,10 +2541,43 @@ function setModuleModelRef(moduleId: string, refValue: string) {
       model: parsed.model,
     },
   };
+  const group = ensureModuleAgentGroup(moduleId);
+  group.primaryAgent = parsed.model;
+  ensureModuleAgentProfile(moduleId, parsed.model, { role: "primary" });
   if (parsed.provider === "openai-chatgpt") {
     void ensureCodexOAuthReady(true);
   }
 }
+
+function setModuleAgentProfileEnabled(moduleId: string, agentId: string, enabled: boolean) {
+  const profile = ensureModuleAgentProfile(moduleId, agentId);
+  if (profile) {
+    profile.enabled = enabled;
+  }
+}
+
+function addModuleAgentProfileFromDraft(moduleId: string) {
+  const refValue = String(moduleAgentCandidateDrafts.value[moduleId] || "").trim();
+  if (!refValue) {
+    return;
+  }
+  const parsed = parseModelRef(refValue);
+  ensureModuleAgentProfile(moduleId, parsed.model, { role: "assistant" });
+  moduleAgentCandidateDrafts.value = {
+    ...moduleAgentCandidateDrafts.value,
+    [moduleId]: "",
+  };
+}
+
+const moduleModelAssignmentStats = computed(() => {
+  const enabled = intelligentModuleDefinitions.filter((item) => moduleNeedsIntelligence(item.id)).length;
+  const assigned = intelligentModuleDefinitions.filter((item) => moduleNeedsIntelligence(item.id) && moduleModelRef(item.id)).length;
+  return {
+    assigned,
+    enabled,
+    total: intelligentModuleDefinitions.length,
+  };
+});
 
 function hasOpenAiModelUsage() {
   return intelligentModuleDefinitions.some(
@@ -2236,8 +2859,8 @@ function dedupeAgentExploreModelOptions<T extends { value: string }>(options: T[
 
 const agentExploreModelOptions = computed(() => {
   const libraryOptions = visibleModelEntries.value
-    .map(agentExploreModelOptionFromEntry)
-    .filter((option) => option.enabled);
+    .filter((entry) => modelEntryAllowsModule(entry, "agentTools"))
+    .map(agentExploreModelOptionFromEntry);
   return dedupeAgentExploreModelOptions(libraryOptions);
 });
 const agentModelOptionValueSet = computed(
@@ -2246,6 +2869,25 @@ const agentModelOptionValueSet = computed(
 function hasAgentModelOption(value?: string) {
   const normalized = String(value || "").trim();
   return Boolean(normalized && agentModelOptionValueSet.value.has(normalized));
+}
+function validAgentModelAlias(value?: string) {
+  const normalized = String(value || "").trim();
+  return hasAgentModelOption(normalized) ? normalized : "";
+}
+function currentAgentModelOptionLabel(value?: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return agentExploreModelOptions.value.find((item) => item.value === normalized)?.label || "";
+}
+function removedAgentModelOption(value?: string) {
+  return {
+    value: String(value || "").trim(),
+    label: "已移除的智能体",
+    enabled: false,
+    disabledReason: "已从模型库删除",
+  };
 }
 function clearInvalidAgentModelSelections() {
   if (infoFeedForm.value.modelAlias && !hasAgentModelOption(infoFeedForm.value.modelAlias)) {
@@ -2264,9 +2906,11 @@ function clearInvalidAgentModelSelections() {
       reviewFusionModelAlias: "",
     };
   }
+  clearInvalidAgentExploreModelReferences();
+  clearInvalidInfoFeedModelReferences();
 }
 function cacheAgentModelOptionLabels(options: Array<{ value: string; label?: string }>) {
-  const next = { ...agentModelOptionLabelCache.value };
+  const next: Record<string, string> = {};
   for (const option of options) {
     const value = String(option.value || "").trim();
     const label = String(option.label || "").trim();
@@ -2276,13 +2920,8 @@ function cacheAgentModelOptionLabels(options: Array<{ value: string; label?: str
   }
   agentModelOptionLabelCache.value = next;
 }
-function cachedAgentModelLabel(value?: string) {
-  const normalized = String(value || "").trim();
-  return normalized ? agentModelOptionLabelCache.value[normalized] || normalized : "";
-}
 const infoFeedModelOptions = computed(() => {
-  const enabledOptions = agentExploreModelOptions.value.filter((item) => item.enabled);
-  return enabledOptions;
+  return agentExploreModelOptions.value;
 });
 const selectedAgentExploreModel = computed(() => {
   const selectedValue = String(agentExploreForm.value.modelAlias || "").trim();
@@ -2294,12 +2933,7 @@ const selectedAgentExploreModel = computed(() => {
   }
   if (selectedValue) {
     const inactive = agentExploreModelOptions.value.find((item) => item.value === selectedValue);
-    return inactive || {
-      value: selectedValue,
-      label: cachedAgentModelLabel(selectedValue),
-      enabled: false,
-      disabledReason: "配置刷新中或已移除",
-    };
+    return inactive || removedAgentModelOption(selectedValue);
   }
   return {
     value: "",
@@ -2321,9 +2955,9 @@ const selectedRuleAuthoringModel = computed(() => {
     return (
       ruleAuthoringModelOptions.value.find((item) => item.value === selectedValue) || {
         value: selectedValue,
-        label: cachedAgentModelLabel(selectedValue),
+        label: "已移除的智能体",
         enabled: false,
-        disabledReason: "配置刷新中或已移除",
+        disabledReason: "已从模型库删除",
       }
     );
   }
@@ -2506,8 +3140,8 @@ watch(ruleCreationMode, (mode) => {
 });
 const selectedAgentExploreContextProfile = computed(() => {
   const configured = String(
-    settingsDraft.value.agentExploreDefaults?.contextProfileId ||
-      agentExploreForm.value.contextProfileId ||
+    agentExploreForm.value.contextProfileId ||
+      settingsDraft.value.agentExploreDefaults?.contextProfileId ||
       "context-128k",
   ).trim();
   const selected = agentExploreContextWindowOptions.find(
@@ -2525,12 +3159,7 @@ const selectedInfoFeedModel = computed(() => {
   }
   if (selectedValue) {
     const inactive = infoFeedModelOptions.value.find((item) => item.value === selectedValue);
-    return inactive || {
-      value: selectedValue,
-      label: cachedAgentModelLabel(selectedValue),
-      enabled: false,
-      disabledReason: "配置刷新中或已移除",
-    };
+    return inactive || removedAgentModelOption(selectedValue);
   }
   return {
     value: "",
@@ -2554,12 +3183,7 @@ const selectedKnowledgeReviewFusionModel = computed(() => {
   const selected = agentExploreModelOptions.value.find(
     (item) => item.value === configured && item.enabled,
   );
-  return selected || {
-    value: configured,
-    label: cachedAgentModelLabel(configured),
-    enabled: false,
-    disabledReason: "配置刷新中或已移除",
-  };
+  return selected || agentExploreModelOptions.value.find((item) => item.value === configured) || removedAgentModelOption(configured);
 });
 function agentSelectionAlert(
   params: Omit<AgentConfigurationAlert, "status" | "tone"> & { value: string; options: Array<{ value: string; enabled: boolean; disabledReason?: string }> },
@@ -2705,14 +3329,25 @@ const agentConfigurationAlertSummary = computed(() => {
   ].filter(Boolean).join("，");
 });
 const selectedInfoFeedContextProfile = computed(() => {
-  return selectedAgentExploreContextProfile.value;
+  const configured = String(
+    infoFeedForm.value.contextProfileId ||
+      settingsDraft.value.agentExploreDefaults?.contextProfileId ||
+      "context-32k",
+  ).trim();
+  const selected = agentExploreContextWindowOptions.find(
+    (item) => item.value === configured,
+  );
+  return selected || agentExploreContextWindowOptions[0];
 });
 function normalizedAgentExploreThinkingMode(value?: string) {
   const mode = String(value || "default").trim();
   return agentExploreThinkingModeOptions.some((item) => item.value === mode) ? mode : "default";
 }
 const selectedAgentExploreThinkingMode = computed(() =>
-  normalizedAgentExploreThinkingMode(settingsDraft.value.agentExploreDefaults?.thinkingMode),
+  normalizedAgentExploreThinkingMode(
+    agentExploreForm.value.thinkingMode ||
+      settingsDraft.value.agentExploreDefaults?.thinkingMode,
+  ),
 );
 function agentExploreThinkingParameters() {
   const mode = selectedAgentExploreThinkingMode.value;
@@ -2733,7 +3368,7 @@ function infoFeedModelDisplayLabel(value?: string) {
   if (!normalized) {
     return "未记录";
   }
-  return infoFeedModelOptions.value.find((item) => item.value === normalized)?.label || normalized;
+  return infoFeedModelOptions.value.find((item) => item.value === normalized)?.label || "已移除的智能体";
 }
 const infoFeedSummaryRuntime = computed(() => {
   const summary = infoFeedCurrentRun.value?.summary;
@@ -3289,6 +3924,26 @@ const filteredKnowledgeLogRows = computed(() => {
     return true;
   });
 });
+watch(
+  [currentView, knowledgeTab, filteredKnowledgeLogRows],
+  () => {
+    if (currentView.value === "knowledge" && knowledgeTab.value === "logs") {
+      void nextTick(() => syncKnowledgeLogTableScrollLeft());
+    }
+  },
+);
+const knowledgeLogColumnDividers = computed(() => {
+  let left = 0;
+  return knowledgeLogColumnOrder.slice(0, -1).map((key) => {
+    left += knowledgeLogColumnWidths.value[key];
+    return {
+      key,
+      label: knowledgeLogColumnLabels[key],
+      left: left - knowledgeLogTableScrollLeft.value,
+      active: knowledgeLogResizing.value?.key === key,
+    };
+  });
+});
 const evidenceReadableHtml = computed(() => renderEvidenceReadableHtml());
 const evidenceReadableKind = computed(() => evidenceReadableKindLabel());
 
@@ -3842,9 +4497,8 @@ async function readInfoFeedAttachment(file: File): Promise<InfoFeedAttachment> {
   }
 }
 
-async function handleInfoFeedAttachmentInput(event: Event) {
-  const input = event.target as HTMLInputElement | null;
-  const files = Array.from(input?.files || []);
+async function handleInfoFeedAttachmentFiles(selectedFiles: File[]) {
+  const files = Array.from(selectedFiles || []);
   if (!files.length) {
     return;
   }
@@ -4117,6 +4771,50 @@ function compactInfoFeedRunForStorage(run: InfoFeedRunState): InfoFeedRunState {
   };
 }
 
+function sanitizeInfoFeedRunModelReferences(run: InfoFeedRunState): InfoFeedRunState {
+  const summaryModelAlias = validAgentModelAlias(run.summary?.modelAlias);
+  return {
+    ...run,
+    turns: (run.turns || []).map((turn) => ({
+      ...turn,
+      summaryModelAlias: validAgentModelAlias(turn.summaryModelAlias),
+    })),
+    summary: {
+      ...run.summary,
+      modelAlias: summaryModelAlias,
+    },
+  };
+}
+
+function infoFeedRestorableModelAlias(run: InfoFeedRunState) {
+  const agentRunInput = asRecord(asRecord(run.agent?.response?.run)?.input) || {};
+  return (
+    validAgentModelAlias(run.summary?.modelAlias) ||
+    validAgentModelAlias(String(agentRunInput.modelAlias || ""))
+  );
+}
+
+function clearInvalidInfoFeedModelReferences() {
+  let historyChanged = false;
+  const nextHistory = infoFeedHistory.value.map((run) => {
+    const sanitized = sanitizeInfoFeedRunModelReferences(run);
+    if (
+      sanitized.summary.modelAlias !== run.summary?.modelAlias ||
+      sanitized.turns.some((turn, index) => turn.summaryModelAlias !== run.turns?.[index]?.summaryModelAlias)
+    ) {
+      historyChanged = true;
+    }
+    return sanitized;
+  });
+  if (historyChanged) {
+    infoFeedHistory.value = nextHistory;
+    persistInfoFeedHistory();
+  }
+  if (infoFeedCurrentRun.value?.summary?.modelAlias && !hasAgentModelOption(infoFeedCurrentRun.value.summary.modelAlias)) {
+    infoFeedCurrentRun.value = sanitizeInfoFeedRunModelReferences(infoFeedCurrentRun.value);
+  }
+}
+
 function buildInfoFeedSourceSearchQuery(run: InfoFeedRunState) {
   if (!run.followUp) {
     return run.query;
@@ -4210,7 +4908,7 @@ function normalizeInfoFeedHistory(runs: InfoFeedRunState[]) {
       return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
     })
     .slice(0, 20)
-    .map(compactInfoFeedRunForStorage);
+    .map((run) => sanitizeInfoFeedRunModelReferences(compactInfoFeedRunForStorage(run)));
 }
 
 function persistInfoFeedHistory() {
@@ -4218,7 +4916,9 @@ function persistInfoFeedHistory() {
     window.localStorage.setItem(
       INFO_FEED_STORAGE_KEY,
       JSON.stringify({
-        history: infoFeedHistory.value.map(compactInfoFeedRunForStorage),
+        history: infoFeedHistory.value.map((run) =>
+          sanitizeInfoFeedRunModelReferences(compactInfoFeedRunForStorage(run)),
+        ),
       }),
     );
   } catch {
@@ -4231,6 +4931,9 @@ function restoreInfoFeedHistory() {
     const parsed = JSON.parse(window.localStorage.getItem(INFO_FEED_STORAGE_KEY) || "{}");
     const history = Array.isArray(parsed?.history) ? parsed.history : [];
     infoFeedHistory.value = normalizeInfoFeedHistory(history as InfoFeedRunState[]);
+    if (history.length > 0) {
+      persistInfoFeedHistory();
+    }
   } catch {
     infoFeedHistory.value = [];
   }
@@ -4255,15 +4958,37 @@ function deleteInfoFeedHistory(runId: string) {
   persistInfoFeedHistory();
 }
 
+const infoFeedHistoryPanelItems = computed<HistorySessionPanelItem[]>(() =>
+  infoFeedHistory.value.map((run) => ({
+    id: run.runId,
+    title: run.query || "未命名问题",
+    meta: `${formatCompactDate(run.completedAt || run.startedAt)} · ${run.summary.status || "unknown"}`,
+    preview: truncateInfoFeedText(run.summary.answer || run.agent.response?.answer || "", 140),
+    active: infoFeedCurrentRun.value?.runId === run.runId,
+    deleteLabel: `删除历史记录 ${run.query || run.runId}`,
+  })),
+);
+
+function selectInfoFeedHistoryItem(runId: string) {
+  const run = infoFeedHistory.value.find((item) => item.runId === runId);
+  if (run) {
+    openInfoFeedHistoryRun(run);
+  }
+}
+
+function deleteInfoFeedHistoryItem(runId: string) {
+  deleteInfoFeedHistory(runId);
+}
+
 function openInfoFeedHistoryRun(run: InfoFeedRunState) {
-  const agentRunInput = asRecord(asRecord(run.agent.response?.run)?.input) || {};
   infoFeedParentRunSnapshot.value = null;
-  infoFeedCurrentRun.value = compactInfoFeedRunForStorage(run);
+  const sanitizedRun = sanitizeInfoFeedRunModelReferences(compactInfoFeedRunForStorage(run));
+  infoFeedCurrentRun.value = sanitizedRun;
   infoFeedForm.value = {
     ...infoFeedForm.value,
     query: "",
-    modelAlias: run.summary.modelAlias || String(agentRunInput.modelAlias || "") || infoFeedForm.value.modelAlias,
-    contextProfileId: run.summary.contextProfileId || infoFeedForm.value.contextProfileId,
+    modelAlias: infoFeedRestorableModelAlias(sanitizedRun),
+    contextProfileId: sanitizedRun.summary.contextProfileId || infoFeedForm.value.contextProfileId,
   };
 }
 
@@ -4879,6 +5604,9 @@ async function runInfoFeedSummaryAgent(sequence = infoFeedRunSequence) {
       bridge.callAgentGateway({
         modelAlias: selectedInfoFeedModel.value.value,
         alias: selectedInfoFeedModel.value.value,
+        moduleId: "agentTools",
+        taskId: run.runId,
+        sessionId: run.workspaceId || run.runId,
         question: buildInfoFeedSummaryQuestion(run),
         systemPrompt:
           "你是 SplitAll 信息流总结智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
@@ -7037,6 +7765,9 @@ async function fuseKnowledgeReview(item: KnowledgeReviewItem) {
     const response = await bridge.callAgentGateway({
       modelAlias: model.value,
       alias: model.value,
+      moduleId: "agentTools",
+      taskId: reviewId,
+      sessionId: reviewId,
       question: knowledgeReviewFusionPrompt(item),
       systemPrompt: settingsDraft.value.agentExploreDefaults.reviewFusionSystemPrompt,
       parameters: {
@@ -7105,6 +7836,98 @@ async function searchKnowledge() {
   }
 }
 
+function parseKnowledgeRecallTopKValues(value: unknown) {
+  const values = String(value || "")
+    .split(/[,\s，、]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0)
+    .map((item) => Math.max(1, Math.min(Math.floor(item), 100)));
+  return [...new Set(values)].slice(0, 6);
+}
+
+function buildKnowledgeRecallSearchPayload(query: string, topK: number) {
+  const retrievalProfile = {
+    ...currentKnowledgeRetrievalSettings(),
+    topK,
+  };
+  return {
+    query,
+    limit: topK,
+    retrievalMode: knowledgeRecallDebugForm.value.retrievalMode || "hybrid",
+    keywordOnly: knowledgeRecallDebugForm.value.keywordOnly,
+    retrievalProfile,
+    profile: { retrieval: retrievalProfile },
+    retrievalProfileId: String(retrievalProfile.retrievalProfileId || ""),
+    clientId: "server-console-debug-knowledge-recall",
+    explain: knowledgeRecallDebugForm.value.explain,
+    learningEnabled: knowledgeRecallDebugForm.value.learningEnabled,
+  };
+}
+
+const knowledgeRecallDebugGridStyle = computed<Record<string, string>>(() => ({
+  "--debug-compare-columns": String(Math.max(1, knowledgeRecallDebugRuns.value.length || 1)),
+}));
+
+const knowledgeRecallDebugParameterSummary = computed(() => {
+  const topKValues = parseKnowledgeRecallTopKValues(knowledgeRecallDebugForm.value.topKValues);
+  return [
+    `TopK ${topKValues.length ? topKValues.join(" / ") : "未设置"}`,
+    `模式 ${knowledgeRecallDebugForm.value.retrievalMode}`,
+    knowledgeRecallDebugForm.value.keywordOnly ? "仅关键词" : "混合候选",
+    knowledgeRecallDebugForm.value.learningEnabled ? "学习启用" : "学习关闭",
+  ].join(" · ");
+});
+
+async function runKnowledgeRecallDebugBatch() {
+  const query = knowledgeRecallDebugForm.value.query.trim();
+  if (!query) {
+    error.value = "请输入知识库召回调试问题。";
+    return;
+  }
+  if (!canReadKnowledge.value) {
+    error.value = "当前账号没有知识库读取权限。";
+    return;
+  }
+  const topKValues = parseKnowledgeRecallTopKValues(knowledgeRecallDebugForm.value.topKValues);
+  if (!topKValues.length) {
+    error.value = "请至少填写一个有效 TopK，例如 10 20 30。";
+    return;
+  }
+  busyKey.value = "debug:knowledge-recall";
+  error.value = "";
+  knowledgeRecallDebugRuns.value = topKValues.map((topK) => ({
+    runId: `knowledge-recall-${topK}-${Date.now()}`,
+    label: `TopK ${topK}`,
+    topK,
+    status: "queued",
+    elapsedMs: 0,
+    startedAt: "",
+    response: null,
+    items: [],
+    error: "",
+  }));
+  await Promise.all(
+    knowledgeRecallDebugRuns.value.map(async (run) => {
+      const started = performance.now();
+      run.status = "running";
+      run.startedAt = new Date().toISOString();
+      try {
+        const response = await bridge.searchKnowledge(buildKnowledgeRecallSearchPayload(query, run.topK));
+        run.response = response;
+        run.items = normalizeSearchResults(response);
+        run.status = "completed";
+      } catch (nextError) {
+        run.error = nextError instanceof Error ? nextError.message : "知识库召回失败。";
+        run.status = "failed";
+      } finally {
+        run.elapsedMs = Math.max(0, Math.round(performance.now() - started));
+      }
+    }),
+  );
+  lastKnowledgeSearchQuery.value = query;
+  busyKey.value = "";
+}
+
 function agentExploreRunStatus(result: AgentExploreRunResponse | null) {
   return String(asRecord(result?.run)?.status || "");
 }
@@ -7161,8 +7984,14 @@ function agentExploreSessionFromResult(
         agentExploreForm.value.contextProfileId ||
         "context-128k",
     ),
+    thinkingMode: normalizedAgentExploreThinkingMode(
+      String(input.thinkingMode || fallback.thinkingMode || agentExploreForm.value.thinkingMode || "default"),
+    ),
+    temperature: Number(input.temperature ?? fallback.temperature ?? agentExploreForm.value.temperature ?? 0.2),
+    maxTokens: Number(input.maxTokens || fallback.maxTokens || agentExploreForm.value.maxTokens || 1800),
     maxIterations: Number(input.maxIterations || fallback.maxIterations || agentExploreForm.value.maxIterations || 4),
     limit: Number(input.limit || fallback.limit || agentExploreForm.value.limit || 8),
+    toolChoice: String(input.toolChoice || fallback.toolChoice || agentExploreForm.value.toolChoice || "auto"),
     status: agentExploreRunStatus(result),
     answerPreview: String(result?.answer || fallback.answerPreview || "").slice(0, 180),
     updatedAt: String(run.updatedAt || run.completedAt || fallback.updatedAt || new Date().toISOString()),
@@ -7191,6 +8020,35 @@ function agentExploreHistorySortValue(session: AgentExploreSession) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function sanitizeAgentExploreSessionModelReference(session: AgentExploreSession): AgentExploreSession {
+  return {
+    ...session,
+    modelAlias: validAgentModelAlias(session.modelAlias),
+  };
+}
+
+function clearInvalidAgentExploreModelReferences() {
+  let changed = false;
+  const sanitizeList = (sessions: AgentExploreSession[]) =>
+    sessions.map((session) => {
+      const sanitized = sanitizeAgentExploreSessionModelReference(session);
+      if (sanitized.modelAlias !== session.modelAlias) {
+        changed = true;
+      }
+      return sanitized;
+    });
+  agentExploreDraftTabs.value = sanitizeList(agentExploreDraftTabs.value);
+  agentExploreHistory.value = sanitizeList(agentExploreHistory.value);
+  const activeSession = asRecord(agentExploreResult.value?.run);
+  const activeInput = asRecord(activeSession?.input);
+  if (activeInput?.modelAlias && !hasAgentModelOption(String(activeInput.modelAlias))) {
+    activeInput.modelAlias = "";
+  }
+  if (changed) {
+    persistAgentExploreState();
+  }
+}
+
 function normalizeAgentExploreHistoryList(sessions: AgentExploreSession[]) {
   const seen = new Set<string>();
   return sessions
@@ -7202,6 +8060,7 @@ function normalizeAgentExploreHistoryList(sessions: AgentExploreSession[]) {
       seen.add(runId);
       return true;
     })
+    .map(sanitizeAgentExploreSessionModelReference)
     .sort((left, right) => agentExploreHistorySortValue(right) - agentExploreHistorySortValue(left))
     .slice(0, 20);
 }
@@ -7214,8 +8073,12 @@ function createAgentExploreDraftTab(seed: Partial<AgentExploreSession> = {}): Ag
     query: "",
     modelAlias: agentExploreForm.value.modelAlias || "",
     contextProfileId: selectedAgentExploreContextProfile.value.value,
+    thinkingMode: selectedAgentExploreThinkingMode.value,
+    temperature: Number(agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
+    maxTokens: Number(agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
     maxIterations: agentExploreConfiguredMaxIterations.value,
     limit: agentExploreConfiguredLimit.value,
+    toolChoice: agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value,
     status: "draft",
     answerPreview: "",
     updatedAt: timestamp,
@@ -7240,8 +8103,12 @@ function syncActiveAgentExploreDraftFromForm() {
             query: agentExploreForm.value.query,
             modelAlias: agentExploreForm.value.modelAlias,
             contextProfileId: selectedAgentExploreContextProfile.value.value,
+            thinkingMode: selectedAgentExploreThinkingMode.value,
+            temperature: agentExploreForm.value.temperature,
+            maxTokens: agentExploreForm.value.maxTokens,
             maxIterations: agentExploreForm.value.maxIterations,
             limit: agentExploreForm.value.limit,
+            toolChoice: agentExploreForm.value.toolChoice,
             updatedAt: item.updatedAt,
           }
         : item,
@@ -7302,6 +8169,32 @@ function deleteAgentExploreHistorySession(session: AgentExploreSession) {
 
 function agentExploreTabBusy(session: AgentExploreSession) {
   return busyKey.value === `knowledge:agent-explore:load:${session.runId}`;
+}
+
+const agentExploreHistoryPanelItems = computed<HistorySessionPanelItem[]>(() =>
+  agentExploreHistory.value.map((session) => ({
+    id: session.runId,
+    title: agentExploreSessionLabel(session),
+    meta: `${session.status || "unknown"} · ${shortId(session.runId)}`,
+    preview: session.answerPreview || "",
+    active: session.runId === agentExploreActiveTabId.value,
+    disabled: agentExploreTabBusy(session),
+    deleteLabel: `删除历史会话 ${agentExploreSessionLabel(session)}`,
+  })),
+);
+
+function selectAgentExploreHistoryItem(runId: string) {
+  const session = agentExploreHistory.value.find((item) => item.runId === runId);
+  if (session) {
+    void switchAgentExploreTab(session);
+  }
+}
+
+function deleteAgentExploreHistoryItem(runId: string) {
+  const session = agentExploreHistory.value.find((item) => item.runId === runId);
+  if (session) {
+    deleteAgentExploreHistorySession(session);
+  }
 }
 
 function closeAgentExploreTab(session: AgentExploreSession) {
@@ -7426,8 +8319,12 @@ function applyAgentExploreDraftTab(session: AgentExploreSession) {
     query: session.query,
     modelAlias: hasAgentModelOption(session.modelAlias) ? session.modelAlias : "",
     contextProfileId: session.contextProfileId || agentExploreForm.value.contextProfileId,
+    thinkingMode: normalizedAgentExploreThinkingMode(session.thinkingMode || agentExploreForm.value.thinkingMode),
+    temperature: Number(session.temperature || agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
+    maxTokens: Number(session.maxTokens || agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
     maxIterations: session.maxIterations || agentExploreConfiguredMaxIterations.value,
     limit: session.limit || agentExploreConfiguredLimit.value,
+    toolChoice: session.toolChoice || agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value,
     workspaceId: "",
   };
   if (busyKey.value === "knowledge:agent-explore") {
@@ -7461,8 +8358,12 @@ async function loadAgentExploreSession(session: AgentExploreSession) {
       query: session.query,
       modelAlias: hasAgentModelOption(session.modelAlias) ? session.modelAlias : "",
       contextProfileId: session.contextProfileId || agentExploreForm.value.contextProfileId,
+      thinkingMode: normalizedAgentExploreThinkingMode(session.thinkingMode || agentExploreForm.value.thinkingMode),
+      temperature: Number(session.temperature || agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
+      maxTokens: Number(session.maxTokens || agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
       maxIterations: session.maxIterations || agentExploreForm.value.maxIterations,
       limit: session.limit || agentExploreForm.value.limit,
+      toolChoice: session.toolChoice || agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value,
       workspaceId: session.workspaceId,
     };
     const result = normalizeAgentExploreRun(
@@ -7514,8 +8415,12 @@ async function restoreAgentExploreState() {
     query: String(persistedForm.query || agentExploreForm.value.query || ""),
     modelAlias: hasAgentModelOption(persistedModelAlias) ? persistedModelAlias : "",
     contextProfileId: String(persistedForm.contextProfileId || agentExploreForm.value.contextProfileId || "context-128k"),
+    thinkingMode: normalizedAgentExploreThinkingMode(String(persistedForm.thinkingMode || agentExploreForm.value.thinkingMode || "default")),
+    temperature: Number(persistedForm.temperature || agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
+    maxTokens: Number(persistedForm.maxTokens || agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
     maxIterations: Number(persistedForm.maxIterations || agentExploreForm.value.maxIterations || 4),
     limit: Number(persistedForm.limit || agentExploreForm.value.limit || 8),
+    toolChoice: String(persistedForm.toolChoice || agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value),
     workspaceId: String(persistedForm.workspaceId || persisted.activeWorkspaceId || agentExploreForm.value.workspaceId || ""),
   };
   agentExploreHydrated.value = true;
@@ -7524,8 +8429,12 @@ async function restoreAgentExploreState() {
       query: agentExploreForm.value.query,
       modelAlias: agentExploreForm.value.modelAlias,
       contextProfileId: agentExploreForm.value.contextProfileId,
+      thinkingMode: agentExploreForm.value.thinkingMode,
+      temperature: agentExploreForm.value.temperature,
+      maxTokens: agentExploreForm.value.maxTokens,
       maxIterations: agentExploreForm.value.maxIterations,
       limit: agentExploreForm.value.limit,
+      toolChoice: agentExploreForm.value.toolChoice,
     });
     agentExploreDraftTabs.value = [draft];
     agentExploreActiveTabId.value = draft.runId;
@@ -7563,8 +8472,12 @@ async function restoreAgentExploreState() {
         query: agentExploreForm.value.query,
         modelAlias: agentExploreForm.value.modelAlias,
         contextProfileId: agentExploreForm.value.contextProfileId,
+        thinkingMode: agentExploreForm.value.thinkingMode,
+        temperature: agentExploreForm.value.temperature,
+        maxTokens: agentExploreForm.value.maxTokens,
         maxIterations: agentExploreForm.value.maxIterations,
         limit: agentExploreForm.value.limit,
+        toolChoice: agentExploreForm.value.toolChoice,
         status: "",
         answerPreview: "",
         updatedAt: new Date().toISOString(),
@@ -7715,15 +8628,43 @@ async function runKnowledgeAgentExplore() {
     error.value = "请选择模型库中已配置且支持智能检索工具调用的模型。";
     return;
   }
-  const maxIterations = agentExploreConfiguredMaxIterations.value;
-  const limit = agentExploreConfiguredLimit.value;
+  const maxIterations = boundedAgentExploreNumber(
+    agentExploreForm.value.maxIterations,
+    agentExploreConfiguredMaxIterations.value,
+    1,
+    8,
+  );
+  const limit = boundedAgentExploreNumber(
+    agentExploreForm.value.limit,
+    agentExploreConfiguredLimit.value,
+    1,
+    20,
+  );
+  const temperature = boundedAgentExploreNumber(
+    agentExploreForm.value.temperature,
+    agentExploreConfiguredTemperature.value,
+    0,
+    2,
+  );
+  const maxTokens = boundedAgentExploreNumber(
+    agentExploreForm.value.maxTokens,
+    agentExploreConfiguredMaxTokens.value,
+    128,
+    32000,
+  );
+  const toolChoice = String(agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value || "auto").trim() || "auto";
   agentExploreForm.value.maxIterations = maxIterations;
   agentExploreForm.value.limit = limit;
+  agentExploreForm.value.temperature = temperature;
+  agentExploreForm.value.maxTokens = maxTokens;
+  agentExploreForm.value.toolChoice = toolChoice;
   agentExploreForm.value.contextProfileId = selectedAgentExploreContextProfile.value.value;
+  agentExploreForm.value.thinkingMode = selectedAgentExploreThinkingMode.value;
   agentExploreTraceOpen.value = true;
   busyKey.value = "knowledge:agent-explore";
   error.value = "";
-  currentView.value = "dashboard";
+  currentView.value = "debug";
+  debugTab.value = "agentRetrieval";
   agentExploreResult.value = null;
   const draftRunId = agentExploreActiveTabId.value.startsWith("draft:")
     ? agentExploreActiveTabId.value
@@ -7735,8 +8676,11 @@ async function runKnowledgeAgentExplore() {
       modelAlias: selectedAgentExploreModel.value.value,
       contextProfileId: selectedAgentExploreContextProfile.value.value,
       thinkingMode: selectedAgentExploreThinkingMode.value,
+      temperature,
+      maxTokens,
       maxIterations,
       limit,
+      toolChoice,
       workspaceId: agentExploreForm.value.workspaceId || undefined,
       async: true,
       realtime: true,
@@ -7776,6 +8720,12 @@ function resetKnowledgeAgentExplore() {
   const draft = createAgentExploreDraftTab({
     modelAlias: agentExploreForm.value.modelAlias,
     contextProfileId: selectedAgentExploreContextProfile.value.value,
+    thinkingMode: selectedAgentExploreThinkingMode.value,
+    temperature: agentExploreForm.value.temperature,
+    maxTokens: agentExploreForm.value.maxTokens,
+    maxIterations: agentExploreForm.value.maxIterations,
+    limit: agentExploreForm.value.limit,
+    toolChoice: agentExploreForm.value.toolChoice,
   });
   agentExploreDraftTabs.value = normalizeAgentExploreHistoryList([
     draft,
@@ -7787,8 +8737,12 @@ function resetKnowledgeAgentExplore() {
     query: "",
     modelAlias: draft.modelAlias,
     contextProfileId: draft.contextProfileId,
+    thinkingMode: draft.thinkingMode,
+    temperature: draft.temperature,
+    maxTokens: draft.maxTokens,
     maxIterations: draft.maxIterations,
     limit: draft.limit,
+    toolChoice: draft.toolChoice,
     workspaceId: "",
   };
   persistAgentExploreState();
@@ -8160,6 +9114,9 @@ function switchView(view: AppView) {
   if (view === "knowledge") {
     void refreshKnowledgeConsole();
   }
+  if (view === "debug") {
+    void refreshKnowledgeConsole();
+  }
   if (view === "admin") {
     void refreshAuthAdmin();
     if (adminView.value === "tools") {
@@ -8173,11 +9130,20 @@ function switchView(view: AppView) {
   }
 }
 
+function openDebugTab(tab: DebugTab) {
+  debugTab.value = tab;
+  currentView.value = "debug";
+  void refreshKnowledgeConsole();
+}
+
 function openKnowledgeTab(tab: KnowledgeTab) {
   knowledgeTab.value = tab;
   switchView("knowledge");
   if (tab === "conflicts") {
     void refreshKnowledgeConflicts();
+  }
+  if (tab === "expertRules") {
+    void refreshExpertRules();
   }
 }
 
@@ -8668,6 +9634,144 @@ function deleteVocabularyEntry(index: number) {
     expertVocabularyDraft.value.entries.filter((_, entryIndex) => entryIndex !== index);
 }
 
+function parseEmailRulesDraft(): EmailRuleSet {
+  try {
+    return JSON.parse(rulesText.value || "{}") as EmailRuleSet;
+  } catch {
+    return {
+      schemaVersion: 1,
+      updatedAt: "",
+      reportSeries: [],
+      synonymDictionary: [],
+      departmentDictionary: [],
+      keywordStopwords: [],
+      transactionMergeRules: {
+        highSimilarity: 0.32,
+        mediumSimilarity: 0.18,
+        mediumParticipantOverlap: 0.34,
+        highParticipantOverlap: 0.6,
+      },
+    };
+  }
+}
+
+const emailRulesDraft = computed(() => parseEmailRulesDraft());
+const emailReportSeriesRules = computed(() =>
+  (emailRulesDraft.value.reportSeries || []).map((rule, index) => ({ rule, index })),
+);
+const emailSynonymRules = computed(() =>
+  (emailRulesDraft.value.synonymDictionary || []).map((rule, index) => ({ rule, index })),
+);
+const emailDepartmentRules = computed(() =>
+  (emailRulesDraft.value.departmentDictionary || []).map((rule, index) => ({ rule, index })),
+);
+
+function expertRuleEnabled(value: unknown) {
+  return (asRecord(value)?.enabled as boolean | undefined) !== false;
+}
+
+function setEmailRuleEntryEnabled(
+  collection: "reportSeries" | "synonymDictionary" | "departmentDictionary",
+  index: number,
+  enabled: boolean,
+) {
+  const rules = parseEmailRulesDraft() as EmailRuleSet & Record<string, unknown>;
+  const list = Array.isArray(rules[collection]) ? [...(rules[collection] as unknown[])] : [];
+  const current = asRecord(list[index]) || {};
+  list[index] = {
+    ...current,
+    enabled,
+  };
+  rules[collection] = list;
+  rulesText.value = JSON.stringify(rules, null, 2);
+}
+
+function setVocabularyEntryEnabled(index: number, enabled: boolean) {
+  updateVocabularyEntry(index, {
+    status: enabled ? "active" : "retired",
+  });
+}
+
+const goldenRulePackages = computed(() => {
+  const state = asRecord(goldenRulesState.value) || {};
+  const packages = Array.isArray(state.packages) ? state.packages : [];
+  return packages
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+});
+
+function goldenRulePackageTitle(pkg: Record<string, unknown>) {
+  return `${String(pkg.packageId || "golden-rules")} v${String(pkg.version || "0")}`;
+}
+
+function goldenRuleItems(pkg: Record<string, unknown>) {
+  return (Array.isArray(pkg.rules) ? pkg.rules : [])
+    .map((rule, index) => ({
+      rule: asRecord(rule) || {},
+      index,
+    }));
+}
+
+async function refreshExpertRules(options: { silent?: boolean } = {}) {
+  const showBusy = !options.silent;
+  if (showBusy) {
+    busyKey.value = "expert-rules:refresh";
+  }
+  error.value = "";
+
+  try {
+    const [emailRulesResult, vocabularyResult, goldenRulesResult] = await Promise.all([
+      bridge.getEmailRules(),
+      bridge.getExpertVocabulary(),
+      bridge.getGoldenRules(),
+    ]);
+    rulesText.value = JSON.stringify(emailRulesResult.rules, null, 2);
+    expertVocabularyDraft.value = cloneExpertVocabulary(vocabularyResult.vocabulary);
+    goldenRulesState.value = goldenRulesResult;
+  } catch (nextError) {
+    error.value = nextError instanceof Error ? nextError.message : "加载专家规则失败。";
+  } finally {
+    if (showBusy) {
+      busyKey.value = "";
+    }
+  }
+}
+
+async function toggleGoldenRuleEnabled(pkg: Record<string, unknown>, ruleIndex: number, enabled: boolean) {
+  const packageId = String(pkg.packageId || "");
+  if (!packageId) {
+    return;
+  }
+  busyKey.value = `golden-rule:${packageId}:${ruleIndex}`;
+  error.value = "";
+
+  try {
+    const nextRules = goldenRuleItems(pkg).map(({ rule, index }) =>
+      index === ruleIndex
+        ? {
+            ...rule,
+            enabled,
+          }
+        : rule,
+    );
+    const saved = await bridge.saveGoldenRules({
+      ...pkg,
+      version: undefined,
+      status: "draft",
+      rules: nextRules,
+    });
+    const savedPackage = asRecord(saved.package) || {};
+    await bridge.publishGoldenRules(packageId, {
+      version: Number(savedPackage.version || 0),
+    });
+    await refreshExpertRules({ silent: true });
+  } catch (nextError) {
+    error.value = nextError instanceof Error ? nextError.message : "更新黄金规则失败。";
+  } finally {
+    busyKey.value = "";
+  }
+}
+
 async function refreshState(options: { silent?: boolean; forceSettings?: boolean } = {}) {
   const showBusy = !options.silent;
   if (showBusy) {
@@ -9007,6 +10111,36 @@ async function saveSettings() {
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存基础设置失败。";
+    busyKey.value = "";
+  }
+}
+
+async function saveModelLibrarySettings() {
+  busyKey.value = "model-library-save";
+  error.value = "";
+
+  try {
+    const failures = await probeModelLibraryBeforeSave();
+    if (failures.length) {
+      const details = failures
+        .slice(0, 6)
+        .map(({ entry, result }) => `- ${entry.label || modelEntryStatusKey(entry)}：${result.message || "探测失败"}`)
+        .join("\n");
+      const suffix = failures.length > 6 ? `\n- 另有 ${failures.length - 6} 个智能体未通过探测。` : "";
+      const confirmed = window.confirm(
+        `保存前探测发现 ${failures.length} 个智能体不可用：\n${details}${suffix}\n\n是否仍然保存这些配置？`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    await bridge.saveSettings(settingsPayloadForSave());
+    settingsDraftDirty.value = false;
+    await refreshState({ forceSettings: true });
+  } catch (nextError) {
+    error.value =
+      nextError instanceof Error ? nextError.message : "保存模型库配置失败。";
+  } finally {
     busyKey.value = "";
   }
 }
@@ -9564,6 +10698,158 @@ const maintenanceAgentRunbooks = computed(() =>
       {},
   ),
 );
+const retrievalModeOptionBarOptions: OptionBarOption[] = [
+  { value: "hybrid", label: "hybrid" },
+  { value: "lexical", label: "lexical" },
+  { value: "vector", label: "vector" },
+];
+const enabledBooleanOptionBarOptions: OptionBarOption[] = [
+  { value: true, label: "开启" },
+  { value: false, label: "关闭" },
+];
+const enabledStringOptionBarOptions: OptionBarOption[] = [
+  { value: "true", label: "开启" },
+  { value: "false", label: "关闭" },
+];
+const knowledgeReviewStatusOptionBarOptions: OptionBarOption[] = [
+  { value: "pending", label: "待决策" },
+  { value: "resolved", label: "已解决" },
+  { value: "rejected", label: "已忽略" },
+  { value: "all", label: "全部" },
+];
+const vocabularyStatusOptionBarOptions: OptionBarOption[] = [
+  { value: "draft", label: "草稿" },
+  { value: "active", label: "启用" },
+  { value: "retired", label: "停用" },
+];
+const plannerModeOptionBarOptions: OptionBarOption[] = [
+  { value: "gateway_fallback", label: "gateway_fallback" },
+  { value: "fixed_runbook", label: "fixed_runbook" },
+  { value: "gateway", label: "gateway" },
+];
+const autoApproveRiskOptionBarOptions: OptionBarOption[] = [
+  { value: "safe_write", label: "safe_write" },
+  { value: "read_only", label: "read_only" },
+];
+const discoveryModeOptionBarOptions: OptionBarOption[] = [
+  { value: "active", label: "激活 (active)" },
+  { value: "forward", label: "转发 (forward)" },
+];
+const contextWindowOptionBarOptions = computed<OptionBarOption[]>(() =>
+  agentExploreContextWindowOptions.map((option) => ({
+    value: option.value,
+    label: `${option.label} - ${option.description}`,
+  })),
+);
+const thinkingModeOptionBarOptions = computed<OptionBarOption[]>(() =>
+  agentExploreThinkingModeOptions.map((option) => ({
+    value: option.value,
+    label: option.label,
+  })),
+);
+const moduleAccessModeOptionBarOptions: OptionBarOption[] = [
+  { value: "all", label: "默认公开给所有功能" },
+  { value: "selected", label: "仅公开给选定功能" },
+];
+function callableModelOptionBarLabel(option: { label?: string; enabled?: boolean; disabledReason?: string }) {
+  return `${option.label || ""}${option.enabled ? "" : `（${option.disabledReason || "不可用"}）`}`;
+}
+const agentExploreModelOptionBarOptions = computed<OptionBarOption[]>(() =>
+  agentExploreModelOptions.value.map((option) => ({
+    value: option.value,
+    label: callableModelOptionBarLabel(option),
+    disabled: !option.enabled,
+  })),
+);
+const agentExploreModelOptionBarOptionsWithEmpty = computed<OptionBarOption[]>(() => [
+  { value: "", label: "未分配智能体" },
+  ...agentExploreModelOptionBarOptions.value,
+]);
+const infoFeedModelOptionBarOptions = computed<OptionBarOption[]>(() =>
+  infoFeedModelOptions.value.map((option) => ({
+    value: option.value,
+    label: callableModelOptionBarLabel(option),
+    disabled: !option.enabled,
+  })),
+);
+const ruleScopeOptionBarOptions = computed<OptionBarOption[]>(() =>
+  ruleScopeOptions.map((option) => ({ value: option.value, label: option.label })),
+);
+const ruleMatchStrategyOptionBarOptions = computed<OptionBarOption[]>(() =>
+  ruleMatchStrategyOptions.map((option) => ({ value: option.value, label: option.label })),
+);
+const ruleActionOptionBarOptions = computed<OptionBarOption[]>(() =>
+  ruleActionOptions.map((option) => ({ value: option.value, label: option.label })),
+);
+const knowledgeLogStatusOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "", label: "全部状态" },
+  ...knowledgeLogStatusOptions.value.map((status) => ({ value: status, label: status })),
+]);
+const maintenanceTaskOptionBarOptions = computed<OptionBarOption[]>(() =>
+  (knowledgeSchema.value?.maintenanceTasks || []).map((task) => ({
+    value: task.id,
+    label: `${task.label} / ${task.danger}`,
+  })),
+);
+const analysisModuleOptionBarOptions = computed<OptionBarOption[]>(() =>
+  (consoleState.value?.runtime.analysisModules || []).map((item) => ({
+    value: item.id,
+    label: `${item.label} / ${item.id}`,
+  })),
+);
+const addableModelProviderOptionBarOptions = computed<OptionBarOption[]>(() =>
+  addableModelProviders.value.map((provider) => ({
+    value: provider.id,
+    label: provider.label,
+  })),
+);
+const agentModelAssignmentOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "", label: "未分配智能体" },
+  ...agentModelAssignmentOptions.value.map((model) => ({
+    value: model.ref,
+    label: `${model.label}${model.enabled ? "" : "（未配置）"} / ${providerLabel(model.provider)}`,
+    disabled: !model.enabled,
+  })),
+]);
+function moduleModelAssignmentOptionBarOptions(moduleId: string): OptionBarOption[] {
+  return [
+    { value: "", label: "未分配智能体" },
+    ...moduleModelAssignmentOptions(moduleId).map((model) => ({
+      value: model.ref,
+      label: `${model.label}${model.enabled ? "" : "（未配置）"}`,
+      disabled: !model.enabled,
+    })),
+  ];
+}
+const maintenanceAgentRunbookOptionBarOptions = computed<OptionBarOption[]>(() =>
+  maintenanceAgentRunbooks.value.map((runbook) => ({
+    value: runbook.id,
+    label: `${runbook.label} / ${runbook.id}`,
+  })),
+);
+const policyPreviewToolOptionBarOptions = computed<OptionBarOption[]>(() =>
+  toolManagementTools.value.map((tool) => ({
+    value: tool.id,
+    label: `${tool.label} / ${tool.id}`,
+  })),
+);
+const policyPreviewProfileOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "", label: "不绑定档案" },
+  ...toolManagementProfiles.value.map((profile) => ({
+    value: profile.id,
+    label: `${profile.label} / ${profile.id}`,
+  })),
+]);
+const clientStateFilterOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "all", label: "所有状态" },
+  ...Object.entries(migrationStateLabels).map(([value, label]) => ({ value, label })),
+]);
+const authRoleOptionBarOptions = computed<OptionBarOption[]>(() =>
+  (authState.value?.roles || []).map((role) => ({
+    value: role.roleId,
+    label: role.label,
+  })),
+);
 const maintenanceAgentSchedules = computed(
   () =>
     maintenanceAgentConfig.value?.schedules ||
@@ -9832,6 +11118,7 @@ function jobElapsed(item: SplitJob) {
 
 onMounted(() => {
   void (async () => {
+    await clearBrowserLocalStateFromUrl();
     const session = await refreshAuthState();
     if (!session?.bootstrap.required && (session?.session.authenticated || session?.enabled === false)) {
       await refreshState({ silent: true });
@@ -9849,6 +11136,7 @@ onUnmounted(() => {
   stopCodexOAuthPolling();
   stopAgentExplorePolling();
   stopAgentExploreSplitResize();
+  stopKnowledgeLogColumnResize();
   clearInfoFeedSummaryStreamTimer();
   if (configTargetHighlightTimer) {
     window.clearTimeout(configTargetHighlightTimer);
@@ -9904,6 +11192,20 @@ onUnmounted(() => {
             @click="openKnowledgeTab(tab.id)"
           >
             {{ knowledgeTabDisplayLabel(tab) }}
+          </button>
+        </section>
+
+        <section class="side-nav-section" aria-label="调试面板">
+          <p class="side-nav-section-title">调试面板</p>
+          <button
+            v-for="tab in debugTabs"
+            :key="tab.id"
+            class="side-link side-link-subtle"
+            :class="{ active: currentView === 'debug' && debugTab === tab.id }"
+            type="button"
+            @click="openDebugTab(tab.id)"
+          >
+            {{ tab.label }}
           </button>
         </section>
 
@@ -10054,11 +11356,110 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'feed'">
-          <article class="surface-card agent-explore-card agent-explore-home">
+        <template v-if="isAuthenticated && currentView === 'debug'">
+          <section class="debug-panel-shell">
+            <article v-if="debugTab === 'knowledgeRecall'" class="surface-card debug-panel-card knowledge-recall-debug-card">
+              <div class="section-header">
+                <div>
+                  <h3>知识库召回</h3>
+                  <p>只调试底层知识库召回，不调用大模型。适合对比 TopK、融合策略、学习开关和证据可读性。</p>
+                </div>
+                <div class="section-tags">
+                  <span>{{ knowledgeConsole?.available ? "KnowledgeCore 可用" : "KnowledgeCore 未启用" }}</span>
+                  <span>{{ knowledgeStatus }}</span>
+                  <span>目录 {{ knowledgeSourceState?.summary.totalCount || 0 }}</span>
+                </div>
+              </div>
+
+              <form class="debug-parameter-panel" @submit.prevent="runKnowledgeRecallDebugBatch">
+                <label class="full-row">
+                  <span>召回问题</span>
+                  <input
+                    v-model="knowledgeRecallDebugForm.query"
+                    type="search"
+                    placeholder="例如：HSBC 账单"
+                  />
+                </label>
+                <label>
+                  <span>TopK 对比</span>
+                  <input
+                    v-model="knowledgeRecallDebugForm.topKValues"
+                    type="text"
+                    placeholder="10 20 30"
+                  />
+                </label>
+                <OptionBar
+                  v-model="knowledgeRecallDebugForm.retrievalMode"
+                  label="召回模式"
+                  :options="retrievalModeOptionBarOptions"
+                />
+                <BinaryCheckbox
+                  v-model="knowledgeRecallDebugForm.keywordOnly"
+                  label="仅关键词"
+                />
+                <BinaryCheckbox
+                  v-model="knowledgeRecallDebugForm.learningEnabled"
+                  label="启用学习"
+                />
+                <BinaryCheckbox
+                  v-model="knowledgeRecallDebugForm.explain"
+                  label="返回解释"
+                />
+                <button
+                  class="primary-action"
+                  type="submit"
+                  :disabled="busyKey === 'debug:knowledge-recall' || !knowledgeRecallDebugForm.query.trim()"
+                >
+                  {{ busyKey === "debug:knowledge-recall" ? "批量召回中" : "批量对比召回" }}
+                </button>
+              </form>
+
+              <div class="debug-parameter-summary">
+                <strong>参数说明</strong>
+                <span>{{ knowledgeRecallDebugParameterSummary }}</span>
+              </div>
+
+              <div
+                v-if="knowledgeRecallDebugRuns.length"
+                class="debug-compare-grid"
+                :style="knowledgeRecallDebugGridStyle"
+              >
+                <section
+                  v-for="run in knowledgeRecallDebugRuns"
+                  :key="run.runId"
+                  class="debug-compare-column"
+                  :data-status="run.status"
+                >
+                  <header class="debug-compare-header">
+                    <div>
+                      <h4>{{ run.label }}</h4>
+                      <span>{{ run.status }} · {{ run.elapsedMs }} ms · {{ run.items.length }} 条</span>
+                    </div>
+                  </header>
+                  <div class="info-feed-results-list debug-result-list">
+                    <InfoFeedResultRow
+                      v-for="item in run.items"
+                      :key="String(item.evidenceId || item.itemId || item.documentId || item.title)"
+                      :item="item"
+                      tier="debug"
+                      @open="openAgentEvidencePreview"
+                    />
+                    <div v-if="run.status === 'running'" class="empty-note">正在召回。</div>
+                    <div v-else-if="run.status === 'failed'" class="empty-note">{{ run.error }}</div>
+                    <div v-else-if="run.status === 'completed' && run.items.length === 0" class="empty-note">没有召回结果。</div>
+                  </div>
+                  <ConfigFoldCard v-if="run.response" title="原始响应">
+                    <pre>{{ jsonPreview(run.response || {}) }}</pre>
+                  </ConfigFoldCard>
+                </section>
+              </div>
+            </article>
+
+            <article v-if="debugTab === 'agentRetrieval'" class="surface-card agent-explore-card agent-explore-home debug-panel-card">
             <div class="section-header">
               <div>
-                <h3>智能检索</h3>
+                <h3>智能体检索</h3>
+                <p>调试智能体如何规划工具调用、压缩上下文、打开证据并生成最终回答。</p>
               </div>
               <div class="section-actions">
                 <button class="tool-button" type="button" @click="resetKnowledgeAgentExplore">
@@ -10106,30 +11507,48 @@ onUnmounted(() => {
                   placeholder="例如：帮我找最近的账单，并说明哪些证据真正相关"
                 />
               </label>
-              <label
+              <OptionBar
                 class="wide-field"
                 data-config-target="agent-explore-agent"
                 :data-config-highlighted="highlightedConfigTarget === 'agent-explore-agent'"
-              >
-                <span>模型</span>
-                <el-select
-                  v-model="agentExploreForm.modelAlias"
-                  class="agent-explore-model-select"
-                  teleported
-                  filterable
-                  placeholder="未分配智能体"
-                  :persistent="false"
-                  popper-class="splitall-select-popper"
-                >
-                  <el-option
-                    v-for="option in agentExploreModelOptions"
-                    :key="option.value"
-                    :label="`${option.label}${option.enabled ? '' : `（${option.disabledReason || '不可用'}）`}`"
-                    :value="option.value"
-                    :disabled="!option.enabled"
-                  />
-                </el-select>
-              </label>
+                v-model="agentExploreForm.modelAlias"
+                label="模型"
+                placeholder="未分配智能体"
+                filterable
+                :options="agentExploreModelOptionBarOptions"
+              />
+              <div class="agent-debug-parameter-grid full-row">
+                <OptionBar
+                  v-model="agentExploreForm.contextProfileId"
+                  label="上下文窗口"
+                  :options="contextWindowOptionBarOptions"
+                />
+                <OptionBar
+                  v-model="agentExploreForm.thinkingMode"
+                  label="Thinking"
+                  :options="thinkingModeOptionBarOptions"
+                />
+                <label>
+                  <span>循环轮数</span>
+                  <input v-model.number="agentExploreForm.maxIterations" type="number" min="1" max="8" />
+                </label>
+                <label>
+                  <span>每次召回</span>
+                  <input v-model.number="agentExploreForm.limit" type="number" min="1" max="20" />
+                </label>
+                <label>
+                  <span>temperature</span>
+                  <input v-model.number="agentExploreForm.temperature" type="number" min="0" max="2" step="0.1" />
+                </label>
+                <label>
+                  <span>max_tokens</span>
+                  <input v-model.number="agentExploreForm.maxTokens" type="number" min="128" step="128" />
+                </label>
+                <label>
+                  <span>tool_choice</span>
+                  <input v-model="agentExploreForm.toolChoice" autocomplete="off" />
+                </label>
+              </div>
               <button
                 class="primary-action full-row"
                 type="submit"
@@ -10152,47 +11571,13 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <details v-if="agentExploreHistory.length" class="agent-explore-history">
-              <summary>
-                <span>历史会话</span>
-                <small>{{ agentExploreHistory.length }} 条，滚动查看</small>
-              </summary>
-              <div class="agent-explore-history-list">
-                <div
-                  v-for="session in agentExploreHistory"
-                  :key="session.runId"
-                  class="agent-explore-history-item"
-                  :data-active="session.runId === agentExploreActiveTabId"
-                >
-                  <button
-                    class="agent-explore-history-main"
-                    type="button"
-                    :disabled="busyKey === `knowledge:agent-explore:load:${session.runId}`"
-                    @click="switchAgentExploreTab(session)"
-                  >
-                    <strong>{{ agentExploreSessionLabel(session) }}</strong>
-                    <span>{{ session.status || "unknown" }} · {{ shortId(session.runId) }}</span>
-                    <small v-if="session.answerPreview">{{ session.answerPreview }}</small>
-                  </button>
-                  <button
-                    class="agent-explore-history-delete"
-                    type="button"
-                    title="删除历史会话"
-                    :aria-label="`删除历史会话 ${agentExploreSessionLabel(session)}`"
-                    :disabled="busyKey === `knowledge:agent-explore:load:${session.runId}`"
-                    @click.stop="deleteAgentExploreHistorySession(session)"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4h8v2" />
-                      <path d="M6 6l1 15h10l1-15" />
-                      <path d="M10 11v6" />
-                      <path d="M14 11v6" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </details>
+            <HistorySessionPanel
+              title="历史会话"
+              :subtitle="`${agentExploreHistory.length} 条，滚动查看`"
+              :items="agentExploreHistoryPanelItems"
+              @select="selectAgentExploreHistoryItem"
+              @delete="deleteAgentExploreHistoryItem"
+            />
 
             <div
               v-if="agentExploreResult || busyKey === 'knowledge:agent-explore'"
@@ -10319,8 +11704,7 @@ onUnmounted(() => {
                   <strong>等待结果</strong>
                   <span>模型会调用本地工具检索，再决定是否打开证据。</span>
                 </div>
-                <details v-if="agentExploreLinkedEvidenceRefs.length" class="advanced-config">
-                  <summary>引用证据</summary>
+                <ConfigFoldCard v-if="agentExploreLinkedEvidenceRefs.length" title="引用证据">
                   <div class="agent-evidence-ref-list">
                     <button
                       v-for="refId in agentExploreLinkedEvidenceRefs"
@@ -10333,18 +11717,17 @@ onUnmounted(() => {
                       {{ refId }}
                     </button>
                   </div>
-                </details>
-                <details v-if="agentExploreResult?.contextPack" class="advanced-config">
-                  <summary>上下文包</summary>
+                </ConfigFoldCard>
+                <ConfigFoldCard v-if="agentExploreResult?.contextPack" title="上下文包">
                   <pre>{{ jsonPreview(agentExploreResult.contextPack || {}) }}</pre>
-                </details>
-                <details v-if="agentExploreResult" class="advanced-config">
-                  <summary>运行结构</summary>
+                </ConfigFoldCard>
+                <ConfigFoldCard v-if="agentExploreResult" title="运行结构">
                   <pre>{{ jsonPreview(agentExploreResult || {}) }}</pre>
-                </details>
+                </ConfigFoldCard>
               </section>
             </div>
           </article>
+          </section>
         </template>
 
         <template v-if="isAuthenticated && currentView === 'dashboard'">
@@ -10354,12 +11737,10 @@ onUnmounted(() => {
                 <h3>空配置报警</h3>
                 <p>{{ agentConfigurationAlertSummary }}</p>
               </div>
-              <span
-                class="status-pill"
-                :data-tone="agentConfigurationAlerts.length ? 'warning' : 'success'"
-              >
-                {{ agentConfigurationAlerts.length ? `${agentConfigurationAlerts.length} 项` : "已就绪" }}
-              </span>
+              <StatusPill
+                :tone="agentConfigurationAlerts.length ? 'warning' : 'success'"
+                :label="agentConfigurationAlerts.length ? `${agentConfigurationAlerts.length} 项` : '已就绪'"
+              />
             </div>
             <div v-if="agentConfigurationAlerts.length" class="configuration-alert-list">
               <button
@@ -10418,28 +11799,15 @@ onUnmounted(() => {
                     placeholder="例如：生成一个黄金规则，完全一样的知识直接跳过"
                   ></textarea>
                 </label>
-                <label
+                <OptionBar
                   data-config-target="rule-authoring-agent"
                   :data-config-highlighted="highlightedConfigTarget === 'rule-authoring-agent'"
-                >
-                  <span>模型</span>
-                  <el-select
-                    v-model="ruleAuthoringForm.modelAlias"
-                    teleported
-                    filterable
-                    placeholder="未分配智能体"
-                    :persistent="false"
-                    popper-class="splitall-select-popper"
-                  >
-                    <el-option
-                      v-for="option in ruleAuthoringModelOptions"
-                      :key="option.value"
-                      :label="`${option.label}${option.enabled ? '' : `（${option.disabledReason || '不可用'}）`}`"
-                      :value="option.value"
-                      :disabled="!option.enabled"
-                    />
-                  </el-select>
-                </label>
+                  v-model="ruleAuthoringForm.modelAlias"
+                  label="模型"
+                  placeholder="未分配智能体"
+                  filterable
+                  :options="agentExploreModelOptionBarOptions"
+                />
               </template>
               <template v-else>
                 <label>
@@ -10450,54 +11818,21 @@ onUnmounted(() => {
                     placeholder="例如：重复知识处理规则"
                   />
                 </label>
-                <label>
-                  <span>适用范围</span>
-                  <el-select
-                    v-model="ruleAuthoringForm.scope"
-                    teleported
-                    :persistent="false"
-                    popper-class="splitall-select-popper"
-                  >
-                    <el-option
-                      v-for="option in ruleScopeOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-select>
-                </label>
-                <label>
-                  <span>匹配方式</span>
-                  <el-select
-                    v-model="ruleAuthoringForm.matchStrategy"
-                    teleported
-                    :persistent="false"
-                    popper-class="splitall-select-popper"
-                  >
-                    <el-option
-                      v-for="option in ruleMatchStrategyOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-select>
-                </label>
-                <label>
-                  <span>执行动作</span>
-                  <el-select
-                    v-model="ruleAuthoringForm.action"
-                    teleported
-                    :persistent="false"
-                    popper-class="splitall-select-popper"
-                  >
-                    <el-option
-                      v-for="option in ruleActionOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-select>
-                </label>
+                <OptionBar
+                  v-model="ruleAuthoringForm.scope"
+                  label="适用范围"
+                  :options="ruleScopeOptionBarOptions"
+                />
+                <OptionBar
+                  v-model="ruleAuthoringForm.matchStrategy"
+                  label="匹配方式"
+                  :options="ruleMatchStrategyOptionBarOptions"
+                />
+                <OptionBar
+                  v-model="ruleAuthoringForm.action"
+                  label="执行动作"
+                  :options="ruleActionOptionBarOptions"
+                />
                 <label>
                   <span>最低置信度</span>
                   <input
@@ -10559,14 +11894,12 @@ onUnmounted(() => {
                   {{ busyKey === "knowledge:rule-authoring:publish" ? "发布中" : "确认发布" }}
                 </button>
               </div>
-              <details class="advanced-config">
-                <summary>门禁结果</summary>
+              <ConfigFoldCard title="门禁结果">
                 <pre>{{ jsonPreview(ruleAuthoringResult.gate || {}) }}</pre>
-              </details>
-              <details class="advanced-config">
-                <summary>生成的 JSON 规则包</summary>
+              </ConfigFoldCard>
+              <ConfigFoldCard title="生成的 JSON 规则包">
                 <pre>{{ jsonPreview(ruleAuthoringResult.package || {}) }}</pre>
-              </details>
+              </ConfigFoldCard>
             </div>
           </article>
         </template>
@@ -10575,44 +11908,14 @@ onUnmounted(() => {
           <section class="info-feed-shell">
             <div class="info-feed-dialog">
               <div class="info-feed-render">
-                <details v-if="infoFeedHistory.length" class="info-feed-history">
-                  <summary>
-                    <span>历史记录</span>
-                    <small>{{ infoFeedHistory.length }} 条</small>
-                  </summary>
-                  <div class="info-feed-history-list">
-                    <article
-                      v-for="historyRun in infoFeedHistory"
-                      :key="historyRun.runId"
-                      class="info-feed-history-item"
-                      :data-active="infoFeedCurrentRun?.runId === historyRun.runId"
-                    >
-                      <button class="info-feed-history-main" type="button" @click="openInfoFeedHistoryRun(historyRun)">
-                        <strong>{{ historyRun.query || "未命名问题" }}</strong>
-                        <span>
-                          {{ formatCompactDate(historyRun.completedAt || historyRun.startedAt) }}
-                          · {{ historyRun.summary.status || "unknown" }}
-                        </span>
-                        <small>{{ truncateInfoFeedText(historyRun.summary.answer || historyRun.agent.response?.answer || "", 140) }}</small>
-                      </button>
-                      <button
-                        class="info-feed-history-delete"
-                        type="button"
-                        title="删除历史记录"
-                        :aria-label="`删除历史记录 ${historyRun.query || historyRun.runId}`"
-                        @click.stop="deleteInfoFeedHistory(historyRun.runId)"
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M3 6h18" />
-                          <path d="M8 6V4h8v2" />
-                          <path d="M6 6l1 15h10l1-15" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                        </svg>
-                      </button>
-                    </article>
-                  </div>
-                </details>
+                <HistorySessionPanel
+                  class="info-feed-history-panel"
+                  title="历史记录"
+                  :subtitle="`${infoFeedHistory.length} 条`"
+                  :items="infoFeedHistoryPanelItems"
+                  @select="selectInfoFeedHistoryItem"
+                  @delete="deleteInfoFeedHistoryItem"
+                />
 
                 <div v-if="!infoFeedCurrentRun" class="info-feed-empty">
                   <strong>信息流</strong>
@@ -10629,7 +11932,7 @@ onUnmounted(() => {
                         <h3>知识归纳</h3>
                         <span>上一轮专家确认</span>
                       </div>
-                      <span class="status-pill" data-tone="success">已选择</span>
+                      <StatusPill tone="success" label="已选择" />
                     </div>
                     <div class="info-feed-expert-feedback-list">
                       <article
@@ -10799,7 +12102,7 @@ onUnmounted(() => {
                           <h3>附件处理</h3>
                           <span>{{ infoFeedCurrentRun.attachments.length }} 个附件</span>
                         </div>
-                        <span class="status-pill" data-tone="info">页面读取</span>
+                        <StatusPill tone="info" label="页面读取" />
                       </div>
                       <div class="info-feed-track-body">
                         <div
@@ -10828,9 +12131,10 @@ onUnmounted(() => {
                           </span>
                           <span v-else>直接扫描服务端原始文件{{ infoFeedCurrentRun.keyword.fromCache ? " · 缓存" : "" }}</span>
                         </div>
-                        <span class="status-pill" :data-tone="infoFeedStatusTone(infoFeedCurrentRun.keyword.status)">
-                          {{ infoFeedStatusLabel(infoFeedCurrentRun.keyword.status) }}
-                        </span>
+                        <StatusPill
+                          :tone="infoFeedStatusTone(infoFeedCurrentRun.keyword.status)"
+                          :label="infoFeedStatusLabel(infoFeedCurrentRun.keyword.status)"
+                        />
                       </div>
                       <div
                         class="info-feed-progress-track"
@@ -10863,21 +12167,12 @@ onUnmounted(() => {
                             · 剩余约 {{ Number(infoFeedContextGateNotice.remainingTokens || 0).toLocaleString() }} tokens
                           </small>
                         </div>
-                        <button
+                        <InfoFeedResultRow
                           v-for="item in infoFeedKeywordItems"
                           :key="item.evidenceId || item.itemId || item.documentId || item.title"
-                          class="info-feed-result-row"
-                          type="button"
-                          :disabled="!item.evidenceId"
-                          @click="item.evidenceId ? openAgentEvidencePreview(item.evidenceId) : undefined"
-                        >
-                          <strong>{{ item.title || "未命名来源" }}</strong>
-                          <span>{{ truncateInfoFeedText(item.snippet || "无片段", 180) }}</span>
-                          <small>
-                            {{ item.evidenceId || item.documentId || "无证据编号" }}
-                            <template v-if="item.score !== undefined"> · {{ Number(item.score).toFixed(3) }}</template>
-                          </small>
-                        </button>
+                          :item="item"
+                          @open="openAgentEvidencePreview"
+                        />
                         <div
                           v-if="infoFeedCurrentRun.keyword.status === 'completed' && infoFeedKeywordItems.length === 0 && infoFeedLowRelevanceKeywordItems.length"
                           class="empty-note"
@@ -10893,22 +12188,13 @@ onUnmounted(() => {
                             低关联邮件 {{ infoFeedLowRelevanceKeywordItems.length }} 封
                             <small>原始 EML 命中，但主要命中在 URL、HTML 参数、编码块或不可读区域</small>
                           </summary>
-                          <button
+                          <InfoFeedResultRow
                             v-for="item in infoFeedLowRelevanceKeywordItems"
                             :key="item.evidenceId || item.itemId || item.documentId || item.title"
-                            class="info-feed-result-row"
-                            data-tier="low"
-                            type="button"
-                            :disabled="!item.evidenceId"
-                            @click="item.evidenceId ? openAgentEvidencePreview(item.evidenceId) : undefined"
-                          >
-                            <strong>{{ item.title || "未命名来源" }}</strong>
-                            <span>{{ truncateInfoFeedText(item.snippet || "无片段", 180) }}</span>
-                            <small>
-                              {{ item.evidenceId || item.documentId || "无证据编号" }}
-                              <template v-if="item.score !== undefined"> · {{ Number(item.score).toFixed(3) }}</template>
-                            </small>
-                          </button>
+                            :item="item"
+                            tier="low"
+                            @open="openAgentEvidencePreview"
+                          />
                         </details>
                         <div
                           v-if="infoFeedCurrentRun.keyword.status === 'completed' && infoFeedAllKeywordItems.length === 0"
@@ -10925,9 +12211,10 @@ onUnmounted(() => {
                           <h3>智能规划</h3>
                           <span>{{ selectedInfoFeedModel.label }}</span>
                         </div>
-                        <span class="status-pill" :data-tone="infoFeedStatusTone(infoFeedCurrentRun.agent.status)">
-                          {{ infoFeedStatusLabel(infoFeedCurrentRun.agent.status) }}
-                        </span>
+                        <StatusPill
+                          :tone="infoFeedStatusTone(infoFeedCurrentRun.agent.status)"
+                          :label="infoFeedStatusLabel(infoFeedCurrentRun.agent.status)"
+                        />
                       </div>
                       <div class="info-feed-progress-track">
                         <span :style="{ width: `${infoFeedCurrentRun.agent.progress}%` }"></span>
@@ -10961,28 +12248,15 @@ onUnmounted(() => {
                       <h3>需要选择可用模型</h3>
                       <p>{{ infoFeedModelSelectionMessage }}</p>
                     </div>
-                    <label
+                    <OptionBar
                       data-config-target="info-feed-summary-agent"
                       :data-config-highlighted="highlightedConfigTarget === 'info-feed-summary-agent'"
-                    >
-                      <span>模型</span>
-                      <el-select
-                        v-model="infoFeedForm.modelAlias"
-                        teleported
-                        filterable
-                        placeholder="未分配智能体"
-                        :persistent="false"
-                        popper-class="splitall-select-popper"
-                      >
-                        <el-option
-                          v-for="option in infoFeedModelOptions"
-                          :key="option.value"
-                          :label="`${option.label}${option.enabled ? '' : `（${option.disabledReason || '不可用'}）`}`"
-                          :value="option.value"
-                          :disabled="!option.enabled"
-                        />
-                      </el-select>
-                    </label>
+                      v-model="infoFeedForm.modelAlias"
+                      label="模型"
+                      placeholder="未分配智能体"
+                      filterable
+                      :options="infoFeedModelOptionBarOptions"
+                    />
                     <button
                       class="primary-action"
                       type="button"
@@ -11014,9 +12288,10 @@ onUnmounted(() => {
                         <h3>知识归纳</h3>
                         <span>融合原文检索、智能规划和附件处理结果</span>
                       </div>
-                      <span class="status-pill" :data-tone="infoFeedStatusTone(infoFeedCurrentRun.summary.status)">
-                        总结{{ infoFeedStatusLabel(infoFeedCurrentRun.summary.status) }}
-                      </span>
+                      <StatusPill
+                        :tone="infoFeedStatusTone(infoFeedCurrentRun.summary.status)"
+                        :label="`总结${infoFeedStatusLabel(infoFeedCurrentRun.summary.status)}`"
+                      />
                     </div>
                     <div class="info-feed-summary-main">
                       <div class="info-feed-summary-meta" aria-label="总结运行参数">
@@ -11128,9 +12403,10 @@ onUnmounted(() => {
                         <h3>需要确认</h3>
                         <span>{{ infoFeedClarification.reason || "选择一个方向继续。" }}</span>
                       </div>
-                      <span class="status-pill" :data-tone="infoFeedClarification.status === 'answered' ? 'success' : 'warning'">
-                        {{ infoFeedClarification.status === 'answered' ? '已选择' : '待选择' }}
-                      </span>
+                      <StatusPill
+                        :tone="infoFeedClarification.status === 'answered' ? 'success' : 'warning'"
+                        :label="infoFeedClarification.status === 'answered' ? '已选择' : '待选择'"
+                      />
                     </div>
                     <p>{{ infoFeedClarification.prompt }}</p>
                     <div class="info-feed-clarification-options">
@@ -11173,38 +12449,25 @@ onUnmounted(() => {
                     :placeholder="infoFeedInputPlaceholder"
                   ></textarea>
                   <div class="info-feed-input-actions">
-                    <input
-                      ref="infoFeedFileInput"
-                      type="file"
-                      multiple
-                      class="visually-hidden"
-                      @change="handleInfoFeedAttachmentInput"
-                    />
-                    <button class="tool-button tool-button-ghost info-feed-attachment-button" type="button" @click="infoFeedFileInput?.click()">
+                    <BrowseSelectButton
+                      kind="local-files"
+                      button-class="tool-button tool-button-ghost info-feed-attachment-button"
+                      button-text="附件"
+                      :multiple="true"
+                      @select="handleInfoFeedAttachmentFiles"
+                    >
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                       </svg>
                       附件
-                    </button>
-                    <label>
-                      <span>模型</span>
-                      <el-select
-                        v-model="infoFeedForm.modelAlias"
-                        teleported
-                        filterable
-                        placeholder="未分配智能体"
-                        :persistent="false"
-                        popper-class="splitall-select-popper"
-                      >
-                        <el-option
-                          v-for="option in infoFeedModelOptions"
-                          :key="option.value"
-                          :label="`${option.label}${option.enabled ? '' : `（${option.disabledReason || '不可用'}）`}`"
-                          :value="option.value"
-                          :disabled="!option.enabled"
-                        />
-                      </el-select>
-                    </label>
+                    </BrowseSelectButton>
+                    <OptionBar
+                      v-model="infoFeedForm.modelAlias"
+                      label="模型"
+                      placeholder="未分配智能体"
+                      filterable
+                      :options="infoFeedModelOptionBarOptions"
+                    />
                     <button
                       class="primary-action"
                       type="submit"
@@ -11227,10 +12490,10 @@ onUnmounted(() => {
                   <h3>本地文件夹</h3>
                   <p>文件夹、PDF、Office、图片等批量输入，进入同一套解析与知识构建流程。</p>
                 </div>
-                <span class="module-state-pill" :data-enabled="enabledMountCount > 0">
-                  <span class="state-dot" />
-                  {{ enabledMountCount > 0 ? "可用" : "未就绪" }}
-                </span>
+                <StatusPill
+                  :enabled="enabledMountCount > 0"
+                  :label="enabledMountCount > 0 ? '可用' : '未就绪'"
+                />
               </div>
               <dl class="meta-list">
                 <div>
@@ -11266,10 +12529,10 @@ onUnmounted(() => {
                   <h3>外部客户端</h3>
                   <p>桌面客户端通过服务发现接入，服务端只提供任务、解析与工具能力。</p>
                 </div>
-                <span class="module-state-pill" :data-enabled="(consoleState?.clients.summary.totalCount || 0) > 0">
-                  <span class="state-dot" />
-                  {{ consoleState?.clients.summary.totalCount || 0 }} 台
-                </span>
+                <StatusPill
+                  :enabled="(consoleState?.clients.summary.totalCount || 0) > 0"
+                  :label="`${consoleState?.clients.summary.totalCount || 0} 台`"
+                />
               </div>
               <dl class="meta-list">
                 <div>
@@ -11376,8 +12639,7 @@ onUnmounted(() => {
                       </div>
                       <div class="evidence-rendered-content" v-html="evidenceReadableHtml"></div>
                     </section>
-                    <details class="advanced-config evidence-retrieval-details">
-                      <summary>检索细节</summary>
+                    <ConfigFoldCard class="evidence-retrieval-details" title="检索细节">
                       <dl class="meta-list evidence-summary-list">
                         <div>
                           <dt>相关度</dt>
@@ -11392,9 +12654,8 @@ onUnmounted(() => {
                           <dd>{{ evidenceReasonText() }}</dd>
                         </div>
                       </dl>
-                    </details>
-                    <details class="advanced-config evidence-source-details">
-                      <summary>来源定位</summary>
+                    </ConfigFoldCard>
+                    <ConfigFoldCard class="evidence-source-details" title="来源定位">
                       <dl class="meta-list evidence-summary-list">
                         <div
                           v-for="item in evidenceSourceDetails()"
@@ -11404,11 +12665,10 @@ onUnmounted(() => {
                           <dd>{{ item.value }}</dd>
                         </div>
                       </dl>
-                    </details>
-                    <details class="advanced-config">
-                      <summary>机器结构</summary>
+                    </ConfigFoldCard>
+                    <ConfigFoldCard title="机器结构">
                       <pre>{{ jsonPreview(selectedEvidence || {}) }}</pre>
-                    </details>
+                    </ConfigFoldCard>
                   </template>
                   <div v-else class="knowledge-preview-empty">
                     <strong>未选择来源</strong>
@@ -11436,55 +12696,76 @@ onUnmounted(() => {
               </div>
               <div v-if="knowledgeLogAdvancedOpen" class="knowledge-log-filters">
                 <input v-model="knowledgeLogFilters.id" type="search" placeholder="筛选 ID / 对象" />
-                <select v-model="knowledgeLogFilters.status">
-                  <option value="">全部状态</option>
-                  <option v-for="status in knowledgeLogStatusOptions" :key="status" :value="status">
-                    {{ status }}
-                  </option>
-                </select>
+                <OptionBar
+                  v-model="knowledgeLogFilters.status"
+                  :options="knowledgeLogStatusOptionBarOptions"
+                />
                 <input v-model="knowledgeLogFilters.stage" type="search" placeholder="阶段 / 详情关键词" />
                 <input v-model="knowledgeLogFilters.from" type="date" />
                 <input v-model="knowledgeLogFilters.to" type="date" />
               </div>
-              <el-table
-                :data="filteredKnowledgeLogRows"
-                row-key="logId"
-                border
-                stripe
-                size="small"
-                class="knowledge-log-table"
-                empty-text="暂无知识库日志"
+              <div
+                ref="knowledgeLogTableShellRef"
+                class="knowledge-log-table-shell"
+                :class="{ 'is-resizing-column': Boolean(knowledgeLogResizing) }"
               >
-                <el-table-column prop="kindLabel" label="类型" width="110" resizable />
-                <el-table-column label="对象" min-width="260" show-overflow-tooltip resizable>
-                  <template #default="{ row }">
-                    <div class="knowledge-log-target">
-                      <span class="mono-compact" :title="row.logId">{{ row.displayId }}</span>
-                      <small>{{ row.target }}</small>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="状态" width="112" resizable>
-                  <template #default="{ row }">
-                    <span class="status-pill" :data-tone="row.tone">{{ row.statusLabel }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="stage" label="阶段" min-width="190" show-overflow-tooltip resizable />
-                <el-table-column label="进度" width="92" resizable>
-                  <template #default="{ row }">
-                    {{ Math.round(Number(row.progressPercent || 0)) }}%
-                  </template>
-                </el-table-column>
-                <el-table-column label="时间" width="142" resizable>
-                  <template #default="{ row }">
-                    <span :title="formatMachineDate(row.occurredAt, 'full')">
-                      {{ formatMachineDate(row.occurredAt, 'compact') }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="detail" label="详情" min-width="280" show-overflow-tooltip resizable />
-                <el-table-column prop="error" label="错误" min-width="220" show-overflow-tooltip resizable />
-              </el-table>
+                <el-table
+                  :data="filteredKnowledgeLogRows"
+                  row-key="logId"
+                  border
+                  stripe
+                  size="small"
+                  class="knowledge-log-table"
+                  empty-text="暂无知识库日志"
+                  @scroll="handleKnowledgeLogTableScroll"
+                >
+                  <el-table-column prop="kindLabel" label="类型" :width="knowledgeLogColumnWidths.kind" />
+                  <el-table-column label="对象" :width="knowledgeLogColumnWidths.target" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <div class="knowledge-log-target">
+                        <span class="mono-compact" :title="row.logId">{{ row.displayId }}</span>
+                        <small>{{ row.target }}</small>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="状态" :width="knowledgeLogColumnWidths.status">
+                    <template #default="{ row }">
+                      <StatusPill :tone="row.tone" :label="row.statusLabel" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="stage" label="阶段" :width="knowledgeLogColumnWidths.stage" show-overflow-tooltip />
+                  <el-table-column label="进度" :width="knowledgeLogColumnWidths.progress">
+                    <template #default="{ row }">
+                      {{ Math.round(Number(row.progressPercent || 0)) }}%
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="时间" :width="knowledgeLogColumnWidths.time">
+                    <template #default="{ row }">
+                      <span :title="formatMachineDate(row.occurredAt, 'full')">
+                        {{ formatMachineDate(row.occurredAt, 'compact') }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="detail" label="详情" :width="knowledgeLogColumnWidths.detail" show-overflow-tooltip />
+                  <el-table-column prop="error" label="错误" :width="knowledgeLogColumnWidths.error" show-overflow-tooltip />
+                </el-table>
+                <div class="knowledge-log-resize-layer">
+                  <button
+                    v-for="divider in knowledgeLogColumnDividers"
+                    :key="divider.key"
+                    class="knowledge-log-column-divider"
+                    type="button"
+                    :aria-label="`拖拽调整${divider.label}列宽`"
+                    :data-active="divider.active"
+                    :style="{ left: `${divider.left}px` }"
+                    :title="`拖拽调整${divider.label}列宽`"
+                    @pointerdown="startKnowledgeLogColumnResize($event, divider.key)"
+                    @keydown="handleKnowledgeLogColumnDividerKeydown($event, divider.key)"
+                  >
+                    <span />
+                  </button>
+                </div>
+              </div>
             </article>
 
             <article v-if="knowledgeTab === 'ingest'" class="surface-card knowledge-source-manager">
@@ -11529,18 +12810,18 @@ onUnmounted(() => {
                   </div>
                 </label>
                 <div class="source-sync-row">
-                  <label class="inline-check">
-                    <input v-model="localSourceForm.autoSync" type="checkbox" />
-                    <span>自动监听变化</span>
-                  </label>
-                  <label class="inline-check">
-                    <input v-model="localSourceForm.recursive" type="checkbox" />
-                    <span>包含子目录</span>
-                  </label>
-                  <label class="inline-check">
-                    <input v-model="localSourceForm.hydrationEnabled" type="checkbox" />
-                    <span>自动下载</span>
-                  </label>
+                  <BinaryCheckbox
+                    v-model="localSourceForm.autoSync"
+                    label="自动监听变化"
+                  />
+                  <BinaryCheckbox
+                    v-model="localSourceForm.recursive"
+                    label="包含子目录"
+                  />
+                  <BinaryCheckbox
+                    v-model="localSourceForm.hydrationEnabled"
+                    label="自动下载"
+                  />
                   <button
                     class="primary-action"
                     type="submit"
@@ -11561,9 +12842,7 @@ onUnmounted(() => {
                       <strong>{{ source.label }}</strong>
                       <span>{{ source.directoryPath }}</span>
                     </div>
-                    <span class="status-pill" :data-tone="sourceSyncTone(source)">
-                      {{ sourceSyncLabel(source) }}
-                    </span>
+                    <StatusPill :tone="sourceSyncTone(source)" :label="sourceSyncLabel(source)" />
                   </div>
                   <dl class="meta-list source-meta-list">
                     <div>
@@ -11708,9 +12987,7 @@ onUnmounted(() => {
                   <strong>{{ ingestJob.id }}</strong>
                   <span>{{ ingestJob.stage || "等待开始" }}</span>
                 </div>
-                <span class="status-pill" :data-tone="jobStatusTone(ingestJob.status)">
-                  {{ jobStatusLabels[ingestJob.status] }}
-                </span>
+                <StatusPill :tone="jobStatusTone(ingestJob.status)" :label="jobStatusLabels[ingestJob.status]" />
                 <progress :value="Number(ingestJob.progressPercent || 0)" max="100" />
                 <button class="tool-button tool-button-ghost" type="button" @click="refreshIngestJob">
                   刷新任务
@@ -11743,12 +13020,11 @@ onUnmounted(() => {
                   <p>知识录入发现同一路径不同内容、重复来源或结构化版本冲突时，会先进入这里等待人工决策。</p>
                 </div>
                 <div class="source-actions">
-                  <select v-model="knowledgeReviewStatus" class="compact-select">
-                    <option value="pending">待决策</option>
-                    <option value="resolved">已解决</option>
-                    <option value="rejected">已忽略</option>
-                    <option value="all">全部</option>
-                  </select>
+                  <OptionBar
+                    v-model="knowledgeReviewStatus"
+                    class="compact-select"
+                    :options="knowledgeReviewStatusOptionBarOptions"
+                  />
                   <button
                     class="tool-button"
                     type="button"
@@ -11768,12 +13044,10 @@ onUnmounted(() => {
 	                    <h4>{{ knowledgeReviewTitle(selectedKnowledgeReviewItem) }}</h4>
 	                    <span>{{ selectedKnowledgeReviewItem.reviewId }}</span>
 	                  </div>
-	                  <span
-	                    class="status-pill"
-	                    :data-tone="knowledgeReviewTone(selectedKnowledgeReviewItem)"
-	                  >
-	                    {{ knowledgeReviewStatusLabel(selectedKnowledgeReviewItem.status) }}
-	                  </span>
+		                  <StatusPill
+		                    :tone="knowledgeReviewTone(selectedKnowledgeReviewItem)"
+		                    :label="knowledgeReviewStatusLabel(selectedKnowledgeReviewItem.status)"
+		                  />
 	                </header>
 
 	                <div class="knowledge-review-compare-grid">
@@ -11900,19 +13174,16 @@ onUnmounted(() => {
                         </div>
                       </dl>
                       <pre>{{ knowledgeReviewDetailText(row) }}</pre>
-                      <details class="advanced-config">
-                        <summary>机器结构</summary>
+                      <ConfigFoldCard title="机器结构">
                         <pre>{{ jsonPreview(row) }}</pre>
-                      </details>
+                      </ConfigFoldCard>
                     </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="类型" width="150" resizable>
                   <template #default="{ row }">
                     <div class="knowledge-conflict-kind">
-                      <span class="status-pill" :data-tone="knowledgeReviewTone(row)">
-                        {{ knowledgeReviewStatusLabel(row.status) }}
-                      </span>
+                      <StatusPill :tone="knowledgeReviewTone(row)" :label="knowledgeReviewStatusLabel(row.status)" />
                       <small>{{ knowledgeReviewSourceLabel(row) }} / {{ knowledgeReviewReasonLabel(row.reason) }}</small>
                     </div>
                   </template>
@@ -12024,15 +13295,12 @@ onUnmounted(() => {
                       :step="field.step || 1"
                       @input="setMaintenanceFieldFromEvent(field.name, $event, 'number')"
                     />
-                    <el-select
+                    <OptionBar
                       v-else-if="field.type === 'boolean'"
                       :model-value="maintenanceFieldValue(field.name, field.defaultValue) ? 'true' : 'false'"
-                      teleported
+                      :options="enabledStringOptionBarOptions"
                       @update:model-value="setMaintenanceFieldValue(field.name, $event === 'true')"
-                    >
-                      <el-option label="开启" value="true" />
-                      <el-option label="关闭" value="false" />
-                    </el-select>
+                    />
                     <input
                       v-else
                       :value="String(maintenanceFieldValue(field.name, field.defaultValue) ?? '')"
@@ -12043,13 +13311,12 @@ onUnmounted(() => {
                   </label>
                 </div>
               </div>
-              <details class="advanced-config">
-                <summary>高级 JSON Diff</summary>
+              <ConfigFoldCard title="高级 JSON Diff">
                 <label class="json-editor">
                   <span>只在需要精确修改服务端配置对象时展开</span>
                   <textarea v-model="maintenanceJson" rows="10" spellcheck="false" />
                 </label>
-              </details>
+              </ConfigFoldCard>
               <div class="source-actions">
                 <button class="primary-action" type="button" :disabled="!canAdminKnowledge" @click="saveKnowledgeMaintenance">
                   保存配置
@@ -12061,22 +13328,19 @@ onUnmounted(() => {
                   <p>这不是配置项，而是一次性执行的知识库维护动作；用于校验、修复、清理、重建索引或触发进化学习。</p>
                 </div>
                 <div class="maintenance-runner">
-                  <el-select v-model="selectedMaintenanceTask" teleported>
-                    <el-option
-                      v-for="task in knowledgeSchema?.maintenanceTasks || []"
-                      :key="task.id"
-                      :label="`${task.label} / ${task.danger}`"
-                      :value="task.id"
-                    />
-                  </el-select>
-                  <label class="inline-check">
-                    <input v-model="maintenanceConfirm" type="checkbox" />
-                    <span>确认执行</span>
-                  </label>
-                  <label v-if="currentMaintenanceTaskSupportsDryRun" class="inline-check">
-                    <input v-model="maintenanceDryRun" type="checkbox" />
-                    <span>仅预览</span>
-                  </label>
+                  <OptionBar
+                    v-model="selectedMaintenanceTask"
+                    :options="maintenanceTaskOptionBarOptions"
+                  />
+                  <BinaryCheckbox
+                    v-model="maintenanceConfirm"
+                    label="确认执行"
+                  />
+                  <BinaryCheckbox
+                    v-if="currentMaintenanceTaskSupportsDryRun"
+                    v-model="maintenanceDryRun"
+                    label="仅预览"
+                  />
                   <button class="tool-button" type="button" :disabled="!canMaintainKnowledge" @click="runKnowledgeMaintenanceTask">
                     执行维护任务
                   </button>
@@ -12089,11 +13353,71 @@ onUnmounted(() => {
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'maintenance'" class="surface-card knowledge-vocabulary">
+            <article v-if="knowledgeTab === 'expertRules'" class="surface-card expert-rules-page">
+              <div class="section-header">
+                <div>
+                  <h3>黄金规则</h3>
+                  <p>智能体蒸馏、候选发布和审核分流都必须先经过这些规则。关闭规则后，运行时会直接跳过该规则。</p>
+                </div>
+                <div class="source-actions">
+                  <button class="tool-button" type="button" :disabled="busyKey === 'expert-rules:refresh'" @click="refreshExpertRules">
+                    {{ busyKey === "expert-rules:refresh" ? "加载中" : "重新加载" }}
+                  </button>
+                </div>
+              </div>
+              <div class="expert-rule-group-list">
+                <section
+                  v-for="pkg in goldenRulePackages"
+                  :key="String(pkg.packageId || pkg.version)"
+                  class="module-panel expert-rule-package"
+                >
+                  <div class="module-panel-heading">
+                    <div>
+                      <strong>{{ goldenRulePackageTitle(pkg) }}</strong>
+                      <span>{{ String(pkg.status || "unknown") }} · {{ goldenRuleItems(pkg).length }} 条</span>
+                    </div>
+                    <StatusPill
+                      :tone="String(pkg.status || '') === 'active' ? 'success' : 'warning'"
+                      :label="String(pkg.status || 'draft')"
+                    />
+                  </div>
+                  <div class="expert-rule-card-list">
+                    <article
+                      v-for="item in goldenRuleItems(pkg)"
+                      :key="String(item.rule.ruleId || item.index)"
+                      class="expert-rule-card"
+                      :data-enabled="expertRuleEnabled(item.rule)"
+                    >
+                      <div>
+                        <strong>{{ String(item.rule.label || item.rule.ruleId || `规则 ${item.index + 1}`) }}</strong>
+                        <span>{{ String(item.rule.action || "needs_human_review") }} · priority {{ Number(item.rule.priority || 0) }}</span>
+                        <p>{{ String(item.rule.reason || item.rule.description || "无说明") }}</p>
+                        <small>{{ (Array.isArray(item.rule.targetTypes) ? item.rule.targetTypes : ["*"]).join(" / ") }}</small>
+                      </div>
+                      <FeatureToggle
+                        :model-value="expertRuleEnabled(item.rule)"
+                        :aria-label="expertRuleEnabled(item.rule) ? '停用规则' : '启用规则'"
+                        :disabled="!canAdminKnowledge || busyKey === `golden-rule:${String(pkg.packageId || '')}:${item.index}`"
+                        @update:model-value="toggleGoldenRuleEnabled(pkg, item.index, $event)"
+                      />
+                    </article>
+                  </div>
+                  <ConfigFoldCard title="规则包 JSON">
+                    <pre>{{ jsonPreview(pkg) }}</pre>
+                  </ConfigFoldCard>
+                </section>
+                <div v-if="goldenRulePackages.length === 0" class="empty-state">
+                  <strong>暂无黄金规则包</strong>
+                  <span>点击重新加载，或通过工作台创建规则草稿。</span>
+                </div>
+              </div>
+            </article>
+
+            <article v-if="knowledgeTab === 'expertRules'" class="surface-card knowledge-vocabulary expert-rules-page">
                 <div class="section-header">
                   <div>
-                    <h3>专家词汇库</h3>
-                    <p>用于知识分类、事务归纳和检索提示。默认只展示前 8 条，可搜索或展开全部。</p>
+                    <h3>专家词汇规则</h3>
+                    <p>用于知识分类、事务归纳和检索提示。Toggle 控制词条是否作为 active 专家规则参与运行。</p>
                   </div>
                   <span>v{{ expertVocabularyDraft.version || 0 }} / {{ expertVocabularyDraft.entries.length }} 条</span>
                 </div>
@@ -12135,11 +13459,12 @@ onUnmounted(() => {
                           <textarea :value="item.entry.domains.join(', ')" @input="updateVocabularyDomains(item.index, ($event.target as HTMLTextAreaElement).value)" />
                         </td>
                         <td>
-                          <el-select v-model="item.entry.status" teleported @change="updateVocabularyEntry(item.index, { status: item.entry.status })">
-                            <el-option label="草稿" value="draft" />
-                            <el-option label="启用" value="active" />
-                            <el-option label="停用" value="retired" />
-                          </el-select>
+                          <FeatureToggle
+                            :model-value="item.entry.status === 'active'"
+                            :aria-label="item.entry.status === 'active' ? '停用词条' : '启用词条'"
+                            @update:model-value="setVocabularyEntryEnabled(item.index, $event)"
+                          />
+                          <small class="field-hint">{{ item.entry.status }}</small>
                         </td>
                         <td>
                           <input v-model="item.entry.notes" autocomplete="off" />
@@ -12171,18 +13496,94 @@ onUnmounted(() => {
                 </div>
             </article>
 
-            <article v-if="knowledgeTab === 'maintenance'" class="surface-card knowledge-rules">
+            <article v-if="knowledgeTab === 'expertRules'" class="surface-card knowledge-rules expert-rules-page">
                 <div class="section-header">
                   <div>
-                    <h3>规则库</h3>
-                    <p>规则 JSON 是机器可读维护项，默认收起，避免遮挡常用配置。</p>
+                    <h3>邮件专家规则</h3>
+                    <p>报告序列、同义词和部门规则会进入邮件分析、分类引导和检索归纳。Toggle 会写入 email-rules.json 的 enabled 字段。</p>
                   </div>
-                  <span>知识库配置</span>
+                  <span>{{ emailReportSeriesRules.length + emailSynonymRules.length + emailDepartmentRules.length }} 条</span>
                 </div>
-                <details class="advanced-config rules-json-panel">
-                  <summary>展开规则 JSON</summary>
+                <div class="expert-rule-grid">
+                  <section class="module-panel">
+                    <div class="module-panel-heading">
+                      <strong>报告序列</strong>
+                      <span>{{ emailReportSeriesRules.length }}</span>
+                    </div>
+                    <div class="expert-rule-card-list">
+                      <article
+                        v-for="item in emailReportSeriesRules"
+                        :key="item.rule.id || item.index"
+                        class="expert-rule-card"
+                        :data-enabled="expertRuleEnabled(item.rule)"
+                      >
+                        <div>
+                          <strong>{{ item.rule.label }}</strong>
+                          <span>{{ item.rule.cadence }} · {{ item.rule.id }}</span>
+                          <p>{{ item.rule.keywords.join(" / ") }}</p>
+                        </div>
+                        <FeatureToggle
+                          :model-value="expertRuleEnabled(item.rule)"
+                          :aria-label="expertRuleEnabled(item.rule) ? '停用报告序列规则' : '启用报告序列规则'"
+                          @update:model-value="setEmailRuleEntryEnabled('reportSeries', item.index, $event)"
+                        />
+                      </article>
+                    </div>
+                  </section>
+                  <section class="module-panel">
+                    <div class="module-panel-heading">
+                      <strong>同义词</strong>
+                      <span>{{ emailSynonymRules.length }}</span>
+                    </div>
+                    <div class="expert-rule-card-list">
+                      <article
+                        v-for="item in emailSynonymRules"
+                        :key="item.rule.canonical || item.index"
+                        class="expert-rule-card"
+                        :data-enabled="expertRuleEnabled(item.rule)"
+                      >
+                        <div>
+                          <strong>{{ item.rule.canonical }}</strong>
+                          <span>{{ item.rule.terms.length }} 个词</span>
+                          <p>{{ item.rule.terms.join(" / ") }}</p>
+                        </div>
+                        <FeatureToggle
+                          :model-value="expertRuleEnabled(item.rule)"
+                          :aria-label="expertRuleEnabled(item.rule) ? '停用同义词规则' : '启用同义词规则'"
+                          @update:model-value="setEmailRuleEntryEnabled('synonymDictionary', item.index, $event)"
+                        />
+                      </article>
+                    </div>
+                  </section>
+                  <section class="module-panel">
+                    <div class="module-panel-heading">
+                      <strong>部门归属</strong>
+                      <span>{{ emailDepartmentRules.length }}</span>
+                    </div>
+                    <div class="expert-rule-card-list">
+                      <article
+                        v-for="item in emailDepartmentRules"
+                        :key="item.rule.department || item.index"
+                        class="expert-rule-card"
+                        :data-enabled="expertRuleEnabled(item.rule)"
+                      >
+                        <div>
+                          <strong>{{ item.rule.department }}</strong>
+                          <span>{{ item.rule.keywords.length }} 名称词 / {{ item.rule.emailKeywords.length }} 邮箱词</span>
+                          <p>{{ [...item.rule.keywords, ...item.rule.emailKeywords].join(" / ") || "无关键词" }}</p>
+                        </div>
+                        <FeatureToggle
+                          :model-value="expertRuleEnabled(item.rule)"
+                          :aria-label="expertRuleEnabled(item.rule) ? '停用部门规则' : '启用部门规则'"
+                          @update:model-value="setEmailRuleEntryEnabled('departmentDictionary', item.index, $event)"
+                        />
+                      </article>
+                    </div>
+                  </section>
+                </div>
+                <ConfigFoldCard class="rules-json-panel" title="展开规则 JSON">
                   <textarea v-model="rulesText" class="rules-editor" spellcheck="false" />
-                </details>
+                </ConfigFoldCard>
                 <button class="tool-button" type="button" :disabled="busyKey === 'rules'" @click="saveRules">
                   {{ busyKey === "rules" ? "保存中" : "保存规则库" }}
                 </button>
@@ -12214,14 +13615,10 @@ onUnmounted(() => {
                     </div>
                     <label class="module-field">
                       <span>当前分析引擎</span>
-                      <el-select v-model="settingsDraft.analysisModuleId" teleported>
-                        <el-option
-                          v-for="item in consoleState?.runtime.analysisModules || []"
-                          :key="item.id"
-                          :label="`${item.label} / ${item.id}`"
-                          :value="item.id"
-                        />
-                      </el-select>
+                      <OptionBar
+                        v-model="settingsDraft.analysisModuleId"
+                        :options="analysisModuleOptionBarOptions"
+                      />
                     </label>
                     <p class="module-note">
                       {{ analysisModuleDescription() }}
@@ -12249,17 +13646,19 @@ onUnmounted(() => {
                   </section>
 
                   <section class="module-panel module-assignment-panel">
-                    <div class="module-panel-heading">
+                    <div class="module-panel-heading module-assignment-heading">
                       <div class="module-panel-title">
                         <strong>模块模型分配</strong>
+                        <span class="module-assignment-count">
+                          {{ moduleModelAssignmentStats.assigned }}/{{ moduleModelAssignmentStats.enabled }} 已分配
+                        </span>
                       </div>
-                      <span
-                        class="module-state-pill"
-                        :data-enabled="settingsDraft.modelIntelligenceEnabled"
-                      >
-                        <span class="state-dot" />
-                        {{ moduleEnabledLabel(settingsDraft.modelIntelligenceEnabled) }}
-                      </span>
+                      <FeatureToggle
+                        v-model="settingsDraft.modelIntelligenceEnabled"
+                        on-label="智能模块已开启"
+                        off-label="智能模块已关闭"
+                        :aria-label="settingsDraft.modelIntelligenceEnabled ? '关闭云智能解析' : '开启云智能解析'"
+                      />
                     </div>
                     <p class="module-note">
                       这里不设置全局模型。每个功能必须显式选择智能体；未选择时保持空，不会自动引用任何模型。
@@ -12273,77 +13672,129 @@ onUnmounted(() => {
                         :data-config-target="`module-agent-${item.id}`"
                         :data-config-highlighted="highlightedConfigTarget === `module-agent-${item.id}`"
                       >
-                        <div class="module-assignment-main">
-                          <label class="checkbox-field module-intelligence-toggle">
-                            <span>
-                              <strong>{{ item.label }}</strong>
-                              <small>{{ item.description }}</small>
-                            </span>
-                            <input
-                              type="checkbox"
-                              :checked="moduleNeedsIntelligence(item.id)"
-                              @change="
-                                setModuleNeedsIntelligence(
-                                  item.id,
-                                  ($event.target as HTMLInputElement).checked,
-                                )
-                              "
-                            />
-                          </label>
+                        <div class="module-assignment-card-head">
+                          <div class="module-assignment-title-block">
+                            <strong>{{ item.label }}</strong>
+                            <small>{{ item.description }}</small>
+                          </div>
+                          <FeatureToggle
+                            :model-value="moduleNeedsIntelligence(item.id)"
+                            on-label="使用智能体"
+                            off-label="不使用"
+                            :aria-label="`${item.label}${moduleNeedsIntelligence(item.id) ? '关闭智能体分配' : '启用智能体分配'}`"
+                            @update:model-value="setModuleNeedsIntelligence(item.id, $event)"
+                          />
                         </div>
-                        <label
-                          v-if="moduleNeedsIntelligence(item.id)"
-                          class="module-field module-model-field"
-                        >
-                          <span>使用模型</span>
-                          <el-select
+                        <div class="module-assignment-card-body">
+                          <OptionBar
+                            class="module-model-field"
                             :model-value="moduleModelRef(item.id)"
-                            @change="
-                              setModuleModelRef(
-                                item.id,
-                                $event,
-                              )
-                            "
+                            label="分配智能体"
                             placeholder="未分配智能体"
-                            teleported
-                          >
-                            <el-option label="未分配智能体" value="" />
-                            <el-option
-                              v-for="model in agentModelAssignmentOptions"
-                              :key="`${item.id}:${model.ref}`"
-                              :label="`${model.label}${model.enabled ? '' : '（未配置）'} / ${providerLabel(model.provider)}`"
-                              :value="model.ref"
-                              :disabled="!model.enabled"
+                            clearable
+                            :disabled="!moduleNeedsIntelligence(item.id)"
+                            :options="moduleModelAssignmentOptionBarOptions(item.id)"
+                            @update:model-value="setModuleModelRef(item.id, String($event))"
+                          />
+                          <span class="module-assignment-hint">
+                            {{
+                              moduleNeedsIntelligence(item.id)
+                                ? moduleModelRef(item.id)
+                                  ? "已保存为模块专属智能体"
+                                  : "未分配时不会隐式调用模型"
+                                : "停用后保存会移除该模块分配"
+                            }}
+                          </span>
+                        </div>
+                        <ConfigFoldCard
+                          v-if="moduleNeedsIntelligence(item.id)"
+                          class="module-agent-profile-card"
+                          title="模块/功能专属智能体参数"
+                        >
+                          <p class="module-note">
+                            加载顺序：智能体通用连接配置 -> 本模块专属参数 -> 当前会话/任务上下文。
+                          </p>
+                          <div class="module-agent-add-row">
+                            <OptionBar
+                              v-model="moduleAgentCandidateDrafts[item.id]"
+                              label="新增辅助智能体"
+                              placeholder="选择已授权开放的智能体"
+                              clearable
+                              :options="moduleModelAssignmentOptionBarOptions(item.id)"
                             />
-                          </el-select>
-                        </label>
+                            <button
+                              class="tool-button tool-button-ghost compact-action"
+                              type="button"
+                              :disabled="!moduleAgentCandidateDrafts[item.id]"
+                              @click="addModuleAgentProfileFromDraft(item.id)"
+                            >
+                              添加
+                            </button>
+                          </div>
+                          <div class="module-agent-profile-list">
+                            <article
+                              v-for="row in moduleAgentProfileRows(item.id)"
+                              :key="row.agentId"
+                              class="module-agent-profile-item"
+                            >
+                              <div class="module-agent-profile-head">
+                                <div>
+                                  <strong>{{ row.label }}</strong>
+                                  <span>{{ row.isPrimary ? "主智能体" : "辅助智能体" }}</span>
+                                </div>
+                                <div class="module-agent-profile-actions">
+                                  <FeatureToggle
+                                    :model-value="row.profile.enabled"
+                                    :aria-label="row.profile.enabled ? '停用该模块智能体' : '启用该模块智能体'"
+                                    @update:model-value="setModuleAgentProfileEnabled(item.id, row.agentId, $event)"
+                                  />
+                                  <button
+                                    class="inline-link"
+                                    type="button"
+                                    @click="removeModuleAgentProfile(item.id, row.agentId)"
+                                  >
+                                    移除
+                                  </button>
+                                </div>
+                              </div>
+                              <div class="form-grid compact-form-grid">
+                                <label>
+                                  <span>角色</span>
+                                  <input v-model="row.profile.role" autocomplete="off" />
+                                </label>
+                                <OptionBar
+                                  v-model="row.profile.contextProfileId"
+                                  label="上下文窗口"
+                                  clearable
+                                  :options="contextWindowOptionBarOptions"
+                                />
+                              </div>
+                              <label>
+                                <span>模块提示词</span>
+                                <textarea v-model="row.profile.systemPrompt" rows="3" spellcheck="false"></textarea>
+                              </label>
+                              <div class="form-grid compact-form-grid">
+                                <label>
+                                  <span>调用参数 JSON</span>
+                                  <textarea v-model="row.profile.parametersText" rows="4" spellcheck="false"></textarea>
+                                </label>
+                                <label>
+                                  <span>功能依赖上下文 JSON</span>
+                                  <textarea v-model="row.profile.dependencyContextText" rows="4" spellcheck="false"></textarea>
+                                </label>
+                              </div>
+                            </article>
+                            <div v-if="!moduleAgentProfileRows(item.id).length" class="empty-note">
+                              尚未为该模块配置专属智能体参数。
+                            </div>
+                          </div>
+                        </ConfigFoldCard>
                       </div>
                     </div>
                     <p class="module-note">
                       授权连接和自定义 Adapter 在“智能体配置 / 模型库”中维护。模块只保存智能体 UID；
                       未选择时保持空，不会隐式使用其它模型。
                     </p>
-                    <div class="module-panel-footer">
-                      <button
-                        class="module-switch"
-                        :data-enabled="settingsDraft.modelIntelligenceEnabled"
-                        :aria-pressed="settingsDraft.modelIntelligenceEnabled"
-                        :aria-label="
-                          settingsDraft.modelIntelligenceEnabled
-                            ? '关闭云智能解析'
-                            : '开启云智能解析'
-                        "
-                        type="button"
-                        @click="
-                          settingsDraft.modelIntelligenceEnabled =
-                            !settingsDraft.modelIntelligenceEnabled
-                        "
-                      >
-                        <span class="module-switch-track">
-                          <span class="module-switch-knob" />
-                        </span>
-                      </button>
-                    </div>
                   </section>
 
                   <section class="module-panel">
@@ -12351,13 +13802,10 @@ onUnmounted(() => {
                       <div class="module-panel-title">
                         <strong>本地 OCR</strong>
                       </div>
-                      <span
-                        class="module-state-pill"
-                        :data-enabled="settingsDraft.ocrEnabled"
-                      >
-                        <span class="state-dot" />
-                        {{ moduleEnabledLabel(settingsDraft.ocrEnabled) }}
-                      </span>
+                      <StatusPill
+                        :enabled="settingsDraft.ocrEnabled"
+                        :label="moduleEnabledLabel(settingsDraft.ocrEnabled)"
+                      />
                     </div>
                     <div class="form-grid compact-form-grid">
                       <label>
@@ -12390,20 +13838,10 @@ onUnmounted(() => {
                       图片类输入将优先走 OCR 路由，关闭后跳过图片文本兜底。
                     </p>
                     <div class="module-panel-footer">
-                      <button
-                        class="module-switch"
-                        :data-enabled="settingsDraft.ocrEnabled"
-                        :aria-pressed="settingsDraft.ocrEnabled"
-                        :aria-label="
-                          settingsDraft.ocrEnabled ? '关闭本地 OCR' : '开启本地 OCR'
-                        "
-                        type="button"
-                        @click="settingsDraft.ocrEnabled = !settingsDraft.ocrEnabled"
-                      >
-                        <span class="module-switch-track">
-                          <span class="module-switch-knob" />
-                        </span>
-                      </button>
+                      <FeatureToggle
+                        v-model="settingsDraft.ocrEnabled"
+                        :aria-label="settingsDraft.ocrEnabled ? '关闭本地 OCR' : '开启本地 OCR'"
+                      />
                     </div>
                   </section>
 
@@ -12486,7 +13924,7 @@ onUnmounted(() => {
               data-config-target="agent-model-library"
               :data-config-highlighted="highlightedConfigTarget === 'agent-model-library'"
             >
-              <form class="drawer-panel" @submit.prevent="saveSettings">
+              <form class="drawer-panel" @submit.prevent="saveModelLibrarySettings">
                 <div class="section-header">
                   <div>
                     <h3>模型库</h3>
@@ -12495,14 +13933,10 @@ onUnmounted(() => {
                 </div>
 
                 <div class="model-library-toolbar">
-                  <el-select v-model="selectedModelProvider" teleported>
-                    <el-option
-                      v-for="provider in addableModelProviders"
-                      :key="provider.id"
-                      :label="provider.label"
-                      :value="provider.id"
-                    />
-                  </el-select>
+                  <OptionBar
+                    v-model="selectedModelProvider"
+                    :options="addableModelProviderOptionBarOptions"
+                  />
                   <button
                     class="tool-button"
                     type="button"
@@ -12527,6 +13961,8 @@ onUnmounted(() => {
                       class="model-library-card-toggle"
                       type="button"
                       :aria-expanded="isModelLibraryCardExpanded(entry) ? 'true' : 'false'"
+                      :aria-label="`${entry.label || modelEntryStatusKey(entry)} ${isModelLibraryCardExpanded(entry) ? '收起配置' : '展开配置'}`"
+                      :title="isModelLibraryCardExpanded(entry) ? '收起配置' : '展开配置'"
                       @click="toggleModelLibraryCard(entry)"
                     >
                       <div class="model-library-card-header">
@@ -12535,12 +13971,24 @@ onUnmounted(() => {
                           <small>{{ modelProviderDefinition(entry.provider)?.label || providerLabel(entry.provider) }} / {{ entry.model || modelEntryStatusKey(entry) }}</small>
                         </div>
                         <div class="model-library-card-statuses">
-                          <span :data-tone="modelEntryStatusTone(entry)">{{ modelEntryStatusLabel(entry) }}</span>
-                          <span v-if="modelEntryIsBound(entry)" data-tone="bound">已绑定</span>
+                          <StatusPill
+                            v-if="modelEntryIsBound(entry)"
+                            tone="info"
+                            label="已绑定"
+                          />
+                          <StatusPill
+                            v-if="modelEntryProbeResult(entry)"
+                            :tone="modelEntryProbeStatusTone(entry)"
+                            :label="modelEntryProbeStatusLabel(entry)"
+                          />
                         </div>
                       </div>
-                      <span class="model-library-chevron" aria-hidden="true">
-                        {{ isModelLibraryCardExpanded(entry) ? "收起" : "展开" }}
+                      <span
+                        class="model-library-expand-icon"
+                        :data-expanded="isModelLibraryCardExpanded(entry)"
+                        aria-hidden="true"
+                      >
+                        <span />
                       </span>
                     </button>
 
@@ -12570,9 +14018,7 @@ onUnmounted(() => {
                           {{
                             busyKey === `model-remove:${modelEntryStatusKey(entry)}`
                               ? "移除中"
-                              : modelEntryIsBound(entry)
-                                ? "已绑定"
-                                : "移除"
+                              : "移除"
                           }}
                         </button>
                       </div>
@@ -12586,6 +14032,12 @@ onUnmounted(() => {
                           / HTTP {{ modelProbeResults[modelEntryStatusKey(entry)].statusCode }}
                         </template>
                       </small>
+                    </p>
+                    <p
+                      v-if="modelLibrarySaveProbeNotices[modelEntryStatusKey(entry)]"
+                      class="model-library-save-notice"
+                    >
+                      {{ modelLibrarySaveProbeNotices[modelEntryStatusKey(entry)] }}
                     </p>
 
                     <div v-if="isModelLibraryCardExpanded(entry)" class="model-library-card-body">
@@ -12673,8 +14125,7 @@ onUnmounted(() => {
                           <span>Token</span>
                           <input v-model="entry.token" autocomplete="off" type="password" placeholder="留空保持已保存 Token" />
                         </label>
-                        <details class="advanced-config">
-                          <summary>高级连接参数</summary>
+                        <ConfigFoldCard title="高级连接参数">
                           <div class="form-grid compact-form-grid">
                             <label>
                               <span>Token Header</span>
@@ -12689,11 +14140,38 @@ onUnmounted(() => {
                               <input v-model.number="entry.timeoutMs" type="number" min="1000" step="1000" />
                             </label>
                           </div>
-                        </details>
+                        </ConfigFoldCard>
                       </template>
 
-                      <details v-if="modelEntryIsBound(entry)" class="advanced-config model-library-bindings">
-                        <summary>被引用的功能（{{ modelEntryBindings(entry).length }}）</summary>
+                      <ConfigFoldCard title="功能可见性与授权">
+                        <OptionBar
+                          :model-value="modelEntryModuleAccess(entry).mode"
+                          label="开放范围"
+                          :options="moduleAccessModeOptionBarOptions"
+                          @update:model-value="setModelEntryModuleAccessMode(entry, String($event))"
+                        />
+                        <div
+                          v-if="modelEntryModuleAccess(entry).mode === 'selected'"
+                          class="model-library-module-access-list"
+                        >
+                          <BinaryCheckbox
+                            v-for="moduleDefinition in intelligentModuleDefinitions"
+                            :key="moduleDefinition.id"
+                            :model-value="modelEntryModuleAccess(entry).moduleIds.includes(moduleDefinition.id)"
+                            :label="moduleDefinition.label"
+                            @update:model-value="toggleModelEntryModuleAccess(entry, moduleDefinition.id, Boolean($event))"
+                          />
+                        </div>
+                        <p class="module-note">
+                          没有授权给某个功能时，该功能的智能体选项中不会出现这个智能体。
+                        </p>
+                      </ConfigFoldCard>
+
+                      <ConfigFoldCard
+                        v-if="modelEntryIsBound(entry)"
+                        class="model-library-bindings"
+                        :title="`被引用的功能（${modelEntryBindings(entry).length}）`"
+                      >
                         <div class="model-library-binding-list">
                           <article
                             v-for="binding in modelEntryBindings(entry)"
@@ -12707,10 +14185,9 @@ onUnmounted(() => {
                             <p>{{ binding.detail }}</p>
                           </article>
                         </div>
-                      </details>
+                      </ConfigFoldCard>
 
-                      <details class="advanced-config">
-                        <summary>智能体提示词与调用参数</summary>
+                      <ConfigFoldCard title="智能体提示词与调用参数">
                         <label>
                           <span>系统提示词</span>
                           <textarea v-model="entry.systemPrompt" rows="5" autocomplete="off"></textarea>
@@ -12719,14 +14196,14 @@ onUnmounted(() => {
                           <span>调用参数 JSON</span>
                           <textarea v-model="entry.parametersText" rows="6" spellcheck="false"></textarea>
                         </label>
-                      </details>
+                      </ConfigFoldCard>
                     </div>
                   </section>
                 </div>
 
-                <div class="source-actions">
-                  <button class="tool-button" type="submit" :disabled="busyKey === 'settings'">
-                    {{ busyKey === "settings" ? "保存中" : "保存模型库" }}
+                <div class="source-actions model-library-save-actions">
+                  <button class="tool-button" type="submit" :disabled="busyKey === 'model-library-save'">
+                    {{ busyKey === "model-library-save" ? "探测并保存中" : "保存配置" }}
                   </button>
                 </div>
               </form>
@@ -12827,22 +14304,19 @@ onUnmounted(() => {
                   </button>
                 </div>
 
-                <details v-if="contextPreviewResult" class="advanced-config" open>
-                  <summary>本轮上下文包</summary>
+                <ConfigFoldCard v-if="contextPreviewResult" title="本轮上下文包" open>
                   <pre>{{ jsonPreview(contextPreviewResult) }}</pre>
-                </details>
-                <details v-if="contextEvaluationResult" class="advanced-config" open>
-                  <summary>Replay 评估结果</summary>
+                </ConfigFoldCard>
+                <ConfigFoldCard v-if="contextEvaluationResult" title="Replay 评估结果" open>
                   <pre>{{ jsonPreview(contextEvaluationResult) }}</pre>
-                </details>
+                </ConfigFoldCard>
 
-		                <details
-		                  class="advanced-config"
-		                  data-config-target="knowledge-review-fusion-agent"
-		                  :data-config-highlighted="highlightedConfigTarget === 'knowledge-review-fusion-agent'"
-		                  open
-		                >
-                  <summary>最近上下文编译记录</summary>
+                <ConfigFoldCard
+                  title="最近上下文编译记录"
+                  data-config-target="knowledge-review-fusion-agent"
+                  :data-config-highlighted="highlightedConfigTarget === 'knowledge-review-fusion-agent'"
+                  open
+                >
                   <div class="context-build-record-list">
                     <article
                       v-for="record in contextBuildRecordRows"
@@ -12865,7 +14339,7 @@ onUnmounted(() => {
                       暂无上下文编译记录。
                     </div>
                   </div>
-                </details>
+                </ConfigFoldCard>
               </div>
             </article>
             <article class="surface-card">
@@ -12893,30 +14367,16 @@ onUnmounted(() => {
                   <textarea v-model="settingsDraft.agentExploreDefaults.answerTemplate" rows="18" spellcheck="false"></textarea>
                 </label>
                 <div class="form-grid compact-form-grid">
-                  <label>
-                    <span>上下文窗口</span>
-                    <select v-model="settingsDraft.agentExploreDefaults.contextProfileId">
-                      <option
-                        v-for="option in agentExploreContextWindowOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }} - {{ option.description }}
-                      </option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Thinking</span>
-                    <select v-model="settingsDraft.agentExploreDefaults.thinkingMode">
-                      <option
-                        v-for="option in agentExploreThinkingModeOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
+                  <OptionBar
+                    v-model="settingsDraft.agentExploreDefaults.contextProfileId"
+                    label="上下文窗口"
+                    :options="contextWindowOptionBarOptions"
+                  />
+                  <OptionBar
+                    v-model="settingsDraft.agentExploreDefaults.thinkingMode"
+                    label="Thinking"
+                    :options="thinkingModeOptionBarOptions"
+                  />
                   <label>
                     <span>temperature</span>
                     <input v-model.number="settingsDraft.agentExploreDefaults.temperature" type="number" min="0" max="2" step="0.1" />
@@ -12938,29 +14398,15 @@ onUnmounted(() => {
 	                    <input v-model="settingsDraft.agentExploreDefaults.toolChoice" autocomplete="off" />
 	                  </label>
 	                </div>
-	                <details class="advanced-config" open>
-	                  <summary>知识融合智能体</summary>
+	                <ConfigFoldCard title="知识融合智能体" open>
 	                  <div class="form-grid compact-form-grid">
-	                    <label>
-	                      <span>模型</span>
-	                      <el-select
-	                        v-model="settingsDraft.agentExploreDefaults.reviewFusionModelAlias"
-	                        teleported
-	                        filterable
-	                        placeholder="未分配智能体"
-	                        :persistent="false"
-	                        popper-class="splitall-select-popper"
-	                      >
-	                        <el-option label="未分配智能体" value="" />
-	                        <el-option
-	                          v-for="option in agentExploreModelOptions"
-	                          :key="option.value"
-	                          :label="`${option.label}${option.enabled ? '' : `（${option.disabledReason || '不可用'}）`}`"
-	                          :value="option.value"
-	                          :disabled="!option.enabled"
-	                        />
-	                      </el-select>
-	                    </label>
+	                    <OptionBar
+	                      v-model="settingsDraft.agentExploreDefaults.reviewFusionModelAlias"
+	                      label="模型"
+	                      placeholder="未分配智能体"
+	                      filterable
+	                      :options="agentExploreModelOptionBarOptionsWithEmpty"
+	                    />
 	                    <label>
 	                      <span>temperature</span>
 	                      <input
@@ -12989,9 +14435,8 @@ onUnmounted(() => {
 	                      spellcheck="false"
 	                    ></textarea>
 	                  </label>
-	                </details>
-	                <details class="advanced-config">
-	                  <summary>运行时变量</summary>
+	                </ConfigFoldCard>
+	                <ConfigFoldCard title="运行时变量">
 	                  <pre>{{ jsonPreview({
 	                    modelAlias: agentExploreForm.modelAlias,
                     contextProfileId: selectedAgentExploreContextProfile.value,
@@ -13014,7 +14459,7 @@ onUnmounted(() => {
 	                      systemPrompt: settingsDraft.agentExploreDefaults.reviewFusionSystemPrompt
 	                    }
 	                  }) }}</pre>
-	                </details>
+	                </ConfigFoldCard>
                 <div class="source-actions">
                   <button class="tool-button" type="submit" :disabled="busyKey === 'settings'">
                     {{ busyKey === "settings" ? "保存中" : "保存智能检索参数" }}
@@ -13031,10 +14476,10 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="form-grid compact-form-grid">
-                  <label class="inline-checkbox">
-                    <input v-model="settingsDraft.agentToolExecution.http.enabled" type="checkbox" />
-                    <span>启用 HTTP 工具</span>
-                  </label>
+                  <BinaryCheckbox
+                    v-model="settingsDraft.agentToolExecution.http.enabled"
+                    label="启用 HTTP 工具"
+                  />
                   <label>
                     <span>HTTP 允许 Host（逗号分隔）</span>
                     <input
@@ -13052,14 +14497,14 @@ onUnmounted(() => {
                   </label>
                 </div>
                 <div class="form-grid compact-form-grid">
-                  <label class="inline-checkbox">
-                    <input v-model="settingsDraft.agentToolExecution.local.enabled" type="checkbox" />
-                    <span>启用本地命令工具</span>
-                  </label>
-                  <label class="inline-checkbox">
-                    <input v-model="settingsDraft.agentToolExecution.local.allowDirectCommands" type="checkbox" />
-                    <span>允许直接命令</span>
-                  </label>
+                  <BinaryCheckbox
+                    v-model="settingsDraft.agentToolExecution.local.enabled"
+                    label="启用本地命令工具"
+                  />
+                  <BinaryCheckbox
+                    v-model="settingsDraft.agentToolExecution.local.allowDirectCommands"
+                    label="允许直接命令"
+                  />
                   <label>
                     <span>命令 Timeout(ms)</span>
                     <input v-model.number="settingsDraft.agentToolExecution.local.timeoutMs" type="number" min="1000" step="1000" />
@@ -13069,17 +14514,15 @@ onUnmounted(() => {
                     <input v-model.number="settingsDraft.agentToolExecution.local.maxOutputBytes" type="number" min="1024" step="1024" />
                   </label>
                 </div>
-                <details class="advanced-config" open>
-                  <summary>本地命令模板 JSON</summary>
+                <ConfigFoldCard title="本地命令模板 JSON" open>
                   <textarea
                     :value="jsonPreview(settingsDraft.agentToolExecution.local.commands)"
                     rows="10"
                     spellcheck="false"
                     @change="settingsDraft.agentToolExecution.local.commands = JSON.parse(($event.target as HTMLTextAreaElement).value || '[]')"
                   ></textarea>
-                </details>
-                <details class="advanced-config">
-                  <summary>function call schema</summary>
+                </ConfigFoldCard>
+                <ConfigFoldCard title="function call schema">
                   <pre>{{ jsonPreview({
                     http_request: {
                       method: 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS',
@@ -13097,7 +14540,7 @@ onUnmounted(() => {
                       timeoutMs: 30000
                     }
                   }) }}</pre>
-                </details>
+                </ConfigFoldCard>
                 <div class="source-actions">
                   <button class="tool-button" type="submit" :disabled="busyKey === 'settings'">
                     {{ busyKey === "settings" ? "保存中" : "保存工具调用配置" }}
@@ -13187,9 +14630,7 @@ onUnmounted(() => {
                     <strong>{{ processItem.label }}</strong>
                     <small>{{ processItem.role }} · 重启 {{ processItem.restartCount || 0 }}</small>
                   </span>
-                  <span class="status-pill" :data-tone="backgroundProcessTone(processItem.status)">
-                    {{ backgroundProcessLabel(processItem.status) }}
-                  </span>
+                  <StatusPill :tone="backgroundProcessTone(processItem.status)" :label="backgroundProcessLabel(processItem.status)" />
                   <span>{{ processItem.pid || "—" }}</span>
                   <span>{{ formatCompactDate(processItem.lastHeartbeatAt || "") }}</span>
                 </div>
@@ -13242,9 +14683,7 @@ onUnmounted(() => {
                   :key="alert.alertId"
                   class="job-row"
                 >
-                  <span class="status-pill" :data-tone="monitorAlertSeverityTone(alert.severity)">
-                    {{ monitorAlertSeverityLabel(alert.severity) }}
-                  </span>
+                  <StatusPill :tone="monitorAlertSeverityTone(alert.severity)" :label="monitorAlertSeverityLabel(alert.severity)" />
                   <span>
                     <strong>{{ alert.title }}</strong>
                     <small>{{ alert.message }}</small>
@@ -13255,15 +14694,13 @@ onUnmounted(() => {
               <div v-if="activeMonitorAlerts.length === 0" class="empty-state">
                 <strong>暂无活跃报警</strong>
               </div>
-              <details class="advanced-config" open>
-                <summary>报警报文配置 JSON</summary>
+              <ConfigFoldCard title="报警报文配置 JSON" open>
                 <label class="json-editor">
                   <span>配置会保存到后台文件，sh 巡检脚本下一轮自动读取</span>
                   <textarea v-model="monitorAlertConfigText" rows="14" spellcheck="false" />
                 </label>
-              </details>
-              <details class="advanced-config">
-                <summary>最近报警历史</summary>
+              </ConfigFoldCard>
+              <ConfigFoldCard title="最近报警历史">
                 <div class="job-table compact-job-table monitor-alert-table">
                   <div class="job-table-header">
                     <span>级别</span>
@@ -13275,9 +14712,7 @@ onUnmounted(() => {
                     :key="`${alert.alertId}:${alert.lastSeenAt}:${alert.resolvedAt || ''}`"
                     class="job-row"
                   >
-                    <span class="status-pill" :data-tone="monitorAlertSeverityTone(alert.severity)">
-                      {{ monitorAlertSeverityLabel(alert.severity) }}
-                    </span>
+                    <StatusPill :tone="monitorAlertSeverityTone(alert.severity)" :label="monitorAlertSeverityLabel(alert.severity)" />
                     <span>
                       <strong>{{ alert.title }}</strong>
                       <small>{{ alert.active ? "活跃" : "已恢复" }} · {{ alert.message }}</small>
@@ -13285,7 +14720,7 @@ onUnmounted(() => {
                     <span>{{ formatCompactDate(alert.lastSeenAt || alert.resolvedAt || alert.firstSeenAt) }}</span>
                   </div>
                 </div>
-              </details>
+              </ConfigFoldCard>
               <p v-if="monitorAlertState?.configPath" class="module-note">
                 配置文件：{{ monitorAlertState.configPath }}；sh 配置：{{ monitorAlertState.shellConfigPath || "未生成" }}；状态文件：{{ monitorAlertState.statePath }}
               </p>
@@ -13298,28 +14733,21 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="form-grid compact-form-grid">
-                <label>
-                  <span>启用</span>
-                  <el-select v-model="maintenanceAgentConfig.enabled" teleported>
-                    <el-option label="开启" :value="true" />
-                    <el-option label="关闭" :value="false" />
-                  </el-select>
-                </label>
-                <label>
-                  <span>Planner</span>
-                  <el-select v-model="maintenanceAgentConfig.plannerMode" teleported>
-                    <el-option label="gateway_fallback" value="gateway_fallback" />
-                    <el-option label="fixed_runbook" value="fixed_runbook" />
-                    <el-option label="gateway" value="gateway" />
-                  </el-select>
-                </label>
-                <label>
-                  <span>自动批准</span>
-                  <el-select v-model="maintenanceAgentConfig.autoApproveRisk" teleported>
-                    <el-option label="safe_write" value="safe_write" />
-                    <el-option label="read_only" value="read_only" />
-                  </el-select>
-                </label>
+                <OptionBar
+                  v-model="maintenanceAgentConfig.enabled"
+                  label="启用"
+                  :options="enabledBooleanOptionBarOptions"
+                />
+                <OptionBar
+                  v-model="maintenanceAgentConfig.plannerMode"
+                  label="Planner"
+                  :options="plannerModeOptionBarOptions"
+                />
+                <OptionBar
+                  v-model="maintenanceAgentConfig.autoApproveRisk"
+                  label="自动批准"
+                  :options="autoApproveRiskOptionBarOptions"
+                />
                 <label>
                   <span>Tick 秒</span>
                   <input v-model.number="maintenanceAgentConfig.scheduler.tickSeconds" type="number" min="1" max="3600" />
@@ -13387,17 +14815,12 @@ onUnmounted(() => {
                   <strong>Runbook</strong>
                   <span>{{ maintenanceAgentRunbooks.length }}</span>
                 </div>
-                <label class="module-field">
-                  <span>选择</span>
-                  <el-select v-model="maintenanceAgentRunbook" teleported>
-                    <el-option
-                      v-for="runbook in maintenanceAgentRunbooks"
-                      :key="runbook.id"
-                      :label="`${runbook.label} / ${runbook.id}`"
-                      :value="runbook.id"
-                    />
-                  </el-select>
-                </label>
+                <OptionBar
+                  v-model="maintenanceAgentRunbook"
+                  class="module-field"
+                  label="选择"
+                  :options="maintenanceAgentRunbookOptionBarOptions"
+                />
                 <button
                   class="tool-button"
                   type="button"
@@ -13433,9 +14856,10 @@ onUnmounted(() => {
                   >
                     {{ run.intent }} / {{ formatCompactDate(run.updatedAt) }}
                   </button>
-                  <span class="status-pill" :data-tone="maintenanceAgentStatusTone(run.status)">
-                    {{ maintenanceAgentStatusLabel(run.status) }} / {{ maintenanceAgentRiskLabel(run.risk) }}
-                  </span>
+                  <StatusPill
+                    :tone="maintenanceAgentStatusTone(run.status)"
+                    :label="`${maintenanceAgentStatusLabel(run.status)} / ${maintenanceAgentRiskLabel(run.risk)}`"
+                  />
                   <span class="table-actions-inline">
                     <button
                       v-if="run.status === 'awaiting_approval'"
@@ -13556,7 +14980,7 @@ onUnmounted(() => {
                     <small>{{ tool.id }} / {{ tool.source }}</small>
                   </span>
                   <span>{{ tool.toolsets.map(toolsetLabel).join(" / ") }}</span>
-                  <span class="status-pill" :data-tone="tool.risk">{{ toolRiskLabel(tool.risk) }}</span>
+                  <StatusPill :tone="tool.risk" :label="toolRiskLabel(tool.risk)" />
                   <span>{{ toolStatusLabel(tool.status) }}</span>
                 </div>
               </div>
@@ -13615,31 +15039,16 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="form-grid compact-form-grid">
-                <label>
-                  <span>工具</span>
-                  <select v-model="policyPreviewToolId">
-                    <option
-                      v-for="tool in toolManagementTools"
-                      :key="tool.id"
-                      :value="tool.id"
-                    >
-                      {{ tool.label }} / {{ tool.id }}
-                    </option>
-                  </select>
-                </label>
-                <label>
-                  <span>智能体档案</span>
-                  <select v-model="policyPreviewProfileId">
-                    <option value="">不绑定档案</option>
-                    <option
-                      v-for="profile in toolManagementProfiles"
-                      :key="profile.id"
-                      :value="profile.id"
-                    >
-                      {{ profile.label }} / {{ profile.id }}
-                    </option>
-                  </select>
-                </label>
+                <OptionBar
+                  v-model="policyPreviewToolId"
+                  label="工具"
+                  :options="policyPreviewToolOptionBarOptions"
+                />
+                <OptionBar
+                  v-model="policyPreviewProfileId"
+                  label="智能体档案"
+                  :options="policyPreviewProfileOptionBarOptions"
+                />
                 <label>
                   <span>授权 ID</span>
                   <input v-model="policyPreviewGrantId" autocomplete="off" placeholder="留空时使用当前工具的模拟 grant" />
@@ -13781,19 +15190,14 @@ onUnmounted(() => {
                       </button>
                     </div>
                     <div class="permission-actions">
-                      <button
-                        class="module-switch"
-                        :data-enabled="grant.enabled"
-                        :aria-pressed="grant.enabled"
+                      <FeatureToggle
+                        :model-value="grant.enabled"
+                        on-label="授权已启用"
+                        off-label="授权已停用"
                         :aria-label="grant.enabled ? '停用授权' : '启用授权'"
-                        type="button"
                         :disabled="busyKey === `grant:${grant.id}`"
-                        @click="updateGrant(grant, { enabled: !grant.enabled })"
-                      >
-                        <span class="module-switch-track">
-                          <span class="module-switch-knob" />
-                        </span>
-                      </button>
+                        @update:model-value="updateGrant(grant, { enabled: $event })"
+                      />
                       <button class="table-action" type="button" :disabled="busyKey === `grant:${grant.id}`" @click="rotateGrant(grant)">
                         轮换
                       </button>
@@ -13882,13 +15286,10 @@ onUnmounted(() => {
                     <div class="mount-config-main">
                       <div class="mount-config-heading">
                         <strong>{{ item.label }}</strong>
-                        <span
-                          class="module-state-pill"
-                          :data-enabled="item.externalEnabled"
-                        >
-                          <span class="state-dot" />
-                          {{ moduleAvailabilityLabel(item) }}
-                        </span>
+	                        <StatusPill
+	                          :enabled="item.externalEnabled"
+	                          :label="moduleAvailabilityLabel(item)"
+	                        />
                       </div>
                       <p>{{ item.description }}</p>
                       <dl class="module-status-list">
@@ -13928,31 +15329,16 @@ onUnmounted(() => {
                         </div>
                       </label>
                       <div class="mount-config-actions">
-                        <button
-                          class="module-switch"
-                          :data-enabled="item.externalEnabled"
-                          :aria-pressed="item.externalEnabled"
-                          :aria-label="
-                            item.externalEnabled
-                              ? `关闭${item.label}`
-                              : `开启${item.label}`
-                          "
-                          type="button"
+                        <FeatureToggle
+                          :model-value="item.externalEnabled"
+                          :aria-label="item.externalEnabled ? `关闭${item.label}` : `开启${item.label}`"
                           :disabled="
                             busyKey === `mount:${item.name}` ||
                             (!item.externalEnabled &&
                               !String(mountDraft[item.name] || '').trim())
                           "
-                          @click="
-                            item.externalEnabled
-                              ? disableMountModule(item.name)
-                              : enableMountModule(item.name)
-                          "
-                        >
-                          <span class="module-switch-track">
-                            <span class="module-switch-knob" />
-                          </span>
-                        </button>
+                          @update:model-value="$event ? enableMountModule(item.name) : disableMountModule(item.name)"
+                        />
                       </div>
                     </div>
                   </article>
@@ -14002,12 +15388,7 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <span
-                        class="status-pill"
-                        :data-tone="jobStatusTone(item.status)"
-                      >
-                        {{ jobStatusLabels[item.status] }}
-                      </span>
+	                      <StatusPill :tone="jobStatusTone(item.status)" :label="jobStatusLabels[item.status]" />
                     </td>
                     <td class="progress-cell">
                       <div class="progress-track">
@@ -14074,15 +15455,11 @@ onUnmounted(() => {
                   class="search-input"
                   placeholder="搜索 标签、ID、主机或系统…"
                 />
-                <el-select v-model="clientStateFilter" class="filter-select" teleported>
-                  <el-option label="所有状态" value="all" />
-                  <el-option
-                    v-for="(label, key) in migrationStateLabels"
-                    :key="key"
-                    :label="label"
-                    :value="key"
-                  />
-                </el-select>
+                <OptionBar
+                  v-model="clientStateFilter"
+                  class="filter-select"
+                  :options="clientStateFilterOptionBarOptions"
+                />
               </div>
               <div class="toolbar-actions">
                 <button
@@ -14149,12 +15526,10 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <span
-                        class="status-pill"
-                        :data-tone="migrationTone(item.migrationState)"
-                      >
-                        {{ migrationStateLabels[item.migrationState] }}
-                      </span>
+	                      <StatusPill
+	                        :tone="migrationTone(item.migrationState)"
+	                        :label="migrationStateLabels[item.migrationState]"
+	                      />
                     </td>
                   </tr>
                 </tbody>
@@ -14545,13 +15920,11 @@ onUnmounted(() => {
                 autocomplete="off"
               />
             </label>
-            <label>
-              <span>运行模式</span>
-              <el-select v-model="discoveryDraft.mode" teleported>
-                <el-option label="激活 (active)" value="active" />
-                <el-option label="转发 (forward)" value="forward" />
-              </el-select>
-            </label>
+            <OptionBar
+              v-model="discoveryDraft.mode"
+              label="运行模式"
+              :options="discoveryModeOptionBarOptions"
+            />
             <label>
               <span>配置版本</span>
               <input
@@ -14620,14 +15993,11 @@ onUnmounted(() => {
                 </div>
                 <div v-for="user in authUsers" :key="user.userId" class="job-row">
                   <span>{{ user.displayName }} / {{ user.username }}</span>
-                  <el-select :model-value="user.roleId" teleported @change="updateConsoleUserRole(user, $event)">
-                    <el-option
-                      v-for="role in authState?.roles || []"
-                      :key="role.roleId"
-                      :label="role.label"
-                      :value="role.roleId"
-                    />
-                  </el-select>
+                  <OptionBar
+                    :model-value="user.roleId"
+                    :options="authRoleOptionBarOptions"
+                    @change="updateConsoleUserRole(user, String($event))"
+                  />
                   <button
                     class="table-action"
                     type="button"
@@ -14646,13 +16016,11 @@ onUnmounted(() => {
                 <span>{{ oidcDraft.enabled ? "已启用" : "未启用" }}</span>
               </div>
               <div class="form-grid compact-form-grid">
-                <label>
-                  <span>启用</span>
-                  <el-select v-model="oidcDraft.enabled" teleported>
-                    <el-option label="开启" :value="true" />
-                    <el-option label="关闭" :value="false" />
-                  </el-select>
-                </label>
+                <OptionBar
+                  v-model="oidcDraft.enabled"
+                  label="启用"
+                  :options="enabledBooleanOptionBarOptions"
+                />
                 <label>
                   <span>Issuer</span>
                   <input v-model="oidcDraft.issuer" autocomplete="off" />
@@ -14777,10 +16145,10 @@ onUnmounted(() => {
               <div class="mount-config-main">
                 <div class="mount-config-heading">
                   <strong>{{ item.label }}</strong>
-                  <span class="module-state-pill" :data-enabled="item.externalEnabled">
-                    <span class="state-dot" />
-                    {{ moduleAvailabilityLabel(item) }}
-                  </span>
+	                  <StatusPill
+	                    :enabled="item.externalEnabled"
+	                    :label="moduleAvailabilityLabel(item)"
+	                  />
                 </div>
                 <p>{{ item.description }}</p>
                 <dl class="module-status-list">
@@ -14863,8 +16231,7 @@ onUnmounted(() => {
             </div>
             <div class="evidence-rendered-content" v-html="evidenceReadableHtml"></div>
           </section>
-          <details class="advanced-config evidence-source-details">
-            <summary>来源定位</summary>
+          <ConfigFoldCard class="evidence-source-details" title="来源定位">
             <dl class="meta-list evidence-summary-list">
               <div
                 v-for="item in evidenceSourceDetails()"
@@ -14874,7 +16241,7 @@ onUnmounted(() => {
                 <dd>{{ item.value }}</dd>
               </div>
             </dl>
-          </details>
+          </ConfigFoldCard>
         </template>
         <div v-else-if="evidenceLoadError" class="knowledge-preview-empty evidence-preview-error">
           <strong>证据无法打开</strong>
@@ -14932,14 +16299,11 @@ onUnmounted(() => {
           <button class="tool-button tool-button-ghost compact-action" type="button" @click="refreshServerPathBrowser()">
             刷新
           </button>
-          <label class="inline-check">
-            <input
-              v-model="pathPicker.includeHidden"
-              type="checkbox"
-              @change="refreshServerPathBrowser()"
-            />
-            <span>显示隐藏项</span>
-          </label>
+          <BinaryCheckbox
+            v-model="pathPicker.includeHidden"
+            label="显示隐藏项"
+            @change="refreshServerPathBrowser()"
+          />
         </div>
 
         <p v-if="pathPicker.extensions.length" class="module-note">

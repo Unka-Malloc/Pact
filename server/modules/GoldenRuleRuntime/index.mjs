@@ -391,6 +391,7 @@ function buildRuleContext({ targetType = "", candidate = {}, evidenceGate = null
 function evaluateRulesInPackage({ pkg = {}, targetType = "knowledgeSkill", candidate = {}, evidenceGate = null } = {}) {
   const context = buildRuleContext({ targetType, candidate, evidenceGate });
   const matches = asArray(pkg.rules)
+    .filter((rule) => rule.enabled !== false)
     .filter((rule) => ruleTargetMatches(rule, targetType))
     .filter((rule) => ruleConditionMatches(rule, context))
     .sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0));
@@ -432,6 +433,7 @@ function normalizePackage(input = {}, fallback = null) {
     rules: asArray(input.rules || base.rules).map((rule, index) => ({
       ruleId: normalizeText(rule.ruleId || rule.id) || stableId("golden_rule", packageId, version, index, rule.label || rule.reason),
       label: normalizeText(rule.label || rule.name || `规则 ${index + 1}`),
+      enabled: rule.enabled === undefined ? true : rule.enabled !== false,
       priority: Number(rule.priority ?? 0),
       targetTypes: uniqueStrings(rule.targetTypes || ["*"]),
       when: asObject(rule.when),

@@ -190,6 +190,7 @@ export function buildTextMatchers(patterns = []) {
 
 export function compileRuleSet(rawRules = {}) {
   const reportSeries = (rawRules.reportSeries || [])
+    .filter((entry) => entry?.enabled !== false)
     .map((entry, index) => ({
       id: normalizeWhitespace(entry?.id) || `report-series-${index + 1}`,
       label: normalizeWhitespace(entry?.label) || `规则 ${index + 1}`,
@@ -203,6 +204,7 @@ export function compileRuleSet(rawRules = {}) {
     .filter((entry) => entry.matchers.length > 0);
 
   const synonymReplacements = (rawRules.synonymDictionary || [])
+    .filter((entry) => entry?.enabled !== false)
     .flatMap((entry) => {
       const canonical = normalizeWhitespace(entry?.canonical);
       if (!canonical) {
@@ -218,6 +220,7 @@ export function compileRuleSet(rawRules = {}) {
     .sort((left, right) => right.term.length - left.term.length);
 
   const departmentDictionary = (rawRules.departmentDictionary || [])
+    .filter((entry) => entry?.enabled !== false)
     .map((entry) => ({
       department: normalizeWhitespace(entry?.department),
       nameMatchers: buildTextMatchers(entry?.keywords),

@@ -14,6 +14,7 @@ export type AgentSettings = {
   agentExploreDefaults: AgentExploreDefaults;
   agentToolExecution: AgentToolExecutionConfig;
   moduleModelAssignments: Record<string, { provider: string; model: string }>;
+  moduleAgentProfiles: Record<string, ModuleAgentProfileGroup>;
   moduleIntelligence: Record<string, boolean>;
   openRouterApiKey: string;
   openRouterApiKeyConfigured?: boolean;
@@ -93,8 +94,30 @@ export type AgentModelConfig = {
   engine?: string;
   systemPrompt?: string;
   parameters?: Record<string, unknown>;
+  moduleAccess?: AgentModuleAccess;
   timeoutMs?: number;
   parametersText?: string;
+};
+
+export type AgentModuleAccess = {
+  mode: "all" | "selected";
+  moduleIds: string[];
+};
+
+export type ModuleAgentProfile = {
+  enabled: boolean;
+  role: string;
+  contextProfileId: string;
+  systemPrompt: string;
+  parameters: Record<string, unknown>;
+  parametersText?: string;
+  dependencyContext: Record<string, unknown>;
+  dependencyContextText?: string;
+};
+
+export type ModuleAgentProfileGroup = {
+  primaryAgent: string;
+  agents: Record<string, ModuleAgentProfile>;
 };
 
 export type AgentExploreDefaults = {
@@ -172,6 +195,10 @@ export type AgentGatewayCallRequest = {
   pluginList?: string[] | string;
   question: string;
   sessionId?: string;
+  taskId?: string;
+  moduleId?: string;
+  featureId?: string;
+  functionId?: string;
   userId?: string;
   projectId?: string;
   engine?: string;
@@ -345,17 +372,20 @@ export type AnalysisModuleInfo = {
 export type ReportSeriesRule = {
   id: string;
   label: string;
+  enabled?: boolean;
   cadence: "weekly" | "monthly" | "irregular";
   keywords: string[];
 };
 
 export type SynonymDictionaryEntry = {
   canonical: string;
+  enabled?: boolean;
   terms: string[];
 };
 
 export type DepartmentDictionaryEntry = {
   department: string;
+  enabled?: boolean;
   keywords: string[];
   emailKeywords: string[];
 };

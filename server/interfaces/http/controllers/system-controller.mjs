@@ -279,7 +279,96 @@ function modelForProbeProvider(settings = {}, provider = "") {
   }
 }
 
-function mergeSettingsForModelProbe(currentSettings = {}, incomingSettings = {}, provider = "") {
+function findModelLibraryModelForProbe(settings = {}, modelAlias = "", provider = "") {
+  const normalizedAlias = String(modelAlias || "").trim();
+  const normalizedProvider = String(provider || "").trim();
+  const models = Array.isArray(settings.modelLibraryModels) ? settings.modelLibraryModels : [];
+  if (normalizedAlias) {
+    const byAlias = models.find((model) =>
+      [model?.uid, model?.instanceId, model?.alias]
+        .map((value) => String(value || "").trim())
+        .includes(normalizedAlias)
+    );
+    if (byAlias) {
+      return byAlias;
+    }
+  }
+  const targetModel = String(modelForProbeProvider(settings, normalizedProvider) || "").trim();
+  return models.find((model) => {
+    if (normalizedProvider && String(model?.provider || "").trim() !== normalizedProvider) {
+      return false;
+    }
+    if (!targetModel) {
+      return true;
+    }
+    return [model?.model, model?.engine].map((value) => String(value || "").trim()).includes(targetModel);
+  });
+}
+
+function preserveModelLibrarySecretsForProbe(incomingModels, currentSettings = {}) {
+  if (!Array.isArray(incomingModels)) {
+    return incomingModels;
+  }
+  const currentModels = Array.isArray(currentSettings.modelLibraryModels)
+    ? currentSettings.modelLibraryModels
+    : [];
+  const currentByKey = new Map();
+  for (const model of currentModels) {
+    for (const key of [model?.uid, model?.instanceId, model?.alias].filter(Boolean)) {
+      currentByKey.set(String(key).trim(), model);
+    }
+  }
+  return incomingModels.map((model) => {
+    const key = String(model?.uid || model?.instanceId || model?.alias || "").trim();
+    const current = currentByKey.get(key);
+    if (!current) {
+      return model;
+    }
+    const next = { ...model };
+    if (!String(next.apiKey || "").trim() && current.apiKey) {
+      next.apiKey = current.apiKey;
+    }
+    if (!String(next.token || "").trim() && current.token) {
+      next.token = current.token;
+    }
+    return next;
+  });
+}
+
+function applySelectedModelSecretForProbe(settings = {}, provider = "", modelAlias = "") {
+  if (!modelAlias) {
+    return settings;
+  }
+  const selected = findModelLibraryModelForProbe(settings, modelAlias, provider);
+  if (!selected) {
+    return settings;
+  }
+  if (provider === "deepseek") {
+    settings.deepSeekApiKey = String(selected.apiKey || "").trim();
+    settings.deepSeekApiKeyConfigured = Boolean(selected.apiKey);
+    settings.deepSeekBaseUrl = String(selected.baseUrl || settings.deepSeekBaseUrl || "").trim();
+    settings.deepSeekModel = String(selected.model || selected.engine || settings.deepSeekModel || "").trim();
+  }
+  if (provider === "custom-http") {
+    const token = String(selected.token || selected.apiKey || "").trim();
+    const selectedAdapter = {
+      ...(settings.agentGateway || {}),
+      ...(settings.customHttpAdapter || {}),
+      ...selected,
+      alias: String(selected.uid || selected.instanceId || selected.alias || modelAlias).trim(),
+      token,
+      tokenConfigured: Boolean(token),
+      url: String(selected.url || settings.agentGateway?.url || settings.customHttpAdapter?.url || "").trim(),
+      engine: String(selected.engine || selected.model || "").trim()
+    };
+    settings.agentGateway = selectedAdapter;
+    settings.customHttpAdapter = selectedAdapter;
+    settings.customHttpAdapters = [selectedAdapter];
+  }
+  return settings;
+}
+
+function mergeSettingsForModelProbe(currentSettings = {}, incomingSettings = {}, provider = "", options = {}) {
   const current = normalizeSettings(currentSettings);
   const incoming = incomingSettings && typeof incomingSettings === "object" ? incomingSettings : {};
   const nextSettings = {
@@ -314,6 +403,12 @@ function mergeSettingsForModelProbe(currentSettings = {}, incomingSettings = {},
       token: current.agentGateway.token
     };
   }
+  if (Array.isArray(incoming?.modelLibraryModels)) {
+    nextSettings.modelLibraryModels = preserveModelLibrarySecretsForProbe(
+      incoming.modelLibraryModels,
+      current
+    );
+  }
 
   if (nextSettings.customHttpAdapter || nextSettings.agentGateway) {
     const mergedAdapter = {
@@ -326,7 +421,13 @@ function mergeSettingsForModelProbe(currentSettings = {}, incomingSettings = {},
     nextSettings.agentGateway = mergedAdapter;
   }
 
-  return normalizeSettings(nextSettings);
+  return normalizeSettings(
+    applySelectedModelSecretForProbe(
+      nextSettings,
+      String(provider || "").trim(),
+      String(options.modelAlias || "").trim()
+    )
+  );
 }
 
 function sendJsonWithHeaders(response, statusCode, payload, headers = {}) {
@@ -1513,11 +1614,15 @@ export function createSystemController({
     async handleProbeModel({ requestBody, response }) {
       const payload = parseJsonBody(requestBody);
       const provider = String(payload.provider || payload.modelProvider || "").trim();
+      const modelAlias = String(
+        payload.modelAlias || payload.agentAlias || payload.agentId || payload.uid || ""
+      ).trim();
       const current = await loadSettings(userDataPath);
       const candidateSettings = mergeSettingsForModelProbe(
         current,
         payload.settings || payload.value || {},
-        provider
+        provider,
+        { modelAlias }
       );
       sendJson(
         response,
@@ -1525,6 +1630,7 @@ export function createSystemController({
         await probeModelConnection({
           provider,
           settings: candidateSettings,
+          modelAlias,
           userDataPath
         })
       );
@@ -2308,14 +2414,32 @@ export function createSystemController({
         error: "知识库建议模块不可用。"
       });
     },
-    async handleGoldenRules({ response }) {
+    async handleGoldenRules({ url, response }) {
       if (!goldenRuleRuntime) {
         sendJson(response, 503, {
           error: "黄金规则运行时不可用。"
         });
         return;
       }
-      sendJson(response, 200, await goldenRuleRuntime.listRulePackages());
+      const result = await goldenRuleRuntime.listRulePackages();
+      if (url?.searchParams?.get("includeRules") === "true") {
+        const packages = [];
+        for (const item of Array.isArray(result.items) ? result.items : []) {
+          const pkg = await goldenRuleRuntime.getRulePackage({
+            packageId: item.packageId,
+            version: item.activeVersion
+          });
+          if (pkg) {
+            packages.push(pkg);
+          }
+        }
+        sendJson(response, 200, {
+          ...result,
+          packages
+        });
+        return;
+      }
+      sendJson(response, 200, result);
     },
     async handleSaveGoldenRules({ requestBody, response }) {
       if (!goldenRuleRuntime) {
