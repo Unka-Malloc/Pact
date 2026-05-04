@@ -1,0 +1,20 @@
+{
+  "id": "external-knowledge-writer",
+  "label": "External Knowledge Writer",
+  "agentType": "external",
+  "toolsets": [
+    "splitall.knowledge.read",
+    "splitall.knowledge.write"
+  ],
+  "toolAllow": [],
+  "toolDeny": [
+    "splitall.admin"
+  ],
+  "maxRisk": "safe_write",
+  "approvalPolicy": "deny_repair",
+  "concurrencyLimit": 2,
+  "sandboxPolicy": "remote-token",
+  "auditTags": [
+    "external-writer"
+  ]
+}

@@ -1,0 +1,387 @@
+import { sendJson } from "../interfaces/http/http-utils.mjs";
+import { getRuntimeLogger, summarizeError, summarizeForLog } from "../observability/runtime-logger.mjs";
+import { TOOL_MANAGEMENT_API_PREFIX } from "./catalog.mjs";
+
+function parseJsonBody(requestBody) {
+  if (!requestBody || requestBody.length === 0) {
+    return {};
+  }
+  return JSON.parse(requestBody.toString("utf8"));
+}
+
+function pathAfterPrefix(pathname) {
+  return String(pathname || "").slice(TOOL_MANAGEMENT_API_PREFIX.length) || "/";
+}
+
+async function authorizeConsole({ consoleAuth, request, method, url, requiredScopes = ["runtime:admin"] }) {
+  if (!consoleAuth || typeof consoleAuth.authorizeOperation !== "function") {
+    return { ok: true, session: null };
+  }
+  return consoleAuth.authorizeOperation({
+    request,
+    method,
+    url,
+    operation: {
+      id: "tool_management.http",
+      requiredScopes,
+      skipCsrf: false
+    }
+  });
+}
+
+function sendAuthorizationDenied(response, authorization) {
+  sendJson(response, authorization.status || 403, {
+    schemaVersion: 1,
+    error: {
+      code: authorization.status === 401 ? "console_unauthenticated" : "console_forbidden",
+      message: authorization.error || "Permission denied.",
+      details: {
+        bootstrap: authorization.bootstrap
+      }
+    }
+  });
+}
+
+export function createToolManagementHttpRouter({ platform, consoleAuth = null, logger = getRuntimeLogger() }) {
+  function logRouter(level, event, details = {}) {
+    if (!logger || typeof logger[level] !== "function") {
+      return;
+    }
+    logger[level](event, details);
+  }
+
+  function hasSafetyConfirm(request) {
+    const value = String(
+      request?.headers?.["x-splitall-safety-confirm"] ||
+        request?.headers?.["x-splitall-confirm"] ||
+        ""
+    ).toLowerCase();
+    return ["1", "true", "yes"].includes(value);
+  }
+
+  function requireSafetyConfirm(request, response) {
+    if (hasSafetyConfirm(request)) {
+      return true;
+    }
+    logRouter("warn", "tool_management.http.confirmation_required", {
+      requestId: request?.__splitallRequestId || ""
+    });
+    sendJson(response, 403, {
+      schemaVersion: 1,
+      error: {
+        code: "confirmation_required",
+        message: "Tool management grant changes require x-splitall-safety-confirm: true."
+      }
+    });
+    return false;
+  }
+
+  async function requireConsole(request, response, method, url, scopes = ["runtime:admin"]) {
+    const authorization = await authorizeConsole({
+      consoleAuth,
+      request,
+      method,
+      url,
+      requiredScopes: scopes
+    });
+    if (!authorization.ok) {
+      logRouter("warn", "tool_management.http.denied", {
+        requestId: request?.__splitallRequestId || "",
+        method,
+        route: url.pathname,
+        scopes,
+        status: authorization.status || 403,
+        error: authorization.error || ""
+      });
+      sendAuthorizationDenied(response, authorization);
+      return null;
+    }
+    logRouter("debug", "tool_management.http.authorized", {
+      requestId: request?.__splitallRequestId || "",
+      method,
+      route: url.pathname,
+      scopes,
+      userId: authorization.session?.user?.userId || "",
+      roleId: authorization.session?.user?.roleId || ""
+    });
+    return authorization;
+  }
+
+  async function handleToolManagementHttpRequest({ request, response, requestBody, url, method }) {
+    if (!url.pathname.startsWith(TOOL_MANAGEMENT_API_PREFIX)) {
+      return false;
+    }
+    const suffix = pathAfterPrefix(url.pathname);
+    const normalizedMethod = String(method || "GET").toUpperCase();
+    const startedAt = Date.now();
+    logRouter("info", "tool_management.http.requested", {
+      requestId: request?.__splitallRequestId || "",
+      method: normalizedMethod,
+      route: url.pathname,
+      suffix,
+      query: Object.fromEntries(url.searchParams.entries()),
+      bodyBytes: requestBody?.length || 0
+    });
+
+    async function complete(status, payload = {}) {
+      logRouter(status >= 400 ? "warn" : "info", "tool_management.http.completed", {
+        requestId: request?.__splitallRequestId || "",
+        method: normalizedMethod,
+        route: url.pathname,
+        suffix,
+        status,
+        durationMs: Date.now() - startedAt,
+        payload: summarizeForLog(payload, { maxDepth: 3, maxArrayItems: 4, maxObjectKeys: 20 })
+      });
+      sendJson(response, status, payload);
+      return true;
+    }
+
+    try {
+
+    if (normalizedMethod === "GET" && suffix === "/catalog") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      return complete(200, platform.catalog());
+    }
+
+    if (normalizedMethod === "GET" && suffix.startsWith("/catalog/")) {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      const toolId = decodeURIComponent(suffix.slice("/catalog/".length));
+      const tool = platform.registry.getTool(toolId);
+      if (!tool) {
+        return complete(404, {
+          schemaVersion: 1,
+          error: { code: "unknown_tool", message: "Tool is not registered.", details: { toolId } }
+        });
+      }
+      return complete(200, { schemaVersion: 1, tool });
+    }
+
+    if (normalizedMethod === "GET" && suffix === "/toolsets") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      return complete(200, { schemaVersion: 1, toolsets: platform.registry.listToolsets() });
+    }
+
+    if (normalizedMethod === "POST" && suffix === "/toolsets/resolve") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      const payload = parseJsonBody(requestBody);
+      return complete(200, {
+        schemaVersion: 1,
+        result: platform.registry.resolveToolset(payload)
+      });
+    }
+
+    if (normalizedMethod === "GET" && suffix === "/profiles") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      return complete(200, { schemaVersion: 1, profiles: platform.registry.listProfiles() });
+    }
+
+    if (normalizedMethod === "POST" && (suffix === "/policy/evaluate" || suffix === "/policy/preview")) {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      const payload = parseJsonBody(requestBody);
+      return complete(200, {
+        schemaVersion: 1,
+        decision: platform.policyEngine.preview(payload)
+      });
+    }
+
+    if (normalizedMethod === "POST" && (suffix === "/execute" || suffix === "/dry-run")) {
+      const payload = parseJsonBody(requestBody);
+      const result = await platform.runtime.executeTool({
+        toolId: payload.toolId,
+        input: payload.input || {},
+        request,
+        context: payload.context || {},
+        dryRun: suffix === "/dry-run" || payload.dryRun === true
+      });
+      return complete(result.status || 500, result.payload);
+    }
+
+    if (normalizedMethod === "POST" && suffix === "/batch") {
+      const payload = parseJsonBody(requestBody);
+      const calls = Array.isArray(payload.calls) ? payload.calls : [];
+      const results = [];
+      for (const call of calls) {
+        results.push(
+          (await platform.runtime.executeTool({
+            toolId: call.toolId,
+            input: call.input || {},
+            request,
+            context: { ...(payload.context || {}), ...(call.context || {}) },
+            dryRun: payload.dryRun === true || call.dryRun === true
+          })).payload
+        );
+      }
+      return complete(200, { schemaVersion: 1, results });
+    }
+
+    if (normalizedMethod === "GET" && suffix === "/grants") {
+      if (!(await requireConsole(request, response, normalizedMethod, url))) {
+        return true;
+      }
+      return complete(200, { schemaVersion: 1, grants: platform.store.listGrants() });
+    }
+
+    if (normalizedMethod === "POST" && suffix === "/grants") {
+      if (!(await requireConsole(request, response, normalizedMethod, url))) {
+        return true;
+      }
+      if (!requireSafetyConfirm(request, response)) {
+        return true;
+      }
+      const result = platform.store.createGrant(parseJsonBody(requestBody));
+      return complete(201, {
+        schemaVersion: 1,
+        grant: result.grant,
+        token: result.token
+      });
+    }
+
+    const grantRotateMatch = suffix.match(/^\/grants\/([^/]+)\/rotate$/);
+    if (normalizedMethod === "POST" && grantRotateMatch) {
+      if (!(await requireConsole(request, response, normalizedMethod, url))) {
+        return true;
+      }
+      if (!requireSafetyConfirm(request, response)) {
+        return true;
+      }
+      const result = platform.store.rotateGrantToken(decodeURIComponent(grantRotateMatch[1]));
+      if (!result) {
+        return complete(404, { schemaVersion: 1, error: { code: "grant_not_found", message: "Grant not found." } });
+      }
+      return complete(200, { schemaVersion: 1, grant: result.grant, token: result.token });
+    }
+
+    const grantRevokeMatch = suffix.match(/^\/grants\/([^/]+)\/revoke$/);
+    if (normalizedMethod === "POST" && grantRevokeMatch) {
+      if (!(await requireConsole(request, response, normalizedMethod, url))) {
+        return true;
+      }
+      if (!requireSafetyConfirm(request, response)) {
+        return true;
+      }
+      const payload = parseJsonBody(requestBody);
+      const grant = platform.store.revokeGrant(decodeURIComponent(grantRevokeMatch[1]), payload.reason || "");
+      if (!grant) {
+        return complete(404, { schemaVersion: 1, error: { code: "grant_not_found", message: "Grant not found." } });
+      }
+      return complete(200, { schemaVersion: 1, grant });
+    }
+
+    const grantUpdateMatch = suffix.match(/^\/grants\/([^/]+)$/);
+    if (normalizedMethod === "POST" && grantUpdateMatch) {
+      if (!(await requireConsole(request, response, normalizedMethod, url))) {
+        return true;
+      }
+      if (!requireSafetyConfirm(request, response)) {
+        return true;
+      }
+      const grant = platform.store.updateGrant(decodeURIComponent(grantUpdateMatch[1]), parseJsonBody(requestBody));
+      if (!grant) {
+        return complete(404, { schemaVersion: 1, error: { code: "grant_not_found", message: "Grant not found." } });
+      }
+      return complete(200, { schemaVersion: 1, grant });
+    }
+
+    if (normalizedMethod === "GET" && suffix === "/audit") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      return complete(200, {
+        schemaVersion: 1,
+        items: platform.store.listAudit({
+          limit: Number(url.searchParams.get("limit") || 100),
+          toolId: url.searchParams.get("toolId") || "",
+          grantId: url.searchParams.get("grantId") || "",
+          status: url.searchParams.get("status") || ""
+        })
+      });
+    }
+
+    if (normalizedMethod === "GET" && suffix.startsWith("/audit/")) {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      const toolExecutionId = decodeURIComponent(suffix.slice("/audit/".length));
+      const audit = platform.store.getAudit(toolExecutionId);
+      if (!audit) {
+        return complete(404, { schemaVersion: 1, error: { code: "audit_not_found", message: "Audit record not found." } });
+      }
+      return complete(200, { schemaVersion: 1, audit });
+    }
+
+    if (normalizedMethod === "GET" && suffix === "/metrics/summary") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      return complete(200, {
+        schemaVersion: 1,
+        metrics: platform.store.metricsSummary({
+          limit: Number(url.searchParams.get("limit") || 2000),
+          since: url.searchParams.get("since") || "",
+          until: url.searchParams.get("until") || ""
+        })
+      });
+    }
+
+    if (normalizedMethod === "GET" && suffix === "/events") {
+      if (!(await requireConsole(request, response, normalizedMethod, url, ["console:read"]))) {
+        return true;
+      }
+      return complete(200, {
+        schemaVersion: 1,
+        events: platform.store.listAudit({ limit: Number(url.searchParams.get("limit") || 100) })
+      });
+    }
+
+    return complete(404, {
+      schemaVersion: 1,
+      error: {
+        code: "tool_management_route_not_found",
+        message: "Tool management route not found.",
+        details: { path: suffix }
+      }
+    });
+    } catch (error) {
+      logRouter("error", "tool_management.http.failed", {
+        requestId: request?.__splitallRequestId || "",
+        method: normalizedMethod,
+        route: url.pathname,
+        suffix,
+        durationMs: Date.now() - startedAt,
+        error: summarizeError(error)
+      });
+      throw error;
+    }
+  }
+
+  async function handleCompatAgentToolHttpRequest({ request, response, requestBody, url, method }) {
+    if (!url.pathname.startsWith("/api/agent-tools") && url.pathname !== "/api/agent-sync/publish") {
+      return false;
+    }
+    return platform.runtime.executeHttpOperation({
+      request,
+      response,
+      requestBody,
+      url,
+      method
+    });
+  }
+
+  return {
+    handleToolManagementHttpRequest,
+    handleCompatAgentToolHttpRequest
+  };
+}

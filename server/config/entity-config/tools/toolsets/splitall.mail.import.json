@@ -1,0 +1,10 @@
+{
+  "id": "splitall.mail.import",
+  "label": "Mail import",
+  "requiredScopes": [
+    "knowledge:write"
+  ],
+  "maxRisk": "safe_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

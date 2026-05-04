@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "bundleType": "splitall.standard.bundle",
+  "standardId": "splitall.golden-rules",
+  "protocolVersion": "splitall.golden-rule.v1",
+  "sourceSeed": "server/modules/GoldenRuleRuntime/index.mjs:createDefaultPackage",
+  "runtimeAuthority": "<userDataPath>/knowledge-golden/packages/<packageId>/manifest.json",
+  "files": {
+    "templates": "../../../golden-rule-templates.json"
+  },
+  "lightweightBundle": true
+}

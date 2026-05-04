@@ -1,12 +1,11 @@
 # PaddleOCR Sidecar
 
-当前 OCR 通过 `electron/ocr.mjs` 调用这个目录下的
-`paddle_ocr_extract.py`。
+当前 OCR 通过 `server/modules/FileProcessor/FileNormalizer/OCR/paddle-ocr.mjs` 调用这个目录下的 `paddle_ocr_extract.py`。
 
-它不会被打进 `portable-client` 薄客户端；应该部署在远端服务，或 Electron 本地后端所在机器。
-在当前方案里，它属于**可选补充能力**，不是主 OCR 方案。主方案应当是云端视觉智能体，见 [CLOUD-BOUNDARY.md](/Users/unka/DevSpace/Unka-Malloc/splitall/CLOUD-BOUNDARY.md)。
+它不会被打进 Flutter 客户端；应该部署在服务端所在机器。
+在当前方案里，它属于**可选补充能力**，不是主 OCR 方案。主方案应当是云端视觉智能体，见 [CLOUD-BOUNDARY.md](/Users/unka/DevSpace/Unka-Malloc/splitall/docs/CLOUD-BOUNDARY.md)。
 
-如果要做 full-local Electron 版，本地 Python 运行时需要按 [vendor/ocr-runtime/README.md](/Users/unka/DevSpace/Unka-Malloc/splitall/vendor/ocr-runtime/README.md) 的目录约定预先放好；打包脚本会直接检查，不会跳过。
+如果要做带 OCR sidecar 的本地服务部署，本地 Python 运行时需要按 [vendor/ocr-runtime/README.md](/Users/unka/DevSpace/Unka-Malloc/splitall/vendor/ocr-runtime/README.md) 的目录约定预先放好。
 这些运行时二进制默认不进入 GitHub 源码仓。
 
 ## 配置项

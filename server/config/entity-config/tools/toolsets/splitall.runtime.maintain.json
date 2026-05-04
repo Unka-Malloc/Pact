@@ -1,0 +1,10 @@
+{
+  "id": "splitall.runtime.maintain",
+  "label": "Runtime maintain",
+  "requiredScopes": [
+    "knowledge:maintain"
+  ],
+  "maxRisk": "repair_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

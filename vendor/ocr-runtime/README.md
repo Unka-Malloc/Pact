@@ -1,4 +1,4 @@
-这里是 full-local Electron 版本使用的本地 OCR 运行时目录。
+这里是本地服务部署使用的 OCR 运行时目录。
 
 目录约定沿用 `process.platform-process.arch`：
 
@@ -26,6 +26,6 @@
   - `vendor/ocr-runtime/<platform-arch>/.venv/Scripts/python.exe`
   - `vendor/ocr-runtime/<platform-arch>/venv/Scripts/python.exe`
 
-如果这些路径都不存在，`bundle:full-local:*` 会直接失败，不会生成一个缺 OCR 运行时的假包。
+如果这些路径都不存在，服务端 OCR sidecar 将无法启动。
 
-建议把模型和依赖一并预装进这个运行时，再做打包；否则首次运行时去下载模型，会破坏“全本地自带环境”的目标。
+建议把模型和依赖一并预装进这个运行时；否则首次运行时去下载模型，会破坏“全本地自带环境”的目标。

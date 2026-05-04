@@ -1,0 +1,592 @@
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import assert from "node:assert/strict";
+import { createAgentWorkspace } from "../modules/AgentWorkspace/index.mjs";
+import { createContextRuntime } from "../modules/ContextRuntime/index.mjs";
+import { createAgentExplorationRuntime } from "../modules/AgentExplorationRuntime/index.mjs";
+
+const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-explore-"));
+const toolServer = await new Promise((resolve, reject) => {
+  const server = http.createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ ok: true, method: request.method, url: request.url }));
+  });
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    server.removeListener("error", reject);
+    const address = server.address();
+    resolve({
+      url: `http://127.0.0.1:${address.port}`,
+      close: () => new Promise((done) => server.close(done))
+    });
+  });
+});
+
+const fakeKnowledgeCore = {
+  enabled: true,
+  async search(input = {}) {
+    assert.equal(input.retrievalMode, "hybrid");
+    assert.equal(input.keywordOnly, false);
+    assert.equal(input.learningEnabled, true);
+    return {
+      protocolVersion: "splitall.knowledge.v1",
+      query: input.query,
+      retrievalMode: "hybrid",
+      retrievalProfileId: "balanced",
+      retrievalProfileKey: "balanced@1",
+      profileRoute: { routedBy: "active" },
+      hierarchy: {
+        enabled: true,
+        policy: "coarse_to_fine",
+        selected: {
+          documents: [{ title: "账单邮件", documentId: "doc_1" }]
+        }
+      },
+      items: [
+        {
+          evidenceId: "ev_1",
+          documentId: "doc_1",
+          title: "招商银行信用卡电子账单.eml",
+          snippet: "本期账单金额 123.45。",
+          score: 0.91,
+          hierarchy: { path: "collection:mail > document:doc_1" },
+          modalities: ["text", "image"],
+          assets: [{ assetId: "asset_1" }],
+          reasons: [{ kind: "bm25", score: 1, weight: 1 }]
+        }
+      ],
+      explain: {
+        candidateCount: 1,
+        generatedCandidateCount: 1,
+        dedupedCandidateCount: 1,
+        hierarchyCandidateCount: 1
+      }
+    };
+  },
+  async aggregate(input = {}) {
+    assert.equal(input.metric, "email_advertising_by_sender");
+    assert.equal(input.groupBy, "senderEmail");
+    return {
+      protocolVersion: "splitall.knowledge.v1",
+      ok: true,
+      metric: input.metric,
+      groupBy: input.groupBy,
+      filters: { documentType: "email", classification: "advertising" },
+      scannedDocumentCount: 3,
+      matchedDocumentCount: 3,
+      topGroup: {
+        key: "offers@example.com",
+        label: "offers@example.com",
+        count: 2,
+        evidenceRefs: ["ev_1"],
+        examples: [{ documentId: "doc_1", evidenceId: "ev_1", title: "广告邮件.eml" }]
+      },
+      groups: [
+        {
+          key: "offers@example.com",
+          label: "offers@example.com",
+          count: 2,
+          evidenceRefs: ["ev_1"],
+          examples: [{ documentId: "doc_1", evidenceId: "ev_1", title: "广告邮件.eml" }]
+        },
+        {
+          key: "news@example.com",
+          label: "news@example.com",
+          count: 1,
+          evidenceRefs: ["ev_2"],
+          examples: [{ documentId: "doc_2", evidenceId: "ev_2", title: "促销邮件.eml" }]
+        }
+      ],
+      methodology: "mock aggregate"
+    };
+  },
+  async getEvidence({ evidenceId }) {
+    assert.equal(evidenceId, "ev_1");
+    return {
+      evidenceId,
+      title: "招商银行信用卡电子账单.eml",
+      snippet: "本期账单金额 123.45。",
+      score: 0.91,
+      locator: { sourcePath: "/fixtures/bill.eml" },
+      payload: {
+        document: {
+          documentId: "doc_1",
+          title: "招商银行信用卡电子账单.eml",
+          documentType: "email",
+          sourcePath: "/fixtures/bill.eml",
+          batchId: "batch_1"
+        },
+        blocks: [
+          {
+            blockId: "block_1",
+            title: "正文",
+            text: "账单日 2026-04-20，本期账单金额 123.45。"
+          }
+        ],
+        assets: [{ assetId: "asset_1", mediaType: "image/png", title: "账单截图" }]
+      },
+      markdown: "# 招商银行信用卡电子账单\n\n本期账单金额 123.45。"
+    };
+  }
+};
+
+const agentWorkspace = createAgentWorkspace({ userDataPath: tempRoot });
+const contextRuntime = createContextRuntime({ userDataPath: tempRoot });
+let callCount = 0;
+const runtime = createAgentExplorationRuntime({
+  userDataPath: tempRoot,
+  runtime: {
+    mounts: {
+      knowledgeBase: fakeKnowledgeCore
+    }
+  },
+  agentWorkspace,
+  contextRuntime,
+  agentGatewayCall: async (input = {}) => {
+    callCount += 1;
+    assert.ok(input.parameters?.tools?.length >= 4, "native function-call tools must be supplied");
+    assert.ok(
+      input.parameters.tools.some((tool) => tool.function?.name === "knowledge_aggregate"),
+      "aggregation tool must be supplied for count/ranking questions"
+    );
+    assert.equal(input.parameters.tool_choice, "auto");
+    assert.match(input.messages[0].content, /Answer template:/);
+    assert.match(input.messages[0].content, /证据来源/);
+    assert.match(input.messages[0].content, /Critical Evidence Index/);
+    assert.doesNotMatch(input.messages[0].content, /ContextPack: \{/);
+    if (callCount === 1) {
+      return {
+        ok: true,
+        answer: "",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" },
+        chunks: {
+          reasoning: ["I should search local evidence first."]
+        },
+        toolCalls: [
+          {
+            id: "call_keyword",
+            type: "function",
+            function: {
+              name: "keyword_search",
+              arguments: JSON.stringify({ query: "账单", limit: 2 })
+            }
+          }
+        ]
+      };
+    }
+    if (callCount === 2) {
+      const assistantToolCallMessage = input.messages.find(
+        (message) => message.role === "assistant" && Array.isArray(message.tool_calls)
+      );
+      assert.ok(
+        assistantToolCallMessage?.reasoning_content,
+        "DeepSeek thinking mode requires prior assistant reasoning_content to be passed back with tool calls"
+      );
+      return {
+        ok: true,
+        answer: "",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" },
+        toolCalls: [
+          {
+            id: "call_evidence",
+            type: "function",
+            function: {
+              name: "open_evidence",
+              arguments: JSON.stringify({ evidenceId: "ev_1" })
+            }
+          }
+        ]
+      };
+    }
+    if (callCount === 3) {
+      return {
+        ok: true,
+        answer: "",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" },
+        toolCalls: [
+          {
+            id: "call_local",
+            type: "function",
+            function: {
+              name: "local_command",
+              arguments: JSON.stringify({ commandId: "node-version" })
+            }
+          }
+        ]
+      };
+    }
+    if (callCount === 4) {
+      return {
+        ok: true,
+        answer: "",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" },
+        toolCalls: [
+          {
+            id: "call_http",
+            type: "function",
+            function: {
+              name: "http_request",
+              arguments: JSON.stringify({
+                method: "GET",
+                url: `${toolServer.url}/ping`,
+                query: { q: "ok" }
+              })
+            }
+          }
+        ]
+      };
+    }
+    return {
+      ok: true,
+      answer: "找到了账单证据：招商银行信用卡电子账单，金额 123.45。[ev_1]",
+      finish: true,
+      upstream: { provider: "mock", status: 200, contentType: "application/json" }
+    };
+  }
+});
+
+try {
+  const result = await runtime.run({
+    query: "帮我找账单",
+    modelAlias: "deepseek",
+    contextProfileId: "small-context",
+    maxIterations: 5,
+    limit: 2
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.degraded, false);
+  assert.equal(result.toolResults[0].tool, "keyword_search");
+  assert.equal(result.toolResults[1].tool, "open_evidence");
+  assert.equal(result.toolResults[2].tool, "local_command");
+  assert.equal(result.toolResults[2].result.ok, true);
+  assert.equal(result.toolResults[3].tool, "http_request");
+  assert.equal(result.toolResults[3].result.status, 200);
+  assert.match(result.answer, /123\.45/);
+  assert.ok(result.evidenceRefs.includes("ev_1"));
+  assert.equal(result.run.coverage.nativeFunctionCalling, true);
+  assert.equal(result.contextPack.profileId, "small-context");
+  assert.ok(result.contextPack.contextBuildRecordId);
+  assert.ok(result.contextPack.criticalEvidenceIndex);
+  assert.ok(result.contextPack.toolStateSummary);
+  assert.ok(result.steps[0].events.some((event) => event.type === "model_calling"));
+  assert.ok(result.steps[0].events.some((event) => event.type === "tool_selected"));
+  assert.ok(result.steps[0].events.some((event) => event.type === "tool_calling"));
+  assert.ok(result.steps[0].events.some((event) => event.type === "tool_result"));
+  assert.equal(result.steps[0].toolCalls[0].status, "completed");
+  assert.equal(result.steps[0].toolResults[0].status, "completed");
+  const auditLog = await fs.readFile(path.join(tempRoot, "logs", "agent-exploration.jsonl"), "utf8");
+  assert.match(auditLog, /"event":"run_started"/);
+  assert.match(auditLog, /"event":"model_response"/);
+  assert.match(auditLog, /"reasoningContentReturned":true/);
+
+  const loaded = runtime.getRun({
+    runId: result.run.runId,
+    workspaceId: result.workspace.workspaceId
+  });
+  assert.equal(loaded.run.runId, result.run.runId);
+  assert.equal(loaded.answer, result.answer);
+  assert.ok(loaded.steps[0].events.some((event) => event.type === "tool_selected"));
+
+  let aggregateCallCount = 0;
+  const aggregateRuntime = createAgentExplorationRuntime({
+    userDataPath: tempRoot,
+    runtime: {
+      mounts: {
+        knowledgeBase: fakeKnowledgeCore
+      }
+    },
+    agentWorkspace,
+    contextRuntime,
+    agentGatewayCall: async (input = {}) => {
+      aggregateCallCount += 1;
+      assert.ok(
+        input.parameters?.tools?.some((tool) => tool.function?.name === "knowledge_aggregate"),
+        "native function-call aggregation tool must be supplied"
+      );
+      if (aggregateCallCount === 1) {
+        assert.equal(input.parameters.tool_choice, "auto");
+        assert.match(input.messages[0].content, /knowledge_aggregate/);
+        return {
+          ok: true,
+          answer: "",
+          finish: true,
+          upstream: { provider: "mock", status: 200, contentType: "application/json" },
+          toolCalls: [
+            {
+              id: "call_aggregate",
+              type: "function",
+              function: {
+                name: "knowledge_aggregate",
+                arguments: JSON.stringify({
+                  metric: "email_advertising_by_sender",
+                  groupBy: "senderEmail",
+                  limit: 5
+                })
+              }
+            }
+          ]
+        };
+      }
+      assert.equal(input.parameters.tool_choice, "auto");
+      assert.match(JSON.stringify(input.messages), /offers@example\.com/);
+      return {
+        ok: true,
+        answer: "广告数量最多的发件邮箱是 offers@example.com，共 2 封。\n\n📎 证据来源：evidence::ev_1",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" }
+      };
+    }
+  });
+  const aggregateResult = await aggregateRuntime.run({
+    query: "哪个邮箱的广告数量最多？",
+    modelAlias: "deepseek",
+    contextProfileId: "small-context",
+    maxIterations: 2,
+    limit: 5
+  });
+  assert.equal(aggregateCallCount, 2);
+  assert.equal(aggregateResult.toolResults[0].tool, "knowledge_aggregate");
+  assert.equal(aggregateResult.toolResults[0].result.topGroup.key, "offers@example.com");
+  assert.match(aggregateResult.answer, /offers@example\.com/);
+  assert.ok(aggregateResult.evidenceRefs.includes("ev_1"));
+
+  let hermesCallCount = 0;
+  const hermesRuntime = createAgentExplorationRuntime({
+    userDataPath: tempRoot,
+    runtime: {
+      mounts: {
+        knowledgeBase: fakeKnowledgeCore
+      }
+    },
+    agentWorkspace,
+    contextRuntime,
+    agentGatewayCall: async (input = {}) => {
+      hermesCallCount += 1;
+      if (hermesCallCount === 1) {
+        assert.equal(input.parameters.tool_choice, "auto");
+        return {
+          ok: true,
+          answer:
+            '<tool_call>{"name":"keyword_search","arguments":{"query":"账单","limit":2}}</tool_call>',
+          finish: true,
+          upstream: { provider: "mock-qwen", status: 200, contentType: "application/json" }
+        };
+      }
+      assert.match(JSON.stringify(input.messages), /tool_call/);
+      return {
+        ok: true,
+        answer: "Hermes 兜底解析后找到账单证据。\n\n📎 证据来源：evidence::ev_1",
+        finish: true,
+        upstream: { provider: "mock-qwen", status: 200, contentType: "application/json" }
+      };
+    }
+  });
+  const hermesResult = await hermesRuntime.run({
+    query: "Qwen3 Hermes 工具调用兜底",
+    modelAlias: "qwen3-32b",
+    contextProfileId: "small-context",
+    maxIterations: 2,
+    limit: 2
+  });
+  assert.equal(hermesCallCount, 2);
+  assert.equal(hermesResult.toolResults[0].tool, "keyword_search");
+  assert.equal(hermesResult.steps[0].functionCallSource, "json_text_tool_call");
+  assert.equal(hermesResult.degraded, true);
+  assert.ok(hermesResult.evidenceRefs.includes("ev_1"));
+
+  let synthesisCallCount = 0;
+  const synthesisRuntime = createAgentExplorationRuntime({
+    userDataPath: tempRoot,
+    runtime: {
+      mounts: {
+        knowledgeBase: fakeKnowledgeCore
+      }
+    },
+    agentWorkspace,
+    contextRuntime,
+    agentGatewayCall: async (input = {}) => {
+      synthesisCallCount += 1;
+      if (synthesisCallCount <= 2) {
+        assert.equal(input.parameters.tool_choice, "auto");
+        return {
+          ok: true,
+          answer: "",
+          finish: true,
+          upstream: { provider: "mock", status: 200, contentType: "application/json" },
+          toolCalls: [
+            {
+              id: `call_keyword_${synthesisCallCount}`,
+              type: "function",
+              function: {
+                name: "keyword_search",
+                arguments: JSON.stringify({ query: "账单", limit: 2 })
+              }
+            }
+          ]
+        };
+      }
+      assert.equal(input.parameters.tool_choice, "none");
+      assert.match(input.messages.at(-1).content, /不要再返回 function call/);
+      return {
+        ok: true,
+        answer: "最终综合：找到账单证据，金额 123.45。[ev_1]",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" }
+      };
+    }
+  });
+  const synthesisResult = await synthesisRuntime.run({
+    query: "循环耗尽后仍要综合",
+    modelAlias: "deepseek",
+    contextProfileId: "small-context",
+    maxIterations: 2,
+    limit: 2
+  });
+  assert.equal(synthesisCallCount, 3);
+  assert.match(synthesisResult.answer, /最终综合/);
+  assert.doesNotMatch(synthesisResult.answer, /已完成本地关键词检索/);
+  assert.equal(synthesisResult.run.coverage.finalSynthesis, true);
+  assert.ok(synthesisResult.steps.at(-1).events.some((event) => event.type === "answer_ready"));
+
+  let ruleAuthoringCallCount = 0;
+  const ruleAuthoringRuntime = createAgentExplorationRuntime({
+    userDataPath: tempRoot,
+    runtime: {
+      mounts: {
+        knowledgeBase: fakeKnowledgeCore
+      }
+    },
+    agentWorkspace,
+    contextRuntime,
+    knowledgeRuleAuthoringRuntime: {
+      async chat(input = {}) {
+        assert.match(input.message, /完全一样/);
+        assert.equal(input.modelAlias, "deepseek");
+        return {
+          ok: true,
+          status: "pending_human_confirmation",
+          runId: "rule_authoring_verify",
+          intent: { needsRule: true, templateId: "exact_duplicate_skip_existing" },
+          template: { templateId: "exact_duplicate_skip_existing" },
+          gate: {
+            ok: true,
+            scenarios: [
+              {
+                result: {
+                  context: {
+                    candidate: {
+                      evidenceRefs: ["ev_1"]
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          confirmation: {
+            packageId: "agent-rule-exact-duplicate-skip-existing",
+            version: 1
+          },
+          package: {
+            packageId: "agent-rule-exact-duplicate-skip-existing",
+            version: 1,
+            status: "draft",
+            rules: [
+              {
+                label: "完全一样的知识直接跳过",
+                action: "skip_existing",
+                reason: "验证"
+              }
+            ]
+          },
+          humanConfirmationRequired: true
+        };
+      }
+    },
+    agentGatewayCall: async (input = {}) => {
+      ruleAuthoringCallCount += 1;
+      assert.ok(
+        input.parameters?.tools?.some((tool) => tool.function?.name === "golden_rule_authoring"),
+        "native function-call rule authoring tool must be supplied"
+      );
+      if (ruleAuthoringCallCount === 1) {
+        return {
+          ok: true,
+          answer: "",
+          finish: true,
+          upstream: { provider: "mock", status: 200, contentType: "application/json" },
+          toolCalls: [
+            {
+              id: "call_rule_authoring",
+              type: "function",
+              function: {
+                name: "golden_rule_authoring",
+                arguments: JSON.stringify({
+                  message: "生成一个黄金规则：完全一样的知识直接跳过",
+                  modelEnabled: false
+                })
+              }
+            }
+          ]
+        };
+      }
+      assert.match(JSON.stringify(input.messages), /pending_human_confirmation/);
+      return {
+        ok: true,
+        answer: "规则草稿已生成，等待人类确认发布。",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" }
+      };
+    }
+  });
+  const ruleAuthoringResult = await ruleAuthoringRuntime.run({
+    query: "请创建规则：完全一样的知识直接跳过",
+    modelAlias: "deepseek",
+    contextProfileId: "small-context",
+    maxIterations: 2,
+    limit: 2
+  });
+  assert.equal(ruleAuthoringResult.toolResults[0].tool, "golden_rule_authoring");
+  assert.equal(ruleAuthoringResult.toolResults[0].result.status, "pending_human_confirmation");
+  assert.equal(ruleAuthoringResult.toolResults[0].result.humanConfirmationRequired, true);
+  assert.ok(ruleAuthoringResult.evidenceRefs.includes("ev_1"));
+
+  callCount = 0;
+  const asyncResult = await runtime.run({
+    query: "帮我找账单 async",
+    modelAlias: "deepseek",
+    contextProfileId: "small-context",
+    maxIterations: 5,
+    limit: 2,
+    async: true
+  });
+  assert.equal(asyncResult.pending, true);
+  assert.equal(asyncResult.run.status, "running");
+  let asyncLoaded = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    asyncLoaded = runtime.getRun({
+      runId: asyncResult.run.runId,
+      workspaceId: asyncResult.workspace.workspaceId
+    });
+    if (asyncLoaded?.run?.status === "completed") {
+      break;
+    }
+  }
+  assert.equal(asyncLoaded.run.status, "completed");
+  assert.equal(asyncLoaded.pending, false);
+  assert.match(asyncLoaded.answer, /123\.45/);
+  assert.ok(asyncLoaded.steps[0].events.some((event) => event.type === "tool_result"));
+
+  console.log("agent exploration verification passed");
+} finally {
+  agentWorkspace.close();
+  await toolServer.close();
+  await fs.rm(tempRoot, { recursive: true, force: true });
+}

@@ -1,0 +1,19 @@
+{
+  "id": "external-knowledge-reader",
+  "label": "External Knowledge Reader",
+  "agentType": "external",
+  "toolsets": [
+    "splitall.knowledge.read"
+  ],
+  "toolAllow": [],
+  "toolDeny": [
+    "splitall.admin"
+  ],
+  "maxRisk": "read_only",
+  "approvalPolicy": "deny_write",
+  "concurrencyLimit": 4,
+  "sandboxPolicy": "remote-token",
+  "auditTags": [
+    "external-reader"
+  ]
+}

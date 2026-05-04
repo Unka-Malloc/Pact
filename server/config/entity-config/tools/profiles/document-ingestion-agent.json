@@ -1,0 +1,21 @@
+{
+  "id": "document-ingestion-agent",
+  "label": "Document Ingestion Agent",
+  "agentType": "ingestion",
+  "toolsets": [
+    "splitall.document.parse",
+    "splitall.document.convert",
+    "splitall.knowledge.write"
+  ],
+  "toolAllow": [],
+  "toolDeny": [
+    "splitall.admin"
+  ],
+  "maxRisk": "safe_write",
+  "approvalPolicy": "deny_repair",
+  "concurrencyLimit": 2,
+  "sandboxPolicy": "document-runtime",
+  "auditTags": [
+    "document-ingestion"
+  ]
+}

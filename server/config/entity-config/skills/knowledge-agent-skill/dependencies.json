@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "dependencyType": "splitall.agent-skill.dependencies",
+  "runtimeModules": [
+    "KnowledgeAgentSkillRuntime",
+    "EvidenceSufficiencyGate",
+    "KnowledgeCore"
+  ],
+  "requiredTools": [
+    {
+      "toolId": "splitall.knowledge.search",
+      "reason": "Coarse-to-fine retrieval"
+    },
+    {
+      "toolId": "splitall.knowledge.evidence",
+      "reason": "Evidence opening and citation validation"
+    },
+    {
+      "toolId": "splitall.knowledge.renderMarkdown",
+      "reason": "Evidence pack rendering"
+    }
+  ],
+  "heavyDependencies": [],
+  "manifestOnlyDependencies": []
+}

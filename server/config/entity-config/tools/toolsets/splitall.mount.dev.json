@@ -1,0 +1,10 @@
+{
+  "id": "splitall.mount.dev",
+  "label": "Mount development",
+  "requiredScopes": [
+    "knowledge:admin"
+  ],
+  "maxRisk": "repair_write",
+  "grantable": false,
+  "defaultForAgents": false
+}

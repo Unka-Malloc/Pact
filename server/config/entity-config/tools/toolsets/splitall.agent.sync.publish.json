@@ -1,0 +1,10 @@
+{
+  "id": "splitall.agent.sync.publish",
+  "label": "Agent sync publish",
+  "requiredScopes": [
+    "agent_sync:publish"
+  ],
+  "maxRisk": "safe_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

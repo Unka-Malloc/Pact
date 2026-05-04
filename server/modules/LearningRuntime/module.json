@@ -1,0 +1,17 @@
+{
+  "name": "LearningRuntime",
+  "version": 1,
+  "description": "Auditable splitall.learning.v1 runtime for feedback aggregation, retrieval profile tuning, and knowledge suggestions.",
+  "defaultLoaded": false,
+  "protocol": "splitall.learning.v1",
+  "components": {
+    "deterministicFallback": {
+      "path": "./index.mjs",
+      "factory": "createLearningRuntime",
+      "providerId": "builtin:deterministic-learning-runtime",
+      "providerType": "offline-fallback",
+      "packaging": "core",
+      "status": "fallback"
+    }
+  }
+}

@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "description": "SplitAll client packaging module selection. Set enabled=false to omit optional modules from desktop bundles.",
+  "bundle": {
+    "moduleResourceDirectory": "modules",
+    "manifestPath": "portable-data/backend/packaging-modules.json"
+  },
+  "modules": {
+    "client-gui": {
+      "label": "Flutter desktop frontend",
+      "category": "core",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "flutter-app"
+    },
+    "client-cli": {
+      "label": "Rust CLI execution layer",
+      "category": "core",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "sidecar-binary",
+      "cargoBin": "splitall-client"
+    },
+    "client-daemon": {
+      "label": "Rust local daemon",
+      "category": "core",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "sidecar-binary",
+      "cargoBin": "splitall-clientd"
+    },
+    "local-rpc": {
+      "label": "Local GUI to daemon command/RPC bridge",
+      "category": "core",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["client-daemon"]
+    },
+    "portable-data": {
+      "label": "Portable workspace, logs, exports, checkpoints, and caches",
+      "category": "storage",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "portable-data",
+      "portableDirectories": ["backend", "logs", "exports", "mail-imports", "knowledge"]
+    },
+    "file-system-adapter": {
+      "label": "Local file collection and opening adapter",
+      "category": "adapter",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability"
+    },
+    "server-bridge": {
+      "label": "Bootstrap, discovery check-in, jobs, upload session, and server API bridge",
+      "category": "communication",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability"
+    },
+    "upload-queue": {
+      "label": "Event-sourced upload queue",
+      "category": "upload",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["server-bridge"]
+    },
+    "checkpoint-upload": {
+      "label": "Chunked upload checkpoint/resume protocol client",
+      "category": "upload",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["upload-queue"]
+    },
+    "knowledge-mirror": {
+      "label": "Local KnowledgeCore downstream mirror and offline Markdown cache",
+      "category": "knowledge",
+      "enabled": true,
+      "required": true,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "portableDirectories": ["knowledge/documents", "knowledge/assets", "knowledge/normalized-documents"]
+    },
+    "knowledge-agent": {
+      "label": "Offline knowledge context and cloud agent answer interface",
+      "category": "agent",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["knowledge-mirror"]
+    },
+    "agent-registry": {
+      "label": "Server agent registry sync plus local custom agent aliases",
+      "category": "agent",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["server-bridge"]
+    },
+    "expert-vocabulary": {
+      "label": "Expert vocabulary pull and local hot index update",
+      "category": "knowledge",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["server-bridge"]
+    },
+    "mail-index": {
+      "label": "Local mail knowledge index, search, and evidence opening",
+      "category": "mail",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["expert-vocabulary"],
+      "portableDirectories": ["mail-imports/index"]
+    },
+    "macos-mail-import": {
+      "label": "macOS Mail.app import adapter",
+      "category": "mail",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos"],
+      "packaging": "swift-sidecar",
+      "swiftSource": "client-gui/macos/Runner/MacOSMailImporter.swift",
+      "artifactName": "splitall-macos-mail-tool",
+      "requires": ["mail-index"]
+    },
+    "knowledge-graph-ui": {
+      "label": "Local knowledge graph projection and UI",
+      "category": "ui",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["knowledge-mirror"]
+    },
+    "server.FileProcessor": {
+      "label": "Optional server FileProcessor module resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/modules/FileProcessor"]
+    },
+    "server.KnowledgeCore": {
+      "label": "Optional server KnowledgeCore module resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/modules/KnowledgeCore"]
+    },
+    "server.EmbeddingRuntime": {
+      "label": "Optional server EmbeddingRuntime module resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/modules/EmbeddingRuntime"]
+    },
+    "server.VectorStore": {
+      "label": "Optional server VectorStore module resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/modules/VectorStore"]
+    },
+    "server.AgentGateway": {
+      "label": "Optional server AgentGateway module resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/modules/AgentGateway"]
+    },
+    "server.LearningRuntime": {
+      "label": "Optional server LearningRuntime module resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/modules/LearningRuntime"]
+    },
+    "server.MaintenanceAgent": {
+      "label": "Optional server MaintenanceAgent application resources",
+      "category": "embedded-server",
+      "enabled": false,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "module-resources",
+      "includePaths": ["server/application/MaintenanceAgent"]
+    }
+  }
+}

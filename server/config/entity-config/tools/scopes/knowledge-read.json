@@ -1,0 +1,5 @@
+{
+  "id": "knowledge:read",
+  "label": "Read knowledge",
+  "description": "Search and read knowledge items, evidence, graph, skills, and agent context."
+}

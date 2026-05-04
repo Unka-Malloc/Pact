@@ -1,0 +1,11 @@
+{
+  "id": "splitall.agent.workspace",
+  "label": "Agent workspace",
+  "requiredScopes": [
+    "knowledge:read",
+    "knowledge:write"
+  ],
+  "maxRisk": "safe_write",
+  "grantable": true,
+  "defaultForAgents": false
+}
