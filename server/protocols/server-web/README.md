@@ -16,7 +16,7 @@
 
 - console state
 - settings 和规则库
-- runtime info、mounts、skills 和 routing
+- runtime info、mounts、capabilities 和 routing
 - jobs、job result、normalized documents
 - storage summary、doctor、locate、reconcile
 - discovery config、client registry、migration state

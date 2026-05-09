@@ -8,12 +8,20 @@ import process from "node:process";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { TIKA_VERSION } from "../modules/FileProcessor/FileNormalizer/Tika/tika.mjs";
+import { TIKA_VERSION } from "../platform/modules/knowledge/file-processor/FileNormalizer/Tika/tika.mjs";
+import {
+  collectPackagePlan,
+  resolveFeatureRuntime,
+  writeFeaturePlanArtifacts
+} from "../platform/interactive/features/feature-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../..");
-const vendorRoot = path.join(projectRoot, "vendor");
+const moduleResourceRoot = path.join(projectRoot, "modules");
+const jreResourceRoot = path.join(moduleResourceRoot, "jre");
+const tikaResourceRoot = path.join(moduleResourceRoot, "tika");
+const ocrResourceRoot = path.join(moduleResourceRoot, "ocr");
 
 const TARGETS = {
   "linux-x64": {
@@ -32,7 +40,17 @@ const TARGETS = {
   }
 };
 
-const RUNTIME_DEPENDENCIES = ["better-sqlite3", "docx", "fflate", "sqlite-vec"];
+const BASE_RUNTIME_DEPENDENCIES = [
+  "better-sqlite3",
+  "docx",
+  "fflate",
+  "p-limit",
+  "p-queue",
+  "sqlite-vec"
+];
+const FEATURE_RUNTIME_DEPENDENCIES = Object.freeze({
+  "knowledge-distillation": ["@langchain/langgraph"]
+});
 const DOCKER_PATH =
   "/pkg/runtime/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -64,8 +82,8 @@ export const KNOWLEDGE_LICENSE_POLICY = Object.freeze({
       examples: ["MPL", "EPL", "CDDL"]
     },
     {
-      id: "source-available-or-commercial",
-      examples: ["BUSL", "PolyForm", "Commons-Clause", "proprietary", "commercial"]
+      id: "source-available-or-restricted",
+      examples: ["BUSL", "PolyForm", "Commons-Clause", "proprietary"]
     },
     {
       id: "unknown-or-unreviewed",
@@ -73,7 +91,7 @@ export const KNOWLEDGE_LICENSE_POLICY = Object.freeze({
     },
     {
       id: "model-risk",
-      examples: ["unknown model weights", "non-commercial model", "cloud-only runtime"]
+      examples: ["unknown model weights", "restricted model", "cloud-only runtime"]
     },
     {
       id: "runtime-risk",
@@ -155,11 +173,30 @@ function parseCsvList(value) {
 }
 
 export function createPackagingPlan(args = {}) {
+  const featureRuntime = args.featureRuntime || resolveFeatureRuntime({
+    edition: args.edition || "enterprise",
+    enableFeatures: args.features,
+    disableFeatures: args["without-features"]
+  });
+  const activeFeatures = new Set(featureRuntime.activeFeatureIds);
   const modules = new Set(parseCsvList(args.modules));
-  modules.add("KnowledgeCore");
+  if (activeFeatures.has("knowledge-core")) {
+    modules.add("KnowledgeCore");
+  }
+  if (activeFeatures.has("document-parser")) {
+    modules.add("FileProcessor");
+  }
+  if (activeFeatures.has("vector-store-external")) {
+    modules.add("VectorStore");
+  }
   const includeFileProcessor = modules.has("FileProcessor");
   const defaultFileProcessorComponents = includeFileProcessor
-    ? "tika,ocr,pdfProcessor,normalizedDocuments"
+    ? [
+        "tika",
+        activeFeatures.has("ocr") ? "ocr" : "",
+        activeFeatures.has("pdf-processor") ? "pdfProcessor" : "",
+        "normalizedDocuments"
+      ].filter(Boolean).join(",")
     : "";
   const fileProcessorComponents = new Set(
     parseCsvList(args["file-processor-components"] || defaultFileProcessorComponents)
@@ -175,8 +212,29 @@ export function createPackagingPlan(args = {}) {
     includeFileProcessor,
     fileProcessorComponents: [...fileProcessorComponents],
     includeTika,
-    includeOcr: includeFileProcessor && fileProcessorComponents.has("ocr")
+    includeOcr: includeFileProcessor && fileProcessorComponents.has("ocr"),
+    featureProfile: {
+      edition: featureRuntime.edition,
+      activeFeatureIds: featureRuntime.activeFeatureIds,
+      disabledFeatureIds: featureRuntime.disabledFeatureIds
+    },
+    featureRuntime,
+    featurePackagePlan: collectPackagePlan(featureRuntime)
   };
+}
+
+export function runtimeDependenciesForPackagingPlan(packagingPlan = {}) {
+  const dependencies = new Set(BASE_RUNTIME_DEPENDENCIES);
+  const activeFeatures = new Set(packagingPlan.featureProfile?.activeFeatureIds || []);
+  for (const [featureId, featureDependencies] of Object.entries(FEATURE_RUNTIME_DEPENDENCIES)) {
+    if (!activeFeatures.has(featureId)) {
+      continue;
+    }
+    for (const dependency of featureDependencies) {
+      dependencies.add(dependency);
+    }
+  }
+  return [...dependencies].sort();
 }
 
 async function pathExists(targetPath) {
@@ -314,6 +372,123 @@ async function copyPath(sourcePath, targetPath) {
     recursive: true,
     filter: (source) => !path.basename(source).startsWith(".DS_Store")
   });
+}
+
+async function walkSourceFiles(rootPath) {
+  const files = [];
+  async function visit(currentPath) {
+    let entries = [];
+    try {
+      entries = await fs.readdir(currentPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const entryPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".git") {
+          continue;
+        }
+        await visit(entryPath);
+      } else if (entry.isFile() && /\.(?:mjs|js|ts|vue)$/.test(entry.name)) {
+        files.push(entryPath);
+      }
+    }
+  }
+  await visit(rootPath);
+  return files;
+}
+
+function staticImportSpecifiers(sourceText = "") {
+  const specifiers = [];
+  const patterns = [
+    /\bimport\s+(?!\()(?:(?:[\s\S]*?)\s+from\s+)?["']([^"']+)["']/g,
+    /\bexport\s+(?:[\s\S]*?)\s+from\s+["']([^"']+)["']/g
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(sourceText))) {
+      specifiers.push(match[1]);
+    }
+  }
+  return specifiers;
+}
+
+function resolveStaticSpecifier(filePath, specifier) {
+  if (!specifier.startsWith(".")) {
+    return "";
+  }
+  return path.resolve(path.dirname(filePath), specifier);
+}
+
+function isInsideOrEqual(candidatePath, rootPath) {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+export async function applyFeatureSourcePlan(stagingPath, packagingPlan) {
+  const plannedPaths = [...new Set(packagingPlan.featurePackagePlan?.removePaths || [])]
+    .map((relativePath) => String(relativePath || "").trim())
+    .filter(Boolean);
+  const applied = [];
+  for (const relativePath of plannedPaths) {
+    const targetPath = path.join(stagingPath, relativePath);
+    if (await pathExists(targetPath)) {
+      await fs.rm(targetPath, { recursive: true, force: true });
+      applied.push(relativePath);
+    }
+  }
+
+  const lingeringPaths = [];
+  for (const relativePath of plannedPaths) {
+    if (await pathExists(path.join(stagingPath, relativePath))) {
+      lingeringPaths.push(relativePath);
+    }
+  }
+
+  const plannedRoots = plannedPaths.map((relativePath) => path.resolve(stagingPath, relativePath));
+  const staticImportViolations = [];
+  for (const filePath of await walkSourceFiles(path.join(stagingPath, "server"))) {
+    const text = await fs.readFile(filePath, "utf8");
+    for (const specifier of staticImportSpecifiers(text)) {
+      const resolved = resolveStaticSpecifier(filePath, specifier);
+      if (!resolved) {
+        continue;
+      }
+      const violationRoot = plannedRoots.find((rootPath) => isInsideOrEqual(resolved, rootPath));
+      if (violationRoot) {
+        staticImportViolations.push({
+          file: path.relative(stagingPath, filePath),
+          specifier,
+          plannedPath: path.relative(stagingPath, violationRoot)
+        });
+      }
+    }
+  }
+
+  const report = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    edition: packagingPlan.featureProfile?.edition || "",
+    requestedPaths: plannedPaths,
+    applied,
+    lingeringPaths,
+    staticImportViolations,
+    ok: lingeringPaths.length === 0 && staticImportViolations.length === 0
+  };
+  await ensureDirectory(path.join(stagingPath, "feature-profile"));
+  await fs.writeFile(
+    path.join(stagingPath, "feature-profile", "source-layout-report.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8"
+  );
+  if (!report.ok) {
+    throw new Error(`Source layout verification failed: ${JSON.stringify({
+      lingeringPaths,
+      staticImportViolations: staticImportViolations.slice(0, 8)
+    })}`);
+  }
+  return report;
 }
 
 function exactVersion(value) {
@@ -638,10 +813,10 @@ async function collectProductionNpmDependencies({ stagingPath = "", rootPackage,
   return { scanSource, dependencies };
 }
 
-async function writeRuntimePackageJson(stagingPath) {
+async function writeRuntimePackageJson(stagingPath, packagingPlan) {
   const rootPackage = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8"));
   const dependencies = {};
-  for (const name of RUNTIME_DEPENDENCIES) {
+  for (const name of runtimeDependenciesForPackagingPlan(packagingPlan)) {
     dependencies[name] = exactVersion(rootPackage.dependencies?.[name]);
     if (!dependencies[name]) {
       throw new Error(`package.json is missing runtime dependency ${name}`);
@@ -670,13 +845,16 @@ async function writeRuntimePackageJson(stagingPath) {
 async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
   const binDir = path.join(stagingPath, "bin");
   await ensureDirectory(binDir);
-  const javaPath = `$ROOT/vendor/jre/${targetKey}/bin/java`;
+  const javaPath = `$ROOT/server/platform/modules/knowledge/runtime/jre/${targetKey}/bin/java`;
   const commonHeader = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
     'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
     'export PATH="$ROOT/runtime/node/bin:$PATH"',
     `export SPLITALL_SERVER_PROFILE="\${SPLITALL_SERVER_PROFILE:-${packagingPlan.includeFileProcessor ? "default" : "minimal"}}"`,
+    `export SPLITALL_FEATURE_EDITION="\${SPLITALL_FEATURE_EDITION:-${packagingPlan.featureProfile?.edition || "enterprise"}}"`,
+    'export SPLITALL_FEATURE_PROFILE="${SPLITALL_FEATURE_PROFILE:-$ROOT/feature-profile/feature-profile.json}"',
+    `export SPLITALL_FEATURES="\${SPLITALL_FEATURES:-${(packagingPlan.featureProfile?.activeFeatureIds || []).join(",")}}"`,
     'export SPLITALL_SERVER_DATA_DIR="${SPLITALL_SERVER_DATA_DIR:-$ROOT/data}"',
     'export SPLITALL_SERVER_HOST="${SPLITALL_SERVER_HOST:-0.0.0.0}"',
     'export SPLITALL_SERVER_PORT="${SPLITALL_SERVER_PORT:-8787}"'
@@ -684,7 +862,7 @@ async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
   if (packagingPlan.includeTika) {
     commonHeader.push(
       `export SPLITALL_JAVA_BIN_PATH="\${SPLITALL_JAVA_BIN_PATH:-${javaPath}}"`,
-      `export SPLITALL_TIKA_JAR_PATH="\${SPLITALL_TIKA_JAR_PATH:-$ROOT/vendor/tika/tika-app-${TIKA_VERSION}.jar}"`
+      `export SPLITALL_TIKA_JAR_PATH="\${SPLITALL_TIKA_JAR_PATH:-$ROOT/server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar}"`
     );
   }
   await fs.writeFile(
@@ -717,8 +895,8 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
   ];
   if (packagingPlan.includeTika) {
     includedRuntime.push(
-      `- JRE: \`vendor/jre/${targetKey}/\``,
-      `- Tika: \`vendor/tika/tika-app-${TIKA_VERSION}.jar\``
+      `- JRE: \`server/platform/modules/knowledge/runtime/jre/${targetKey}/\``,
+      `- Tika: \`server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar\``
     );
   }
   includedRuntime.push(
@@ -771,7 +949,7 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       "",
       "```bash",
       "./runtime/node/bin/node -v",
-      packagingPlan.includeTika ? `./vendor/jre/${targetKey}/bin/java -version` : "# Java/Tika omitted by this package plan.",
+      packagingPlan.includeTika ? `./server/platform/modules/knowledge/runtime/jre/${targetKey}/bin/java -version` : "# Java/Tika omitted by this package plan.",
       "./bin/splitall health --server-url http://127.0.0.1:8787",
       "```",
       "",
@@ -799,28 +977,43 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
 
 async function prepareSourceTree(stagingPath, targetKey, target, nodeVersion, packagingPlan) {
   await ensureDirectory(stagingPath);
-  await writeRuntimePackageJson(stagingPath);
+  await writeRuntimePackageJson(stagingPath, packagingPlan);
   await copyPath(path.join(projectRoot, "server"), path.join(stagingPath, "server"));
   await copyPath(path.join(projectRoot, "build", "dist"), path.join(stagingPath, "build", "dist"));
-  if (packagingPlan.includeOcr && await pathExists(path.join(projectRoot, "ocr"))) {
-    await copyPath(path.join(projectRoot, "ocr"), path.join(stagingPath, "ocr"));
+  await writeFeaturePlanArtifacts({
+    outputDir: path.join(stagingPath, "feature-profile"),
+    featureRuntime: packagingPlan.featureRuntime,
+    packagePlan: packagingPlan.featurePackagePlan
+  });
+  await fs.writeFile(
+    path.join(stagingPath, "feature-profile", "feature-profile.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      edition: packagingPlan.featureProfile?.edition || "enterprise",
+      features: packagingPlan.featureProfile?.activeFeatureIds || []
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  await applyFeatureSourcePlan(stagingPath, packagingPlan);
+  if (packagingPlan.includeOcr && await pathExists(ocrResourceRoot)) {
+    await copyPath(ocrResourceRoot, path.join(stagingPath, "modules", "ocr"));
   }
 
   const nodeArchiveName = `node-v${nodeVersion}-${target.nodePlatform}.tar.xz`;
-  const nodeArchivePath = path.join(vendorRoot, "downloads", nodeArchiveName);
+  const nodeArchivePath = path.join(jreResourceRoot, "downloads", nodeArchiveName);
   const nodeUrl = `https://nodejs.org/dist/v${nodeVersion}/${nodeArchiveName}`;
   console.log(`Ensuring Node runtime: ${nodeUrl}`);
   await downloadFile(nodeUrl, nodeArchivePath);
   await extractTar(nodeArchivePath, path.join(stagingPath, "runtime", "node"));
 
   if (packagingPlan.includeTika) {
-    const jreArchivePath = path.join(vendorRoot, "downloads", target.jreFileName);
+    const jreArchivePath = path.join(jreResourceRoot, "downloads", target.jreFileName);
     console.log(`Ensuring JRE runtime: ${target.jreUrl}`);
     await downloadFile(target.jreUrl, jreArchivePath);
-    await extractTar(jreArchivePath, path.join(stagingPath, "vendor", "jre", targetKey));
+    await extractTar(jreArchivePath, path.join(stagingPath, "modules", "jre", targetKey));
 
-    const tikaSourcePath = path.join(vendorRoot, "tika", `tika-app-${TIKA_VERSION}.jar`);
-    const tikaTargetPath = path.join(stagingPath, "vendor", "tika", `tika-app-${TIKA_VERSION}.jar`);
+    const tikaSourcePath = path.join(tikaResourceRoot, `tika-app-${TIKA_VERSION}.jar`);
+    const tikaTargetPath = path.join(stagingPath, "modules", "tika", `tika-app-${TIKA_VERSION}.jar`);
     await ensureDirectory(path.dirname(tikaTargetPath));
     if (await pathExists(tikaSourcePath)) {
       await fs.copyFile(tikaSourcePath, tikaTargetPath);
@@ -867,14 +1060,18 @@ async function writeOfflineManifest(stagingPath, targetKey, nodeVersion, packagi
     tikaVersion: TIKA_VERSION,
     bundled: {
       node: "runtime/node",
-      jre: packagingPlan.includeTika ? `vendor/jre/${targetKey}` : "",
-      tika: packagingPlan.includeTika ? `vendor/tika/tika-app-${TIKA_VERSION}.jar` : "",
+      jre: packagingPlan.includeTika ? `server/platform/modules/knowledge/runtime/jre/${targetKey}` : "",
+      tika: packagingPlan.includeTika ? `server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar` : "",
       nodeModules: "node_modules",
       consoleDist: "build/dist"
     },
     modules: packagingPlan.modules,
+    featureProfile: packagingPlan.featureProfile,
+    activeFeatures: packagingPlan.featureProfile?.activeFeatureIds || [],
+    disabledFeatures: packagingPlan.featureProfile?.disabledFeatureIds || [],
+    featurePackagePlan: packagingPlan.featurePackagePlan || null,
     fileProcessorComponents: packagingPlan.fileProcessorComponents,
-    runtimeDependencies: RUNTIME_DEPENDENCIES,
+    runtimeDependencies: runtimeDependenciesForPackagingPlan(packagingPlan),
     noAptRequiredAtRuntime: true
   };
   await fs.writeFile(path.join(stagingPath, "offline-manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
@@ -889,7 +1086,7 @@ export async function createKnowledgeLicenseManifest({
   const dependencyScan = await collectProductionNpmDependencies({
     stagingPath,
     rootPackage,
-    runtimeDependencies: RUNTIME_DEPENDENCIES
+    runtimeDependencies: runtimeDependenciesForPackagingPlan(packagingPlan)
   });
   const licenseSummary = dependencyScan.dependencies.reduce(
     (summary, dependency) => {
@@ -914,7 +1111,7 @@ export async function createKnowledgeLicenseManifest({
     fileProcessorComponents: packagingPlan.fileProcessorComponents,
     npm: {
       scanSource: dependencyScan.scanSource,
-      runtimeDependencyRoots: RUNTIME_DEPENDENCIES,
+      runtimeDependencyRoots: runtimeDependenciesForPackagingPlan(packagingPlan),
       productionDependencies: dependencyScan.dependencies,
       summary: licenseSummary
     },
@@ -1131,10 +1328,10 @@ async function verifyUbuntuPackage(stagingPath, target, packagingPlan) {
     "test -x /pkg/runtime/node/bin/node",
     "/pkg/runtime/node/bin/node -e \"const Database=require('better-sqlite3'); const db=new Database(':memory:'); const row=db.prepare('select 1 as ok').get(); if(row.ok!==1) process.exit(1); db.close();\"",
     packagingPlan.includeTika
-      ? "test -x /pkg/vendor/jre/linux-x64/bin/java || test -x /pkg/vendor/jre/linux-arm64/bin/java"
-      : "test ! -d /pkg/vendor/jre",
+      ? "test -x /pkg/server/platform/modules/knowledge/runtime/jre/linux-x64/bin/java || test -x /pkg/server/platform/modules/knowledge/runtime/jre/linux-arm64/bin/java"
+      : "test ! -d /pkg/server/platform/modules/knowledge/runtime/jre",
     packagingPlan.includeTika
-      ? "/pkg/vendor/jre/linux-x64/bin/java -version >/tmp/java-version.log 2>&1 || /pkg/vendor/jre/linux-arm64/bin/java -version >/tmp/java-version.log 2>&1"
+      ? "/pkg/server/platform/modules/knowledge/runtime/jre/linux-x64/bin/java -version >/tmp/java-version.log 2>&1 || /pkg/server/platform/modules/knowledge/runtime/jre/linux-arm64/bin/java -version >/tmp/java-version.log 2>&1"
       : "true",
     "/pkg/bin/start-server --help >/tmp/start-help.log",
     "SPLITALL_SERVER_DATA_DIR=/tmp/splitall-data SPLITALL_SERVER_HOST=127.0.0.1 SPLITALL_SERVER_PORT=18787 /pkg/bin/start-server >/tmp/splitall-server.log 2>&1 &",
@@ -1194,6 +1391,14 @@ async function main() {
   }
 
   const nodeVersion = String(args["node-version"] || process.versions.node).replace(/^v/, "");
+  if (args["feature-profile"]) {
+    args.featureRuntime = resolveFeatureRuntime({
+      edition: args.edition || "enterprise",
+      profile: JSON.parse(await fs.readFile(path.resolve(String(args["feature-profile"])), "utf8")),
+      enableFeatures: args.features,
+      disableFeatures: args["without-features"]
+    });
+  }
   const packagingPlan = createPackagingPlan(args);
   const outputDir = path.resolve(String(args["output-dir"] || path.join("build", "release")));
   const packageName = `splitall-server-${targetKey}`;

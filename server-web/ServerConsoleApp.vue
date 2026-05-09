@@ -17,6 +17,7 @@ import type {
   AgentModelConfig,
   AgentModuleAccess,
   BackgroundProcessStatus,
+  ClientRuntimeHeatRow,
   ClientMigrationState,
   CodexOAuthLogin,
   CodexOAuthStatus,
@@ -48,18 +49,21 @@ import type {
   ModuleAgentProfile,
   NormalizedDocumentsManifest,
   ProtocolEvent,
+  QueueMonitorItem,
   ServerPathBrowseEntry,
   ServerPathBrowseResponse,
   ServerConsoleState,
   SplitJob,
   SplitJobStatus,
+  UnifiedRegistrationRecord,
   ToolManagementAuditItem,
   ToolManagementCatalog,
   ToolManagementMetrics,
   ToolManagementProfile,
   ToolManagementTool,
   ToolManagementToolset,
-  ToolPlatformGrant,
+  ToolManagementGrant,
+  AgentPermissionGroup,
 } from "./lib/types";
 
 type DrawerTab =
@@ -79,12 +83,16 @@ type RuleAuthoringMode = "chat" | "manual";
 type AdminView =
   | "jobs"
   | "tools"
+  | "agentManagement"
+  | "agentPermissions"
   | "agentConfig"
   | "maintenanceAgent"
+  | "opsMonitor"
   | "clients"
   | "storage"
   | "modules";
-type KnowledgeTab = "overview" | "ingest" | "conflicts" | "logs" | "expertRules" | "maintenance";
+type KnowledgeTab = "management" | "overview" | "ingest" | "conflicts" | "logs" | "expertRules" | "maintenance";
+type KnowledgeManagementPanel = "knowledge" | "rules";
 type OptionBarValue = string | number | boolean;
 type OptionBarOption = {
   value: OptionBarValue;
@@ -159,6 +167,37 @@ type AgentConfigurationAlert = {
   view: AppView;
   adminView?: AdminView;
   targetId: string;
+};
+type DashboardAlert = {
+  alertId: string;
+  category: string;
+  title: string;
+  detail: string;
+  status: string;
+  tone: "warning" | "danger" | "success";
+  actionLabel: string;
+  source: "configuration" | "monitor";
+  configAlert?: AgentConfigurationAlert;
+  monitorAlert?: MonitorAlertState["activeAlerts"][number];
+};
+type WorkQueueRow = {
+  rowId: string;
+  queueId: string;
+  kind: string;
+  label: string;
+  ownerId: string;
+  source: "queue-monitor" | "split-job" | "maintenance-agent";
+  sourceLabel: string;
+  lifecycleStatus: string;
+  status: string;
+  phase: string;
+  tone: string;
+  startedAt: string;
+  updatedAt: string;
+  lastHeartbeatAt: string;
+  checkpointTreeId: string;
+  detail: string;
+  registration?: UnifiedRegistrationRecord;
 };
 type InfoFeedStageStatus = "idle" | "running" | "completed" | "failed";
 type InfoFeedAttachment = {
@@ -375,7 +414,8 @@ const emptySettings: AgentSettings = {
   defaultModelProvider: "",
   defaultModel: "",
   modelLibraryEntries: [],
-  modelLibraryModels: [],
+  modelLibraryAgents: [],
+  agentPermissionGroups: [],
   agentExploreDefaults: {
     systemPrompt:
       "You are SplitAll Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
@@ -494,19 +534,6 @@ const emptySettings: AgentSettings = {
     timeoutMs: 120000,
   },
   customHttpAdapters: [],
-  agentGateway: {
-    alias: "external-agent",
-    url: "",
-    token: "",
-    tokenConfigured: false,
-    tokenHeader: "token",
-    tokenPrefix: "",
-    agentName: "",
-    pluginList: [],
-    engine: "",
-    parameters: {},
-    timeoutMs: 120000,
-  },
   analysisModuleId: "builtin:heuristic-hybrid-v1",
   ocrEnabled: true,
   ocrPythonPath: "",
@@ -617,14 +644,37 @@ const debugTabs: Array<{ id: DebugTab; label: string }> = [
 ];
 
 const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
-  { id: "ingest", label: "入库同步" },
+  { id: "management", label: "知识管理" },
   { id: "conflicts", label: "冲突审核" },
   { id: "logs", label: "日志记录" },
-  { id: "expertRules", label: "专家规则" },
   { id: "maintenance", label: "知识库配置" },
 ];
 
 const consoleState = ref<ServerConsoleState | null>(null);
+const activeConsoleFeatureIds = computed(() =>
+  consoleState.value?.features?.activeFeatureIds || []
+);
+function hasFeature(featureId: string) {
+  const active = activeConsoleFeatureIds.value;
+  return active.length === 0 || active.includes(featureId);
+}
+function hasAnyFeature(featureIds: string[]) {
+  return featureIds.some((featureId) => hasFeature(featureId));
+}
+const visibleKnowledgeTabs = computed(() =>
+  hasFeature("knowledge-core") ? knowledgeTabs : []
+);
+const visibleDebugTabs = computed(() =>
+  debugTabs.filter((tab) => {
+    if (tab.id === "knowledgeRecall") {
+      return hasFeature("knowledge-core");
+    }
+    if (tab.id === "agentRetrieval") {
+      return hasFeature("agent-exploration");
+    }
+    return true;
+  })
+);
 const settingsDraft = ref<AgentSettings>({ ...emptySettings });
 const discoveryDraft = ref<DiscoveryConfig>({ ...emptyDiscovery });
 const mountDraft = ref<Record<string, string>>({});
@@ -646,12 +696,21 @@ const modelLibraryExpandedCards = ref<Record<string, boolean>>({});
 const moduleAgentCandidateDrafts = ref<Record<string, string>>({});
 const agentModelOptionLabelCache = ref<Record<string, string>>({});
 const settingsDraftDirty = ref(false);
+const discoveryDraftDirty = ref(false);
+const mountDraftDirty = ref(false);
+const rulesDraftDirty = ref(false);
+const expertVocabularyDraftDirty = ref(false);
 let applyingRemoteSettings = false;
+let applyingRemoteConsoleDrafts = false;
 let codexOAuthPollTimer: ReturnType<typeof window.setInterval> | null = null;
 let agentExplorePollTimer: ReturnType<typeof window.setInterval> | null = null;
 let configTargetHighlightTimer: ReturnType<typeof window.setTimeout> | null = null;
 let serverEventCursor = 0;
 let serverEventSubscriptionStopped = false;
+let serverEventSubscriptionGeneration = 0;
+let serverEventAbortController: AbortController | null = null;
+let serverEventTimer: ReturnType<typeof window.setTimeout> | null = null;
+let serverEventTimerResolve: (() => void) | null = null;
 const AGENT_EXPLORE_STORAGE_KEY = "splitall.agentExplore.sessions.v1";
 const INFO_FEED_STORAGE_KEY = "splitall.infoFeed.history.v1";
 const filter = ref("");
@@ -670,8 +729,10 @@ const newGrantScopes = ref<string[]>(["knowledge:read"]);
 const newGrantToolsets = ref<string[]>(["splitall.knowledge.read"]);
 const issuedToolToken = ref("");
 const toolManagementCatalogState = ref<ToolManagementCatalog | null>(null);
+const toolManagementGrantsState = ref<ToolManagementGrant[]>([]);
 const toolManagementMetricsState = ref<ToolManagementMetrics | null>(null);
 const toolManagementAuditItems = ref<ToolManagementAuditItem[]>([]);
+const selectedToolManagementToolId = ref("splitall.knowledge.health");
 const policyPreviewToolId = ref("splitall.knowledge.health");
 const policyPreviewProfileId = ref("external-knowledge-reader");
 const policyPreviewGrantId = ref("");
@@ -685,6 +746,7 @@ const maintenanceAgentConfig = ref<MaintenanceAgentConfig | null>(null);
 const maintenanceAgentRuns = ref<MaintenanceAgentRun[]>([]);
 const selectedMaintenanceAgentRun = ref<MaintenanceAgentRun | null>(null);
 const maintenanceAgentMessage = ref("检查服务端健康状态，自动处理安全维护项。");
+const maintenanceAgentModelAlias = ref("");
 const maintenanceAgentRunbook = ref("health_smoke");
 const maintenanceAgentResultJson = ref("");
 const backgroundProcessStatus = ref<BackgroundProcessStatus | null>(null);
@@ -703,7 +765,8 @@ const oidcDraft = ref<ConsoleOidcConfig & { clientSecret?: string }>({
 });
 const oidcAllowedDomainsText = ref("");
 const oidcRoleMappingText = ref("{}");
-const knowledgeTab = ref<KnowledgeTab>("ingest");
+const knowledgeTab = ref<KnowledgeTab>("management");
+const knowledgeManagementPanel = ref<KnowledgeManagementPanel>("knowledge");
 const knowledgeConsole = ref<KnowledgeConsoleState | null>(null);
 const knowledgeSchema = ref<KnowledgeConfigSchema | null>(null);
 const knowledgeSourceState = ref<KnowledgeSourceState | null>(null);
@@ -853,6 +916,8 @@ const knowledgeLogResizing = ref<{
 const knowledgeReviewStatus = ref("pending");
 const knowledgeReviewItems = ref<KnowledgeReviewItem[]>([]);
 const selectedKnowledgeReviewId = ref("");
+let knowledgeReviewRequestGeneration = 0;
+let knowledgeReviewBusyGeneration = 0;
 const selectedKnowledgeReviewItem = computed(() => {
   const selected = knowledgeReviewItems.value.find(
     (item) => item.reviewId === selectedKnowledgeReviewId.value,
@@ -895,7 +960,7 @@ const pathPicker = ref<PathPickerState>({
   applyPath: () => {},
 });
 
-const serverEventTopics = [
+const baseServerEventTopics = [
   "server.lifecycle",
   "system.interfaces",
   "system.console_state",
@@ -922,9 +987,24 @@ const serverEventTopics = [
   "maintenance.agent.tool.completed",
   "maintenance.agent.tool.failed",
   "maintenance.agent.run.completed",
-  "tool_platform.grants",
   "agent_sync.config",
-].join(",");
+];
+
+function currentServerEventTopics() {
+  const topics = baseServerEventTopics.filter((topic) => {
+    if (topic.startsWith("knowledge.") || topic === "email_rules.current" || topic === "expert_vocabulary.current") {
+      return hasFeature("knowledge-core");
+    }
+    if (topic.startsWith("maintenance.agent.")) {
+      return hasFeature("maintenance-agent-runbooks");
+    }
+    if (topic === "agent_sync.config") {
+      return hasFeature("agent-gateway");
+    }
+    return true;
+  });
+  return topics.join(",");
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -988,6 +1068,41 @@ function normalizeAgentModuleAccess(value?: Partial<AgentModuleAccess>): AgentMo
   };
 }
 
+function normalizeAgentPermissionGroupDraft(
+  value: Partial<AgentPermissionGroup>,
+  index = 0,
+): AgentPermissionGroup {
+  const record = asRecord(value) || {};
+  const id =
+    String(record.id || "").trim() ||
+    `agent-permission-${Date.now()}-${index + 1}`;
+  const normalizeList = (input: unknown) =>
+    [...new Set(Array.isArray(input) ? input.map((item) => String(item || "").trim()).filter(Boolean) : [])];
+  return {
+    id,
+    label: String(record.label || id).trim(),
+    description: String(record.description || "").trim(),
+    enabled: record.enabled !== false,
+    scopeIds: normalizeList(record.scopeIds),
+    toolsetIds: normalizeList(record.toolsetIds),
+    toolAllow: normalizeList(record.toolAllow),
+    toolDeny: normalizeList(record.toolDeny),
+  };
+}
+
+function normalizeAgentPermissionGroupsDraft(value: unknown): AgentPermissionGroup[] {
+  const seen = new Set<string>();
+  return (Array.isArray(value) ? value : [])
+    .map((item, index) => normalizeAgentPermissionGroupDraft(item as Partial<AgentPermissionGroup>, index))
+    .filter((item) => {
+      if (!item.id || seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    });
+}
+
 function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): AgentModelConfig {
   const provider = String(entry.provider || "") as CloudProvider;
   const model = modelEntryStringField(entry, ["model", "engine"]) ?? "";
@@ -996,13 +1111,13 @@ function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): Agent
     (String(entry.alias || "").trim() || `${providerLabel(provider)}${model ? ` ${model}` : " 智能体"}`.trim());
   const agentName = modelEntryStringField(entry, ["agentName", "label"]) ?? label;
   const engine = modelEntryStringField(entry, ["engine", "model"]) ?? "";
-  const legacyInstanceId = String(entry.instanceId || "").trim();
+  const existingInstanceId = String(entry.instanceId || "").trim();
   const explicitUid = String(entry.uid || "").trim();
-  const legacyAlias = String(entry.alias || "").trim();
+  const existingAlias = String(entry.alias || "").trim();
   const uid = explicitUid ||
-    (legacyInstanceId.startsWith("agent_") ? legacyInstanceId : "") ||
-    (legacyAlias.startsWith("agent_") ? legacyAlias : "") ||
-    modelAgentUid(provider, legacyInstanceId || legacyAlias || index + 1);
+    (existingInstanceId.startsWith("agent_") ? existingInstanceId : "") ||
+    (existingAlias.startsWith("agent_") ? existingAlias : "") ||
+    modelAgentUid(provider, existingInstanceId || existingAlias || index + 1);
   return {
     uid,
     instanceId: uid,
@@ -1024,6 +1139,7 @@ function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): Agent
     systemPrompt: String(entry.systemPrompt || "").trim(),
     parameters: asRecord(entry.parameters) || {},
     moduleAccess: normalizeAgentModuleAccess(entry.moduleAccess),
+    permissionGroupId: String(entry.permissionGroupId || "").trim(),
     parametersText:
       String(entry.parametersText || "").trim() ||
       JSON.stringify(asRecord(entry.parameters) || {}, null, 2),
@@ -1031,9 +1147,9 @@ function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): Agent
   };
 }
 
-function normalizeModelLibraryModels(settings: AgentSettings): AgentModelConfig[] {
-  const models = Array.isArray(settings.modelLibraryModels)
-    ? settings.modelLibraryModels
+function normalizeModelLibraryAgents(settings: AgentSettings): AgentModelConfig[] {
+  const models = Array.isArray(settings.modelLibraryAgents)
+    ? settings.modelLibraryAgents
     : [];
   return models.map((item, index) => normalizeModelEntry(item, index));
 }
@@ -1136,8 +1252,7 @@ function moduleAgentProfilesPayload() {
 
 function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
   const adapter = {
-    ...emptySettings.agentGateway,
-    ...(settings.agentGateway || {}),
+    ...emptySettings.customHttpAdapter,
     ...(settings.customHttpAdapter || {}),
   };
   const alias = String(
@@ -1163,7 +1278,8 @@ function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
   return {
     ...settings,
     modelLibraryEntries: normalizeModelLibraryEntries(settings.modelLibraryEntries),
-    modelLibraryModels: normalizeModelLibraryModels(settings),
+    modelLibraryAgents: normalizeModelLibraryAgents(settings),
+    agentPermissionGroups: normalizeAgentPermissionGroupsDraft(settings.agentPermissionGroups),
     agentExploreDefaults: {
       ...emptySettings.agentExploreDefaults,
       ...(settings.agentExploreDefaults || {}),
@@ -1186,18 +1302,17 @@ function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
     customModelLabel: label,
     customHttpAdapter: nextAdapter,
     customHttpAdapters,
-    agentGateway: nextAdapter,
   };
 }
 
 function settingsPayloadForSave() {
   const normalized = normalizeHttpAdapterSettings(settingsDraft.value);
-  normalized.modelLibraryModels = visibleModelEntries.value.map((entry, index) => ({
+  normalized.modelLibraryAgents = visibleModelEntries.value.map((entry, index) => ({
     ...normalizeModelEntry(entry, index),
     parameters: modelEntryParameters(entry),
   }));
   normalized.modelLibraryEntries = [
-    ...new Set(normalized.modelLibraryModels.map((entry) => String(entry.provider || "").trim()).filter(Boolean)),
+    ...new Set(normalized.modelLibraryAgents.map((entry) => String(entry.provider || "").trim()).filter(Boolean)),
   ] as CloudProvider[];
   normalized.moduleModelAssignments = Object.fromEntries(
     Object.entries(normalized.moduleModelAssignments || {}).filter(([moduleId, assignment]) => {
@@ -1503,6 +1618,46 @@ watch(
 );
 
 watch(
+  discoveryDraft,
+  () => {
+    if (!applyingRemoteConsoleDrafts) {
+      discoveryDraftDirty.value = true;
+    }
+  },
+  { deep: true, flush: "sync" },
+);
+
+watch(
+  mountDraft,
+  () => {
+    if (!applyingRemoteConsoleDrafts) {
+      mountDraftDirty.value = true;
+    }
+  },
+  { deep: true, flush: "sync" },
+);
+
+watch(
+  rulesText,
+  () => {
+    if (!applyingRemoteConsoleDrafts) {
+      rulesDraftDirty.value = true;
+    }
+  },
+  { flush: "sync" },
+);
+
+watch(
+  expertVocabularyDraft,
+  () => {
+    if (!applyingRemoteConsoleDrafts) {
+      expertVocabularyDraftDirty.value = true;
+    }
+  },
+  { deep: true, flush: "sync" },
+);
+
+watch(
   agentExploreForm,
   () => {
     persistAgentExploreState();
@@ -1521,6 +1676,17 @@ watch(
 watch(knowledgeReviewStatus, () => {
   if (currentView.value === "knowledge" && knowledgeTab.value === "conflicts") {
     void refreshKnowledgeConflicts();
+  }
+});
+
+watch(knowledgeManagementPanel, (panel) => {
+  if (currentView.value !== "knowledge" || knowledgeTab.value !== "management") {
+    return;
+  }
+  if (panel === "rules") {
+    void refreshExpertRules();
+  } else {
+    void refreshKnowledgeConsole();
   }
 });
 
@@ -1559,9 +1725,73 @@ function replaceSettingsDraftFromServer(
   });
 }
 
+function applyRemoteConsoleDraftUpdate(update: () => void) {
+  applyingRemoteConsoleDrafts = true;
+  try {
+    update();
+  } finally {
+    applyingRemoteConsoleDrafts = false;
+  }
+}
+
+function replaceDiscoveryDraftFromServer(
+  value: Partial<DiscoveryConfig> | null | undefined,
+  options: { markClean?: boolean } = {},
+) {
+  applyRemoteConsoleDraftUpdate(() => {
+    discoveryDraft.value = {
+      ...emptyDiscovery,
+      ...(value || {}),
+    };
+    if (options.markClean !== false) {
+      discoveryDraftDirty.value = false;
+    }
+  });
+}
+
+function replaceMountDraftFromServer(
+  value: Record<string, string> | null | undefined,
+  options: { markClean?: boolean } = {},
+) {
+  applyRemoteConsoleDraftUpdate(() => {
+    mountDraft.value = {
+      ...(value || {}),
+    };
+    if (options.markClean !== false) {
+      mountDraftDirty.value = false;
+    }
+  });
+}
+
+function replaceRulesDraftFromServer(
+  rules: EmailRuleSet,
+  options: { markClean?: boolean } = {},
+) {
+  applyRemoteConsoleDraftUpdate(() => {
+    rulesText.value = JSON.stringify(rules, null, 2);
+    if (options.markClean !== false) {
+      rulesDraftDirty.value = false;
+    }
+  });
+}
+
+function replaceExpertVocabularyDraftFromServer(
+  vocabulary: ExpertVocabulary | null | undefined,
+  options: { markClean?: boolean } = {},
+) {
+  applyRemoteConsoleDraftUpdate(() => {
+    expertVocabularyDraft.value = cloneExpertVocabulary(
+      vocabulary || emptyExpertVocabulary,
+    );
+    if (options.markClean !== false) {
+      expertVocabularyDraftDirty.value = false;
+    }
+  });
+}
+
 function applyConsoleState(
   nextState: ServerConsoleState,
-  options: { forceSettings?: boolean } = {},
+  options: { forceSettings?: boolean; forceDrafts?: boolean } = {},
 ) {
   const nextSettings = normalizedSettingsFromServer(nextState.settings.value);
   consoleState.value = {
@@ -1575,17 +1805,20 @@ function applyConsoleState(
     replaceSettingsDraftFromServer(nextSettings);
   }
   applyAgentExploreDefaultsFromSettings();
-  discoveryDraft.value = {
-    ...emptyDiscovery,
-    ...nextState.discovery.value,
-  };
-  mountDraft.value = {
-    ...(nextState.runtime.mountModules || {}),
-  };
-  rulesText.value = JSON.stringify(nextState.emailRules.rules, null, 2);
-  expertVocabularyDraft.value = cloneExpertVocabulary(
-    nextState.expertVocabulary.vocabulary,
-  );
+  if (options.forceDrafts || !discoveryDraftDirty.value) {
+    replaceDiscoveryDraftFromServer(nextState.discovery.value);
+  }
+  if (options.forceDrafts || !mountDraftDirty.value) {
+    replaceMountDraftFromServer(nextState.runtime.mountModules || {});
+  }
+  if (options.forceDrafts || !rulesDraftDirty.value) {
+    replaceRulesDraftFromServer(nextState.emailRules.rules);
+  }
+  if (options.forceDrafts || !expertVocabularyDraftDirty.value) {
+    replaceExpertVocabularyDraftFromServer(
+      nextState.expertVocabulary.vocabulary,
+    );
+  }
   maintenanceAgentConfig.value = nextState.maintenanceAgent?.config
     ? JSON.parse(JSON.stringify(nextState.maintenanceAgent.config))
     : null;
@@ -1760,10 +1993,6 @@ function applyServerEvent(event: ProtocolEvent) {
     if (!value) {
       return false;
     }
-    discoveryDraft.value = {
-      ...emptyDiscovery,
-      ...value,
-    };
     consoleState.value = {
       ...consoleState.value,
       discovery: {
@@ -1773,6 +2002,9 @@ function applyServerEvent(event: ProtocolEvent) {
           consoleState.value.discovery.bootstrap,
       },
     };
+    if (!discoveryDraftDirty.value) {
+      replaceDiscoveryDraftFromServer(value);
+    }
     return true;
   }
 
@@ -1788,9 +2020,9 @@ function applyServerEvent(event: ProtocolEvent) {
         ...runtime,
       },
     };
-    mountDraft.value = {
-      ...(consoleState.value.runtime.mountModules || {}),
-    };
+    if (!mountDraftDirty.value) {
+      replaceMountDraftFromServer(consoleState.value.runtime.mountModules || {});
+    }
     return true;
   }
 
@@ -1803,11 +2035,13 @@ function applyServerEvent(event: ProtocolEvent) {
       path: String(payload.path || consoleState.value.emailRules.path || ""),
       rules,
     };
-    rulesText.value = JSON.stringify(rules, null, 2);
     consoleState.value = {
       ...consoleState.value,
       emailRules,
     };
+    if (!rulesDraftDirty.value) {
+      replaceRulesDraftFromServer(rules);
+    }
     return true;
   }
 
@@ -1820,30 +2054,18 @@ function applyServerEvent(event: ProtocolEvent) {
       path: String(payload.path || consoleState.value.expertVocabulary.path || ""),
       vocabulary,
     };
-    expertVocabularyDraft.value = cloneExpertVocabulary(vocabulary);
     consoleState.value = {
       ...consoleState.value,
       expertVocabulary,
     };
+    if (!expertVocabularyDraftDirty.value) {
+      replaceExpertVocabularyDraftFromServer(vocabulary);
+    }
     return true;
   }
 
   if (event.topic === "knowledge.golden_rules") {
     void refreshExpertRules({ silent: true });
-    return true;
-  }
-
-  if (event.topic === "tool_platform.grants") {
-    const state =
-      asRecord(payload.state) ||
-      (Array.isArray(payload.grants) ? payload : null);
-    if (!state) {
-      return false;
-    }
-    consoleState.value = {
-      ...consoleState.value,
-      toolPlatform: state as ServerConsoleState["toolPlatform"],
-    };
     return true;
   }
 
@@ -1925,7 +2147,6 @@ function parseModelRef(refValue: string) {
 function customHttpAdapterAlias() {
   return String(
     settingsDraft.value.customModelAlias ||
-      settingsDraft.value.agentGateway?.alias ||
       settingsDraft.value.customHttpAdapter?.alias ||
       settingsDraft.value.customModelLabel ||
       "external-agent",
@@ -1935,7 +2156,6 @@ function customHttpAdapterAlias() {
 function customHttpAdapterLabel() {
   return String(
     settingsDraft.value.customModelLabel ||
-      settingsDraft.value.agentGateway?.label ||
       settingsDraft.value.customHttpAdapter?.label ||
       "自定义 HTTP 模型",
   ).trim();
@@ -1949,7 +2169,7 @@ const visibleModelProviders = computed(() =>
   normalizeModelLibraryEntries(settingsDraft.value.modelLibraryEntries),
 );
 
-const visibleModelEntries = computed(() => settingsDraft.value.modelLibraryModels || []);
+const visibleModelEntries = computed(() => settingsDraft.value.modelLibraryAgents || []);
 
 const addableModelProviders = computed(() => modelLibraryProviderDefinitions);
 
@@ -1966,7 +2186,7 @@ function providerConfigured(provider: CloudProvider) {
     case "copilot":
       return Boolean(settingsDraft.value.copilotEndpoint || settingsDraft.value.copilotApiKeyConfigured || settingsDraft.value.copilotApiKey);
     case "custom-http":
-      return Boolean(settingsDraft.value.agentGateway?.url || settingsDraft.value.agentGateway?.tokenConfigured || settingsDraft.value.agentGateway?.token);
+      return Boolean(settingsDraft.value.customHttpAdapter?.url || settingsDraft.value.customHttpAdapter?.tokenConfigured || settingsDraft.value.customHttpAdapter?.token);
     case "local-model":
       return Boolean(settingsDraft.value.localModelEndpoint);
     default:
@@ -1980,7 +2200,7 @@ function modelEntryConfigured(entry: AgentModelConfig) {
     return hasModel && Boolean(entry.apiKey || entry.apiKeyConfigured || settingsDraft.value.deepSeekApiKey || settingsDraft.value.deepSeekApiKeyConfigured);
   }
   if (entry.provider === "custom-http") {
-    return hasModel && Boolean((entry.url || settingsDraft.value.agentGateway?.url) && (entry.token || entry.tokenConfigured || settingsDraft.value.agentGateway?.tokenConfigured));
+    return hasModel && Boolean((entry.url || settingsDraft.value.customHttpAdapter?.url) && (entry.token || entry.tokenConfigured || settingsDraft.value.customHttpAdapter?.tokenConfigured));
   }
   return hasModel && providerConfigured(entry.provider as CloudProvider);
 }
@@ -2213,7 +2433,7 @@ function addModelProvider() {
     timeoutMs: provider === "deepseek" ? settingsDraft.value.deepSeekTimeoutMs : 120000,
   }, Date.now());
   const key = modelEntryStatusKey(entry);
-  settingsDraft.value.modelLibraryModels = [
+  settingsDraft.value.modelLibraryAgents = [
     entry,
     ...visibleModelEntries.value,
   ];
@@ -2232,14 +2452,14 @@ async function removeModelProvider(provider: CloudProvider | AgentModelConfig) {
   }
   const previousModels = [...visibleModelEntries.value];
   const previousEntries = [...visibleModelProviders.value];
-  settingsDraft.value.modelLibraryModels = entry
+  settingsDraft.value.modelLibraryAgents = entry
     ? visibleModelEntries.value.filter((item) => modelEntryStatusKey(item) !== removeKey)
     : visibleModelEntries.value.filter((item) => item.provider !== provider);
   const remainingExpandedCards = { ...modelLibraryExpandedCards.value };
   delete remainingExpandedCards[removeKey];
   modelLibraryExpandedCards.value = remainingExpandedCards;
   settingsDraft.value.modelLibraryEntries = [
-    ...new Set(settingsDraft.value.modelLibraryModels.map((item) => item.provider)),
+    ...new Set(settingsDraft.value.modelLibraryAgents.map((item) => item.provider)),
   ] as CloudProvider[];
   busyKey.value = `model-remove:${removeKey}`;
   error.value = "";
@@ -2247,7 +2467,7 @@ async function removeModelProvider(provider: CloudProvider | AgentModelConfig) {
     const saved = await bridge.saveSettings(settingsPayloadForSave());
     replaceSettingsDraftFromServer(saved);
   } catch (nextError) {
-    settingsDraft.value.modelLibraryModels = previousModels;
+    settingsDraft.value.modelLibraryAgents = previousModels;
     settingsDraft.value.modelLibraryEntries = previousEntries;
     error.value =
       nextError instanceof Error ? nextError.message : "移除模型配置失败。";
@@ -2267,7 +2487,7 @@ function duplicateModelEntry(entry: AgentModelConfig) {
     token: "",
   }, Date.now());
   const key = modelEntryStatusKey(copy);
-  settingsDraft.value.modelLibraryModels = [copy, ...visibleModelEntries.value];
+  settingsDraft.value.modelLibraryAgents = [copy, ...visibleModelEntries.value];
   modelLibraryExpandedCards.value = {
     ...modelLibraryExpandedCards.value,
     [key]: true,
@@ -2315,8 +2535,8 @@ function modelProbeSettingsForEntry(entry: AgentModelConfig) {
   if (entry.provider === "custom-http") {
     settings.customModelAlias = modelEntryStatusKey(entry);
     settings.customModelLabel = entry.label || modelEntryStatusKey(entry);
-    settings.agentGateway = {
-      ...settings.agentGateway,
+    const adapter = {
+      ...settings.customHttpAdapter,
       alias: modelEntryStatusKey(entry),
       label: entry.label || modelEntryStatusKey(entry),
       url: entry.url || "",
@@ -2330,8 +2550,8 @@ function modelProbeSettingsForEntry(entry: AgentModelConfig) {
       parameters: cleanParameters,
       timeoutMs: Number(entry.timeoutMs || 120000),
     };
-    settings.customHttpAdapter = settings.agentGateway;
-    settings.customHttpAdapters = [settings.agentGateway];
+    settings.customHttpAdapter = adapter;
+    settings.customHttpAdapters = [adapter];
   }
   return settings;
 }
@@ -2588,19 +2808,18 @@ function hasOpenAiModelUsage() {
   );
 }
 
-const toolPlatform = computed(() => consoleState.value?.toolPlatform || null);
-const toolScopes = computed(() => toolPlatform.value?.scopes || []);
-const toolCatalog = computed(() => toolPlatform.value?.tools || []);
-const toolGrants = computed(() => toolPlatform.value?.grants || []);
+const toolScopes = computed(() => toolManagementCatalogState.value?.scopes || []);
+const toolCatalog = computed(() => toolManagementCatalogState.value?.tools || []);
+const toolGrants = computed(() => toolManagementGrantsState.value);
 const enabledToolGrantCount = computed(
   () => toolGrants.value.filter((grant) => grant.enabled).length,
 );
 const toolManagementTools = computed<ToolManagementTool[]>(() => toolManagementCatalogState.value?.tools || []);
 const toolManagementToolsets = computed<ToolManagementToolset[]>(
-  () => toolManagementCatalogState.value?.toolsets || toolPlatform.value?.toolsets || [],
+  () => toolManagementCatalogState.value?.toolsets || [],
 );
 const toolManagementProfiles = computed<ToolManagementProfile[]>(
-  () => toolManagementCatalogState.value?.profiles || toolPlatform.value?.profiles || [],
+  () => toolManagementCatalogState.value?.profiles || [],
 );
 const activeToolManagementToolCount = computed(
   () => toolManagementTools.value.filter((tool) => tool.status === "active").length,
@@ -2620,6 +2839,86 @@ const toolManagementRiskRows = computed(() =>
     value,
   })),
 );
+
+const knowledgeManagementPanelOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "knowledge", label: "知识" },
+  { value: "rules", label: "规则" },
+]);
+
+function selectKnowledgeManagementPanel(panel: OptionBarValue) {
+  if (panel === "knowledge" || panel === "rules") {
+    knowledgeManagementPanel.value = panel;
+  }
+}
+
+const defaultAgentPermissionGroups = computed<AgentPermissionGroup[]>(() => {
+  const readScopes = toolScopes.value
+    .filter((scope) => /read|knowledge/i.test(scope.id))
+    .map((scope) => scope.id);
+  const writeScopes = toolScopes.value
+    .filter((scope) => /write|execute|tool|maintenance|admin/i.test(scope.id))
+    .map((scope) => scope.id);
+  const readToolsets = toolManagementToolsets.value
+    .filter((toolset) => toolset.maxRisk === "read_only" && toolset.grantable !== false)
+    .map((toolset) => toolset.id);
+  const safeToolsets = toolManagementToolsets.value
+    .filter((toolset) => ["read_only", "safe_write"].includes(toolset.maxRisk) && toolset.grantable !== false)
+    .map((toolset) => toolset.id);
+  const allToolsets = toolManagementToolsets.value
+    .filter((toolset) => toolset.grantable !== false)
+    .map((toolset) => toolset.id);
+  return [
+    {
+      id: "agent-permission-knowledge-reader",
+      label: "知识读取组",
+      description: "只允许读取知识、执行只读召回和健康检查。",
+      enabled: true,
+      scopeIds: readScopes,
+      toolsetIds: readToolsets,
+      toolAllow: [],
+      toolDeny: [],
+    },
+    {
+      id: "agent-permission-operator",
+      label: "运维操作组",
+      description: "允许只读和安全写入工具，适合巡检、索引校验和轻量维护。",
+      enabled: true,
+      scopeIds: [...new Set([...readScopes, ...writeScopes])],
+      toolsetIds: safeToolsets,
+      toolAllow: [],
+      toolDeny: [],
+    },
+    {
+      id: "agent-permission-admin-review",
+      label: "管理员审批组",
+      description: "保留全部工具集入口，高风险工具仍受审批和策略预览约束。",
+      enabled: true,
+      scopeIds: toolScopes.value.map((scope) => scope.id),
+      toolsetIds: allToolsets,
+      toolAllow: [],
+      toolDeny: [],
+    },
+  ];
+});
+
+const agentPermissionGroups = computed<AgentPermissionGroup[]>(() =>
+  normalizeAgentPermissionGroupsDraft(settingsDraft.value.agentPermissionGroups),
+);
+
+const agentPermissionGroupOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "", label: "未分配" },
+  ...agentPermissionGroups.value
+    .filter((group) => group.enabled)
+    .map((group) => ({
+      value: group.id,
+      label: group.label || group.id,
+    })),
+]);
+
+const selectedToolManagementTool = computed(() => {
+  const selectedId = selectedToolManagementToolId.value || policyPreviewToolId.value;
+  return toolManagementTools.value.find((tool) => tool.id === selectedId) || toolManagementTools.value[0] || null;
+});
 const currentUser = computed(() => authState.value?.session.user || null);
 const isAuthenticated = computed(
   () => authState.value?.session.authenticated || authState.value?.enabled === false,
@@ -2881,7 +3180,7 @@ function currentAgentModelOptionLabel(value?: string) {
   }
   return agentExploreModelOptions.value.find((item) => item.value === normalized)?.label || "";
 }
-function removedAgentModelOption(value?: string) {
+function inactiveAgentModelOption(value?: string) {
   return {
     value: String(value || "").trim(),
     label: "已移除的智能体",
@@ -2933,7 +3232,7 @@ const selectedAgentExploreModel = computed(() => {
   }
   if (selectedValue) {
     const inactive = agentExploreModelOptions.value.find((item) => item.value === selectedValue);
-    return inactive || removedAgentModelOption(selectedValue);
+    return inactive || inactiveAgentModelOption(selectedValue);
   }
   return {
     value: "",
@@ -3159,7 +3458,7 @@ const selectedInfoFeedModel = computed(() => {
   }
   if (selectedValue) {
     const inactive = infoFeedModelOptions.value.find((item) => item.value === selectedValue);
-    return inactive || removedAgentModelOption(selectedValue);
+    return inactive || inactiveAgentModelOption(selectedValue);
   }
   return {
     value: "",
@@ -3183,7 +3482,7 @@ const selectedKnowledgeReviewFusionModel = computed(() => {
   const selected = agentExploreModelOptions.value.find(
     (item) => item.value === configured && item.enabled,
   );
-  return selected || agentExploreModelOptions.value.find((item) => item.value === configured) || removedAgentModelOption(configured);
+  return selected || agentExploreModelOptions.value.find((item) => item.value === configured) || inactiveAgentModelOption(configured);
 });
 function agentSelectionAlert(
   params: Omit<AgentConfigurationAlert, "status" | "tone"> & { value: string; options: Array<{ value: string; enabled: boolean; disabledReason?: string }> },
@@ -3326,6 +3625,50 @@ const agentConfigurationAlertSummary = computed(() => {
   return [
     dangerCount ? `${dangerCount} 项不可用` : "",
     warningCount ? `${warningCount} 项未配置` : "",
+  ].filter(Boolean).join("，");
+});
+const dashboardMonitorAlerts = computed<DashboardAlert[]>(() =>
+  activeMonitorAlerts.value.map((alert) => {
+    const recovered = alert.ackRequired || alert.active === false || alert.status === "recovered";
+    const isQueueInterruption = alert.ruleId === "queueInterrupted";
+    return {
+      alertId: alert.alertId,
+      category: isQueueInterruption ? "中断报警" : "后台报警",
+      title: alert.title,
+      detail: alert.queueId ? `${alert.message} 队列 ID：${alert.queueId}` : alert.message,
+      status: recovered ? "已恢复，待确认" : monitorAlertSeverityLabel(alert.severity),
+      tone: recovered ? "success" : alert.severity === "critical" ? "danger" : "warning",
+      actionLabel: recovered ? "确认关闭" : "查看报警",
+      source: "monitor",
+      monitorAlert: alert,
+    };
+  }),
+);
+const dashboardAlerts = computed<DashboardAlert[]>(() => [
+  ...dashboardMonitorAlerts.value,
+  ...agentConfigurationAlerts.value.map((alert) => ({
+    alertId: alert.alertId,
+    category: "空配置报警",
+    title: alert.title,
+    detail: alert.detail,
+    status: alert.status,
+    tone: alert.tone,
+    actionLabel: "去配置",
+    source: "configuration" as const,
+    configAlert: alert,
+  })),
+]);
+const dashboardAlertSummary = computed(() => {
+  const dangerCount = dashboardAlerts.value.filter((item) => item.tone === "danger").length;
+  const warningCount = dashboardAlerts.value.filter((item) => item.tone === "warning").length;
+  const recoveredCount = dashboardAlerts.value.filter((item) => item.tone === "success").length;
+  if (dashboardAlerts.value.length === 0) {
+    return "当前没有需要处理的报警。";
+  }
+  return [
+    dangerCount ? `${dangerCount} 项严重` : "",
+    warningCount ? `${warningCount} 项警告` : "",
+    recoveredCount ? `${recoveredCount} 项已恢复待确认` : "",
   ].filter(Boolean).join("，");
 });
 const selectedInfoFeedContextProfile = computed(() => {
@@ -4268,16 +4611,16 @@ function redactedProviderSettingsForAgentExport(entry: AgentModelConfig, setting
   if (provider === "custom-http") {
     return {
       provider,
-      url: entry.url || settings.agentGateway?.url || "",
-      tokenHeader: entry.tokenHeader || settings.agentGateway?.tokenHeader || "token",
-      tokenPrefix: entry.tokenPrefix || settings.agentGateway?.tokenPrefix || "",
+      url: entry.url || settings.customHttpAdapter?.url || "",
+      tokenHeader: entry.tokenHeader || settings.customHttpAdapter?.tokenHeader || "token",
+      tokenPrefix: entry.tokenPrefix || settings.customHttpAdapter?.tokenPrefix || "",
       tokenConfigured: Boolean(
         entry.token ||
           entry.tokenConfigured ||
-          settings.agentGateway?.token ||
-          settings.agentGateway?.tokenConfigured,
+          settings.customHttpAdapter?.token ||
+          settings.customHttpAdapter?.tokenConfigured,
       ),
-      timeoutMs: Number(entry.timeoutMs || settings.agentGateway?.timeoutMs || 120000),
+      timeoutMs: Number(entry.timeoutMs || settings.customHttpAdapter?.timeoutMs || 120000),
     };
   }
   return { provider };
@@ -6415,6 +6758,21 @@ function knowledgeResultHierarchyPath(item: KnowledgeSearchResult) {
     .join(" > ");
 }
 
+function knowledgeFusionSummary(response: KnowledgeSearchResponse | null | undefined) {
+  const fusion = asRecord(response?.fusion);
+  if (!fusion) {
+    return "";
+  }
+  const mode = String(fusion.mode || "server-index-only");
+  const localHitCount = Number(fusion.localHitCount || 0);
+  const localMergedCount = Number(fusion.localMergedCount || 0);
+  const localAppendedCount = Number(fusion.localAppendedCount || 0);
+  if (!localHitCount) {
+    return `${mode} · 无本地 mirror 命中`;
+  }
+  return `${mode} · 本地 mirror ${localHitCount} 条，合并 ${localMergedCount} 条，补充 ${localAppendedCount} 条`;
+}
+
 function formatBytes(value: unknown) {
   const bytes = Number(value || 0);
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -7584,6 +7942,8 @@ async function submitLoginAuth() {
 async function logoutConsole() {
   busyKey.value = "auth:logout";
   error.value = "";
+  stopServerEventSubscription();
+  serverEventCursor = 0;
   try {
     await bridge.logoutAuth();
     consoleState.value = null;
@@ -7683,18 +8043,26 @@ async function refreshKnowledgeConsole() {
   if (!hasScope("knowledge:read")) {
     return;
   }
+  const requestedReviewStatus = knowledgeReviewStatus.value;
+  const reviewRequestGeneration = ++knowledgeReviewRequestGeneration;
   try {
     const [state, schema, maintenance, sources, reviewItems] = await Promise.all([
       bridge.getKnowledgeConsole(),
       bridge.getKnowledgeConfigSchema(),
       bridge.getKnowledgeMaintenance().catch(() => ({} as MaintenanceSettings)),
       bridge.getKnowledgeSources().catch(() => null),
-      bridge.listKnowledgeReviewItems({ status: knowledgeReviewStatus.value, limit: 100 }).catch(() => null),
+      bridge.listKnowledgeReviewItems({ status: requestedReviewStatus, limit: 100 }).catch(() => null),
     ]);
     knowledgeConsole.value = state;
     knowledgeSchema.value = schema;
     knowledgeSourceState.value = sources || state.sources || null;
-    knowledgeReviewItems.value = reviewItems?.items || knowledgeReviewItems.value;
+    if (
+      reviewItems &&
+      reviewRequestGeneration === knowledgeReviewRequestGeneration &&
+      requestedReviewStatus === knowledgeReviewStatus.value
+    ) {
+      knowledgeReviewItems.value = reviewItems.items || [];
+    }
     knowledgeMaintenanceDraft.value = maintenance || {};
     maintenanceJson.value = jsonPreview(knowledgeMaintenanceDraft.value);
   } catch (nextError) {
@@ -7705,22 +8073,38 @@ async function refreshKnowledgeConsole() {
 
 async function refreshKnowledgeConflicts(options: { silent?: boolean } = {}) {
   if (!hasScope("knowledge:read")) {
+    knowledgeReviewRequestGeneration += 1;
     return;
   }
+  const requestedStatus = knowledgeReviewStatus.value;
+  const requestGeneration = ++knowledgeReviewRequestGeneration;
+  const busyGeneration = options.silent ? 0 : ++knowledgeReviewBusyGeneration;
   if (!options.silent) {
     busyKey.value = "knowledge:review-items";
   }
   error.value = "";
   try {
     const result = await bridge.listKnowledgeReviewItems({
-      status: knowledgeReviewStatus.value,
+      status: requestedStatus,
       limit: 100,
     });
+    if (
+      requestGeneration !== knowledgeReviewRequestGeneration ||
+      requestedStatus !== knowledgeReviewStatus.value
+    ) {
+      return;
+    }
     knowledgeReviewItems.value = result.items || [];
   } catch (nextError) {
+    if (
+      requestGeneration !== knowledgeReviewRequestGeneration ||
+      requestedStatus !== knowledgeReviewStatus.value
+    ) {
+      return;
+    }
     error.value = nextError instanceof Error ? nextError.message : "加载知识冲突列表失败。";
   } finally {
-    if (!options.silent) {
+    if (!options.silent && busyGeneration === knowledgeReviewBusyGeneration) {
       busyKey.value = "";
     }
   }
@@ -9110,54 +9494,134 @@ async function deleteKnowledgeSource(source: KnowledgeSource) {
 }
 
 function switchView(view: AppView) {
+  if (view === "knowledge" && !hasFeature("knowledge-core")) {
+    currentView.value = "dashboard";
+    return;
+  }
+  if (view === "intelligence" && !hasFeature("agent-exploration")) {
+    currentView.value = "dashboard";
+    return;
+  }
+  if (view === "debug" && visibleDebugTabs.value.length === 0) {
+    currentView.value = "dashboard";
+    return;
+  }
+  if (view === "debug" && !visibleDebugTabs.value.some((item) => item.id === debugTab.value)) {
+    debugTab.value = visibleDebugTabs.value[0]?.id || "knowledgeRecall";
+  }
   currentView.value = view;
+  if (view === "dashboard") {
+    void refreshMonitorAlerts({ silent: true });
+  }
   if (view === "knowledge") {
     void refreshKnowledgeConsole();
+    if (knowledgeTab.value === "management" && knowledgeManagementPanel.value === "rules") {
+      void refreshExpertRules();
+    }
   }
   if (view === "debug") {
     void refreshKnowledgeConsole();
   }
   if (view === "admin") {
     void refreshAuthAdmin();
-    if (adminView.value === "tools") {
+    if (adminView.value === "tools" || adminView.value === "agentPermissions") {
       void refreshToolManagement({ silent: true });
+    }
+    if (adminView.value === "agentPermissions") {
+      ensureAgentPermissionGroupsDraft();
     }
     if (adminView.value === "maintenanceAgent") {
       void refreshMaintenanceAgent();
+    }
+    if (adminView.value === "jobs") {
+      void refreshState({ silent: true });
+      void refreshMaintenanceAgent({ silent: true });
       void refreshBackgroundProcesses({ silent: true });
+      void refreshMonitorAlerts({ silent: true });
+    }
+    if (adminView.value === "opsMonitor") {
+      void refreshBackgroundProcesses({ silent: true });
+      void refreshClientRuntimeStatus({ silent: true });
       void refreshMonitorAlerts({ silent: true });
     }
   }
 }
 
 function openDebugTab(tab: DebugTab) {
+  if (!visibleDebugTabs.value.some((item) => item.id === tab)) {
+    return;
+  }
   debugTab.value = tab;
   currentView.value = "debug";
   void refreshKnowledgeConsole();
 }
 
 function openKnowledgeTab(tab: KnowledgeTab) {
+  if (!visibleKnowledgeTabs.value.some((item) => item.id === tab)) {
+    return;
+  }
+  if (tab === "overview") {
+    openDebugTab("knowledgeRecall");
+    return;
+  }
   knowledgeTab.value = tab;
   switchView("knowledge");
   if (tab === "conflicts") {
     void refreshKnowledgeConflicts();
   }
-  if (tab === "expertRules") {
+  if (tab === "expertRules" || (tab === "management" && knowledgeManagementPanel.value === "rules")) {
     void refreshExpertRules();
   }
 }
 
 function openAdmin(tab: AdminView) {
+  if (!isAdminViewEnabled(tab)) {
+    tab = "jobs";
+  }
   adminView.value = tab;
   currentView.value = "admin";
   void refreshAuthAdmin();
-  if (tab === "tools") {
-    void refreshToolManagement();
+  if (tab === "tools" || tab === "agentPermissions") {
+    void refreshToolManagement().then(() => {
+      if (tab === "agentPermissions") {
+        ensureAgentPermissionGroupsDraft();
+      }
+    });
+  }
+  if (tab === "agentManagement") {
+    void refreshState({ silent: true });
   }
   if (tab === "maintenanceAgent") {
     void refreshMaintenanceAgent();
-    void refreshBackgroundProcesses({ silent: true });
+  }
+  if (tab === "jobs") {
+    void refreshState({ silent: true });
+    void refreshMaintenanceAgent({ silent: true });
     void refreshMonitorAlerts({ silent: true });
+  }
+  if (tab === "opsMonitor") {
+    void refreshBackgroundProcesses({ silent: true });
+    void refreshClientRuntimeStatus({ silent: true });
+    void refreshMonitorAlerts({ silent: true });
+  }
+}
+
+function isAdminViewEnabled(tab: AdminView) {
+  switch (tab) {
+    case "agentManagement":
+      return hasFeature("agent-management");
+    case "tools":
+      return hasFeature("agent-gateway") || hasFeature("agent-management");
+    case "agentPermissions":
+      return hasFeature("agent-management");
+    case "agentConfig":
+      return hasFeature("agent-gateway");
+    case "maintenanceAgent":
+      return hasFeature("maintenance-agent-runbooks");
+    case "modules":
+      return hasFeature("analysis-runtime");
+    default:
+      return true;
   }
 }
 
@@ -9199,14 +9663,36 @@ async function openAgentConfigurationAlert(alertItem: AgentConfigurationAlert) {
   await scrollToConfigTarget(alertItem.targetId);
 }
 
-function replaceToolPlatformState(state: ServerConsoleState["toolPlatform"]) {
-  if (!consoleState.value) {
+async function acknowledgeMonitorAlert(alertId: string) {
+  if (!canAdminMaintenanceAgent.value) {
+    error.value = "当前账号没有维护配置权限。";
     return;
   }
-  consoleState.value = {
-    ...consoleState.value,
-    toolPlatform: state,
-  };
+  busyKey.value = `monitor-alert:ack:${alertId}`;
+  error.value = "";
+  try {
+    const state = await bridge.acknowledgeMonitorAlert(alertId);
+    monitorAlertState.value = state;
+    monitorAlertConfigText.value = jsonPreview(state.config);
+  } catch (nextError) {
+    error.value =
+      nextError instanceof Error ? nextError.message : "确认报警失败。";
+  } finally {
+    busyKey.value = "";
+  }
+}
+
+async function openDashboardAlert(alertItem: DashboardAlert) {
+  if (alertItem.source === "configuration" && alertItem.configAlert) {
+    await openAgentConfigurationAlert(alertItem.configAlert);
+    return;
+  }
+  if (alertItem.monitorAlert?.ackRequired || alertItem.monitorAlert?.active === false) {
+    await acknowledgeMonitorAlert(alertItem.alertId);
+    return;
+  }
+  openAdmin("opsMonitor");
+  await refreshMonitorAlerts({ silent: true });
 }
 
 function scopeLabel(scopeId: string) {
@@ -9239,6 +9725,118 @@ function profileLabel(profileId: string) {
 
 function previewToolDefinition() {
   return toolManagementTools.value.find((tool) => tool.id === policyPreviewToolId.value) || null;
+}
+
+function ensureAgentPermissionGroupsDraft() {
+  if (settingsDraft.value.agentPermissionGroups?.length) {
+    settingsDraft.value.agentPermissionGroups = agentPermissionGroups.value;
+    return;
+  }
+  settingsDraft.value.agentPermissionGroups = defaultAgentPermissionGroups.value.map((group, index) =>
+    normalizeAgentPermissionGroupDraft(group, index),
+  );
+}
+
+function addAgentPermissionGroup() {
+  ensureAgentPermissionGroupsDraft();
+  const group = normalizeAgentPermissionGroupDraft(
+    {
+      id: `agent-permission-custom-${Date.now()}`,
+      label: "自定义权限组",
+      description: "按权限层级和工具明细定义智能体可调用范围。",
+      enabled: true,
+      scopeIds: [],
+      toolsetIds: [],
+      toolAllow: [],
+      toolDeny: [],
+    },
+    settingsDraft.value.agentPermissionGroups.length,
+  );
+  settingsDraft.value.agentPermissionGroups = [group, ...settingsDraft.value.agentPermissionGroups];
+}
+
+function removeAgentPermissionGroup(group: AgentPermissionGroup) {
+  if (!window.confirm(`删除权限组“${group.label || group.id}”？`)) {
+    return;
+  }
+  settingsDraft.value.agentPermissionGroups = agentPermissionGroups.value.filter((item) => item.id !== group.id);
+  for (const entry of visibleModelEntries.value) {
+    if (entry.permissionGroupId === group.id) {
+      entry.permissionGroupId = "";
+    }
+  }
+}
+
+function permissionGroupLabel(groupId?: string) {
+  const normalized = String(groupId || "").trim();
+  if (!normalized) {
+    return "未分配";
+  }
+  return agentPermissionGroups.value.find((group) => group.id === normalized)?.label || normalized;
+}
+
+function setModelEntryPermissionGroup(entry: AgentModelConfig, groupId: string) {
+  entry.permissionGroupId = String(groupId || "").trim();
+}
+
+function permissionGroupHasScope(group: AgentPermissionGroup, scopeId: string) {
+  return group.scopeIds.includes(scopeId);
+}
+
+function permissionGroupHasToolset(group: AgentPermissionGroup, toolsetId: string) {
+  return group.toolsetIds.includes(toolsetId);
+}
+
+function togglePermissionGroupScope(group: AgentPermissionGroup, scopeId: string) {
+  const next = new Set(group.scopeIds || []);
+  if (next.has(scopeId)) {
+    next.delete(scopeId);
+  } else {
+    next.add(scopeId);
+  }
+  group.scopeIds = [...next];
+}
+
+function togglePermissionGroupToolset(group: AgentPermissionGroup, toolsetId: string) {
+  const next = new Set(group.toolsetIds || []);
+  if (next.has(toolsetId)) {
+    next.delete(toolsetId);
+  } else {
+    next.add(toolsetId);
+  }
+  group.toolsetIds = [...next];
+}
+
+function selectToolForManagement(toolId: string) {
+  selectedToolManagementToolId.value = toolId;
+  policyPreviewToolId.value = toolId;
+}
+
+function grantToolRuleState(grant: ToolManagementGrant, toolId: string) {
+  if ((grant.toolDeny || []).includes(toolId)) {
+    return "deny";
+  }
+  if ((grant.toolAllow || []).includes(toolId)) {
+    return "allow";
+  }
+  return "inherit";
+}
+
+async function setGrantToolRule(grant: ToolManagementGrant, toolId: string, rule: "inherit" | "allow" | "deny") {
+  const allow = new Set(grant.toolAllow || []);
+  const deny = new Set(grant.toolDeny || []);
+  allow.delete(toolId);
+  deny.delete(toolId);
+  if (rule === "allow") {
+    allow.add(toolId);
+  }
+  if (rule === "deny") {
+    deny.add(toolId);
+  }
+  await updateGrant(grant, {
+    toolAllow: [...allow],
+    toolDeny: [...deny],
+  });
 }
 
 function policyPreviewGrant() {
@@ -9275,11 +9873,11 @@ function toggleNewGrantToolset(toolsetId: string) {
   newGrantToolsets.value = [...current];
 }
 
-function grantHasScope(grant: ToolPlatformGrant, scopeId: string) {
+function grantHasScope(grant: ToolManagementGrant, scopeId: string) {
   return grant.scopes.includes(scopeId);
 }
 
-function grantHasToolset(grant: ToolPlatformGrant, toolsetId: string) {
+function grantHasToolset(grant: ToolManagementGrant, toolsetId: string) {
   return (grant.toolsets || []).includes(toolsetId);
 }
 
@@ -9392,6 +9990,60 @@ function jobStatusTone(status: SplitJobStatus) {
   return status;
 }
 
+function queueLifecycleTone(status: string) {
+  const normalized = String(status || "").toLowerCase();
+  if (["interrupted", "failed", "missing"].includes(normalized)) {
+    return "danger";
+  }
+  if (["recovered", "closed", "completed", "completed_with_errors"].includes(normalized)) {
+    return "success";
+  }
+  if (["running", "open"].includes(normalized)) {
+    return "running";
+  }
+  if (["queued", "awaiting_approval", "standby"].includes(normalized)) {
+    return "queued";
+  }
+  return "neutral";
+}
+
+function queueLifecycleLabel(status: string) {
+  const labels: Record<string, string> = {
+    open: "运行中",
+    queued: "排队中",
+    running: "运行中",
+    awaiting_approval: "待审批",
+    interrupted: "已中断",
+    recovered: "已恢复",
+    closed: "已关闭",
+    completed: "已完成",
+    completed_with_errors: "有错误",
+    failed: "失败",
+    cancelled: "已取消",
+    rejected: "已拒绝",
+  };
+  return labels[String(status || "").toLowerCase()] || status || "未知";
+}
+
+function queueSourceLabel(source: string) {
+  const labels: Record<string, string> = {
+    "function-self-check": "功能自检",
+    watchdog: "守护进程巡检",
+    "watchdog-reconcile": "守护进程补录",
+    "queue-monitor": "队列监控",
+  };
+  return labels[String(source || "")] || source || "队列监控";
+}
+
+function queueMonitorDetail(item: QueueMonitorItem) {
+  return [
+    item.interruptedReason ? `中断原因 ${item.interruptedReason}` : "",
+    item.recoveryStatus ? `恢复状态 ${item.recoveryStatus}` : "",
+    item.metadata?.stage ? `阶段 ${String(item.metadata.stage)}` : "",
+    item.checkpointTreeId ? `checkpoint ${item.checkpointTreeId}` : "",
+  ].filter(Boolean).join(" · ") || item.kind || "队列";
+}
+
 function maintenanceAgentStatusTone(status: string) {
   if (status === "awaiting_approval" || status === "queued") {
     return "queued";
@@ -9451,6 +10103,70 @@ function backgroundProcessLabel(status: string) {
     missing: "缺失",
   };
   return labels[status] || status || "未知";
+}
+
+function processTypeLabel(processType?: string) {
+  return processType === "daemon" ? "守护进程" : "服务进程";
+}
+
+function processRelationText(processItem: BackgroundProcessStatus["processes"][number]) {
+  const services = processItem.services?.length
+    ? `服务：${processItem.services.join(" / ")}`
+    : "";
+  const monitors = processItem.monitors?.length
+    ? `监控：${processItem.monitors.join(" / ")}`
+    : "";
+  const alerts = processItem.alerts?.length
+    ? `报警：${processItem.alerts.join(" / ")}`
+    : "";
+  return [services, monitors, alerts].filter(Boolean).join("；") || processItem.description || "无关联说明";
+}
+
+function clientRuntimeCoolingTone(state: string) {
+  if (state === "hot") {
+    return "running";
+  }
+  if (state === "cooled") {
+    return "warning";
+  }
+  return "info";
+}
+
+function clientRuntimeCoolingLabel(state: string) {
+  const labels: Record<string, string> = {
+    hot: "热连接",
+    warm: "正常",
+    cooled: "已冷却",
+  };
+  return labels[state] || state || "未知";
+}
+
+function clientRuntimeReasonLabel(reason: string) {
+  const labels: Record<string, string> = {
+    "new-client": "新客户端",
+    normal: "正常分配",
+    "frequent-client": "高频使用",
+    "outside-warm-client-limit": "超出保温上限",
+    "least-recently-used-and-low-frequency": "最旧且低频",
+  };
+  return labels[reason] || reason || "无冷却原因";
+}
+
+function clientRuntimeTaskText(row: ClientRuntimeHeatRow) {
+  return row.taskTypes?.length
+    ? row.taskTypes.map((item) => `${item.taskType}×${item.count}`).join(" / ")
+    : "无任务记录";
+}
+
+function clientRuntimeSurfaceText(row: ClientRuntimeHeatRow) {
+  return row.surfaces?.length
+    ? row.surfaces.map((item) => `${item.surface}×${item.count}`).join(" / ")
+    : "无调用面记录";
+}
+
+function clientRuntimeHeatStyle(row: ClientRuntimeHeatRow) {
+  const heat = Math.max(4, Math.min(100, Number(row.heatPercent || 0)));
+  return { "--heat": `${heat}%` };
 }
 
 function monitorAlertSeverityTone(severity: string) {
@@ -9516,6 +10232,9 @@ function migrationProgress(state: ClientMigrationState) {
 }
 
 function openDrawer(tab: DrawerTab) {
+  if (tab === "modules" && !hasFeature("analysis-runtime")) {
+    tab = "discovery";
+  }
   drawerTab.value = tab;
   drawerOpen.value = true;
   if (tab === "users") {
@@ -9712,8 +10431,9 @@ function goldenRuleItems(pkg: Record<string, unknown>) {
     }));
 }
 
-async function refreshExpertRules(options: { silent?: boolean } = {}) {
+async function refreshExpertRules(options: { silent?: boolean; forceDrafts?: boolean } = {}) {
   const showBusy = !options.silent;
+  const forceDrafts = options.forceDrafts === true;
   if (showBusy) {
     busyKey.value = "expert-rules:refresh";
   }
@@ -9725,8 +10445,12 @@ async function refreshExpertRules(options: { silent?: boolean } = {}) {
       bridge.getExpertVocabulary(),
       bridge.getGoldenRules(),
     ]);
-    rulesText.value = JSON.stringify(emailRulesResult.rules, null, 2);
-    expertVocabularyDraft.value = cloneExpertVocabulary(vocabularyResult.vocabulary);
+    if (forceDrafts || !rulesDraftDirty.value) {
+      replaceRulesDraftFromServer(emailRulesResult.rules);
+    }
+    if (forceDrafts || !expertVocabularyDraftDirty.value) {
+      replaceExpertVocabularyDraftFromServer(vocabularyResult.vocabulary);
+    }
     goldenRulesState.value = goldenRulesResult;
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "加载专家规则失败。";
@@ -9772,8 +10496,13 @@ async function toggleGoldenRuleEnabled(pkg: Record<string, unknown>, ruleIndex: 
   }
 }
 
-async function refreshState(options: { silent?: boolean; forceSettings?: boolean } = {}) {
+async function refreshState(options: {
+  silent?: boolean;
+  forceSettings?: boolean;
+  forceDrafts?: boolean;
+} = {}) {
   const showBusy = !options.silent;
+  const forceDrafts = options.forceDrafts === true;
   if (showBusy) {
     busyKey.value = busyKey.value || "refresh";
   }
@@ -9781,7 +10510,10 @@ async function refreshState(options: { silent?: boolean; forceSettings?: boolean
 
   try {
     const nextState = await bridge.getServerConsoleState();
-    applyConsoleState(nextState, { forceSettings: options.forceSettings });
+    applyConsoleState(nextState, {
+      forceSettings: options.forceSettings,
+      forceDrafts,
+    });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "加载服务端控制台失败。";
@@ -9921,24 +10653,72 @@ function exportContextBuildRecords() {
   );
 }
 
-function stopServerEventSubscription() {
-  serverEventSubscriptionStopped = true;
+function clearServerEventTimer() {
+  if (serverEventTimer) {
+    window.clearTimeout(serverEventTimer);
+    serverEventTimer = null;
+  }
+  if (serverEventTimerResolve) {
+    serverEventTimerResolve();
+    serverEventTimerResolve = null;
+  }
 }
 
-async function runServerEventSubscription() {
-  if (serverEventSubscriptionStopped) {
+function waitForServerEventRetry(ms: number) {
+  return new Promise<void>((resolve) => {
+    serverEventTimerResolve = resolve;
+    serverEventTimer = window.setTimeout(() => {
+      serverEventTimer = null;
+      serverEventTimerResolve = null;
+      resolve();
+    }, ms);
+  });
+}
+
+function isAbortError(nextError: unknown) {
+  return (
+    (nextError instanceof DOMException && nextError.name === "AbortError") ||
+    (nextError instanceof Error && nextError.name === "AbortError")
+  );
+}
+
+function stopServerEventSubscription() {
+  serverEventSubscriptionStopped = true;
+  serverEventSubscriptionGeneration += 1;
+  clearServerEventTimer();
+  if (serverEventAbortController) {
+    serverEventAbortController.abort();
+    serverEventAbortController = null;
+  }
+}
+
+async function runServerEventSubscription(generation = serverEventSubscriptionGeneration) {
+  if (
+    serverEventSubscriptionStopped ||
+    generation !== serverEventSubscriptionGeneration
+  ) {
     return;
   }
 
+  const controller = new AbortController();
+  serverEventAbortController = controller;
+  const requestCursor = serverEventCursor;
   try {
     const response = await bridge.subscribeEvents({
-      cursor: serverEventCursor,
-      topic: serverEventTopics,
+      cursor: requestCursor,
+      topic: currentServerEventTopics(),
       timeoutMs: 25000,
-      includeSnapshot: serverEventCursor === 0,
-    });
+      includeSnapshot: requestCursor === 0,
+    }, { signal: controller.signal });
+    if (
+      serverEventSubscriptionStopped ||
+      generation !== serverEventSubscriptionGeneration ||
+      controller.signal.aborted
+    ) {
+      return;
+    }
     const incomingEvents = [
-      ...(serverEventCursor === 0 ? response.snapshots || [] : []),
+      ...(requestCursor === 0 ? response.snapshots || [] : []),
       ...response.events,
     ];
     const hasUpdates = incomingEvents.length > 0;
@@ -9947,20 +10727,38 @@ async function runServerEventSubscription() {
     if (hasUpdates && handledUpdates < incomingEvents.length) {
       await refreshState({ silent: true });
     }
-  } catch {
-    await new Promise((resolve) => window.setTimeout(resolve, 3000));
+  } catch (nextError) {
+    if (
+      isAbortError(nextError) ||
+      serverEventSubscriptionStopped ||
+      generation !== serverEventSubscriptionGeneration
+    ) {
+      return;
+    }
+    await waitForServerEventRetry(3000);
+  } finally {
+    if (serverEventAbortController === controller) {
+      serverEventAbortController = null;
+    }
   }
 
-  if (!serverEventSubscriptionStopped) {
-    window.setTimeout(() => {
-      void runServerEventSubscription();
+  if (
+    !serverEventSubscriptionStopped &&
+    generation === serverEventSubscriptionGeneration
+  ) {
+    serverEventTimer = window.setTimeout(() => {
+      serverEventTimer = null;
+      void runServerEventSubscription(generation);
     }, 100);
   }
 }
 
 function startServerEventSubscription() {
+  stopServerEventSubscription();
+  serverEventCursor = 0;
   serverEventSubscriptionStopped = false;
-  void runServerEventSubscription();
+  serverEventSubscriptionGeneration += 1;
+  void runServerEventSubscription(serverEventSubscriptionGeneration);
 }
 
 async function refreshCodexOAuthStatus() {
@@ -10044,7 +10842,8 @@ async function saveModuleSettings() {
     await bridge.saveRuntimeMounts({
       mountModules: mountDraft.value,
     });
-    await refreshState({ forceSettings: true });
+    mountDraftDirty.value = false;
+    await refreshState({ forceSettings: true, forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存设置失败。";
@@ -10060,7 +10859,8 @@ async function saveMountModules(busy = "mounts") {
     await bridge.saveRuntimeMounts({
       mountModules: mountDraft.value,
     });
-    await refreshState();
+    mountDraftDirty.value = false;
+    await refreshState({ forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存挂载模块失败。";
@@ -10075,7 +10875,7 @@ async function reloadModules() {
 
   try {
     await bridge.reloadRuntimeMounts(settingsDraft.value);
-    await refreshState();
+    await refreshState({ forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "重载智能能力失败。";
@@ -10107,7 +10907,7 @@ async function saveSettings() {
   try {
     await bridge.saveSettings(settingsPayloadForSave());
     settingsDraftDirty.value = false;
-    await refreshState({ forceSettings: true });
+    await refreshState({ forceSettings: true, forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存基础设置失败。";
@@ -10136,10 +10936,25 @@ async function saveModelLibrarySettings() {
     }
     await bridge.saveSettings(settingsPayloadForSave());
     settingsDraftDirty.value = false;
-    await refreshState({ forceSettings: true });
+    await refreshState({ forceSettings: true, forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存模型库配置失败。";
+  } finally {
+    busyKey.value = "";
+  }
+}
+
+async function saveAgentPermissionSettings() {
+  busyKey.value = "agent-permissions-save";
+  error.value = "";
+  try {
+    settingsDraft.value.agentPermissionGroups = agentPermissionGroups.value;
+    const saved = await bridge.saveSettings(settingsPayloadForSave());
+    replaceSettingsDraftFromServer(saved);
+  } catch (nextError) {
+    error.value =
+      nextError instanceof Error ? nextError.message : "保存智能体权限组失败。";
   } finally {
     busyKey.value = "";
   }
@@ -10187,7 +11002,8 @@ async function saveDiscovery() {
 
   try {
     await bridge.saveDiscoveryConfig(discoveryDraft.value);
-    await refreshState();
+    discoveryDraftDirty.value = false;
+    await refreshState({ forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存服务发现配置失败。";
@@ -10201,7 +11017,8 @@ async function saveRules() {
 
   try {
     await bridge.saveEmailRules(JSON.parse(rulesText.value) as EmailRuleSet);
-    await refreshState();
+    rulesDraftDirty.value = false;
+    await refreshState({ forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存规则库失败。";
@@ -10215,7 +11032,8 @@ async function saveExpertVocabulary() {
 
   try {
     await bridge.saveExpertVocabulary(expertVocabularyDraft.value);
-    await refreshState();
+    expertVocabularyDraftDirty.value = false;
+    await refreshState({ forceDrafts: false });
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "保存专家词汇库失败。";
@@ -10223,30 +11041,29 @@ async function saveExpertVocabulary() {
   }
 }
 
-async function refreshToolPlatform() {
-  await refreshToolManagement();
-}
-
 async function refreshToolManagement(options: { silent?: boolean } = {}) {
   const showBusy = !options.silent;
   if (showBusy) {
-    busyKey.value = "tool-platform";
+    busyKey.value = "tool-management";
   }
   error.value = "";
 
   try {
-    const [legacyState, catalog, audit, metrics] = await Promise.all([
-      bridge.getToolPlatform(),
+    const [grants, catalog, audit, metrics] = await Promise.all([
+      bridge.getToolManagementGrants(),
       bridge.getToolManagementCatalog(),
       bridge.getToolManagementAudit(50),
       bridge.getToolManagementMetrics(),
     ]);
-    replaceToolPlatformState(legacyState);
+    toolManagementGrantsState.value = grants.grants;
     toolManagementCatalogState.value = catalog;
     toolManagementAuditItems.value = audit.items;
     toolManagementMetricsState.value = metrics.metrics;
     if (!policyPreviewToolId.value && catalog.tools.length > 0) {
       policyPreviewToolId.value = catalog.tools[0].id;
+    }
+    if (!selectedToolManagementToolId.value && catalog.tools.length > 0) {
+      selectedToolManagementToolId.value = catalog.tools[0].id;
     }
   } catch (nextError) {
     error.value =
@@ -10380,6 +11197,29 @@ async function refreshBackgroundProcesses(options: { silent?: boolean } = {}) {
   }
 }
 
+async function refreshClientRuntimeStatus(options: { silent?: boolean } = {}) {
+  if (!options.silent) {
+    busyKey.value = "client-runtime:refresh";
+  }
+  error.value = "";
+  try {
+    const status = await bridge.getClientRuntimeStatus();
+    if (consoleState.value) {
+      consoleState.value = {
+        ...consoleState.value,
+        clientRuntime: status,
+      };
+    }
+  } catch (nextError) {
+    error.value =
+      nextError instanceof Error ? nextError.message : "刷新客户端运行时热度失败。";
+  } finally {
+    if (!options.silent) {
+      busyKey.value = "";
+    }
+  }
+}
+
 async function refreshMonitorAlerts(options: { silent?: boolean } = {}) {
   if (!canReadMaintenanceAgent.value) {
     return;
@@ -10450,7 +11290,15 @@ async function chatMaintenanceAgent() {
   busyKey.value = "maintenance-agent:chat";
   error.value = "";
   try {
-    const result = await bridge.chatMaintenanceAgent({ message, wait: true });
+    const selectedAgent = visibleModelEntries.value.find(
+      (entry) => modelEntryStatusKey(entry) === maintenanceAgentModelAlias.value,
+    );
+    const result = await bridge.chatMaintenanceAgent({
+      message,
+      modelAlias: maintenanceAgentModelAlias.value || undefined,
+      agentName: selectedAgent?.agentName || selectedAgent?.label || undefined,
+      wait: true,
+    });
     maintenanceAgentResultJson.value = jsonPreview(result);
     selectedMaintenanceAgentRun.value = result.run;
     await refreshMaintenanceAgent({ silent: true });
@@ -10534,7 +11382,6 @@ async function createGrant() {
       scopes: newGrantScopes.value,
       toolsets: newGrantToolsets.value,
     });
-    replaceToolPlatformState(result.state);
     issuedToolToken.value = result.token;
     await refreshToolManagement({ silent: true });
   } catch (nextError) {
@@ -10545,19 +11392,19 @@ async function createGrant() {
   }
 }
 
-async function updateGrant(grant: ToolPlatformGrant, patch: Partial<ToolPlatformGrant>) {
+async function updateGrant(grant: ToolManagementGrant, patch: Partial<ToolManagementGrant>) {
   busyKey.value = `grant:${grant.id}`;
   error.value = "";
 
   try {
-    replaceToolPlatformState(
-      await bridge.updateToolGrant(grant.id, {
-        label: patch.label,
-        enabled: patch.enabled,
-        scopes: patch.scopes,
-        toolsets: patch.toolsets,
-      }),
-    );
+    await bridge.updateToolGrant(grant.id, {
+      label: patch.label,
+      enabled: patch.enabled,
+      scopes: patch.scopes,
+      toolsets: patch.toolsets,
+      toolAllow: patch.toolAllow,
+      toolDeny: patch.toolDeny,
+    });
     await refreshToolManagement({ silent: true });
   } catch (nextError) {
     error.value =
@@ -10567,7 +11414,7 @@ async function updateGrant(grant: ToolPlatformGrant, patch: Partial<ToolPlatform
   }
 }
 
-async function toggleGrantScope(grant: ToolPlatformGrant, scopeId: string) {
+async function toggleGrantScope(grant: ToolManagementGrant, scopeId: string) {
   const nextScopes = new Set(grant.scopes);
   if (nextScopes.has(scopeId)) {
     nextScopes.delete(scopeId);
@@ -10579,7 +11426,7 @@ async function toggleGrantScope(grant: ToolPlatformGrant, scopeId: string) {
   });
 }
 
-async function toggleGrantToolset(grant: ToolPlatformGrant, toolsetId: string) {
+async function toggleGrantToolset(grant: ToolManagementGrant, toolsetId: string) {
   const nextToolsets = new Set(grant.toolsets || []);
   if (nextToolsets.has(toolsetId)) {
     nextToolsets.delete(toolsetId);
@@ -10591,14 +11438,13 @@ async function toggleGrantToolset(grant: ToolPlatformGrant, toolsetId: string) {
   });
 }
 
-async function rotateGrant(grant: ToolPlatformGrant) {
+async function rotateGrant(grant: ToolManagementGrant) {
   busyKey.value = `grant:${grant.id}`;
   error.value = "";
   issuedToolToken.value = "";
 
   try {
     const result = await bridge.rotateToolGrantToken(grant.id);
-    replaceToolPlatformState(result.state);
     issuedToolToken.value = result.token;
     await refreshToolManagement({ silent: true });
   } catch (nextError) {
@@ -10609,7 +11455,7 @@ async function rotateGrant(grant: ToolPlatformGrant) {
   }
 }
 
-async function deleteGrant(grant: ToolPlatformGrant) {
+async function deleteGrant(grant: ToolManagementGrant) {
   if (!window.confirm(`撤销工具授权“${grant.label}”？`)) {
     return;
   }
@@ -10618,7 +11464,7 @@ async function deleteGrant(grant: ToolPlatformGrant) {
   error.value = "";
 
   try {
-    replaceToolPlatformState(await bridge.deleteToolGrant(grant.id));
+    await bridge.deleteToolGrant(grant.id);
     await refreshToolManagement({ silent: true });
   } catch (nextError) {
     error.value =
@@ -10689,7 +11535,7 @@ const filteredClientList = computed(() => {
 });
 
 const displayedClients = computed(() => filteredClients.value.slice(0, 6));
-const recentJobs = computed(() => filteredJobs.value.slice(0, 8));
+const recentJobs = computed(() => filteredJobs.value);
 const maintenanceAgentSummary = computed(() => consoleState.value?.maintenanceAgent || null);
 const maintenanceAgentRunbooks = computed(() =>
   Object.values(
@@ -10893,14 +11739,160 @@ const backgroundSupervisorLabel = computed(() => {
 const backgroundRunningCount = computed(
   () => backgroundProcesses.value.filter((item) => item.alive && !item.stale).length,
 );
+const clientRuntimeStatus = computed(() => consoleState.value?.clientRuntime || null);
+const clientRuntimeHeatRows = computed(() => clientRuntimeStatus.value?.heatmap?.clients || []);
+const clientRuntimeSummary = computed(() => clientRuntimeStatus.value?.summary || {
+  totalClients: 0,
+  hotClients: 0,
+  warmClients: 0,
+  cooledClients: 0,
+  totalCalls: 0,
+  workspaceCount: 0,
+  contextCount: 0,
+});
+const clientRuntimeCoolingPolicyText = computed(() => {
+  const policy = clientRuntimeStatus.value?.coolingPolicy || {};
+  const strategy = String(policy.strategy || "lru-lfu-v1");
+  const coldAfterMinutes = Math.round(Number(policy.coldAfterMs || 0) / 60000);
+  const maxWarmClients = Number(policy.maxWarmClients || 0);
+  return `${strategy} · 冷却阈值 ${coldAfterMinutes || "默认"} 分钟 · 保温客户端 ${maxWarmClients || "不限"}`;
+});
 const monitorAlertSummary = computed(() => monitorAlertState.value?.summary || {
   activeCount: 0,
+  visibleCount: 0,
+  recoveredCount: 0,
   criticalCount: 0,
   warningCount: 0,
   historyCount: 0,
 });
 const activeMonitorAlerts = computed(() => monitorAlertState.value?.activeAlerts || []);
 const recentMonitorAlertHistory = computed(() => (monitorAlertState.value?.history || []).slice(0, 8));
+const queueMonitorState = computed(() => monitorAlertState.value?.queueMonitor || null);
+const queueMonitorItems = computed<QueueMonitorItem[]>(() => {
+  const rawItems = queueMonitorState.value?.items;
+  if (Array.isArray(rawItems)) {
+    return rawItems;
+  }
+  if (rawItems && typeof rawItems === "object") {
+    return Object.values(rawItems as Record<string, QueueMonitorItem>);
+  }
+  return [];
+});
+const allMaintenanceAgentRuns = computed(() =>
+  maintenanceAgentRuns.value.length > 0
+    ? maintenanceAgentRuns.value
+    : maintenanceAgentSummary.value?.runs || [],
+);
+const workQueueRows = computed<WorkQueueRow[]>(() => {
+  const rows: WorkQueueRow[] = [];
+  const monitoredJobOwners = new Set<string>();
+  const monitoredQueueIds = new Set<string>();
+
+  for (const item of queueMonitorItems.value) {
+    const registration = item.unifiedRegistration;
+    const attributes = registration?.attributes || {};
+    const relations = registration?.relations || {};
+    monitoredJobOwners.add(item.ownerId);
+    monitoredQueueIds.add(item.queueId);
+    rows.push({
+      rowId: registration?.registrationId || `queue-monitor:${item.queueId}`,
+      queueId: String(attributes.queueId || item.queueId),
+      kind: String(attributes.kind || item.kind || "queue"),
+      label: registration?.label || item.label || item.queueId,
+      ownerId: String(relations.ownerId || item.ownerId || ""),
+      source: "queue-monitor",
+      sourceLabel: queueSourceLabel(registration?.source || item.source || item.sources?.[0] || "queue-monitor"),
+      lifecycleStatus: registration?.status || item.lifecycleStatus || item.status || "unknown",
+      status: String(attributes.status || item.status || item.lifecycleStatus || "unknown"),
+      phase: String(attributes.phase || item.phase || item.status || ""),
+      tone: registration?.tone || queueLifecycleTone(item.lifecycleStatus || item.status),
+      startedAt: item.startedAt || "",
+      updatedAt: item.closedAt || item.recoveredAt || registration?.registeredAt || item.lastHeartbeatAt || item.lastCheckpointAt || "",
+      lastHeartbeatAt: String(attributes.lastHeartbeatAt || item.lastHeartbeatAt || ""),
+      checkpointTreeId: String(relations.checkpointTreeId || item.checkpointTreeId || ""),
+      detail: queueMonitorDetail(item),
+      registration,
+    });
+  }
+
+  for (const job of consoleState.value?.jobs.items || []) {
+    const registration = job.unifiedRegistration;
+    const relations = registration?.relations || {};
+    const attributes = registration?.attributes || {};
+    const queueId = job.queueId || "";
+    if ((queueId && monitoredQueueIds.has(queueId)) || monitoredJobOwners.has(job.id)) {
+      continue;
+    }
+    rows.push({
+      rowId: `split-job:${job.id}`,
+      queueId: queueId || `job:${job.id}`,
+      kind: "import_parse_job",
+      label: registration?.label || `导入解析任务 ${job.id}`,
+      ownerId: job.id,
+      source: "split-job",
+      sourceLabel: registration?.source === "jobs" ? "服务端任务" : registration?.source || "服务端任务",
+      lifecycleStatus: registration?.status || job.status,
+      status: job.status,
+      phase: String(attributes.stage || job.stage || job.status),
+      tone: registration?.tone || queueLifecycleTone(job.status),
+      startedAt: job.startedAt || job.createdAt || "",
+      updatedAt: job.finishedAt || registration?.registeredAt || job.updatedAt || "",
+      lastHeartbeatAt: job.updatedAt || "",
+      checkpointTreeId: String(relations.checkpointTreeId || job.checkpointTreeId || ""),
+      detail: `进度 ${job.progressPercent}% · ${job.stage || "无阶段信息"}`,
+      registration,
+    });
+  }
+
+  for (const run of allMaintenanceAgentRuns.value) {
+    const registration = run.unifiedRegistration;
+    const relations = registration?.relations || {};
+    const attributes = registration?.attributes || {};
+    rows.push({
+      rowId: registration?.registrationId || `maintenance-agent:${run.runId}`,
+      queueId: String(relations.queueId || `maintenance:${run.runId}`),
+      kind: String(attributes.taskType || "maintenance_agent_run"),
+      label: registration?.label || run.summary || run.intent || `智能巡检任务 ${run.runId}`,
+      ownerId: run.runId,
+      source: "maintenance-agent",
+      sourceLabel: registration?.source === "maintenance-agent" ? "智能巡检" : registration?.source || "智能巡检",
+      lifecycleStatus: registration?.status || run.status,
+      status: run.status,
+      phase: String(attributes.stage || run.status),
+      tone: registration?.tone || queueLifecycleTone(run.status),
+      startedAt: run.startedAt || run.createdAt || "",
+      updatedAt: run.completedAt || registration?.registeredAt || run.updatedAt || "",
+      lastHeartbeatAt: run.updatedAt || "",
+      checkpointTreeId: "",
+      detail: `${maintenanceAgentRiskLabel(run.risk)} · ${run.plan?.summary || run.intent || "智能巡检"}`,
+      registration,
+    });
+  }
+
+  const activeRank = (row: WorkQueueRow) =>
+    ["interrupted", "failed"].includes(row.status) || row.lifecycleStatus === "interrupted"
+      ? 0
+      : ["running", "queued", "awaiting_approval", "open"].includes(row.status) || row.lifecycleStatus === "open"
+        ? 1
+        : row.lifecycleStatus === "recovered"
+          ? 2
+          : 3;
+  return rows.sort((left, right) => {
+    const rankDelta = activeRank(left) - activeRank(right);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    return Date.parse(right.updatedAt || right.startedAt || "") - Date.parse(left.updatedAt || left.startedAt || "");
+  });
+});
+const workQueueSummary = computed(() => ({
+  total: workQueueRows.value.length,
+  active: workQueueRows.value.filter((row) =>
+    ["queued", "running", "awaiting_approval"].includes(row.status) || row.lifecycleStatus === "open",
+  ).length,
+  interrupted: workQueueRows.value.filter((row) => row.lifecycleStatus === "interrupted" || row.status === "interrupted").length,
+  recovered: workQueueRows.value.filter((row) => row.lifecycleStatus === "recovered" || row.status === "recovered").length,
+}));
 
 const serverIdentity = computed(
   () =>
@@ -11122,6 +12114,7 @@ onMounted(() => {
     const session = await refreshAuthState();
     if (!session?.bootstrap.required && (session?.session.authenticated || session?.enabled === false)) {
       await refreshState({ silent: true });
+      await refreshMonitorAlerts({ silent: true });
       await refreshKnowledgeConsole();
       await refreshContextCompiler({ silent: true });
       await restoreAgentExploreState();
@@ -11181,10 +12174,10 @@ onUnmounted(() => {
           数据源
         </button>
 
-        <section class="side-nav-section" aria-label="知识库">
+        <section v-if="hasFeature('knowledge-core')" class="side-nav-section" aria-label="知识库">
           <p class="side-nav-section-title">知识库</p>
           <button
-            v-for="tab in knowledgeTabs"
+            v-for="tab in visibleKnowledgeTabs"
             :key="tab.id"
             class="side-link side-link-subtle"
             :class="{ active: currentView === 'knowledge' && knowledgeTab === tab.id }"
@@ -11195,10 +12188,10 @@ onUnmounted(() => {
           </button>
         </section>
 
-        <section class="side-nav-section" aria-label="调试面板">
+        <section v-if="visibleDebugTabs.length > 0" class="side-nav-section" aria-label="调试面板">
           <p class="side-nav-section-title">调试面板</p>
           <button
-            v-for="tab in debugTabs"
+            v-for="tab in visibleDebugTabs"
             :key="tab.id"
             class="side-link side-link-subtle"
             :class="{ active: currentView === 'debug' && debugTab === tab.id }"
@@ -11209,9 +12202,14 @@ onUnmounted(() => {
           </button>
         </section>
 
-        <section class="side-nav-section" aria-label="智能体">
+        <section
+          v-if="hasAnyFeature(['agent-gateway', 'agent-management', 'agent-exploration', 'maintenance-agent-runbooks'])"
+          class="side-nav-section"
+          aria-label="智能体"
+        >
           <p class="side-nav-section-title">智能体</p>
           <button
+            v-if="hasFeature('agent-exploration')"
             class="side-link side-link-subtle"
             :class="{ active: currentView === 'intelligence' }"
             type="button"
@@ -11220,6 +12218,16 @@ onUnmounted(() => {
             智能分析
           </button>
           <button
+            v-if="hasFeature('agent-management')"
+            class="side-link side-link-subtle"
+            :class="{ active: currentView === 'admin' && adminView === 'agentManagement' }"
+            type="button"
+            @click="openAdmin('agentManagement')"
+          >
+            智能体管理
+          </button>
+          <button
+            v-if="hasFeature('agent-gateway') || hasFeature('agent-management')"
             class="side-link side-link-subtle"
             :class="{ active: currentView === 'admin' && adminView === 'tools' }"
             type="button"
@@ -11228,6 +12236,16 @@ onUnmounted(() => {
             智能体工具
           </button>
           <button
+            v-if="hasFeature('agent-management')"
+            class="side-link side-link-subtle"
+            :class="{ active: currentView === 'admin' && adminView === 'agentPermissions' }"
+            type="button"
+            @click="openAdmin('agentPermissions')"
+          >
+            智能体权限
+          </button>
+          <button
+            v-if="hasFeature('maintenance-agent-runbooks')"
             class="side-link side-link-subtle"
             :class="{ active: currentView === 'admin' && adminView === 'maintenanceAgent' }"
             type="button"
@@ -11236,6 +12254,7 @@ onUnmounted(() => {
             智能巡检
           </button>
           <button
+            v-if="hasFeature('agent-gateway')"
             class="side-link side-link-subtle"
             :class="{ active: currentView === 'admin' && adminView === 'agentConfig' }"
             type="button"
@@ -11273,7 +12292,15 @@ onUnmounted(() => {
             type="button"
             @click="openAdmin('jobs')"
           >
-            后台任务
+            工作队列
+          </button>
+          <button
+            class="side-link side-link-subtle"
+            :class="{ active: currentView === 'admin' && adminView === 'opsMonitor' }"
+            type="button"
+            @click="openAdmin('opsMonitor')"
+          >
+            运维监控
           </button>
         </section>
 
@@ -11307,7 +12334,7 @@ onUnmounted(() => {
             class="tool-button"
             type="button"
             :disabled="busyKey === 'refresh'"
-            @click="refreshState()"
+            @click="refreshState({ forceDrafts: true })"
           >
             {{ busyKey === "refresh" ? "同步中" : "刷新" }}
           </button>
@@ -11356,7 +12383,7 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'debug'">
+        <template v-if="isAuthenticated && currentView === 'debug' && visibleDebugTabs.length > 0">
           <section class="debug-panel-shell">
             <article v-if="debugTab === 'knowledgeRecall'" class="surface-card debug-panel-card knowledge-recall-debug-card">
               <div class="section-header">
@@ -11434,6 +12461,7 @@ onUnmounted(() => {
                     <div>
                       <h4>{{ run.label }}</h4>
                       <span>{{ run.status }} · {{ run.elapsedMs }} ms · {{ run.items.length }} 条</span>
+                      <small v-if="knowledgeFusionSummary(run.response)">{{ knowledgeFusionSummary(run.response) }}</small>
                     </div>
                   </header>
                   <div class="info-feed-results-list debug-result-list">
@@ -11734,32 +12762,33 @@ onUnmounted(() => {
           <article class="surface-card configuration-alert-card">
             <div class="section-header">
               <div>
-                <h3>空配置报警</h3>
-                <p>{{ agentConfigurationAlertSummary }}</p>
+                <h3>报警</h3>
+                <p>{{ dashboardAlertSummary }}</p>
               </div>
               <StatusPill
-                :tone="agentConfigurationAlerts.length ? 'warning' : 'success'"
-                :label="agentConfigurationAlerts.length ? `${agentConfigurationAlerts.length} 项` : '已就绪'"
+                :tone="dashboardAlerts.length ? 'warning' : 'success'"
+                :label="dashboardAlerts.length ? `${dashboardAlerts.length} 项` : '已就绪'"
               />
             </div>
-            <div v-if="agentConfigurationAlerts.length" class="configuration-alert-list">
+            <div v-if="dashboardAlerts.length" class="configuration-alert-list">
               <button
-                v-for="alertItem in agentConfigurationAlerts"
+                v-for="alertItem in dashboardAlerts"
                 :key="alertItem.alertId"
                 class="configuration-alert-item"
                 type="button"
                 :data-tone="alertItem.tone"
-                @click="openAgentConfigurationAlert(alertItem)"
+                :disabled="busyKey === `monitor-alert:ack:${alertItem.alertId}`"
+                @click="openDashboardAlert(alertItem)"
               >
                 <span class="configuration-alert-category">{{ alertItem.category }}</span>
                 <strong>{{ alertItem.title }}</strong>
                 <span>{{ alertItem.detail }}</span>
-                <em>{{ alertItem.status }} · 去配置</em>
+                <em>{{ alertItem.status }} · {{ busyKey === `monitor-alert:ack:${alertItem.alertId}` ? "确认中" : alertItem.actionLabel }}</em>
               </button>
             </div>
             <div v-else class="configuration-alert-empty">
-              <strong>没有空配置</strong>
-              <span>当前工作流中需要智能体的入口都已经显式绑定可用模型。</span>
+              <strong>没有报警</strong>
+              <span>空配置、中断和后台巡检当前都没有需要处理的事项。</span>
             </div>
           </article>
           <article class="surface-card rule-authoring-card">
@@ -12557,127 +13586,27 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'knowledge'">
+        <template v-if="isAuthenticated && currentView === 'knowledge' && hasFeature('knowledge-core')">
           <section class="knowledge-layout">
-            <article
-              v-if="knowledgeTab === 'overview'"
-              class="surface-card knowledge-hero"
-              :class="{ 'knowledge-search-card': knowledgeTab === 'overview', expanded: knowledgeSearchExpanded }"
+            <div
+              v-if="knowledgeTab === 'management'"
+              class="knowledge-management-tabs"
+              role="tablist"
+              aria-label="知识管理面板"
             >
-              <div class="section-header">
-                <div>
-                  <h3>知识召回调试</h3>
-                </div>
-                <div class="section-tags">
-                  <span>{{ knowledgeConsole?.available ? "KnowledgeCore 可用" : "KnowledgeCore 未启用" }}</span>
-                  <span>{{ knowledgeStatus }}</span>
-                  <span>目录 {{ knowledgeSourceState?.summary.totalCount || 0 }}</span>
-                </div>
-              </div>
-              <form
-                v-if="canReadKnowledge && knowledgeTab === 'overview'"
-                class="knowledge-page-search"
-                @submit.prevent="searchKnowledge"
+              <button
+                v-for="option in knowledgeManagementPanelOptionBarOptions"
+                :key="String(option.value)"
+                class="knowledge-management-tab"
+                :class="{ active: knowledgeManagementPanel === option.value }"
+                type="button"
+                role="tab"
+                :aria-selected="knowledgeManagementPanel === option.value"
+                @click="selectKnowledgeManagementPanel(option.value)"
               >
-                <input
-                  v-model="knowledgeSearchForm.query"
-                  type="search"
-                  placeholder="调试底层召回，默认全库搜索：例如 账单"
-                />
-                <button
-                  class="primary-action"
-                  type="submit"
-                  :disabled="busyKey === 'knowledge:search' || !knowledgeSearchForm.query.trim()"
-                >
-                  {{ busyKey === "knowledge:search" ? "召回中" : "召回" }}
-                </button>
-              </form>
-
-              <div v-if="knowledgeSearchExpanded" class="knowledge-search-workspace has-preview">
-                <div class="knowledge-search-workspace-grid">
-                <div class="knowledge-result-pane">
-                  <div class="knowledge-result-list">
-                    <button
-                      v-for="item in knowledgeSearchResults"
-                      :key="String(item.evidenceId || item.itemId || item.documentId || item.title)"
-                      class="knowledge-result"
-                      :class="{ active: knowledgeResultEvidenceId(item) === selectedEvidenceId }"
-                      type="button"
-                      :disabled="!knowledgeResultEvidenceId(item)"
-                      :title="knowledgeResultTitle(item)"
-                      @click="openKnowledgeSearchResult(item)"
-                    >
-                      <strong>{{ knowledgeResultTitle(item) }}</strong>
-                      <span v-if="knowledgeResultSnippet(item)">{{ knowledgeResultSnippet(item) }}</span>
-                      <small v-if="knowledgeResultHierarchyPath(item)">
-                        {{ knowledgeResultHierarchyPath(item) }}
-                      </small>
-                      <small>
-                        相关度 {{ knowledgeResultScore(item) }}
-                        / 图片 {{ knowledgeResultAssetCount(item) }}
-                      </small>
-                    </button>
-                    <div v-if="busyKey === 'knowledge:search'" class="empty-note">正在检索。</div>
-                    <div v-else-if="knowledgeSearchEmpty" class="empty-state">
-                      <strong>没有找到结果</strong>
-                      <span>已完成对“{{ lastKnowledgeSearchQuery }}”的搜索，可以换一个事务、人物或更上层分类词再试。</span>
-                    </div>
-                  </div>
-                </div>
-
-                <aside class="knowledge-evidence-card knowledge-preview-pane">
-                  <div class="section-header compact-section-header">
-                    <div>
-                      <h3>{{ selectedEvidenceDisplayTitle }}</h3>
-                    </div>
-                  </div>
-                  <template v-if="selectedEvidence">
-                    <section class="evidence-text">
-                      <div class="evidence-text-heading">
-                        <h4>原始文件</h4>
-                        <span>{{ evidenceReadableKind }}</span>
-                      </div>
-                      <div class="evidence-rendered-content" v-html="evidenceReadableHtml"></div>
-                    </section>
-                    <ConfigFoldCard class="evidence-retrieval-details" title="检索细节">
-                      <dl class="meta-list evidence-summary-list">
-                        <div>
-                          <dt>相关度</dt>
-                          <dd>{{ Number(selectedEvidence.score || selectedEvidence.finalScore || 0).toFixed(3) }}</dd>
-                        </div>
-                        <div>
-                          <dt>图片</dt>
-                          <dd>{{ evidenceAssets.length }}</dd>
-                        </div>
-                        <div>
-                          <dt>命中说明</dt>
-                          <dd>{{ evidenceReasonText() }}</dd>
-                        </div>
-                      </dl>
-                    </ConfigFoldCard>
-                    <ConfigFoldCard class="evidence-source-details" title="来源定位">
-                      <dl class="meta-list evidence-summary-list">
-                        <div
-                          v-for="item in evidenceSourceDetails()"
-                          :key="item.label"
-                        >
-                          <dt>{{ item.label }}</dt>
-                          <dd>{{ item.value }}</dd>
-                        </div>
-                      </dl>
-                    </ConfigFoldCard>
-                    <ConfigFoldCard title="机器结构">
-                      <pre>{{ jsonPreview(selectedEvidence || {}) }}</pre>
-                    </ConfigFoldCard>
-                  </template>
-                  <div v-else class="knowledge-preview-empty">
-                    <strong>未选择来源</strong>
-                    <span>{{ busyKey === "knowledge:search" ? "正在整理候选来源。" : "搜索结果详情会显示在这里。" }}</span>
-                  </div>
-                </aside>
-              </div>
-              </div>
-            </article>
+                {{ option.label }}
+              </button>
+            </div>
 
             <article v-if="knowledgeTab === 'logs'" class="surface-card knowledge-log-report">
               <div class="section-header">
@@ -12768,7 +13697,10 @@ onUnmounted(() => {
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'ingest'" class="surface-card knowledge-source-manager">
+            <article
+              v-if="knowledgeTab === 'ingest' || (knowledgeTab === 'management' && knowledgeManagementPanel === 'knowledge')"
+              class="surface-card knowledge-source-manager"
+            >
               <div class="section-header">
                 <div>
                   <h3>持续同步目录</h3>
@@ -12944,7 +13876,10 @@ onUnmounted(() => {
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'ingest'" class="surface-card ingest-upload-card">
+            <article
+              v-if="knowledgeTab === 'ingest' || (knowledgeTab === 'management' && knowledgeManagementPanel === 'knowledge')"
+              class="surface-card ingest-upload-card"
+            >
               <div class="section-header">
                 <div>
                   <h3>临时上传</h3>
@@ -13353,14 +14288,22 @@ onUnmounted(() => {
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'expertRules'" class="surface-card expert-rules-page">
+            <article
+              v-if="knowledgeTab === 'expertRules' || (knowledgeTab === 'management' && knowledgeManagementPanel === 'rules')"
+              class="surface-card expert-rules-page"
+            >
               <div class="section-header">
                 <div>
                   <h3>黄金规则</h3>
                   <p>智能体蒸馏、候选发布和审核分流都必须先经过这些规则。关闭规则后，运行时会直接跳过该规则。</p>
                 </div>
                 <div class="source-actions">
-                  <button class="tool-button" type="button" :disabled="busyKey === 'expert-rules:refresh'" @click="refreshExpertRules">
+                  <button
+                    class="tool-button"
+                    type="button"
+                    :disabled="busyKey === 'expert-rules:refresh'"
+                    @click="refreshExpertRules({ forceDrafts: true })"
+                  >
                     {{ busyKey === "expert-rules:refresh" ? "加载中" : "重新加载" }}
                   </button>
                 </div>
@@ -13413,7 +14356,10 @@ onUnmounted(() => {
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'expertRules'" class="surface-card knowledge-vocabulary expert-rules-page">
+            <article
+              v-if="knowledgeTab === 'expertRules' || (knowledgeTab === 'management' && knowledgeManagementPanel === 'rules')"
+              class="surface-card knowledge-vocabulary expert-rules-page"
+            >
                 <div class="section-header">
                   <div>
                     <h3>专家词汇规则</h3>
@@ -13496,7 +14442,10 @@ onUnmounted(() => {
                 </div>
             </article>
 
-            <article v-if="knowledgeTab === 'expertRules'" class="surface-card knowledge-rules expert-rules-page">
+            <article
+              v-if="knowledgeTab === 'expertRules' || (knowledgeTab === 'management' && knowledgeManagementPanel === 'rules')"
+              class="surface-card knowledge-rules expert-rules-page"
+            >
                 <div class="section-header">
                   <div>
                     <h3>邮件专家规则</h3>
@@ -13591,7 +14540,7 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'intelligence'">
+        <template v-if="isAuthenticated && currentView === 'intelligence' && hasFeature('agent-exploration')">
           <section class="modules-layout">
             <article class="surface-card module-control-card">
               <div class="module-card-meta">
@@ -13917,7 +14866,249 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'agentConfig'">
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'agentManagement' && hasFeature('agent-management')">
+          <section class="agent-management-layout">
+            <article class="surface-card">
+              <form class="drawer-panel" @submit.prevent="saveModelLibrarySettings">
+                <div class="section-header">
+                  <div>
+                    <h3>智能体管理</h3>
+                    <p>系统当前按四类平台管理：模块管理、工具管理、智能体管理、知识管理；本页负责智能体实例的新增、修改、删除和权限组绑定。</p>
+                  </div>
+                  <div class="section-tags">
+                    <span>智能体 {{ visibleModelEntries.length }}</span>
+                    <span>权限组 {{ agentPermissionGroups.length }}</span>
+                  </div>
+                </div>
+
+                <div class="model-library-toolbar">
+                  <OptionBar
+                    v-model="selectedModelProvider"
+                    :options="addableModelProviderOptionBarOptions"
+                  />
+                  <button class="tool-button" type="button" @click="addModelProvider">
+                    新增智能体
+                  </button>
+                  <button class="tool-button" type="submit" :disabled="busyKey === 'model-library-save'">
+                    {{ busyKey === "model-library-save" ? "保存中" : "保存智能体" }}
+                  </button>
+                </div>
+
+                <div v-if="visibleModelEntries.length > 0" class="agent-management-grid">
+                  <article
+                    v-for="entry in visibleModelEntries"
+                    :key="entry.instanceId"
+                    class="agent-management-card"
+                  >
+                    <div class="agent-management-card-header">
+                      <div>
+                        <strong>{{ entry.label || modelEntryStatusKey(entry) }}</strong>
+                        <span>{{ modelProviderDefinition(entry.provider)?.label || providerLabel(entry.provider) }} / {{ entry.model || "未配置模型" }}</span>
+                      </div>
+                      <StatusPill :tone="modelEntryStatusTone(entry)" :label="modelEntryStatusLabel(entry)" />
+                    </div>
+                    <div class="form-grid compact-form-grid">
+                      <label>
+                        <span>智能体名称</span>
+                        <input v-model="entry.label" autocomplete="off" />
+                      </label>
+                      <label>
+                        <span>模型 ID</span>
+                        <input v-model="entry.model" autocomplete="off" />
+                      </label>
+                      <label>
+                        <span>权限组</span>
+                        <OptionBar
+                          :model-value="entry.permissionGroupId || ''"
+                          :options="agentPermissionGroupOptionBarOptions"
+                          @update:model-value="setModelEntryPermissionGroup(entry, String($event))"
+                        />
+                      </label>
+                    </div>
+                    <ConfigFoldCard title="调用参数">
+                      <template #summary>
+                        <span>调用参数</span>
+                        <small class="fold-dropdown-hint">点击展开 ▾</small>
+                      </template>
+                      <label>
+                        <span>系统提示词</span>
+                        <textarea v-model="entry.systemPrompt" rows="4" autocomplete="off"></textarea>
+                      </label>
+                      <label>
+                        <span>参数 JSON</span>
+                        <textarea v-model="entry.parametersText" rows="5" spellcheck="false"></textarea>
+                      </label>
+                    </ConfigFoldCard>
+                    <ConfigFoldCard title="连接信息">
+                      <template #summary>
+                        <span>连接信息</span>
+                        <small class="fold-dropdown-hint">点击展开 ▾</small>
+                      </template>
+                      <div class="form-grid compact-form-grid">
+                        <label v-if="entry.provider === 'deepseek' || entry.provider === 'openrouter' || entry.provider === 'custom-http'">
+                          <span>Base URL / URL</span>
+                          <input v-model="entry.baseUrl" autocomplete="off" />
+                        </label>
+                        <label v-if="entry.provider === 'custom-http'">
+                          <span>HTTP URL</span>
+                          <input v-model="entry.url" autocomplete="off" />
+                        </label>
+                        <label v-if="entry.provider === 'deepseek'">
+                          <span>Key / Token</span>
+                          <input v-model="entry.apiKey" type="password" autocomplete="off" placeholder="留空保持已保存密钥" />
+                        </label>
+                        <label v-if="entry.provider === 'custom-http'">
+                          <span>Token</span>
+                          <input v-model="entry.token" type="password" autocomplete="off" placeholder="留空保持已保存 Token" />
+                        </label>
+                        <label>
+                          <span>Timeout(ms)</span>
+                          <input v-model.number="entry.timeoutMs" type="number" min="1000" step="1000" />
+                        </label>
+                      </div>
+                    </ConfigFoldCard>
+                    <div class="source-actions">
+                      <button class="tool-button tool-button-ghost compact-action" type="button" :disabled="busyKey === `model-probe:${modelEntryStatusKey(entry)}`" @click="probeModelEntry(entry)">
+                        {{ busyKey === `model-probe:${modelEntryStatusKey(entry)}` ? "探测中" : "探测" }}
+                      </button>
+                      <button class="tool-button tool-button-ghost compact-action" type="button" @click="duplicateModelEntry(entry)">
+                        复制
+                      </button>
+                      <button
+                        class="table-action danger-action"
+                        type="button"
+                        :disabled="busyKey === `model-remove:${modelEntryStatusKey(entry)}` || modelEntryIsBound(entry)"
+                        :title="modelEntryIsBound(entry) ? `已绑定到 ${modelEntryBindingSummary(entry)}，请先解除引用。` : ''"
+                        @click="removeModelProvider(entry)"
+                      >
+                        删除
+                      </button>
+                    </div>
+                    <p v-if="modelProbeResults[modelEntryStatusKey(entry)]" class="model-probe-result" :data-ok="modelProbeResults[modelEntryStatusKey(entry)].ok ? 'true' : 'false'">
+                      {{ modelProbeResults[modelEntryStatusKey(entry)].message }}
+                    </p>
+                  </article>
+                </div>
+                <div v-else class="empty-state">
+                  <strong>当前没有智能体</strong>
+                  <span>选择一个模型提供方后新增智能体。</span>
+                </div>
+              </form>
+            </article>
+          </section>
+        </template>
+
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'agentPermissions' && hasFeature('agent-management')">
+          <section class="agent-permissions-layout">
+            <article class="surface-card">
+              <div class="section-header">
+                <div>
+                  <h3>智能体权限</h3>
+                  <p>权限组是智能体管理页可选择的预设；详细的权限层级、工具集和单工具例外只在这里维护。</p>
+                </div>
+                <div class="source-actions">
+                  <button class="tool-button tool-button-ghost" type="button" @click="ensureAgentPermissionGroupsDraft">
+                    生成默认组
+                  </button>
+                  <button class="tool-button tool-button-ghost" type="button" @click="addAgentPermissionGroup">
+                    新增权限组
+                  </button>
+                  <button class="tool-button" type="button" :disabled="busyKey === 'agent-permissions-save'" @click="saveAgentPermissionSettings">
+                    {{ busyKey === "agent-permissions-save" ? "保存中" : "保存权限组" }}
+                  </button>
+                </div>
+              </div>
+              <div class="detail-metrics knowledge-metrics">
+                <div>
+                  <span>权限层级</span>
+                  <strong>{{ toolScopes.length }}</strong>
+                </div>
+                <div>
+                  <span>工具集</span>
+                  <strong>{{ toolManagementToolsets.length }}</strong>
+                </div>
+                <div>
+                  <span>工具</span>
+                  <strong>{{ toolManagementTools.length }}</strong>
+                </div>
+                <div>
+                  <span>预设组</span>
+                  <strong>{{ settingsDraft.agentPermissionGroups.length }}</strong>
+                </div>
+              </div>
+            </article>
+
+            <article
+              v-for="group in settingsDraft.agentPermissionGroups"
+              :key="group.id"
+              class="surface-card agent-permission-group-card"
+              :data-enabled="group.enabled"
+            >
+              <div class="section-header">
+                <div class="form-grid compact-form-grid permission-group-title-grid">
+                  <label>
+                    <span>权限组名称</span>
+                    <input v-model="group.label" autocomplete="off" />
+                  </label>
+                  <label>
+                    <span>权限组 ID</span>
+                    <input v-model="group.id" autocomplete="off" />
+                  </label>
+                </div>
+                <div class="permission-actions">
+                  <FeatureToggle
+                    :model-value="group.enabled"
+                    :aria-label="group.enabled ? '停用权限组' : '启用权限组'"
+                    @update:model-value="group.enabled = Boolean($event)"
+                  />
+                  <button class="table-action danger-action" type="button" @click="removeAgentPermissionGroup(group)">
+                    删除
+                  </button>
+                </div>
+              </div>
+              <label class="module-field">
+                <span>说明</span>
+                <input v-model="group.description" autocomplete="off" />
+              </label>
+              <ConfigFoldCard title="第一层：权限控制层级" open>
+                <div class="scope-grid compact-scope-grid">
+                  <button
+                    v-for="scope in toolScopes"
+                    :key="scope.id"
+                    class="scope-chip"
+                    :class="{ active: permissionGroupHasScope(group, scope.id) }"
+                    type="button"
+                    @click="togglePermissionGroupScope(group, scope.id)"
+                  >
+                    <strong>{{ scope.label }}</strong>
+                    <span>{{ scope.id }}</span>
+                  </button>
+                </div>
+              </ConfigFoldCard>
+              <ConfigFoldCard title="第二层：工具集权限" open>
+                <div class="scope-grid compact-scope-grid">
+                  <button
+                    v-for="toolset in toolManagementToolsets.filter((item) => item.grantable !== false)"
+                    :key="toolset.id"
+                    class="scope-chip"
+                    :class="{ active: permissionGroupHasToolset(group, toolset.id) }"
+                    type="button"
+                    @click="togglePermissionGroupToolset(group, toolset.id)"
+                  >
+                    <strong>{{ toolset.label }}</strong>
+                    <span>{{ toolRiskLabel(toolset.maxRisk) }}</span>
+                  </button>
+                </div>
+              </ConfigFoldCard>
+            </article>
+            <div v-if="settingsDraft.agentPermissionGroups.length === 0" class="empty-state">
+              <strong>暂无权限组</strong>
+              <span>先生成默认组或新增自定义权限组。</span>
+            </div>
+          </section>
+        </template>
+
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'agentConfig' && hasFeature('agent-gateway')">
           <section class="agent-config-layout">
             <article
               class="surface-card"
@@ -14144,6 +15335,14 @@ onUnmounted(() => {
                       </template>
 
                       <ConfigFoldCard title="功能可见性与授权">
+                        <label class="module-field">
+                          <span>权限组</span>
+                          <OptionBar
+                            :model-value="entry.permissionGroupId || ''"
+                            :options="agentPermissionGroupOptionBarOptions"
+                            @update:model-value="setModelEntryPermissionGroup(entry, String($event))"
+                          />
+                        </label>
                         <OptionBar
                           :model-value="modelEntryModuleAccess(entry).mode"
                           label="开放范围"
@@ -14526,7 +15725,7 @@ onUnmounted(() => {
                   <pre>{{ jsonPreview({
                     http_request: {
                       method: 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS',
-                      url: 'http://127.0.0.1:8787/api/agent-tools/...',
+                      url: 'http://127.0.0.1:8787/api/tool-management/v1/execute',
                       headers: {},
                       query: {},
                       body: {},
@@ -14551,7 +15750,7 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'maintenanceAgent'">
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'maintenanceAgent' && hasFeature('maintenance-agent-runbooks')">
           <section class="maintenance-agent-layout">
             <article class="surface-card">
               <div class="section-header">
@@ -14592,138 +15791,6 @@ onUnmounted(() => {
                   {{ busyKey === "maintenance-agent:refresh" ? "刷新中" : "刷新" }}
                 </button>
               </div>
-            </article>
-
-            <article class="surface-card">
-              <div class="section-header">
-                <div>
-                  <h3>后台守护进程</h3>
-                </div>
-                <div class="section-tags">
-                  <span>{{ backgroundSupervisorLabel }}</span>
-                  <span>运行 {{ backgroundRunningCount }} / {{ backgroundProcesses.length }}</span>
-                </div>
-              </div>
-              <div class="source-actions">
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="busyKey === 'background-processes:refresh'"
-                  @click="refreshBackgroundProcesses()"
-                >
-                  {{ busyKey === "background-processes:refresh" ? "刷新中" : "刷新进程" }}
-                </button>
-              </div>
-              <div class="job-table compact-job-table background-process-table">
-                <div class="job-table-header">
-                  <span>进程</span>
-                  <span>状态</span>
-                  <span>PID</span>
-                  <span>心跳</span>
-                </div>
-                <div
-                  v-for="processItem in backgroundProcesses"
-                  :key="processItem.role"
-                  class="job-row"
-                >
-                  <span>
-                    <strong>{{ processItem.label }}</strong>
-                    <small>{{ processItem.role }} · 重启 {{ processItem.restartCount || 0 }}</small>
-                  </span>
-                  <StatusPill :tone="backgroundProcessTone(processItem.status)" :label="backgroundProcessLabel(processItem.status)" />
-                  <span>{{ processItem.pid || "—" }}</span>
-                  <span>{{ formatCompactDate(processItem.lastHeartbeatAt || "") }}</span>
-                </div>
-              </div>
-              <p v-if="backgroundProcessStatus?.statePath" class="module-note">
-                状态文件：{{ backgroundProcessStatus.statePath }}
-              </p>
-              <div v-if="backgroundProcesses.length === 0" class="empty-state">
-                <strong>暂无后台进程状态</strong>
-              </div>
-            </article>
-
-            <article class="surface-card">
-              <div class="section-header">
-                <div>
-                  <h3>监控报警</h3>
-                </div>
-                <div class="section-tags">
-                  <span>{{ monitorAlertState?.status || "未读取" }}</span>
-                  <span>活跃 {{ monitorAlertSummary.activeCount }}</span>
-                  <span>严重 {{ monitorAlertSummary.criticalCount }}</span>
-                </div>
-              </div>
-              <div class="source-actions">
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="busyKey === 'monitor-alerts:refresh'"
-                  @click="refreshMonitorAlerts()"
-                >
-                  {{ busyKey === "monitor-alerts:refresh" ? "刷新中" : "刷新报警" }}
-                </button>
-                <button
-                  class="primary-action"
-                  type="button"
-                  :disabled="!canAdminMaintenanceAgent || busyKey === 'monitor-alerts:save'"
-                  @click="saveMonitorAlertConfig"
-                >
-                  {{ busyKey === "monitor-alerts:save" ? "保存中" : "保存报警配置" }}
-                </button>
-              </div>
-              <div class="job-table compact-job-table monitor-alert-table">
-                <div class="job-table-header">
-                  <span>级别</span>
-                  <span>报警</span>
-                  <span>最近出现</span>
-                </div>
-                <div
-                  v-for="alert in activeMonitorAlerts"
-                  :key="alert.alertId"
-                  class="job-row"
-                >
-                  <StatusPill :tone="monitorAlertSeverityTone(alert.severity)" :label="monitorAlertSeverityLabel(alert.severity)" />
-                  <span>
-                    <strong>{{ alert.title }}</strong>
-                    <small>{{ alert.message }}</small>
-                  </span>
-                  <span>{{ formatCompactDate(alert.lastSeenAt || alert.firstSeenAt) }}</span>
-                </div>
-              </div>
-              <div v-if="activeMonitorAlerts.length === 0" class="empty-state">
-                <strong>暂无活跃报警</strong>
-              </div>
-              <ConfigFoldCard title="报警报文配置 JSON" open>
-                <label class="json-editor">
-                  <span>配置会保存到后台文件，sh 巡检脚本下一轮自动读取</span>
-                  <textarea v-model="monitorAlertConfigText" rows="14" spellcheck="false" />
-                </label>
-              </ConfigFoldCard>
-              <ConfigFoldCard title="最近报警历史">
-                <div class="job-table compact-job-table monitor-alert-table">
-                  <div class="job-table-header">
-                    <span>级别</span>
-                    <span>报警</span>
-                    <span>时间</span>
-                  </div>
-                  <div
-                    v-for="alert in recentMonitorAlertHistory"
-                    :key="`${alert.alertId}:${alert.lastSeenAt}:${alert.resolvedAt || ''}`"
-                    class="job-row"
-                  >
-                    <StatusPill :tone="monitorAlertSeverityTone(alert.severity)" :label="monitorAlertSeverityLabel(alert.severity)" />
-                    <span>
-                      <strong>{{ alert.title }}</strong>
-                      <small>{{ alert.active ? "活跃" : "已恢复" }} · {{ alert.message }}</small>
-                    </span>
-                    <span>{{ formatCompactDate(alert.lastSeenAt || alert.resolvedAt || alert.firstSeenAt) }}</span>
-                  </div>
-                </div>
-              </ConfigFoldCard>
-              <p v-if="monitorAlertState?.configPath" class="module-note">
-                配置文件：{{ monitorAlertState.configPath }}；sh 配置：{{ monitorAlertState.shellConfigPath || "未生成" }}；状态文件：{{ monitorAlertState.statePath }}
-              </p>
             </article>
 
             <article v-if="maintenanceAgentConfig" class="surface-card">
@@ -14794,8 +15861,14 @@ onUnmounted(() => {
               <section class="module-panel">
                 <div class="module-panel-heading">
                   <strong>对话入口</strong>
-                  <span>{{ maintenanceAgentConfig?.plannerMode || "fixed_runbook" }}</span>
+                  <span>{{ maintenanceAgentConfig?.plannerMode || "fixed_runbook" }} · {{ currentAgentModelOptionLabel(maintenanceAgentModelAlias) || "默认智能体" }}</span>
                 </div>
+                <OptionBar
+                  v-model="maintenanceAgentModelAlias"
+                  class="module-field"
+                  label="巡检智能体"
+                  :options="agentExploreModelOptionBarOptionsWithEmpty"
+                />
                 <label class="json-editor">
                   <span>指令</span>
                   <textarea v-model="maintenanceAgentMessage" rows="4" />
@@ -14920,7 +15993,251 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'tools'">
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'opsMonitor'">
+          <section class="maintenance-agent-layout ops-monitor-layout">
+            <article class="surface-card">
+              <div class="section-header">
+                <div>
+                  <h3>运维监控</h3>
+                  <p>统一查看服务端进程状态、守护巡检和报警队列。</p>
+                </div>
+                <div class="section-tags">
+                  <span>{{ backgroundSupervisorLabel }}</span>
+                  <span>进程 {{ backgroundRunningCount }} / {{ backgroundProcesses.length }}</span>
+                  <span>报警 {{ monitorAlertSummary.activeCount }}</span>
+                </div>
+              </div>
+              <div class="source-actions">
+                <button
+                  class="tool-button"
+                  type="button"
+                  :disabled="busyKey === 'background-processes:refresh'"
+                  @click="refreshBackgroundProcesses()"
+                >
+                  {{ busyKey === "background-processes:refresh" ? "刷新中" : "刷新进程" }}
+                </button>
+                <button
+                  class="tool-button"
+                  type="button"
+                  :disabled="busyKey === 'client-runtime:refresh'"
+                  @click="refreshClientRuntimeStatus()"
+                >
+                  {{ busyKey === "client-runtime:refresh" ? "刷新中" : "刷新热力图" }}
+                </button>
+                <button
+                  class="tool-button"
+                  type="button"
+                  :disabled="busyKey === 'monitor-alerts:refresh'"
+                  @click="refreshMonitorAlerts()"
+                >
+                  {{ busyKey === "monitor-alerts:refresh" ? "刷新中" : "刷新报警" }}
+                </button>
+              </div>
+            </article>
+
+            <article class="surface-card client-runtime-card">
+              <div class="section-header">
+                <div>
+                  <h3>客户端热力图</h3>
+                  <p>按协议层 clientUid 收敛工作空间、上下文和使用热度，低频连接会进入冷却状态。</p>
+                </div>
+                <div class="section-tags">
+                  <span>客户端 {{ clientRuntimeSummary.totalClients }}</span>
+                  <span>调用 {{ clientRuntimeSummary.totalCalls }}</span>
+                  <span>热 {{ clientRuntimeSummary.hotClients }}</span>
+                  <span>冷却 {{ clientRuntimeSummary.cooledClients }}</span>
+                </div>
+              </div>
+              <div v-if="clientRuntimeHeatRows.length > 0" class="client-runtime-heatmap">
+                <div class="client-runtime-heatmap-header">
+                  <span>客户端</span>
+                  <span>热度</span>
+                  <span>工作空间</span>
+                  <span>上下文</span>
+                  <span>最近调用</span>
+                  <span>调用面</span>
+                </div>
+                <div
+                  v-for="row in clientRuntimeHeatRows"
+                  :key="row.clientUid"
+                  class="client-runtime-heatmap-row"
+                  :data-heat="row.heatLevel"
+                >
+                  <span>
+                    <strong>{{ row.clientUid }}</strong>
+                    <small>{{ row.profileId }} · {{ row.matched ? "命中 profile" : "默认 profile" }}</small>
+                  </span>
+                  <span>
+                    <StatusPill :tone="clientRuntimeCoolingTone(row.coolingState)" :label="clientRuntimeCoolingLabel(row.coolingState)" />
+                    <small>{{ clientRuntimeReasonLabel(row.coolingReason) }}</small>
+                    <span class="client-runtime-heatbar" :style="clientRuntimeHeatStyle(row)"><i /></span>
+                  </span>
+                  <span>
+                    <strong>{{ row.workspaceId || "未分配" }}</strong>
+                    <small>{{ row.retrievalProfileId || "无检索 profile" }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ row.contextProfileId || "未分配" }}</strong>
+                    <small>{{ row.modelAlias || "未指定模型" }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ row.recentCalls }} / {{ row.totalCalls }}</strong>
+                    <small>{{ formatCompactDate(row.lastSeenAt) }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ clientRuntimeTaskText(row) }}</strong>
+                    <small>{{ clientRuntimeSurfaceText(row) }}</small>
+                  </span>
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                <strong>暂无客户端运行时热度</strong>
+                <span>带 clientUid 的标准调用进入协议层后会在这里出现。</span>
+              </div>
+              <p class="module-note">
+                冷却策略：{{ clientRuntimeCoolingPolicyText }}；状态文件：{{ clientRuntimeStatus?.usagePath || "未生成" }}
+              </p>
+            </article>
+
+            <article class="surface-card">
+              <div class="section-header">
+                <div>
+                  <h3>进程状态</h3>
+                </div>
+                <div class="section-tags">
+                  <span>{{ backgroundProcessStatus?.status || "未读取" }}</span>
+                  <span>运行 {{ backgroundRunningCount }}</span>
+                </div>
+              </div>
+              <div class="job-table compact-job-table background-process-table ops-process-table">
+                <div class="job-table-header">
+                  <span>进程</span>
+                  <span>类型</span>
+                  <span>状态</span>
+                  <span>PID / 心跳</span>
+                  <span>作用和关联</span>
+                </div>
+                <div
+                  v-for="processItem in backgroundProcesses"
+                  :key="processItem.role"
+                  class="job-row"
+                >
+                  <span>
+                    <strong>{{ processItem.label }}</strong>
+                    <small>{{ processItem.role }} · 重启 {{ processItem.restartCount || 0 }}</small>
+                  </span>
+                  <StatusPill tone="info" :label="processTypeLabel(processItem.processType)" />
+                  <StatusPill :tone="backgroundProcessTone(processItem.status)" :label="backgroundProcessLabel(processItem.status)" />
+                  <span>
+                    <strong>{{ processItem.pid || "—" }}</strong>
+                    <small>{{ formatCompactDate(processItem.lastHeartbeatAt || "") }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ processItem.responsibility || processItem.description }}</strong>
+                    <small>{{ processRelationText(processItem) }}</small>
+                  </span>
+                </div>
+              </div>
+              <p v-if="backgroundProcessStatus?.statePath" class="module-note">
+                状态文件：{{ backgroundProcessStatus.statePath }}
+              </p>
+              <div v-if="backgroundProcesses.length === 0" class="empty-state">
+                <strong>暂无进程状态</strong>
+              </div>
+            </article>
+
+            <article class="surface-card">
+              <div class="section-header">
+                <div>
+                  <h3>监控报警</h3>
+                </div>
+                <div class="section-tags">
+                  <span>{{ monitorAlertState?.status || "未读取" }}</span>
+                  <span>可见 {{ monitorAlertSummary.visibleCount || monitorAlertSummary.activeCount }}</span>
+                  <span>严重 {{ monitorAlertSummary.criticalCount }}</span>
+                </div>
+              </div>
+              <div class="source-actions">
+                <button
+                  class="primary-action"
+                  type="button"
+                  :disabled="!canAdminMaintenanceAgent || busyKey === 'monitor-alerts:save'"
+                  @click="saveMonitorAlertConfig"
+                >
+                  {{ busyKey === "monitor-alerts:save" ? "保存中" : "保存报警配置" }}
+                </button>
+              </div>
+              <div class="job-table compact-job-table monitor-alert-table">
+                <div class="job-table-header">
+                  <span>级别</span>
+                  <span>报警</span>
+                  <span>状态</span>
+                </div>
+                <div
+                  v-for="alert in activeMonitorAlerts"
+                  :key="alert.alertId"
+                  class="job-row"
+                >
+                  <StatusPill
+                    :tone="alert.ackRequired ? 'success' : monitorAlertSeverityTone(alert.severity)"
+                    :label="alert.ackRequired ? '已恢复' : monitorAlertSeverityLabel(alert.severity)"
+                  />
+                  <span>
+                    <strong>{{ alert.title }}</strong>
+                    <small>{{ alert.queueId ? `队列 ID：${alert.queueId} · ` : "" }}{{ alert.message }}</small>
+                  </span>
+                  <span>
+                    {{ formatCompactDate(alert.recoveredAt || alert.lastSeenAt || alert.firstSeenAt) }}
+                    <button
+                      v-if="alert.ackRequired"
+                      class="tool-button tool-button-ghost"
+                      type="button"
+                      :disabled="busyKey === `monitor-alert:ack:${alert.alertId}`"
+                      @click="acknowledgeMonitorAlert(alert.alertId)"
+                    >
+                      {{ busyKey === `monitor-alert:ack:${alert.alertId}` ? "确认中" : "确认关闭" }}
+                    </button>
+                  </span>
+                </div>
+              </div>
+              <div v-if="activeMonitorAlerts.length === 0" class="empty-state">
+                <strong>暂无活跃报警</strong>
+              </div>
+              <ConfigFoldCard title="报警报文配置 JSON" open>
+                <label class="json-editor">
+                  <span>配置会保存到后台文件，守护巡检下一轮自动读取</span>
+                  <textarea v-model="monitorAlertConfigText" rows="14" spellcheck="false" />
+                </label>
+              </ConfigFoldCard>
+              <ConfigFoldCard title="最近报警历史">
+                <div class="job-table compact-job-table monitor-alert-table">
+                  <div class="job-table-header">
+                    <span>级别</span>
+                    <span>报警</span>
+                    <span>时间</span>
+                  </div>
+                  <div
+                    v-for="alert in recentMonitorAlertHistory"
+                    :key="`${alert.alertId}:${alert.lastSeenAt}:${alert.resolvedAt || ''}`"
+                    class="job-row"
+                  >
+                    <StatusPill :tone="monitorAlertSeverityTone(alert.severity)" :label="monitorAlertSeverityLabel(alert.severity)" />
+                    <span>
+                      <strong>{{ alert.title }}</strong>
+                      <small>{{ alert.active ? "活跃" : "已恢复" }} · {{ alert.message }}</small>
+                    </span>
+                    <span>{{ formatCompactDate(alert.lastSeenAt || alert.resolvedAt || alert.firstSeenAt) }}</span>
+                  </div>
+                </div>
+              </ConfigFoldCard>
+              <p v-if="monitorAlertState?.configPath" class="module-note">
+                配置文件：{{ monitorAlertState.configPath }}；sh 配置：{{ monitorAlertState.shellConfigPath || "未生成" }}；状态文件：{{ monitorAlertState.statePath }}
+              </p>
+            </article>
+          </section>
+        </template>
+
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'tools' && (hasFeature('agent-gateway') || hasFeature('agent-management'))">
           <section class="tools-layout">
             <article class="surface-card">
               <div class="section-header">
@@ -14956,33 +16273,99 @@ onUnmounted(() => {
                 <button
                   class="tool-button tool-button-ghost"
                   type="button"
-                  :disabled="busyKey === 'tool-platform'"
-                  @click="refreshToolPlatform"
+                  :disabled="busyKey === 'tool-management'"
+                  @click="refreshToolManagement"
                 >
-                  {{ busyKey === "tool-platform" ? "刷新中" : "刷新" }}
+                  {{ busyKey === "tool-management" ? "刷新中" : "刷新" }}
                 </button>
               </div>
 
-              <div class="job-table compact-job-table">
-                <div class="job-table-header">
-                  <span>工具</span>
-                  <span>工具集</span>
-                  <span>风险</span>
-                  <span>状态</span>
+              <div class="tool-catalog-management-grid">
+                <div class="tool-catalog-card-list">
+                  <button
+                    v-for="tool in toolManagementTools"
+                    :key="tool.id"
+                    class="tool-catalog-card"
+                    :class="{ active: selectedToolManagementTool?.id === tool.id }"
+                    type="button"
+                    @click="selectToolForManagement(tool.id)"
+                  >
+                    <div>
+                      <strong>{{ tool.label }}</strong>
+                      <span>{{ tool.id }} / {{ tool.source }}</span>
+                    </div>
+                    <StatusPill :tone="tool.risk" :label="toolRiskLabel(tool.risk)" />
+                  </button>
                 </div>
-                <div
-                  v-for="tool in toolManagementTools.slice(0, 80)"
-                  :key="tool.id"
-                  class="job-row"
-                >
-                  <span>
-                    <strong>{{ tool.label }}</strong>
-                    <small>{{ tool.id }} / {{ tool.source }}</small>
-                  </span>
-                  <span>{{ tool.toolsets.map(toolsetLabel).join(" / ") }}</span>
-                  <StatusPill :tone="tool.risk" :label="toolRiskLabel(tool.risk)" />
-                  <span>{{ toolStatusLabel(tool.status) }}</span>
-                </div>
+
+                <aside v-if="selectedToolManagementTool" class="tool-editor-panel">
+                  <div class="module-panel-heading">
+                    <div>
+                      <strong>{{ selectedToolManagementTool.label }}</strong>
+                      <span>{{ selectedToolManagementTool.id }}</span>
+                    </div>
+                    <StatusPill :tone="selectedToolManagementTool.risk" :label="toolRiskLabel(selectedToolManagementTool.risk)" />
+                  </div>
+                  <p>{{ selectedToolManagementTool.description }}</p>
+                  <dl class="module-status-list">
+                    <div>
+                      <dt>工具集</dt>
+                      <dd>{{ selectedToolManagementTool.toolsets.map(toolsetLabel).join(" / ") || "未声明" }}</dd>
+                    </div>
+                    <div>
+                      <dt>权限层级</dt>
+                      <dd>{{ selectedToolManagementTool.requiredScopes.map(scopeLabel).join(" / ") || "未声明" }}</dd>
+                    </div>
+                    <div>
+                      <dt>执行状态</dt>
+                      <dd>{{ toolStatusLabel(selectedToolManagementTool.status) }}</dd>
+                    </div>
+                  </dl>
+                  <ConfigFoldCard title="按权限组编辑工具例外" open>
+                    <div class="permission-list compact-permission-list">
+                      <article
+                        v-for="grant in toolGrants"
+                        :key="grant.id"
+                        class="permission-card tool-rule-card"
+                        :data-enabled="grant.enabled"
+                      >
+                        <div class="permission-card-main">
+                          <strong>{{ grant.label }}</strong>
+                          <small>{{ grant.id }} · {{ grantToolRuleState(grant, selectedToolManagementTool.id) }}</small>
+                        </div>
+                        <div class="permission-actions">
+                          <button
+                            class="table-action"
+                            type="button"
+                            :disabled="busyKey === `grant:${grant.id}`"
+                            @click="setGrantToolRule(grant, selectedToolManagementTool.id, 'inherit')"
+                          >
+                            继承
+                          </button>
+                          <button
+                            class="table-action"
+                            type="button"
+                            :disabled="busyKey === `grant:${grant.id}`"
+                            @click="setGrantToolRule(grant, selectedToolManagementTool.id, 'allow')"
+                          >
+                            允许
+                          </button>
+                          <button
+                            class="table-action danger-action"
+                            type="button"
+                            :disabled="busyKey === `grant:${grant.id}`"
+                            @click="setGrantToolRule(grant, selectedToolManagementTool.id, 'deny')"
+                          >
+                            禁止
+                          </button>
+                        </div>
+                      </article>
+                      <div v-if="toolGrants.length === 0" class="empty-note">
+                        暂无授权组，先创建工具授权后再编辑工具例外。
+                      </div>
+                    </div>
+                  </ConfigFoldCard>
+                </aside>
               </div>
               <div v-if="toolManagementTools.length === 0" class="empty-state">
                 <strong>尚未加载工具目录</strong>
@@ -14995,13 +16378,13 @@ onUnmounted(() => {
                   <h3>工具集 / 智能体档案</h3>
                 </div>
               </div>
-              <div class="tool-platform-grid">
+              <div class="tool-management-grid">
                 <article
                   v-for="toolset in toolManagementToolsets"
                   :key="toolset.id"
-                  class="tool-platform-card"
+                  class="tool-management-card"
                 >
-                  <div class="tool-platform-card-header">
+                  <div class="tool-management-card-header">
                     <div>
                       <strong>{{ toolset.label }}</strong>
                       <span>{{ toolset.id }}</span>
@@ -15253,7 +16636,7 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'modules'">
+        <template v-if="isAuthenticated && currentView === 'admin' && adminView === 'modules' && hasFeature('analysis-runtime')">
           <section class="modules-layout">
             <article class="surface-card module-mount-card">
               <div class="module-card-meta module-card-meta-right">
@@ -15352,27 +16735,103 @@ onUnmounted(() => {
           <section id="jobs" class="surface-card jobs-card">
             <div class="section-header">
               <div>
-                <h3>活跃任务</h3>
+                <h3>工作队列</h3>
               </div>
               <div class="section-tags">
-                <span
-                  >总计 {{ consoleState?.jobs.summary.totalCount || 0 }}</span
-                >
-                <span
-                  >完成
-                  {{ consoleState?.jobs.summary.completedCount || 0 }}</span
-                >
-                <span
-                  >失败 {{ consoleState?.jobs.summary.failedCount || 0 }}</span
-                >
+                <span>队列 {{ workQueueSummary.total }}</span>
+                <span>活跃 {{ workQueueSummary.active }}</span>
+                <span>中断 {{ workQueueSummary.interrupted }}</span>
+                <span>恢复 {{ workQueueSummary.recovered }}</span>
               </div>
             </div>
 
+            <div class="source-actions">
+              <button
+                class="tool-button"
+                type="button"
+                :disabled="busyKey === 'refresh'"
+                @click="refreshState({ forceDrafts: true })"
+              >
+                {{ busyKey === "refresh" ? "刷新中" : "刷新任务" }}
+              </button>
+              <button
+                class="tool-button"
+                type="button"
+                :disabled="busyKey === 'monitor-alerts:refresh'"
+                @click="refreshMonitorAlerts()"
+              >
+                {{ busyKey === "monitor-alerts:refresh" ? "刷新中" : "刷新队列监控" }}
+              </button>
+            </div>
+
+            <section class="queue-status-section">
+              <div class="section-header compact-section-header">
+                <div>
+                  <h4>队列状态</h4>
+                  <p>这里收拢 queue-monitor、导入解析任务和智能巡检任务队列。</p>
+                </div>
+                <div class="section-tags">
+                  <span>监控项 {{ queueMonitorState?.summary.totalCount || 0 }}</span>
+                  <span>打开 {{ queueMonitorState?.summary.openCount || 0 }}</span>
+                </div>
+              </div>
+              <div class="job-table compact-job-table work-queue-table">
+                <div class="job-table-header">
+                  <span>队列</span>
+                  <span>来源</span>
+                  <span>状态</span>
+                  <span>心跳 / 更新时间</span>
+                  <span>说明</span>
+                </div>
+                <div
+                  v-for="row in workQueueRows"
+                  :key="row.rowId"
+                  class="job-row"
+                >
+                  <span>
+                    <strong>{{ row.label }}</strong>
+                    <small>{{ row.queueId }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ row.sourceLabel }}</strong>
+                    <small>{{ row.kind }} · {{ row.ownerId || "无 owner" }}</small>
+                  </span>
+                  <StatusPill :tone="row.tone" :label="queueLifecycleLabel(row.lifecycleStatus || row.status)" />
+                  <span>
+                    <strong>{{ formatCompactDate(row.lastHeartbeatAt || row.updatedAt || row.startedAt) }}</strong>
+                    <small>{{ row.updatedAt ? `更新 ${formatCompactDate(row.updatedAt)}` : "无更新时间" }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ row.phase || row.status }}</strong>
+                    <small>{{ row.detail }}</small>
+                  </span>
+                </div>
+              </div>
+              <div v-if="workQueueRows.length === 0" class="empty-state">
+                <strong>暂无队列记录</strong>
+                <span>当前没有导入解析、智能巡检或队列监控记录。</span>
+              </div>
+              <p v-if="queueMonitorState?.statePath" class="module-note">
+                队列状态文件：{{ queueMonitorState.statePath }}；事件日志：{{ queueMonitorState.eventLogPath }}
+              </p>
+            </section>
+
+            <div class="section-header compact-section-header">
+              <div>
+                <h4>任务记录</h4>
+              </div>
+              <div class="section-tags">
+                <span>总计 {{ consoleState?.jobs.summary.totalCount || 0 }}</span>
+                <span>完成 {{ consoleState?.jobs.summary.completedCount || 0 }}</span>
+                <span>失败 {{ consoleState?.jobs.summary.failedCount || 0 }}</span>
+              </div>
+            </div>
             <div class="table-shell">
               <table class="jobs-table">
                 <thead>
                   <tr>
                     <th>任务 ID</th>
+                    <th>队列 ID</th>
                     <th>状态</th>
                     <th>进度</th>
                     <th>耗时</th>
@@ -15386,6 +16845,9 @@ onUnmounted(() => {
                         <strong>{{ item.id }}</strong>
                         <span>{{ item.stage }}</span>
                       </div>
+                    </td>
+                    <td>
+                      <span class="url-badge">{{ item.queueId || "未登记" }}</span>
                     </td>
                     <td>
 	                      <StatusPill :tone="jobStatusTone(item.status)" :label="jobStatusLabels[item.status]" />
@@ -15856,6 +17318,7 @@ onUnmounted(() => {
           服务发现
         </button>
         <button
+          v-if="hasFeature('analysis-runtime')"
           class="drawer-tab"
           :class="{ active: drawerTab === 'users' }"
           type="button"
@@ -16101,7 +17564,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section v-else-if="drawerTab === 'modules'" class="drawer-panel">
+        <section v-else-if="drawerTab === 'modules' && hasFeature('analysis-runtime')" class="drawer-panel">
           <div class="panel-header">
             <h4>模块管理</h4>
             <p>运行代次 {{ consoleState?.runtime.mountGeneration || 0 }}，可用 {{ enabledMountCount }}/{{ totalMountCount }}</p>

@@ -7,13 +7,13 @@ import {
   backgroundDefinitionForRole,
   normalizeBackgroundRoleList,
   writeBackgroundProcessState
-} from "../application/background-process-status.mjs";
+} from "../platform/common/devops/process-status/background-process-status.mjs";
 import {
   createRuntimeLogger,
   setRuntimeLogger,
   summarizeError,
   summarizeForLog
-} from "../observability/runtime-logger.mjs";
+} from "../platform/common/observability/runtime-logger.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

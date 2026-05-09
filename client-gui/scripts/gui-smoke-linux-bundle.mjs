@@ -179,6 +179,16 @@ async function main() {
   if (!existsSync(packagingManifest)) {
     throw new Error(`Packaging manifest is missing: ${packagingManifest}`);
   }
+  const manifest = JSON.parse(readFileSync(packagingManifest, "utf8"));
+  const enabledModuleIds = new Set(manifest.modules?.map((item) => item.id) || []);
+  const skippedModuleIds = new Set(manifest.skippedModules?.map((item) => item.id) || []);
+  if (enabledModuleIds.has("macos-mail-import") || skippedModuleIds.has("macos-mail-import")) {
+    throw new Error("Linux GUI bundle manifest must not include macOS-only module: macos-mail-import");
+  }
+  const macOSMailTool = path.join(bundleDir, "splitall-macos-mail-tool");
+  if (existsSync(macOSMailTool)) {
+    throw new Error(`Linux GUI bundle must not include macOS Mail sidecar: ${macOSMailTool}`);
+  }
 
   const artifactDir = path.resolve(
     process.env.SPLITALL_GUI_ARTIFACT_DIR ||

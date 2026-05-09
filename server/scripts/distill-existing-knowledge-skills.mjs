@@ -4,9 +4,9 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { createKnowledgeCoreMount } from "../modules/KnowledgeCore/index.mjs";
-import { createKnowledgeSkillRuntime } from "../modules/KnowledgeSkillRuntime/index.mjs";
-import { loadBundledKnowledgeTaxonomy } from "../domain/knowledge-taxonomy/default-taxonomy.mjs";
+import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/datastore/knowledge-core/index.mjs";
+import { createKnowledgeSkillRuntime } from "../platform/specialized/knowledge/runtime/knowledge-skill-runtime/index.mjs";
+import { loadBundledKnowledgeTaxonomy } from "../platform/specialized/knowledge/domain/knowledge-taxonomy/default-taxonomy.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -287,7 +287,7 @@ async function main() {
   };
 
   if (!dryRun) {
-    const knowledgeCore = createKnowledgeCoreMount({ userDataPath });
+    const knowledgeCore = await createKnowledgeCoreMount({ userDataPath });
     const skillRuntime = createKnowledgeSkillRuntime({
       userDataPath,
       runtime: {

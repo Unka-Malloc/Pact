@@ -7,14 +7,14 @@ import {
   getStateMutationDispatcher,
   mutateState,
   stateFileKey
-} from "../application/state-coordinator.mjs";
-import { searchSourceFiles } from "../application/source-file-search-service.mjs";
+} from "../platform/common/platform-core/state-coordinator.mjs";
+import { searchSourceFiles } from "../platform/specialized/knowledge/datastore/source-file-search-service.mjs";
 import {
   importFileTypeConfigPath,
   mediaTypeForImportExtension,
   reloadImportFileTypeRegistry
-} from "../modules/FileProcessor/import-file-types.mjs";
-import { setRuntimeLogger } from "../observability/runtime-logger.mjs";
+} from "../platform/specialized/knowledge/file-processor/import-file-types.mjs";
+import { setRuntimeLogger } from "../platform/common/observability/runtime-logger.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -28,7 +28,7 @@ async function writeJson(filePath, value) {
 }
 
 async function assertStaticSingletonBoundaries() {
-  const stateCoordinator = await readText("server/application/state-coordinator.mjs");
+  const stateCoordinator = await readText("server/platform/common/platform-core/state-coordinator.mjs");
   assert.ok(stateCoordinator.includes("const stateQueues = new Map();"));
   assert.ok(stateCoordinator.includes("let defaultStateMutationDispatcher = null;"));
   assert.ok(stateCoordinator.includes("return `file:${path.resolve(filePath)}`;"));
@@ -37,32 +37,32 @@ async function assertStaticSingletonBoundaries() {
     "default StateMutationDispatcher must read the current runtime logger dynamically"
   );
 
-  const operationDispatcher = await readText("server/interfaces/api/operation-dispatcher.mjs");
+  const operationDispatcher = await readText("server/platform/common/operation-dispatcher/operation-dispatcher.mjs");
   assert.ok(operationDispatcher.includes("const operationLocks = new Map();"));
   assert.ok(
     operationDispatcher.includes("const key = `${concurrencyScope}:${operation.concurrencyGroup || operation.id}`;"),
     "operation locks must be scoped by caller-provided concurrencyScope"
   );
 
-  const httpServer = await readText("server/http-server.mjs");
+  const compositionRoot = await readText("server/platform/interactive/composition-root.mjs");
   assert.ok(
-    httpServer.includes("const operationConcurrencyScope = path.resolve(userDataPath);"),
+    compositionRoot.includes("const operationConcurrencyScope = path.resolve(userDataPath);"),
     "HTTP/RPC dispatcher lock scope must be per userDataPath"
   );
 
-  const toolRuntime = await readText("server/tool-management/runtime.mjs");
+  const toolRuntime = await readText("server/platform/specialized/agent/agent-tools/tool-management-core/runtime.mjs");
   assert.ok(toolRuntime.includes("concurrencyScope: operationConcurrencyScope"));
-  const maintenanceTools = await readText("server/application/MaintenanceAgent/tool-registry.mjs");
+  const maintenanceTools = await readText("server/services/agent/maintenance-agent/tool-registry.mjs");
   assert.ok(maintenanceTools.includes("concurrencyScope: operationConcurrencyScope"));
 
-  const sourceSearch = await readText("server/application/source-file-search-service.mjs");
+  const sourceSearch = await readText("server/platform/specialized/knowledge/datastore/source-file-search-service.mjs");
   assert.ok(sourceSearch.includes("const SEARCH_CACHE = new Map();"));
   assert.ok(sourceSearch.includes("userDataPath: path.resolve(userDataPath)"));
   assert.ok(sourceSearch.includes("rulesUpdatedAt: rules.updatedAt"));
   assert.ok(sourceSearch.includes("scanRoots: sourceRoots.map((root) => ({"));
   assert.ok(sourceSearch.includes("setBoundedMapEntry(SEARCH_CACHE"));
 
-  const importTypes = await readText("server/modules/FileProcessor/import-file-types.mjs");
+  const importTypes = await readText("server/platform/specialized/knowledge/file-processor/import-file-types.mjs");
   assert.ok(importTypes.includes("let cachedRegistry = null;"));
   assert.ok(importTypes.includes("cachedPath === filePath"));
   assert.ok(importTypes.includes("cachedMtimeMs === stat.mtimeMs"));

@@ -104,13 +104,51 @@ npm run cli -- \
 
 外部邮箱连接器只作为可选入口处理：有可用配置时显示入口，没有配置时不影响 `.eml` / `.zip` / 文件夹导入主流程。
 
-## 5. 归一化 DOCX 输出
+## 5. 本地数据连接器
+
+客户端连接器用于把多应用数据源同步成本地 mirror，再通过上传队列提交服务端。搜索默认不实时访问远端 Gmail、Drive、Slack 或 Teams API。
+
+常用命令：
+
+```bash
+splitall-client connectors list
+splitall-client connectors install slack
+splitall-client connectors enable slack
+splitall-client connectors auth start slack '{"accountHint":"me@example.com"}'
+splitall-client connectors sync slack '{"syncBatchId":"client-batch-2026-03","messages":[]}'
+splitall-client connectors query-local "3 月账单"
+```
+
+外部连接器可以按目录包动态安装。包内必须包含 `connector.json`，进程型连接器的 `runtime.kind` 为 `process`，`entrypoint` 指向包内相对路径的可执行文件：
+
+```text
+acme-files-connector/
+  connector.json
+  connector.sh
+```
+
+```bash
+splitall-client connectors install ./acme-files-connector
+splitall-client connectors enable acme-files
+splitall-client connectors sync acme-files '{"syncBatchId":"client-batch-2026-03"}'
+splitall-client connectors query-local "3 月账单"
+splitall-client connectors health acme-files
+splitall-client connectors uninstall acme-files '{"removeCache":true}'
+```
+
+运行时通过标准输入接收 JSON 请求，通过标准输出返回 JSON。请求包含 `operation`、`providerId`、`params`、`paths` 和 `policy`；`policy.remoteCallsAllowed=false` 表示 `localQuery` 只能查询本地 mirror，不能现场访问远端 API。卸载时如 `uninstallPolicy.removeModuleOnUninstall=true`，客户端会在调用连接器 `uninstall` 钩子后删除 `portable-data/connectors/modules/<providerId>`。
+
+聊天来源写入 `portable-data/chat-index/chat.sqlite`，邮件、网盘文件和知识镜像写入 `portable-data/connectors/cache`。连接器上传到服务端时会携带 `clientUid/sourceType/providerId/externalId/syncBatchId/contentHash/capturedAt/sourceMetadata`，原始文件仍只按 `ClientUID -> SourceType -> FileName` 归档，服务端不向源文件追加检索字段。
+
+## 6. 归一化 DOCX 输出
 
 SplitAll 当前定位为外部知识库的解析归一中转层，不在本地追加长期知识库模块。任务完成后可以导出：
 
 - `result.json`：任务分析、邮件/事务结构、源文件审计和归一化 DOCX manifest。
 - `normalized-documents/*.docx`：面向阅读、归档和外部知识库摄取的多颗粒度 DOCX 文档。
 - `normalized-documents/source-materials/*`：仅对 PPT/PDF/HTML 等允许入库的原始材料保留副本；EML/MSG 原始邮件只保留在 raw object 审计存储中。
+
+正式检索不读取 `result.json` 或 upload session manifest。服务端先查 SQLite / 知识库索引，命中 raw object 后再按元数据中的 `storage_rel_path` 打开原始文件。
 
 Markdown 和旧 `knowledge-package` 导出已移除。图片、图表和版式信息必须在 DOCX 中被嵌入或文本化，不能依赖 Markdown 外部图片地址。
 
@@ -126,7 +164,7 @@ GET /api/jobs/:jobId/normalized-documents
 GET /api/jobs/:jobId/normalized-documents/:documentId
 ```
 
-## 6. 适配拆分 DOCX
+## 7. 适配拆分 DOCX
 
 任务完成后，服务端会在 job 工作目录生成多颗粒度 DOCX：
 
@@ -147,7 +185,7 @@ npm run cli -- jobs normalized-docs --id JOB_ID
 npm run cli -- jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx
 ```
 
-## 7. 文档解析挂载
+## 8. 文档解析挂载
 
 服务端主链支持挂载式组件。
 
@@ -166,7 +204,7 @@ npm run cli -- jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out
 
 默认文档解析主线按 `Tika` 设计。
 
-## 8. 校验
+## 9. 校验
 
 服务端回归：
 

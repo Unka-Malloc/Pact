@@ -52,6 +52,43 @@
 
 新增跨切面能力时，先明确协议归属和上下游关系，再落到对应组件的 `protocols` 目录。
 
+## 存储、Manifest 与检索关系
+
+服务端存储协议固定分层：
+
+- `metadata/splitall.sqlite` 是唯一服务端元数据真相源，也是普通检索、审计、raw object 定位的入口。
+- `upload-sessions/<sessionId>/meta.json` 只保存上传和断点续传状态。
+- `checkpointReceipt` 只保存创建 job 所需的服务端校验凭证。
+- `jobs/<jobId>/result.json` 是任务结果快照，用于回放、排障和元数据库重建，不作为在线检索索引。
+- `objects/<ClientUID>/<SourceType>/<OriginalFileName>__<ArchiveBatchId>.<ext>` 只保存客户端上传的原始文件字节，不保存服务端追加字段。
+
+检索请求必须先进入 SQLite / 知识库协议索引。命中 raw object 后，才允许通过 `storage_rel_path` 读取对象存储。任何 HTTP、RPC、CLI、server-web、client-gui 或智能体工具都不能直接扫描 manifest 或 `objects/` 目录作为检索入口。
+
+## 多源本地镜像与统一检索
+
+跨应用检索采用 local mirror-first 架构：客户端连接 Gmail、Outlook、Google Drive、OneDrive、Slack、Teams、macOS Mail、本地目录等数据源，把授权、同步、本地缓存和本地查询都收敛到客户端 `DataConnector`，服务端只接收已镜像、已校验的归档批次和标准来源元数据。
+
+客户端标准调用面：
+
+- RPC / CLI：`connectors.list`、`connectors.install`、`connectors.enable`、`connectors.disable`、`connectors.uninstall`、`connectors.auth.start`、`connectors.auth.status`、`connectors.auth.revoke`、`connectors.sync`、`connectors.health`、`connectors.queryLocal`。
+- 连接器 manifest 最小字段：`id`、`providerId`、`sourceType`、`displayName`、`version`、`runtime`、`entrypoint`、`capabilities`、`permissions`、`oauth`、`syncPolicy`、`uninstallPolicy`。
+- 运行目录：`portable-data/connectors/modules`、`portable-data/connectors/state`、`portable-data/connectors/cache`、`portable-data/chat-index/chat.sqlite`。
+- OAuth token 默认进入系统 Keychain / Credential Store；便携模式下只有显式启用加密本地凭据文件时才允许落盘。
+
+外部连接器包按目录安装，目录内的 `connector.json` 定义 provider、sourceType、运行时和卸载策略。`runtime.kind = "process"` 的连接器由客户端复制到 `portable-data/connectors/modules/<providerId>` 后动态执行；`entrypoint` 必须是包内相对路径，不能指向绝对路径或包外文件。进程运行时协议为 `splitall.data-connector.process.v1`：客户端向标准输入写入 `{ operation, providerId, params, connector, paths, policy }`，连接器向标准输出返回 JSON。`sync` 返回 `items/results/hits/messages` 后写入本地 mirror 或 `chat.sqlite`；`localQuery` 返回统一 `SourceHit`；`health`、`auth.start/status/revoke`、`uninstall` 是可选 capability。`policy.remoteCallsAllowed=false` 是本地查询边界，连接器不得在搜索时实时访问远端 API。
+
+服务端 ingestion 接收并持久化这些来源字段：`clientUid`、`sourceType`、`providerId`、`externalId`、`syncBatchId`、`originalFileName`、`contentHash`、`capturedAt`、`sourceMetadata`。原始文件仍按 `ClientUID -> SourceType -> FileName` 归档，文件名包含原始文件名和客户端/服务端一致的上传批次 ID；服务端检索字段、连接器字段、批次关系只进入 SQLite / Manifest，不写入源文件字节。
+
+聊天记录使用专用本地 `chat.sqlite`，保留 `sources`、`workspaces`、`conversations`、`participants`、`messages`、`attachments`、`message_fts` 等会话关系。服务端 KnowledgeCore 只消费统一 evidence 包，搜索结果必须标注来源应用、源对象、原始路径或消息定位、同步批次和可信时间。
+
+知识蒸馏只消费已入库的统一 evidence，不直接依赖连接器或远端 API。蒸馏候选必须携带 `sourceTrace`，并在 `distilledOutputs.summary`、`distilledOutputs.ruleCandidates[]`、`distilledOutputs.entityRelationCandidates[]` 上保留 `evidenceRefs`、`citations` 和来源链路；没有引用链路的摘要、规则或实体关系只能进入补证/审核，不能作为可发布知识资产。
+
+搜索默认不实时调用远端 Gmail / Drive / Slack / Teams API。统一检索先查服务端已入库索引，再可选合并客户端 `connectors.queryLocal` 返回的本地 mirror 命中；该预留接口用于覆盖尚未上传完成的数据，不承担远端 federated search。融合排序由 `knowledge.search` 接收 `localQuery.items` / `localHits` 后完成：服务端按 `providerId + externalId`、聊天定位、文件定位或内容 hash 去重，把已入库 evidence 与本地 mirror 命中合并排序；本地-only 命中会标记 `localMirror.openable=false`，UI 可以展示但不能当成服务端 evidence 打开。
+
+长文档检索吸收 PageIndex 的局部能力，但仍属于 KnowledgeCore 的分层检索增强，不引入 PageIndex 依赖，也不改成全局 vectorless RAG。`DocumentOutlineRuntime` 从已入库 sections、Markdown 标题、归一化段落、页/块边界构建自然章节树；结构过粗的长文档会生成 synthetic outline nodes，写入 `kc_hierarchy_nodes`，metadata 只保存 `outlineOrigin`、`sourceRange`、`quality`、`textDigest`，不会改写源文件。`knowledge.search` 可显式传入 `hierarchyReasoning: true`，或由 RetrievalProfile 打开 `hierarchyReasoningEnabled`；开启后只把 compact tree `{nodeId,title,summary,sourceRange,children}` 交给 `hierarchy_tree_router` 做可选路由，模型必须由 `modelEnabled=true` 显式启用，失败时降级为确定性 hierarchy FTS。结构读取接口只返回目录树和定位，不返回全文：HTTP `GET /api/knowledge/documents/:documentId/structure`，RPC `knowledge.document.structure`，CLI `knowledge structure --document-id <id>`，工具 `splitall.knowledge.documentStructure`。
+
+客户端运行时分配由 `ClientRuntimeAllocator` 提供，协议版本为 `splitall.client-runtime-allocator.v1`。它是应用层的 Strategy/Policy Resolver：只按标准字段 `clientUid + taskType` 选择运行时 profile，把模型别名、ContextProfile、RetrievalProfile、workspace/session 和工具授权绑定到同一个客户端维度；调用方显式传入的 `modelAlias/contextProfileId/retrievalProfileId/workspaceId/toolGrantId` 永远优先。配置持久化在 `client-runtime/client-runtime-allocator.json`；使用热度持久化在 `client-runtime/client-runtime-usage.json`。公开接口为 HTTP `GET|POST /api/client-runtime/profiles`、`POST /api/client-runtime/resolve`、`GET /api/client-runtime/status`，RPC `client_runtime.profiles.get|set`、`client_runtime.resolve`、`client_runtime.status`，CLI `client-runtime profiles|profiles set|resolve|status`。`agent_gateway.call`、`context.preview/assemble`、`knowledge.search`、总结和智能探索运行时会把分配结果写入 `clientRuntimeAllocation`，用于 UI、审计和热切换解释。`coolingPolicy.strategy = lru-lfu-v1` 使用最近窗口桶、总调用量和最近访问时间计算热度；低频且最旧的客户端可被切到 `coldContextProfileId` 与冷工作空间策略，释放上下文预算给高频客户端。控制台“系统状态 / 运维监控”中的客户端热力图读取同一个状态接口，不维护另一套私有统计。`clientId` 不参与用户空间识别；它只属于检索灰度、服务发现等明确声明的其他协议。
+
 ## 发布-订阅要求
 
 上游向下游发布的内容统一使用发布-订阅模型：
@@ -86,7 +123,7 @@
 - 所有受保护的非 GET 写操作必须带 `x-splitall-csrf`，否则返回 403。
 - 审计日志记录用户、接口、scope、目标摘要、结果和错误，不记录 token、密钥、真实文件路径或大文本 payload。
 
-控制台用户 RBAC 与智能体工具授权分离。智能体仍只通过 `/api/agent-tools/*` 和 Bearer token 访问受限工具入口；这些旧入口已经降级为兼容层，真实授权、策略、执行、审计和指标统一由 `splitall.tool-management.v1` 管理。
+控制台用户 RBAC 与智能体工具授权分离。智能体只通过 `splitall.tool-management.v1` 的 grant 和 Bearer token 执行受限工具；授权、策略、执行、审计和指标统一由 Tool Management v1 管理。
 
 ## 工具管理平台协议
 
@@ -153,7 +190,6 @@
 - grant token 只保存 hash，原文只在创建或轮换响应中出现一次。
 - grant 支持 `toolsets`、`toolAllow`、`toolDeny`、`scopes`、过期时间、最大使用次数、每分钟限流、来源 Origin 和 CIDR 边界。
 - 审计表记录 redacted input、result summary、duration、status、policy decision，不记录 token、密钥、cookie 或认证头。
-- `/api/tool-platform/*` 和 `/api/agent-tools/*` 保留协议兼容，但内部必须进入 ToolExecutionRuntime。
 - `GET /api/tool-management/v1/metrics/summary` 支持 `limit`、`since`、`until` 查询参数，返回按 status、tool、profile、grant、risk、denied reason 聚合的调用指标。
 
 知识库智能体工具覆盖四层 scope：
@@ -163,9 +199,11 @@
 - `knowledge:maintain`：维护任务、reindex、审核项解决、自进化建议解决、学习任务、总结 artifact 确认。
 - `knowledge:admin`：知识库维护参数、检索参数和上下文预算 profile 修改。
 
-工具授权 token 不能直接访问控制台 `/api/knowledge/*`；同等能力由 `/api/agent-tools/knowledge/*` 包装并返回 `{ grant, result }`。二进制资产读取仍返回原始内容，并通过响应头标记使用的 grant。危险维护任务保留 `confirm: true` 要求。
+工具授权 token 不能直接访问控制台 `/api/knowledge/*`；同等能力通过 `/api/tool-management/v1/execute` 执行 `splitall.knowledge.*` 工具并返回标准工具执行响应。二进制资产读取必须走对应工具或控制台注册接口。危险维护任务保留 `confirm: true` 要求。
 
-知识库检索必须遵守分层索引原则：先在 collection/document/section 粗层判断候选分支，再进入 block/asset 细粒度证据召回。`/api/knowledge/search`、`/api/agent-tools/knowledge/search` 和兼容入口 `/api/agent-tools/search` 都返回 `hierarchy` 字段；当 `hierarchy.enforced=true` 时，智能体必须把选中的文档/章节视为后续证据读取、图谱展开和回答的边界。
+知识库检索必须遵守分层索引原则：先在 collection/document/section 粗层判断候选分支，再进入 block/asset 细粒度证据召回。`/api/knowledge/search` 和 `splitall.knowledge.search` 工具都返回 `hierarchy` 字段；当 `hierarchy.enforced=true` 时，智能体必须把选中的文档/章节视为后续证据读取、图谱展开和回答的边界。
+
+分层索引包含自然章节树增强：`rebuildHierarchyIndex` 按 section level / position 重建父子树，长文档 synthetic outline 节点也进入同一 `kc_hierarchy_nodes`。搜索结果的 `hierarchy` 会在原有 selected/candidates 基础上补充 `selected.outlines`、`outlineRoutes` 和 `reasoning`；outline 只提升或收窄候选，不能替代 FTS/BM25、vector、graph、feedback、localQuery 或 evidence gate。RetrievalProfile 可配置 `hierarchyReasoningEnabled`、`outlineMinDocumentBlocks`、`outlineMaxTreeNodes`，默认 `hierarchyReasoningEnabled=false`。
 
 ## 多智能体知识总结协议
 
@@ -190,7 +228,7 @@
 - `GET /api/context/profiles`
 - `POST /api/context/profiles`
 
-智能体工具入口提供同等受限包装：`/api/agent-tools/knowledge/summarization/*`、`/api/agent-tools/agent-workspaces/:workspaceId`、`/api/agent-tools/context/profiles`。工具 token 只能通过 scope 访问包装入口，不能绕过控制台认证。
+智能体工具入口通过 Tool Management v1 提供同等受限能力：`splitall.knowledge.*`、`splitall.agent-workspace.*`、`splitall.context.*` 等工具只能在 grant scope 允许时执行，不能绕过控制台认证。
 
 共享空间的提交审核、issue 解决和锁操作也暴露为工具入口。锁用于协调多个无记忆智能体对同一个 artifact、submission、issue 或其他目标的短时独占处理；获取失败返回 `lock_held`，调用方必须换目标或等待，不允许覆盖其他智能体的锁。
 
@@ -228,7 +266,7 @@
 - `POST /api/knowledge/evolution/deployments/:deploymentId/promote`
 - `POST /api/knowledge/evolution/deployments/:deploymentId/rollback`
 
-同等能力也通过 `/api/agent-tools/knowledge/*` 提供受限包装。评估运行默认不把失败样本写入学习反馈，避免污染真实用户反馈；它只输出指标、case 级命中和发布建议。进化运行只允许把通过离线评估的候选 `RetrievalProfile` 发布为 canary；active 发布必须经过 promote，异常时可 rollback 到 baseline profile。
+同等能力也通过 Tool Management v1 的 `splitall.knowledge.*` 工具提供受限调用。评估运行默认不把失败样本写入学习反馈，避免污染真实用户反馈；它只输出指标、case 级命中和发布建议。进化运行只允许把通过离线评估的候选 `RetrievalProfile` 发布为 canary；active 发布必须经过 promote，异常时可 rollback 到 baseline profile。
 
 语义证据裁判默认采用确定性 token entailment fallback；请求显式 `modelEnabled=true` 且 AgentGateway alias 已配置时才会调用模型。模型输出只作为 `semanticJudgement`、失败归因或建议输入，不能直接改 canonical knowledge。
 
@@ -266,7 +304,7 @@ Vue 控制台消费 `server/protocols/server-web` 下游协议，只依赖这些
 agent 报文实现组件；应用层只保存模型分配引用，不在业务代码中直接拼接外部 URL、token 或 SSE
 解析逻辑。
 
-- 配置来源：`<userDataPath>/model-agents/<agent_uid>.json` 是模型库智能体的权威配置文件；`settings.modelLibraryAgentIds[]` 只保存顺序索引。`settings.customHttpAdapter`、`settings.customHttpAdapters[]` 和 `settings.agentGateway` 只保留 custom-http 兼容字段，敏感 token 读取时脱敏。
+- 配置来源：`<userDataPath>/model-agents/<agent_uid>.json` 是模型库智能体的权威配置文件；`settings.modelLibraryAgentIds[]` 只保存顺序索引。`settings.customHttpAdapter` 和 `settings.customHttpAdapters[]` 保存 custom-http 配置，敏感 token 读取时脱敏。
 - 模型分配：`provider=custom-http`，`model=<自定义代称>`。
 - HTTP：`GET/POST /api/agent-gateway/config`、`POST /api/agent-gateway/call`、`GET /api/agents`、`POST /api/agents`、`POST /api/agents/:agentId`、`DELETE /api/agents/:agentId`。
 - RPC：`agent_gateway.config.get`、`agent_gateway.config.set`、`agent_gateway.call`、`agents.list`、`agents.create`、`agents.update`、`agents.delete`。
@@ -298,7 +336,7 @@ Chat Completions 请求。
 控制台模型库使用显式注册列表 `settings.modelLibraryEntries[]` 和智能体顺序索引
 `settings.modelLibraryAgentIds[]`；每个智能体配置是 `<userDataPath>/model-agents/<agent_uid>.json`
 下的独立 JSON 文件。页面只展示用户添加过的模型卡片。新增模型时前端把 provider 插入列表顶部；
-保存后服务端按独立智能体文件返回脱敏设置。旧版 `settings.modelLibraryModels[]` 仅作为迁移兼容读取。
+保存后服务端按独立智能体文件返回脱敏设置。
 
 探测接口：
 

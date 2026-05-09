@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../../server/http-server.mjs";
+import { startHttpServer } from "../../server/services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "../../server/scripts/test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {

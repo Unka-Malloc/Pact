@@ -17,4 +17,4 @@
 - `server-web/`：服务端对控制台暴露的上游 HTTP / JSON 协议。
 - `storage/`：服务端持久化协议。
 
-协议报文、协议状态机和协议边界内执行适配放在这里。模块执行逻辑放入 `server/modules`，应用编排放入 `server/application`。
+协议报文、协议状态机和协议边界内执行适配放在这里。外置模块放入 `server/platform/modules`，专属底座放入 `server/platform/specialized`，产品线服务放入 `server/services`。

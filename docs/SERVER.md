@@ -16,7 +16,7 @@ npm install
 npm run server:setup-runtime
 ```
 
-这一步只会写入项目内 `vendor/` 和本地数据目录，不向系统安装软件。
+这一步只会写入项目内 `server/platform/modules/knowledge/` 和本地数据目录，不向系统安装软件。
 
 ### 常用命令
 
@@ -111,16 +111,10 @@ node server/scripts/start-server.mjs
   - 挂载名到模块路径的映射
 - `mount-routing.json`
   - 扩展名 / 媒体类型 / kind 到挂载动作的映射
-- `modules/FileProcessor/module.json`
+- `server/platform/specialized/knowledge/file-processor/module.json`
   - FileProcessor 的组件、路由表、可选打包和只读运行时声明
 
-兼容说明：
-
-- 旧版本的 `mounts.json` 仍可被读取
-- 保存新配置后会拆写为：
-  - `mount-modules.json`
-  - `mount-routing.json`
-- 同时清理旧 `mounts.json`
+服务端只读取 `mount-modules.json` 和 `mount-routing.json`。旧 `mounts.json` 布局已移除；历史数据需要通过外部脚本转换后再启动服务。
 
 ## 5. 下游挂载机制
 
@@ -191,9 +185,13 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 公开调用仍走接口注册制：
 
-- HTTP：`/api/knowledge/capabilities`、`/api/knowledge/search`、`/api/knowledge/evidence/:evidenceId`、`/api/knowledge/assets/:assetId`、`/api/knowledge/render/markdown`、`/api/knowledge/health`、`/api/knowledge/maintenance`、`/api/knowledge/reindex`
-- JSON-RPC：`knowledge.capabilities`、`knowledge.search`、`knowledge.get.evidence`、`knowledge.asset`、`knowledge.render.markdown`、`knowledge.health`、`knowledge.maintenance.get/set`、`knowledge.reindex`
-- CLI：`knowledge capabilities`、`knowledge search --query ...`、`knowledge evidence --id ...`、`knowledge asset --id ... --output image.bin`、`knowledge render --evidence-id ...`、`knowledge maintenance ...`
+- HTTP：`/api/knowledge/capabilities`、`/api/knowledge/search`、`/api/knowledge/documents/:documentId/structure`、`/api/knowledge/evidence/:evidenceId`、`/api/knowledge/assets/:assetId`、`/api/knowledge/render/markdown`、`/api/knowledge/health`、`/api/knowledge/maintenance`、`/api/knowledge/reindex`
+- JSON-RPC：`knowledge.capabilities`、`knowledge.search`、`knowledge.document.structure`、`knowledge.get.evidence`、`knowledge.asset`、`knowledge.render.markdown`、`knowledge.health`、`knowledge.maintenance.get/set`、`knowledge.reindex`
+- CLI：`knowledge capabilities`、`knowledge search --query ... [--hierarchy-reasoning]`、`knowledge structure --document-id ...`、`knowledge evidence --id ...`、`knowledge asset --id ... --output image.bin`、`knowledge render --evidence-id ...`、`knowledge maintenance ...`
+
+长文档检索支持 PageIndex-inspired 的局部章节树增强：`DocumentOutlineRuntime` 会把可靠 section 重建为父子树，并在结构过粗的长文档上生成 synthetic outline nodes。outline metadata 写入 KnowledgeCore SQLite，不写入源文件；`knowledge.search` 默认不调用模型，只有 `hierarchyReasoning=true` 或 retrieval profile 的 `hierarchyReasoningEnabled=true` 才启用树路由，且模型路由还必须显式传入 `modelEnabled=true`。结构读取接口只返回 compact outline tree、source ranges 和 quality findings，不返回全文正文。
+
+`ClientRuntimeAllocator` 负责按客户端维度动态分配模型、上下文和工作空间。服务端读取 `client-runtime/client-runtime-allocator.json`，只用标准字段 `clientUid + taskType` 匹配 profile，并把缺省的 `modelAlias`、`contextProfileId`、`retrievalProfileId/profileKey`、`workspaceId/sessionId` 和 `toolGrantId` 注入标准调用；调用方显式参数不会被覆盖。运行使用率写入 `client-runtime/client-runtime-usage.json`，由 `coolingPolicy.strategy = lru-lfu-v1` 按最近窗口、频次和访问时间形成冷却状态，低频客户端可以被切到冷上下文 profile，把预算留给高频连接。管理接口：HTTP `GET|POST /api/client-runtime/profiles`、`POST /api/client-runtime/resolve`、`GET /api/client-runtime/status`；RPC `client_runtime.profiles.get|set`、`client_runtime.resolve`、`client_runtime.status`；CLI `client-runtime profiles`、`client-runtime profiles set --body profiles.json`、`client-runtime resolve --client-uid CLIENT_UID`、`client-runtime status`。控制台“系统状态 / 运维监控”热力图来自 `/api/client-runtime/status`。`clientId` 不参与用户空间识别；它只属于检索灰度、服务发现等明确声明的其他协议。
 
 ### 5.5 多智能体知识总结
 
@@ -217,7 +215,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 - `POST /api/agent-workspaces/:workspaceId/locks`
 - `GET/POST /api/context/profiles`
 
-同等受限能力也通过 `/api/agent-tools/*` 暴露给工具授权智能体。任何事实、实体、关系和分类法变更只允许生成审核项或建议，不允许由总结链路直接覆盖 canonical knowledge。
+同等受限能力通过 Tool Management v1 的 `splitall.knowledge.*` 工具暴露给授权智能体。任何事实、实体、关系和分类法变更只允许生成审核项或建议，不允许由总结链路直接覆盖 canonical knowledge。
 
 共享空间锁是短 TTL 协作锁，用来保护 artifact、submission、issue 等目标的处理权。锁不代表 canonical 权威事实，只是多智能体运行期间的调度约束；释放或过期后其他智能体才能继续处理同一目标。
 
@@ -253,7 +251,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 - `POST /api/knowledge/evolution/deployments/:deploymentId/promote`
 - `POST /api/knowledge/evolution/deployments/:deploymentId/rollback`
 
-对应工具授权入口位于 `/api/agent-tools/knowledge/*`。评估运行只产出指标和建议，不默认写入真实反馈；进化运行必须使用真实反馈或人工提供 case，避免用系统自己生成的样本直接发布策略。
+对应工具授权入口位于 `/api/tool-management/v1/execute` 的 `splitall.knowledge.*` 工具。评估运行只产出指标和建议，不默认写入真实反馈；进化运行必须使用真实反馈或人工提供 case，避免用系统自己生成的样本直接发布策略。
 
 发布策略：
 
@@ -353,7 +351,7 @@ Node.js 不直接解析文件，而是先按路由把文件分发给挂载。
 
 Java 不参与服务编排，只承担文档解析引擎宿主角色。
 
-- 通过 vendored JRE 运行 `tika-app.jar`
+- 通过 `server/platform/modules/knowledge/runtime/jre` 内的 JRE 运行 `tika-app.jar`
 - 由 Node.js 调起
 - 返回：
   - `text`
@@ -419,29 +417,53 @@ checkpoint 贯穿客户端与服务端：
 
 ## 10. 任务输出
 
-任务完成后，结果会拆成三层：
+任务完成后，结果会拆成四层。四层职责不能互相替代：
 
 ### 10.1 原始对象
 
-- `objects/mail/<batchId>/<objectId>/<原始相对路径>`
+- `objects/<ClientUID>/<SourceType>/<OriginalFileName>__<ArchiveBatchId>.<ext>`
 
 特点：
 
 - 保留原文件名
 - 保留原内容
 - 不篡改文件本体
+- 只保存客户端上传的原始字节
+- 不保存服务端分析、检索、审计字段
 
-### 10.2 任务快照
+### 10.2 Upload Session Manifest
+
+- `upload-sessions/<sessionId>/meta.json`
+
+用途：
+
+- 分块 offset
+- `sha256 / byteSize` 校验状态
+- `archiveBatchId / clientUid / sourceType`
+- 断点续传和上传会话恢复
+
+它不是检索索引，不参与业务查询。
+
+### 10.3 任务快照
 
 - `jobs/<jobId>/meta.json`
 - `jobs/<jobId>/payload.json`
 - `jobs/<jobId>/result.json`
 
-### 10.3 SQLite 元数据库
+用途：
+
+- 任务恢复
+- 结果回放
+- 运维排障
+- 元数据库重建输入
+
+它不是在线检索入口。
+
+### 10.4 SQLite 元数据库
 
 - `metadata/splitall.sqlite`
 
-这是当前唯一元数据真相源。
+这是当前唯一元数据真相源，也是检索入口。
 
 主要承载：
 
@@ -457,6 +479,14 @@ checkpoint 贯穿客户端与服务端：
 - retrieval documents / FTS
 - discovery clients
 - 删除协调状态
+
+检索链路固定为：
+
+```text
+检索请求 -> SQLite retrieval / FTS / knowledge index -> raw object 元数据 -> storage_rel_path -> objects 原始文件
+```
+
+服务端、控制台、客户端和智能体工具都不能直接扫描 `objects/`、upload session manifest 或 job result manifest 作为检索入口。
 
 ## 11. 服务发现与迁移
 
@@ -554,8 +584,8 @@ npm run server:reconcile -- --apply --prune-orphan-objects
 
 服务端现在按两层拆分：
 
-- 功能层：控制器和服务只实现功能，并通过注册表暴露 `feature`、`target`、`http`、`rpc`、`cli` 元数据。注册表位置：[operation-registry.mjs](/Users/unka/DevSpace/Unka-Malloc/splitall/server/interfaces/api/operation-registry.mjs)。
-- 接口层：HTTP、JSON-RPC 和 CLI 只按注册表做路由、参数映射和返回，不关心功能内部怎么实现。JSON-RPC 使用自己的 `rpc.params`、`rpc.query`、`rpc.body` 映射，不从 HTTP 路由反推参数。分发器位置：[operation-dispatcher.mjs](/Users/unka/DevSpace/Unka-Malloc/splitall/server/interfaces/api/operation-dispatcher.mjs)。
+- 功能层：控制器和服务只实现功能，并通过注册表暴露 `feature`、`target`、`http`、`rpc`、`cli` 元数据。注册表位置：[operation-registry.mjs](/Users/unka/DevSpace/Unka-Malloc/splitall/server/platform/common/operation-dispatcher/operation-registry.mjs)。
+- 接口层：HTTP、JSON-RPC 和 CLI 只按注册表做路由、参数映射和返回，不关心功能内部怎么实现。JSON-RPC 使用自己的 `rpc.params`、`rpc.query`、`rpc.body` 映射，不从 HTTP 路由反推参数。分发器位置：[operation-dispatcher.mjs](/Users/unka/DevSpace/Unka-Malloc/splitall/server/platform/common/operation-dispatcher/operation-dispatcher.mjs)。
 
 RPC 统一走：
 
@@ -605,8 +635,8 @@ build/release/splitall-server-linux-x64.tar.gz.sha256
 
 - `runtime/node/`：Linux Node.js 运行时。
 - `node_modules/`：在 Ubuntu 容器内安装的生产依赖，包括 `better-sqlite3` 原生模块。
-- `vendor/jre/linux-x64/`：Linux JRE。
-- `vendor/tika/tika-app-*.jar`：Tika 应用包。
+- `server/platform/modules/knowledge/runtime/jre/linux-x64/`：Linux JRE。
+- `server/platform/modules/knowledge/tika/tika-app-*.jar`：Tika 应用包。
 - `build/dist/`：已构建的服务端控制台静态资源。
 - `bin/start-server`、`bin/splitall`：不依赖宿主 Node/npm/Java 的启动脚本。
 - `offline-manifest.json`：目标平台、运行时、模块和组件清单。
@@ -616,7 +646,7 @@ build/release/splitall-server-linux-x64.tar.gz.sha256
 打包阶段会生成并校验 `license-manifest.json`。该 gate 覆盖包内生产依赖闭包、KnowledgeCore、EmbeddingRuntime、VectorStore、内置 embedding/vector fallback，以及可选 sqlite-vec / ONNX 模型状态：
 
 - allowed licenses 明确写入 manifest，目前包括 `MIT`、`Apache-2.0`、`BSD-2-Clause`、`BSD-3-Clause`、`ISC`、`Zlib`、`BlueOak-1.0.0`、`0BSD`、`CC0-1.0`、`Unlicense`、`project-internal`，并允许已列明的兼容表达式，例如 `MIT OR Apache-2.0`。
-- blocked classes 明确写入 manifest，包括 GPL/AGPL/LGPL/SSPL、MPL/EPL/CDDL、source-available/commercial、UNKNOWN/NOASSERTION、未知模型权重、非商业模型、cloud-only runtime、启动期隐式下载等类别。
+- blocked classes 明确写入 manifest，包括 GPL/AGPL/LGPL/SSPL、MPL/EPL/CDDL、source-available/restricted、UNKNOWN/NOASSERTION、未知模型权重、受限模型、cloud-only runtime、启动期隐式下载等类别。
 - 任意生产依赖被判定为 `blocked` 或 `unknown` 时，离线打包失败。
 - `sqlite-vec` 通过 npm 包和目标平台 optional native package 进入离线包；license gate 必须把主包和平台包都判定为 allowed，否则打包失败。
 - ONNX runtime / ONNX embedding model 当前状态是 `not-bundled-license-gated`；模型文件必须由操作者显式提供并写入 manifest，不能在离线包启动时下载。
@@ -646,7 +676,7 @@ cd splitall-server-linux-x64
 ./bin/start-server --host 0.0.0.0 --port 8787 --data-dir ./data
 ```
 
-包内脚本默认开启控制台 UI，并默认使用包内 `vendor/jre` 和 `vendor/tika`。目标机仍需要 Linux 内核和兼容 glibc，这是原生 Linux 程序的系统边界；但不需要预装 Node.js、npm、Java、Tika、Python 或通过 apt 安装任何应用运行时。
+包内脚本默认开启控制台 UI，并默认使用包内 `server/platform/modules/knowledge/runtime/jre` 和 `server/platform/modules/knowledge/tika`。目标机仍需要 Linux 内核和兼容 glibc，这是原生 Linux 程序的系统边界；但不需要预装 Node.js、npm、Java、Tika、Python 或通过 apt 安装任何应用运行时。
 
 `--no-verify-docker` 只跳过 Ubuntu 容器启动验证，不跳过 license manifest 生成和 gate 校验。
 
@@ -692,65 +722,31 @@ node server/scripts/build-transaction-continuity.mjs \
 | runtime.info | runtime | system.handleGetRuntimeInfo | GET /api/runtime/info | runtime.info | runtime |
 | runtime.path_browse | runtime | system.handleBrowseServerPath | POST /api/runtime/path-browse | runtime.path_browse | runtime path-browse --body request.json |
 | runtime.mounts | runtime | system.handleGetMounts | GET /api/runtime/mounts | runtime.mounts | runtime mounts<br>alias: mounts |
-| runtime.set_mounts | runtime | system.handleSetMounts | POST /api/runtime/mounts | runtime.set_mounts | mounts set --body mounts.json |
+| runtime.set_mounts | runtime | system.handleSetMounts | POST /api/runtime/mounts | runtime.set_mounts | mounts set --body mount-config.json |
 | runtime.reload_mounts | runtime | system.handleReloadMounts | POST /api/runtime/mounts/reload | runtime.reload_mounts | mounts reload [--body settings.json] |
 | settings.get | settings | system.handleGetSettings | GET /api/settings | settings.get | settings get<br>alias: settings |
 | settings.set | settings | system.handleSetSettings | POST /api/settings | settings.set | settings set --body settings.json |
 | oauth.codex_status | oauth | system.handleGetCodexOAuthStatus | GET /api/oauth/codex/status | oauth.codex_status | oauth status<br>alias: oauth |
 | oauth.codex_login | oauth | system.handleStartCodexOAuthLogin | POST /api/oauth/codex/login | oauth.codex_login | oauth login |
 | oauth.codex_return | oauth | system.handleCodexOAuthReturn | GET /api/oauth/codex/return | oauth.codex_return | oauth return |
-| tool_platform.get | tool_platform | system.handleGetToolPlatform | GET /api/tool-platform | tool_platform.get | tool-platform |
-| tool_platform.create_grant | tool_platform | system.handleCreateToolGrant | POST /api/tool-platform/grants | tool_platform.create_grant | tool-platform create-grant --body grant.json |
-| tool_platform.update_grant | tool_platform | system.handleUpdateToolGrant | POST /api/tool-platform/grants/:grantId | tool_platform.update_grant | tool-platform update-grant --id GRANT_ID --body grant.json |
-| tool_platform.delete_grant | tool_platform | system.handleDeleteToolGrant | DELETE /api/tool-platform/grants/:grantId | tool_platform.delete_grant | tool-platform delete-grant --id GRANT_ID |
-| tool_platform.rotate_grant | tool_platform | system.handleRotateToolGrant | POST /api/tool-platform/grants/:grantId/rotate | tool_platform.rotate_grant | tool-platform rotate-grant --id GRANT_ID |
-| tool_management.catalog | tool_management | ToolManagementPlatform.catalog | GET /api/tool-management/v1/catalog |  | tools catalog |
-| tool_management.toolsets | tool_management | ToolManagementPlatform.toolsets | GET /api/tool-management/v1/toolsets |  | tools toolsets |
-| tool_management.profiles | tool_management | ToolManagementPlatform.profiles | GET /api/tool-management/v1/profiles |  | tools profiles |
-| tool_management.policy_preview | tool_management | ToolPolicyEngine.preview | POST /api/tool-management/v1/policy/preview |  | tools policy preview --body preview.json |
-| tool_management.execute | tool_management | ToolExecutionRuntime.executeTool | POST /api/tool-management/v1/execute |  | tools execute --tool-id TOOL_ID --body input.json |
-| tool_management.dry_run | tool_management | ToolExecutionRuntime.executeTool | POST /api/tool-management/v1/dry-run |  | tools dry-run --tool-id TOOL_ID --body input.json |
-| tool_management.batch | tool_management | ToolExecutionRuntime.batch | POST /api/tool-management/v1/batch |  |  |
-| tool_management.grants | tool_management | ToolManagementStore.grants | GET /api/tool-management/v1/grants |  | tools grants list |
-| tool_management.create_grant | tool_management | ToolManagementStore.createGrant | POST /api/tool-management/v1/grants |  | tools grants create --body grant.json |
-| tool_management.update_grant | tool_management | ToolManagementStore.updateGrant | POST /api/tool-management/v1/grants/:grantId |  |  |
-| tool_management.rotate_grant | tool_management | ToolManagementStore.rotateGrantToken | POST /api/tool-management/v1/grants/:grantId/rotate |  | tools grants rotate --id GRANT_ID |
-| tool_management.revoke_grant | tool_management | ToolManagementStore.revokeGrant | POST /api/tool-management/v1/grants/:grantId/revoke |  | tools grants revoke --id GRANT_ID |
-| tool_management.audit | tool_management | ToolManagementStore.listAudit | GET /api/tool-management/v1/audit |  | tools audit |
-| tool_management.metrics | tool_management | ToolManagementStore.metricsSummary | GET /api/tool-management/v1/metrics/summary |  | tools metrics |
+| tool_management.catalog | tool_management | ToolManagementPlatform.catalog | GET /api/tool-management/v1/catalog | tool_management.catalog | tools catalog |
+| tool_management.toolsets | tool_management | ToolManagementPlatform.toolsets | GET /api/tool-management/v1/toolsets | tool_management.toolsets | tools toolsets |
+| tool_management.profiles | tool_management | ToolManagementPlatform.profiles | GET /api/tool-management/v1/profiles | tool_management.profiles | tools profiles |
+| tool_management.policy_preview | tool_management | ToolPolicyEngine.preview | POST /api/tool-management/v1/policy/preview | tool_management.policy_preview | tools policy preview --body preview.json |
+| tool_management.execute | tool_management | ToolExecutionRuntime.executeTool | POST /api/tool-management/v1/execute | tool_management.execute | tools execute --tool-id TOOL_ID --body input.json |
+| tool_management.dry_run | tool_management | ToolExecutionRuntime.executeTool | POST /api/tool-management/v1/dry-run | tool_management.dry_run | tools dry-run --tool-id TOOL_ID --body input.json |
+| tool_management.batch | tool_management | ToolExecutionRuntime.batch | POST /api/tool-management/v1/batch | tool_management.batch |  |
+| tool_management.grants | tool_management | ToolManagementStore.grants | GET /api/tool-management/v1/grants | tool_management.grants | tools grants list |
+| tool_management.create_grant | tool_management | ToolManagementStore.createGrant | POST /api/tool-management/v1/grants | tool_management.create_grant | tools grants create --body grant.json |
+| tool_management.update_grant | tool_management | ToolManagementStore.updateGrant | POST /api/tool-management/v1/grants/:grantId | tool_management.update_grant |  |
+| tool_management.rotate_grant | tool_management | ToolManagementStore.rotateGrantToken | POST /api/tool-management/v1/grants/:grantId/rotate | tool_management.rotate_grant | tools grants rotate --id GRANT_ID |
+| tool_management.revoke_grant | tool_management | ToolManagementStore.revokeGrant | POST /api/tool-management/v1/grants/:grantId/revoke | tool_management.revoke_grant | tools grants revoke --id GRANT_ID |
+| tool_management.audit | tool_management | ToolManagementStore.listAudit | GET /api/tool-management/v1/audit | tool_management.audit | tools audit |
+| tool_management.metrics | tool_management | ToolManagementStore.metricsSummary | GET /api/tool-management/v1/metrics/summary | tool_management.metrics | tools metrics |
 | email_rules.get | email_rules | system.handleGetRules | GET /api/email-rules | email_rules.get | email-rules get<br>alias: email-rules |
 | email_rules.set | email_rules | system.handleSetRules | POST /api/email-rules | email_rules.set | email-rules set --body rules.json |
 | storage.summary | storage | system.handleGetStorageSummary | GET /api/storage/summary | storage.summary | storage |
 | knowledge.affair_taxonomy | knowledge | system.handleEnhanceAffairTaxonomy | POST /api/knowledge/affair-taxonomy | knowledge.affair_taxonomy | knowledge --body taxonomy.json |
-| agent_tools.search | agent_tools | system.handleAgentToolSearch | GET /api/agent-tools/search | agent_tools.search | agent-tools search --query QUERY [--header 'Authorization: Bearer ...'] |
-| agent_tools.storage_summary | agent_tools | system.handleAgentToolStorageSummary | GET /api/agent-tools/storage/summary | agent_tools.storage_summary | agent-tools storage --header 'Authorization: Bearer ...' |
-| agent_tools.jobs | agent_tools | system.handleAgentToolJobs | GET /api/agent-tools/jobs | agent_tools.jobs | agent-tools jobs [--limit 20] --header 'Authorization: Bearer ...' |
-| agent_tools.job | agent_tools | system.handleAgentToolJob | GET /api/agent-tools/jobs/:jobId | agent_tools.job | agent-tools job --id JOB_ID --header 'Authorization: Bearer ...' |
-| agent_tools.knowledge_affair_taxonomy | agent_tools | system.handleAgentToolEnhanceAffairTaxonomy | POST /api/agent-tools/knowledge/affair-taxonomy | agent_tools.knowledge_affair_taxonomy | agent-tools knowledge --body taxonomy.json --header 'Authorization: Bearer ...' |
-| agent_tools.knowledge_console | agent_tools | system.handleAgentToolKnowledgeConsole | GET /api/agent-tools/knowledge/console | agent_tools.knowledge_console |  |
-| agent_tools.knowledge_config_schema | agent_tools | system.handleAgentToolKnowledgeConfigSchema | GET /api/agent-tools/knowledge/config-schema | agent_tools.knowledge_config_schema |  |
-| agent_tools.knowledge_capabilities | agent_tools | system.handleAgentToolKnowledgeCapabilities | GET /api/agent-tools/knowledge/capabilities | agent_tools.knowledge_capabilities |  |
-| agent_tools.knowledge_health | agent_tools | system.handleAgentToolKnowledgeHealth | GET /api/agent-tools/knowledge/health | agent_tools.knowledge_health |  |
-| agent_tools.knowledge_maintenance_get | agent_tools | system.handleAgentToolKnowledgeMaintenanceGet | GET /api/agent-tools/knowledge/maintenance | agent_tools.knowledge_maintenance_get |  |
-| agent_tools.knowledge_maintenance_set | agent_tools | system.handleAgentToolKnowledgeMaintenanceSet | POST /api/agent-tools/knowledge/maintenance | agent_tools.knowledge_maintenance_set |  |
-| agent_tools.knowledge_reindex | agent_tools | system.handleAgentToolKnowledgeReindex | POST /api/agent-tools/knowledge/reindex | agent_tools.knowledge_reindex |  |
-| agent_tools.knowledge_maintenance_run | agent_tools | system.handleAgentToolKnowledgeMaintenanceRun | POST /api/agent-tools/knowledge/maintenance/run | agent_tools.knowledge_maintenance_run |  |
-| agent_tools.knowledge_sync | agent_tools | system.handleAgentToolKnowledgeSync | GET /api/agent-tools/knowledge/sync | agent_tools.knowledge_sync |  |
-| agent_tools.knowledge_changes | agent_tools | system.handleAgentToolKnowledgeChanges | POST /api/agent-tools/knowledge/changes | agent_tools.knowledge_changes |  |
-| agent_tools.knowledge_review_items | agent_tools | system.handleAgentToolKnowledgeReviewItems | GET /api/agent-tools/knowledge/review-items | agent_tools.knowledge_review_items |  |
-| agent_tools.knowledge_review_resolve | agent_tools | system.handleAgentToolResolveKnowledgeReviewItem | POST /api/agent-tools/knowledge/review-items/:reviewId/resolve | agent_tools.knowledge_review_resolve |  |
-| agent_tools.knowledge_feedback | agent_tools | system.handleAgentToolKnowledgeFeedback | POST /api/agent-tools/knowledge/feedback | agent_tools.knowledge_feedback |  |
-| agent_tools.knowledge_suggestions | agent_tools | system.handleAgentToolKnowledgeSuggestions | GET /api/agent-tools/knowledge/suggestions | agent_tools.knowledge_suggestions |  |
-| agent_tools.knowledge_suggestion_resolve | agent_tools | system.handleAgentToolResolveKnowledgeSuggestion | POST /api/agent-tools/knowledge/suggestions/:suggestionId/resolve | agent_tools.knowledge_suggestion_resolve |  |
-| agent_tools.knowledge_learning_jobs | agent_tools | system.handleAgentToolKnowledgeLearningJob | POST /api/agent-tools/knowledge/learning/jobs | agent_tools.knowledge_learning_jobs |  |
-| agent_tools.knowledge_learning_health | agent_tools | system.handleAgentToolKnowledgeLearningHealth | GET /api/agent-tools/knowledge/learning/health | agent_tools.knowledge_learning_health |  |
-| agent_tools.knowledge_search | agent_tools | system.handleAgentToolKnowledgeSearch | POST /api/agent-tools/knowledge/search | agent_tools.knowledge_search |  |
-| agent_tools.knowledge_search_get | agent_tools | system.handleAgentToolKnowledgeSearch | GET /api/agent-tools/knowledge/search | agent_tools.knowledge_search_get |  |
-| agent_tools.knowledge_item | agent_tools | system.handleAgentToolGetKnowledgeItem | GET /api/agent-tools/knowledge/items/:itemId | agent_tools.knowledge_item |  |
-| agent_tools.knowledge_evidence | agent_tools | system.handleAgentToolGetKnowledgeEvidence | GET /api/agent-tools/knowledge/evidence/:evidenceId | agent_tools.knowledge_evidence |  |
-| agent_tools.knowledge_asset | agent_tools | system.handleAgentToolGetKnowledgeAsset | GET /api/agent-tools/knowledge/assets/:assetId | agent_tools.knowledge_asset |  |
-| agent_tools.knowledge_render_markdown | agent_tools | system.handleAgentToolRenderKnowledgeMarkdown | POST /api/agent-tools/knowledge/render/markdown | agent_tools.knowledge_render_markdown |  |
-| agent_tools.knowledge_graph | agent_tools | system.handleAgentToolKnowledgeGraph | GET /api/agent-tools/knowledge/graph | agent_tools.knowledge_graph |  |
 | search.query | search | system.handleSearch | GET /api/search | search.query | search --query QUERY [--limit 20] |
 | uploads.create_session | uploads | jobs.handleCreateUploadSession | POST /api/upload-sessions | uploads.create_session | upload-session --body session.json |
 | uploads.get_session | uploads | jobs.handleGetUploadSession | GET /api/upload-sessions/:sessionId | uploads.get_session | upload-session get --id SESSION_ID |
@@ -795,7 +791,7 @@ npm run server:verify:agent-knowledge-tools
 - 元数据库重建
 - 运维工具
 - 智能体知识库工具授权与 scope 分层
-- 分层索引粗到细检索，以及 agent-tools 搜索入口统一遵守分层索引
+- 分层索引粗到细检索，以及 Tool Management 搜索工具统一遵守分层索引
 
 ## 17. 知识库控制台与 RBAC
 
@@ -892,8 +888,7 @@ OpenAI-compatible Chat Completions，不让页面或客户端直接持有 API Ke
 
 控制台“模型库”不再默认展示所有模型。页面使用 `settings.modelLibraryEntries[]`
 保存用户显式添加过的 provider，并使用 `settings.modelLibraryAgentIds[]` 保存智能体顺序索引；
-每个智能体的完整配置独立落盘到 `<userDataPath>/model-agents/<agent_uid>.json`。旧版
-`settings.modelLibraryModels[]` 仍可读取作为迁移来源，但保存后不会继续写回主 `settings.json`。
+每个智能体的完整配置独立落盘到 `<userDataPath>/model-agents/<agent_uid>.json`。
 新增卡片插入到列表顶部；没有任何条目时只显示新增入口。
 每个模型卡片都有“探测”按钮，调用服务端只读接口：
 
@@ -905,7 +900,7 @@ OpenAI-compatible Chat Completions，不让页面或客户端直接持有 API Ke
 OpenRouter、Gemini 等 API Key 模型会发起最小化连通性请求；ChatGPT OAuth 会验证并尝试
 一次轻量调用；自定义 HTTP Adapter、本地模型和企业代理按各自配置的 Endpoint 探测。
 
-规范配置字段位于 `settings.customHttpAdapter`，`settings.agentGateway` 只作为旧接口兼容别名保留。多个可用智能体使用 `settings.customHttpAdapters[]` 保存，首个条目会与 `customHttpAdapter` 归一为默认 `custom-http` 模型：
+规范配置字段位于 `settings.customHttpAdapter`。多个可用智能体使用 `settings.customHttpAdapters[]` 保存，首个条目会与 `customHttpAdapter` 归一为默认 `custom-http` 模型：
 
 - `alias`：模型分配时使用的自定义代称，例如 `kb-http`
 - `url`：外部智能体请求 URL
@@ -1017,7 +1012,7 @@ npm run server:verify:agent-sync
 
 ## 20. 工具管理平台
 
-服务端新增 `splitall.tool-management.v1`，作为智能体工具、外部 token 工具、兼容 agent-tools 入口的统一管理平台。旧 `/api/tool-platform/*` 仍可用于兼容控制台和脚本，但授权数据已经迁移到 `<userDataPath>/tool-management/tool-management.sqlite`；旧 `/api/agent-tools/*` 只保留协议外形，内部统一进入 `ToolExecutionRuntime`。
+服务端只保留 `splitall.tool-management.v1` 作为智能体工具和外部 token 工具的统一管理平台。旧 `/api/tool-platform/*` 和 `/api/agent-tools/*` 已移除；授权数据保存在 `<userDataPath>/tool-management/tool-management.sqlite`。
 
 核心能力：
 
@@ -1025,8 +1020,8 @@ npm run server:verify:agent-sync
 - `ToolsetRegistry`：内置 `splitall.knowledge.read/write/maintain/admin`、`splitall.storage.read`、`splitall.jobs.read`、`splitall.agent.sync.publish` 等企业授权单元。
 - `ToolManagementStore`：保存 grant、token hash、policy decision、tool execution、metric event 和 catalog snapshot；grant 支持 toolset 白名单/黑名单、scope、限流、来源 Origin/CIDR、过期和撤销。
 - `ToolPolicyEngine`：按 platform、grant、agent profile、session 和 runtime safety 计算 allow/deny/confirmation。
-- `ToolExecutionRuntime`：统一执行、dry-run、batch、兼容 agent-tools、输入 schema 校验、timeout、结果大小限制、串行锁、审计和指标埋点。
-- Console：`admin/tools` 使用 `/api/tool-management/v1/*` 展示 Catalog、Toolsets、Profiles、Policy Preview、Grants、Audit 和 Metrics；旧 `/api/tool-platform` 只用于兼容摘要。
+- `ToolExecutionRuntime`：统一执行、dry-run、batch、输入 schema 校验、timeout、结果大小限制、串行锁、审计和指标埋点。
+- Console：`admin/tools` 使用 `/api/tool-management/v1/*` 展示 Catalog、Toolsets、Profiles、Policy Preview、Grants、Audit 和 Metrics。
 
 CLI：
 

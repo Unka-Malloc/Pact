@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);

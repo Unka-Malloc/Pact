@@ -5,15 +5,15 @@ import path from "node:path";
 import {
   isSupportedImportFilePath,
   isSupportedImportPath
-} from "../modules/FileProcessor/index.mjs";
+} from "../platform/specialized/knowledge/file-processor/index.mjs";
 import {
   getImportExtensionRoutes,
   importFileDescriptorForPath,
   importFileTypeConfigPath,
   reloadImportFileTypeRegistry
-} from "../modules/FileProcessor/import-file-types.mjs";
-import { TIKA_IMPORT_EXTENSIONS } from "../modules/FileProcessor/FileNormalizer/Tika/tika.mjs";
-import { normalizeMountRouting } from "../runtime/mount-config.mjs";
+} from "../platform/specialized/knowledge/file-processor/import-file-types.mjs";
+import { TIKA_IMPORT_EXTENSIONS } from "../platform/modules/knowledge/file-processor/FileNormalizer/Tika/tika.mjs";
+import { normalizeMountRouting } from "../platform/common/module-manager/mount-config.mjs";
 
 const configPath = importFileTypeConfigPath();
 assert.ok(configPath.endsWith("default-import-file-types.json"));

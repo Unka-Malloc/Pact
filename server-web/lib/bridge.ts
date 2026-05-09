@@ -8,6 +8,7 @@ import type {
   AgentSyncConfig,
   AgentSyncPublishRequest,
   BackgroundProcessStatus,
+  ClientRuntimeStatus,
   ClientMigrationCommandResponse,
   ConsoleAuditItem,
   ConsoleAuthSummary,
@@ -51,9 +52,9 @@ import type {
   SplitResult,
   ToolManagementAuditResponse,
   ToolManagementCatalog,
+  ToolManagementGrantIssue,
+  ToolManagementGrantsResponse,
   ToolManagementMetricsResponse,
-  ToolPlatformGrantIssue,
-  ToolPlatformState,
   UploadSessionResponse
 } from "./types";
 
@@ -111,6 +112,8 @@ type Bridge = {
   saveMaintenanceAgentConfig: (config: Partial<MaintenanceAgentConfig>) => Promise<{ config: MaintenanceAgentConfig }>;
   chatMaintenanceAgent: (payload: {
     message: string;
+    modelAlias?: string;
+    agentName?: string;
     wait?: boolean;
   }) => Promise<{ plan: MaintenanceAgentRun["plan"]; run: MaintenanceAgentRun }>;
   startMaintenanceAgentRun: (payload: {
@@ -133,26 +136,35 @@ type Bridge = {
   ) => Promise<{ run: MaintenanceAgentRun }>;
   getMaintenanceAgentSummaryFromState?: () => Promise<MaintenanceAgentSummary | null>;
   getBackgroundProcesses: () => Promise<BackgroundProcessStatus>;
+  getClientRuntimeStatus: () => Promise<ClientRuntimeStatus>;
   getMonitorAlerts: () => Promise<MonitorAlertState>;
   saveMonitorAlertConfig: (config: MonitorAlertConfig) => Promise<MonitorAlertState>;
+  acknowledgeMonitorAlert: (alertId: string) => Promise<MonitorAlertState>;
   subscribeEvents: (params?: {
     cursor?: number;
     topic?: string;
     timeoutMs?: number;
     includeSnapshot?: boolean;
-  }) => Promise<EventSubscriptionResponse>;
+  }, options?: BridgeRequestOptions) => Promise<EventSubscriptionResponse>;
   getToolManagementCatalog: () => Promise<ToolManagementCatalog>;
   getToolManagementAudit: (limit?: number) => Promise<ToolManagementAuditResponse>;
   getToolManagementMetrics: () => Promise<ToolManagementMetricsResponse>;
   previewToolPolicy: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  getToolPlatform: () => Promise<ToolPlatformState>;
-  createToolGrant: (payload: { label: string; scopes?: string[]; toolsets?: string[] }) => Promise<ToolPlatformGrantIssue>;
+  getToolManagementGrants: () => Promise<ToolManagementGrantsResponse>;
+  createToolGrant: (payload: { label: string; scopes?: string[]; toolsets?: string[] }) => Promise<ToolManagementGrantIssue>;
   updateToolGrant: (
     grantId: string,
-    payload: { label?: string; enabled?: boolean; scopes?: string[]; toolsets?: string[] },
-  ) => Promise<ToolPlatformState>;
-  deleteToolGrant: (grantId: string) => Promise<ToolPlatformState>;
-  rotateToolGrantToken: (grantId: string) => Promise<ToolPlatformGrantIssue>;
+    payload: {
+      label?: string;
+      enabled?: boolean;
+      scopes?: string[];
+      toolsets?: string[];
+      toolAllow?: string[];
+      toolDeny?: string[];
+    },
+  ) => Promise<{ grant: ToolManagementGrantIssue["grant"] }>;
+  deleteToolGrant: (grantId: string) => Promise<{ grant: ToolManagementGrantIssue["grant"] }>;
+  rotateToolGrantToken: (grantId: string) => Promise<ToolManagementGrantIssue>;
   getDiscoveryConfig: () => Promise<DiscoveryConfigResponse>;
   saveDiscoveryConfig: (config: DiscoveryConfig) => Promise<DiscoveryConfigResponse>;
   getEmailRules: () => Promise<EmailRuleSetResponse>;
@@ -287,11 +299,15 @@ type SafetyRequestOptions = {
   safetyConfirm?: boolean;
 };
 
+type BridgeRequestOptions = SafetyRequestOptions & {
+  signal?: AbortSignal;
+};
+
 function safetyHeaders(options: SafetyRequestOptions = {}): Record<string, string> {
   return options.safetyConfirm ? { "x-splitall-safety-confirm": "true" } : {};
 }
 
-async function postJson<T>(url: string, payload?: unknown, options: SafetyRequestOptions = {}): Promise<T> {
+async function postJson<T>(url: string, payload?: unknown, options: BridgeRequestOptions = {}): Promise<T> {
   const headers: HeadersInit | undefined = payload
     ? {
         "Content-Type": "application/json",
@@ -304,7 +320,8 @@ async function postJson<T>(url: string, payload?: unknown, options: SafetyReques
     method: payload ? "POST" : "GET",
     headers,
     body: payload ? JSON.stringify(payload) : undefined,
-    credentials: "same-origin"
+    credentials: "same-origin",
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -317,7 +334,7 @@ async function postJson<T>(url: string, payload?: unknown, options: SafetyReques
   return data;
 }
 
-async function deleteJson<T>(url: string, options: SafetyRequestOptions = {}): Promise<T> {
+async function deleteJson<T>(url: string, options: BridgeRequestOptions = {}): Promise<T> {
   const headers: HeadersInit = {
     Accept: "application/json",
     ...(csrfToken ? { "x-splitall-csrf": csrfToken } : {}),
@@ -326,7 +343,8 @@ async function deleteJson<T>(url: string, options: SafetyRequestOptions = {}): P
   const response = await fetch(url, {
     method: "DELETE",
     headers,
-    credentials: "same-origin"
+    credentials: "same-origin",
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -493,6 +511,7 @@ const browserBridge: Bridge = {
     ),
   getBackgroundProcesses: () =>
     postJson<BackgroundProcessStatus>("/api/system/background-processes"),
+  getClientRuntimeStatus: () => getJson<ClientRuntimeStatus>("/api/client-runtime/status"),
   getMonitorAlerts: () =>
     postJson<MonitorAlertState>("/api/system/monitor-alerts"),
   saveMonitorAlertConfig: (config) =>
@@ -501,7 +520,13 @@ const browserBridge: Bridge = {
       { config },
       { safetyConfirm: true },
     ),
-  subscribeEvents: (params = {}) => {
+  acknowledgeMonitorAlert: (alertId) =>
+    postJson<MonitorAlertState>(
+      `/api/system/monitor-alerts/${encodeURIComponent(alertId)}/ack`,
+      {},
+      { safetyConfirm: true },
+    ),
+  subscribeEvents: (params = {}, options = {}) => {
     const query = new URLSearchParams();
     if (params.cursor !== undefined) {
       query.set("cursor", String(params.cursor));
@@ -516,7 +541,7 @@ const browserBridge: Bridge = {
       query.set("includeSnapshot", params.includeSnapshot ? "1" : "0");
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return postJson<EventSubscriptionResponse>(`/api/events${suffix}`);
+    return postJson<EventSubscriptionResponse>(`/api/events${suffix}`, undefined, options);
   },
   getToolManagementCatalog: () => postJson<ToolManagementCatalog>("/api/tool-management/v1/catalog"),
   getToolManagementAudit: (limit = 50) =>
@@ -527,46 +552,34 @@ const browserBridge: Bridge = {
     postJson<ToolManagementMetricsResponse>("/api/tool-management/v1/metrics/summary"),
   previewToolPolicy: (payload) =>
     postJson<Record<string, unknown>>("/api/tool-management/v1/policy/preview", payload),
-  getToolPlatform: () => postJson<ToolPlatformState>("/api/tool-platform"),
+  getToolManagementGrants: () => postJson<ToolManagementGrantsResponse>("/api/tool-management/v1/grants"),
   createToolGrant: async (payload) => {
-    const result = await postJson<{ grant: ToolPlatformGrantIssue["grant"]; token: string }>(
+    return postJson<ToolManagementGrantIssue>(
       "/api/tool-management/v1/grants",
       payload,
       { safetyConfirm: true },
     );
-    return {
-      state: await postJson<ToolPlatformState>("/api/tool-platform"),
-      grant: result.grant,
-      token: result.token,
-    };
   },
   updateToolGrant: async (grantId, payload) => {
-    await postJson(
+    return postJson(
       `/api/tool-management/v1/grants/${encodeURIComponent(grantId)}`,
       payload,
       { safetyConfirm: true },
     );
-    return postJson<ToolPlatformState>("/api/tool-platform");
   },
   deleteToolGrant: async (grantId) => {
-    await postJson(
+    return postJson(
       `/api/tool-management/v1/grants/${encodeURIComponent(grantId)}/revoke`,
       { reason: "revoked_from_console" },
       { safetyConfirm: true },
     );
-    return postJson<ToolPlatformState>("/api/tool-platform");
   },
   rotateToolGrantToken: async (grantId) => {
-    const result = await postJson<{ grant: ToolPlatformGrantIssue["grant"]; token: string }>(
+    return postJson<ToolManagementGrantIssue>(
       `/api/tool-management/v1/grants/${encodeURIComponent(grantId)}/rotate`,
       {},
       { safetyConfirm: true },
     );
-    return {
-      state: await postJson<ToolPlatformState>("/api/tool-platform"),
-      grant: result.grant,
-      token: result.token,
-    };
   },
   getDiscoveryConfig: () => postJson<DiscoveryConfigResponse>("/api/discovery/config"),
   saveDiscoveryConfig: (config) =>

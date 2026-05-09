@@ -2,6 +2,8 @@ class ClientConfig {
   const ClientConfig({
     this.bootstrapBaseUrl = '',
     this.resolvedServiceBaseUrl = '',
+    this.serviceUsername = '',
+    this.servicePassword = '',
     this.clientId = '',
     this.lastDiscoveryConfigVersion = '',
     this.lastExpertVocabularyVersion = 0,
@@ -12,10 +14,13 @@ class ClientConfig {
     this.indexHotUpdatePolicy = 'automatic',
     this.platformCapabilityPreference = 'auto',
     this.emailAnalysisModuleEnabled,
+    this.macOSMailUploadToCloudEnabled = false,
   });
 
   final String bootstrapBaseUrl;
   final String resolvedServiceBaseUrl;
+  final String serviceUsername;
+  final String servicePassword;
   final String clientId;
   final String lastDiscoveryConfigVersion;
   final int lastExpertVocabularyVersion;
@@ -26,10 +31,13 @@ class ClientConfig {
   final String indexHotUpdatePolicy;
   final String platformCapabilityPreference;
   final bool? emailAnalysisModuleEnabled;
+  final bool macOSMailUploadToCloudEnabled;
 
   ClientConfig copyWith({
     String? bootstrapBaseUrl,
     String? resolvedServiceBaseUrl,
+    String? serviceUsername,
+    String? servicePassword,
     String? clientId,
     String? lastDiscoveryConfigVersion,
     int? lastExpertVocabularyVersion,
@@ -40,11 +48,14 @@ class ClientConfig {
     String? indexHotUpdatePolicy,
     String? platformCapabilityPreference,
     bool? emailAnalysisModuleEnabled,
+    bool? macOSMailUploadToCloudEnabled,
   }) {
     return ClientConfig(
       bootstrapBaseUrl: bootstrapBaseUrl ?? this.bootstrapBaseUrl,
       resolvedServiceBaseUrl:
           resolvedServiceBaseUrl ?? this.resolvedServiceBaseUrl,
+      serviceUsername: serviceUsername ?? this.serviceUsername,
+      servicePassword: servicePassword ?? this.servicePassword,
       clientId: clientId ?? this.clientId,
       lastDiscoveryConfigVersion:
           lastDiscoveryConfigVersion ?? this.lastDiscoveryConfigVersion,
@@ -62,6 +73,8 @@ class ClientConfig {
           platformCapabilityPreference ?? this.platformCapabilityPreference,
       emailAnalysisModuleEnabled:
           emailAnalysisModuleEnabled ?? this.emailAnalysisModuleEnabled,
+      macOSMailUploadToCloudEnabled:
+          macOSMailUploadToCloudEnabled ?? this.macOSMailUploadToCloudEnabled,
     );
   }
 
@@ -70,6 +83,8 @@ class ClientConfig {
     return ClientConfig(
       bootstrapBaseUrl: (json['bootstrapBaseUrl'] ?? '').toString(),
       resolvedServiceBaseUrl: (json['resolvedServiceBaseUrl'] ?? '').toString(),
+      serviceUsername: (json['serviceUsername'] ?? '').toString(),
+      servicePassword: (json['servicePassword'] ?? '').toString(),
       clientId: (json['clientId'] ?? '').toString(),
       lastDiscoveryConfigVersion: (json['lastDiscoveryConfigVersion'] ?? '')
           .toString(),
@@ -89,6 +104,8 @@ class ClientConfig {
       emailAnalysisModuleEnabled: rawEmailAnalysisModuleEnabled is bool
           ? rawEmailAnalysisModuleEnabled
           : null,
+      macOSMailUploadToCloudEnabled:
+          json['macOSMailUploadToCloudEnabled'] == true,
     );
   }
 
@@ -96,6 +113,8 @@ class ClientConfig {
     final json = <String, dynamic>{
       'bootstrapBaseUrl': bootstrapBaseUrl,
       'resolvedServiceBaseUrl': resolvedServiceBaseUrl,
+      'serviceUsername': serviceUsername,
+      'servicePassword': servicePassword,
       'clientId': clientId,
       'lastDiscoveryConfigVersion': lastDiscoveryConfigVersion,
       'lastExpertVocabularyVersion': lastExpertVocabularyVersion,
@@ -105,6 +124,7 @@ class ClientConfig {
       'expertVocabularySyncPolicy': expertVocabularySyncPolicy,
       'indexHotUpdatePolicy': indexHotUpdatePolicy,
       'platformCapabilityPreference': platformCapabilityPreference,
+      'macOSMailUploadToCloudEnabled': macOSMailUploadToCloudEnabled,
     };
     if (emailAnalysisModuleEnabled != null) {
       json['emailAnalysisModuleEnabled'] = emailAnalysisModuleEnabled!;
@@ -710,6 +730,7 @@ enum AppSection {
   queue,
   server,
   modules,
+  dataConnectors,
   knowledgeGraph,
   export,
   checkpoints,

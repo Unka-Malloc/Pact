@@ -4,7 +4,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import {
   getAgentToolExecutionSettingsPath,
   getModelProviderSettingsPath,
@@ -12,13 +12,13 @@ import {
   loadSettings,
   normalizeSettings,
   resolveModelForModule
-} from "../config.mjs";
+} from "../platform/common/platform-core/settings.mjs";
 import {
   callAgentGateway,
   parseAgentGatewayStreamText,
   parseDeepSeekStreamText
-} from "../modules/AgentGateway/index.mjs";
-import { probeModelConnection } from "../modules/ModelProbe/index.mjs";
+} from "../platform/specialized/agent/agent-gateway/index.mjs";
+import { probeModelConnection } from "../platform/specialized/agent/agent-gateway/model-probe/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {
@@ -246,7 +246,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      alias: "legacy-agent",
+      alias: "custom-http-agent",
       url: mockAgent.url,
       token: "secret-token",
       tokenHeader: "token",
@@ -257,7 +257,7 @@ try {
       timeoutMs: 30000
     })
   });
-  assert.equal(config.config.alias, "legacy-agent");
+  assert.equal(config.config.alias, "custom-http-agent");
   assert.equal(config.config.url, mockAgent.url);
   assert.equal(config.config.token, "");
   assert.equal(config.config.tokenConfigured, true);
@@ -302,7 +302,7 @@ try {
       deepSeekBaseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
       deepSeekModel: "deepseek-v4-flash",
       deepSeekTimeoutMs: 30000,
-      modelLibraryModels: [
+      modelLibraryAgents: [
         {
           provider: "deepseek",
           label: "Flash Analyst",
@@ -364,9 +364,6 @@ try {
   assert.equal(settings.customHttpAdapter.alias, "kb-http");
   assert.equal(settings.customHttpAdapter.token, "");
   assert.equal(settings.customHttpAdapter.tokenConfigured, true);
-  assert.equal(settings.agentGateway.alias, "kb-http");
-  assert.equal(settings.agentGateway.token, "");
-  assert.equal(settings.agentGateway.tokenConfigured, true);
   assert.equal(settings.customHttpAdapters.length, 2);
   assert.equal(settings.customHttpAdapters[1].alias, "qa-http");
   assert.equal(settings.customHttpAdapters[1].token, "");
@@ -377,19 +374,19 @@ try {
   assert.equal(settings.deepSeekModel, "deepseek-v4-flash");
   assert.equal(settings.modelLibraryEntries.includes("custom-http"), true);
   assert.equal(settings.modelLibraryEntries.includes("deepseek"), true);
-  assert.equal(settings.modelLibraryModels.length, 2);
-  const libraryAliases = settings.modelLibraryModels.map((model) => model.alias);
+  assert.equal(settings.modelLibraryAgents.length, 2);
+  const libraryAliases = settings.modelLibraryAgents.map((model) => model.alias);
   assert.equal(libraryAliases.every((alias) => /^agent_[0-9a-f]{16}$/.test(alias)), true);
   assert.deepEqual(
-    settings.modelLibraryModels.map((model) => model.uid),
+    settings.modelLibraryAgents.map((model) => model.uid),
     libraryAliases
   );
   assert.deepEqual(
-    settings.modelLibraryModels.map((model) => model.instanceId),
+    settings.modelLibraryAgents.map((model) => model.instanceId),
     libraryAliases
   );
-  assert.equal(settings.modelLibraryModels[0].agentName, "Flash Analyst");
-  assert.equal(settings.modelLibraryModels[1].agentName, "HTTP Analyst");
+  assert.equal(settings.modelLibraryAgents[0].agentName, "Flash Analyst");
+  assert.equal(settings.modelLibraryAgents[1].agentName, "HTTP Analyst");
   assert.equal(settings.agentToolExecution.http.timeoutMs, 11000);
   assert.equal(settings.agentToolExecution.local.commands[0].commandId, "node-version-test");
 
@@ -470,7 +467,7 @@ try {
   assert.equal(updatedAgent.agent.systemPromptConfigured, true);
   assert.deepEqual(updatedAgent.agent.parameterKeys, ["temperature"]);
   const settingsAfterCliUpdate = await loadSettings(userDataPath);
-  const managedAgentSettings = settingsAfterCliUpdate.modelLibraryModels.find(
+  const managedAgentSettings = settingsAfterCliUpdate.modelLibraryAgents.find(
     (model) => model.uid === createdAgent.agentId
   );
   assert.equal(managedAgentSettings.apiKey, "managed-secret");
@@ -686,7 +683,7 @@ try {
     settings: {
       openRouterApiKey: "router-secret",
       openRouterBaseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
-      modelLibraryModels: [
+      modelLibraryAgents: [
         {
           uid: openRouterAlias,
           instanceId: openRouterAlias,
@@ -728,7 +725,7 @@ try {
   const qwenLocalAlias = "agent_qwen3_32b_test";
   const qwenGatewayResult = await callAgentGateway({
     settings: {
-      modelLibraryModels: [
+      modelLibraryAgents: [
         {
           uid: qwenLocalAlias,
           instanceId: qwenLocalAlias,
@@ -778,7 +775,7 @@ try {
 
   const layeredAlias = "agent_module_layer_test";
   const layeredSettings = normalizeSettings({
-    modelLibraryModels: [
+    modelLibraryAgents: [
       {
         uid: layeredAlias,
         instanceId: layeredAlias,
@@ -901,7 +898,7 @@ try {
   assert.equal(contentArrayProbe.ok, true);
   assert.equal(contentArrayProbe.answerSnippet, "SplitAllProbeOK");
 
-  const savedDeepSeekAlias = settings.modelLibraryModels[0].alias;
+  const savedDeepSeekAlias = settings.modelLibraryAgents[0].alias;
   const redactedDeepSeekProbeBefore = mockAgent.requests.length;
   const redactedDeepSeekProbe = await fetchJson(`${server.url}/api/settings/model-probe`, {
     method: "POST",
@@ -914,9 +911,9 @@ try {
         deepSeekApiKey: "",
         deepSeekApiKeyConfigured: false,
         deepSeekModel: "deepseek-v4-flash",
-        modelLibraryModels: [
+        modelLibraryAgents: [
           {
-            ...settings.modelLibraryModels[0],
+            ...settings.modelLibraryAgents[0],
             baseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
             apiKey: "",
             apiKeyConfigured: true
@@ -941,7 +938,7 @@ try {
         deepSeekApiKey: "",
         deepSeekApiKeyConfigured: false,
         deepSeekModel: "deepseek-v4-flash",
-        modelLibraryModels: [
+        modelLibraryAgents: [
           {
             uid: unsavedDeepSeekAlias,
             instanceId: unsavedDeepSeekAlias,
@@ -979,7 +976,7 @@ try {
     callAgentGateway({
       settings: {
         deepSeekBaseUrl: `http://127.0.0.1:${new URL(mockAgent.url).port}`,
-        modelLibraryModels: [
+        modelLibraryAgents: [
           {
             uid: "deepseek",
             instanceId: "deepseek",

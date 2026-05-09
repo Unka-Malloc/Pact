@@ -3,6 +3,8 @@
   "enabled": true,
   "intervalMs": 5000,
   "heartbeatStaleMs": 15000,
+  "queueHeartbeatStaleMs": 60000,
+  "recoverInterruptedQueues": true,
   "historyLimit": 200,
   "rules": {
     "supervisorStopped": {
@@ -31,6 +33,12 @@
       "restartCountThreshold": 1,
       "titleTemplate": "{{label}} 已被守护进程重启",
       "messageTemplate": "{{label}} 当前重启次数 {{restartCount}}，PID {{pid}}。"
+    },
+    "queueInterrupted": {
+      "enabled": true,
+      "severity": "critical",
+      "titleTemplate": "{{queueLabel}} 中断",
+      "messageTemplate": "{{queueLabel}} 缺少闭环关闭登记，最近证据 {{evidenceUpdatedAt}}，checkpoint {{checkpointStatus}}，恢复状态 {{recoveryStatus}}。"
     }
   }
 }

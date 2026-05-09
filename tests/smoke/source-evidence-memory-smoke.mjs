@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { getSourceFileIndexRun, indexKnowledgeSourceFiles } from "../../server/application/source-file-index-service.mjs";
-import { getSourceFileEvidence, searchSourceFiles } from "../../server/application/source-file-search-service.mjs";
-import { getSourceSearchRulesPath } from "../../server/source-search-rules.mjs";
+import { getSourceFileIndexRun, indexKnowledgeSourceFiles } from "../../server/platform/specialized/knowledge/datastore/source-file-index-service.mjs";
+import { getSourceFileEvidence, searchSourceFiles } from "../../server/platform/specialized/knowledge/datastore/source-file-search-service.mjs";
+import { getSourceSearchRulesPath } from "../../server/platform/specialized/knowledge/domain/rules/source-search-rules.mjs";
 import {
   analyzeMemorySamples,
   captureMemorySample,

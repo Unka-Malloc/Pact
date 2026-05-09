@@ -8,13 +8,14 @@ import {
   finishCheckpointTree,
   startCheckpointTree,
   upsertCheckpointNode
-} from "../../application/checkpoint-tree-store.mjs";
+} from "../../platform/common/data-structure/checkpoint-tree-store.mjs";
+import { resolveArchiveBatchIdentity } from "../../services/client/work-queue-core/archive-batch-id.mjs";
 import {
   assertServerToken,
   hashClientString,
   resolveWithin,
   serverToken
-} from "../../security/client-strings.mjs";
+} from "../../platform/common/platform-core/security/client-strings.mjs";
 
 const SESSION_SCHEMA_VERSION = 1;
 
@@ -83,6 +84,12 @@ function normalizeFileIndex(value) {
     throw new Error("上传文件索引无效。");
   }
   return fileIndex;
+}
+
+function originalFileNameForUpload(file, index) {
+  return path.posix.basename(
+    normalizeRelativePath(file?.relativePath || file?.name || `upload-${index + 1}`)
+  );
 }
 
 async function hashFileSha256(filePath) {
@@ -206,9 +213,18 @@ async function reconcileSessionMeta(userDataPath, meta) {
 }
 
 function buildPublicSession(meta) {
+  const archiveBatch = resolveArchiveBatchIdentity({
+    archiveBatchId: meta.archiveBatchId,
+    checkpointId: meta.checkpointId,
+    manifestDigest: meta.manifestDigest,
+    inputDigest: meta.inputDigest
+  });
   return {
     sessionId: meta.sessionId,
     checkpointId: meta.checkpointId,
+    archiveBatchId: archiveBatch.archiveBatchId,
+    clientUid: meta.clientUid || "",
+    sourceType: meta.sourceType || "",
     checkpointTreeId: meta.checkpointTreeId || buildCheckpointTreeId("upload-session", meta.sessionId),
     manifestDigest: meta.manifestDigest,
     inputDigest: meta.inputDigest,
@@ -219,6 +235,14 @@ function buildPublicSession(meta) {
       index: file.index,
       name: file.name,
       relativePath: file.relativePath,
+      originalFileName: file.originalFileName || "",
+      clientUid: file.clientUid || meta.clientUid || "",
+      sourceType: file.sourceType || meta.sourceType || "",
+      providerId: file.providerId || meta.providerId || "",
+      externalId: file.externalId || meta.externalId || "",
+      syncBatchId: file.syncBatchId || meta.syncBatchId || "",
+      contentHash: file.contentHash || meta.contentHash || "",
+      capturedAt: file.capturedAt || meta.capturedAt || "",
       mediaType: file.mediaType,
       sha256: file.sha256,
       byteSize: file.byteSize,
@@ -266,7 +290,22 @@ export async function createOrResumeUploadSession({
     manifestDigest,
     inputDigest
   );
+  const archiveBatch = resolveArchiveBatchIdentity({
+    archiveBatchId: checkpoint?.archiveBatchId,
+    batchId: checkpoint?.batchId,
+    clientBatchId: checkpoint?.clientBatchId,
+    checkpointId: clientCheckpointId,
+    manifestDigest,
+    inputDigest
+  });
   const sessionId = serverToken("upload_session", checkpointId, manifestDigest, inputDigest);
+  const clientUid = String(checkpoint?.clientUid || checkpoint?.clientId || manifest?.clientUid || manifest?.clientId || "").trim();
+  const sourceType = String(checkpoint?.sourceType || checkpoint?.resourceType || manifest?.sourceType || manifest?.resourceType || "upload").trim();
+  const providerId = String(checkpoint?.providerId || manifest?.providerId || "").trim();
+  const externalId = String(checkpoint?.externalId || manifest?.externalId || "").trim();
+  const syncBatchId = String(checkpoint?.syncBatchId || manifest?.syncBatchId || "").trim();
+  const contentHash = String(checkpoint?.contentHash || manifest?.contentHash || "").trim();
+  const capturedAt = String(checkpoint?.capturedAt || manifest?.capturedAt || "").trim();
   const checkpointTreeId = buildCheckpointTreeId("upload-session", sessionId);
   await startCheckpointTree({
     userDataPath,
@@ -279,6 +318,14 @@ export async function createOrResumeUploadSession({
     metadata: {
       sessionId,
       checkpointId,
+      archiveBatchId: archiveBatch.archiveBatchId,
+      clientUid,
+      sourceType,
+      providerId,
+      externalId,
+      syncBatchId,
+      contentHash,
+      capturedAt,
       manifestDigest,
       inputDigest,
       fileCount: files.length
@@ -317,6 +364,27 @@ export async function createOrResumeUploadSession({
         existingInputDigest: existing.inputDigest
       });
       throw new Error("同一 checkpoint 的上传会话摘要不一致，拒绝覆盖。");
+    }
+    const existingArchiveBatchId = existing.archiveBatchId
+      ? resolveArchiveBatchIdentity({
+          archiveBatchId: existing.archiveBatchId,
+          checkpointId: existing.checkpointId,
+          manifestDigest: existing.manifestDigest,
+          inputDigest: existing.inputDigest
+        }).archiveBatchId
+      : "";
+    if (existingArchiveBatchId && existingArchiveBatchId !== archiveBatch.archiveBatchId) {
+      await emitTrace(trace, {
+        functionName: "createOrResumeUploadSession",
+        stage: "resume_rejected",
+        level: "error",
+        message: "同一 checkpoint 的归档批次不一致。",
+        sessionId,
+        checkpointId,
+        archiveBatchId: archiveBatch.archiveBatchId,
+        existingArchiveBatchId
+      });
+      throw new Error("同一 checkpoint 的归档批次不一致，拒绝覆盖。");
     }
 
     await emitTrace(trace, {
@@ -368,6 +436,16 @@ export async function createOrResumeUploadSession({
     sessionId,
     checkpointId,
     checkpointTreeId,
+    archiveBatchId: archiveBatch.archiveBatchId,
+    clientArchiveBatchHash: archiveBatch.clientArchiveBatchHash,
+    archiveBatchSource: archiveBatch.archiveBatchSource,
+    clientUid,
+    sourceType,
+    providerId,
+    externalId,
+    syncBatchId,
+    contentHash,
+    capturedAt,
     sourceCheckpointHash: hashClientString(clientCheckpointId, "checkpoint.source"),
     parentCheckpointHash: hashClientString(checkpoint?.parentCheckpointId || "", "checkpoint.parent"),
     checkpointModeHash: hashClientString(checkpoint?.mode || "", "checkpoint.mode"),
@@ -380,6 +458,7 @@ export async function createOrResumeUploadSession({
       const sourceRelativePath = validateRelativePath(
         file.relativePath || file.name || `upload-${index + 1}`
       );
+      const originalFileName = originalFileNameForUpload(file, index);
       const sha256 = normalizeSha256(file.sha256, `files[${index}].sha256`);
       const byteSize = normalizeByteSize(file.byteSize);
       const sourceRelativePathHash = hashClientString(sourceRelativePath, "upload.relative_path");
@@ -399,6 +478,18 @@ export async function createOrResumeUploadSession({
         index,
         name: fileToken,
         relativePath: fileToken,
+        originalFileName,
+        clientUid: String(file.clientUid || file.clientId || clientUid || "").trim(),
+        sourceType: String(file.sourceType || file.resourceType || sourceType || "upload").trim(),
+        providerId: String(file.providerId || providerId || "").trim(),
+        externalId: String(file.externalId || externalId || "").trim(),
+        syncBatchId: String(file.syncBatchId || syncBatchId || "").trim(),
+        contentHash: String(file.contentHash || contentHash || sha256 || "").trim(),
+        capturedAt: String(file.capturedAt || capturedAt || "").trim(),
+        sourceMetadata:
+          file.sourceMetadata && typeof file.sourceMetadata === "object" && !Array.isArray(file.sourceMetadata)
+            ? file.sourceMetadata
+            : {},
         sourceNameHash,
         sourceRelativePathHash,
         clientMediaTypeHash: hashClientString(file.mediaType || "", "upload.media_type"),
@@ -705,6 +796,16 @@ export async function resolveUploadSessionFiles(userDataPath, sessionId) {
     relativePath: file.relativePath,
     sourceNameHash: file.sourceNameHash || "",
     sourceRelativePathHash: file.sourceRelativePathHash || "",
+    originalFileName: file.originalFileName || "",
+    clientUid: file.clientUid || meta.clientUid || "",
+    sourceType: file.sourceType || meta.sourceType || "",
+    providerId: file.providerId || meta.providerId || "",
+    externalId: file.externalId || meta.externalId || "",
+    syncBatchId: file.syncBatchId || meta.syncBatchId || "",
+    contentHash: file.contentHash || meta.contentHash || file.sha256 || "",
+    capturedAt: file.capturedAt || meta.capturedAt || "",
+    sourceMetadata: file.sourceMetadata || {},
+    archiveBatchId: meta.archiveBatchId || "",
     mediaType: file.mediaType,
     sha256: file.sha256,
     byteSize: file.byteSize,
@@ -722,14 +823,37 @@ export async function buildCheckpointReceiptFromUploadSession(userDataPath, sess
     throw new Error(`上传会话尚未完成：${sessionId}`);
   }
 
+  const archiveBatch = resolveArchiveBatchIdentity({
+    archiveBatchId: meta.archiveBatchId,
+    checkpointId: meta.checkpointId,
+    manifestDigest: meta.manifestDigest,
+    inputDigest: meta.inputDigest
+  });
   return {
     checkpointId: meta.checkpointId,
+    archiveBatchId: archiveBatch.archiveBatchId,
+    clientUid: meta.clientUid || "",
+    sourceType: meta.sourceType || "",
+    providerId: meta.providerId || "",
+    externalId: meta.externalId || "",
+    syncBatchId: meta.syncBatchId || "",
+    contentHash: meta.contentHash || "",
+    capturedAt: meta.capturedAt || "",
     verifiedAt: nowIso(),
     manifestSha256: meta.manifestDigest,
     fileCount: meta.files.length,
     files: meta.files.map((file) => ({
       name: file.name,
       relativePath: file.relativePath,
+      originalFileName: file.originalFileName || "",
+      clientUid: file.clientUid || meta.clientUid || "",
+      sourceType: file.sourceType || meta.sourceType || "",
+      providerId: file.providerId || meta.providerId || "",
+      externalId: file.externalId || meta.externalId || "",
+      syncBatchId: file.syncBatchId || meta.syncBatchId || "",
+      contentHash: file.contentHash || meta.contentHash || file.sha256 || "",
+      capturedAt: file.capturedAt || meta.capturedAt || "",
+      sourceMetadata: file.sourceMetadata || {},
       sourceNameHash: file.sourceNameHash || "",
       sourceRelativePathHash: file.sourceRelativePathHash || "",
       sha256: file.sha256,

@@ -43,7 +43,7 @@ npm run server:start
 npm run server:console
 ```
 
-本地运行时依赖采用程序目录内 vendored 资产，不向系统安装 Java/Tika：
+本地运行时依赖采用程序目录内 `server/platform/modules/knowledge/` 资产，不向系统安装 Java/Tika：
 
 ```bash
 npm run server:setup-runtime

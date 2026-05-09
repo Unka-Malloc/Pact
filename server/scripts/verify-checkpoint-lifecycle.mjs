@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadCheckpointTree } from "../application/checkpoint-tree-store.mjs";
-import { startHttpServer } from "../http-server.mjs";
+import { loadCheckpointTree } from "../platform/common/data-structure/checkpoint-tree-store.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const mockDocumentParserModulePath = path.resolve(
@@ -139,7 +139,7 @@ function buildUploadedFile(name, relativePath, text) {
   };
 }
 
-function buildCheckpointBundle(uploadedFile, checkpointId) {
+function buildCheckpointBundle(uploadedFile, checkpointId, options = {}) {
   const manifestSha256 = sha256Hex(
     Buffer.from(
       JSON.stringify([
@@ -152,6 +152,9 @@ function buildCheckpointBundle(uploadedFile, checkpointId) {
     manifestSha256,
     checkpoint: {
       checkpointId,
+      clientBatchId: options.clientBatchId || "",
+      clientUid: options.clientUid || "",
+      sourceType: options.sourceType || "",
       parentCheckpointId: "",
       mode: "initial",
       inputDigest: sha256Hex(Buffer.from("", "utf8")),
@@ -160,6 +163,8 @@ function buildCheckpointBundle(uploadedFile, checkpointId) {
     manifest: {
       inputDigest: sha256Hex(Buffer.from("", "utf8")),
       manifestDigest: manifestSha256,
+      clientUid: options.clientUid || "",
+      sourceType: options.sourceType || "",
       fileCount: 1,
       fileRecords: [
         {
@@ -255,6 +260,7 @@ try {
 
   assert.ok(isServerToken(createdJob.checkpointId, "checkpoint"));
   assert.notEqual(createdJob.checkpointId, "checkpoint-receipt-test");
+  assert.ok(isServerToken(createdJob.archiveBatchId, "archive_batch"));
   const jobEvents = await subscribeEvents(server.url, {
     cursor: startupEvents.nextCursor,
     topic: "jobs.job",
@@ -301,7 +307,8 @@ try {
 	  );
 	  assert.equal(checkpointTreeDetail.treeId, createdJob.checkpointTreeId);
 	  const result = await fetchJson(`${server.url}/api/jobs/${createdJob.id}/result`);
-  assert.equal(result.batchId, createdJob.id);
+	  assert.equal(result.batchId, createdJob.archiveBatchId);
+	  assert.equal(result.jobId, createdJob.id);
   assert.equal(result.emails.length, 1);
 
   const summaryAfterCompleted = await fetchJson(`${server.url}/api/storage/summary`);
@@ -464,7 +471,11 @@ try {
         "这是一封需要断点续传和服务重启恢复的测试邮件。"
       ].join("\n")
     );
-    const resumedBundle = buildCheckpointBundle(resumedFile, "checkpoint-upload-resume");
+    const resumedBundle = buildCheckpointBundle(resumedFile, "checkpoint-upload-resume", {
+      clientBatchId: "client-batch-upload-resume",
+      clientUid: "checkpoint-client-01",
+      sourceType: "mailbox"
+    });
     const uploadEventBaseline = await subscribeEvents(resumedServer.url, {
       topic: "uploads.session"
     });
@@ -481,6 +492,9 @@ try {
           {
             name: resumedFile.name,
             relativePath: resumedFile.relativePath,
+            originalFileName: resumedFile.name,
+            clientUid: "checkpoint-client-01",
+            sourceType: "mailbox",
             mediaType: resumedFile.mediaType,
             sha256: resumedFile.sha256,
             byteSize: resumedFile.byteSize
@@ -492,6 +506,12 @@ try {
 	    assert.match(createdSession.checkpointTreeId || "", /^checkpoint_tree_[a-f0-9]{32}$/);
     assert.notEqual(createdSession.sessionId, "checkpoint-upload-resume");
     assert.ok(isServerToken(createdSession.checkpointId, "checkpoint"));
+    assert.equal(createdSession.archiveBatchId, "client-batch-upload-resume");
+    assert.equal(createdSession.clientUid, "checkpoint-client-01");
+    assert.equal(createdSession.sourceType, "mailbox");
+    assert.equal(createdSession.files[0].originalFileName, "resume-weekly.eml");
+    assert.equal(createdSession.files[0].clientUid, "checkpoint-client-01");
+    assert.equal(createdSession.files[0].sourceType, "mailbox");
     assert.ok(isServerToken(createdSession.files[0].relativePath, "upload_file"));
     assert.notEqual(createdSession.files[0].relativePath, resumedFile.relativePath);
     const uploadEvents = await subscribeEvents(resumedServer.url, {
@@ -652,6 +672,13 @@ try {
         `${restartedUploadServer.url}/api/jobs/${uploadJob.id}/result`
       );
       assert.equal(uploadResult.emails.length, 1);
+      assert.equal(uploadResult.batchId, "client-batch-upload-resume");
+      assert.equal(uploadResult.sourceFiles[0].clientUid, "checkpoint-client-01");
+      assert.equal(uploadResult.sourceFiles[0].sourceType, "mailbox");
+      assert.match(
+        uploadResult.sourceFiles[0].storageRelativePath,
+        /^objects\/checkpoint-client-01\/mailbox\/resume-weekly__client-batch-upload-resume\.eml$/
+      );
       const recoveryBundle = buildCheckpointBundle(resumedFile, "checkpoint-restart-recover");
 
       const recoverySession = await fetchJson(`${restartedUploadServer.url}/api/upload-sessions`, {
@@ -846,10 +873,10 @@ try {
 
     await waitForImportCheckpointEntries(parseResumeDataPath, parseJob.id, 1);
     const liveSearchResult = await waitForKnowledgeSearchHit(parseResumeServer.url, "第一封", {
-      batchId: parseJob.id
+      batchId: parseJob.archiveBatchId
     });
     assert.ok(
-      liveSearchResult.items.some((item) => String(item.batchId || "") === parseJob.id),
+      liveSearchResult.items.some((item) => String(item.batchId || "") === parseJob.archiveBatchId),
       "导入解析进行中，已解析完成的资料应该立即进入知识检索。"
     );
     await fs.mkdir(path.dirname(staleTikaTempPath), { recursive: true });

@@ -1,6 +1,6 @@
 import path from "node:path";
 import process from "node:process";
-import { runStorageDoctor } from "../storage/ops-tools.mjs";
+import { runStorageDoctor } from "../platform/common/storage/ops-tools.mjs";
 
 function parseArgs(argv) {
   const args = {

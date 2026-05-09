@@ -2,6 +2,8 @@ use serde_json::{Value, json};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
@@ -146,37 +148,11 @@ fn spawn_vocabulary_server(vocabulary: Value) -> (String, thread::JoinHandle<()>
         let _ = stream.read(&mut request);
         let request_text = String::from_utf8_lossy(&request);
         assert!(
-            request_text.starts_with("GET /api/expert-vocabulary ")
-                || request_text
-                    .starts_with("GET /api/knowledge-packages/mail-expert-vocabulary/export "),
+            request_text.starts_with("GET /api/expert-vocabulary "),
             "unexpected request: {}",
             request_text
         );
-        let body = if request_text
-            .starts_with("GET /api/knowledge-packages/mail-expert-vocabulary/export ")
-        {
-            serde_json::to_string(&json!({
-                "package": {
-                    "schemaVersion": 1,
-                    "packageId": "mail-expert-vocabulary",
-                    "version": vocabulary["version"],
-                    "status": "active",
-                    "scope": { "sourceKinds": ["email"], "platforms": ["desktop"] },
-                    "layers": [],
-                    "entries": vocabulary["entries"],
-                    "checksum": vocabulary["checksum"],
-                    "parentVersion": 0,
-                    "rollbackOf": 0,
-                    "updatedAt": vocabulary["updatedAt"],
-                    "publishedAt": vocabulary["publishedAt"],
-                    "auditId": ""
-                },
-                "vocabulary": vocabulary
-            }))
-            .unwrap()
-        } else {
-            serde_json::to_string(&json!({ "vocabulary": vocabulary })).unwrap()
-        };
+        let body = serde_json::to_string(&json!({ "vocabulary": vocabulary })).unwrap();
         write!(
             stream,
             "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -320,10 +296,12 @@ fn cli_config_logs_rpc_and_task_commands_return_expected_json() {
     .to_string();
     let context_run = run_cli_json(&dir, &["context", "compaction", "run", &context_payload]);
     assert_eq!(context_run["compacted"], true);
-    assert!(context_run["summary"]
-        .as_str()
-        .unwrap()
-        .contains("cli-context-evidence"));
+    assert!(
+        context_run["summary"]
+            .as_str()
+            .unwrap()
+            .contains("cli-context-evidence")
+    );
     let context_records = run_cli_json(&dir, &["context", "compaction", "records"]);
     assert_eq!(context_records["records"].as_array().unwrap().len(), 1);
     let context_memory = run_cli_json(&dir, &["context", "session-memory", "get"]);
@@ -441,6 +419,208 @@ fn cli_upload_queue_commands_are_event_sourced() {
 
     let cleared = run_cli_json(&dir, &["upload", "clear-completed"]);
     assert!(cleared["state"]["tasks"].as_array().unwrap().is_empty());
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cli_data_connectors_manage_chat_mirror_and_local_query() {
+    let dir = unique_temp_dir("data-connectors");
+
+    let listed = run_cli_json(&dir, &["connectors", "list"]);
+    assert_eq!(listed["ok"], true);
+    assert!(
+        listed["chatDatabasePath"]
+            .as_str()
+            .unwrap()
+            .ends_with("chat-index/chat.sqlite")
+    );
+    assert!(
+        listed["connectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| { item["providerId"] == "slack" && item["sourceType"] == "chat" })
+    );
+
+    let installed = run_cli_json(&dir, &["connectors", "install", "slack"]);
+    assert_eq!(installed["ok"], true);
+    assert_eq!(installed["connector"]["providerId"], "slack");
+    assert_eq!(installed["connector"]["installed"], true);
+
+    let enabled = run_cli_json(&dir, &["connectors", "enable", "slack"]);
+    assert_eq!(enabled["connector"]["enabled"], true);
+
+    let auth = run_cli_json(
+        &dir,
+        &[
+            "connectors",
+            "auth",
+            "start",
+            "slack",
+            r#"{"accountHint":"ops@example.test","mockToken":"token"}"#,
+        ],
+    );
+    assert_eq!(auth["auth"]["status"], "connected");
+
+    let sync_payload = json!({
+        "syncBatchId": "client-batch-2026-03",
+        "messages": [
+            {
+                "externalId": "slack-message-bill-1",
+                "workspaceId": "workspace-a",
+                "workspaceName": "Ops Workspace",
+                "conversationId": "billing",
+                "conversationTitle": "Billing",
+                "senderId": "u-1",
+                "senderName": "Alice",
+                "text": "3 月账单已经上传到网盘，文件名是 invoice-march.pdf。",
+                "timestamp": "2026-03-18T09:00:00Z"
+            }
+        ]
+    })
+    .to_string();
+    let synced = run_cli_json(&dir, &["connectors", "sync", "slack", &sync_payload]);
+    assert_eq!(synced["ok"], true);
+    assert_eq!(synced["syncBatchId"], "client-batch-2026-03");
+    assert_eq!(synced["itemCount"], 1);
+
+    let queried = run_cli_json(&dir, &["connectors", "query-local", "3 月账单"]);
+    assert_eq!(queried["ok"], true);
+    assert_eq!(queried["items"][0]["sourceType"], "chat");
+    assert_eq!(queried["items"][0]["providerId"], "slack");
+    assert_eq!(
+        queried["items"][0]["chatRef"]["syncBatchId"],
+        "client-batch-2026-03"
+    );
+
+    let health = run_cli_json(&dir, &["connectors", "health", "slack"]);
+    assert_eq!(health["items"][0]["chatMessageCount"], 1);
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+#[cfg(unix)]
+fn cli_external_data_connector_package_lifecycle_invokes_process_runtime() {
+    let dir = unique_temp_dir("external-data-connector");
+    let package_dir = dir.join("acme-connector-package");
+    fs::create_dir_all(&package_dir).unwrap();
+    fs::write(
+        package_dir.join("connector.json"),
+        serde_json::to_string_pretty(&json!({
+            "schemaVersion": 1,
+            "id": "acme-files",
+            "providerId": "acme-files",
+            "sourceType": "file",
+            "displayName": "ACME Files",
+            "version": "1.0.0",
+            "entrypoint": "process:connector.sh",
+            "runtime": {
+                "kind": "process",
+                "command": "connector.sh",
+                "protocol": "stdio-json-v1"
+            },
+            "permissions": ["source:file", "local-mirror:write", "local-query:read"],
+            "capabilities": ["sync", "localQuery", "health", "uninstall"],
+            "oauth": { "type": "none" },
+            "syncPolicy": {
+                "mode": "incremental-local-mirror",
+                "realTimeFederatedSearch": false
+            },
+            "uninstallPolicy": {
+                "retainIngestedKnowledge": true,
+                "removeLocalMirror": true,
+                "removeModuleOnUninstall": true
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let script = package_dir.join("connector.sh");
+    fs::write(
+        &script,
+        r#"#!/bin/sh
+cat >/dev/null
+case "$SPLITALL_CONNECTOR_OPERATION" in
+  sync)
+    printf '%s\n' '{"ok":true,"items":[{"externalId":"acme-invoice-1","title":"ACME 3 月账单","snippet":"3 月账单来自外部连接器。","timestamp":"2026-03-18T12:00:00Z","score":0.91}]}'
+    ;;
+  localQuery)
+    printf '%s\n' '{"ok":true,"items":[{"externalId":"acme-local-1","title":"ACME 本地 mirror 账单","snippet":"3 月账单本地 mirror 命中。","timestamp":"2026-03-18T13:00:00Z","score":0.93}]}'
+    ;;
+  health)
+    printf '%s\n' '{"ok":true,"status":"healthy","runtime":"process"}'
+    ;;
+  uninstall)
+    mkdir -p "$SPLITALL_CONNECTOR_CACHE_DIR"
+    : > "$SPLITALL_CONNECTOR_CACHE_DIR/uninstalled.flag"
+    printf '%s\n' '{"ok":true,"status":"uninstalled"}'
+    ;;
+  *)
+    printf '%s\n' '{"ok":true}'
+    ;;
+esac
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&script, permissions).unwrap();
+
+    let installed = run_cli_json(
+        &dir,
+        &[
+            "connectors",
+            "install",
+            package_dir.to_str().expect("utf8 package path"),
+        ],
+    );
+    assert_eq!(installed["ok"], true);
+    assert_eq!(installed["connector"]["providerId"], "acme-files");
+    assert_eq!(installed["connector"]["runtime"]["kind"], "process");
+    assert_eq!(installed["connector"]["installed"], true);
+
+    let enabled = run_cli_json(&dir, &["connectors", "enable", "acme-files"]);
+    assert_eq!(enabled["connector"]["enabled"], true);
+
+    let synced = run_cli_json(
+        &dir,
+        &[
+            "connectors",
+            "sync",
+            "acme-files",
+            r#"{"syncBatchId":"client-batch-ext"}"#,
+        ],
+    );
+    assert_eq!(synced["ok"], true);
+    assert_eq!(synced["runtime"]["kind"], "process");
+    assert_eq!(synced["itemCount"], 1);
+
+    let queried = run_cli_json(&dir, &["connectors", "query-local", "3 月账单"]);
+    let items = queried["items"].as_array().unwrap();
+    assert!(items.iter().any(|item| {
+        item["providerId"] == "acme-files" && item["runtime"]["kind"] == "process"
+    }));
+
+    let health = run_cli_json(&dir, &["connectors", "health", "acme-files"]);
+    assert_eq!(health["items"][0]["runtime"]["kind"], "process");
+    assert_eq!(health["items"][0]["runtimeHealth"]["status"], "healthy");
+
+    let uninstalled = run_cli_json(&dir, &["connectors", "uninstall", "acme-files"]);
+    assert_eq!(uninstalled["ok"], true);
+    assert_eq!(uninstalled["removedCache"], true);
+    assert_eq!(uninstalled["removedModule"], true);
+    assert!(!dir.join("connectors/modules/acme-files").exists());
+
+    let listed = run_cli_json(&dir, &["connectors", "list"]);
+    assert!(
+        !listed["connectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| { item["providerId"] == "acme-files" })
+    );
 
     let _ = fs::remove_dir_all(dir);
 }

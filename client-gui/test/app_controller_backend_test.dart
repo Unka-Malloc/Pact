@@ -118,6 +118,108 @@ void main() {
     },
   );
 
+  test('controller manual Mail import starts through backend daemon', () async {
+    if (!Platform.isMacOS) {
+      return;
+    }
+    final harness = await _ControllerHarness.create(
+      backend: _FakeBackendScenario.available(),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.controller.initialize();
+    await harness.controller.importMacOSMail();
+
+    expect(harness.backend.startMailImportCalls, 1);
+    expect(harness.backend.submitPipelineCalls, 0);
+    expect(harness.controller.queuedFiles, hasLength(1));
+    expect(harness.controller.queuedFiles.single.mediaType, 'message/rfc822');
+    expect(harness.controller.statusMessage, '已从 Mail.app 加入 1 封邮件。');
+  });
+
+  test('controller Mail sync stores local files before cloud upload', () async {
+    if (!Platform.isMacOS) {
+      return;
+    }
+    final harness = await _ControllerHarness.create(
+      initialConfig: const ClientConfig(
+        resolvedServiceBaseUrl: 'http://splitall.test',
+        macOSMailUploadToCloudEnabled: true,
+      ),
+      backend: _FakeBackendScenario.available(),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.controller.initialize();
+    await harness.controller.startMacOSMailSync();
+
+    expect(harness.backend.startMailImportCalls, 1);
+    expect(harness.backend.submitPipelineCalls, 1);
+    expect(harness.backend.lastSubmittedFiles, hasLength(1));
+    expect(harness.controller.queuedFiles, hasLength(1));
+    expect(harness.controller.statusMessage, 'Mail.app 已写入本地工作空间并同步到云端。');
+    expect(harness.controller.mailCloudSyncQueueCount, 0);
+    expect(harness.controller.mailCloudSyncStatusLabel, '已完成');
+  });
+
+  test(
+    'controller Mail cloud sync click refreshes existing queued task',
+    () async {
+      if (!Platform.isMacOS) {
+        return;
+      }
+      final harness = await _ControllerHarness.create(
+        initialConfig: const ClientConfig(
+          resolvedServiceBaseUrl: 'http://splitall.test',
+          macOSMailUploadToCloudEnabled: true,
+        ),
+        backend: _FakeBackendScenario.available(submitAsQueued: true),
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.initialize();
+      await harness.controller.startMacOSMailSync();
+
+      expect(harness.backend.startMailImportCalls, 1);
+      expect(harness.backend.submitPipelineCalls, 1);
+      expect(harness.controller.mailCloudSyncQueueCount, 1);
+      expect(harness.controller.mailCloudSyncStatusLabel, '本地后台队列等待中');
+
+      await harness.controller.startMacOSMailSync();
+
+      expect(harness.backend.startMailImportCalls, 1);
+      expect(harness.backend.submitPipelineCalls, 1);
+      expect(harness.backend.listUploadQueueCalls, greaterThanOrEqualTo(2));
+      expect(harness.controller.statusMessage, '已刷新 Mail.app 云端同步状态，未创建新任务。');
+    },
+  );
+
+  test('controller Mail cloud sync click refreshes active task', () async {
+    if (!Platform.isMacOS) {
+      return;
+    }
+    final harness = await _ControllerHarness.create(
+      initialConfig: const ClientConfig(
+        resolvedServiceBaseUrl: 'http://splitall.test',
+        macOSMailUploadToCloudEnabled: true,
+      ),
+      backend: _FakeBackendScenario.available(
+        mailImportDelay: const Duration(milliseconds: 40),
+      ),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.controller.initialize();
+    final firstSync = harness.controller.startMacOSMailSync();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    await harness.controller.startMacOSMailSync();
+    await firstSync;
+
+    expect(harness.backend.startMailImportCalls, 1);
+    expect(harness.backend.submitPipelineCalls, 1);
+  });
+
   test('controller selection and derived counters stay consistent', () async {
     final harness = await _ControllerHarness.create(
       backend: _FakeBackendScenario.available(),
@@ -359,23 +461,31 @@ class _FakeBackendScenario {
     required this.vocabulary,
     required this.stats,
     required this.rebuildStats,
+    this.mailImportDelay = Duration.zero,
+    this.submitAsQueued = false,
   });
 
   final bool available;
   final ExpertVocabulary vocabulary;
   final Map<String, dynamic> stats;
   final Map<String, dynamic> rebuildStats;
+  final Duration mailImportDelay;
+  final bool submitAsQueued;
 
   factory _FakeBackendScenario.available({
     ExpertVocabulary? vocabulary,
     Map<String, dynamic>? stats,
     Map<String, dynamic>? rebuildStats,
+    Duration mailImportDelay = Duration.zero,
+    bool submitAsQueued = false,
   }) {
     return _FakeBackendScenario(
       available: true,
       vocabulary: vocabulary ?? _testVocabulary(),
       stats: stats ?? _stats(documentCount: 4, segmentCount: 2),
       rebuildStats: rebuildStats ?? _stats(documentCount: 7, segmentCount: 3),
+      mailImportDelay: mailImportDelay,
+      submitAsQueued: submitAsQueued,
     );
   }
 
@@ -405,11 +515,17 @@ class _FakeClientBackendApi extends ClientBackendApi {
   int applyVocabularyCalls = 0;
   int searchMailIndexCalls = 0;
   int searchKnowledgeCacheCalls = 0;
+  int listDataConnectorsCalls = 0;
   int syncKnowledgeCacheCalls = 0;
   int listServerInterfacesCalls = 0;
   int serverApiCalls = 0;
   int submitPipelineCalls = 0;
+  int startMailImportCalls = 0;
+  int listUploadQueueCalls = 0;
+  String lastSubmittedText = '';
+  List<Map<String, dynamic>> lastSubmittedFiles = const [];
   Map<String, dynamic>? _currentStats;
+  Map<String, dynamic>? _queuedUploadTask;
 
   @override
   Future<bool> ensureDaemon() async {
@@ -497,6 +613,41 @@ class _FakeClientBackendApi extends ClientBackendApi {
   }
 
   @override
+  Future<Map<String, dynamic>> startMailImport() async {
+    startMailImportCalls += 1;
+    if (scenario.mailImportDelay > Duration.zero) {
+      await Future<void>.delayed(scenario.mailImportDelay);
+    }
+    final directory = await storage.dataDirectory();
+    final downloads = Directory(
+      p.join(directory.path, 'mail-imports', 'downloads'),
+    );
+    await downloads.create(recursive: true);
+    final message = File(p.join(downloads.path, 'manual-import.eml'));
+    await message.writeAsString(
+      [
+        'From: Alice <alice@example.com>',
+        'To: Bob <bob@example.com>',
+        'Subject: Manual import',
+        '',
+        'Imported through the backend daemon.',
+      ].join('\n'),
+    );
+    return {
+      'status': 'completed',
+      'running': false,
+      'downloadsDirectory': downloads.path,
+      'diagnostics': {
+        'exportDirectory': downloads.path,
+        'exportedCount': 1,
+        'failedCount': 0,
+        'scannedMessageCount': 1,
+        'scannedMailboxCount': 1,
+      },
+    };
+  }
+
+  @override
   Future<Map<String, dynamic>> searchMailIndex({
     required String query,
     int limit = 50,
@@ -548,6 +699,54 @@ class _FakeClientBackendApi extends ClientBackendApi {
         },
       ],
     };
+  }
+
+  @override
+  Future<Map<String, dynamic>> listDataConnectors() async {
+    listDataConnectorsCalls += 1;
+    return {
+      'ok': true,
+      'connectors': [
+        {
+          'providerId': 'gmail',
+          'sourceType': 'mail',
+          'displayName': 'Gmail',
+          'installed': false,
+          'enabled': false,
+          'auth': {'status': 'not_started'},
+          'lastSync': {},
+        },
+      ],
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> controlDataConnector({
+    required String providerId,
+    required String action,
+    Map<String, dynamic> params = const {},
+  }) async {
+    return {'ok': true, 'providerId': providerId, 'action': action};
+  }
+
+  @override
+  Future<Map<String, dynamic>> startDataConnectorAuth({
+    required String providerId,
+    Map<String, dynamic> params = const {},
+  }) async {
+    return {
+      'ok': true,
+      'providerId': providerId,
+      'auth': {'status': 'authorization_required'},
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> syncDataConnector({
+    required String providerId,
+    Map<String, dynamic> params = const {},
+  }) async {
+    return {'ok': true, 'providerId': providerId, 'itemCount': 0};
   }
 
   @override
@@ -612,6 +811,26 @@ class _FakeClientBackendApi extends ClientBackendApi {
   }
 
   @override
+  Future<Map<String, dynamic>> listUploadQueue({
+    bool includeEvents = false,
+    int offset = 0,
+  }) async {
+    listUploadQueueCalls += 1;
+    final task = _queuedUploadTask;
+    return {
+      'ok': true,
+      'state': {
+        'schemaVersion': 1,
+        'eventCount': task == null ? 0 : 1,
+        'nextOffset': task == null ? 0 : 1,
+        'activeTaskId': '',
+        'updatedAt': 'unix:1',
+        'tasks': task == null ? const [] : [task],
+      },
+    };
+  }
+
+  @override
   Future<Map<String, dynamic>> submitPipeline({
     required String serviceBaseUrl,
     required String inputText,
@@ -619,6 +838,42 @@ class _FakeClientBackendApi extends ClientBackendApi {
     required Map<String, dynamic> settings,
   }) async {
     submitPipelineCalls += 1;
+    lastSubmittedText = inputText;
+    lastSubmittedFiles = files;
+    if (scenario.submitAsQueued) {
+      _queuedUploadTask = {
+        'taskId': 'mail-cloud-task',
+        'status': 'queued',
+        'serviceBaseUrl': serviceBaseUrl,
+        'inputText': inputText,
+        'checkpointId': 'checkpoint-created',
+        'manifestDigest': 'manifest-created',
+        'inputDigest': 'input-created',
+        'summary': 'Mail cloud sync',
+        'files': files,
+        'attempts': 0,
+        'progress': 0.25,
+        'createdAt': 'unix:1',
+        'updatedAt': 'unix:2',
+        'knowledgeStatus': 'pending',
+        'uploadSession': {
+          'sessionId': 'session-created',
+          'checkpointId': 'checkpoint-created',
+          'manifestDigest': 'manifest-created',
+          'inputDigest': 'input-created',
+          'status': 'pending',
+          'createdAt': 'unix:1',
+          'updatedAt': 'unix:2',
+          'files': const [],
+        },
+      };
+      return {
+        'ok': true,
+        'checkpointId': 'checkpoint-created',
+        'manifestDigest': 'manifest-created',
+        'task': _queuedUploadTask,
+      };
+    }
     return {
       'ok': true,
       'checkpointId': 'checkpoint-created',

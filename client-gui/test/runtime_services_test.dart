@@ -317,6 +317,106 @@ void main() {
     expect(result['segmentCount'], 2);
   });
 
+  test('client backend api normalizes bare bootstrap URLs', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'splitall-bootstrap-url-',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final backendDirectory = Directory(p.join(directory.path, 'backend'));
+    await Directory(
+      p.join(backendDirectory.path, 'commands', 'inbox'),
+    ).create(recursive: true);
+    await Directory(
+      p.join(backendDirectory.path, 'command-results'),
+    ).create(recursive: true);
+    await File(
+      p.join(backendDirectory.path, 'runtime-state.json'),
+    ).writeAsString(
+      jsonEncode({
+        'schemaVersion': 1,
+        'protocolVersion': 1,
+        'daemonStatus': 'running',
+        'currentTask': '',
+        'mailIndex': const {},
+        'vocabulary': const {
+          'version': 0,
+          'checksum': '',
+          'activeEntryCount': 0,
+          'updatedAt': '',
+        },
+        'recentError': '',
+        'lastHeartbeatAt':
+            'unix:${DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000}',
+        'dataDirectory': directory.path,
+      }),
+    );
+
+    final api = ClientBackendApi(
+      storage: PortableStorage(dataDirectoryOverride: directory),
+    );
+    addTearDown(api.dispose);
+
+    final responder = Future<void>(() async {
+      final inbox = Directory(
+        p.join(backendDirectory.path, 'commands', 'inbox'),
+      );
+      File? commandFile;
+      for (var attempt = 0; attempt < 30; attempt += 1) {
+        final files = inbox
+            .listSync()
+            .whereType<File>()
+            .where((file) => p.extension(file.path) == '.json')
+            .toList();
+        if (files.isNotEmpty) {
+          commandFile = files.first;
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(commandFile, isNotNull);
+      final command = jsonDecode(await commandFile!.readAsString()) as Map;
+      expect(command['method'], 'server.api');
+      final params = Map<String, dynamic>.from(command['params'] as Map);
+      expect(params['serviceBaseUrl'], 'http://127.0.0.1:8787');
+      expect(params['path'], '/api/bootstrap');
+      final commandId = command['commandId'].toString();
+      await File(
+        p.join(backendDirectory.path, 'command-results', '$commandId.json'),
+      ).writeAsString(
+        jsonEncode({
+          'schemaVersion': 1,
+          'protocolVersion': 1,
+          'commandId': commandId,
+          'method': command['method'],
+          'status': 'completed',
+          'result': {
+            'bootstrapBaseUrl': 'http://127.0.0.1:8787',
+            'activeServiceUrl': 'http://127.0.0.1:8787',
+            'configVersion': 'test',
+            'resolvedAt': 'unix:1',
+          },
+          'error': null,
+          'startedAt': 'unix:1',
+          'finishedAt': 'unix:1',
+        }),
+      );
+    });
+
+    final bootstrap = await api.fetchBootstrap('127.0.0.1:8787');
+    await responder;
+
+    expect(bootstrap.bootstrapBaseUrl, 'http://127.0.0.1:8787');
+    expect(
+      SplitAllServiceUrls.normalizeBaseUrl('localhost:8787/api/bootstrap/'),
+      'http://localhost:8787',
+    );
+  });
+
   test(
     'client backend api rejects incompatible shared protocol files',
     () async {
@@ -729,6 +829,14 @@ void main() {
       expect(
         SplitAllServiceUrls.normalizeBaseUrl(' http://server/api/bootstrap/ '),
         'http://server',
+      );
+      expect(
+        SplitAllServiceUrls.normalizeBaseUrl('127.0.0.1:8787'),
+        'http://127.0.0.1:8787',
+      );
+      expect(
+        SplitAllServiceUrls.normalizeBaseUrl('https://example.test:9443/'),
+        'https://example.test:9443',
       );
     },
   );

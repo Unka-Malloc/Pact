@@ -2,17 +2,17 @@
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { createBackgroundWorkerRuntime } from "../application/background-workers/registry.mjs";
+import { createBackgroundWorkerRuntime } from "../services/client/work-queue-core/background-workers/registry.mjs";
 import {
   backgroundDefinitionForRole,
   normalizeBackgroundRoleList
-} from "../application/background-process-status.mjs";
+} from "../platform/common/devops/process-status/background-process-status.mjs";
 import {
   createRuntimeLogger,
   setRuntimeLogger,
   summarizeError,
   summarizeForLog
-} from "../observability/runtime-logger.mjs";
+} from "../platform/common/observability/runtime-logger.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

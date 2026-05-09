@@ -155,4 +155,4 @@ The gate is part of this protocol boundary because a replacement knowledge modul
 | `onnxruntime-node` | `not-bundled-license-gated` |
 | ONNX embedding model assets | `not-bundled-license-gated` |
 
-Allowed licenses, allowed expressions, and blocked classes are written into the manifest. Unknown model weights, non-commercial models, cloud-only runtimes, and implicit downloads are not valid offline package contents.
+Allowed licenses, allowed expressions, and blocked classes are written into the manifest. Unknown model weights, restricted models, cloud-only runtimes, and implicit downloads are not valid offline package contents.

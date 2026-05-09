@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
-import { rebuildMetadataStore } from "../storage/rebuild-metadata.mjs";
-import { getMetadataDatabasePath } from "../storage/schema-manager.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { rebuildMetadataStore } from "../platform/common/storage/rebuild-metadata.mjs";
+import { getMetadataDatabasePath } from "../platform/common/storage/schema-manager.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const mockDocumentParserModulePath = path.resolve(

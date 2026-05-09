@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 import {
   buildMaintenancePlan,
@@ -11,7 +11,7 @@ import {
   computeHealthFindings,
   summarizeMaintenanceRuns,
   validateKnowledgeQualityAssertions
-} from "../modules/KnowledgeCore/maintenance.mjs";
+} from "../platform/specialized/knowledge/datastore/knowledge-core/maintenance.mjs";
 
 const ONE_PIXEL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";

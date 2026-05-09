@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use splitall_client_native::backend_core::{Backend, load_rpc_endpoint_from_portable_data};
 use std::env;
+use std::path::Path;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -136,21 +137,6 @@ fn main() -> Result<()> {
         [scope, action] if scope == "vocabulary" && action == "apply" => {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method("vocabulary.applyToIndex", json!({}), None)?);
-            Ok(())
-        }
-        [scope, action] if scope == "knowledge-packages" && action == "get" => {
-            let backend = Backend::from_portable_data_dir()?;
-            print_json(&backend.execute_method("knowledge-packages.get", json!({}), None)?);
-            Ok(())
-        }
-        [scope, action] if scope == "knowledge-packages" && action == "pull" => {
-            let backend = Backend::from_portable_data_dir()?;
-            print_json(&backend.execute_method("knowledge-packages.pull", json!({}), None)?);
-            Ok(())
-        }
-        [scope, action] if scope == "knowledge-packages" && action == "rollback" => {
-            let backend = Backend::from_portable_data_dir()?;
-            print_json(&backend.execute_method("knowledge-packages.rollback", json!({}), None)?);
             Ok(())
         }
         [scope, action] if scope == "index" && action == "rebuild" => {
@@ -313,6 +299,94 @@ fn main() -> Result<()> {
             )?);
             Ok(())
         }
+        [scope, action] if scope == "connectors" && action == "list" => {
+            let backend = Backend::from_portable_data_dir()?;
+            print_json(&backend.execute_method("connectors.list", json!({}), None)?);
+            Ok(())
+        }
+        [scope, action, provider_id] if scope == "connectors" && action == "install" => {
+            let backend = Backend::from_portable_data_dir()?;
+            let params = serde_json::from_str::<Value>(provider_id)
+                .map(|manifest| json!({ "manifest": manifest }))
+                .unwrap_or_else(|_| {
+                    if Path::new(provider_id).exists() {
+                        json!({ "packagePath": provider_id })
+                    } else {
+                        json!({ "providerId": provider_id })
+                    }
+                });
+            print_json(&backend.execute_method("connectors.install", params, None)?);
+            Ok(())
+        }
+        [scope, action, provider_id]
+            if scope == "connectors"
+                && matches!(action.as_str(), "enable" | "disable" | "uninstall") =>
+        {
+            let backend = Backend::from_portable_data_dir()?;
+            let method = match action.as_str() {
+                "enable" => "connectors.enable",
+                "disable" => "connectors.disable",
+                "uninstall" => "connectors.uninstall",
+                _ => unreachable!(),
+            };
+            print_json(&backend.execute_method(
+                method,
+                json!({ "providerId": provider_id }),
+                None,
+            )?);
+            Ok(())
+        }
+        [scope, action, subaction, provider_id, rest @ ..]
+            if scope == "connectors"
+                && action == "auth"
+                && matches!(subaction.as_str(), "start" | "status" | "revoke") =>
+        {
+            let backend = Backend::from_portable_data_dir()?;
+            let mut params = if let Some(raw) = rest.first() {
+                serde_json::from_str(raw).unwrap_or_else(|_| json!({}))
+            } else {
+                json!({})
+            };
+            params["providerId"] = json!(provider_id);
+            let method = match subaction.as_str() {
+                "start" => "connectors.auth.start",
+                "status" => "connectors.auth.status",
+                "revoke" => "connectors.auth.revoke",
+                _ => unreachable!(),
+            };
+            print_json(&backend.execute_method(method, params, None)?);
+            Ok(())
+        }
+        [scope, action, provider_id, rest @ ..] if scope == "connectors" && action == "sync" => {
+            let backend = Backend::from_portable_data_dir()?;
+            let mut params = if let Some(raw) = rest.first() {
+                serde_json::from_str(raw).unwrap_or_else(|_| json!({}))
+            } else {
+                json!({})
+            };
+            params["providerId"] = json!(provider_id);
+            print_json(&backend.execute_method("connectors.sync", params, None)?);
+            Ok(())
+        }
+        [scope, action, rest @ ..] if scope == "connectors" && action == "health" => {
+            let backend = Backend::from_portable_data_dir()?;
+            let params = if let Some(provider_id) = rest.first() {
+                json!({ "providerId": provider_id })
+            } else {
+                json!({})
+            };
+            print_json(&backend.execute_method("connectors.health", params, None)?);
+            Ok(())
+        }
+        [scope, action, query @ ..] if scope == "connectors" && action == "query-local" => {
+            let backend = Backend::from_portable_data_dir()?;
+            print_json(&backend.execute_method(
+                "connectors.queryLocal",
+                json!({ "query": query.join(" "), "limit": 50 }),
+                None,
+            )?);
+            Ok(())
+        }
         [scope, action, subaction, document_id]
             if scope == "knowledge"
                 && action == "document"
@@ -378,16 +452,21 @@ fn main() -> Result<()> {
             print_json(&backend.execute_method("agents.sync", agent_sync_params(rest), None)?);
             Ok(())
         }
-        [scope, area, action] if scope == "context" && area == "compaction" && action == "records" => {
+        [scope, area, action]
+            if scope == "context" && area == "compaction" && action == "records" =>
+        {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method("context.compaction.records", json!({}), None)?);
             Ok(())
         }
         [scope, area, action, params]
-            if scope == "context" && area == "compaction" && matches!(action.as_str(), "run" | "preview") =>
+            if scope == "context"
+                && area == "compaction"
+                && matches!(action.as_str(), "run" | "preview") =>
         {
             let backend = Backend::from_portable_data_dir()?;
-            let params = serde_json::from_str(params).unwrap_or_else(|_| json!({ "question": params }));
+            let params =
+                serde_json::from_str(params).unwrap_or_else(|_| json!({ "question": params }));
             let method = if action == "preview" {
                 "context.compaction.preview"
             } else {
@@ -396,16 +475,21 @@ fn main() -> Result<()> {
             print_json(&backend.execute_method(method, params, None)?);
             Ok(())
         }
-        [scope, area, action] if scope == "context" && area == "session-memory" && action == "get" => {
+        [scope, area, action]
+            if scope == "context" && area == "session-memory" && action == "get" =>
+        {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method("context.session_memory.get", json!({}), None)?);
             Ok(())
         }
         [scope, area, action, params]
-            if scope == "context" && area == "session-memory" && matches!(action.as_str(), "get" | "clear") =>
+            if scope == "context"
+                && area == "session-memory"
+                && matches!(action.as_str(), "get" | "clear") =>
         {
             let backend = Backend::from_portable_data_dir()?;
-            let params = serde_json::from_str(params).unwrap_or_else(|_| json!({ "sessionId": params }));
+            let params =
+                serde_json::from_str(params).unwrap_or_else(|_| json!({ "sessionId": params }));
             let method = if action == "clear" {
                 "context.session_memory.clear"
             } else {
@@ -462,7 +546,6 @@ fn print_usage() {
   splitall-client server api <GET|POST|PUT|DELETE> <path> [json-body] [service-base-url]
   splitall-client server <splitall-server-cli-args...>
   splitall-client vocabulary pull|apply
-  splitall-client knowledge-packages get|pull|rollback
   splitall-client index rebuild
   splitall-client mail auth
   splitall-client mail import start|status|pause|resume|cancel
@@ -478,6 +561,13 @@ fn print_usage() {
   splitall-client knowledge status
   splitall-client knowledge sync [--push-outbox]
   splitall-client knowledge search <query>
+  splitall-client connectors list
+  splitall-client connectors install <provider-id-or-manifest-json-or-package-path>
+  splitall-client connectors enable|disable|uninstall <provider-id>
+  splitall-client connectors auth start|status|revoke <provider-id> [json]
+  splitall-client connectors sync <provider-id> [json]
+  splitall-client connectors health [provider-id]
+  splitall-client connectors query-local <query>
   splitall-client knowledge document get|open <document-id>
   splitall-client knowledge export [document-id]
   splitall-client knowledge agent-context <query>

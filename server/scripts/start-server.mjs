@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,7 +49,7 @@ function usage() {
   console.log(`SplitAll Server
 
 Usage:
-  node server/scripts/start-server.mjs [--host 0.0.0.0] [--port 8787] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default]
+  node server/scripts/start-server.mjs [--host 0.0.0.0] [--port 8787] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default] [--edition community|pro|enterprise|custom]
 
 Options:
   --host                    监听地址，默认读取 SPLITALL_SERVER_HOST，否则使用 127.0.0.1
@@ -58,6 +58,8 @@ Options:
   --data-dir                数据目录，默认 build/server-data/
   --with-ui                 同时提供 build/dist 前端页面；build/dist 不存在时会报错
   --profile                 运行档位：default|minimal，默认 default
+  --edition                 功能版本：community|pro|enterprise|custom
+  --feature-profile         自定义功能 profile JSON 路径
   --server-id               服务实例 ID
   --server-label            服务实例标签
   --bootstrap-url           客户端引导地址
@@ -101,6 +103,12 @@ const withUi =
   args["with-ui"] === true || process.env.SPLITALL_SERVER_WITH_UI === "1";
 const runtimeOptions = {
   profile: String(args.profile || process.env.SPLITALL_SERVER_PROFILE || "default").trim(),
+  featureEdition: String(
+    args.edition || process.env.SPLITALL_FEATURE_EDITION || ""
+  ).trim(),
+  featureProfile: String(
+    args["feature-profile"] || process.env.SPLITALL_FEATURE_PROFILE || ""
+  ).trim(),
   allowPublicConsole: args["allow-public-console"] === true,
   cwd: projectRoot,
   mountModules: {

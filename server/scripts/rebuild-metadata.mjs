@@ -1,6 +1,6 @@
 import path from "node:path";
 import process from "node:process";
-import { rebuildMetadataStore } from "../storage/rebuild-metadata.mjs";
+import { rebuildMetadataStore } from "../platform/common/storage/rebuild-metadata.mjs";
 
 function parseArgs(argv) {
   const args = {

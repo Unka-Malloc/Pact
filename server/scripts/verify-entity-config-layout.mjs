@@ -4,24 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import {
   saveSettings
-} from "../config.mjs";
-import {
-  getKnowledgePackage,
-  createOrUpdateKnowledgePackage,
-  publishKnowledgePackage
-} from "../expert-vocabulary.mjs";
+} from "../platform/common/platform-core/settings.mjs";
 import {
   TOOL_MANAGEMENT_PROFILES,
   TOOL_MANAGEMENT_SCOPES,
   TOOL_MANAGEMENT_TOOLSETS,
   createToolCatalog
-} from "../tool-management/catalog.mjs";
-import {
-  createKnowledgeSkillRuntime
-} from "../modules/KnowledgeSkillRuntime/index.mjs";
-import {
-  createGoldenRuleRuntime
-} from "../modules/GoldenRuleRuntime/index.mjs";
+} from "../platform/specialized/agent/agent-tools/tool-management-core/catalog.mjs";
 
 const REPO_ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const ENTITY_ROOT = path.join(REPO_ROOT, "server/config/entity-config");
@@ -87,6 +76,7 @@ async function verifySkillBundles() {
   assert.equal(framework.frameworkId, "splitall.default-knowledge-skill-framework");
 
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-skill-"));
+  const { createKnowledgeSkillRuntime } = await import("../platform/specialized/knowledge/runtime/knowledge-skill-runtime/index.mjs");
   const runtime = createKnowledgeSkillRuntime({ userDataPath });
   try {
     const proposal = await runtime.proposeSkill({
@@ -130,7 +120,7 @@ async function verifyModelAgentEntityFiles() {
   try {
     await saveSettings(userDataPath, {
       modelLibraryEntries: ["deepseek"],
-      modelLibraryModels: [
+      modelLibraryAgents: [
         {
           provider: "deepseek",
           label: "DeepSeek Config Entity",
@@ -147,8 +137,8 @@ async function verifyModelAgentEntityFiles() {
     assert.equal(agentFiles.length, 1, "model agents must be split into per-agent JSON files");
     const providerFiles = await listJsonFiles(path.join(userDataPath, "model-settings"));
     assert.deepEqual(providerFiles, ["deepseek.json"]);
-    await assertManifest(path.join(userDataPath, "agent-tools/execution.json")).catch(async () => {
-      const execution = await readJson(path.join(userDataPath, "agent-tools/execution.json"));
+    await assertManifest(path.join(userDataPath, "tool-management/execution.json")).catch(async () => {
+      const execution = await readJson(path.join(userDataPath, "tool-management/execution.json"));
       assert.equal(typeof execution, "object");
     });
   } finally {
@@ -156,7 +146,7 @@ async function verifyModelAgentEntityFiles() {
   }
 }
 
-async function verifyKnowledgePackageAndStandards() {
+async function verifyStandards() {
   await assertManifest(path.join(ENTITY_ROOT, "standards/golden-rules/manifest.json"), {
     bundleType: "splitall.standard.bundle"
   });
@@ -168,31 +158,13 @@ async function verifyKnowledgePackageAndStandards() {
   });
 
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-package-"));
+  const { createGoldenRuleRuntime } = await import("../platform/specialized/knowledge/golden-rules/golden-rule-runtime/index.mjs");
   const goldenRuleRuntime = createGoldenRuleRuntime({ userDataPath });
   try {
     const rules = await goldenRuleRuntime.listRulePackages();
     assert.equal(rules.items.length >= 1, true, "golden rules must materialize as package directories");
     const goldenManifest = path.join(userDataPath, "knowledge-golden/packages/default-golden-rules/manifest.json");
     await assertManifest(goldenManifest);
-
-    await createOrUpdateKnowledgePackage(userDataPath, {
-      packageId: "mail-expert-vocabulary",
-      status: "draft",
-      scope: { platforms: ["server"] },
-      entries: [
-        {
-          id: "google-bill",
-          pathSegments: ["账单", "Google"],
-          label: "Google 账单",
-          keywords: ["google bill"],
-          status: "active"
-        }
-      ]
-    });
-    await publishKnowledgePackage(userDataPath, { packageId: "mail-expert-vocabulary", version: 1 });
-    const pkg = await getKnowledgePackage(userDataPath, { packageId: "mail-expert-vocabulary" });
-    assert.equal(pkg.package.packageId, "mail-expert-vocabulary");
-    await assertManifest(path.join(userDataPath, "rules/knowledge-packages/mail-expert-vocabulary/manifest.json"));
   } finally {
     await goldenRuleRuntime.close?.();
     await fs.rm(userDataPath, { recursive: true, force: true });
@@ -206,7 +178,7 @@ async function main() {
   await verifyToolEntityConfigs();
   await verifySkillBundles();
   await verifyModelAgentEntityFiles();
-  await verifyKnowledgePackageAndStandards();
+  await verifyStandards();
   console.log("entity-config-layout verification passed");
 }
 

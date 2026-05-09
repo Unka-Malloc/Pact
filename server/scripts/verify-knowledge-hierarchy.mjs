@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {
@@ -88,8 +88,15 @@ try {
   assert.ok(search.items.length >= 1);
   assert.ok(search.items.every((item) => item.hierarchy && item.hierarchy.documentId));
   assert.match(`${search.items[0].title}\n${search.items[0].snippet}`, /合同|发票|盖章/);
+  const structure = await fetchJson(
+    `${server.url}/api/knowledge/documents/${encodeURIComponent(search.items[0].documentId)}/structure`
+  );
+  assert.equal(structure.protocolVersion, "splitall.knowledge.v1");
+  assert.equal(structure.document.documentId, search.items[0].documentId);
+  assert.ok(structure.tree.length >= 1);
+  assert.ok(structure.nodes.every((node) => node.text === undefined));
 
-  const grant = await fetchJson(`${server.url}/api/tool-platform/grants`, {
+  const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -97,31 +104,39 @@ try {
       scopes: ["knowledge:read"]
     })
   });
-  const agentSearch = await fetchJson(`${server.url}/api/agent-tools/knowledge/search`, {
+  const agentSearch = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${grant.token}`
     },
     body: JSON.stringify({
-      query: "发票抬头 合同盖章",
-      limit: 3,
-      explain: true
+      toolId: "splitall.knowledge.search",
+      input: {
+        query: "发票抬头 合同盖章",
+        limit: 3,
+        explain: true
+      }
     })
   });
   assert.equal(agentSearch.result.hierarchy.enabled, true);
   assert.equal(agentSearch.result.hierarchy.enforced, true);
-
-  const legacyAgentSearch = await fetchJson(
-    `${server.url}/api/agent-tools/search?q=${encodeURIComponent("发票抬头 合同盖章")}&limit=3`,
-    {
-      headers: {
-        Authorization: `Bearer ${grant.token}`
+  const agentStructure = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${grant.token}`
+    },
+    body: JSON.stringify({
+      toolId: "splitall.knowledge.documentStructure",
+      input: {
+        documentId: search.items[0].documentId,
+        maxNodes: 20
       }
-    }
-  );
-  assert.equal(legacyAgentSearch.result.hierarchy.enabled, true);
-  assert.equal(legacyAgentSearch.result.hierarchy.enforced, true);
+    })
+  });
+  assert.equal(agentStructure.result.document.documentId, search.items[0].documentId);
+  assert.ok(agentStructure.result.tree.length >= 1);
 } finally {
   await server.close();
   await fs.rm(userDataPath, { recursive: true, force: true });

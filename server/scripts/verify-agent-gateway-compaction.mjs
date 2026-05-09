@@ -3,10 +3,10 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { saveSettings } from "../config.mjs";
-import { startHttpServer } from "../http-server.mjs";
-import { callAgentGateway } from "../modules/AgentGateway/index.mjs";
-import { createContextRuntime } from "../modules/ContextRuntime/index.mjs";
+import { saveSettings } from "../platform/common/platform-core/settings.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { callAgentGateway } from "../platform/specialized/agent/agent-gateway/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
@@ -68,8 +68,8 @@ try {
           risks: ["gateway-risk"],
           todos: ["gateway todo"],
           evidenceRefs: ["evidence:gateway-1"],
-          fileRefs: ["server/modules/ContextCompactionRuntime/index.mjs"],
-          knowledgePackages: []
+          fileRefs: ["server/platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs"],
+          knowledgeRefs: []
         })
       };
     }
@@ -150,7 +150,7 @@ try {
   });
   const gatewayResult = await callAgentGateway({
     settings: {
-      agentGateway: {
+      customHttpAdapter: {
         provider: "custom-http",
         alias: "direct-gateway",
         url: "http://splitall.local/agent",
@@ -228,7 +228,7 @@ try {
       agentName: "http-gateway",
       timeoutMs: 30000
     },
-    agentGateway: {
+    customHttpAdapter: {
       provider: "custom-http",
       alias: "http-gateway",
       url: mockGateway.url,

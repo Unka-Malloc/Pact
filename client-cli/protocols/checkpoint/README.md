@@ -43,17 +43,23 @@ content-type: application/json
 {
   "checkpoint": {
     "checkpointId": "string",
+    "clientBatchId": "string",
+    "clientUid": "string",
+    "sourceType": "string",
     "parentCheckpointId": "string",
     "mode": "initial|resume|append|branch|splitall-cli"
   },
   "manifest": {
     "manifestDigest": "sha256-hex",
-    "inputDigest": "sha256-hex"
+    "inputDigest": "sha256-hex",
+    "clientUid": "string",
+    "sourceType": "string"
   },
   "files": [
     {
       "name": "string",
       "relativePath": "string",
+      "originalFileName": "string",
       "mediaType": "string",
       "sha256": "sha256-hex",
       "byteSize": 0
@@ -68,6 +74,9 @@ content-type: application/json
 {
   "sessionId": "string",
   "checkpointId": "string",
+  "archiveBatchId": "string",
+  "clientUid": "string",
+  "sourceType": "string",
   "manifestDigest": "sha256-hex",
   "inputDigest": "sha256-hex",
   "status": "uploading|complete",
@@ -78,6 +87,7 @@ content-type: application/json
       "index": 0,
       "name": "string",
       "relativePath": "string",
+      "originalFileName": "string",
       "mediaType": "string",
       "sha256": "sha256-hex",
       "byteSize": 0,
@@ -89,7 +99,7 @@ content-type: application/json
 }
 ```
 
-客户端必须以服务端返回的 `receivedBytes` 作为下一次上传 offset。响应中的 `sessionId`、`checkpointId`、`files[].name`、`files[].relativePath` 是服务端 hash token，不是客户端原始字符串回显。
+客户端必须以服务端返回的 `receivedBytes` 作为下一次上传 offset。响应中的 `sessionId`、`checkpointId`、`files[].name`、`files[].relativePath` 是服务端 hash token，不是客户端原始字符串回显。客户端显式传入的 `clientBatchId` 会作为服务端 `archiveBatchId` 原值保留，用于后续 raw object 和检索元数据归档。
 
 ## 2. 查询 Upload Session
 
@@ -166,9 +176,15 @@ content-type: application/json
 {
   "checkpoint": {
     "checkpointId": "string",
+    "clientBatchId": "string",
+    "clientUid": "string",
+    "sourceType": "string",
     "mode": "initial|resume|append|branch|splitall-cli"
   },
   "uploadSessionId": "string",
+  "archiveBatchId": "string",
+  "clientUid": "string",
+  "sourceType": "string",
   "uploadedFiles": [],
   "settings": {}
 }
@@ -189,9 +205,16 @@ GET /api/events?cursor=0&topic=uploads.session&includeSnapshot=1
 ## 客户端约束
 
 - `checkpointId` 在同一批输入的续传过程中必须稳定。
+- `clientBatchId` 在同一批输入的续传过程中必须稳定；服务端返回的 `archiveBatchId` 必须与客户端批次一致。
+- `clientUid` 标识本客户端，`sourceType` 标识提交资源类型；两者用于服务端归档路径维度，不用于本地扫描路径。
+- 多源连接器上传必须同时传递 `providerId`、`externalId`、`syncBatchId`、`contentHash`、`capturedAt`、`sourceMetadata`；混合来源批次可以在 `files[]` 上覆盖这些字段。
 - `manifestDigest` 必须由 `relativePath + sha256 + byteSize` 等稳定输入计算。
 - `relativePath` 必须是相对路径，不能包含空段、`.`、`..` 或绝对路径前缀；服务端只使用它做 hash 派生。
 - 客户端不得假设服务端保留或回显任何原始文件名、相对路径、checkpoint 字符串或 media type 字符串。
 - 每个 chunk 的 `offset` 必须等于服务端返回的 `receivedBytes`。
 - 如果订阅到 `uploads.session` retained snapshot，客户端必须用该 snapshot 校正本地 checkpoint 状态。
 - Flutter GUI 不能直接调用本协议，必须通过 `client-cli` 或 `client-cli` daemon 间接调用。
+
+## 存储与检索边界
+
+客户端只消费 upload session 状态来恢复上传，不把服务端 manifest 当作检索索引。服务端正式检索入口是 SQLite / 知识库索引；需要打开原始文件时由服务端按 SQLite 中的 raw object 引用读取对象存储。客户端不得推导或扫描服务端 `objects/` 目录。

@@ -1,6 +1,6 @@
 import path from "node:path";
 import process from "node:process";
-import { locateStorageEntity } from "../storage/ops-tools.mjs";
+import { locateStorageEntity } from "../platform/common/storage/ops-tools.mjs";
 
 function parseArgs(argv) {
   const args = {

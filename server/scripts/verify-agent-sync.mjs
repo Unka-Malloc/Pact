@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {
@@ -44,7 +44,7 @@ try {
     false
   );
 
-  const grant = await fetchJson(`${server.url}/api/tool-platform/grants`, {
+  const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

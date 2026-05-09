@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
-import { createAgentWorkspace } from "../modules/AgentWorkspace/index.mjs";
-import { createContextRuntime } from "../modules/ContextRuntime/index.mjs";
-import { createAgentExplorationRuntime } from "../modules/AgentExplorationRuntime/index.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { createAgentWorkspace } from "../platform/specialized/agent/agent-workspace/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createAgentExplorationRuntime } from "../platform/specialized/agent/agent-tools/agent-exploration-runtime/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {

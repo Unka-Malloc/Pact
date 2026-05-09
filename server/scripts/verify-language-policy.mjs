@@ -6,6 +6,26 @@ const projectRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)
 const serverRoot = path.join(projectRoot, "server");
 const allowedExtensions = new Set([".mjs", ".json", ".md"]);
 const ignoredDirectories = new Set(["node_modules", ".git"]);
+const runtimeAssetPrefixes = [
+  "server/platform/modules/knowledge/runtime/jre/",
+  "server/platform/modules/knowledge/tika/",
+  "server/platform/modules/knowledge/ocr/runtime/"
+];
+const runtimeAssetFiles = new Set([
+  "server/platform/modules/knowledge/ocr/paddle_ocr_extract.py"
+]);
+
+function toPosix(relativePath) {
+  return relativePath.split(path.sep).join("/");
+}
+
+function isRuntimeAsset(filePath) {
+  const relativePath = toPosix(path.relative(projectRoot, filePath));
+  return (
+    runtimeAssetFiles.has(relativePath) ||
+    runtimeAssetPrefixes.some((prefix) => relativePath.startsWith(prefix))
+  );
+}
 
 async function walk(directory) {
   const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -27,11 +47,17 @@ async function walk(directory) {
 }
 
 const files = await walk(serverRoot);
-const violations = files.filter((filePath) => !allowedExtensions.has(path.extname(filePath)));
+const violations = files.filter((filePath) => {
+  if (allowedExtensions.has(path.extname(filePath))) {
+    return false;
+  }
+  return !isRuntimeAsset(filePath);
+});
 
 if (violations.length > 0) {
-  console.error("Server language policy violation: server/ must contain JavaScript implementation files only.");
-  console.error("Allowed server file extensions: .mjs, .json, .md");
+  console.error("Server language policy violation: server/ implementation files must be JavaScript.");
+  console.error("Allowed server implementation file extensions: .mjs, .json, .md");
+  console.error("Runtime assets are allowed only under server/platform/modules/knowledge/runtime/jre, server/platform/modules/knowledge/tika, and server/platform/modules/knowledge/ocr.");
   for (const filePath of violations) {
     console.error(`- ${path.relative(projectRoot, filePath)}`);
   }

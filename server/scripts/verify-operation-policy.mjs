@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
-import { evaluateOperationSafety } from "../interfaces/api/operation-decorators.mjs";
-import { SERVER_API_OPERATIONS, listInterfaceCatalog } from "../interfaces/api/operation-registry.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { evaluateOperationSafety } from "../platform/common/operation-dispatcher/operation-decorators.mjs";
+import { SERVER_API_OPERATIONS, listInterfaceCatalog } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { authHeaders, installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
@@ -46,7 +46,7 @@ async function main() {
   }
 
   const byId = new Map(SERVER_API_OPERATIONS.map((operation) => [operation.id, operation]));
-  const repair = byId.get("knowledge_packages.publish");
+  const repair = byId.get("expert_vocabulary.set");
   const deniedRepair = evaluateOperationSafety({
     operation: repair,
     requestBody: Buffer.from("{}"),

@@ -15,9 +15,9 @@
 - `build/release/`
 - `client-cli/target/`
 - `build/local-data/`
-- `vendor/jre/`
-- `vendor/tika/*.jar`
-- `vendor/ocr-runtime/` 里的 Python / PaddleOCR / 模型二进制
+- `server/platform/modules/knowledge/runtime/jre/` 里的 JRE 二进制
+- `server/platform/modules/knowledge/tika/*.jar`
+- `server/platform/modules/knowledge/ocr/runtime/` 里的 Python / PaddleOCR / 模型二进制
 
 ## 为什么这样处理
 
@@ -32,13 +32,13 @@
 
 ## 本地如何补齐运行时
 
-如果你要在本地准备完整服务运行时，运行时资产仍然放在：
+如果你要在本地准备完整服务运行时，运行时资产放在：
 
-- `vendor/jre/<platform-arch>/`
-- `vendor/tika/`
-- `vendor/ocr-runtime/<platform-arch>/`
+- `server/platform/modules/knowledge/runtime/jre/<platform-arch>/`
+- `server/platform/modules/knowledge/tika/`
+- `server/platform/modules/knowledge/ocr/runtime/<platform-arch>/`
 
-这些目录约定保留，但大文件本体不进 GitHub。
+这些目录约定是当前唯一受支持的运行时资源布局；大文件本体不进 GitHub。
 
 ## 当前状态
 

@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadCheckpointTree } from "../application/checkpoint-tree-store.mjs";
-import { startHttpServer } from "../http-server.mjs";
+import { loadCheckpointTree } from "../platform/common/data-structure/checkpoint-tree-store.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);

@@ -29,8 +29,7 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build/dist ./build/dist
 COPY --from=build /app/server ./server
-COPY ocr ./ocr
-COPY vendor ./vendor
+COPY modules ./modules
 
 RUN mkdir -p /data /codex-home
 

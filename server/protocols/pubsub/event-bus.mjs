@@ -3,9 +3,9 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
-import { atomicWriteJsonThroughState } from "../../application/state-coordinator.mjs";
-import { getRuntimeLogger, summarizeError, summarizeForLog } from "../../observability/runtime-logger.mjs";
-import { traceDetails } from "../../observability/trace-context.mjs";
+import { atomicWriteJsonThroughState } from "../../platform/common/platform-core/state-coordinator.mjs";
+import { getRuntimeLogger, summarizeError, summarizeForLog } from "../../platform/common/observability/runtime-logger.mjs";
+import { traceDetails } from "../../platform/common/observability/trace-context.mjs";
 
 const EVENT_SCHEMA_VERSION = 1;
 const DEFAULT_LIMIT = 100;

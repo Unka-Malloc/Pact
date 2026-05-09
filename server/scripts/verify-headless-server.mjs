@@ -6,8 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync, strToU8 } from "fflate";
-import { startHttpServer } from "../http-server.mjs";
-import { saveMountConfig } from "../runtime/mount-config.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { saveMountConfig } from "../platform/common/module-manager/mount-config.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {
@@ -377,12 +377,12 @@ try {
   assert.equal(interfaceCatalog.transport.rpc, "POST /api/rpc");
   assert.ok(interfaceCatalog.interfaces.some((item) => item.id === "jobs.create"));
   assert.equal(interfaceCatalog.interfaces.some((item) => item.id === "exports.create"), false);
-  const removedExportEndpoint = await fetch(`${splitAllServer.url}/api/export`, {
+  const legacyExportEndpoint = await fetch(`${splitAllServer.url}/api/export`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({})
   });
-  assert.equal(removedExportEndpoint.status, 404);
+  assert.equal(legacyExportEndpoint.status, 404);
   const rpcHealth = await fetchJson(`${splitAllServer.url}/api/rpc`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -821,6 +821,7 @@ try {
   });
 
   assert.equal(typeof createdJob.id, "string");
+  assert.equal(typeof createdJob.archiveBatchId, "string");
 
   const completedJob = await waitForCompletedJob(splitAllServer.url, createdJob.id);
   assert.equal(completedJob.status, "completed");
@@ -838,7 +839,8 @@ try {
   );
   assert.ok(result.overview.summary.includes("[mock:agent-only-module]"));
 
-  assert.equal(result.batchId, createdJob.id);
+  assert.equal(result.batchId, createdJob.archiveBatchId);
+  assert.equal(result.jobId, createdJob.id);
   assert.equal(Object.hasOwn(result, "cloudParsing"), false);
   assert.equal(Object.hasOwn(result, "chunks"), false);
   assert.equal(result.overview.emailCount, 6);
@@ -978,7 +980,7 @@ try {
   assert.ok(resumedWeeklyTransaction);
   assert.equal(resumedWeeklyTransaction.lineageId, weeklyTransaction.lineageId);
   assert.ok(["matched", "recovered"].includes(resumedWeeklyTransaction.lifecycle.stage));
-  assert.equal(resumedWeeklyTransaction.lifecycle.matchedBatchId, createdJob.id);
+  assert.equal(resumedWeeklyTransaction.lifecycle.matchedBatchId, createdJob.archiveBatchId);
   assert.ok(resumedWeeklyTransaction.lifecycle.pulledEventCount > 0);
   assert.ok(followupResult.lifecycle.pulledEventCount > 0);
   assert.ok(
@@ -990,7 +992,7 @@ try {
     followupResult.timeline.some(
       (event) =>
         event.timelinePhase === "history" &&
-        event.originBatchId === createdJob.id &&
+        event.originBatchId === createdJob.archiveBatchId &&
         event.lineageId === weeklyTransaction.lineageId
     )
   );
@@ -1046,7 +1048,7 @@ try {
 
   const storageSummary = await fetchJson(`${splitAllServer.url}/api/storage/summary`);
   assert.ok(storageSummary.databasePath.endsWith("metadata/splitall.sqlite"));
-  assert.ok(storageSummary.objectRootPath.endsWith("objects/mail"));
+  assert.ok(storageSummary.objectRootPath.endsWith("objects"));
   assert.ok(storageSummary.batchCount >= 2);
   assert.ok(storageSummary.rawObjectCount >= 7);
   assert.ok(storageSummary.lineageCount >= 2);
@@ -1073,7 +1075,7 @@ try {
   assert.equal(weeklyDownload.ok, true);
   assert.match(
     weeklyDownload.headers.get("content-disposition") || "",
-    /^attachment; filename="raw_mail_name_[a-f0-9]{32}\.eml"$/
+    /^attachment; filename="weekly-report\.eml"$/
   );
   assert.equal(await weeklyDownload.text(), bundledWeeklyEmail.content);
 

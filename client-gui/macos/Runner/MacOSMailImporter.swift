@@ -359,20 +359,9 @@ with timeout of 30 seconds
 end timeout
 return accountCount as text
 """
-    guard let script = NSAppleScript(source: scriptSource) else {
-      throw MacOSMailImporterError.scriptCompilationFailed
-    }
-
-    var scriptError: NSDictionary?
-    let descriptor = script.executeAndReturnError(&scriptError)
-    if let scriptError {
-      throw MacOSMailImporterError.scriptFailed(
-        describeAppleScriptError(scriptError))
-    }
-
     return [
       "authorized": true,
-      "accountCount": Int(descriptor.stringValue ?? "") ?? 0,
+      "accountCount": Int(try runAppleScript(scriptSource)) ?? 0,
     ]
   }
 
@@ -527,27 +516,23 @@ return accountCount as text
       dedupeResultsDirectoryPath: dedupeResultsDirectory.path,
       pauseFilePath: pauseFile.path,
       cancelFilePath: cancelFile.path)
-    guard let script = NSAppleScript(source: scriptSource) else {
-      throw MacOSMailImporterError.scriptCompilationFailed
-    }
-
-    var scriptError: NSDictionary?
-    let descriptor = script.executeAndReturnError(&scriptError)
-    if let scriptError {
+    let rawCounts: String
+    do {
+      rawCounts = try Self.runAppleScript(scriptSource)
+    } catch {
       try? Self.writeDiagnostics(
         [
           "workspaceDirectory": baseDirectory.path,
           "downloadsDirectory": exportDirectory.path,
           "tmpDirectory": tempDirectory.path,
           "mailApplicationState": mailApplicationState,
-          "scriptError": Self.describeAppleScriptError(scriptError),
+          "scriptError": String(describing: error),
         ],
         to: tempDirectory)
-      throw MacOSMailImporterError.scriptFailed(
-        Self.describeAppleScriptError(scriptError))
+      throw error
     }
 
-    let counts = Self.parseCounts(descriptor.stringValue ?? "")
+    let counts = Self.parseCounts(rawCounts)
     let fileCount = Self.countEmlFiles(in: exportDirectory)
     let payload: [String: Any] = [
       "workspaceDirectory": baseDirectory.path,
@@ -600,6 +585,7 @@ property scannedMessageCount : 0
 property exportedCount : 0
 property failedCount : 0
 property skippedCount : 0
+property skipMailboxNames : {"Conflicts", "Local Failures", "Server Failures", "Sync Issues", "All Mail", "Starred", "Important", "冲突", "本地故障", "服务器故障", "同步问题", "所有邮件", "已加星标", "重要"}
 property messageCounter : 0
 property totalMessageCount : 0
 property lastError : ""
@@ -633,12 +619,31 @@ set cancelFilePath to \(cancelPath)
 
 with timeout of 86400 seconds
   tell application "Mail"
-    repeat with accountRef in accounts
+    my writeProgressEvent("scanning", 0, exportedCount, failedCount, skippedCount, "", "准备扫描邮箱")
+    set accountRefs to {}
+    try
+      with timeout of 10 seconds
+        set accountRefs to accounts
+      end timeout
+      if accountRefs is missing value then set accountRefs to {}
+    on error errorMessage number errorNumber
+      set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
+      set accountRefs to {}
+    end try
+    repeat with accountRef in accountRefs
       my checkIfCancelled()
       set scannedAccountCount to scannedAccountCount + 1
+      set scanAccountName to ""
+      try
+        set scanAccountName to name of accountRef as text
+      end try
+      if scanAccountName is "" then set scanAccountName to "Account"
+      my writeProgressEvent("scanning", scannedMessageCount, exportedCount, failedCount, skippedCount, scanAccountName, "扫描账号")
       set accountMailboxes to {}
       try
-        set accountMailboxes to mailboxes of accountRef
+        with timeout of 10 seconds
+          set accountMailboxes to mailboxes of accountRef
+        end timeout
         if accountMailboxes is missing value then set accountMailboxes to {}
       on error errorMessage number errorNumber
         set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
@@ -647,7 +652,8 @@ with timeout of 86400 seconds
       repeat with mailboxRef in accountMailboxes
         try
           my checkIfCancelled()
-          my countMailboxMessages(mailboxRef)
+          set scannedMailboxCount to scannedMailboxCount + 1
+          my writeProgressEvent("scanning", scannedMessageCount, exportedCount, failedCount, skippedCount, my mailboxNameFor(mailboxRef), "已发现邮箱")
         on error errorMessage number errorNumber
           if my isCancelRequested() then error "Mail.app 导入已取消"
           set failedCount to failedCount + 1
@@ -658,7 +664,10 @@ with timeout of 86400 seconds
 
     set rootMailboxes to {}
     try
-      set rootMailboxes to mailboxes
+      my writeProgressEvent("scanning", scannedMessageCount, exportedCount, failedCount, skippedCount, "Local", "扫描本机邮箱")
+      with timeout of 10 seconds
+        set rootMailboxes to mailboxes
+      end timeout
       if rootMailboxes is missing value then set rootMailboxes to {}
     on error errorMessage number errorNumber
       set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
@@ -667,7 +676,8 @@ with timeout of 86400 seconds
     repeat with mailboxRef in rootMailboxes
       try
         my checkIfCancelled()
-        my countMailboxMessages(mailboxRef)
+        set scannedMailboxCount to scannedMailboxCount + 1
+        my writeProgressEvent("scanning", scannedMessageCount, exportedCount, failedCount, skippedCount, my mailboxNameFor(mailboxRef), "已发现本机邮箱")
       on error errorMessage number errorNumber
         if my isCancelRequested() then error "Mail.app 导入已取消"
         set failedCount to failedCount + 1
@@ -675,10 +685,10 @@ with timeout of 86400 seconds
       end try
     end repeat
 
-    set totalMessageCount to scannedMessageCount
+    set totalMessageCount to 0
     my writeProgressEvent("planned", 0, exportedCount, failedCount, skippedCount, "", "")
 
-    repeat with accountRef in accounts
+    repeat with accountRef in accountRefs
       my checkIfCancelled()
       set accountName to ""
       try
@@ -687,7 +697,9 @@ with timeout of 86400 seconds
       if accountName is "" then set accountName to "Account"
       set accountMailboxes to {}
       try
-        set accountMailboxes to mailboxes of accountRef
+        with timeout of 10 seconds
+          set accountMailboxes to mailboxes of accountRef
+        end timeout
         if accountMailboxes is missing value then set accountMailboxes to {}
       on error errorMessage number errorNumber
         set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
@@ -725,10 +737,22 @@ on countMailboxMessages(mailboxRef)
   tell application "Mail"
     my checkIfCancelled()
     set scannedMailboxCount to scannedMailboxCount + 1
+    set scanMailboxName to ""
+    try
+      set scanMailboxName to name of mailboxRef as text
+    end try
+    if scanMailboxName is "" then set scanMailboxName to "Mailbox"
+    my writeProgressEvent("scanning", scannedMessageCount, exportedCount, failedCount, skippedCount, scanMailboxName, "扫描邮箱")
+    if my shouldSkipMailbox(scanMailboxName) then
+      set skippedCount to skippedCount + 1
+      my writeProgressEvent("skipped", scannedMessageCount, exportedCount, failedCount, skippedCount, scanMailboxName, "跳过系统同步故障邮箱")
+      return
+    end if
     try
       with timeout of 10 seconds
         set scannedMessageCount to scannedMessageCount + (count of messages of mailboxRef)
       end timeout
+      my writeProgressEvent("scanning", scannedMessageCount, exportedCount, failedCount, skippedCount, scanMailboxName, "已计数 " & (scannedMailboxCount as text) & " 个邮箱")
     on error errorMessage number errorNumber
       if my isCancelRequested() then error "Mail.app 导入已取消"
       set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
@@ -736,7 +760,9 @@ on countMailboxMessages(mailboxRef)
 
     set childMailboxes to {}
     try
-      set childMailboxes to mailboxes of mailboxRef
+      with timeout of 10 seconds
+        set childMailboxes to mailboxes of mailboxRef
+      end timeout
       if childMailboxes is missing value then set childMailboxes to {}
     on error errorMessage number errorNumber
       set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
@@ -756,18 +782,38 @@ end countMailboxMessages
 
 on exportMailbox(mailboxRef, exportRootPath, accountName, mailboxPath)
   tell application "Mail"
-    set mailboxMessages to {}
-    try
-      set mailboxMessages to messages of mailboxRef
-      if mailboxMessages is missing value then set mailboxMessages to {}
-    on error errorMessage number errorNumber
-      set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
-    end try
-
-    repeat with messageRef in mailboxMessages
+    set mailboxLabel to my mailboxNameFor(mailboxRef)
+    if my shouldSkipMailbox(mailboxLabel) then
+      set skippedCount to skippedCount + 1
+      my writeProgressEvent("skipped", messageCounter, exportedCount, failedCount, skippedCount, mailboxPath, "跳过系统同步故障邮箱")
+      return
+    end if
+    set mailboxReadFailures to 0
+    set messageIndex to 1
+    my writeProgressEvent("planned", messageCounter, exportedCount, failedCount, skippedCount, mailboxPath, "准备导出邮箱")
+    repeat 1000000 times
       my waitIfPaused()
       my checkIfCancelled()
+      set messageRef to missing value
+      set shouldProcessMessage to true
+      try
+        with timeout of 10 seconds
+          set messageRef to message messageIndex of mailboxRef
+        end timeout
+      on error errorMessage number errorNumber
+        if my isMailboxExhausted(errorMessage, errorNumber) then exit repeat
+        if my isCancelRequested() then error "Mail.app 导入已取消"
+        set mailboxReadFailures to mailboxReadFailures + 1
+        set failedCount to failedCount + 1
+        set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
+        if mailboxReadFailures is greater than or equal to 3 then exit repeat
+        set messageIndex to messageIndex + 1
+        set shouldProcessMessage to false
+      end try
+      if shouldProcessMessage and messageRef is not missing value then
+      set mailboxReadFailures to 0
       set messageCounter to messageCounter + 1
+      set messageIndex to messageIndex + 1
       set messageSubject to ""
       try
         set messageSubject to subject of messageRef
@@ -825,11 +871,14 @@ on exportMailbox(mailboxRef, exportRootPath, accountName, mailboxPath)
         my writeIndexEvent(messageCounter, messageKey, "", accountName, mailboxPath, messageSubject, senderText, toText, ccText, dateSentText, dateReceivedText, "failed", errorMessage, "", "")
         my writeDetailedProgressEvent("failed", messageCounter, exportedCount, failedCount, skippedCount, messageSubject, errorMessage, messageKey, accountName, mailboxPath, senderText, toText, ccText, dateSentText, dateReceivedText, "", "", "", errorMessage, "failed")
       end try
+      end if
     end repeat
 
     set childMailboxes to {}
     try
-      set childMailboxes to mailboxes of mailboxRef
+      with timeout of 10 seconds
+        set childMailboxes to mailboxes of mailboxRef
+      end timeout
       if childMailboxes is missing value then set childMailboxes to {}
     on error errorMessage number errorNumber
       set lastError to my sanitizeDiagnostic(errorMessage & " (" & errorNumber & ")")
@@ -847,6 +896,19 @@ on exportMailbox(mailboxRef, exportRootPath, accountName, mailboxPath)
     end repeat
   end tell
 end exportMailbox
+
+on isMailboxExhausted(errorMessage, errorNumber)
+  if errorNumber is -1728 then return true
+  set messageText to ""
+  try
+    set messageText to errorMessage as text
+  end try
+  if messageText contains "Can’t get message" then return true
+  if messageText contains "Can't get message" then return true
+  if messageText contains "无法获取 message" then return true
+  if messageText contains "无法取得 message" then return true
+  return false
+end isMailboxExhausted
 
 on writeRawSource(rawSource, targetPath)
   set fileHandle to missing value
@@ -912,6 +974,13 @@ on senderForMessage(messageRef)
   end tell
   return senderText
 end senderForMessage
+
+on shouldSkipMailbox(mailboxNameText)
+  repeat with skipName in skipMailboxNames
+    if mailboxNameText is (skipName as text) then return true
+  end repeat
+  return false
+end shouldSkipMailbox
 
 on recipientsForMessage(messageRef, recipientKind)
   set recipientTexts to {}
@@ -1343,6 +1412,49 @@ end sanitizeDiagnostic
     return formatter.string(from: Date())
   }
 
+  private static func runAppleScript(_ source: String) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = ["-"]
+
+    let stdinPipe = Pipe()
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    process.standardInput = stdinPipe
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
+
+    do {
+      try process.run()
+    } catch {
+      throw MacOSMailImporterError.scriptFailed(error.localizedDescription)
+    }
+
+    if let scriptData = (source + "\n").data(using: .utf8) {
+      stdinPipe.fileHandleForWriting.write(scriptData)
+    }
+    try? stdinPipe.fileHandleForWriting.close()
+
+    process.waitUntilExit()
+
+    let stdout = String(
+      data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let stderr = String(
+      data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+    guard process.terminationStatus == 0 else {
+      let message = stderr.isEmpty ? stdout : stderr
+      throw MacOSMailImporterError.scriptFailed(
+        message.isEmpty ? "AppleScript 执行失败。" : message)
+    }
+
+    return stdout
+  }
+
   private static func cleanupLegacyWorkspaceFiles(in downloadsDirectory: URL) {
     let fileManager = FileManager.default
     let legacyNames = [
@@ -1565,7 +1677,7 @@ private final class MailImportProgressMonitor {
   private func emit(_ payload: [String: Any]) {
     let kind = payload["kind"] as? String ?? ""
     switch kind {
-    case "started", "planned", "exported", "skipped", "failed", "paused",
+    case "started", "scanning", "planned", "exported", "skipped", "failed", "paused",
       "resumed", "completed":
       flushDeferredPayload(force: true)
       send(payload)
@@ -1879,7 +1991,7 @@ private final class MailExportDeduperStore {
     let fileManager = FileManager.default
     let targetURL = URL(fileURLWithPath: request.targetPath)
     let sourceURL = URL(fileURLWithPath: request.sourceTempPath)
-    let sourceMetadata = try metadata(for: sourceURL)
+    let sourceMetadata = try preparedSourceMetadata(for: sourceURL)
     let messageKey = stableKey(
       messageKey: request.messageKey,
       fallback: targetURL.lastPathComponent)
@@ -1926,6 +2038,7 @@ private final class MailExportDeduperStore {
     case "skip":
       try? fileManager.removeItem(at: sourceURL)
     default:
+      try waitForPreparedSource(at: sourceURL)
       try fileManager.createDirectory(
         at: resolution.url.deletingLastPathComponent(),
         withIntermediateDirectories: true)
@@ -2103,6 +2216,36 @@ private final class MailExportDeduperStore {
     return FileMetadata(
       byteSize: byteSize,
       sha256: try sha256Hex(for: url))
+  }
+
+  private func preparedSourceMetadata(for url: URL) throws -> FileMetadata {
+    try waitForPreparedSource(at: url)
+    return try metadata(for: url)
+  }
+
+  private func waitForPreparedSource(at url: URL) throws {
+    let fileManager = FileManager.default
+    var lastObservedSize: UInt64?
+
+    for attempt in 0..<120 {
+      if let attributes = try? fileManager.attributesOfItem(atPath: url.path) {
+        let byteSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        if byteSize > 0 {
+          if lastObservedSize == byteSize || attempt >= 2 {
+            return
+          }
+          lastObservedSize = byteSize
+        }
+      }
+      Thread.sleep(forTimeInterval: 0.01)
+    }
+
+    throw NSError(
+      domain: "MailExportDeduper",
+      code: 5,
+      userInfo: [
+        NSLocalizedDescriptionKey: "临时邮件源文件未及时落盘：\(url.path)"
+      ])
   }
 
   private func sha256Hex(for url: URL) throws -> String {

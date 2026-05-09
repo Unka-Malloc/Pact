@@ -206,6 +206,8 @@ class AppController extends ChangeNotifier {
     );
     _registerDaemonTasks();
     bootstrapController.addListener(notifyListeners);
+    serviceUsernameController.addListener(notifyListeners);
+    servicePasswordController.addListener(notifyListeners);
     inputController.addListener(notifyListeners);
     _knowledgeGraphSubscriptionAspect.registerDataSource(
       const AffairKnowledgeGraphDataSource(),
@@ -223,6 +225,7 @@ class AppController extends ChangeNotifier {
   static const Duration _mailImportUiNotifyInterval = Duration(
     milliseconds: 500,
   );
+  static const Duration _mailImportQueueSyncInterval = Duration(seconds: 2);
 
   static const Set<String> _supportedExtensions = {
     'txt',
@@ -279,6 +282,7 @@ class AppController extends ChangeNotifier {
   static const Duration _uploadSessionWatchInterval = Duration(seconds: 2);
   static const Duration _mailImportStallTimeout = Duration(seconds: 90);
   static const String _mailWorkspaceName = 'mail-imports';
+  static const String _mailCloudSyncInputPrefix = '同步 macOS Mail 导出的';
 
   final PortableStorage _storage;
   final ClientBackendApi _backendApi;
@@ -287,6 +291,8 @@ class AppController extends ChangeNotifier {
   late final ModuleDaemon _moduleDaemon;
   late final KnowledgeDaemon _knowledgeDaemon;
   final bootstrapController = TextEditingController();
+  final serviceUsernameController = TextEditingController();
+  final servicePasswordController = TextEditingController();
   final inputController = TextEditingController();
   final Uuid _uuid = const Uuid();
 
@@ -315,6 +321,7 @@ class AppController extends ChangeNotifier {
   bool busy = false;
   bool connecting = false;
   bool importingMacOSMail = false;
+  bool syncingMacOSMailToCloud = false;
   bool activatingMacOSMailAuthorization = false;
   bool refreshingMailIndexStats = false;
   bool pullingExpertVocabulary = false;
@@ -327,20 +334,29 @@ class AppController extends ChangeNotifier {
   bool searchingKnowledgeIndex = false;
   bool rebuildingMailIndex = false;
   bool emailAnalysisModuleEnabled = false;
+  bool macOSMailUploadToCloudEnabled = false;
   bool loadingSelectedRun = false;
+  bool refreshingMacOSMailCloudSyncStatus = false;
   double packagingProgress = 0;
   double uploadProgress = 0;
   double? mailImportProgressValue;
+  double? mailCloudSyncProgressValue;
   int mailImportProcessedCount = 0;
   int mailImportExportedCount = 0;
   int mailImportFailedCount = 0;
   int mailImportSkippedCount = 0;
   int mailImportTotalCount = 0;
   int mailImportCurrentSequence = 0;
+  int mailCloudSyncQueueCount = 0;
+  int mailCloudSyncFileCount = 0;
   bool mailImportPaused = false;
   String statusMessage = '等待提交任务。';
   String statusCaption = '空闲状态';
   String lastError = '';
+  String mailCloudSyncStatusLabel = '空闲';
+  String mailCloudSyncTaskId = '';
+  String mailCloudSyncCheckpointId = '';
+  String mailCloudSyncUpdatedAt = '';
   String selectedRunId = '';
   String selectedCheckpointId = '';
   String selectedUploadSessionId = '';
@@ -350,6 +366,9 @@ class AppController extends ChangeNotifier {
   String knowledgeSearchError = '';
   int knowledgeSearchTotal = 0;
   List<MacOSMailIndexSearchResult> knowledgeSearchResults = const [];
+  List<Map<String, dynamic>> dataConnectors = const [];
+  String dataConnectorError = '';
+  bool refreshingDataConnectors = false;
   static const int uploadSessionPageSize = 10;
   int uploadSessionPageIndex = 0;
   final DateTime _sessionStartedAt = DateTime.now();
@@ -369,8 +388,12 @@ class AppController extends ChangeNotifier {
   int _mailImportRunToken = 0;
   int _lastLoggedMailImportBucket = -1;
   DateTime _lastMailImportUiNotifyAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastMailImportQueueSyncAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _lastMailImportQueueSyncExportedCount = -1;
   bool _mailImportUiNotifyPending = false;
+  bool _mailCloudSyncStatusRefreshInFlight = false;
   bool _logsMutable = false;
+  bool _disposed = false;
   bool _syncingKnowledgeGraph = false;
   bool _knowledgeGraphDirty = true;
   bool _mailKnowledgeCloudEnhanceInFlight = false;
@@ -380,6 +403,8 @@ class AppController extends ChangeNotifier {
   int _knowledgeSearchToken = 0;
 
   String get bootstrapUrl => bootstrapController.text.trim();
+  String get serviceUsername => serviceUsernameController.text.trim();
+  String get servicePassword => servicePasswordController.text;
   String get inputText => inputController.text;
   String get resolvedServiceUrl => config.resolvedServiceBaseUrl;
   bool get connected => resolvedServiceUrl.isNotEmpty;
@@ -390,6 +415,33 @@ class AppController extends ChangeNotifier {
       emailAnalysisModuleSupported || clientBackendMailIndexSupported;
   bool get canImportMacOSMail =>
       emailAnalysisModuleSupported && emailAnalysisModuleEnabled;
+  bool get hasMacOSMailCloudSyncActivity =>
+      syncingMacOSMailToCloud ||
+      refreshingMacOSMailCloudSyncStatus ||
+      mailCloudSyncQueueCount > 0 ||
+      mailCloudSyncTaskId.isNotEmpty;
+  String get mailCloudSyncQueueLabel {
+    if (syncingMacOSMailToCloud) {
+      return '当前 1 个';
+    }
+    if (mailCloudSyncQueueCount <= 0) {
+      return '无未完成任务';
+    }
+    final taskSuffix = mailCloudSyncTaskId.isEmpty
+        ? ''
+        : ' · ${shortId(mailCloudSyncTaskId)}';
+    return '$mailCloudSyncQueueCount 个未完成$taskSuffix';
+  }
+
+  String get mailCloudSyncProgressLabel {
+    final value = mailCloudSyncProgressValue;
+    if (value == null) {
+      return mailCloudSyncStatusLabel;
+    }
+    final percent = (value.clamp(0, 1) * 100).round();
+    return '$percent% · $mailCloudSyncStatusLabel';
+  }
+
   String get clientBackendStatusLabel {
     if (startingClientBackend) {
       return '启动中';
@@ -759,10 +811,13 @@ class AppController extends ChangeNotifier {
       emailAnalysisModuleEnabled =
           emailAnalysisModuleSupported &&
           (config.emailAnalysisModuleEnabled ?? emailAnalysisModuleSupported);
+      macOSMailUploadToCloudEnabled = config.macOSMailUploadToCloudEnabled;
       if (shouldSaveConfig) {
         await _storage.saveConfig(config);
       }
       bootstrapController.text = config.bootstrapBaseUrl;
+      serviceUsernameController.text = config.serviceUsername;
+      servicePasswordController.text = config.servicePassword;
       await _initializeClientBackend();
       if (localMailIndexAvailable) {
         emailAnalysisModuleEnabled = config.emailAnalysisModuleEnabled ?? true;
@@ -773,9 +828,11 @@ class AppController extends ChangeNotifier {
         config = config.copyWith(emailAnalysisModuleEnabled: true);
         await _storage.saveConfig(config);
       }
+      macOSMailUploadToCloudEnabled = config.macOSMailUploadToCloudEnabled;
       if (config.bootstrapBaseUrl.isNotEmpty) {
         unawaited(connect(silent: true));
       }
+      unawaited(refreshDataConnectors(silent: true));
     } catch (error) {
       _setError('初始化本地便携存储失败：$error');
     } finally {
@@ -788,16 +845,6 @@ class AppController extends ChangeNotifier {
       _requestMailIndexStatsRefreshIfStale(
         delay: const Duration(milliseconds: 200),
       );
-      if (Platform.environment['SPLITALL_AUTO_START_MAIL_IMPORT'] == '1') {
-        unawaited(
-          Future<void>.delayed(const Duration(milliseconds: 500), () async {
-            if (canImportMacOSMail && !importingMacOSMail) {
-              _appendLog('环境变量触发 Mail.app 自动导入。', notify: false);
-              await importMacOSMail();
-            }
-          }),
-        );
-      }
       notifyListeners();
     }
   }
@@ -951,6 +998,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      config = config.copyWith(
+        bootstrapBaseUrl: SplitAllServiceUrls.normalizeBaseUrl(rawBaseUrl),
+        serviceUsername: serviceUsername,
+        servicePassword: servicePassword,
+      );
+      await _storage.saveConfig(config);
       if (!await _backendApi.ensureDaemon()) {
         throw StateError('本地客户端后台不可用。');
       }
@@ -967,6 +1020,8 @@ class AppController extends ChangeNotifier {
         lastConnectedAt: DateTime.now().toIso8601String(),
       );
       bootstrapController.text = config.bootstrapBaseUrl;
+      serviceUsernameController.text = config.serviceUsername;
+      servicePasswordController.text = config.servicePassword;
       statusMessage = '已连接到 ${config.resolvedServiceBaseUrl}';
       statusCaption = '握手校验通过';
       lastError = '';
@@ -1407,6 +1462,9 @@ class AppController extends ChangeNotifier {
     if (section == AppSection.server && serverOperations.isEmpty) {
       unawaited(refreshServerCapabilities());
     }
+    if (section == AppSection.dataConnectors) {
+      unawaited(refreshDataConnectors());
+    }
     if (section == AppSection.knowledgeGraph && localMailIndexAvailable) {
       _notifyKnowledgeDaemon(
         KnowledgeDaemonEvent(
@@ -1475,6 +1533,16 @@ class AppController extends ChangeNotifier {
         delay: const Duration(milliseconds: 120),
       );
     }
+    notifyListeners();
+  }
+
+  Future<void> setMacOSMailUploadToCloudEnabled(bool enabled) async {
+    macOSMailUploadToCloudEnabled = enabled;
+    config = config.copyWith(macOSMailUploadToCloudEnabled: enabled);
+    await _storage.saveConfig(config);
+    statusMessage = enabled ? 'Mail.app 同步将同时上传云端。' : 'Mail.app 同步仅写入本地工作空间。';
+    statusCaption = '模块配置已保存';
+    _appendLog(statusMessage);
     notifyListeners();
   }
 
@@ -1917,7 +1985,22 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  Future<void> importMacOSMail() async {
+  Future<void> importMacOSMail() => startMacOSMailSync();
+
+  Future<void> syncMacOSMailToCloud() async {
+    if (!macOSMailUploadToCloudEnabled) {
+      macOSMailUploadToCloudEnabled = true;
+      config = config.copyWith(macOSMailUploadToCloudEnabled: true);
+      await _storage.saveConfig(config);
+    }
+    await startMacOSMailSync();
+  }
+
+  Future<void> startMacOSMailSync() async {
+    if (syncingMacOSMailToCloud) {
+      _refreshActiveMacOSMailCloudSyncStatus();
+      return;
+    }
     if (busy || importingMacOSMail) {
       return;
     }
@@ -1930,13 +2013,57 @@ class AppController extends ChangeNotifier {
       return;
     }
 
+    final uploadToCloud = macOSMailUploadToCloudEnabled;
+    var targetServiceUrl = '';
+    if (uploadToCloud) {
+      if (await _refreshMacOSMailCloudSyncQueueState(silent: true)) {
+        statusMessage = '已刷新 Mail.app 云端同步状态，未创建新任务。';
+        statusCaption = mailCloudSyncStatusLabel;
+        _appendLog('Mail.app 云端同步已有未完成任务，点击已刷新状态，没有创建新任务。');
+        notifyListeners();
+        return;
+      }
+
+      targetServiceUrl = resolvedServiceUrl;
+      if (targetServiceUrl.isEmpty && bootstrapUrl.isNotEmpty) {
+        targetServiceUrl = SplitAllServiceUrls.normalizeBaseUrl(bootstrapUrl);
+      }
+      if (targetServiceUrl.isEmpty) {
+        _setError('请先配置服务端地址，再同步 Mail 到云端。');
+        return;
+      }
+      if (!connected && bootstrapUrl.isNotEmpty) {
+        await connect(silent: true);
+        if (resolvedServiceUrl.isNotEmpty) {
+          targetServiceUrl = resolvedServiceUrl;
+        }
+      }
+    }
+
     importingMacOSMail = true;
+    syncingMacOSMailToCloud = uploadToCloud;
     final runToken = ++_mailImportRunToken;
+    final initialQueueCount = queuedFiles.length;
     _resetMailImportProgress();
-    statusMessage = '正在请求 Mail.app 并导出本机邮件...';
+    if (uploadToCloud) {
+      mailCloudSyncQueueCount = 1;
+      mailCloudSyncProgressValue = null;
+      mailCloudSyncFileCount = 0;
+      mailCloudSyncTaskId = '';
+      mailCloudSyncCheckpointId = '';
+      mailCloudSyncStatusLabel = '正在导出 Mail.app 邮件';
+      mailCloudSyncUpdatedAt = DateTime.now().toIso8601String();
+    }
+    statusMessage = uploadToCloud
+        ? '正在导出 Mail.app 邮件到本地工作空间，并准备上传云端...'
+        : '正在请求 Mail.app 并导出本机邮件...';
     statusCaption = '等待系统自动化权限';
     lastError = '';
-    _appendLog('已触发 Mail.app 导入，正在等待系统授权和邮箱扫描。');
+    _appendLog(
+      uploadToCloud
+          ? '已触发 Mail.app 同步，导出到本地工作空间后将提交服务端。'
+          : '已触发 Mail.app 同步，正在等待系统授权和邮箱扫描。',
+    );
     _scheduleMailImportWatchdog(runToken);
     notifyListeners();
 
@@ -1947,92 +2074,672 @@ class AppController extends ChangeNotifier {
         });
       }
       if (!await _backendApi.ensureDaemon()) {
-        throw StateError('本地客户端后台不可用，无法导入 Mail.app。');
+        throw StateError('本地客户端后台不可用，无法同步 Mail.app。');
       }
       clientBackendAvailable = true;
-      var status = await _backendApi.startMailImport();
-      _applyBackendMailImportStatus(status);
-      while (_backendMailImportStillActive(status)) {
-        if (runToken != _mailImportRunToken || !importingMacOSMail) {
-          _appendLog('Mail.app 后端导入仍在运行，但当前导入任务已复位，已停止前端等待。');
-          return;
-        }
-        await Future<void>.delayed(const Duration(seconds: 1));
-        status = await _backendApi.mailImportStatus();
-        _applyBackendMailImportStatus(status);
-      }
-      if (runToken != _mailImportRunToken || !importingMacOSMail) {
-        _appendLog('Mail.app 导入结果已返回，但当前导入任务已复位，已忽略旧结果。');
+      final status = await _runMacOSMailExport(
+        runToken: runToken,
+        queueLocalFiles: true,
+        initialQueueCount: initialQueueCount,
+      );
+      if (status == null) {
         return;
       }
-      final diagnostics = status['diagnostics'] is Map
-          ? Map<String, dynamic>.from(status['diagnostics'] as Map)
-          : const <String, dynamic>{};
-      final latestProgress = status['latestProgress'] is Map
-          ? Map<String, dynamic>.from(status['latestProgress'] as Map)
-          : const <String, dynamic>{};
-      final exportDirectory =
-          _stringFrom(diagnostics['exportDirectory']).isNotEmpty
-          ? _stringFrom(diagnostics['exportDirectory'])
-          : _stringFrom(latestProgress['exportDirectory']).isNotEmpty
-          ? _stringFrom(latestProgress['exportDirectory'])
-          : _stringFrom(status['downloadsDirectory']);
-      final importStatus = _stringFrom(status['status']);
-      if (importStatus == 'failed') {
-        final lastError = _stringFrom(diagnostics['lastError']);
-        throw StateError(lastError.isEmpty ? 'Mail.app 后端导入失败。' : lastError);
-      }
+      _stopMailImportWatchdog();
+
+      final exportDirectory = _mailExportDirectoryFromStatus(status);
       if (exportDirectory.isEmpty) {
         throw StateError('Mail.app 导入没有返回导出目录。');
       }
 
-      final additions = await _collectQueuedFilesFromDirectory(exportDirectory);
-      if (additions.isEmpty) {
+      final diagnostics = status['diagnostics'] is Map
+          ? Map<String, dynamic>.from(status['diagnostics'] as Map)
+          : const <String, dynamic>{};
+      final added = queuedFiles.length - initialQueueCount;
+      final failedCount = _intFrom(diagnostics['failedCount']);
+      if (added <= 0) {
         statusMessage = 'Mail.app 没有导出可解析邮件。';
-        final failedCount = _intFrom(diagnostics['failedCount']);
         statusCaption = failedCount > 0 ? '$failedCount 封邮件导出失败' : '未找到邮件';
         _appendLog(
-          'Mail.app 导入未加入文件：${_formatMailImportStatusDiagnostics(status)}',
+          'Mail.app 同步未加入文件：${_formatMailImportStatusDiagnostics(status)}',
         );
+      } else {
+        statusMessage = '已从 Mail.app 加入 $added 封邮件。';
+        statusCaption = failedCount > 0
+            ? '$failedCount 封邮件导出失败'
+            : 'Mail.app 同步完成';
+        mailImportProgressValue = 1;
+        _appendLog(
+          'Mail.app 导出 ${_intFrom(diagnostics['exportedCount'])} 封邮件，加入本地队列 $added 个文件。${_formatMailImportStatusDiagnostics(status)}',
+        );
+        _moduleDaemon.requestTask(
+          'mail.index-stats',
+          delay: const Duration(milliseconds: 200),
+        );
+        _moduleDaemon.emitModuleDataChanged(
+          'mail',
+          reason: 'mail-import-completed',
+        );
+      }
+
+      if (!uploadToCloud) {
         return;
       }
 
-      final previousCount = queuedFiles.length;
-      _mergeQueuedFiles(additions);
-      final added = queuedFiles.length - previousCount;
-      statusMessage = '已从 Mail.app 加入 $added 封邮件。';
-      final failedCount = _intFrom(diagnostics['failedCount']);
-      statusCaption = failedCount > 0
-          ? '$failedCount 封邮件导出失败'
-          : 'Mail.app 导入完成';
-      mailImportProgressValue = 1;
-      _appendLog(
-        'Mail.app 导出 ${_intFrom(diagnostics['exportedCount'])} 封邮件，加入队列 $added 个文件。${_formatMailImportStatusDiagnostics(status)}',
+      final mailFiles = await _collectQueuedFilesFromDirectory(exportDirectory);
+      if (mailFiles.isEmpty) {
+        throw StateError('Mail.app 没有导出可同步邮件。');
+      }
+      busy = true;
+      mailCloudSyncFileCount = mailFiles.length;
+      mailCloudSyncProgressValue = 0;
+      mailCloudSyncStatusLabel = '正在上传 ${mailFiles.length} 封邮件';
+      mailCloudSyncUpdatedAt = DateTime.now().toIso8601String();
+      statusMessage = '正在把本地工作空间中的 ${mailFiles.length} 封 Mail.app 邮件上传云端...';
+      statusCaption = '云端上传中';
+      notifyListeners();
+
+      final submittedText = '同步 macOS Mail 导出的 ${mailFiles.length} 封邮件。';
+      final response = await _backendApi.submitPipeline(
+        serviceBaseUrl: targetServiceUrl,
+        inputText: submittedText,
+        files: mailFiles.map((file) => file.toJson()).toList(),
+        settings: _defaultSettings,
       );
-      _moduleDaemon.requestTask(
-        'mail.index-stats',
-        delay: const Duration(milliseconds: 200),
+      await _applyPipelineSubmissionResponse(
+        response: response,
+        submittedText: submittedText,
+        submittedFiles: mailFiles,
+        targetServiceUrl: targetServiceUrl,
+        queuedStatusMessage: 'Mail.app 云端同步任务已进入本地后台队列。',
+        queuedStatusCaption: '后台自动同步',
+        completedStatusMessage: 'Mail.app 已写入本地工作空间并同步到云端。',
+        completedStatusCaption: '云端同步完成',
+        completedLogPrefix: 'Mail.app 云端同步完成',
       );
-      _moduleDaemon.emitModuleDataChanged(
-        'mail',
-        reason: 'mail-import-completed',
+      _applyMacOSMailCloudSubmissionSnapshot(
+        response,
+        fileCount: mailFiles.length,
       );
     } on PlatformException catch (error) {
       if (runToken == _mailImportRunToken) {
-        _setError('Mail.app 导入失败：${error.message ?? error.code}');
+        if (uploadToCloud) {
+          _markMacOSMailCloudSyncFailed(error.message ?? error.code);
+        }
+        _setError('Mail.app 同步失败：${error.message ?? error.code}');
       }
     } catch (error) {
       if (runToken == _mailImportRunToken) {
-        _setError('Mail.app 导入失败：$error');
+        if (uploadToCloud) {
+          _markMacOSMailCloudSyncFailed(error.toString());
+        }
+        _setError('Mail.app 同步失败：$error');
       }
     } finally {
       if (runToken == _mailImportRunToken) {
         _stopMailImportWatchdog();
         importingMacOSMail = false;
+        syncingMacOSMailToCloud = false;
         mailImportPaused = false;
-        _applyPendingExpertVocabularyIndexUpdate();
+        busy = false;
+        if (mailCloudSyncQueueCount <= 0) {
+          mailCloudSyncProgressValue ??= mailImportProgressValue;
+        }
         notifyListeners();
       }
+    }
+  }
+
+  Future<void> refreshMacOSMailCloudSyncStatus({bool silent = false}) async {
+    if (syncingMacOSMailToCloud) {
+      _refreshActiveMacOSMailCloudSyncStatus();
+      return;
+    }
+    await _refreshMacOSMailCloudSyncQueueState(silent: silent);
+  }
+
+  void _refreshActiveMacOSMailCloudSyncStatus() {
+    mailCloudSyncQueueCount = 1;
+    mailCloudSyncStatusLabel = busy
+        ? (mailCloudSyncFileCount > 0
+              ? '正在上传 $mailCloudSyncFileCount 封邮件'
+              : '正在上传邮件')
+        : '正在导出 Mail.app 邮件';
+    mailCloudSyncProgressValue = busy
+        ? uploadProgress.clamp(0, 1).toDouble()
+        : mailImportProgressValue;
+    mailCloudSyncUpdatedAt = DateTime.now().toIso8601String();
+    statusMessage = 'Mail.app 云端同步仍在进行，已刷新当前状态，未创建新任务。';
+    statusCaption = mailCloudSyncProgressLabel;
+    _appendLog('Mail.app 云端同步状态已刷新，当前任务仍在进行。');
+    notifyListeners();
+  }
+
+  Future<bool> _refreshMacOSMailCloudSyncQueueState({
+    required bool silent,
+  }) async {
+    if (_mailCloudSyncStatusRefreshInFlight) {
+      return mailCloudSyncQueueCount > 0;
+    }
+    _mailCloudSyncStatusRefreshInFlight = true;
+    refreshingMacOSMailCloudSyncStatus = true;
+    if (!silent) {
+      statusMessage = '正在刷新 Mail.app 云端同步队列...';
+      statusCaption = '云端同步状态';
+      notifyListeners();
+    }
+
+    try {
+      if (!await _backendApi.ensureDaemon()) {
+        throw StateError('本地客户端后台不可用，无法刷新 Mail.app 云端同步状态。');
+      }
+      clientBackendAvailable = true;
+      final response = await _backendApi.listUploadQueue();
+      final hasUnfinished = _applyMacOSMailCloudQueueSnapshot(response);
+      if (!silent) {
+        if (hasUnfinished) {
+          statusMessage = '已刷新 Mail.app 云端同步状态，未创建新任务。';
+          statusCaption = mailCloudSyncStatusLabel;
+          _appendLog('Mail.app 云端同步队列已刷新：$mailCloudSyncQueueLabel。');
+        } else {
+          statusMessage = '没有未完成的 Mail.app 云端同步任务。';
+          statusCaption = '云端同步空闲';
+          _appendLog('Mail.app 云端同步队列已刷新，没有未完成任务。');
+        }
+      }
+      return hasUnfinished;
+    } catch (error) {
+      if (!silent) {
+        _setError('刷新 Mail.app 云端同步状态失败：$error');
+      }
+      return false;
+    } finally {
+      refreshingMacOSMailCloudSyncStatus = false;
+      _mailCloudSyncStatusRefreshInFlight = false;
+      if (!silent) {
+        notifyListeners();
+      }
+    }
+  }
+
+  bool _applyMacOSMailCloudQueueSnapshot(Map<String, dynamic> response) {
+    final state = response['state'];
+    final stateMap = state is Map ? Map<String, dynamic>.from(state) : null;
+    final rawTasks = stateMap?['tasks'];
+    final tasks = rawTasks is List
+        ? rawTasks
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .where(_isMacOSMailCloudQueueTask)
+              .toList()
+        : <Map<String, dynamic>>[];
+    if (tasks.isEmpty) {
+      if (!syncingMacOSMailToCloud) {
+        mailCloudSyncQueueCount = 0;
+        mailCloudSyncProgressValue = null;
+        mailCloudSyncFileCount = 0;
+        mailCloudSyncTaskId = '';
+        mailCloudSyncCheckpointId = '';
+        mailCloudSyncUpdatedAt = '';
+        mailCloudSyncStatusLabel = '空闲';
+      }
+      return false;
+    }
+
+    final unfinished = tasks
+        .where((task) => _isUnfinishedMacOSMailCloudTaskStatus(task['status']))
+        .toList();
+    if (unfinished.isEmpty) {
+      final latest = _latestMacOSMailCloudQueueTask(tasks);
+      if (latest != null && !syncingMacOSMailToCloud) {
+        _applyMacOSMailCloudTaskSnapshot(latest, unfinishedCount: 0);
+      }
+      return false;
+    }
+
+    final activeTaskId = _stringFrom(stateMap?['activeTaskId']);
+    final selected = _preferredMacOSMailCloudQueueTask(
+      unfinished,
+      activeTaskId: activeTaskId,
+    );
+    _applyMacOSMailCloudTaskSnapshot(
+      selected,
+      unfinishedCount: unfinished.length,
+    );
+    return true;
+  }
+
+  bool _isMacOSMailCloudQueueTask(Map<String, dynamic> task) {
+    return _stringFrom(task['inputText']).startsWith(_mailCloudSyncInputPrefix);
+  }
+
+  Map<String, dynamic> _preferredMacOSMailCloudQueueTask(
+    List<Map<String, dynamic>> tasks, {
+    required String activeTaskId,
+  }) {
+    if (activeTaskId.isNotEmpty) {
+      for (final task in tasks) {
+        if (_stringFrom(task['taskId']) == activeTaskId) {
+          return task;
+        }
+      }
+    }
+    for (final task in tasks) {
+      if (_stringFrom(task['status']) == 'running') {
+        return task;
+      }
+    }
+    return _latestMacOSMailCloudQueueTask(tasks) ?? tasks.first;
+  }
+
+  Map<String, dynamic>? _latestMacOSMailCloudQueueTask(
+    List<Map<String, dynamic>> tasks,
+  ) {
+    if (tasks.isEmpty) {
+      return null;
+    }
+    final sorted = [...tasks]
+      ..sort((left, right) {
+        final updated = _stringFrom(
+          right['updatedAt'],
+        ).compareTo(_stringFrom(left['updatedAt']));
+        if (updated != 0) {
+          return updated;
+        }
+        return _stringFrom(
+          right['createdAt'],
+        ).compareTo(_stringFrom(left['createdAt']));
+      });
+    return sorted.first;
+  }
+
+  bool _isUnfinishedMacOSMailCloudTaskStatus(Object? rawStatus) {
+    final status = _stringFrom(rawStatus);
+    return status == 'queued' ||
+        status == 'running' ||
+        status == 'paused' ||
+        status == 'waiting_server';
+  }
+
+  void _applyMacOSMailCloudTaskSnapshot(
+    Map<String, dynamic> task, {
+    required int unfinishedCount,
+  }) {
+    final files = task['files'];
+    final fileCount = files is List
+        ? files.length
+        : _intFrom(task['fileCount']);
+    mailCloudSyncQueueCount = unfinishedCount;
+    mailCloudSyncTaskId = _stringFrom(task['taskId']);
+    mailCloudSyncCheckpointId = _stringFrom(task['checkpointId']);
+    mailCloudSyncFileCount = fileCount;
+    mailCloudSyncProgressValue = ((task['progress'] as num?)?.toDouble() ?? 0)
+        .clamp(0, 1)
+        .toDouble();
+    mailCloudSyncUpdatedAt = _stringFrom(task['updatedAt']);
+    mailCloudSyncStatusLabel = _mailCloudQueueStatusLabel(task);
+  }
+
+  void _applyMacOSMailCloudSubmissionSnapshot(
+    Map<String, dynamic> response, {
+    required int fileCount,
+  }) {
+    mailCloudSyncCheckpointId = _stringFrom(response['checkpointId']);
+    final rawTask = response['task'];
+    if (rawTask is Map) {
+      final task = Map<String, dynamic>.from(rawTask);
+      _applyMacOSMailCloudTaskSnapshot(
+        task,
+        unfinishedCount: _isUnfinishedMacOSMailCloudTaskStatus(task['status'])
+            ? 1
+            : 0,
+      );
+      return;
+    }
+
+    final rawJob = response['job'];
+    final rawJobMap = rawJob is Map ? Map<String, dynamic>.from(rawJob) : null;
+    if (rawJobMap != null && _stringFrom(rawJobMap['id']).isNotEmpty) {
+      final job = SplitJob.fromJson(rawJobMap);
+      mailCloudSyncQueueCount = job.isCompleted ? 0 : 1;
+      mailCloudSyncTaskId = '';
+      mailCloudSyncFileCount = fileCount;
+      mailCloudSyncProgressValue = (job.progressPercent / 100)
+          .clamp(0, 1)
+          .toDouble();
+      mailCloudSyncUpdatedAt = DateTime.now().toIso8601String();
+      mailCloudSyncStatusLabel = job.isCompleted
+          ? '已完成'
+          : displayStageLabel(job.stage);
+      return;
+    }
+
+    mailCloudSyncQueueCount = 0;
+    mailCloudSyncTaskId = '';
+    mailCloudSyncFileCount = fileCount;
+    mailCloudSyncProgressValue = 1;
+    mailCloudSyncUpdatedAt = DateTime.now().toIso8601String();
+    mailCloudSyncStatusLabel = '已完成';
+  }
+
+  String _mailCloudQueueStatusLabel(Map<String, dynamic> task) {
+    final status = _stringFrom(task['status']);
+    final knowledgeStatus = _stringFrom(task['knowledgeStatus']);
+    final base = switch (status) {
+      'queued' => '本地后台队列等待中',
+      'running' => '本地后台正在同步',
+      'paused' => '已暂停',
+      'waiting_server' => '等待服务端恢复',
+      'completed' => '已完成',
+      'failed' => '失败',
+      'cancelled' => '已取消',
+      _ => status.isEmpty ? '状态未知' : status,
+    };
+    if (knowledgeStatus == 'syncing') {
+      return '$base · 知识库同步中';
+    }
+    if (knowledgeStatus == 'synced') {
+      return '$base · 知识库已同步';
+    }
+    if (knowledgeStatus == 'failed') {
+      return '$base · 知识库同步失败';
+    }
+    return base;
+  }
+
+  void _markMacOSMailCloudSyncFailed(String message) {
+    mailCloudSyncQueueCount = 0;
+    mailCloudSyncProgressValue = null;
+    mailCloudSyncStatusLabel = '失败';
+    mailCloudSyncUpdatedAt = DateTime.now().toIso8601String();
+    if (message.trim().isNotEmpty) {
+      _appendLog('Mail.app 云端同步失败：$message', notify: false);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _runMacOSMailExport({
+    required int runToken,
+    required bool queueLocalFiles,
+    required int initialQueueCount,
+  }) async {
+    Map<String, dynamic> normalizeStatus(Map<String, dynamic> raw) {
+      final nested = raw['status'];
+      if (nested is Map) {
+        return Map<String, dynamic>.from(nested);
+      }
+      return raw;
+    }
+
+    Map<String, dynamic> status;
+    try {
+      status = normalizeStatus(await _backendApi.startMailImport());
+    } catch (error) {
+      if (runToken != _mailImportRunToken || !importingMacOSMail) {
+        return null;
+      }
+      _appendLog('Mail.app 导入启动后状态返回失败，正在重新读取后台状态：$error', notify: false);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      status = normalizeStatus(await _backendApi.mailImportStatus());
+    }
+    _applyBackendMailImportStatus(status);
+    if (queueLocalFiles) {
+      await _syncMailExportedFilesToQueue(
+        status,
+        initialQueueCount: initialQueueCount,
+      );
+    }
+    var statusRefreshFailureCount = 0;
+    while (_backendMailImportStillActive(status)) {
+      if (runToken != _mailImportRunToken || !importingMacOSMail) {
+        _appendLog('Mail.app 后端导入仍在运行，但当前导入任务已复位，已停止前端等待。');
+        return null;
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+      try {
+        status = normalizeStatus(await _backendApi.mailImportStatus());
+        statusRefreshFailureCount = 0;
+      } catch (error) {
+        statusRefreshFailureCount += 1;
+        if (statusRefreshFailureCount == 1 ||
+            statusRefreshFailureCount % 5 == 0) {
+          _appendLog('Mail.app 导入状态刷新失败，后台导入仍按当前进度继续等待：$error', notify: false);
+        }
+        continue;
+      }
+      _applyBackendMailImportStatus(status);
+      if (queueLocalFiles) {
+        await _syncMailExportedFilesToQueue(
+          status,
+          initialQueueCount: initialQueueCount,
+        );
+      }
+    }
+    if (runToken != _mailImportRunToken || !importingMacOSMail) {
+      _appendLog('Mail.app 导入结果已返回，但当前导入任务已复位，已忽略旧结果。');
+      return null;
+    }
+
+    final importStatus = _stringFrom(status['status']);
+    if (importStatus == 'failed') {
+      final diagnostics = status['diagnostics'] is Map
+          ? Map<String, dynamic>.from(status['diagnostics'] as Map)
+          : const <String, dynamic>{};
+      final lastError = _stringFrom(diagnostics['lastError']);
+      throw StateError(lastError.isEmpty ? 'Mail.app 后端导入失败。' : lastError);
+    }
+    if (queueLocalFiles) {
+      await _syncMailExportedFilesToQueue(
+        status,
+        initialQueueCount: initialQueueCount,
+        forceScan: true,
+      );
+    }
+    return status;
+  }
+
+  Future<int> _syncMailExportedFilesToQueue(
+    Map<String, dynamic> status, {
+    required int initialQueueCount,
+    bool forceScan = false,
+  }) async {
+    final exportDirectory = _mailExportDirectoryFromStatus(status);
+    if (exportDirectory.isEmpty) {
+      return 0;
+    }
+
+    final latestProgress = status['latestProgress'] is Map
+        ? Map<String, dynamic>.from(status['latestProgress'] as Map)
+        : const <String, dynamic>{};
+    final additionsByPath = <String, QueuedFile>{};
+    final latestFileName = _stringFrom(latestProgress['fileName']);
+    if (latestFileName.isNotEmpty) {
+      final latestPath = p.normalize(p.join(exportDirectory, latestFileName));
+      if (await File(latestPath).exists()) {
+        try {
+          final queued = await _queuedFileFromPath(
+            latestPath,
+            rootDirectory: p.dirname(exportDirectory),
+          );
+          additionsByPath[queued.path] = queued;
+        } catch (_) {}
+      }
+    }
+
+    final exportedCount = _intFrom(status['exportedCount']) > 0
+        ? _intFrom(status['exportedCount'])
+        : _intFrom(latestProgress['exportedCount']);
+    final now = DateTime.now();
+    final shouldScan =
+        forceScan ||
+        (exportedCount > 0 &&
+            exportedCount != _lastMailImportQueueSyncExportedCount &&
+            now.difference(_lastMailImportQueueSyncAt) >=
+                _mailImportQueueSyncInterval);
+    if (shouldScan) {
+      _lastMailImportQueueSyncAt = now;
+      _lastMailImportQueueSyncExportedCount = exportedCount;
+      for (final queued in await _collectQueuedFilesFromDirectory(
+        exportDirectory,
+      )) {
+        additionsByPath[queued.path] = queued;
+      }
+    }
+
+    if (additionsByPath.isEmpty) {
+      return 0;
+    }
+    final added = _mergeQueuedFiles(
+      additionsByPath.values.toList(growable: false),
+      updateStatus: false,
+      notify: false,
+    );
+    if (added > 0) {
+      final totalAdded = queuedFiles.length - initialQueueCount;
+      statusMessage = '已从 Mail.app 加入 $totalAdded 封邮件到本地队列，导入继续进行。';
+      statusCaption = '本地队列已更新';
+      _appendLog(
+        'Mail.app 导入已增量加入 $added 封邮件；本次累计加入 $totalAdded 封。',
+        notify: false,
+      );
+      notifyListeners();
+    }
+    return added;
+  }
+
+  String _mailExportDirectoryFromStatus(Map<String, dynamic> status) {
+    final diagnostics = status['diagnostics'] is Map
+        ? Map<String, dynamic>.from(status['diagnostics'] as Map)
+        : const <String, dynamic>{};
+    final latestProgress = status['latestProgress'] is Map
+        ? Map<String, dynamic>.from(status['latestProgress'] as Map)
+        : const <String, dynamic>{};
+    if (_stringFrom(diagnostics['exportDirectory']).isNotEmpty) {
+      return _stringFrom(diagnostics['exportDirectory']);
+    }
+    if (_stringFrom(latestProgress['exportDirectory']).isNotEmpty) {
+      return _stringFrom(latestProgress['exportDirectory']);
+    }
+    return _stringFrom(status['downloadsDirectory']);
+  }
+
+  Future<void> _applyPipelineSubmissionResponse({
+    required Map<String, dynamic> response,
+    required String submittedText,
+    required List<QueuedFile> submittedFiles,
+    required String targetServiceUrl,
+    required String queuedStatusMessage,
+    required String queuedStatusCaption,
+    required String completedStatusMessage,
+    required String completedStatusCaption,
+    required String completedLogPrefix,
+  }) async {
+    var checkpointId = _stringFrom(response['checkpointId']);
+    selectedCheckpointId = checkpointId;
+    final rawJob = response['job'];
+    final rawJobMap = rawJob is Map ? Map<String, dynamic>.from(rawJob) : null;
+    final rawTask = response['task'];
+    final rawTaskMap = rawTask is Map
+        ? Map<String, dynamic>.from(rawTask)
+        : null;
+    final taskStatus = _stringFrom(rawTaskMap?['status']);
+    if (rawTaskMap != null &&
+        (taskStatus == 'waiting_server' ||
+            rawJobMap == null ||
+            _stringFrom(rawJobMap['id']).isEmpty)) {
+      _recordBackendQueuedCheckpoint(
+        checkpointId: checkpointId,
+        submittedText: submittedText,
+        submittedFiles: submittedFiles,
+        task: rawTaskMap,
+        manifestDigest: _stringFrom(response['manifestDigest']),
+        serviceUrl: targetServiceUrl,
+      );
+      uploadProgress = ((rawTaskMap['progress'] as num?)?.toDouble() ?? 0)
+          .clamp(0, 1);
+      packagingProgress = 1;
+      await _persistCheckpointStore();
+      statusMessage = queuedStatusMessage;
+      statusCaption = queuedStatusCaption;
+      _appendLog(
+        '$queuedStatusMessage task=${_stringFrom(rawTaskMap['taskId'])}',
+      );
+      return;
+    }
+    if (rawJobMap == null) {
+      throw StateError('本地后台没有返回任务状态。');
+    }
+
+    final job = SplitJob.fromJson(rawJobMap);
+    activeJob = job;
+    final rawResult = response['result'];
+    activeResult = rawResult is Map
+        ? Map<String, dynamic>.from(rawResult)
+        : null;
+    final rawSession = response['uploadSession'];
+    if (rawSession is Map) {
+      activeUploadSession = UploadSessionInfo.fromJson(
+        Map<String, dynamic>.from(rawSession),
+      );
+      if (checkpointId.isEmpty) {
+        checkpointId = activeUploadSession?.checkpointId ?? '';
+        selectedCheckpointId = checkpointId;
+      }
+      selectedUploadSessionId = activeUploadSession?.sessionId ?? '';
+    }
+    uploadProgress = 1;
+    packagingProgress = 1;
+
+    if (checkpointId.isNotEmpty) {
+      _recordBackendPipelineCheckpoint(
+        checkpointId: checkpointId,
+        submittedText: submittedText,
+        submittedFiles: submittedFiles,
+        job: job,
+        uploadSession: activeUploadSession,
+        manifestDigest: _stringFrom(response['manifestDigest']),
+        serviceUrl: targetServiceUrl,
+      );
+      await _persistCheckpointStore();
+    }
+
+    _upsertRun(
+      RecentRun(
+        jobId: job.id,
+        createdAt: DateTime.now().toIso8601String(),
+        status: job.status,
+        stage: displayStageLabel(job.stage),
+        inputPreview: submittedText,
+        fileCount: submittedFiles.length,
+        serviceUrl: targetServiceUrl,
+        progressPercent: job.progressPercent,
+      ),
+    );
+    selectedRunId = job.id;
+    await _persistRuns();
+    if (job.isCompleted && activeResult != null) {
+      try {
+        await _backendApi.syncKnowledgeCache(
+          serviceBaseUrl: targetServiceUrl,
+          pushOutbox: false,
+        );
+      } catch (error) {
+        _appendLog('任务完成后的本地知识库同步失败：$error', notify: false);
+      }
+      _notifyKnowledgeDaemon(
+        KnowledgeDaemonEvent(
+          kind: KnowledgeDaemonEventKind.resultChanged,
+          sourceId: 'result',
+          reason: 'job-completed',
+        ),
+        delay: const Duration(milliseconds: 220),
+      );
+      statusMessage = completedStatusMessage;
+      statusCaption = completedStatusCaption;
+      _appendLog(
+        '$completedLogPrefix：任务 ${job.id}，提交 ${submittedFiles.length} 个文件。',
+      );
+    } else {
+      throw ApiException(job.error.isNotEmpty ? job.error : '任务未成功完成。');
     }
   }
 
@@ -2438,6 +3145,105 @@ class AppController extends ChangeNotifier {
     knowledgeSearchResults = const [];
     searchingKnowledgeIndex = false;
     notifyListeners();
+  }
+
+  Future<void> refreshDataConnectors({bool silent = false}) async {
+    if (refreshingDataConnectors) {
+      return;
+    }
+    refreshingDataConnectors = true;
+    dataConnectorError = '';
+    if (!silent) {
+      statusMessage = '正在刷新数据连接器。';
+      statusCaption = '本地数据源';
+      notifyListeners();
+    }
+    try {
+      if (!clientBackendAvailable && !await _backendApi.ensureDaemon()) {
+        throw StateError('本地客户端后台不可用。');
+      }
+      clientBackendAvailable = true;
+      final response = await _backendApi.listDataConnectors();
+      final rawConnectors = response['connectors'];
+      dataConnectors = rawConnectors is List
+          ? rawConnectors
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList(growable: false)
+          : const [];
+      if (!silent) {
+        statusMessage = '已读取 ${dataConnectors.length} 个数据连接器。';
+        statusCaption = '本地数据源';
+      }
+    } catch (error) {
+      dataConnectorError = '刷新数据连接器失败：$error';
+      if (!silent) {
+        _appendLog(dataConnectorError, notify: false);
+      }
+    } finally {
+      refreshingDataConnectors = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> setDataConnectorEnabled(String providerId, bool enabled) async {
+    try {
+      if (!await _backendApi.ensureDaemon()) {
+        throw StateError('本地客户端后台不可用。');
+      }
+      final existing = dataConnectors.firstWhere(
+        (item) => item['providerId'] == providerId,
+        orElse: () => const {},
+      );
+      final installed = existing['installed'] == true;
+      if (!installed) {
+        await _backendApi.controlDataConnector(
+          providerId: providerId,
+          action: 'install',
+        );
+      }
+      await _backendApi.controlDataConnector(
+        providerId: providerId,
+        action: enabled ? 'enable' : 'disable',
+      );
+      statusMessage = enabled ? '$providerId 已启用。' : '$providerId 已停用。';
+      statusCaption = '数据连接器';
+      await refreshDataConnectors(silent: true);
+    } catch (error) {
+      dataConnectorError = '更新数据连接器失败：$error';
+      _setError(dataConnectorError);
+    }
+  }
+
+  Future<void> startDataConnectorAuth(String providerId) async {
+    try {
+      if (!await _backendApi.ensureDaemon()) {
+        throw StateError('本地客户端后台不可用。');
+      }
+      await _backendApi.startDataConnectorAuth(providerId: providerId);
+      statusMessage = '$providerId 授权流程已创建。';
+      statusCaption = '连接器授权';
+      await refreshDataConnectors(silent: true);
+    } catch (error) {
+      dataConnectorError = '启动连接器授权失败：$error';
+      _setError(dataConnectorError);
+    }
+  }
+
+  Future<void> syncDataConnector(String providerId) async {
+    try {
+      if (!await _backendApi.ensureDaemon()) {
+        throw StateError('本地客户端后台不可用。');
+      }
+      final result = await _backendApi.syncDataConnector(providerId: providerId);
+      final count = (result['itemCount'] as num?)?.toInt() ?? 0;
+      statusMessage = '$providerId 已同步 $count 条本地镜像记录。';
+      statusCaption = '连接器同步';
+      await refreshDataConnectors(silent: true);
+    } catch (error) {
+      dataConnectorError = '同步数据连接器失败：$error';
+      _setError(dataConnectorError);
+    }
   }
 
   Future<void> openKnowledgeMailEvidence({
@@ -3244,6 +4050,8 @@ class AppController extends ChangeNotifier {
     _mailImportUiNotifyTimer = null;
     _mailImportUiNotifyPending = false;
     _lastMailImportUiNotifyAt = DateTime.fromMillisecondsSinceEpoch(0);
+    _lastMailImportQueueSyncAt = DateTime.fromMillisecondsSinceEpoch(0);
+    _lastMailImportQueueSyncExportedCount = -1;
     mailImportProgressValue = null;
     mailImportProcessedCount = 0;
     mailImportExportedCount = 0;
@@ -3323,6 +4131,18 @@ class AppController extends ChangeNotifier {
         _resetMailImportProgress();
         statusMessage = 'Mail.app 已响应，正在准备扫描邮箱。';
         statusCaption = 'Mail.app 已连接';
+      case MacOSMailImportProgressKind.scanning:
+        mailImportProcessedCount = math.max(
+          mailImportProcessedCount,
+          progress.sequence,
+        );
+        final scanned = progress.sequence > 0
+            ? '已发现 ${progress.sequence} 封邮件'
+            : '正在读取邮箱';
+        statusMessage = progress.title.trim().isEmpty
+            ? '正在扫描 Mail.app 邮箱：$scanned。'
+            : '正在扫描 Mail.app 邮箱：${progress.title}，$scanned。';
+        statusCaption = '扫描邮箱中';
       case MacOSMailImportProgressKind.planned:
         mailImportTotalCount = progress.totalCount;
         statusMessage = '已扫描 ${progress.totalCount} 封邮件，开始导出。';
@@ -3977,7 +4797,12 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  void _mergeQueuedFiles(List<QueuedFile> additions) {
+  int _mergeQueuedFiles(
+    List<QueuedFile> additions, {
+    bool updateStatus = true,
+    bool notify = true,
+  }) {
+    final previousCount = queuedFiles.length;
     final merged = <String, QueuedFile>{
       for (final file in queuedFiles) file.path: file,
     };
@@ -3986,9 +4811,14 @@ class AppController extends ChangeNotifier {
     }
     queuedFiles = merged.values.toList()
       ..sort((left, right) => left.relativePath.compareTo(right.relativePath));
-    statusMessage = '已加入 ${queuedFiles.length} 个文件。';
-    statusCaption = '本地队列已更新';
-    notifyListeners();
+    if (updateStatus) {
+      statusMessage = '已加入 ${queuedFiles.length} 个文件。';
+      statusCaption = '本地队列已更新';
+    }
+    if (notify) {
+      notifyListeners();
+    }
+    return queuedFiles.length - previousCount;
   }
 
   void _upsertRun(RecentRun run) {
@@ -4430,11 +5260,15 @@ class AppController extends ChangeNotifier {
 
   @override
   void notifyListeners() {
+    if (_disposed) {
+      return;
+    }
     super.notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _knowledgeDaemon.dispose();
     _moduleDaemon.dispose();
     _clientBackendStatePollTimer?.cancel();
@@ -4445,6 +5279,8 @@ class AppController extends ChangeNotifier {
     _stopMailImportWatchdog();
     _backendApi.dispose();
     bootstrapController.dispose();
+    serviceUsernameController.dispose();
+    servicePasswordController.dispose();
     inputController.dispose();
     super.dispose();
   }

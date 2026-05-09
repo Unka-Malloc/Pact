@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
-import { createLanceDbVectorStore } from "../modules/VectorStore/LanceDB/index.mjs";
+import { createLanceDbVectorStore } from "../platform/specialized/knowledge/embedding/vector-store/LanceDB/index.mjs";
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);

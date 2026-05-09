@@ -3,15 +3,15 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import {
   CONTEXT_COMPACTION_PROTOCOL_VERSION,
   buildMessageGraph,
   chooseCompactionCutPoint,
   computeCompactionBudget,
   createContextCompactionRuntime
-} from "../modules/ContextCompactionRuntime/index.mjs";
-import { createContextRuntime } from "../modules/ContextRuntime/index.mjs";
+} from "../platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
@@ -85,7 +85,7 @@ function sampleMessages() {
       id: "m3",
       role: "user",
       apiRoundId: "round-2",
-      content: "TODO: add session memory, boundary resume, audit redaction, and knowledge package version pkg:v7."
+      content: "TODO: add session memory, boundary resume, audit redaction, and knowledge reference vocab:v7."
     },
     {
       id: "m4",
@@ -192,8 +192,8 @@ try {
     runtimeState: {
       activePlan: ["M0", "M1", "M2"],
       enabledTools: ["context.compaction.run"],
-      currentFiles: ["/Users/unka/DevSpace/Unka-Malloc/splitall/server/modules/ContextCompactionRuntime/index.mjs"],
-      knowledgePackageVersion: "mail-expert-vocabulary@v7",
+      currentFiles: ["/Users/unka/DevSpace/Unka-Malloc/splitall/server/platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs"],
+      knowledgeReference: "expert-vocabulary@v7",
       userConstraints: ["Do not copy Claude Code source"]
     }
   });
@@ -228,14 +228,14 @@ try {
       }
       return {
         summary: JSON.stringify({
-          summary: "Model summary keeps evidence:ev-critical, TODOs, risk-blocked, pkg:v7, and tool-1.",
+          summary: "Model summary keeps evidence:ev-critical, TODOs, risk-blocked, vocab:v7, and tool-1.",
           constraints: ["never split tool pairs"],
           decisions: ["use ContextCompactionRuntime"],
           risks: ["risk-blocked"],
           todos: ["add boundary resume"],
           evidenceRefs: ["evidence:ev-critical"],
-          fileRefs: ["server/modules/ContextCompactionRuntime/index.mjs"],
-          knowledgePackages: ["pkg:v7"]
+          fileRefs: ["server/platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs"],
+          knowledgeRefs: ["vocab:v7"]
         })
       };
     }

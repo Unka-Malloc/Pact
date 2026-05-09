@@ -3,11 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
-import { saveSettings } from "../config.mjs";
-import { TIKA_VERSION } from "../modules/FileProcessor/FileNormalizer/Tika/tika.mjs";
+import { saveSettings } from "../platform/common/platform-core/settings.mjs";
+import { TIKA_VERSION } from "../platform/modules/knowledge/file-processor/FileNormalizer/Tika/tika.mjs";
 
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
-const vendorRoot = path.join(projectRoot, "vendor");
+const moduleResourceRoot = path.join(projectRoot, "server", "modules");
+const jreRoot = path.join(moduleResourceRoot, "jre");
+const tikaRoot = path.join(moduleResourceRoot, "tika");
 const platformKey = `${process.platform}-${process.arch}`;
 const userDataPath = path.join(projectRoot, "build", "server-data");
 
@@ -111,13 +113,13 @@ function getExpectedJavaPath(runtimeRoot) {
     : path.join(runtimeRoot, "bin", executable);
 }
 
-async function setupVendoredJre() {
+async function setupModuleJre() {
   const jreDownload = JRE_DOWNLOADS[platformKey];
   if (!jreDownload) {
     throw new Error(`当前平台 ${platformKey} 没有预设的本地 JRE 下载源。`);
   }
 
-  const runtimeRoot = path.join(vendorRoot, "jre", platformKey);
+  const runtimeRoot = path.join(jreRoot, platformKey);
   const javaPath = getExpectedJavaPath(runtimeRoot);
   if (await fileExists(javaPath)) {
     return {
@@ -127,7 +129,7 @@ async function setupVendoredJre() {
     };
   }
 
-  const archiveDir = path.join(vendorRoot, "downloads");
+  const archiveDir = path.join(jreRoot, "downloads");
   const archivePath = path.join(archiveDir, jreDownload.fileName);
   if (!(await fileExists(archivePath))) {
     console.log(`Downloading JRE: ${jreDownload.url}`);
@@ -148,9 +150,8 @@ async function setupVendoredJre() {
   };
 }
 
-async function setupVendoredTika() {
-  const tikaDir = path.join(vendorRoot, "tika");
-  const tikaJarPath = path.join(tikaDir, TIKA_DOWNLOAD.fileName);
+async function setupModuleTika() {
+  const tikaJarPath = path.join(tikaRoot, TIKA_DOWNLOAD.fileName);
   if (!(await fileExists(tikaJarPath))) {
     console.log(`Downloading Tika: ${TIKA_DOWNLOAD.url}`);
     await downloadFile(TIKA_DOWNLOAD.url, tikaJarPath);
@@ -163,7 +164,7 @@ async function setupVendoredTika() {
 }
 
 async function main() {
-  const [jre, tika] = await Promise.all([setupVendoredJre(), setupVendoredTika()]);
+  const [jre, tika] = await Promise.all([setupModuleJre(), setupModuleTika()]);
 
   const saved = await saveSettings(userDataPath, {
     javaBinPath: jre.javaPath,
@@ -176,7 +177,7 @@ async function main() {
     JSON.stringify(
       {
         platform: platformKey,
-        vendorRoot,
+        moduleResourceRoot,
         javaBinPath: saved.javaBinPath,
         tikaJarPath: saved.tikaJarPath
       },

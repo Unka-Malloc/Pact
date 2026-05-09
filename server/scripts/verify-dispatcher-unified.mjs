@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { startHttpServer } from "../http-server.mjs";
-import { SERVER_API_OPERATIONS } from "../interfaces/api/operation-registry.mjs";
-import { createOperationAuditStore } from "../security/operation-audit.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
+import { createOperationAuditStore } from "../platform/common/platform-core/security/operation-audit.mjs";
 import { authHeaders, installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -44,7 +44,7 @@ async function requestJson(url, options = {}) {
 }
 
 async function assertStaticDispatcherGuard() {
-  const dispatcherPath = path.join(repoRoot, "server", "interfaces", "api", "operation-dispatcher.mjs");
+  const dispatcherPath = path.join(repoRoot, "server", "platform", "common", "operation-dispatcher", "operation-dispatcher.mjs");
   const selfPath = fileURLToPath(import.meta.url);
   const offenders = [];
   for await (const filePath of walk(path.join(repoRoot, "server"))) {
@@ -55,18 +55,22 @@ async function assertStaticDispatcherGuard() {
   }
   assert.deepEqual(offenders, [], "invokeRegisteredOperation must stay private to OperationDispatcher");
 
-  const httpServer = await readText(path.join(repoRoot, "server", "http-server.mjs"));
+  const httpServer = await readText(path.join(repoRoot, "server", "services", "server-runtime", "http-server.mjs"));
   assert.equal(
     httpServer.includes("handledToolManagement = await toolManagementPlatform.router.handleToolManagementHttpRequest"),
     false,
     "HTTP server must not route Tool Management around OperationDispatcher"
   );
 
-  const toolRuntime = await readText(path.join(repoRoot, "server", "tool-management", "runtime.mjs"));
+  const toolRuntime = await readText(
+    path.join(repoRoot, "server", "platform", "specialized", "agent", "agent-tools", "tool-management-core", "runtime.mjs")
+  );
   assert.equal(toolRuntime.includes("dispatchOperation({"), true);
   assert.equal(toolRuntime.includes("invokeRegisteredOperation"), false);
 
-  const maintenanceTools = await readText(path.join(repoRoot, "server", "application", "MaintenanceAgent", "tool-registry.mjs"));
+  const maintenanceTools = await readText(
+    path.join(repoRoot, "server", "services", "agent", "maintenance-agent", "tool-registry.mjs")
+  );
   assert.equal(maintenanceTools.includes("dispatchOperation({"), true);
   assert.equal(maintenanceTools.includes(".run(input"), false);
 }

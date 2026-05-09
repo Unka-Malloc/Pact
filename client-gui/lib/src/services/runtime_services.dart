@@ -212,10 +212,8 @@ class ClientBackendApi {
         ...Platform.environment,
         'SPLITALL_PORTABLE_DIR': dataDirectory.path,
       },
-      mode: ProcessStartMode.detachedWithStdio,
+      mode: ProcessStartMode.detached,
     );
-    unawaited(_spawnedDaemon!.stdout.drain<void>());
-    unawaited(_spawnedDaemon!.stderr.drain<void>());
 
     for (var attempt = 0; attempt < 20; attempt += 1) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -254,7 +252,10 @@ class ClientBackendApi {
   }
 
   Future<ExpertVocabulary> pullVocabulary() async {
-    final result = await submitCommand('vocabulary.pull');
+    final result = await _rpcCommand(
+      'vocabulary.pull',
+      timeout: const Duration(seconds: 20),
+    );
     final rawVocabulary = result['vocabulary'];
     if (rawVocabulary is Map) {
       return ExpertVocabulary.fromJson(rawVocabulary);
@@ -278,42 +279,42 @@ class ClientBackendApi {
   }
 
   Future<Map<String, dynamic>> startMailImport() async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.import.start',
       timeout: const Duration(seconds: 30),
     );
   }
 
   Future<Map<String, dynamic>> mailImportStatus() async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.import.status',
       timeout: const Duration(seconds: 20),
     );
   }
 
   Future<Map<String, dynamic>> pauseMailImport() async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.import.pause',
       timeout: const Duration(seconds: 20),
     );
   }
 
   Future<Map<String, dynamic>> resumeMailImport() async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.import.resume',
       timeout: const Duration(seconds: 20),
     );
   }
 
   Future<Map<String, dynamic>> cancelMailImport() async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.import.cancel',
       timeout: const Duration(seconds: 20),
     );
   }
 
   Future<Map<String, dynamic>> mailIndexStats() async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.index.stats',
       timeout: const Duration(seconds: 20),
     );
@@ -324,7 +325,7 @@ class ClientBackendApi {
     int limit = 50,
     int offset = 0,
   }) async {
-    return submitCommand(
+    return _rpcCommand(
       'mail.index.search',
       params: {'query': query, 'limit': limit, 'offset': offset},
       timeout: const Duration(seconds: 20),
@@ -373,7 +374,7 @@ class ClientBackendApi {
     bool includeEvents = false,
     int offset = 0,
   }) {
-    return submitCommand(
+    return _rpcCommand(
       'upload.queue.list',
       params: {'includeEvents': includeEvents, 'offset': offset},
     );
@@ -423,14 +424,14 @@ class ClientBackendApi {
     Map<String, dynamic>? body,
   }) async {
     final params = <String, dynamic>{
-      'serviceBaseUrl': serviceBaseUrl,
+      'serviceBaseUrl': SplitAllServiceUrls.normalizeBaseUrl(serviceBaseUrl),
       'method': method,
       'path': path,
     };
     if (body != null) {
       params['body'] = body;
     }
-    return submitCommand(
+    return _rpcCommand(
       'server.api',
       params: params,
       timeout: const Duration(minutes: 2),
@@ -448,7 +449,7 @@ class ClientBackendApi {
   }
 
   Future<Map<String, dynamic>> knowledgeCacheStats() {
-    return submitCommand(
+    return _rpcCommand(
       'knowledge.cache.stats',
       timeout: const Duration(seconds: 20),
     );
@@ -487,7 +488,7 @@ class ClientBackendApi {
   }
 
   Future<Map<String, dynamic>> listAgents() {
-    return submitCommand('agents.list', timeout: const Duration(seconds: 20));
+    return _rpcCommand('agents.list', timeout: const Duration(seconds: 20));
   }
 
   Future<Map<String, dynamic>> searchKnowledgeCache({
@@ -496,6 +497,65 @@ class ClientBackendApi {
   }) {
     return submitCommand(
       'knowledge.search',
+      params: {'query': query, 'limit': limit},
+      timeout: const Duration(seconds: 20),
+    );
+  }
+
+  Future<Map<String, dynamic>> listDataConnectors() {
+    return _rpcCommand(
+      'connectors.list',
+      timeout: const Duration(seconds: 20),
+    );
+  }
+
+  Future<Map<String, dynamic>> controlDataConnector({
+    required String providerId,
+    required String action,
+    Map<String, dynamic> params = const {},
+  }) {
+    final method = switch (action) {
+      'install' => 'connectors.install',
+      'enable' => 'connectors.enable',
+      'disable' => 'connectors.disable',
+      'uninstall' => 'connectors.uninstall',
+      _ => throw ArgumentError.value(action, 'action'),
+    };
+    return submitCommand(
+      method,
+      params: {'providerId': providerId, ...params},
+      timeout: const Duration(seconds: 20),
+    );
+  }
+
+  Future<Map<String, dynamic>> startDataConnectorAuth({
+    required String providerId,
+    Map<String, dynamic> params = const {},
+  }) {
+    return submitCommand(
+      'connectors.auth.start',
+      params: {'providerId': providerId, ...params},
+      timeout: const Duration(seconds: 20),
+    );
+  }
+
+  Future<Map<String, dynamic>> syncDataConnector({
+    required String providerId,
+    Map<String, dynamic> params = const {},
+  }) {
+    return submitCommand(
+      'connectors.sync',
+      params: {'providerId': providerId, ...params},
+      timeout: const Duration(minutes: 5),
+    );
+  }
+
+  Future<Map<String, dynamic>> queryLocalDataConnectors({
+    required String query,
+    int limit = 50,
+  }) {
+    return submitCommand(
+      'connectors.queryLocal',
       params: {'query': query, 'limit': limit},
       timeout: const Duration(seconds: 20),
     );
@@ -759,7 +819,7 @@ class ClientBackendApi {
 
   Future<BootstrapInfo> fetchBootstrap(String baseUrl) async {
     final decoded = await serverApi(
-      serviceBaseUrl: baseUrl,
+      serviceBaseUrl: SplitAllServiceUrls.normalizeBaseUrl(baseUrl),
       method: 'GET',
       path: '/api/bootstrap',
     );
@@ -883,9 +943,29 @@ class ClientBackendApi {
     return payload is Map ? Map<String, dynamic>.from(payload) : {};
   }
 
+  Future<Map<String, dynamic>> _rpcCommand(
+    String method, {
+    Map<String, dynamic> params = const {},
+    Duration timeout = _commandTimeout,
+  }) async {
+    if (!await ensureDaemon()) {
+      throw StateError('Local backend daemon is not available.');
+    }
+    try {
+      final result = await rpc(method, params: params, timeout: timeout);
+      return result is Map ? Map<String, dynamic>.from(result) : {};
+    } on StateError catch (error) {
+      if (error.message != 'Local backend RPC is not available.') {
+        rethrow;
+      }
+      return submitCommand(method, params: params, timeout: timeout);
+    }
+  }
+
   Future<dynamic> rpc(
     String method, {
     Map<String, dynamic> params = const {},
+    Duration timeout = _rpcTimeout,
   }) async {
     final config = await loadRpcConfig();
     if (config == null) {
@@ -907,7 +987,7 @@ class ClientBackendApi {
             'protocolVersion': protocolVersion,
           }),
         )
-        .timeout(_rpcTimeout);
+        .timeout(timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
         'Local backend RPC failed with HTTP ${response.statusCode}.',
@@ -1601,6 +1681,10 @@ class SplitAllServiceUrls {
         0,
         normalized.length - '/api/bootstrap'.length,
       );
+    }
+    if (normalized.isNotEmpty &&
+        !RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*://').hasMatch(normalized)) {
+      normalized = 'http://$normalized';
     }
     return normalized;
   }

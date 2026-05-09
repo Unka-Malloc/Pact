@@ -4,11 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONSOLE_ROLES } from "../auth/console-auth.mjs";
-import { normalizeMaintenancePlan } from "../application/MaintenanceAgent/planner.mjs";
-import { startHttpServer } from "../http-server.mjs";
-import { evaluateOperationSafety } from "../interfaces/api/operation-decorators.mjs";
-import { SERVER_API_OPERATIONS, listInterfaceCatalog } from "../interfaces/api/operation-registry.mjs";
+import { CONSOLE_ROLES } from "../platform/common/platform-core/auth/console-auth.mjs";
+import { normalizeMaintenancePlan } from "../services/agent/maintenance-agent/planner.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { evaluateOperationSafety } from "../platform/common/operation-dispatcher/operation-decorators.mjs";
+import { SERVER_API_OPERATIONS, listInterfaceCatalog } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const splitallCliPath = fileURLToPath(new URL("./splitall.mjs", import.meta.url));
@@ -199,7 +199,7 @@ function assertOperationDecorators() {
   assert.equal(byId.get("knowledge.reindex").safety.risk, "repair_write");
   assert.equal(byId.get("knowledge.maintenance.run").safety.risk, "safe_write");
   assert.equal(typeof byId.get("knowledge.maintenance.run").safety.resolveRisk, "function");
-  assert.deepEqual(byId.get("tool_platform.create_grant").requiredScopes, ["runtime:admin"]);
+  assert.deepEqual(byId.get("tool_management.create_grant").requiredScopes, ["runtime:admin"]);
 
   const approver = { user: { scopes: ["maintenance:approve"] } };
   const nonApprover = { user: { scopes: ["knowledge:maintain"] } };

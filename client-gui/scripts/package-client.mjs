@@ -227,9 +227,26 @@ function buildFlutterApp(options) {
   if (options.skipFlutterBuild || options.dryRun) {
     return;
   }
+  cleanStaleFlutterAppBundle(options);
   run("flutter", ["build", options.platform, `--${options.mode}`], {
     cwd: flutterClientRoot
   });
+}
+
+function cleanStaleFlutterAppBundle(options) {
+  if (options.platform !== "macos") {
+    return;
+  }
+  const appDir = path.join(
+    flutterClientRoot,
+    "build",
+    "macos",
+    "Build",
+    "Products",
+    modeDirectoryName(options.mode),
+    "flutter_client.app"
+  );
+  rmSync(appDir, { recursive: true, force: true });
 }
 
 function findLinuxBundle() {
@@ -353,6 +370,21 @@ function copyModuleResources(moduleConfig, bundle) {
   return copied;
 }
 
+function removeSkippedArtifacts(skipped, bundle) {
+  for (const moduleConfig of skipped) {
+    if (moduleConfig.packaging === "swift-sidecar") {
+      const artifactName = moduleConfig.artifactName || moduleConfig.id;
+      rmSync(path.join(bundle.executableDir, artifactName), { force: true });
+    } else if (moduleConfig.packaging === "module-resources") {
+      rmSync(path.join(bundle.moduleResourceDir, moduleConfig.id), { recursive: true, force: true });
+    }
+  }
+}
+
+function targetSkippedModules(skipped) {
+  return skipped.filter((item) => item.status !== "skipped-platform");
+}
+
 function preparePortableData(config, selected, skipped, bundle, options) {
   mkdirSync(bundle.portableDataDir, { recursive: true });
   for (const moduleConfig of selected) {
@@ -373,8 +405,9 @@ function preparePortableData(config, selected, skipped, bundle, options) {
     configPath: path.relative(workspaceRoot, options.configPath),
     bundleRoot: bundle.root,
     flutterExecutable: bundle.flutterExecutable,
+    featureProfile: config.featureProfile || null,
     modules: selected.map(publicModuleRecord),
-    skippedModules: skipped.map(publicModuleRecord)
+    skippedModules: targetSkippedModules(skipped).map(publicModuleRecord)
   };
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   return manifestPath;
@@ -410,10 +443,37 @@ function writeBundleNotes(config, selected, bundle, options) {
   writeFileSync(path.join(bundle.root, fileName), lines.join("\n"), "utf8");
 }
 
+function macosEntitlementsPath(mode) {
+  const fileName = mode === "release" ? "Release.entitlements" : "DebugProfile.entitlements";
+  return path.join(flutterClientRoot, "macos", "Runner", fileName);
+}
+
+function signMacosArtifact(artifactPath, entitlementsPath) {
+  run("codesign", ["--force", "--sign", "-", "--entitlements", entitlementsPath, artifactPath]);
+}
+
+function signMacosBundle(bundle, copiedArtifacts, options) {
+  if (options.platform !== "macos") {
+    return;
+  }
+  const entitlementsPath = macosEntitlementsPath(options.mode);
+  if (!existsSync(entitlementsPath)) {
+    throw new Error(`macOS entitlements file is missing: ${entitlementsPath}`);
+  }
+  for (const artifact of copiedArtifacts) {
+    if (existsSync(artifact) && statSync(artifact).isFile()) {
+      signMacosArtifact(artifact, entitlementsPath);
+    }
+  }
+  const appDir = path.resolve(bundle.executableDir, "..", "..");
+  signMacosArtifact(appDir, entitlementsPath);
+}
+
 function applyPackage(config, selected, skipped, options) {
   const bundle = resolveBundle(options);
   mkdirSync(bundle.executableDir, { recursive: true });
   mkdirSync(bundle.moduleResourceDir, { recursive: true });
+  removeSkippedArtifacts(skipped, bundle);
 
   const copiedArtifacts = [];
   for (const moduleConfig of selected) {
@@ -427,6 +487,7 @@ function applyPackage(config, selected, skipped, options) {
   }
   const manifestPath = preparePortableData(config, selected, skipped, bundle, options);
   writeBundleNotes(config, selected, bundle, options);
+  signMacosBundle(bundle, copiedArtifacts, options);
   return { bundle, copiedArtifacts, manifestPath };
 }
 

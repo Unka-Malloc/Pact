@@ -38,6 +38,7 @@ class _ClientShellState extends State<ClientShell> {
   Timer? _knowledgeSearchDebounce;
   String _serverHttpMethod = 'GET';
   String _selectedKnowledgeGraphNodeId = '';
+  bool _showMailModuleSettings = false;
   AppController get controller => widget.controller;
 
   @override
@@ -165,6 +166,7 @@ class _ClientShellState extends State<ClientShell> {
       (AppSection.console, '输入', Icons.terminal_outlined),
       (AppSection.server, '服务', Icons.dns_outlined),
       (AppSection.modules, '模块', Icons.extension_outlined),
+      (AppSection.dataConnectors, '数据源', Icons.hub_outlined),
       (AppSection.knowledgeGraph, '图谱', Icons.hub_outlined),
       (AppSection.export, '输出', Icons.outbox_outlined),
       (AppSection.localLogs, '日志', Icons.receipt_long_outlined),
@@ -218,6 +220,7 @@ class _ClientShellState extends State<ClientShell> {
       AppSection.queue => ('输入', '当前任务输入、执行状态与结果摘要'),
       AppSection.server => ('服务', '服务端接口、运行时、知识库和智能体能力'),
       AppSection.modules => ('模块', '本地能力开关与平台模块状态'),
+      AppSection.dataConnectors => ('数据源', '跨应用本地镜像、授权和同步状态'),
       AppSection.knowledgeGraph => ('图谱', '跨模块事务关联视图'),
       AppSection.export => ('输出', '查看结果载荷、历史记录与输出实体数据'),
       AppSection.checkpoints => ('检查点', '查看检查点恢复状态'),
@@ -351,6 +354,7 @@ class _ClientShellState extends State<ClientShell> {
       AppSection.queue => _buildDashboardCanvas(context, width),
       AppSection.server => _buildServerCanvas(context, width),
       AppSection.modules => _buildModulesCanvas(context, width),
+      AppSection.dataConnectors => _buildDataConnectorsCanvas(context, width),
       AppSection.knowledgeGraph => _buildKnowledgeGraphCanvas(context, width),
       AppSection.export => _buildExportCanvas(context, width),
       AppSection.checkpoints => _buildCheckpointsCanvas(context, width),
@@ -715,119 +719,173 @@ class _ClientShellState extends State<ClientShell> {
     final split = width >= 1000;
     final enabled = controller.emailAnalysisModuleEnabled;
     final supported = controller.localMailIndexAvailable;
+    final startSyncDisabled =
+        !enabled ||
+        (controller.busy && !controller.syncingMacOSMailToCloud) ||
+        (controller.importingMacOSMail &&
+            !controller.syncingMacOSMailToCloud) ||
+        controller.activatingMacOSMailAuthorization;
+    final startSyncLabel =
+        controller.importingMacOSMail && !controller.syncingMacOSMailToCloud
+        ? '同步中...'
+        : '开始同步';
+    final showMailProgress =
+        controller.importingMacOSMail ||
+        controller.hasMacOSMailCloudSyncActivity;
     final moduleCard = _SectionCard(
-      title: '本地模块',
-      subtitle: enabled ? '1 个已启用' : '未启用',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: enabled
-                    ? SplitAllColors.primaryStrong
-                    : SplitAllColors.surfaceHighest,
-                child: const Icon(
-                  Icons.mail_outline,
-                  color: Colors.white,
-                  size: 20,
-                ),
+      title: _showMailModuleSettings ? '邮箱分析设置' : '本地模块',
+      subtitle: _showMailModuleSettings
+          ? (supported ? 'macOS Mail' : '不可用')
+          : enabled
+          ? '1 个已启用'
+          : '未启用',
+      leading: _showMailModuleSettings
+          ? IconButton(
+              tooltip: '返回',
+              onPressed: () => setState(() => _showMailModuleSettings = false),
+              icon: const Icon(Icons.arrow_back),
+              color: SplitAllColors.textMuted,
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '邮箱分析',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
+            )
+          : null,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        child: _showMailModuleSettings
+            ? _buildMailModuleSettingsPanel(
+                context,
+                enabled: enabled,
+                supported: supported,
+              )
+            : Column(
+                key: const ValueKey('mail-module-main'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: enabled
+                            ? SplitAllColors.primaryStrong
+                            : SplitAllColors.surfaceHighest,
+                        child: const Icon(
+                          Icons.mail_outline,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      supported ? 'Mail.app 本地导入' : '当前平台不可用',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: SplitAllColors.textMuted,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '邮箱分析',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              supported ? 'Mail.app 本地工作空间同步' : '当前平台不可用',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: SplitAllColors.textMuted),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 14),
+                      Switch.adaptive(
+                        value: enabled,
+                        onChanged: supported
+                            ? controller.setEmailAnalysisModuleEnabled
+                            : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _SecondaryActionButton(
+                        label: '设置',
+                        icon: Icons.settings_outlined,
+                        onPressed: supported
+                            ? () =>
+                                  setState(() => _showMailModuleSettings = true)
+                            : null,
+                      ),
+                      _SecondaryActionButton(
+                        label: '工作空间',
+                        icon: Icons.folder_open_outlined,
+                        onPressed: controller.openMailWorkspaceDirectory,
+                      ),
+                      _SecondaryActionButton(
+                        label: startSyncLabel,
+                        icon: Icons.sync_outlined,
+                        onPressed: startSyncDisabled
+                            ? null
+                            : controller.startMacOSMailSync,
+                      ),
+                      if (controller.importingMacOSMail)
+                        _SecondaryActionButton(
+                          label: controller.mailImportPaused ? '继续' : '暂停',
+                          icon: controller.mailImportPaused
+                              ? Icons.play_arrow_outlined
+                              : Icons.pause_outlined,
+                          onPressed: controller.mailImportPaused
+                              ? controller.resumeMacOSMailImport
+                              : controller.pauseMacOSMailImport,
+                        ),
+                    ],
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return SizeTransition(
+                        sizeFactor: animation,
+                        axisAlignment: -1,
+                        child: FadeTransition(opacity: animation, child: child),
+                      );
+                    },
+                    child: showMailProgress
+                        ? _MailImportProgressPanel(
+                            key: const ValueKey('mail-import-progress'),
+                            title:
+                                controller.syncingMacOSMailToCloud ||
+                                    controller.hasMacOSMailCloudSyncActivity
+                                ? '云端同步'
+                                : '本地同步',
+                            statusLabel:
+                                controller.syncingMacOSMailToCloud ||
+                                    controller.hasMacOSMailCloudSyncActivity
+                                ? controller.mailCloudSyncProgressLabel
+                                : controller.statusCaption,
+                            queueLabel:
+                                controller.syncingMacOSMailToCloud ||
+                                    controller.hasMacOSMailCloudSyncActivity
+                                ? controller.mailCloudSyncQueueLabel
+                                : '',
+                            progress: controller.mailImportProgressValue,
+                            downloaded: controller.mailImportDownloadedCount,
+                            total: controller.mailImportTotalCount,
+                            uploadProgress: controller.syncingMacOSMailToCloud
+                                ? controller.uploadProgress
+                                : controller.mailCloudSyncProgressValue,
+                          )
+                        : const SizedBox.shrink(
+                            key: ValueKey('mail-import-empty'),
+                          ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 14),
-              Switch.adaptive(
-                value: enabled,
-                onChanged: supported
-                    ? controller.setEmailAnalysisModuleEnabled
-                    : null,
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _SecondaryActionButton(
-                label: '工作空间',
-                icon: Icons.folder_open_outlined,
-                onPressed: controller.openMailWorkspaceDirectory,
-              ),
-              if (supported)
-                _SecondaryActionButton(
-                  label: controller.activatingMacOSMailAuthorization
-                      ? '授权中...'
-                      : '设置',
-                  icon: Icons.settings_outlined,
-                  onPressed:
-                      controller.importingMacOSMail ||
-                          controller.activatingMacOSMailAuthorization
-                      ? null
-                      : controller.activateMacOSMailAuthorization,
-                ),
-              if (enabled)
-                _SecondaryActionButton(
-                  label: controller.importingMacOSMail ? '导入中...' : '从 Mail 导入',
-                  icon: Icons.mail_outline,
-                  onPressed: controller.busy || controller.importingMacOSMail
-                      ? null
-                      : controller.importMacOSMail,
-                ),
-              if (controller.importingMacOSMail)
-                _SecondaryActionButton(
-                  label: controller.mailImportPaused ? '继续' : '暂停',
-                  icon: controller.mailImportPaused
-                      ? Icons.play_arrow_outlined
-                      : Icons.pause_outlined,
-                  onPressed: controller.mailImportPaused
-                      ? controller.resumeMacOSMailImport
-                      : controller.pauseMacOSMailImport,
-                ),
-            ],
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) {
-              return SizeTransition(
-                sizeFactor: animation,
-                axisAlignment: -1,
-                child: FadeTransition(opacity: animation, child: child),
-              );
-            },
-            child: controller.importingMacOSMail
-                ? _MailImportProgressPanel(
-                    key: const ValueKey('mail-import-progress'),
-                    progress: controller.mailImportProgressValue,
-                    downloaded: controller.mailImportDownloadedCount,
-                    total: controller.mailImportTotalCount,
-                  )
-                : const SizedBox.shrink(key: ValueKey('mail-import-empty')),
-          ),
-        ],
       ),
     );
 
@@ -845,6 +903,8 @@ class _ClientShellState extends State<ClientShell> {
           ),
           _detailRow('客户端后台', controller.clientBackendStatusLabel),
           _detailRow('导入状态', controller.importingMacOSMail ? '正在导入' : '空闲'),
+          _detailRow('云端同步', controller.mailCloudSyncStatusLabel),
+          _detailRow('云端队列', controller.mailCloudSyncQueueLabel),
           _detailRow('索引状态', controller.mailIndexStatusLabel),
           _detailRow('专家词汇', controller.expertVocabularyStatusLabel),
           _detailRow('词汇校验', controller.expertVocabularyChecksumLabel),
@@ -900,6 +960,176 @@ class _ClientShellState extends State<ClientShell> {
 
     return Column(
       children: [moduleCard, const SizedBox(height: 20), detailCard],
+    );
+  }
+
+  Widget _buildMailModuleSettingsPanel(
+    BuildContext context, {
+    required bool enabled,
+    required bool supported,
+  }) {
+    return Column(
+      key: const ValueKey('mail-module-settings'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '启用邮箱分析',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: SplitAllColors.text,
+                ),
+              ),
+            ),
+            Switch.adaptive(
+              value: enabled,
+              onChanged: supported
+                  ? controller.setEmailAnalysisModuleEnabled
+                  : null,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _BinaryCheckbox(
+          label: '上传云端',
+          value: controller.macOSMailUploadToCloudEnabled,
+          disabled: !enabled || !supported,
+          onChanged: (value) {
+            unawaited(controller.setMacOSMailUploadToCloudEnabled(value));
+          },
+        ),
+        const SizedBox(height: 18),
+        _detailRow(
+          '同步路径',
+          controller.macOSMailUploadToCloudEnabled ? '本地工作空间 + 云端' : '仅本地工作空间',
+        ),
+        _detailRow(
+          '服务地址',
+          controller.resolvedServiceUrl.isNotEmpty
+              ? controller.resolvedServiceUrl
+              : '未配置',
+        ),
+        _detailRow('客户端后台', controller.clientBackendStatusLabel),
+        _detailRow('索引状态', controller.mailIndexStatusLabel),
+        _detailRow('专家词汇', controller.expertVocabularyStatusLabel),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _SecondaryActionButton(
+              label: controller.activatingMacOSMailAuthorization
+                  ? '授权中...'
+                  : '请求授权',
+              icon: Icons.verified_user_outlined,
+              onPressed:
+                  supported &&
+                      !controller.importingMacOSMail &&
+                      !controller.syncingMacOSMailToCloud &&
+                      !controller.activatingMacOSMailAuthorization
+                  ? controller.activateMacOSMailAuthorization
+                  : null,
+            ),
+            _SecondaryActionButton(
+              label: controller.refreshingMailIndexStats ? '刷新中...' : '刷新索引',
+              icon: Icons.manage_search_outlined,
+              onPressed: supported && !controller.refreshingMailIndexStats
+                  ? () => controller.refreshMailIndexStats()
+                  : null,
+            ),
+            _SecondaryActionButton(
+              label: controller.pullingExpertVocabulary ? '拉取中...' : '拉取词汇',
+              icon: Icons.download_outlined,
+              onPressed:
+                  controller.connected &&
+                      !controller.pullingExpertVocabulary &&
+                      !controller.applyingExpertVocabularyToMailIndex
+                  ? () => controller.pullExpertVocabulary()
+                  : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDataConnectorsCanvas(BuildContext context, double width) {
+    final connectors = controller.dataConnectors;
+    final installedCount = connectors
+        .where((item) => item['installed'] == true)
+        .length;
+    final enabledCount = connectors.where((item) => item['enabled'] == true).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionCard(
+          title: '数据连接器',
+          subtitle: '$enabledCount 启用 / $installedCount 已安装',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _PrimaryActionButton(
+                    label: controller.refreshingDataConnectors ? '刷新中' : '刷新',
+                    icon: Icons.refresh_outlined,
+                    onPressed: controller.refreshingDataConnectors
+                        ? null
+                        : controller.refreshDataConnectors,
+                  ),
+                  const SizedBox(width: 10),
+                  _SecondaryActionButton(
+                    label: '打开数据目录',
+                    icon: Icons.folder_open_outlined,
+                    onPressed: controller.openPortableDataDirectory,
+                  ),
+                ],
+              ),
+              if (controller.dataConnectorError.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  controller.dataConnectorError,
+                  style: const TextStyle(
+                    color: SplitAllColors.error,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              if (connectors.isEmpty)
+                Text(
+                  '本地后台尚未返回数据连接器清单。',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: SplitAllColors.textMuted,
+                  ),
+                )
+              else
+                Column(
+                  children: [
+                    for (final connector in connectors) ...[
+                      _DataConnectorTile(
+                        connector: connector,
+                        onToggle: (enabled) => controller.setDataConnectorEnabled(
+                          (connector['providerId'] ?? '').toString(),
+                          enabled,
+                        ),
+                        onAuth: () => controller.startDataConnectorAuth(
+                          (connector['providerId'] ?? '').toString(),
+                        ),
+                        onSync: () => controller.syncDataConnector(
+                          (connector['providerId'] ?? '').toString(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1903,6 +2133,25 @@ class _ClientShellState extends State<ClientShell> {
             onSubmitted: (_) => controller.connect(),
           ),
           const SizedBox(height: 16),
+          TextField(
+            controller: controller.serviceUsernameController,
+            decoration: const InputDecoration(
+              hintText: 'owner',
+              labelText: '服务端账号',
+            ),
+            onSubmitted: (_) => controller.connect(),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: controller.servicePasswordController,
+            decoration: const InputDecoration(
+              hintText: '控制台密码',
+              labelText: '服务端密码',
+            ),
+            obscureText: true,
+            onSubmitted: (_) => controller.connect(),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               SizedBox(
@@ -1943,6 +2192,10 @@ class _ClientShellState extends State<ClientShell> {
           _detailRow(
             '服务地址',
             controller.connected ? controller.resolvedServiceUrl : '未分配',
+          ),
+          _detailRow(
+            '认证状态',
+            controller.serviceUsername.isNotEmpty ? '已配置账号密码' : '未配置',
           ),
         ],
       ),
@@ -4668,12 +4921,14 @@ class _SectionCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.child,
+    this.leading,
     this.surfaceColor = SplitAllColors.surface,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
+  final Widget? leading;
   final Color surfaceColor;
 
   @override
@@ -4692,6 +4947,7 @@ class _SectionCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 8)],
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -4776,51 +5032,153 @@ class _LogLineTile extends StatelessWidget {
 class _MailImportProgressPanel extends StatelessWidget {
   const _MailImportProgressPanel({
     super.key,
+    required this.title,
+    required this.statusLabel,
+    required this.queueLabel,
     required this.progress,
     required this.downloaded,
     required this.total,
+    required this.uploadProgress,
   });
 
+  final String title;
+  final String statusLabel;
+  final String queueLabel;
   final double? progress;
   final int downloaded;
   final int total;
+  final double? uploadProgress;
 
   @override
   Widget build(BuildContext context) {
     final progressText = total > 0 ? '$downloaded/$total' : '$downloaded/-';
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 4,
-                backgroundColor: SplitAllColors.surfaceHighest,
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  SplitAllColors.primaryStrong,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SplitAllColors.text,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-            ),
+              if (queueLabel.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    queueLabel,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: SplitAllColors.textMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(width: 10),
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 104),
-            child: Text(
-              progressText,
-              textAlign: TextAlign.right,
+          if (statusLabel.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              statusLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: SplitAllColors.textMuted,
-                fontFeatures: const [FontFeature.tabularFigures()],
-                fontWeight: FontWeight.w700,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: SplitAllColors.textMuted),
             ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _MailSyncProgressBar(
+                  localProgress: progress,
+                  cloudProgress: uploadProgress,
+                ),
+              ),
+              const SizedBox(width: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 104),
+                child: Text(
+                  progressText,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SplitAllColors.textMuted,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MailSyncProgressBar extends StatelessWidget {
+  const _MailSyncProgressBar({
+    required this.localProgress,
+    required this.cloudProgress,
+  });
+
+  final double? localProgress;
+  final double? cloudProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final local = localProgress?.clamp(0.0, 1.0).toDouble();
+    if (local == null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: const LinearProgressIndicator(
+          minHeight: 4,
+          backgroundColor: SplitAllColors.surfaceHighest,
+          valueColor: AlwaysStoppedAnimation<Color>(SplitAllColors.warning),
+        ),
+      );
+    }
+    final cloud = cloudProgress == null
+        ? 0.0
+        : math.min(local, cloudProgress!.clamp(0.0, 1.0).toDouble());
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: 4,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: SplitAllColors.surfaceHighest),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: local,
+              child: const SizedBox.expand(
+                child: ColoredBox(color: SplitAllColors.warning),
+              ),
+            ),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: cloud,
+              child: const SizedBox.expand(
+                child: ColoredBox(color: SplitAllColors.primaryStrong),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4874,6 +5232,130 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
+class _DataConnectorTile extends StatelessWidget {
+  const _DataConnectorTile({
+    required this.connector,
+    required this.onToggle,
+    required this.onAuth,
+    required this.onSync,
+  });
+
+  final Map<String, dynamic> connector;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onAuth;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final providerId = (connector['providerId'] ?? '').toString();
+    final displayName = (connector['displayName'] ?? providerId).toString();
+    final sourceType = (connector['sourceType'] ?? '').toString();
+    final installed = connector['installed'] == true;
+    final enabled = connector['enabled'] == true;
+    final auth = connector['auth'] is Map
+        ? Map<String, dynamic>.from(connector['auth'] as Map)
+        : const <String, dynamic>{};
+    final authStatus = (auth['status'] ?? 'unknown').toString();
+    final lastSync = connector['lastSync'] is Map
+        ? Map<String, dynamic>.from(connector['lastSync'] as Map)
+        : const <String, dynamic>{};
+    final syncStatus = (lastSync['status'] ?? '未同步').toString();
+    final itemCount = (lastSync['itemCount'] as num?)?.toInt();
+    final canAuth = authStatus != 'not_required';
+    final canSync = installed && enabled;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SplitAllColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: const Border.fromBorderSide(
+          BorderSide(color: SplitAllColors.line),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: enabled
+                ? SplitAllColors.primaryStrong
+                : SplitAllColors.surfaceHighest,
+            child: Icon(
+              _connectorIcon(sourceType),
+              size: 19,
+              color: enabled ? Colors.white : SplitAllColors.textMuted,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        displayName,
+                        style: Theme.of(context).textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    _StatusPill(label: enabled ? '启用' : installed ? '停用' : '可安装'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _StatusPill(label: providerId),
+                    _StatusPill(label: sourceType),
+                    _StatusPill(label: '授权 $authStatus'),
+                    _StatusPill(
+                      label: itemCount == null
+                          ? '同步 $syncStatus'
+                          : '同步 $syncStatus · $itemCount',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _SecondaryActionButton(
+                      label: canAuth ? '授权' : '无需授权',
+                      icon: Icons.key_outlined,
+                      onPressed: canAuth ? onAuth : null,
+                    ),
+                    _SecondaryActionButton(
+                      label: '同步',
+                      icon: Icons.sync_outlined,
+                      onPressed: canSync ? onSync : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch.adaptive(value: enabled, onChanged: onToggle),
+        ],
+      ),
+    );
+  }
+
+  static IconData _connectorIcon(String sourceType) {
+    return switch (sourceType) {
+      'chat' => Icons.forum_outlined,
+      'mail' => Icons.mail_outline,
+      'file' => Icons.folder_copy_outlined,
+      'knowledge' => Icons.menu_book_outlined,
+      _ => Icons.hub_outlined,
+    };
+  }
+}
+
 class _PrimaryActionButton extends StatelessWidget {
   const _PrimaryActionButton({required this.label, this.icon, this.onPressed});
 
@@ -4903,6 +5385,121 @@ class _PrimaryActionButton extends StatelessWidget {
       style: baseStyle,
       icon: Icon(icon, size: 18),
       label: Text(label),
+    );
+  }
+}
+
+class _BinaryCheckbox extends StatefulWidget {
+  const _BinaryCheckbox({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.disabled = false,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool disabled;
+
+  @override
+  State<_BinaryCheckbox> createState() => _BinaryCheckboxState();
+}
+
+class _BinaryCheckboxState extends State<_BinaryCheckbox> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final interactive = !widget.disabled;
+    final highlighted = interactive && (_hovered || _focused);
+    final checked = widget.value;
+    final labelColor = widget.disabled
+        ? SplitAllColors.textMuted
+        : checked || highlighted
+        ? SplitAllColors.primaryStrong
+        : SplitAllColors.text;
+
+    return Semantics(
+      checked: checked,
+      button: true,
+      label: widget.label,
+      child: FocusableActionDetector(
+        enabled: interactive,
+        onShowFocusHighlight: (focused) {
+          if (_focused != focused) {
+            setState(() => _focused = focused);
+          }
+        },
+        onShowHoverHighlight: (hovered) {
+          if (_hovered != hovered) {
+            setState(() => _hovered = hovered);
+          }
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: interactive ? () => widget.onChanged(!checked) : null,
+            borderRadius: BorderRadius.circular(8),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: highlighted
+                    ? const Color(0xffeff6ff)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: highlighted
+                      ? SplitAllColors.primaryStrong.withValues(alpha: 0.32)
+                      : Colors.transparent,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: checked && !widget.disabled
+                          ? SplitAllColors.primaryStrong
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: checked && !widget.disabled
+                            ? SplitAllColors.primaryStrong
+                            : SplitAllColors.line,
+                      ),
+                    ),
+                    child: checked
+                        ? const Icon(Icons.check, size: 12, color: Colors.white)
+                        : const SizedBox.shrink(),
+                  ),
+                  SizedBox(
+                    width:
+                        DefaultTextStyle.of(
+                          context,
+                        ).style.fontSize?.clamp(10, 18).toDouble() ??
+                        14,
+                  ),
+                  Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: labelColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

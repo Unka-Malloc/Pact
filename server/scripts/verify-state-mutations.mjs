@@ -7,9 +7,8 @@ import {
   atomicWriteJsonThroughState,
   mutateState,
   readJsonFile
-} from "../application/state-coordinator.mjs";
-import { saveSettings } from "../config.mjs";
-import { saveMaintenanceAgentConfig } from "../application/MaintenanceAgent/config.mjs";
+} from "../platform/common/platform-core/state-coordinator.mjs";
+import { saveSettings } from "../platform/common/platform-core/settings.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -17,14 +16,25 @@ async function readText(relativePath) {
   return fs.readFile(path.join(repoRoot, relativePath), "utf8");
 }
 
+async function pathExists(relativePath) {
+  try {
+    await fs.access(path.join(repoRoot, relativePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function assertStaticStateGuard() {
   const guardedFiles = [
-    "server/config.mjs",
-    "server/application/MaintenanceAgent/config.mjs",
-    "server/jobs/job-manager.mjs",
-    "server/expert-vocabulary.mjs",
+    "server/platform/common/platform-core/settings.mjs",
+    "server/services/client/work-queue-core/jobs/job-manager.mjs",
+    "server/platform/specialized/knowledge/domain/rules/expert-vocabulary.mjs",
     "server/protocols/pubsub/event-bus.mjs"
   ];
+  if (await pathExists("server/services/agent/maintenance-agent/config.mjs")) {
+    guardedFiles.push("server/services/agent/maintenance-agent/config.mjs");
+  }
   for (const relativePath of guardedFiles) {
     const text = await readText(relativePath);
     assert.equal(
@@ -54,11 +64,14 @@ async function main() {
     });
     assert.equal(settings.analysisModuleId, "builtin:state-mutations");
 
-    const maintenance = await saveMaintenanceAgentConfig(userDataPath, {
-      enabled: false,
-      schedules: []
-    });
-    assert.equal(maintenance.enabled, false);
+    if (await pathExists("server/services/agent/maintenance-agent/config.mjs")) {
+      const { saveMaintenanceAgentConfig } = await import("../services/agent/maintenance-agent/config.mjs");
+      const maintenance = await saveMaintenanceAgentConfig(userDataPath, {
+        enabled: false,
+        schedules: []
+      });
+      assert.equal(maintenance.enabled, false);
+    }
 
     const customPath = path.join(userDataPath, "custom", "state.json");
     await mutateState({

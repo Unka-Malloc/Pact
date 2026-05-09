@@ -18,6 +18,7 @@ void main() {
       AppSection.queue,
       AppSection.server,
       AppSection.modules,
+      AppSection.dataConnectors,
       AppSection.knowledgeGraph,
       AppSection.export,
       AppSection.checkpoints,
@@ -27,10 +28,15 @@ void main() {
   });
 
   test('client config preserves email analysis module setting', () {
-    final config = ClientConfig.fromJson({'emailAnalysisModuleEnabled': false});
+    final config = ClientConfig.fromJson({
+      'emailAnalysisModuleEnabled': false,
+      'macOSMailUploadToCloudEnabled': true,
+    });
 
     expect(config.emailAnalysisModuleEnabled, isFalse);
+    expect(config.macOSMailUploadToCloudEnabled, isTrue);
     expect(config.toJson()['emailAnalysisModuleEnabled'], isFalse);
+    expect(config.toJson()['macOSMailUploadToCloudEnabled'], isTrue);
   });
 
   test('server interface operation parses HTTP and safety metadata', () {

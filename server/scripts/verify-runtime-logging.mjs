@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
-import { createRuntimeLogger } from "../observability/runtime-logger.mjs";
+import { createRuntimeLogger } from "../platform/common/observability/runtime-logger.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -123,7 +123,7 @@ try {
     },
     body: JSON.stringify({
       analysisModuleId: "builtin:runtime-logging",
-      agentGateway: {
+      customHttpAdapter: {
         alias: "runtime-logging",
         url: "http://127.0.0.1:65530/agent",
         token: "runtime-logging-secret-token-12345"

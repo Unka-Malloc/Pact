@@ -12,4 +12,4 @@ client-cli/target
 client-gui
 tests/fixtures
 
-vendor/downloads
+server/platform/modules/knowledge/runtime/jre/downloads

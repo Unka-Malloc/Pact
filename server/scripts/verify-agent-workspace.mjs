@@ -5,7 +5,7 @@ import path from "node:path";
 import {
   AGENT_WORKSPACE_PROTOCOL_VERSION,
   createAgentWorkspace
-} from "../modules/AgentWorkspace/index.mjs";
+} from "../platform/specialized/agent/agent-workspace/index.mjs";
 
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-workspace-"));
 const workspace = createAgentWorkspace({ userDataPath });

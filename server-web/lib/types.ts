@@ -10,7 +10,8 @@ export type AgentSettings = {
   defaultModel: string;
   modelLibraryEntries: string[];
   modelLibraryAgentIds?: string[];
-  modelLibraryModels: AgentModelConfig[];
+  modelLibraryAgents: AgentModelConfig[];
+  agentPermissionGroups: AgentPermissionGroup[];
   agentExploreDefaults: AgentExploreDefaults;
   agentToolExecution: AgentToolExecutionConfig;
   moduleModelAssignments: Record<string, { provider: string; model: string }>;
@@ -37,7 +38,6 @@ export type AgentSettings = {
   customModelApiKeyConfigured?: boolean;
   customHttpAdapter: AgentGatewayConfig;
   customHttpAdapters: AgentGatewayConfig[];
-  agentGateway: AgentGatewayConfig;
   analysisModuleId: string;
   ocrEnabled: boolean;
   ocrPythonPath: string;
@@ -95,6 +95,7 @@ export type AgentModelConfig = {
   systemPrompt?: string;
   parameters?: Record<string, unknown>;
   moduleAccess?: AgentModuleAccess;
+  permissionGroupId?: string;
   timeoutMs?: number;
   parametersText?: string;
 };
@@ -102,6 +103,17 @@ export type AgentModelConfig = {
 export type AgentModuleAccess = {
   mode: "all" | "selected";
   moduleIds: string[];
+};
+
+export type AgentPermissionGroup = {
+  id: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+  scopeIds: string[];
+  toolsetIds: string[];
+  toolAllow: string[];
+  toolDeny: string[];
 };
 
 export type ModuleAgentProfile = {
@@ -908,6 +920,8 @@ export type SplitJobStatus = "queued" | "running" | "completed" | "failed";
 export type SplitJob = {
   id: string;
   status: SplitJobStatus;
+  queueId?: string;
+  unifiedRegistration?: UnifiedRegistrationRecord;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;
@@ -916,6 +930,7 @@ export type SplitJob = {
   stage: string;
   checkpointTreeId?: string;
   checkpointId?: string;
+  queueState?: Record<string, unknown>;
   error?: string;
   resultSummary?: {
     emails: number;
@@ -1094,7 +1109,6 @@ export type RuntimeInfoResponse = {
     mountConfigPaths?: {
       modulesPath: string;
       routingPath: string;
-      legacyPath: string;
     };
     mountConfig?: RuntimeMountConfig;
     mounts: RuntimeMountInfo[];
@@ -1118,6 +1132,35 @@ export type RuntimeInfoResponse = {
   };
   discovery: DiscoveryConfigResponse["bootstrap"];
   auth?: ConsoleAuthSummary | null;
+  features?: FeatureRuntimeSummary | null;
+};
+
+export type FeatureRuntimeSummary = {
+  schemaVersion: number;
+  edition: string;
+  profileName?: string;
+  generatedAt?: string;
+  activeFeatureIds: string[];
+  disabledFeatureIds: string[];
+  activeFeatures?: Array<{
+    featureId: string;
+    label: string;
+    group: string;
+    required?: boolean;
+    reason?: string;
+  }>;
+  disabledFeatures?: Array<{
+    featureId: string;
+    label: string;
+    group: string;
+    required?: boolean;
+    reason?: string;
+  }>;
+  operations?: {
+    total: number;
+    active: number;
+    disabled: number;
+  };
 };
 
 export type RuntimeMountsResponse = {
@@ -1125,7 +1168,6 @@ export type RuntimeMountsResponse = {
   paths: {
     modulesPath: string;
     routingPath: string;
-    legacyPath: string;
   };
   value: RuntimeMountConfig;
   runtime: Pick<
@@ -1167,22 +1209,13 @@ export type RuntimeMountReloadResponse = {
   mountRouting: MountRoutingConfig;
 };
 
-export type ToolPlatformScope = {
+export type ToolManagementScope = {
   id: string;
   label: string;
   description: string;
 };
 
-export type ToolPlatformTool = {
-  id: string;
-  label: string;
-  method: string;
-  endpoint: string;
-  scope: string;
-  description: string;
-};
-
-export type ToolPlatformGrant = {
+export type ToolManagementGrant = {
   id: string;
   label: string;
   enabled: boolean;
@@ -1205,22 +1238,13 @@ export type ToolPlatformGrant = {
   lastUsedAt: string;
 };
 
-export type ToolPlatformState = {
-  path: string;
+export type ToolManagementGrantsResponse = {
   schemaVersion: number;
-  updatedAt: string;
-  scopes: ToolPlatformScope[];
-  toolsets?: ToolManagementToolset[];
-  profiles?: ToolManagementProfile[];
-  tools: ToolPlatformTool[];
-  grants: ToolPlatformGrant[];
-  storage?: Record<string, unknown>;
-  catalogFingerprint?: string;
+  grants: ToolManagementGrant[];
 };
 
-export type ToolPlatformGrantIssue = {
-  state: ToolPlatformState;
-  grant: ToolPlatformGrant;
+export type ToolManagementGrantIssue = {
+  grant: ToolManagementGrant;
   token: string;
 };
 
@@ -1281,7 +1305,7 @@ export type ToolManagementCatalog = {
   schemaVersion: number;
   generatedAt: string;
   fingerprint: string;
-  scopes: ToolPlatformScope[];
+  scopes: ToolManagementScope[];
   toolsets: ToolManagementToolset[];
   profiles: ToolManagementProfile[];
   tools: ToolManagementTool[];
@@ -1660,6 +1684,17 @@ export type KnowledgeSearchResult = {
   assetIds?: string[];
   assets?: KnowledgeAssetRef[];
   modalities?: string[];
+  localMirror?: {
+    matched?: boolean;
+    openable?: boolean;
+    sourceType?: string;
+    providerId?: string;
+    externalId?: string;
+    syncBatchId?: string;
+    timestamp?: string;
+    status?: string;
+  };
+  fusion?: Record<string, unknown>;
   hierarchy?: {
     documentId?: string;
     sectionId?: string;
@@ -1680,6 +1715,7 @@ export type KnowledgeSearchResponse = {
   retrievalProfileId?: string;
   retrievalProfileVersion?: number;
   learningRuntime?: Record<string, unknown>;
+  fusion?: Record<string, unknown>;
   explain?: Record<string, unknown>;
   [key: string]: unknown;
 };
@@ -1831,6 +1867,7 @@ export type MaintenanceAgentRun = {
   cancelRequested: boolean;
   error: string;
   auditIds?: string[];
+  unifiedRegistration?: UnifiedRegistrationRecord;
 };
 
 export type MaintenanceAgentTool = {
@@ -1859,6 +1896,12 @@ export type BackgroundProcessItem = {
   role: string;
   label: string;
   description: string;
+  processType?: "service" | "daemon" | string;
+  responsibility?: string;
+  services?: string[];
+  features?: string[];
+  monitors?: string[];
+  alerts?: string[];
   desired: boolean;
   pid: number;
   alive: boolean;
@@ -1872,6 +1915,97 @@ export type BackgroundProcessItem = {
   lastExit?: Record<string, unknown> | null;
   details?: Record<string, unknown>;
   error?: string;
+  unifiedRegistration?: UnifiedRegistrationRecord;
+};
+
+export type UnifiedOriginalType = "process" | "queue" | "task" | "monitor" | "alert" | string;
+
+export type UnifiedRegistrationRecord = {
+  schemaVersion: number;
+  registrationId: string;
+  originalType: UnifiedOriginalType;
+  originalId: string;
+  label: string;
+  status: string;
+  tone: string;
+  source: string;
+  registeredAt: string;
+  route: {
+    originalType: UnifiedOriginalType;
+    section: string;
+    behavior: string;
+  };
+  relations: Record<string, unknown>;
+  attributes: Record<string, unknown>;
+  originalRef: Record<string, unknown>;
+};
+
+export type UnifiedSystemStatus = {
+  schemaVersion: number;
+  updatedAt: string;
+  source: string;
+  summary: {
+    totalCount: number;
+    processCount: number;
+    queueCount: number;
+    taskCount: number;
+    monitorCount: number;
+    alertCount: number;
+  };
+  registrations: UnifiedRegistrationRecord[];
+  routes: Record<string, { section: string; behavior: string }>;
+  processes: UnifiedRegistrationRecord[];
+  queues: UnifiedRegistrationRecord[];
+  tasks: UnifiedRegistrationRecord[];
+  monitors: UnifiedRegistrationRecord[];
+  alerts: UnifiedRegistrationRecord[];
+};
+
+export type ClientRuntimeHeatRow = {
+  clientUid: string;
+  clientKey: string;
+  profileId: string;
+  matched: boolean;
+  workspaceId: string;
+  contextProfileId: string;
+  retrievalProfileId: string;
+  modelAlias: string;
+  taskTypes: Array<{ taskType: string; count: number }>;
+  surfaces: Array<{ surface: string; count: number }>;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  coolingState: "hot" | "warm" | "cooled" | string;
+  heatLevel: "hot" | "warm" | "cold" | string;
+  coolingReason: string;
+  totalCalls: number;
+  recentCalls: number;
+  heatScore: number;
+  heatPercent: number;
+  ageMs: number;
+};
+
+export type ClientRuntimeStatus = {
+  protocolVersion: string;
+  schemaVersion: number;
+  updatedAt: string;
+  configPath: string;
+  usagePath: string;
+  coolingPolicy: Record<string, unknown>;
+  summary: {
+    totalClients: number;
+    hotClients: number;
+    warmClients: number;
+    cooledClients: number;
+    totalCalls: number;
+    workspaceCount: number;
+    contextCount: number;
+  };
+  heatmap: {
+    clients: ClientRuntimeHeatRow[];
+    workspaces: Array<Record<string, unknown>>;
+    contexts: Array<Record<string, unknown>>;
+  };
+  cooledClients: ClientRuntimeHeatRow[];
 };
 
 export type BackgroundProcessStatus = {
@@ -1888,6 +2022,7 @@ export type BackgroundProcessStatus = {
     roles?: string[];
   };
   processes: BackgroundProcessItem[];
+  systemStatus?: UnifiedSystemStatus;
 };
 
 export type MonitorAlertRule = {
@@ -1904,6 +2039,8 @@ export type MonitorAlertConfig = {
   enabled: boolean;
   intervalMs: number;
   heartbeatStaleMs: number;
+  queueHeartbeatStaleMs?: number;
+  recoverInterruptedQueues?: boolean;
   historyLimit: number;
   serviceLabel?: string;
   rules: Record<string, MonitorAlertRule>;
@@ -1919,10 +2056,62 @@ export type MonitorAlertItem = {
   role: string;
   status: string;
   active: boolean;
+  ackRequired?: boolean;
+  acknowledgedAt?: string;
+  queueId?: string;
+  interruptedAt?: string;
+  recoveredAt?: string;
+  tone?: string;
+  evidence?: Record<string, unknown>;
   firstSeenAt: string;
   lastSeenAt: string;
   resolvedAt?: string;
   variables?: Record<string, unknown>;
+  unifiedRegistration?: UnifiedRegistrationRecord;
+};
+
+export type QueueMonitorItem = {
+  queueId: string;
+  kind: string;
+  ownerId: string;
+  label: string;
+  source: string;
+  sources?: string[];
+  lifecycleStatus: string;
+  phase: string;
+  status: string;
+  startedAt?: string;
+  closedAt?: string;
+  lastHeartbeatAt?: string;
+  checkpointId?: string;
+  checkpointTreeId?: string;
+  lastCheckpointAt?: string;
+  recoveryAttemptedAt?: string;
+  recoveryQueuedAt?: string;
+  recoveredAt?: string;
+  interruptedAt?: string;
+  interruptedReason?: string;
+  acknowledgedAt?: string;
+  recoveryStatus?: string;
+  evidence?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  unifiedRegistration?: UnifiedRegistrationRecord;
+};
+
+export type QueueMonitorState = {
+  schemaVersion: number;
+  updatedAt: string;
+  statePath: string;
+  eventLogPath: string;
+  summary: {
+    totalCount: number;
+    openCount: number;
+    interruptedCount: number;
+    recoveredCount: number;
+    closedCount: number;
+  };
+  items: QueueMonitorItem[];
+  systemStatus?: UnifiedSystemStatus;
 };
 
 export type MonitorAlertState = {
@@ -1936,10 +2125,15 @@ export type MonitorAlertState = {
   config: MonitorAlertConfig;
   summary: {
     activeCount: number;
+    visibleCount?: number;
+    recoveredCount?: number;
     criticalCount: number;
     warningCount: number;
     historyCount: number;
   };
+  queueMonitor?: QueueMonitorState | null;
+  acknowledgedAlerts?: Record<string, string>;
+  systemStatus?: UnifiedSystemStatus;
   activeAlerts: MonitorAlertItem[];
   history: MonitorAlertItem[];
 };
@@ -1955,11 +2149,12 @@ export type ServerConsoleState = {
   emailRules: EmailRuleSetPayload;
   expertVocabulary: ExpertVocabularyResponse;
   knowledgeTaxonomy: KnowledgeTaxonomyResponse;
-  toolPlatform: ToolPlatformState;
   auth?: ConsoleAuthSummary | null;
   maintenanceAgent?: MaintenanceAgentSummary | null;
   knowledgeConsole?: KnowledgeConsoleState | null;
   storage: RuntimeInfoResponse["storage"];
   jobs: SplitJobListResponse;
   clients: DiscoveryClientsResponse;
+  clientRuntime?: ClientRuntimeStatus | null;
+  features?: FeatureRuntimeSummary | null;
 };

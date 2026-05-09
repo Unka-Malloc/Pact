@@ -48,7 +48,17 @@
       "required": true,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "portable-data",
-      "portableDirectories": ["backend", "logs", "exports", "mail-imports", "knowledge"]
+      "portableDirectories": [
+        "backend",
+        "logs",
+        "exports",
+        "mail-imports",
+        "knowledge",
+        "connectors/modules",
+        "connectors/state",
+        "connectors/cache",
+        "chat-index"
+      ]
     },
     "file-system-adapter": {
       "label": "Local file collection and opening adapter",
@@ -92,6 +102,89 @@
       "platforms": ["macos", "linux", "windows"],
       "packaging": "runtime-capability",
       "portableDirectories": ["knowledge/documents", "knowledge/assets", "knowledge/normalized-documents"]
+    },
+    "data-connectors": {
+      "label": "DataConnector runtime, local mirrors, OAuth state, and chat index",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["client-daemon", "local-rpc", "portable-data", "upload-queue"],
+      "portableDirectories": [
+        "connectors/modules",
+        "connectors/state",
+        "connectors/cache",
+        "chat-index"
+      ],
+      "connectorManifestFields": [
+        "id",
+        "providerId",
+        "sourceType",
+        "displayName",
+        "version",
+        "runtime",
+        "entrypoint",
+        "capabilities",
+        "permissions",
+        "oauth",
+        "syncPolicy",
+        "uninstallPolicy"
+      ]
+    },
+    "gmail-connector": {
+      "label": "Gmail OAuth connector manifest",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["data-connectors"]
+    },
+    "outlook-mail-connector": {
+      "label": "Outlook Mail OAuth connector manifest",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["data-connectors"]
+    },
+    "google-drive-connector": {
+      "label": "Google Drive OAuth connector manifest",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["data-connectors"]
+    },
+    "onedrive-connector": {
+      "label": "OneDrive OAuth connector manifest",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["data-connectors"]
+    },
+    "slack-connector": {
+      "label": "Slack chat connector manifest",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["data-connectors"]
+    },
+    "teams-connector": {
+      "label": "Microsoft Teams chat connector manifest",
+      "category": "connector",
+      "enabled": true,
+      "required": false,
+      "platforms": ["macos", "linux", "windows"],
+      "packaging": "runtime-capability",
+      "requires": ["data-connectors"]
     },
     "knowledge-agent": {
       "label": "Offline knowledge context and cloud agent answer interface",
@@ -157,7 +250,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/modules/FileProcessor"]
+      "includePaths": ["server/platform/specialized/knowledge/file-processor"]
     },
     "server.KnowledgeCore": {
       "label": "Optional server KnowledgeCore module resources",
@@ -166,7 +259,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/modules/KnowledgeCore"]
+      "includePaths": ["server/platform/specialized/knowledge/datastore/knowledge-core"]
     },
     "server.EmbeddingRuntime": {
       "label": "Optional server EmbeddingRuntime module resources",
@@ -175,7 +268,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/modules/EmbeddingRuntime"]
+      "includePaths": ["server/platform/specialized/knowledge/embedding/embedding-runtime"]
     },
     "server.VectorStore": {
       "label": "Optional server VectorStore module resources",
@@ -184,7 +277,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/modules/VectorStore"]
+      "includePaths": ["server/platform/specialized/knowledge/embedding/vector-store"]
     },
     "server.AgentGateway": {
       "label": "Optional server AgentGateway module resources",
@@ -193,7 +286,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/modules/AgentGateway"]
+      "includePaths": ["server/platform/specialized/agent/agent-gateway"]
     },
     "server.LearningRuntime": {
       "label": "Optional server LearningRuntime module resources",
@@ -202,7 +295,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/modules/LearningRuntime"]
+      "includePaths": ["server/platform/specialized/knowledge/runtime/learning-runtime"]
     },
     "server.MaintenanceAgent": {
       "label": "Optional server MaintenanceAgent application resources",
@@ -211,7 +304,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/application/MaintenanceAgent"]
+      "includePaths": ["server/services/agent/maintenance-agent"]
     }
   }
 }

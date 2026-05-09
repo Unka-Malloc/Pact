@@ -1,0 +1,255 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createEvidenceSufficiencyGate } from "../platform/specialized/knowledge/runtime/evidence-sufficiency-gate/index.mjs";
+import { createGoldenRuleRuntime } from "../platform/specialized/knowledge/golden-rules/golden-rule-runtime/index.mjs";
+import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/datastore/knowledge-core/index.mjs";
+import { createKnowledgeDistillationRuntime } from "../platform/specialized/knowledge/runtime/knowledge-distillation-runtime/index.mjs";
+import { createKnowledgeSkillRuntime } from "../platform/specialized/knowledge/runtime/knowledge-skill-runtime/index.mjs";
+import {
+  persistRawMailObject,
+  resolveStoredObjectPath
+} from "../platform/common/storage/raw-object-store.mjs";
+
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-multi-source-"));
+
+try {
+  const originalBytes = Buffer.from("3 月账单原始文件，不允许服务端追加检索字段。\n", "utf8");
+  const rawObject = await persistRawMailObject({
+    userDataPath,
+    batchId: "client-batch-2026-03",
+    buffer: originalBytes,
+    originalRelativePath: "invoice-march.txt",
+    mediaType: "text/plain",
+    ingestOrigin: "connector-mirror",
+    clientUid: "client-a",
+    sourceType: "file",
+    providerId: "google-drive",
+    externalId: "drive-file-1",
+    syncBatchId: "client-batch-2026-03",
+    capturedAt: "2026-03-18T09:00:00.000Z",
+    sourceMetadata: {
+      originalPath: "/Finance/invoice-march.txt",
+      owner: "billing@example.test"
+    }
+  });
+  assert.match(rawObject.storageRelativePath, /^objects\/client-a\/file\//);
+  assert.equal(rawObject.originalFileName, "invoice-march.txt");
+  assert.deepEqual(
+    await fs.readFile(resolveStoredObjectPath(userDataPath, rawObject.storageRelativePath)),
+    originalBytes
+  );
+
+  const knowledgeCore = await createKnowledgeCoreMount({ userDataPath });
+  try {
+    const ingest = await knowledgeCore.ingestSources({
+      batchId: "client-batch-2026-03",
+      generatedAt: "2026-03-18T09:30:00.000Z",
+      sources: [
+        {
+          id: "gmail-message-1",
+          name: "Gmail 3 月账单提醒",
+          path: "gmail://message/gmail-message-1",
+          kind: "mail",
+          text: "3 月账单已经发送，请查看 Drive 中的 invoice-march.txt。",
+          clientUid: "client-a",
+          sourceType: "mail",
+          providerId: "gmail",
+          externalId: "gmail-message-1",
+          syncBatchId: "client-batch-2026-03",
+          capturedAt: "2026-03-18T08:00:00.000Z",
+          sourceMetadata: {
+            mailbox: "INBOX"
+          }
+        },
+        {
+          id: "drive-file-1",
+          name: "invoice-march.txt",
+          path: "drive://files/drive-file-1",
+          kind: "file",
+          text: "3 月账单总额 1280 元，付款截止日期为 2026-03-31。",
+          rawObject,
+          clientUid: "client-a",
+          sourceType: "file",
+          providerId: "google-drive",
+          externalId: "drive-file-1",
+          syncBatchId: "client-batch-2026-03",
+          capturedAt: "2026-03-18T09:00:00.000Z",
+          sourceMetadata: {
+            originalPath: "/Finance/invoice-march.txt"
+          }
+        },
+        {
+          id: "slack-message-1",
+          name: "Billing channel",
+          path: "slack://workspace-a/billing/slack-message-1",
+          kind: "chat",
+          text: "Alice 在频道里确认：3 月账单已经归档到 Google Drive。",
+          clientUid: "client-a",
+          sourceType: "chat",
+          providerId: "slack",
+          externalId: "slack-message-1",
+          syncBatchId: "client-batch-2026-03",
+          capturedAt: "2026-03-18T10:00:00.000Z",
+          sourceMetadata: {
+            workspaceId: "workspace-a",
+            conversationId: "billing"
+          }
+        }
+      ]
+    });
+    assert.equal(ingest.documentCount, 3);
+
+    const result = knowledgeCore.search({
+      query: "3 月账单",
+      limit: 10,
+      keywordOnly: true
+    });
+    const providers = new Set(result.items.map((item) => item.source?.providerId).filter(Boolean));
+    assert.equal(providers.has("gmail"), true);
+    assert.equal(providers.has("google-drive"), true);
+    assert.equal(providers.has("slack"), true);
+
+    const slackHit = result.items.find((item) => item.source?.providerId === "slack");
+    assert.equal(slackHit.source.sourceType, "chat");
+    assert.equal(slackHit.source.chatRef.externalId, "slack-message-1");
+    assert.equal(slackHit.source.syncBatchId, "client-batch-2026-03");
+
+    const driveHit = result.items.find((item) => item.source?.providerId === "google-drive");
+    assert.equal(driveHit.source.fileRef.originalFileName, "invoice-march.txt");
+    assert.equal(driveHit.source.fileRef.storageRelativePath, rawObject.storageRelativePath);
+
+    const evidence = knowledgeCore.getEvidence({ evidenceId: slackHit.evidenceId });
+    assert.equal(evidence.locator.providerId, "slack");
+    assert.equal(evidence.locator.chatRef.syncBatchId, "client-batch-2026-03");
+
+    const fusedSearch = knowledgeCore.search({
+      query: "3 月账单",
+      limit: 10,
+      keywordOnly: true,
+      explain: true,
+      localQuery: {
+        ok: true,
+        source: "local-data-connectors",
+        items: [
+          {
+            sourceType: "chat",
+            providerId: "teams",
+            externalId: "teams-message-1",
+            title: "Teams 财务提醒",
+            snippet: "3 月账单的报销审批暂存在 Teams，本地 mirror 尚未上传服务端。",
+            timestamp: "2026-03-18T11:00:00.000Z",
+            chatRef: {
+              workspaceId: "tenant-a",
+              conversationId: "finance",
+              messageId: "teams-message-1",
+              syncBatchId: "client-batch-2026-03"
+            },
+            score: 0.99
+          },
+          {
+            sourceType: "chat",
+            providerId: "slack",
+            externalId: "slack-message-1",
+            title: "Slack duplicate",
+            snippet: "这是已经入库的 Slack 消息本地 mirror 副本。",
+            timestamp: "2026-03-18T10:00:00.000Z",
+            chatRef: {
+              workspaceId: "workspace-a",
+              conversationId: "billing",
+              messageId: "slack-message-1",
+              syncBatchId: "client-batch-2026-03"
+            },
+            score: 0.95
+          }
+        ]
+      }
+    });
+    assert.equal(fusedSearch.fusion.mode, "server-index-plus-local-mirror");
+    assert.equal(fusedSearch.fusion.localQueryRemoteCalls, false);
+    assert.equal(fusedSearch.fusion.localHitCount, 2);
+    assert.equal(fusedSearch.fusion.localMergedCount, 1);
+    assert.equal(fusedSearch.fusion.localAppendedCount, 1);
+    const teamsLocalHit = fusedSearch.items.find((item) => item.localMirror?.providerId === "teams");
+    assert.ok(teamsLocalHit, "local-only Teams mirror hit should be returned");
+    assert.equal(Boolean(teamsLocalHit.evidenceId), false);
+    assert.equal(teamsLocalHit.localMirror.openable, false);
+    assert.equal(teamsLocalHit.localMirror.status, "local_mirror_not_yet_ingested");
+    const mergedSlackHit = fusedSearch.items.find((item) => item.source?.providerId === "slack");
+    assert.equal(mergedSlackHit.localMirror.status, "local_mirror_duplicate_of_indexed_evidence");
+    const scores = fusedSearch.items.map((item) => Number(item.finalScore || item.score || 0));
+    assert.deepEqual(scores, [...scores].sort((left, right) => right - left));
+
+    const runtime = { mounts: { knowledgeBase: knowledgeCore } };
+    const goldenRuleRuntime = createGoldenRuleRuntime({ userDataPath, knowledgeCore });
+    const knowledgeSkillRuntime = createKnowledgeSkillRuntime({ userDataPath, runtime, goldenRuleRuntime });
+    try {
+      const framework = await knowledgeSkillRuntime.loadFramework();
+      await knowledgeSkillRuntime.saveFramework({
+        ...framework,
+        qualityGates: {
+          ...framework.qualityGates,
+          minEvidence: 1,
+          minDistinctDocuments: 1,
+          requireHierarchy: false
+        }
+      });
+      const distillationRuntime = createKnowledgeDistillationRuntime({
+        userDataPath,
+        runtime,
+        knowledgeSkillRuntime,
+        goldenRuleRuntime,
+        evidenceGate: createEvidenceSufficiencyGate()
+      });
+      const distillation = await distillationRuntime.runDistillation({
+        query: "3 月账单",
+        limit: 10,
+        minEvidence: 1,
+        minSources: 1,
+        requireHierarchy: false,
+        semanticSupportRequired: false
+      });
+      assert.equal(distillation.status, "completed");
+      assert.ok(distillation.candidates.length >= 1);
+      const candidateProviders = new Set(
+        distillation.candidates.flatMap((candidate) => candidate.unifiedEvidence?.sourceTrace?.providerIds || [])
+      );
+      assert.equal(candidateProviders.has("gmail"), true);
+      assert.equal(candidateProviders.has("google-drive"), true);
+      assert.equal(candidateProviders.has("slack"), true);
+      for (const candidate of distillation.candidates) {
+        assert.ok(candidate.unifiedEvidence?.sourceTrace?.sourceCount >= 1);
+        assert.ok(candidate.unifiedEvidence?.citations?.length >= 1);
+        assert.ok(candidate.distilledOutputs?.summary?.evidenceRefs?.length >= 1);
+        assert.ok(candidate.distilledOutputs?.summary?.citations?.length >= 1);
+        assert.ok(candidate.distilledOutputs?.summary?.sourceTrace?.sourceCount >= 1);
+        assert.ok(candidate.distilledOutputs?.ruleCandidates?.every((rule) =>
+          rule.evidenceRefs?.length >= 1 &&
+            rule.citations?.length >= 1 &&
+            rule.sourceTrace?.sourceCount >= 1
+        ));
+        assert.ok(candidate.distilledOutputs?.entityRelationCandidates?.every((relation) =>
+          relation.evidenceRefs?.length >= 1 &&
+            relation.citations?.length >= 1 &&
+            relation.sourceTrace?.sourceCount >= 1
+        ));
+        assert.equal(candidate.qualityReportV2.distilledOutputs.passed, true);
+        assert.ok(candidate.skill?.skill?.sourceTrace?.sourceCount >= 1);
+      }
+    } finally {
+      knowledgeSkillRuntime.close();
+    }
+  } finally {
+    await knowledgeCore.close();
+  }
+
+  console.log("verify-multi-source-connectors: ok");
+} finally {
+  if (process.env.SPLITALL_KEEP_TEST_DATA !== "1") {
+    await fs.rm(userDataPath, { recursive: true, force: true });
+  } else {
+    console.log(`kept test data: ${userDataPath}`);
+  }
+}

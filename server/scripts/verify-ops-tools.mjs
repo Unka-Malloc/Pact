@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { startHttpServer } from "../http-server.mjs";
-import { getMetadataDatabasePath } from "../storage/schema-manager.mjs";
-import { locateStorageEntity, reconcileStorage, runStorageDoctor } from "../storage/ops-tools.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { getMetadataDatabasePath } from "../platform/common/storage/schema-manager.mjs";
+import { locateStorageEntity, reconcileStorage, runStorageDoctor } from "../platform/common/storage/ops-tools.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const mockDocumentParserModulePath = path.resolve(
@@ -64,6 +64,8 @@ try {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
+      clientUid: "ops-client-01",
+      sourceType: "mail-forward",
       uploadedFiles: [
         buildUploadedFile(
           "ops.eml",
@@ -94,7 +96,8 @@ try {
     userDataPath,
     jobId: createdJob.id
   });
-  assert.equal(jobLocation.batch.batchId, createdJob.id);
+  assert.equal(jobLocation.batch.batchId, createdJob.archiveBatchId);
+  assert.equal(jobLocation.batch.jobId, createdJob.id);
   assert.ok(jobLocation.job.meta);
 
   const objectLocation = await locateStorageEntity({
@@ -103,6 +106,13 @@ try {
   });
   assert.equal(objectLocation.object.sha256, rawObjectSha256);
   assert.equal(objectLocation.object.exists, true);
+  assert.equal(objectLocation.object.clientUid, "ops-client-01");
+  assert.equal(objectLocation.object.sourceType, "mail-forward");
+  assert.match(objectLocation.object.archiveFileName, /^ops__.+\.eml$/);
+  assert.match(
+    objectLocation.object.storageRelativePath,
+    /^objects\/ops-client-01\/mail-forward\/ops__.+\.eml$/
+  );
 
   const orphanPath = path.join(userDataPath, "objects", "mail", "orphan-test", "ghost.eml");
   await fs.mkdir(path.dirname(orphanPath), { recursive: true });

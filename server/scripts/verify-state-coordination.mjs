@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadSettings, saveSettings } from "../config.mjs";
-import { SERVER_API_OPERATIONS } from "../interfaces/api/operation-registry.mjs";
-import { startHttpServer } from "../http-server.mjs";
+import { loadSettings, saveSettings } from "../platform/common/platform-core/settings.mjs";
+import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { createProtocolEventBus } from "../protocols/pubsub/event-bus.mjs";
-import { loadMountConfig, saveMountConfig } from "../runtime/mount-config.mjs";
+import { loadMountConfig, saveMountConfig } from "../platform/common/module-manager/mount-config.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function makeTempRoot() {
@@ -24,7 +24,7 @@ async function verifyOperationLockGroups() {
   assert.equal(operation("agent_gateway.config.set").concurrencyGroup, "settings");
   assert.equal(operation("runtime.set_mounts").concurrencyGroup, "runtime.mounts");
   assert.equal(operation("runtime.reload_mounts").concurrencyGroup, "runtime.mounts");
-  assert.equal(operation("knowledge_packages.publish").concurrencyGroup, "knowledge.packages");
+  assert.equal(operation("expert_vocabulary.set").concurrencyGroup, "rules.expert_vocabulary");
   assert.equal(operation("context.compaction.run").concurrencyGroup, "context.compaction");
 }
 
@@ -37,7 +37,7 @@ async function verifySettingsWriteSerialization() {
     }),
     saveSettings(userDataPath, {
       staleAfterDays: 222,
-      agentGateway: {
+      customHttpAdapter: {
         alias: "state-coordination-gateway",
         url: "http://127.0.0.1:65530/agent",
         token: "gateway-secret"
@@ -55,8 +55,8 @@ async function verifySettingsWriteSerialization() {
   assert.equal(settings.staleAfterDays, 222);
   assert.equal(settings.transactionWindowDays, 44);
   assert.equal(settings.modelIntelligenceEnabled, true);
-  assert.equal(settings.agentGateway.url, "http://127.0.0.1:65530/agent");
-  assert.equal(settings.agentGateway.token, "gateway-secret");
+  assert.equal(settings.customHttpAdapter.url, "http://127.0.0.1:65530/agent");
+  assert.equal(settings.customHttpAdapter.token, "gateway-secret");
 }
 
 async function verifyMountConfigSerialization() {
@@ -152,9 +152,9 @@ async function verifyHttpConfigFlowSerialization() {
     const settings = await fetchJson(`${server.url}/api/settings`);
     assert.equal(settings.analysisModuleId, "builtin:http-state-a");
     assert.equal(settings.retrievalHalfLifeDays, 19);
-    assert.equal(settings.agentGateway.url, "http://127.0.0.1:65529/agent");
-    assert.equal(settings.agentGateway.token, "");
-    assert.equal(settings.agentGateway.tokenConfigured, true);
+    assert.equal(settings.customHttpAdapter.url, "http://127.0.0.1:65529/agent");
+    assert.equal(settings.customHttpAdapter.token, "");
+    assert.equal(settings.customHttpAdapter.tokenConfigured, true);
 
     const events = await fetchJson(`${server.url}/api/events?topic=settings.current&includeSnapshot=1&limit=10`);
     assert.ok((events.events || []).length > 0 || (events.snapshots || []).length > 0);

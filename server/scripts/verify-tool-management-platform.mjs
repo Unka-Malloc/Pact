@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { startHttpServer } from "../http-server.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -184,13 +184,6 @@ try {
   assert.ok(metrics.payload.metrics.callsTotal >= 2);
   assert.ok(metrics.payload.metrics.byStatus.ok >= 1);
   assert.ok(metrics.payload.metrics.byStatus.denied >= 1);
-
-  const compat = await fetchJson(`${server.url}/api/agent-tools/knowledge/health`, {
-    headers: bearerHeaders(grantResult.payload.token)
-  });
-  assert.equal(compat.status, 200);
-  assert.equal(compat.payload.result.ok, true);
-  assert.ok(compat.payload.grant.id);
 
   const cliCatalog = await execFileAsync(
     process.execPath,

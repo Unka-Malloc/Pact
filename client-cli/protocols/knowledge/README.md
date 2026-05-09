@@ -22,8 +22,8 @@
 `documents/` 保存 Markdown 和 JSON sidecar，作为离线可读知识库；`assets/` 保存通过
 `/api/knowledge/assets/:assetId` 下载的二进制资产；`normalized-documents/` 保存服务端归一化
 DOCX。`knowledge_suggestions` 只缓存服务端自进化建议的摘要和状态，不缓存服务端 LanceDB
-索引或学习运行时内部数据。旧版 `<portable-data>/knowledge-cache.sqlite` 首次启动会迁移到
-`knowledge/index.sqlite`。
+索引或学习运行时内部数据。客户端只读取当前 `knowledge/` 布局；旧版
+`<portable-data>/knowledge-cache.sqlite` 自动迁移已移除。
 
 ## CLI / RPC
 

@@ -6,7 +6,7 @@ import {
   CONTEXT_RUNTIME_PROTOCOL_VERSION,
   createContextRuntime,
   estimateTokens
-} from "../modules/ContextRuntime/index.mjs";
+} from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
 
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-context-runtime-"));
 const runtime = createContextRuntime({ userDataPath });
@@ -52,7 +52,7 @@ try {
     evidenceId: `ev-${index}`,
     title: `合同证据 ${index}`,
     claim: `第 ${index} 条证据涉及合同、金额、日期、负责人和风险。`,
-    snippet: "这是一个较长的证据片段，用来验证上下文预算裁剪和引用保留。".repeat(20),
+    snippet: "这是一个较长的证据片段，用来验证上下文预算压缩和引用保留。".repeat(20),
     sourceLocator: `document-${index}`,
     confidence: index === 2 ? 0.99 : 0.4,
     humanExpert: index === 2,

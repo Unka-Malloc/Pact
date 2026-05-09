@@ -9,7 +9,11 @@ import {
   findCliOperation,
   formatInterfaceCatalogMarkdown,
   listInterfaceCatalog
-} from "../interfaces/api/operation-registry.mjs";
+} from "../platform/common/operation-dispatcher/operation-registry.mjs";
+import {
+  filterOperationsForFeatures,
+  resolveFeatureRuntimeFromEnv
+} from "../platform/interactive/features/feature-manifest.mjs";
 
 const DEFAULT_SERVER_URL = process.env.SPLITALL_SERVER_URL || "http://127.0.0.1:8787";
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
@@ -842,25 +846,31 @@ async function runToolsCommand(args) {
   throw new Error(`未知 tools 命令：${args._.join(" ")}`);
 }
 
-function writeLocalInterfaceCatalog(args) {
+async function getActiveCliOperations(args = {}) {
+  const featureRuntime = await resolveFeatureRuntimeFromEnv({ args });
+  return filterOperationsForFeatures(SERVER_API_OPERATIONS, featureRuntime);
+}
+
+function writeLocalInterfaceCatalog(args, operations) {
   if (String(args.format || "").toLowerCase() === "markdown") {
-    process.stdout.write(`${formatInterfaceCatalogMarkdown(SERVER_API_OPERATIONS)}\n`);
+    process.stdout.write(`${formatInterfaceCatalogMarkdown(operations)}\n`);
     return true;
   }
   if (args.local) {
-    process.stdout.write(`${JSON.stringify({ interfaces: listInterfaceCatalog(SERVER_API_OPERATIONS) }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ interfaces: listInterfaceCatalog(operations) }, null, 2)}\n`);
     return true;
   }
   return false;
 }
 
 async function runNamedRpc(args) {
-  const cliMatch = findCliOperation(args._, SERVER_API_OPERATIONS);
+  const activeOperations = await getActiveCliOperations(args);
+  const cliMatch = findCliOperation(args._, activeOperations);
   if (!cliMatch) {
     throw new Error(`未知命令：${args._[0] || ""}\n${usage()}`);
   }
   const operation = cliMatch.operation;
-  if (operation.id === "system.interfaces" && writeLocalInterfaceCatalog(args)) {
+  if (operation.id === "system.interfaces" && writeLocalInterfaceCatalog(args, activeOperations)) {
     return;
   }
 

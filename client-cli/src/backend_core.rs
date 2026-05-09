@@ -1,4 +1,5 @@
 use crate::agent_client::{AgentClientConfig, invoke_agent};
+use crate::connectors;
 use crate::upload_queue::{self, UploadQueueFile, UploadQueueState, UploadQueueTask};
 use anyhow::{Result, anyhow};
 use base64::Engine;
@@ -43,6 +44,7 @@ impl Backend {
     pub fn new(data_dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(data_dir.join(BACKEND_WORKSPACE))?;
         fs::create_dir_all(data_dir.join(MAIL_WORKSPACE))?;
+        connectors::ensure_connector_workspace(&data_dir)?;
         Ok(Self { data_dir })
     }
 
@@ -174,28 +176,8 @@ impl Backend {
         self.data_dir.join("knowledge")
     }
 
-    pub fn knowledge_packages_dir(&self) -> PathBuf {
-        self.data_dir.join("knowledge-packages")
-    }
-
-    pub fn default_knowledge_package_path(&self) -> PathBuf {
-        self.knowledge_packages_dir()
-            .join("mail-expert-vocabulary")
-            .join("active.json")
-    }
-
-    pub fn previous_knowledge_package_path(&self) -> PathBuf {
-        self.knowledge_packages_dir()
-            .join("mail-expert-vocabulary")
-            .join("previous.json")
-    }
-
     pub fn knowledge_cache_path(&self) -> PathBuf {
         self.knowledge_dir().join("index.sqlite")
-    }
-
-    pub fn legacy_knowledge_cache_path(&self) -> PathBuf {
-        self.data_dir.join("knowledge-cache.sqlite")
     }
 
     pub fn knowledge_documents_dir(&self) -> PathBuf {
@@ -215,18 +197,6 @@ impl Backend {
         fs::create_dir_all(self.knowledge_documents_dir())?;
         fs::create_dir_all(self.knowledge_assets_dir())?;
         fs::create_dir_all(self.knowledge_normalized_documents_dir())?;
-        let legacy = self.legacy_knowledge_cache_path();
-        let current = self.knowledge_cache_path();
-        if legacy.exists() && !current.exists() {
-            fs::copy(&legacy, &current)?;
-            self.append_event(
-                "knowledge.cache.migrated",
-                json!({
-                    "from": legacy.to_string_lossy().to_string(),
-                    "to": current.to_string_lossy().to_string()
-                }),
-            )?;
-        }
         Ok(())
     }
 
@@ -243,6 +213,8 @@ impl Backend {
         fs::create_dir_all(self.command_results_dir())?;
         fs::create_dir_all(self.cancelled_tasks_dir())?;
         fs::create_dir_all(self.upload_queue_dir())?;
+        connectors::ensure_connector_workspace(&self.data_dir)?;
+        self.recover_processing_commands()?;
         self.write_capabilities()?;
         let stats = self.mail_index_stats().unwrap_or_else(|_| MailIndexStats {
             document_count: 0,
@@ -254,6 +226,29 @@ impl Backend {
         let vocabulary = self.load_expert_vocabulary().unwrap_or_default();
         self.write_runtime_state("running", None, &stats, &vocabulary)?;
         self.append_event("backend.started", json!({ "dataDir": self.data_dir }))?;
+        Ok(())
+    }
+
+    fn recover_processing_commands(&self) -> Result<()> {
+        for entry in fs::read_dir(self.command_processing_dir())? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|item| item.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|item| item.to_str()) else {
+                continue;
+            };
+            let command_id = file_name.trim_end_matches(".json");
+            let target = if self.command_result_path(command_id).exists() {
+                self.command_done_dir().join(file_name)
+            } else {
+                self.command_inbox_dir().join(file_name)
+            };
+            if fs::rename(&path, &target).is_err() {
+                let _ = fs::remove_file(&path);
+            }
+        }
         Ok(())
     }
 
@@ -585,10 +580,12 @@ impl Backend {
             query.push_str("&topic=");
             query.push_str(&url_escape(topic));
         }
-        let result = http_json(
+        let session = console_session_for_config(&service_url, &config)?;
+        let result = http_json_with_auth(
             "GET",
             &format!("{}/api/events?{}", service_url, query),
             None,
+            session.as_ref(),
         )?;
         let events = result
             .get("events")
@@ -685,6 +682,14 @@ impl Backend {
                     name: file.name,
                     relative_path: file.relative_path,
                     media_type: file.media_type,
+                    client_uid: file.client_uid.unwrap_or_default(),
+                    source_type: file.source_type.unwrap_or_default(),
+                    provider_id: file.provider_id.unwrap_or_default(),
+                    external_id: file.external_id.unwrap_or_default(),
+                    sync_batch_id: file.sync_batch_id.unwrap_or_default(),
+                    content_hash: file.content_hash.unwrap_or_default(),
+                    captured_at: file.captured_at.unwrap_or_default(),
+                    source_metadata: file.source_metadata,
                     sha256: file.sha256,
                     byte_size: file.byte_size,
                     status: "pending".to_string(),
@@ -809,7 +814,15 @@ impl Backend {
                 "path": file.path.clone(),
                 "name": file.name.clone(),
                 "relativePath": file.relative_path.clone(),
-                "mediaType": file.media_type.clone()
+                "mediaType": file.media_type.clone(),
+                "clientUid": file.client_uid.clone(),
+                "sourceType": file.source_type.clone(),
+                "providerId": file.provider_id.clone(),
+                "externalId": file.external_id.clone(),
+                "syncBatchId": file.sync_batch_id.clone(),
+                "contentHash": file.content_hash.clone(),
+                "capturedAt": file.captured_at.clone(),
+                "sourceMetadata": file.source_metadata.clone()
             })).collect::<Vec<_>>(),
             "settings": task.settings.clone(),
             "checkpointId": task.checkpoint_id.clone(),
@@ -1063,7 +1076,17 @@ impl Backend {
             .unwrap_or("GET")
             .to_ascii_uppercase();
         let body = params.get("body").cloned();
-        http_json(&method, &format!("{}{}", base_url, normalized_path), body)
+        let session = if service_path_requires_console_auth(&normalized_path) {
+            console_session_for_config(&base_url, &config)?
+        } else {
+            None
+        };
+        http_json_with_auth(
+            &method,
+            &format!("{}{}", base_url, normalized_path),
+            body,
+            session.as_ref(),
+        )
     }
 
     pub fn knowledge_cache_stats(&self) -> Result<Value> {
@@ -1098,11 +1121,12 @@ impl Backend {
             .and_then(Value::as_str)
             .filter(|value| !value.trim().is_empty())
             .unwrap_or("mirror");
+        let session = console_session_for_config(&service_url, &config)?;
         self.append_event(
             "knowledge.sync.started",
             json!({ "serviceBaseUrl": service_url, "since": since, "scope": scope }),
         )?;
-        let pull = http_json(
+        let pull = http_json_with_auth(
             "GET",
             &format!(
                 "{}/api/knowledge/sync?since={}&scope={}",
@@ -1111,10 +1135,11 @@ impl Backend {
                 url_escape(scope)
             ),
             None,
+            session.as_ref(),
         )?;
         apply_knowledge_sync_payload(&conn, &pull, self)?;
-        download_missing_knowledge_assets(&conn, self, &service_url)?;
-        download_missing_normalized_documents(&conn, self, &service_url)?;
+        download_missing_knowledge_assets(&conn, self, &service_url, session.as_ref())?;
+        download_missing_normalized_documents(&conn, self, &service_url, session.as_ref())?;
 
         let push_outbox = params
             .get("pushOutbox")
@@ -1124,10 +1149,11 @@ impl Backend {
         if push_outbox {
             let changes = pending_knowledge_outbox(&conn)?;
             if !changes.is_empty() {
-                push_result = http_json(
+                push_result = http_json_with_auth(
                     "POST",
                     &format!("{}/api/knowledge/changes", service_url),
                     Some(json!({ "changes": changes })),
+                    session.as_ref(),
                 )?;
                 apply_knowledge_push_result(&conn, &push_result)?;
             } else {
@@ -1174,6 +1200,64 @@ impl Backend {
             .unwrap_or(20)
             .min(200);
         search_knowledge_cache(&conn, query, limit as usize)
+    }
+
+    pub fn list_data_connectors(&self) -> Result<Value> {
+        connectors::list_connectors(&self.data_dir)
+    }
+
+    pub fn install_data_connector(&self, params: Value) -> Result<Value> {
+        let result = connectors::install_connector(&self.data_dir, params)?;
+        self.append_event("connectors.installed", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn enable_data_connector(&self, params: Value) -> Result<Value> {
+        let result = connectors::enable_connector(&self.data_dir, params)?;
+        self.append_event("connectors.enabled", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn disable_data_connector(&self, params: Value) -> Result<Value> {
+        let result = connectors::disable_connector(&self.data_dir, params)?;
+        self.append_event("connectors.disabled", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn uninstall_data_connector(&self, params: Value) -> Result<Value> {
+        let result = connectors::uninstall_connector(&self.data_dir, params)?;
+        self.append_event("connectors.uninstalled", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn start_data_connector_auth(&self, params: Value) -> Result<Value> {
+        let result = connectors::start_connector_auth(&self.data_dir, params)?;
+        self.append_event("connectors.auth.started", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn data_connector_auth_status(&self, params: Value) -> Result<Value> {
+        connectors::connector_auth_status(&self.data_dir, params)
+    }
+
+    pub fn revoke_data_connector_auth(&self, params: Value) -> Result<Value> {
+        let result = connectors::revoke_connector_auth(&self.data_dir, params)?;
+        self.append_event("connectors.auth.revoked", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn sync_data_connector(&self, params: Value) -> Result<Value> {
+        let result = connectors::sync_connector(&self.data_dir, params)?;
+        self.append_event("connectors.sync.completed", result.clone())?;
+        Ok(result)
+    }
+
+    pub fn data_connector_health(&self, params: Value) -> Result<Value> {
+        connectors::connector_health(&self.data_dir, params)
+    }
+
+    pub fn query_local_data_connectors(&self, params: Value) -> Result<Value> {
+        connectors::query_local_sources(&self.data_dir, params)
     }
 
     pub fn knowledge_cache_graph(&self, params: Value) -> Result<Value> {
@@ -1362,7 +1446,11 @@ impl Backend {
         self.context_compaction_run_with_persistence(params, true)
     }
 
-    fn context_compaction_run_with_persistence(&self, params: Value, default_persist: bool) -> Result<Value> {
+    fn context_compaction_run_with_persistence(
+        &self,
+        params: Value,
+        default_persist: bool,
+    ) -> Result<Value> {
         let session_id = params
             .get("sessionId")
             .or_else(|| params.get("session_id"))
@@ -1400,7 +1488,9 @@ impl Backend {
             .get("recentMessageProtectionCount")
             .and_then(Value::as_u64)
             .unwrap_or(1) as usize;
-        let cut_index = messages.len().saturating_sub(protected_tail.min(messages.len()));
+        let cut_index = messages
+            .len()
+            .saturating_sub(protected_tail.min(messages.len()));
         let compacted_messages = &messages[..cut_index];
         let kept_messages = &messages[cut_index..];
         let summary = client_context_summary(compacted_messages, &params);
@@ -1445,32 +1535,41 @@ impl Backend {
             "createdAt": timestamp()
         });
         if persist {
-            append_jsonl_value(&self.context_compaction_records_path(), &json!({
-                "protocolVersion": "splitall.context.compaction.v1",
-                "recordId": &record_id,
-                "boundaryId": &boundary_id,
-                "sessionId": &session_id,
-                "status": "completed",
-                "strategy": "deterministic",
-                "tokenReport": token_report.clone(),
-                "createdAt": timestamp()
-            }))?;
+            append_jsonl_value(
+                &self.context_compaction_records_path(),
+                &json!({
+                    "protocolVersion": "splitall.context.compaction.v1",
+                    "recordId": &record_id,
+                    "boundaryId": &boundary_id,
+                    "sessionId": &session_id,
+                    "status": "completed",
+                    "strategy": "deterministic",
+                    "tokenReport": token_report.clone(),
+                    "createdAt": timestamp()
+                }),
+            )?;
             append_jsonl_value(&self.context_compaction_boundaries_path(), &boundary)?;
-            append_jsonl_value(&self.context_session_memory_path(), &json!({
-                "protocolVersion": "splitall.context.compaction.v1",
-                "memoryId": format!("client_context_memory_{}", Uuid::new_v4()),
-                "sessionId": &session_id,
-                "boundaryId": &boundary_id,
-                "summaryChecksum": sha256_hex(summary.as_bytes()),
-                "summary": &summary,
-                "createdAt": timestamp(),
-                "status": "active"
-            }))?;
-            self.append_event("context.compaction.completed", json!({
-                "recordId": &record_id,
-                "boundaryId": &boundary_id,
-                "sessionId": &session_id
-            }))?;
+            append_jsonl_value(
+                &self.context_session_memory_path(),
+                &json!({
+                    "protocolVersion": "splitall.context.compaction.v1",
+                    "memoryId": format!("client_context_memory_{}", Uuid::new_v4()),
+                    "sessionId": &session_id,
+                    "boundaryId": &boundary_id,
+                    "summaryChecksum": sha256_hex(summary.as_bytes()),
+                    "summary": &summary,
+                    "createdAt": timestamp(),
+                    "status": "active"
+                }),
+            )?;
+            self.append_event(
+                "context.compaction.completed",
+                json!({
+                    "recordId": &record_id,
+                    "boundaryId": &boundary_id,
+                    "sessionId": &session_id
+                }),
+            )?;
         }
         Ok(result)
     }
@@ -1485,7 +1584,10 @@ impl Backend {
 
     pub fn context_session_memory_get(&self, params: Value) -> Result<Value> {
         let limit = params.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
-        let session_id = params.get("sessionId").and_then(Value::as_str).unwrap_or_default();
+        let session_id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let records = read_jsonl_tail(&self.context_session_memory_path(), limit)?
             .into_iter()
             .filter(|item| {
@@ -1504,7 +1606,10 @@ impl Backend {
     }
 
     pub fn context_session_memory_clear(&self, params: Value) -> Result<Value> {
-        let session_id = params.get("sessionId").and_then(Value::as_str).unwrap_or_default();
+        let session_id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let record = json!({
             "protocolVersion": "splitall.context.compaction.v1",
             "memoryId": format!("client_context_memory_clear_{}", Uuid::new_v4()),
@@ -1514,7 +1619,10 @@ impl Backend {
             "createdAt": timestamp()
         });
         append_jsonl_value(&self.context_session_memory_path(), &record)?;
-        self.append_event("context.session_memory.cleared", json!({ "sessionId": session_id }))?;
+        self.append_event(
+            "context.session_memory.cleared",
+            json!({ "sessionId": session_id }),
+        )?;
         Ok(json!({
             "protocolVersion": "splitall.context.compaction.v1",
             "ok": true,
@@ -1530,7 +1638,13 @@ impl Backend {
             .map(normalize_service_url)
             .or_else(|| service_base_url(&config).ok())
             .ok_or_else(|| anyhow!("missing serviceBaseUrl"))?;
-        let registry = http_json("GET", &format!("{}/api/agents", service_url), None)?;
+        let session = console_session_for_config(&service_url, &config)?;
+        let registry = http_json_with_auth(
+            "GET",
+            &format!("{}/api/agents", service_url),
+            None,
+            session.as_ref(),
+        )?;
         let synced_at = timestamp();
         let payload = json!({
             "schemaVersion": 1,
@@ -1763,10 +1877,12 @@ impl Backend {
                 .unwrap_or_else(|| agent.get("engine").and_then(Value::as_str).unwrap_or("")),
             "parameters": parameters
         });
-        let response = http_json(
+        let session = console_session_for_config(&service_url, &config)?;
+        let response = http_json_with_auth(
             "POST",
             &format!("{}/api/agent-gateway/call", service_url),
             Some(body),
+            session.as_ref(),
         )?;
         Ok(json!({
             "ok": response.get("ok").and_then(Value::as_bool).unwrap_or(true),
@@ -1792,6 +1908,7 @@ impl Backend {
             .or_else(|| service_base_url(&config).ok())
             .ok_or_else(|| anyhow!("missing serviceBaseUrl"))?;
         let service_url = normalize_service_url(&service_url);
+        let auth_session = console_session_for_config(&service_url, &config)?;
         let input_text = params
             .get("inputText")
             .and_then(Value::as_str)
@@ -1819,17 +1936,88 @@ impl Backend {
                     &manifest_digest[..24.min(manifest_digest.len())]
                 )
             });
+        let client_batch_id = params
+            .get("batchId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                params
+                    .get("clientBatchId")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .or_else(|| {
+                params
+                    .get("archiveBatchId")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or(&checkpoint_id)
+            .to_string();
+        let client_uid = params
+            .get("clientUid")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                params
+                    .get("clientId")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or(config.client_id.as_str())
+            .to_string();
+        let source_type = params
+            .get("sourceType")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                params
+                    .get("resourceType")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or("upload")
+            .to_string();
+        let provider_id = string_param(&params, &["providerId"]).unwrap_or_default();
+        let external_id = string_param(&params, &["externalId"]).unwrap_or_default();
+        let sync_batch_id = string_param(&params, &["syncBatchId", "clientBatchId", "batchId"])
+            .unwrap_or_else(|| client_batch_id.clone());
+        let content_hash = string_param(&params, &["contentHash"]).unwrap_or_default();
+        let captured_at = string_param(&params, &["capturedAt"]).unwrap_or_default();
         let checkpoint = json!({
             "checkpointId": checkpoint_id,
+            "clientBatchId": client_batch_id,
+            "clientUid": client_uid.clone(),
+            "sourceType": source_type.clone(),
+            "providerId": provider_id.clone(),
+            "externalId": external_id.clone(),
+            "syncBatchId": sync_batch_id.clone(),
+            "contentHash": content_hash.clone(),
+            "capturedAt": captured_at.clone(),
             "mode": "splitall-client-backend"
         });
         let manifest = json!({
             "inputDigest": input_digest,
             "manifestDigest": manifest_digest,
+            "clientUid": client_uid.clone(),
+            "sourceType": source_type.clone(),
+            "providerId": provider_id.clone(),
+            "externalId": external_id.clone(),
+            "syncBatchId": sync_batch_id.clone(),
+            "contentHash": content_hash.clone(),
+            "capturedAt": captured_at.clone(),
             "fileCount": files.len(),
             "fileRecords": files.iter().map(|file| json!({
                 "label": file.name,
                 "relativePath": file.relative_path,
+                "clientUid": file.client_uid.clone().unwrap_or_else(|| client_uid.clone()),
+                "sourceType": file.source_type.clone().unwrap_or_else(|| source_type.clone()),
+                "providerId": file.provider_id.clone().unwrap_or_else(|| provider_id.clone()),
+                "externalId": file.external_id.clone().unwrap_or_else(|| external_id.clone()),
+                "syncBatchId": file.sync_batch_id.clone().unwrap_or_else(|| sync_batch_id.clone()),
+                "contentHash": file.content_hash.clone().unwrap_or_else(|| content_hash.clone()),
+                "capturedAt": file.captured_at.clone().unwrap_or_else(|| captured_at.clone()),
+                "sourceMetadata": file.source_metadata.clone(),
                 "sha256": file.sha256,
                 "byteSize": file.byte_size
             })).collect::<Vec<_>>(),
@@ -1839,30 +2027,45 @@ impl Backend {
             "pipeline.submit.started",
             json!({ "checkpointId": checkpoint_id, "fileCount": files.len() }),
         )?;
-        let mut session = http_json(
+        let mut upload_session = http_json_with_auth(
             "POST",
             &format!("{}/api/upload-sessions", service_url),
             Some(json!({
-                "checkpoint": checkpoint,
+                "checkpoint": checkpoint.clone(),
                 "manifest": manifest,
                 "files": files.iter().map(|file| json!({
-                    "name": file.name,
-                    "relativePath": file.relative_path,
+                "name": file.name,
+                "relativePath": file.relative_path,
+                "originalFileName": file.name,
+                    "clientUid": file.client_uid.clone().unwrap_or_else(|| client_uid.clone()),
+                    "sourceType": file.source_type.clone().unwrap_or_else(|| source_type.clone()),
+                    "providerId": file.provider_id.clone().unwrap_or_else(|| provider_id.clone()),
+                    "externalId": file.external_id.clone().unwrap_or_else(|| external_id.clone()),
+                    "syncBatchId": file.sync_batch_id.clone().unwrap_or_else(|| sync_batch_id.clone()),
+                    "contentHash": file.content_hash.clone().unwrap_or_else(|| content_hash.clone()),
+                    "capturedAt": file.captured_at.clone().unwrap_or_else(|| captured_at.clone()),
+                    "sourceMetadata": file.source_metadata.clone(),
                     "mediaType": file.media_type,
                     "sha256": file.sha256,
                     "byteSize": file.byte_size
                 })).collect::<Vec<_>>()
             })),
+            auth_session.as_ref(),
         )?;
-        let session_id = session
+        let session_id = upload_session
             .get("sessionId")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("server did not return upload session id"))?
             .to_string();
+        let archive_batch_id = upload_session
+            .get("archiveBatchId")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         if !queue_task_id.is_empty() {
             self.append_upload_queue_event(
                 "upload.queue.session.created",
-                json!({ "taskId": queue_task_id, "session": session }),
+                json!({ "taskId": queue_task_id, "session": upload_session }),
             )?;
         }
         for (fallback_index, file) in files.iter().enumerate() {
@@ -1881,7 +2084,7 @@ impl Backend {
                     }),
                 )?;
             }
-            let remote = find_upload_session_file(&session, file, fallback_index)
+            let remote = find_upload_session_file(&upload_session, file, fallback_index)
                 .ok_or_else(|| anyhow!("upload session is missing {}", file.relative_path))?;
             let file_index = remote
                 .get("index")
@@ -1902,24 +2105,25 @@ impl Backend {
                 if chunk.is_empty() {
                     break;
                 }
-                let chunk_response = http_checkpoint_chunk(
+                let chunk_response = http_checkpoint_chunk_with_auth(
                     &format!(
                         "{}/api/upload-sessions/{}/files/{}?offset={}",
                         service_url, session_id, file_index, offset
                     ),
                     &chunk,
+                    auth_session.as_ref(),
                 )?;
                 if let Some(code) = chunk_response.get("code").and_then(Value::as_str) {
                     match code {
                         "offset_mismatch" | "chunk_too_large" | "sha256_mismatch" => {
                             if let Some(remote_session) = chunk_response.get("session") {
-                                session = remote_session.clone();
+                                upload_session = remote_session.clone();
                             }
                             offset = chunk_response
                                 .get("expectedOffset")
                                 .and_then(Value::as_u64)
                                 .or_else(|| {
-                                    find_upload_session_file(&session, file, fallback_index)
+                                    find_upload_session_file(&upload_session, file, fallback_index)
                                         .and_then(|remote| {
                                             remote.get("receivedBytes").and_then(Value::as_u64)
                                         })
@@ -1940,7 +2144,7 @@ impl Backend {
                                     json!({
                                         "taskId": queue_task_id,
                                         "sessionId": session_id,
-                                        "session": session,
+                                        "session": upload_session,
                                         "relativePath": file.relative_path,
                                         "code": code,
                                         "expectedOffset": offset
@@ -1960,8 +2164,8 @@ impl Backend {
                         }
                     }
                 }
-                session = chunk_response;
-                let remote = find_upload_session_file(&session, file, fallback_index)
+                upload_session = chunk_response;
+                let remote = find_upload_session_file(&upload_session, file, fallback_index)
                     .ok_or_else(|| anyhow!("upload session lost {}", file.relative_path))?;
                 offset = remote
                     .get("receivedBytes")
@@ -1991,7 +2195,7 @@ impl Backend {
             }
         }
         self.ensure_upload_queue_task_active(&queue_task_id)?;
-        let job = http_json(
+        let job = http_json_with_auth(
             "POST",
             &format!("{}/api/jobs", service_url),
             Some(json!({
@@ -1999,9 +2203,18 @@ impl Backend {
                 "filePaths": [],
                 "uploadedFiles": [],
                 "uploadSessionId": session_id,
-                "checkpoint": checkpoint,
+                "archiveBatchId": archive_batch_id,
+                "clientUid": client_uid.clone(),
+                "sourceType": source_type.clone(),
+                "providerId": provider_id.clone(),
+                "externalId": external_id.clone(),
+                "syncBatchId": sync_batch_id.clone(),
+                "contentHash": content_hash.clone(),
+                "capturedAt": captured_at.clone(),
+                "checkpoint": checkpoint.clone(),
                 "settings": settings
             })),
+            auth_session.as_ref(),
         )?;
         let job_id = job
             .get("id")
@@ -2018,16 +2231,24 @@ impl Backend {
             return Ok(json!({
                 "ok": true,
                 "job": job,
-                "uploadSession": session,
+                "uploadSession": upload_session,
                 "checkpointId": checkpoint_id,
+                "archiveBatchId": archive_batch_id,
                 "serviceBaseUrl": service_url
             }));
         }
-        let final_job = self.wait_for_server_job(&service_url, &job_id, task_id, &queue_task_id)?;
-        let result = http_json(
+        let final_job = self.wait_for_server_job(
+            &service_url,
+            &job_id,
+            task_id,
+            &queue_task_id,
+            auth_session.as_ref(),
+        )?;
+        let result = http_json_with_auth(
             "GET",
             &format!("{}/api/jobs/{}/result", service_url, job_id),
             None,
+            auth_session.as_ref(),
         )?;
         self.append_event(
             "pipeline.submit.completed",
@@ -2040,7 +2261,7 @@ impl Backend {
                     "taskId": queue_task_id,
                     "job": final_job,
                     "result": result,
-                    "uploadSession": session
+                    "uploadSession": upload_session
                 }),
             )?;
         }
@@ -2048,8 +2269,9 @@ impl Backend {
             "ok": true,
             "job": final_job,
             "result": result,
-            "uploadSession": session,
+            "uploadSession": upload_session,
             "checkpointId": checkpoint_id,
+            "archiveBatchId": archive_batch_id,
             "serviceBaseUrl": service_url,
             "manifestDigest": manifest_digest
         }))
@@ -2061,6 +2283,7 @@ impl Backend {
         job_id: &str,
         task_id: Option<&str>,
         queue_task_id: &str,
+        session: Option<&ConsoleServiceSession>,
     ) -> Result<Value> {
         loop {
             if let Some(task_id) = task_id {
@@ -2069,7 +2292,12 @@ impl Backend {
                 }
             }
             self.ensure_upload_queue_task_active(queue_task_id)?;
-            let job = http_json("GET", &format!("{}/api/jobs/{}", service_url, job_id), None)?;
+            let job = http_json_with_auth(
+                "GET",
+                &format!("{}/api/jobs/{}", service_url, job_id),
+                None,
+                session,
+            )?;
             let status = job
                 .get("status")
                 .and_then(Value::as_str)
@@ -2125,10 +2353,16 @@ impl Backend {
                 object.insert("mode".to_string(), json!(mode));
             }
         }
-        let response = ureq::post(&format!("{}/api/export", service_url))
-            .set("accept", "*/*")
-            .set("content-type", "application/json")
-            .send_json(body)?;
+        let session = console_session_for_config(&service_url, &config)?;
+        let response = apply_console_session_auth(
+            http_binary_agent()
+                .post(&format!("{}/api/export", service_url))
+                .set("accept", "*/*")
+                .set("content-type", "application/json"),
+            "POST",
+            session.as_ref(),
+        )
+        .send_json(body)?;
         let content_type = response
             .header("content-type")
             .unwrap_or("application/octet-stream")
@@ -2197,63 +2431,17 @@ impl Backend {
         Ok(())
     }
 
-    pub fn save_knowledge_package(&self, package: &ClientKnowledgePackage) -> Result<()> {
-        let current = self.load_knowledge_package().unwrap_or_default();
-        if !current.checksum.is_empty() && current.checksum != package.checksum {
-            atomic_write_json(&self.previous_knowledge_package_path(), &current)?;
-        }
-        atomic_write_json(&self.default_knowledge_package_path(), package)?;
-        Ok(())
-    }
-
-    pub fn load_knowledge_package(&self) -> Result<ClientKnowledgePackage> {
-        let path = self.default_knowledge_package_path();
-        if !path.exists() {
-            return Ok(ClientKnowledgePackage::default());
-        }
-        let raw = fs::read_to_string(path)?;
-        if raw.trim().is_empty() {
-            return Ok(ClientKnowledgePackage::default());
-        }
-        Ok(serde_json::from_str(&raw)?)
-    }
-
-    pub fn rollback_knowledge_package(&self) -> Result<VocabularyPullResult> {
-        let previous_path = self.previous_knowledge_package_path();
-        if !previous_path.exists() {
-            return Err(anyhow!("no previous knowledge package is available"));
-        }
-        let raw = fs::read_to_string(previous_path)?;
-        let package: ClientKnowledgePackage = serde_json::from_str(&raw)?;
-        let vocabulary = package.to_expert_vocabulary();
-        self.save_knowledge_package(&package)?;
-        self.save_expert_vocabulary(&vocabulary)?;
-        self.patch_settings_after_vocabulary_pull(&vocabulary)?;
-        let apply_result = Some(self.apply_vocabulary_to_index()?);
-        self.append_event(
-            "knowledge-package.rolled-back",
-            json!({
-                "packageId": package.package_id,
-                "version": package.version,
-                "checksum": package.checksum
-            }),
-        )?;
-        Ok(VocabularyPullResult {
-            changed: true,
-            vocabulary,
-            apply_result,
-        })
-    }
-
     pub fn pull_vocabulary(&self) -> Result<VocabularyPullResult> {
         self.append_event("vocabulary.pull.started", json!({}))?;
         let previous = self.load_expert_vocabulary().unwrap_or_default();
         let config = self.load_config().unwrap_or_default();
-        let (vocabulary, package) = fetch_expert_vocabulary(&config)?;
+        let session = service_base_url(&config)
+            .ok()
+            .map(|service_url| console_session_for_config(&service_url, &config))
+            .transpose()?
+            .flatten();
+        let vocabulary = fetch_expert_vocabulary(&config, session.as_ref())?;
         let changed = vocabulary.checksum.is_empty() || vocabulary.checksum != previous.checksum;
-        if let Some(package) = package {
-            self.save_knowledge_package(&package)?;
-        }
         self.save_expert_vocabulary(&vocabulary)?;
         self.patch_settings_after_vocabulary_pull(&vocabulary)?;
         self.append_event(
@@ -2451,10 +2639,8 @@ impl Backend {
 
         let tool = self.ensure_macos_mail_tool()?;
         let workspace = self.mail_workspace();
+        self.prepare_mail_import_workspace()?;
         let tmp_dir = workspace.join("tmp");
-        fs::create_dir_all(&tmp_dir)?;
-        fs::create_dir_all(self.mail_downloads_dir())?;
-        fs::create_dir_all(self.mail_index_dir())?;
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -2510,6 +2696,37 @@ impl Backend {
         self.mail_import_status()
     }
 
+    fn prepare_mail_import_workspace(&self) -> Result<()> {
+        let workspace = self.mail_workspace();
+        let tmp_dir = workspace.join("tmp");
+        fs::create_dir_all(&tmp_dir)?;
+        fs::create_dir_all(self.mail_downloads_dir())?;
+        fs::create_dir_all(self.mail_index_dir())?;
+        for file_name in [
+            "progress.tsv",
+            "manifest.tsv",
+            "index-events.tsv",
+            "dedupe-requests.tsv",
+        ] {
+            atomic_write_text(&tmp_dir.join(file_name), "")?;
+        }
+        let _ = fs::remove_file(tmp_dir.join("control.pause"));
+        let _ = fs::remove_file(tmp_dir.join("control.cancel"));
+        let _ = fs::remove_dir_all(tmp_dir.join("sources"));
+        atomic_write_json(
+            &tmp_dir.join("diagnostics.json"),
+            &json!({
+                "workspaceDirectory": workspace.to_string_lossy().to_string(),
+                "downloadsDirectory": self.mail_downloads_dir().to_string_lossy().to_string(),
+                "indexDirectory": self.mail_index_dir().to_string_lossy().to_string(),
+                "tmpDirectory": tmp_dir.to_string_lossy().to_string(),
+                "status": "starting",
+                "writtenAt": timestamp(),
+            }),
+        )?;
+        Ok(())
+    }
+
     pub fn mail_import_status(&self) -> Result<Value> {
         let workspace = self.mail_workspace();
         let tmp_dir = workspace.join("tmp");
@@ -2530,7 +2747,7 @@ impl Backend {
                 "running".to_string()
             }
         } else {
-            state
+            let stored_status = state
                 .get("status")
                 .and_then(Value::as_str)
                 .or_else(|| {
@@ -2539,8 +2756,12 @@ impl Backend {
                         .and_then(|item| item.get("kind"))
                         .and_then(Value::as_str)
                 })
-                .unwrap_or("idle")
-                .to_string()
+                .unwrap_or("idle");
+            if matches!(stored_status, "running" | "paused" | "cancelling") {
+                "failed".to_string()
+            } else {
+                stored_status.to_string()
+            }
         };
         if let Some(object) = state.as_object_mut() {
             object.insert("status".to_string(), json!(status));
@@ -2585,9 +2806,14 @@ impl Backend {
     }
 
     pub fn cancel_macos_mail_import(&self) -> Result<Value> {
+        let state = read_json_file(&self.mail_import_state_path()).unwrap_or_else(|| json!({}));
+        let pid = state.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32;
         let pause_path = self.mail_workspace().join("tmp").join("control.pause");
         let _ = fs::remove_file(pause_path);
         self.write_mail_import_control("control.cancel", "cancelled")?;
+        if pid > 0 && process_is_running(pid) {
+            terminate_process(pid);
+        }
         self.append_event("mail.import.cancel-requested", json!({}))?;
         self.mail_import_status()
     }
@@ -3032,6 +3258,17 @@ impl Backend {
             "knowledge.export" => self.export_knowledge(params),
             "knowledge.agent.context" => self.knowledge_agent_context(params),
             "knowledge.agent.answer" => self.knowledge_agent_answer(params),
+            "connectors.list" => self.list_data_connectors(),
+            "connectors.install" => self.install_data_connector(params),
+            "connectors.enable" => self.enable_data_connector(params),
+            "connectors.disable" => self.disable_data_connector(params),
+            "connectors.uninstall" => self.uninstall_data_connector(params),
+            "connectors.auth.start" => self.start_data_connector_auth(params),
+            "connectors.auth.status" => self.data_connector_auth_status(params),
+            "connectors.auth.revoke" => self.revoke_data_connector_auth(params),
+            "connectors.sync" => self.sync_data_connector(params),
+            "connectors.health" => self.data_connector_health(params),
+            "connectors.queryLocal" => self.query_local_data_connectors(params),
             "context.compaction.preview" => self.context_compaction_preview(params),
             "context.compaction.run" => self.context_compaction_run(params),
             "context.compaction.records" => self.context_compaction_records(params),
@@ -3056,11 +3293,6 @@ impl Backend {
             "result.export" => self.export_result_artifact(params),
             "vocabulary.pull" => self.pull_vocabulary().map(|item| json!(item)),
             "vocabulary.applyToIndex" => self.apply_vocabulary_to_index().map(|item| json!(item)),
-            "knowledge-packages.get" => self.load_knowledge_package().map(|item| json!(item)),
-            "knowledge-packages.pull" => self.pull_vocabulary().map(|item| json!(item)),
-            "knowledge-packages.rollback" => {
-                self.rollback_knowledge_package().map(|item| json!(item))
-            }
             "mail.index.stats" => self.mail_index_stats().map(|item| json!(item)),
             "mail.index.rebuild" => self.rebuild_mail_index(),
             "mail.index.search" => {
@@ -3246,6 +3478,8 @@ impl BackendCommandResult {
 pub struct ClientConfig {
     pub bootstrap_base_url: String,
     pub resolved_service_base_url: String,
+    pub service_username: String,
+    pub service_password: String,
     pub client_id: String,
     pub last_discovery_config_version: String,
     pub last_expert_vocabulary_version: u64,
@@ -3257,12 +3491,32 @@ pub struct ClientConfig {
     pub platform_capability_preference: String,
 }
 
+#[derive(Clone, Debug, Default)]
+struct ConsoleServiceAuth {
+    username: String,
+    password: String,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ConsoleServiceSession {
+    cookie: String,
+    csrf: String,
+}
+
 #[derive(Clone, Debug)]
 struct PipelineLocalFile {
     path: PathBuf,
     name: String,
     relative_path: String,
     media_type: String,
+    client_uid: Option<String>,
+    source_type: Option<String>,
+    provider_id: Option<String>,
+    external_id: Option<String>,
+    sync_batch_id: Option<String>,
+    content_hash: Option<String>,
+    captured_at: Option<String>,
+    source_metadata: Value,
     sha256: String,
     byte_size: u64,
 }
@@ -3278,7 +3532,10 @@ pub struct ClientBackendCapabilities {
     pub file_index: bool,
     pub local_rpc: bool,
     pub expert_vocabulary: bool,
+    pub data_connectors: bool,
+    pub chat_index: bool,
     pub platform_adapters: Vec<String>,
+    pub connector_providers: Vec<String>,
     pub methods: Vec<String>,
     pub operations: Vec<ClientOperationDefinition>,
     pub updated_at: String,
@@ -3290,6 +3547,7 @@ impl ClientBackendCapabilities {
         if cfg!(target_os = "macos") {
             adapters.push("macos-mail".to_string());
         }
+        adapters.push("data-connectors".to_string());
         Self {
             schema_version: BACKEND_SCHEMA_VERSION,
             protocol_version: PROTOCOL_VERSION,
@@ -3299,7 +3557,10 @@ impl ClientBackendCapabilities {
             file_index: true,
             local_rpc: true,
             expert_vocabulary: true,
+            data_connectors: true,
+            chat_index: true,
             platform_adapters: adapters,
+            connector_providers: connectors::built_in_connector_provider_ids(),
             methods: backend_methods(),
             operations: client_operation_registry(),
             updated_at: timestamp(),
@@ -3387,38 +3648,6 @@ pub struct ExpertVocabularyEntry {
     pub domains: Vec<String>,
     pub status: String,
     pub notes: String,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct ClientKnowledgePackage {
-    pub schema_version: u32,
-    pub package_id: String,
-    pub version: u64,
-    pub status: String,
-    pub scope: Value,
-    pub layers: Value,
-    pub entries: Vec<ExpertVocabularyEntry>,
-    pub checksum: String,
-    pub parent_version: u64,
-    pub rollback_of: u64,
-    pub updated_at: String,
-    pub published_at: String,
-    pub audit_id: String,
-}
-
-impl ClientKnowledgePackage {
-    fn to_expert_vocabulary(&self) -> ExpertVocabulary {
-        ExpertVocabulary {
-            schema_version: 1,
-            version: self.version,
-            updated_at: self.updated_at.clone(),
-            published_at: self.published_at.clone(),
-            source: self.package_id.clone(),
-            checksum: self.checksum.clone(),
-            entries: self.entries.clone(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -3792,7 +4021,8 @@ pub fn rpc_call(endpoint: &RpcEndpoint, method: &str, params: Value) -> Result<V
         "params": params,
         "protocolVersion": PROTOCOL_VERSION
     });
-    let response: Value = ureq::post(&format!("{}/rpc", endpoint.base_url.trim_end_matches('/')))
+    let response: Value = http_json_agent()
+        .post(&format!("{}/rpc", endpoint.base_url.trim_end_matches('/')))
         .set("content-type", "application/json")
         .set("x-splitall-client-token", &endpoint.token)
         .send_json(request)?
@@ -4029,39 +4259,98 @@ fn header_value(header: &str, name: &str) -> Option<String> {
     None
 }
 
-fn fetch_expert_vocabulary(
-    config: &ClientConfig,
-) -> Result<(ExpertVocabulary, Option<ClientKnowledgePackage>)> {
-    let base = service_base_url(config)?;
-    let package_response = ureq::get(&format!(
-        "{}/api/knowledge-packages/mail-expert-vocabulary/export",
-        base
-    ))
-    .set("accept", "application/json")
-    .call();
-    if let Ok(response) = package_response {
-        let value: Value = response.into_json()?;
-        if let Some(package_value) = value.get("package").cloned() {
-            let package: ClientKnowledgePackage = serde_json::from_value(package_value)?;
-            let vocabulary = value
-                .get("vocabulary")
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()?
-                .unwrap_or_else(|| package.to_expert_vocabulary());
-            return Ok((vocabulary, Some(package)));
+fn service_console_auth(config: &ClientConfig) -> Option<ConsoleServiceAuth> {
+    let username = config.service_username.trim().to_string();
+    let password = config.service_password.to_string();
+    if username.is_empty() || password.trim().is_empty() {
+        return None;
+    }
+    Some(ConsoleServiceAuth { username, password })
+}
+
+fn extract_console_session_cookie(header: &str) -> String {
+    for part in header.split(',') {
+        let cookie = part.split(';').next().unwrap_or("").trim();
+        if cookie.starts_with("splitall_console_session=") {
+            return cookie.to_string();
         }
     }
+    let cookie = header.split(';').next().unwrap_or("").trim();
+    if cookie.starts_with("splitall_console_session=") {
+        return cookie.to_string();
+    }
+    String::new()
+}
 
-    let response: Value = ureq::get(&format!("{}/api/expert-vocabulary", base))
+fn login_console_session(
+    service_url: &str,
+    auth: &ConsoleServiceAuth,
+) -> Result<ConsoleServiceSession> {
+    let login_url = format!("{}/api/auth/login", normalize_service_url(service_url));
+    let response = http_json_agent()
+        .post(&login_url)
         .set("accept", "application/json")
-        .call()?
-        .into_json()?;
+        .set("content-type", "application/json")
+        .send_json(json!({
+            "username": auth.username,
+            "password": auth.password
+        }))?;
+    let set_cookie = response.header("set-cookie").unwrap_or("").to_string();
+    let payload: Value = response.into_json()?;
+    let cookie = extract_console_session_cookie(&set_cookie);
+    let csrf = payload
+        .get("csrfToken")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if cookie.is_empty() || csrf.is_empty() {
+        return Err(anyhow!("console login did not return a usable session"));
+    }
+    Ok(ConsoleServiceSession { cookie, csrf })
+}
+
+fn console_session_for_config(
+    service_url: &str,
+    config: &ClientConfig,
+) -> Result<Option<ConsoleServiceSession>> {
+    let Some(auth) = service_console_auth(config) else {
+        return Ok(None);
+    };
+    Ok(Some(login_console_session(service_url, &auth)?))
+}
+
+fn service_path_requires_console_auth(path: &str) -> bool {
+    if !path.starts_with('/') {
+        return false;
+    }
+    path.starts_with("/api/interfaces")
+        || path.starts_with("/api/knowledge")
+        || path.starts_with("/api/agents")
+        || path.starts_with("/api/upload-sessions")
+        || path.starts_with("/api/jobs")
+        || path.starts_with("/api/export")
+        || path.starts_with("/api/events")
+        || path.starts_with("/api/agent-gateway")
+        || path.starts_with("/api/expert-vocabulary")
+        || path.starts_with("/api/console/")
+}
+
+fn fetch_expert_vocabulary(
+    config: &ClientConfig,
+    session: Option<&ConsoleServiceSession>,
+) -> Result<ExpertVocabulary> {
+    let base = service_base_url(config)?;
+    let response = http_json_with_auth(
+        "GET",
+        &format!("{}/api/expert-vocabulary", base),
+        None,
+        session,
+    )?;
     let vocabulary = response
         .get("vocabulary")
         .cloned()
         .ok_or_else(|| anyhow!("server did not return vocabulary"))?;
-    Ok((serde_json::from_value(vocabulary)?, None))
+    Ok(serde_json::from_value(vocabulary)?)
 }
 
 fn service_base_url(config: &ClientConfig) -> Result<String> {
@@ -4148,7 +4437,6 @@ fn local_agent_alias(config: &Value) -> Option<String> {
         &[
             "customModelAlias",
             "customHttpAdapter.alias",
-            "agentGateway.alias",
             "agentAlias",
             "agent.alias",
         ],
@@ -4162,7 +4450,6 @@ fn local_agent_registry(config: &Value) -> Value {
         &[
             "customModelLabel",
             "customHttpAdapter.label",
-            "agentGateway.label",
             "agentLabel",
             "agent.label",
         ],
@@ -4419,12 +4706,47 @@ fn pipeline_files_from_params(params: &Value) -> Result<Vec<PipelineLocalFile>> 
             name,
             relative_path,
             media_type,
+            client_uid: string_param_from_file(&item, params, &["clientUid", "clientId"]),
+            source_type: string_param_from_file(&item, params, &["sourceType", "resourceType"]),
+            provider_id: string_param_from_file(&item, params, &["providerId"]),
+            external_id: string_param_from_file(&item, params, &["externalId"]),
+            sync_batch_id: string_param_from_file(
+                &item,
+                params,
+                &["syncBatchId", "clientBatchId", "batchId"],
+            ),
+            content_hash: string_param_from_file(&item, params, &["contentHash"]),
+            captured_at: string_param_from_file(&item, params, &["capturedAt"]),
+            source_metadata: object_param_from_file(&item, params, "sourceMetadata"),
             sha256,
             byte_size: metadata.len(),
         });
     }
     files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     Ok(files)
+}
+
+fn string_param(value: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn string_param_from_file(item: &Value, params: &Value, keys: &[&str]) -> Option<String> {
+    string_param(item, keys).or_else(|| string_param(params, keys))
+}
+
+fn object_param_from_file(item: &Value, params: &Value, key: &str) -> Value {
+    item.get(key)
+        .or_else(|| params.get(key))
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}))
 }
 
 fn pipeline_manifest_digest(files: &[PipelineLocalFile]) -> Result<String> {
@@ -4513,14 +4835,65 @@ fn normalize_service_url(value: &str) -> String {
         .to_string()
 }
 
-fn http_json(method: &str, url: &str, body: Option<Value>) -> Result<Value> {
-    let request = match method {
-        "GET" => ureq::get(url),
-        "POST" => ureq::post(url),
-        "PUT" => ureq::put(url),
-        "DELETE" => ureq::delete(url),
-        _ => return Err(anyhow!("unsupported HTTP method: {}", method)),
+fn http_json_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(Duration::from_secs(20))
+        .timeout_write(Duration::from_secs(20))
+        .build()
+}
+
+fn http_binary_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(Duration::from_secs(60))
+        .timeout_write(Duration::from_secs(60))
+        .build()
+}
+
+fn request_is_safe(method: &str) -> bool {
+    matches!(method, "GET" | "HEAD" | "OPTIONS")
+}
+
+fn apply_console_session_auth(
+    request: ureq::Request,
+    method: &str,
+    session: Option<&ConsoleServiceSession>,
+) -> ureq::Request {
+    let Some(session) = session else {
+        return request;
+    };
+    let mut request = request;
+    if !session.cookie.trim().is_empty() {
+        request = request.set("Cookie", session.cookie.trim());
     }
+    if !request_is_safe(method) {
+        if !session.csrf.trim().is_empty() {
+            request = request.set("x-splitall-csrf", session.csrf.trim());
+        }
+        request = request.set("x-splitall-safety-confirm", "true");
+    }
+    request
+}
+
+fn http_json_with_auth(
+    method: &str,
+    url: &str,
+    body: Option<Value>,
+    session: Option<&ConsoleServiceSession>,
+) -> Result<Value> {
+    let agent = http_json_agent();
+    let request = apply_console_session_auth(
+        match method {
+            "GET" => agent.get(url),
+            "POST" => agent.post(url),
+            "PUT" => agent.put(url),
+            "DELETE" => agent.delete(url),
+            _ => return Err(anyhow!("unsupported HTTP method: {}", method)),
+        },
+        method,
+        session,
+    )
     .set("accept", "application/json");
     let response = if let Some(body) = body {
         request
@@ -4532,8 +4905,16 @@ fn http_json(method: &str, url: &str, body: Option<Value>) -> Result<Value> {
     Ok(response.into_json()?)
 }
 
-fn http_checkpoint_chunk(url: &str, body: &[u8]) -> Result<Value> {
-    let request = ureq::put(url)
+fn http_json(method: &str, url: &str, body: Option<Value>) -> Result<Value> {
+    http_json_with_auth(method, url, body, None)
+}
+
+fn http_checkpoint_chunk_with_auth(
+    url: &str,
+    body: &[u8],
+    session: Option<&ConsoleServiceSession>,
+) -> Result<Value> {
+    let request = apply_console_session_auth(http_binary_agent().put(url), "PUT", session)
         .set("accept", "application/json")
         .set("content-type", "application/octet-stream");
     match request.send_bytes(body) {
@@ -4541,6 +4922,10 @@ fn http_checkpoint_chunk(url: &str, body: &[u8]) -> Result<Value> {
         Err(ureq::Error::Status(409, response)) => Ok(response.into_json()?),
         Err(error) => Err(error.into()),
     }
+}
+
+fn http_checkpoint_chunk(url: &str, body: &[u8]) -> Result<Value> {
+    http_checkpoint_chunk_with_auth(url, body, None)
 }
 
 fn content_disposition_filename(value: &str) -> Option<String> {
@@ -4619,6 +5004,17 @@ fn backend_methods() -> Vec<String> {
         "knowledge.export",
         "knowledge.agent.context",
         "knowledge.agent.answer",
+        "connectors.list",
+        "connectors.install",
+        "connectors.enable",
+        "connectors.disable",
+        "connectors.uninstall",
+        "connectors.auth.start",
+        "connectors.auth.status",
+        "connectors.auth.revoke",
+        "connectors.sync",
+        "connectors.health",
+        "connectors.queryLocal",
         "context.compaction.preview",
         "context.compaction.run",
         "context.compaction.records",
@@ -4643,9 +5039,6 @@ fn backend_methods() -> Vec<String> {
         "result.export",
         "vocabulary.pull",
         "vocabulary.applyToIndex",
-        "knowledge-packages.get",
-        "knowledge-packages.pull",
-        "knowledge-packages.rollback",
         "mail.auth.check",
         "mail.auth.request",
         "mail.import.start",
@@ -4698,6 +5091,10 @@ fn client_operation_definition(method: &str) -> ClientOperationDefinition {
             | "knowledge.graph"
             | "knowledge.document.get"
             | "knowledge.export"
+            | "connectors.list"
+            | "connectors.auth.status"
+            | "connectors.health"
+            | "connectors.queryLocal"
             | "context.compaction.preview"
             | "context.compaction.records"
             | "context.session_memory.get"
@@ -4707,7 +5104,6 @@ fn client_operation_definition(method: &str) -> ClientOperationDefinition {
             | "upload.queue.get"
             | "mail.index.stats"
             | "mail.index.search"
-            | "knowledge-packages.get"
             | "events.subscribe"
     );
     let repair_write = matches!(
@@ -4719,7 +5115,6 @@ fn client_operation_definition(method: &str) -> ClientOperationDefinition {
             | "state.logs.clear"
             | "context.session_memory.clear"
             | "mail.index.rebuild"
-            | "knowledge-packages.rollback"
     );
     let risk = if read_only {
         "read_only"
@@ -5424,7 +5819,11 @@ fn compact_client_text(text: &str, max_chars: usize) -> String {
         .take(24)
         .collect::<Vec<_>>()
         .join("\n");
-    let source = if important.is_empty() { text } else { &important };
+    let source = if important.is_empty() {
+        text
+    } else {
+        &important
+    };
     source.chars().take(max_chars).collect()
 }
 
@@ -5442,7 +5841,10 @@ fn client_context_summary(messages: &[Value], params: &Value) -> String {
         parts.push(format!("Current task: {}", task.trim()));
     }
     for message in messages.iter().rev().take(24).rev() {
-        let role = message.get("role").and_then(Value::as_str).unwrap_or("user");
+        let role = message
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or("user");
         let id = message.get("id").and_then(Value::as_str).unwrap_or("");
         let text = compact_client_text(&client_message_text(message), 600);
         if !text.trim().is_empty() {
@@ -5562,6 +5964,18 @@ fn process_is_running(pid: u32) -> bool {
     #[cfg(not(unix))]
     {
         false
+    }
+}
+
+fn terminate_process(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    #[cfg(unix)]
+    {
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        }
     }
 }
 
@@ -7081,8 +7495,13 @@ fn render_cached_document_markdown(
     out
 }
 
-fn http_binary(url: &str) -> Result<(Vec<u8>, String)> {
-    let response = ureq::get(url).set("accept", "*/*").call()?;
+fn http_binary_with_auth(
+    url: &str,
+    session: Option<&ConsoleServiceSession>,
+) -> Result<(Vec<u8>, String)> {
+    let response = apply_console_session_auth(http_binary_agent().get(url), "GET", session)
+        .set("accept", "*/*")
+        .call()?;
     let content_type = response
         .header("content-type")
         .unwrap_or("application/octet-stream")
@@ -7091,6 +7510,10 @@ fn http_binary(url: &str) -> Result<(Vec<u8>, String)> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
     Ok((bytes, content_type))
+}
+
+fn http_binary(url: &str) -> Result<(Vec<u8>, String)> {
+    http_binary_with_auth(url, None)
 }
 
 fn atomic_write_bytes(path: &Path, contents: &[u8]) -> Result<()> {
@@ -7115,6 +7538,7 @@ fn download_missing_knowledge_assets(
     conn: &Connection,
     backend: &Backend,
     service_url: &str,
+    session: Option<&ConsoleServiceSession>,
 ) -> Result<()> {
     let mut stmt = conn.prepare(
         "
@@ -7138,7 +7562,7 @@ fn download_missing_knowledge_assets(
             service_url,
             url_escape(&asset_id)
         );
-        let (bytes, _) = http_binary(&url)?;
+        let (bytes, _) = http_binary_with_auth(&url, session)?;
         atomic_write_bytes(&target, &bytes)?;
         conn.execute(
             "UPDATE knowledge_assets SET local_path = ?2 WHERE asset_id = ?1",
@@ -7152,6 +7576,7 @@ fn download_missing_normalized_documents(
     conn: &Connection,
     backend: &Backend,
     service_url: &str,
+    session: Option<&ConsoleServiceSession>,
 ) -> Result<()> {
     let mut stmt = conn.prepare(
         "
@@ -7205,7 +7630,7 @@ fn download_missing_normalized_documents(
             url_escape(&batch_id),
             url_escape(manifest_document_id)
         );
-        let (bytes, _) = match http_binary(&url) {
+        let (bytes, _) = match http_binary_with_auth(&url, session) {
             Ok(value) => value,
             Err(_) => continue,
         };
@@ -7773,6 +8198,74 @@ mod tests {
         backend.save_expert_vocabulary(vocabulary).unwrap();
     }
 
+    #[test]
+    fn prepare_mail_import_workspace_clears_stale_run_files() {
+        let (dir, backend) = make_backend("mail-import-prepare");
+        let tmp_dir = backend.mail_workspace().join("tmp");
+        fs::create_dir_all(&tmp_dir).unwrap();
+        fs::write(
+            tmp_dir.join("progress.tsv"),
+            "exported\t4\t75712\t4\t0\t0\tOld\told.eml\n",
+        )
+        .unwrap();
+        fs::write(tmp_dir.join("manifest.tsv"), "4\tOld\n").unwrap();
+        fs::write(tmp_dir.join("index-events.tsv"), "4\told\n").unwrap();
+        fs::write(tmp_dir.join("dedupe-requests.tsv"), "4\told\n").unwrap();
+        fs::write(tmp_dir.join("control.pause"), "paused").unwrap();
+        fs::write(tmp_dir.join("control.cancel"), "cancelled").unwrap();
+        atomic_write_json(
+            &tmp_dir.join("diagnostics.json"),
+            &json!({ "status": "completed", "exportedCount": 4 }),
+        )
+        .unwrap();
+
+        backend.prepare_mail_import_workspace().unwrap();
+
+        assert_eq!(
+            fs::read_to_string(tmp_dir.join("progress.tsv")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(tmp_dir.join("manifest.tsv")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(tmp_dir.join("index-events.tsv")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(tmp_dir.join("dedupe-requests.tsv")).unwrap(),
+            ""
+        );
+        assert!(!tmp_dir.join("control.pause").exists());
+        assert!(!tmp_dir.join("control.cancel").exists());
+        let diagnostics = read_json_file(&tmp_dir.join("diagnostics.json")).unwrap();
+        assert_eq!(diagnostics["status"], "starting");
+        assert!(diagnostics.get("exportedCount").is_none());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn mail_import_status_marks_dead_running_pid_failed() {
+        let (dir, backend) = make_backend("mail-import-dead-pid");
+        atomic_write_json(
+            &backend.mail_import_state_path(),
+            &json!({
+                "schemaVersion": BACKEND_SCHEMA_VERSION,
+                "protocolVersion": PROTOCOL_VERSION,
+                "status": "running",
+                "pid": 999_999_999_u64,
+            }),
+        )
+        .unwrap();
+
+        let status = backend.mail_import_status().unwrap();
+
+        assert_eq!(status["running"], false);
+        assert_eq!(status["status"], "failed");
+        cleanup(&dir);
+    }
+
     fn write_docs(backend: &Backend, lines: &[&str]) {
         fs::create_dir_all(backend.docs_tsv_path().parent().unwrap()).unwrap();
         let mut text = lines.join("\n");
@@ -7869,6 +8362,75 @@ mod tests {
         assert_eq!(state.protocol_version, PROTOCOL_VERSION);
         assert_eq!(state.daemon_status, "running");
         assert_eq!(state.data_directory, dir.to_string_lossy());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn initialize_shared_files_recovers_stale_processing_commands() {
+        let (dir, backend) = make_backend("shared-init-recover");
+        fs::create_dir_all(backend.command_processing_dir()).unwrap();
+        fs::create_dir_all(backend.command_results_dir()).unwrap();
+
+        atomic_write_json(
+            &backend.command_processing_dir().join("retry-me.json"),
+            &json!({
+                "schemaVersion": 1,
+                "protocolVersion": PROTOCOL_VERSION,
+                "commandId": "retry-me",
+                "method": "mail.index.stats",
+                "params": {},
+                "createdAt": "unix:1"
+            }),
+        )
+        .unwrap();
+        atomic_write_json(
+            &backend
+                .command_processing_dir()
+                .join("already-finished.json"),
+            &json!({
+                "schemaVersion": 1,
+                "protocolVersion": PROTOCOL_VERSION,
+                "commandId": "already-finished",
+                "method": "mail.index.stats",
+                "params": {},
+                "createdAt": "unix:1"
+            }),
+        )
+        .unwrap();
+        atomic_write_json(
+            &backend.command_result_path("already-finished"),
+            &BackendCommandResult::success(
+                "already-finished",
+                "mail.index.stats",
+                json!({ "ok": true }),
+                "unix:1",
+                "unix:2",
+                "trace_test",
+            ),
+        )
+        .unwrap();
+
+        backend.initialize_shared_files().unwrap();
+
+        assert!(backend.command_inbox_dir().join("retry-me.json").exists());
+        assert!(
+            backend
+                .command_done_dir()
+                .join("already-finished.json")
+                .exists()
+        );
+        assert!(
+            !backend
+                .command_processing_dir()
+                .join("retry-me.json")
+                .exists()
+        );
+        assert!(
+            !backend
+                .command_processing_dir()
+                .join("already-finished.json")
+                .exists()
+        );
         cleanup(&dir);
     }
 
@@ -8218,20 +8780,6 @@ mod tests {
             .search_knowledge_cache(json!({ "query": "signature", "limit": 10 }))
             .unwrap();
         assert_eq!(empty["total"], 0);
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn knowledge_cache_migrates_legacy_root_database() {
-        let (dir, backend) = make_backend("knowledge-migrate");
-        let legacy = backend.legacy_knowledge_cache_path();
-        let conn = open_knowledge_cache(&legacy).unwrap();
-        knowledge_meta_set(&conn, "serverCursor", "42").unwrap();
-        drop(conn);
-
-        let stats = backend.knowledge_cache_stats().unwrap();
-        assert!(backend.knowledge_cache_path().exists());
-        assert_eq!(stats["serverCursor"], "42");
         cleanup(&dir);
     }
 
@@ -8807,19 +9355,17 @@ mod tests {
             .unwrap();
         assert_eq!(result["protocolVersion"], "splitall.context.compaction.v1");
         assert_eq!(result["compacted"], true);
-        assert!(result["summary"]
-            .as_str()
-            .unwrap()
-            .contains("client-evidence-42"));
+        assert!(
+            result["summary"]
+                .as_str()
+                .unwrap()
+                .contains("client-evidence-42")
+        );
         assert!(backend.context_compaction_records_path().exists());
         assert!(backend.context_session_memory_path().exists());
 
         let records = backend
-            .execute_method(
-                "context.compaction.records",
-                json!({ "limit": 10 }),
-                None,
-            )
+            .execute_method("context.compaction.records", json!({ "limit": 10 }), None)
             .unwrap();
         assert_eq!(records["records"].as_array().unwrap().len(), 1);
 
@@ -8840,55 +9386,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(cleared["ok"], true);
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn client_knowledge_package_rollback_restores_previous_vocabulary() {
-        let (dir, backend) = make_backend("knowledge-package-rollback");
-        let old_package = ClientKnowledgePackage {
-            schema_version: 1,
-            package_id: "mail-expert-vocabulary".into(),
-            version: 1,
-            status: "active".into(),
-            scope: json!({ "sourceKinds": ["email"] }),
-            layers: json!([]),
-            entries: sample_vocab("old-checksum").entries,
-            checksum: "old-checksum".into(),
-            parent_version: 0,
-            rollback_of: 0,
-            updated_at: "unix:1".into(),
-            published_at: "unix:1".into(),
-            audit_id: String::new(),
-        };
-        let new_package = ClientKnowledgePackage {
-            checksum: "new-checksum".into(),
-            version: 2,
-            entries: vec![ExpertVocabularyEntry {
-                id: "new".into(),
-                path_segments: vec!["新".into()],
-                label: "新".into(),
-                keywords: vec!["new-marker".into()],
-                domains: vec![],
-                status: "active".into(),
-                notes: String::new(),
-            }],
-            ..old_package.clone()
-        };
-        backend.save_knowledge_package(&old_package).unwrap();
-        backend.save_knowledge_package(&new_package).unwrap();
-        assert_eq!(
-            backend.load_knowledge_package().unwrap().checksum,
-            "new-checksum"
-        );
-
-        let rolled_back = backend.rollback_knowledge_package().unwrap();
-        assert_eq!(rolled_back.vocabulary.checksum, "old-checksum");
-        assert_eq!(
-            backend.load_expert_vocabulary().unwrap().checksum,
-            "old-checksum"
-        );
-        assert!(backend.mail_index_dir().join("state.json").exists());
         cleanup(&dir);
     }
 

@@ -1,5 +1,6 @@
 enum MacOSMailImportProgressKind {
   started,
+  scanning,
   planned,
   processing,
   exported,

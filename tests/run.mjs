@@ -63,6 +63,13 @@ const suites = [
     "knowledge",
     "regression"
   ]),
+  suite("server.knowledge-outline", "Knowledge document outline routing", npm("run", "server:verify:knowledge-outline"), [
+    "server",
+    "integration",
+    "knowledge",
+    "retrieval",
+    "regression"
+  ]),
   suite("server.operation-policy", "Operation policy and central audit", npm("run", "server:verify:operation-policy"), [
     "server",
     "security",
@@ -113,6 +120,13 @@ const suites = [
     "security",
     "regression"
   ]),
+  suite("server.client-runtime-allocator", "Client runtime allocation", npm("run", "server:verify:client-runtime-allocator"), [
+    "server",
+    "context",
+    "agent",
+    "runtime",
+    "regression"
+  ]),
   suite("server.agent-gateway-compaction", "Agent gateway context compaction", npm("run", "server:verify:agent-gateway-compaction"), [
     "server",
     "agent",
@@ -125,12 +139,6 @@ const suites = [
     "maintenance",
     "context",
     "compaction",
-    "regression"
-  ]),
-  suite("server.knowledge-packages", "Knowledge package versioning", npm("run", "server:verify:knowledge-packages"), [
-    "server",
-    "integration",
-    "knowledge",
     "regression"
   ]),
   suite("server.entity-config-layout", "Human-maintainable entity config layout", npm("run", "server:verify:entity-config-layout"), [
@@ -157,11 +165,38 @@ const suites = [
     "memory",
     "regression"
   ]),
+  suite("server.multi-source-connectors", "Multi-source local mirror and unified evidence", npm("run", "server:verify:multi-source-connectors"), [
+    "server",
+    "integration",
+    "knowledge",
+    "source",
+    "connectors",
+    "regression"
+  ]),
   suite("server.maintenance-agent", "Maintenance agent harness", npm("run", "server:verify:maintenance-agent"), [
     "server",
     "integration",
     "security",
     "maintenance",
+    "regression"
+  ]),
+  suite("server.monitor-alerts", "Monitor alert queue interruption lifecycle", npm("run", "server:verify:monitor-alerts"), [
+    "server",
+    "monitoring",
+    "queue",
+    "regression"
+  ]),
+  suite("server.feature-profiles", "Feature profile checks", npm("run", "server:verify:feature-profiles"), [
+    "server",
+    "feature-profile",
+    "build",
+    "packaging",
+    "regression"
+  ]),
+  suite("server.business-scenarios", "Server business scenario black-box framework", npm("run", "server:verify:business-scenarios"), [
+    "server",
+    "business",
+    "integration",
     "regression"
   ]),
   suite("smoke.server.lifecycle", "Server lifecycle and core API smoke", node("tests/smoke/server-lifecycle-smoke.mjs"), [
@@ -268,13 +303,17 @@ const profileSuites = {
     "server.console-auth",
     "server.runtime-logging",
     "server.context-compaction",
+    "server.client-runtime-allocator",
     "server.agent-gateway-compaction",
     "server.maintenance-agent-compaction",
-    "server.knowledge-packages",
     "server.entity-config-layout",
     "server.singleton-boundaries",
     "server.source-evidence",
+    "server.multi-source-connectors",
     "server.maintenance-agent",
+    "server.monitor-alerts",
+    "server.feature-profiles",
+    "server.business-scenarios",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test",
@@ -299,13 +338,15 @@ const profileSuites = {
     "server.console-auth",
     "server.runtime-logging",
     "server.context-compaction",
+    "server.client-runtime-allocator",
     "server.agent-gateway-compaction",
     "server.maintenance-agent-compaction",
-    "server.knowledge-packages",
     "server.entity-config-layout",
     "server.singleton-boundaries",
     "server.source-evidence",
+    "server.multi-source-connectors",
     "server.maintenance-agent",
+    "server.feature-profiles",
     "client.native.test",
     "repo.hygiene.post"
   ],
@@ -323,13 +364,17 @@ const profileSuites = {
     "server.console-auth",
     "server.runtime-logging",
     "server.context-compaction",
+    "server.client-runtime-allocator",
     "server.agent-gateway-compaction",
     "server.maintenance-agent-compaction",
-    "server.knowledge-packages",
     "server.entity-config-layout",
     "server.singleton-boundaries",
     "server.source-evidence",
+    "server.multi-source-connectors",
     "server.maintenance-agent",
+    "server.monitor-alerts",
+    "server.feature-profiles",
+    "server.business-scenarios",
     "server.dispatcher-unified",
     "server.trace-context",
     "server.state-mutations",
@@ -339,6 +384,7 @@ const profileSuites = {
     "repo.hygiene.pre",
     "security.secret-hygiene",
     "server.source-evidence",
+    "server.multi-source-connectors",
     "server.console-auth",
     "server.dispatcher-unified",
     "server.trace-context",
@@ -369,13 +415,16 @@ const profileSuites = {
     "server.console-auth",
     "server.runtime-logging",
     "server.context-compaction",
+    "server.client-runtime-allocator",
     "server.agent-gateway-compaction",
     "server.maintenance-agent-compaction",
-    "server.knowledge-packages",
     "server.entity-config-layout",
     "server.singleton-boundaries",
     "server.source-evidence",
+    "server.multi-source-connectors",
     "server.maintenance-agent",
+    "server.feature-profiles",
+    "server.business-scenarios",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test",
@@ -414,11 +463,14 @@ const profileSuites = {
     "server.operation-policy",
     "server.console-auth",
     "server.runtime-logging",
-    "server.knowledge-packages",
+    "server.client-runtime-allocator",
     "server.entity-config-layout",
     "server.singleton-boundaries",
     "server.source-evidence",
+    "server.multi-source-connectors",
     "server.maintenance-agent",
+    "server.feature-profiles",
+    "server.business-scenarios",
     "server.dispatcher-unified",
     "server.trace-context",
     "server.state-mutations",
@@ -652,7 +704,9 @@ function changedSuiteIds(baseRef) {
       selected.add("server.ops");
       selected.add("server.knowledge");
       selected.add("server.source-evidence");
+      selected.add("server.multi-source-connectors");
       selected.add("server.maintenance-agent");
+      selected.add("server.feature-profiles");
       selected.add("smoke.server.lifecycle");
     }
     if (file.startsWith("server-web/") || file === "vite.config.ts") {

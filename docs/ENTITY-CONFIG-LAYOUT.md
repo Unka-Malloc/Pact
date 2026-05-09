@@ -26,10 +26,8 @@ as `settings.json`, `discovery.json`, or event/state caches.
   - One model agent per JSON entity.
 - `<userDataPath>/model-settings/<provider>.json`
   - One provider settings file per model provider.
-- `<userDataPath>/agent-tools/execution.json`
+- `<userDataPath>/tool-management/execution.json`
   - Singleton execution policy for local/HTTP tool execution.
-- `<userDataPath>/rules/knowledge-packages/<packageId>/`
-  - `manifest.json` plus versioned package payloads.
 - `<userDataPath>/knowledge-golden/packages/<packageId>/`
   - `manifest.json` plus versioned golden-rule payloads.
 - `<userDataPath>/knowledge-skills/bundles/<skillId>/`

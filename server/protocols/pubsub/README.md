@@ -69,7 +69,7 @@ accept: application/json
 - `storage.summary`
 - `knowledge.changes`
 - `knowledge.review_items`
-- `tool_platform.grants`
+- `tool_management.grants`
 - `agent_sync.config`
 - `agent.sync.*`
 

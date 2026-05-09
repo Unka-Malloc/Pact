@@ -118,13 +118,24 @@ async function main() {
   if (!existsSync(packagingManifest)) {
     throw new Error(`Packaging manifest is missing: ${packagingManifest}`);
   }
+  const manifest = JSON.parse(readFileSync(packagingManifest, "utf8"));
   const enabledModuleIds = new Set(
-    JSON.parse(readFileSync(packagingManifest, "utf8")).modules?.map((item) => item.id) || []
+    manifest.modules?.map((item) => item.id) || []
   );
+  const skippedModuleIds = new Set(manifest.skippedModules?.map((item) => item.id) || []);
   for (const moduleId of ["client-cli", "client-daemon", "upload-queue", "knowledge-mirror"]) {
     if (!enabledModuleIds.has(moduleId)) {
       throw new Error(`Packaging manifest does not include required module: ${moduleId}`);
     }
+  }
+  for (const moduleId of ["macos-mail-import"]) {
+    if (enabledModuleIds.has(moduleId) || skippedModuleIds.has(moduleId)) {
+      throw new Error(`Linux bundle manifest must not include macOS-only module: ${moduleId}`);
+    }
+  }
+  const macOSMailTool = path.join(bundleDir, "splitall-macos-mail-tool");
+  if (existsSync(macOSMailTool)) {
+    throw new Error(`Linux bundle must not include macOS Mail sidecar: ${macOSMailTool}`);
   }
 
   const dataDir = path.join(os.tmpdir(), `splitall-ubuntu-smoke-${process.pid}-${Date.now()}`);
@@ -181,6 +192,8 @@ async function main() {
       checks: [
         "bundle binaries exist",
         "packaging manifest includes required modules",
+        "packaging manifest excludes macOS-only Mail module",
+        "bundle excludes macOS Mail sidecar",
         "CLI rebuild applies expert vocabulary",
         "CLI search reads updated taxonomy",
         "daemon starts and stops with shared workspace",

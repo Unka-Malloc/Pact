@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { startHttpServer } from "../http-server.mjs";
-import { createKnowledgeCoreMount } from "../modules/KnowledgeCore/index.mjs";
+import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/datastore/knowledge-core/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const mockDocumentParserModulePath = fileURLToPath(
@@ -99,7 +99,7 @@ function buildKnowledgeIntentDocument({ id, title, text, sourcePath }) {
 
 async function verifyBillingIntentSearch() {
   const directUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-intent-"));
-  const knowledgeCore = createKnowledgeCoreMount({ userDataPath: directUserDataPath });
+  const knowledgeCore = await createKnowledgeCoreMount({ userDataPath: directUserDataPath });
   try {
     knowledgeCore.upsertDocuments({
       documents: [
@@ -410,7 +410,7 @@ async function verifyBillingIntentSearch() {
 
 async function verifyKnowledgeIngestConflictReview() {
   const directUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-conflict-"));
-  const knowledgeCore = createKnowledgeCoreMount({ userDataPath: directUserDataPath });
+  const knowledgeCore = await createKnowledgeCoreMount({ userDataPath: directUserDataPath });
   try {
     const first = await knowledgeCore.ingestSources({
       batchId: "conflict-batch-a",
@@ -555,7 +555,7 @@ try {
     const record = JSON.parse(
       await fs.readFile(path.join(userDataPath, `postcommit-${mountName}.json`), "utf8")
     );
-    assert.equal(record.batchId, createdJob.id);
+    assert.equal(record.batchId, createdJob.archiveBatchId);
     assert.ok(record.itemCount > 0);
   }
 

@@ -56,14 +56,13 @@ const allowedRootNames = new Set([
   "docker-compose.yml",
   "docs",
   "node_modules",
-  "ocr",
   "package-lock.json",
   "package.json",
   "server",
   "server-web",
+  "splitall-v1",
   "tests",
   "tsconfig.json",
-  "vendor",
   "vite.config.ts"
 ]);
 
@@ -73,8 +72,7 @@ const sourceRootsToScan = [
   "server-web",
   "client-cli",
   "client-gui",
-  "tests",
-  "ocr"
+  "tests"
 ];
 
 const nestedScanExcludedPaths = new Set([

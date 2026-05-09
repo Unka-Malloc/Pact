@@ -33,6 +33,10 @@ void main() {
     expect(progress.exportedCount, 3);
     expect(progress.sender, contains('alice@example.com'));
     expect(
+      MacOSMailImportProgressKind.fromValue('scanning'),
+      MacOSMailImportProgressKind.scanning,
+    );
+    expect(
       MacOSMailImportProgressKind.fromValue('missing'),
       MacOSMailImportProgressKind.unknown,
     );

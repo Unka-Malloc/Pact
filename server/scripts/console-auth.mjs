@@ -2,7 +2,7 @@ import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { createConsoleAuth } from "../auth/console-auth.mjs";
+import { createConsoleAuth } from "../platform/common/platform-core/auth/console-auth.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

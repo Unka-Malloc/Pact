@@ -4,7 +4,7 @@ import {
   atomicWriteJson,
   queueStateMutation,
   waitForStateIdle
-} from "../../application/state-coordinator.mjs";
+} from "../../platform/common/platform-core/state-coordinator.mjs";
 
 export const AGENT_SYNC_SCHEMA_VERSION = 1;
 export const AGENT_SYNC_PREFIX = "agent.sync.";

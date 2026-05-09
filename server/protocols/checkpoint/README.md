@@ -33,6 +33,8 @@ content-type: application/json
 
 - `checkpoint.checkpointId` 非空
 - `manifest.manifestDigest` 非空
+- 客户端显式提供的 `checkpoint.archiveBatchId` / `checkpoint.batchId` / `checkpoint.clientBatchId` 是归档批次真相源，服务端必须原值保留为 `archiveBatchId`。
+- `checkpoint.clientUid` 或 `manifest.clientUid` 标识客户端来源；`checkpoint.sourceType` 或 `manifest.sourceType` 标识客户端提交的资源类型。
 - 客户端传入的 `checkpointId` 不能作为服务端 ID 或路径使用；服务端必须用 sha256 派生 `checkpoint_*` 和 `upload_session_*`
 - 客户端传入的 `files[].name`、`files[].relativePath`、`files[].mediaType` 不能回写成服务端路径或路由标识；服务端只保存 hash 派生的 `upload_file_*` 和来源 hash
 - 同一服务端 `checkpoint_*` 已存在时，`manifestDigest` 和 `inputDigest` 必须一致
@@ -45,6 +47,9 @@ content-type: application/json
 {
   "sessionId": "string",
   "checkpointId": "string",
+  "archiveBatchId": "string",
+  "clientUid": "string",
+  "sourceType": "string",
   "manifestDigest": "sha256-hex",
   "inputDigest": "sha256-hex",
   "status": "uploading|complete",
@@ -55,6 +60,9 @@ content-type: application/json
       "index": 0,
       "name": "string",
       "relativePath": "string",
+      "originalFileName": "string",
+      "clientUid": "string",
+      "sourceType": "string",
       "mediaType": "string",
       "sha256": "sha256-hex",
       "byteSize": 0,
@@ -66,7 +74,7 @@ content-type: application/json
 }
 ```
 
-响应中的 `sessionId`、`checkpointId`、`files[].name`、`files[].relativePath` 都是服务端生成的无意义 token，不回显客户端原始字符串。
+响应中的 `sessionId`、`checkpointId`、`files[].name`、`files[].relativePath` 是服务端生成的无意义 token。`archiveBatchId` 在客户端显式提供 `archiveBatchId`/`batchId`/`clientBatchId` 时保持原值；未提供时才由服务端派生。
 
 查询：
 
@@ -119,6 +127,9 @@ content-type: application/json
 {
   "checkpoint": {
     "checkpointId": "string",
+    "clientBatchId": "string",
+    "clientUid": "string",
+    "sourceType": "string",
     "mode": "initial|resume|append|branch|splitall-cli"
   },
   "uploadSessionId": "string",
@@ -132,6 +143,9 @@ content-type: application/json
 ```json
 {
   "checkpointId": "string",
+  "archiveBatchId": "string",
+  "clientUid": "string",
+  "sourceType": "string",
   "verifiedAt": "iso-8601",
   "manifestSha256": "sha256-hex",
   "fileCount": 0,
@@ -148,6 +162,15 @@ content-type: application/json
 
 receipt 是服务端生成的处理凭证，不接受客户端直接提交。
 receipt 内的 `checkpointId` 与文件 `name`/`relativePath` 也必须是服务端 token；原始客户端字符串最多以 hash 形式进入 `sourceNameHash`、`sourceRelativePathHash`。
+receipt 内的 `archiveBatchId` 是归档批次真相源：客户端显式提供时必须与客户端批次 ID 一致，后续原始对象、知识元数据和检索记录必须使用该 ID，而不是服务端 jobId。
+
+## Manifest 与检索边界
+
+upload session `meta.json` 是断点续传状态，不是检索索引。它只保存 session、checkpoint、归档批次、客户端来源、资源类型、文件 hash/size、offset 和完成状态。
+
+创建 job 后，服务端会把 upload session 转成 checkpoint receipt。receipt 只证明该批输入已完成校验，并把 `archiveBatchId` 带入任务；它不是长期元数据表。
+
+任务完成后，正式检索只读 SQLite / 知识库索引。需要打开原始文件时，先查 SQLite `raw_mail_objects.storage_rel_path`，再读取 `objects/<ClientUID>/<SourceType>/<FileName>`。任何客户端、控制台、智能体工具都不能直接扫描 upload session manifest、job result manifest 或 `objects/` 作为检索入口。
 
 ## Pub-Sub 发布
 
