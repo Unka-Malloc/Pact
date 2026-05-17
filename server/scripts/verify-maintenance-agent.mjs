@@ -9,7 +9,7 @@ import { normalizeMaintenancePlan } from "../services/agent/maintenance-agent/pl
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { evaluateOperationSafety } from "../platform/common/operation-dispatcher/operation-decorators.mjs";
 import { SERVER_API_OPERATIONS, listInterfaceCatalog } from "../platform/common/operation-dispatcher/operation-registry.mjs";
-import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
+import { installAuthenticatedFetch, readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 
 const splitallCliPath = fileURLToPath(new URL("./splitall.mjs", import.meta.url));
 const consoleAuthCliPath = fileURLToPath(new URL("./console-auth.mjs", import.meta.url));
@@ -470,9 +470,10 @@ async function verifyAuthScopes() {
   });
 
   try {
-    const ownerPassword = server.initialOwner?.password || "";
+    const ownerCredentials = await readInitialOwnerCredentials(server);
+    const ownerPassword = ownerCredentials.password;
     assert.ok(ownerPassword);
-    const owner = await login(server.url, "owner", ownerPassword);
+    const owner = await login(server.url, ownerCredentials.username, ownerPassword);
     runAuthCli([
       "create-user",
       "--data-dir",

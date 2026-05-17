@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { runMigrations } from "../../../../common/storage/sqlite-migrations.mjs";
 import {
   TOOL_MANAGEMENT_SCOPES,
   scopesToToolsets,
@@ -223,6 +224,13 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_tool_executions_status ON tool_executions(status);
     CREATE INDEX IF NOT EXISTS idx_tool_metric_events_created ON tool_metric_events(created_at);
   `);
+
+  // Version-controlled migrations — add new steps here as the schema evolves.
+  runMigrations(db, [
+    // version 1: baseline — all tables above were created by the initial db.exec.
+    // Reserve this slot so existing databases get user_version = 1 applied.
+    { version: 1, up: () => {} }
+  ]);
 }
 
 function rowToGrant(row) {

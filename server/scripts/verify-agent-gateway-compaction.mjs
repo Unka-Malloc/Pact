@@ -6,7 +6,7 @@ import path from "node:path";
 import { saveSettings } from "../platform/common/platform-core/settings.mjs";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { callAgentGateway } from "../platform/specialized/agent/agent-gateway/index.mjs";
-import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
@@ -68,7 +68,7 @@ try {
           risks: ["gateway-risk"],
           todos: ["gateway todo"],
           evidenceRefs: ["evidence:gateway-1"],
-          fileRefs: ["server/platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs"],
+          fileRefs: ["server/platform/specialized/agent/agent-context/interface/index.mjs"],
           knowledgeRefs: []
         })
       };
@@ -106,7 +106,7 @@ try {
     taskBrief: "verify gateway assisted compaction",
     useSessionMemory: false
   });
-  assert.equal(result.strategy, "model_assisted");
+  assert.equal(result.strategy.id, "model-assisted");
   assert.match(result.summary, /gateway-1/);
   assert.equal(gatewayCalls.length, 1);
   assert.match(gatewayCalls[0].question, /Return strict JSON/);
@@ -140,7 +140,8 @@ try {
     taskBrief: "verify gateway fallback",
     useSessionMemory: false
   });
-  assert.equal(fallback.strategy, "deterministic");
+  assert.equal(fallback.strategy.id, "model-assisted");
+  assert.equal(fallback.executionMode, "deterministic");
   assert.equal(fallback.degraded, true);
   assert.ok(fallback.degradedReasons.length > 0);
 

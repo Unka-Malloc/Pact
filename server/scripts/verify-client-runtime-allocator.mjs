@@ -4,7 +4,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createClientRuntimeAllocator } from "../services/client/client-runtime-core/client-runtime-allocator.mjs";
-import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 

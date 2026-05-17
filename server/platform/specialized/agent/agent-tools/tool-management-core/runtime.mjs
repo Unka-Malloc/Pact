@@ -668,6 +668,7 @@ export function createToolExecutionRuntime({
         scopes: uniqueStrings([
           ...(authorization.grant.scopes || []),
           ...(tool.requiredScopes || []),
+          ...(operation.requiredScopes || []),
           ...approvalScopes
         ])
       };

@@ -5,6 +5,7 @@ import {
   appendJsonLineSerialized,
   atomicWriteJson
 } from "../../../../common/platform-core/state-coordinator.mjs";
+import { createAgentMemory } from "../../agent-memory/index.mjs";
 
 export const CONTEXT_COMPACTION_PROTOCOL_VERSION = "splitall.context.compaction.v1";
 
@@ -17,7 +18,11 @@ const ABSOLUTE_PATH_PATTERN =
 
 const DEFAULT_COMPACTION_POLICY = Object.freeze({
   enabled: true,
-  strategy: "session_memory_first",
+  legacyStrategy: "session_memory_first",
+  strategy: Object.freeze({
+    id: "session-memory-first",
+    params: Object.freeze({})
+  }),
   summaryReserveTokens: 4000,
   reservedBufferTokens: 13000,
   warningBufferTokens: 20000,
@@ -27,6 +32,7 @@ const DEFAULT_COMPACTION_POLICY = Object.freeze({
   recentTurnProtectionCount: 6,
   maxConsecutiveFailures: 3,
   ptlRetryLimit: 3,
+  ptlHeadTrimRatio: 0.2,
   modelMaxInputTokens: 24000,
   modelMaxOutputTokens: 4000,
   deterministicTargetRatio: 0.24,
@@ -37,6 +43,38 @@ const DEFAULT_COMPACTION_POLICY = Object.freeze({
   persistSessionMemory: true,
   persistBoundaries: true,
   microCompaction: true
+});
+
+const BUILTIN_COMPACTION_STRATEGIES = Object.freeze([
+  Object.freeze({
+    id: "session-memory-first",
+    label: "Session memory first, then model-assisted, then deterministic fallback",
+    legacyStrategies: Object.freeze(["session_memory_first"])
+  }),
+  Object.freeze({
+    id: "workbench-reconstruction",
+    label: "Model-assisted compaction with payload dehydration and workbench state reinjection",
+    legacyStrategies: Object.freeze(["workbench_reconstruction", "hybrid-extractive-abstractive"])
+  }),
+  Object.freeze({
+    id: "model-assisted",
+    label: "Model-assisted summary with deterministic fallback",
+    legacyStrategies: Object.freeze(["model_assisted", "hybrid"])
+  }),
+  Object.freeze({
+    id: "deterministic-extractive",
+    label: "Deterministic extractive context summary",
+    legacyStrategies: Object.freeze(["deterministic"])
+  })
+]);
+
+const LEGACY_STRATEGY_ALIASES = Object.freeze({
+  session_memory_first: "session-memory-first",
+  workbench_reconstruction: "workbench-reconstruction",
+  "hybrid-extractive-abstractive": "workbench-reconstruction",
+  model_assisted: "model-assisted",
+  hybrid: "model-assisted",
+  deterministic: "deterministic-extractive"
 });
 
 function asArray(value) {
@@ -57,6 +95,37 @@ function clampNumber(value, fallback, min, max) {
     return fallback;
   }
   return Math.max(min, Math.min(max, number));
+}
+
+function normalizeStrategy(value) {
+  const strategy = String(value || "").trim();
+  return Object.hasOwn(LEGACY_STRATEGY_ALIASES, strategy)
+    ? strategy
+    : DEFAULT_COMPACTION_POLICY.legacyStrategy;
+}
+
+function normalizeStrategyId(value, fallbackStrategy = DEFAULT_COMPACTION_POLICY.legacyStrategy) {
+  const requested = String(value || "").trim();
+  if (requested) {
+    return LEGACY_STRATEGY_ALIASES[requested] || requested.replace(/_/g, "-");
+  }
+  return LEGACY_STRATEGY_ALIASES[normalizeStrategy(fallbackStrategy)] || DEFAULT_COMPACTION_POLICY.strategy.id;
+}
+
+function normalizeStrategyConfig(value, fallbackStrategy = DEFAULT_COMPACTION_POLICY.legacyStrategy) {
+  const source = typeof value === "string"
+    ? { id: value }
+    : asObject(value);
+  const id = normalizeStrategyId(source.id || source.strategyId || source.name || source.mode, fallbackStrategy);
+  const params = {
+    ...asObject(source.params),
+    ...asObject(source.options),
+    ...asObject(source.config)
+  };
+  return {
+    id,
+    params
+  };
 }
 
 function normalizeText(value) {
@@ -133,18 +202,36 @@ export function redactCompactionValue(value, depth = 0) {
 }
 
 export function normalizeCompactionPolicy(profile = {}, patch = {}) {
+  const profilePolicy = asObject(profile.compactionPolicy);
+  const patchPolicy = asObject(patch);
   const source = {
     ...DEFAULT_COMPACTION_POLICY,
-    ...asObject(profile.compactionPolicy),
-    ...asObject(patch)
+    ...profilePolicy,
+    ...asObject(profile.compactionStrategy ? { strategy: profile.compactionStrategy } : {}),
+    ...patchPolicy
   };
   const compression = asObject(profile.compression);
+  const legacyStrategy = normalizeStrategy(
+    typeof source.strategy === "string"
+      ? source.strategy
+      : source.legacyStrategy
+  );
+  const explicitStrategy =
+    patchPolicy.strategy ||
+    patchPolicy.strategyId ||
+    patchPolicy.compactionStrategy ||
+    profile.compactionStrategy ||
+    profilePolicy.strategy ||
+    profilePolicy.strategyId ||
+    profilePolicy.compactionStrategy ||
+    null;
+  const strategy = normalizeStrategyConfig(explicitStrategy, legacyStrategy);
   return {
     ...source,
     enabled: source.enabled !== false,
-    strategy: ["session_memory_first", "model_assisted", "deterministic", "hybrid"].includes(String(source.strategy || ""))
-      ? String(source.strategy)
-      : "session_memory_first",
+    legacyStrategy,
+    strategy,
+    strategyId: strategy.id,
     summaryReserveTokens: clampNumber(
       source.summaryReserveTokens,
       compression.summaryMaxTokens || DEFAULT_COMPACTION_POLICY.summaryReserveTokens,
@@ -169,6 +256,7 @@ export function normalizeCompactionPolicy(profile = {}, patch = {}) {
     ),
     maxConsecutiveFailures: clampNumber(source.maxConsecutiveFailures, 3, 1, 20),
     ptlRetryLimit: clampNumber(source.ptlRetryLimit, 3, 0, 10),
+    ptlHeadTrimRatio: clampNumber(source.ptlHeadTrimRatio, 0.2, 0.05, 0.8),
     modelMaxInputTokens: clampNumber(
       source.modelMaxInputTokens,
       profile.modelCompression?.maxInputTokens || DEFAULT_COMPACTION_POLICY.modelMaxInputTokens,
@@ -245,12 +333,13 @@ function messageText(message = {}) {
   if (Array.isArray(content)) {
     return [content.map((item) => item?.text || item?.content || JSON.stringify(item)).join("\n"), blockText, attachmentText]
       .filter(Boolean)
+      .map(redactEmbeddedPayloads)
       .join("\n");
   }
   if (typeof content === "object" && content !== null) {
-    return [JSON.stringify(content), blockText, attachmentText].filter(Boolean).join("\n");
+    return [JSON.stringify(content), blockText, attachmentText].filter(Boolean).map(redactEmbeddedPayloads).join("\n");
   }
-  return [content, blockText, attachmentText].filter(Boolean).join("\n");
+  return [content, blockText, attachmentText].filter(Boolean).map(redactEmbeddedPayloads).join("\n");
 }
 
 function normalizeMessage(message = {}, index = 0) {
@@ -530,6 +619,96 @@ function collectStructuredFacts(messages = [], runtimeState = {}) {
   };
 }
 
+function normalizeRequiredAnchors(input = {}, runtimeState = {}) {
+  const rawAnchors = [
+    ...asArray(input.requiredAnchors),
+    ...asArray(input.requiredFacts),
+    ...asArray(input.protectedAnchors),
+    ...asArray(input.compactionQuality?.requiredAnchors),
+    ...asArray(runtimeState.requiredAnchors)
+  ];
+  const seen = new Set();
+  return rawAnchors
+    .map((anchor) => {
+      const source = typeof anchor === "string"
+        ? { text: anchor }
+        : asObject(anchor);
+      const text = normalizeText(source.text || source.value || source.anchor || source.id || "");
+      if (!text) {
+        return null;
+      }
+      const id = normalizeText(source.id || source.key || text).slice(0, 120);
+      const key = `${id}\u001f${text}`.toLowerCase();
+      if (seen.has(key)) {
+        return null;
+      }
+      seen.add(key);
+      return {
+        id,
+        text: compactToBudget(text, 120)
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 100);
+}
+
+function retainedTextForQuality({ summary = "", messagesToKeep = [], reinjection = {} } = {}) {
+  return [
+    summary,
+    ...asArray(messagesToKeep).map((message) =>
+      typeof message === "string" ? message : (message.text || message.content || JSON.stringify(message))
+    ),
+    ...asArray(reinjection.items).map((item) =>
+      typeof item?.value === "string" ? item.value : JSON.stringify(item?.value ?? "")
+    )
+  ].join("\n");
+}
+
+function buildCompactionQualityReport({
+  input = {},
+  runtimeState = {},
+  summary = "",
+  messagesToKeep = [],
+  reinjection = {},
+  tokenReport = null
+} = {}) {
+  const requiredAnchors = normalizeRequiredAnchors(input, runtimeState);
+  const retainedRawText = retainedTextForQuality({ summary, messagesToKeep, reinjection });
+  const retainedText = normalizeText(retainedRawText).toLowerCase();
+  const retained = [];
+  const missing = [];
+  for (const anchor of requiredAnchors) {
+    const matched = anchor.text && retainedText.includes(normalizeText(anchor.text).toLowerCase());
+    (matched ? retained : missing).push(anchor);
+  }
+  const secretMatches = [
+    ...(String(retainedRawText || "").match(SENSITIVE_TEXT_PATTERN) || []),
+    ...(String(retainedRawText || "").match(ABSOLUTE_PATH_PATTERN) || [])
+  ];
+  const minimumRetentionRatio = clampNumber(
+    input.compactionQuality?.minimumRetentionRatio,
+    1,
+    0,
+    1
+  );
+  const retentionRatio = requiredAnchors.length
+    ? Number((retained.length / requiredAnchors.length).toFixed(6))
+    : 1;
+  return {
+    protocolVersion: "splitall.context.compaction.quality.v1",
+    requiredAnchorCount: requiredAnchors.length,
+    retainedAnchorCount: retained.length,
+    missingAnchorCount: missing.length,
+    retentionRatio,
+    minimumRetentionRatio,
+    missingAnchors: missing.slice(0, 20),
+    retainedAnchors: retained.slice(0, 20),
+    secretLeakCount: secretMatches.length,
+    compressionSavingsRatio: Number(tokenReport?.savingsRatio || 0),
+    passed: retentionRatio >= minimumRetentionRatio && secretMatches.length === 0
+  };
+}
+
 function buildDeterministicSummary({
   messages = [],
   runtimeState = {},
@@ -625,6 +804,46 @@ function modelInputForAttempt(messages = [], attempt = 0, maxInputTokens = 24000
   return candidate;
 }
 
+function workbenchInputForAttempt(messages = [], attempt = 0, maxInputTokens = 24000, trimRatio = 0.2) {
+  let groups = messagesByApiRound(messages);
+  const originalGroupCount = groups.length;
+  if (attempt > 0 && groups.length > 1) {
+    const dropCount = Math.min(
+      groups.length - 1,
+      Math.max(1, Math.ceil(groups.length * trimRatio * attempt))
+    );
+    groups = groups.slice(dropCount);
+  }
+  let droppedGroupCount = originalGroupCount - groups.length;
+  let candidate = groups.flatMap((group) => group.messages);
+  while (
+    candidate.length > 1 &&
+    estimateContextTokens(candidate.map((message) => message.text).join("\n")) > maxInputTokens
+  ) {
+    const nextGroups = messagesByApiRound(candidate);
+    const dropCount = Math.min(
+      nextGroups.length - 1,
+      Math.max(1, Math.ceil(nextGroups.length * trimRatio))
+    );
+    if (dropCount <= 0) {
+      candidate = candidate.slice(1);
+      droppedGroupCount += 1;
+      continue;
+    }
+    groups = nextGroups.slice(dropCount);
+    droppedGroupCount += dropCount;
+    candidate = groups.length ? groups.flatMap((group) => group.messages) : candidate.slice(1);
+  }
+  return {
+    messages: candidate,
+    metadata: {
+      droppedGroupCount,
+      trimRatio,
+      inputTokens: estimateContextTokens(candidate.map((message) => message.text).join("\n"))
+    }
+  };
+}
+
 function buildModelPrompt({ messages, runtimeState, targetTokens, compactedRange }) {
   const payload = messages.map((message) => ({
     id: message.id,
@@ -654,12 +873,19 @@ function buildReinjectionPayload({ input = {}, runtimeState = {}, policy }) {
   const candidates = [
     ["taskBrief", source.taskBrief || input.taskBrief || input.task || input.query || "", 100],
     ["activePlan", source.activePlan || input.activePlan || input.plan || "", 95],
+    ["activeSkill", source.activeSkill || input.activeSkill || "", 88],
+    ["activeToolUseIds", source.activeToolUseIds || input.activeToolUseIds || "", 84],
+    ["openToolCalls", source.openToolCalls || input.openToolCalls || "", 82],
     ["enabledTools", source.enabledTools || input.enabledTools || input.tools || "", 80],
     ["operationCatalog", source.operationCatalog || input.operationCatalog || "", 75],
     ["currentFiles", source.currentFiles || input.currentFiles || "", 70],
+    ["fileAttachments", source.fileAttachments || input.fileAttachments || "", 68],
     ["knowledgeReference", source.knowledgeReference || input.knowledgeReference || "", 65],
+    ["mcpServers", source.mcpServers || input.mcpServers || "", 64],
+    ["deferredToolDeltas", source.deferredToolDeltas || input.deferredToolDeltas || "", 62],
     ["maintenanceRun", source.maintenanceRun || input.maintenanceRun || "", 60],
     ["recentError", source.recentError || input.recentError || "", 55],
+    ["worktreeState", source.worktreeState || input.worktreeState || "", 54],
     ["userConstraints", source.userConstraints || input.userConstraints || "", 50]
   ]
     .map(([key, value, priority]) => ({ key, value: redactCompactionValue(value), priority }))
@@ -699,6 +925,139 @@ function dehydrateAttachment(attachment = {}, policy) {
     checksum: attachment.checksum || attachment.sha256 || hashValue({ ref, summary }, 16),
     summary,
     dehydrated: true
+  };
+}
+
+function isHeavyContentBlock(value = {}) {
+  const block = asObject(value);
+  const type = String(block.type || block.mediaType || block.kind || "").toLowerCase();
+  return /image|document|attachment|binary|pdf|audio|video/.test(type) ||
+    Boolean(block.data || block.dataBase64 || block.base64 || block.bytes || block.buffer);
+}
+
+function redactEmbeddedPayloads(value) {
+  return redactText(value)
+    .replace(/data:(?:image|application|audio|video)\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi, "[embedded media payload stripped]")
+    .replace(/("(?:dataBase64|base64|data|bytes|buffer)"\s*:\s*")[^"]{64,}(")/gi, "$1[large encoded payload stripped]$2")
+    .replace(/\b[A-Za-z0-9+/]{240,}={0,2}\b/g, "[large encoded payload stripped]");
+}
+
+function dehydrateContentBlock(block = {}, policy) {
+  const source = asObject(block);
+  const ref = source.ref || source.path || source.url || source.name || source.fileName || "";
+  const originalType = String(source.type || source.mediaType || source.kind || "attachment");
+  const summary = compactToBudget(
+    source.summary || source.text || source.description || source.title || JSON.stringify({
+      type: originalType,
+      name: source.name || source.fileName || "",
+      ref
+    }),
+    policy.maxAttachmentTokens
+  );
+  return {
+    type: "dehydrated_payload",
+    originalType,
+    name: source.name || source.fileName || "",
+    ref: redactText(String(ref || "")),
+    checksum: source.checksum || source.sha256 || hashValue({ originalType, ref, summary }, 16),
+    summary,
+    dehydrated: true
+  };
+}
+
+function stripHeavyPayloadsFromMessage(message = {}, policy) {
+  let strippedBlockCount = 0;
+  let dehydratedAttachmentCount = 0;
+  const next = {
+    ...message,
+    text: redactEmbeddedPayloads(message.text || "")
+  };
+
+  if (Array.isArray(message.content)) {
+    next.content = message.content.map((item) => {
+      if (isHeavyContentBlock(item)) {
+        strippedBlockCount += 1;
+        return dehydrateContentBlock(item, policy);
+      }
+      if (typeof item === "string") {
+        return redactEmbeddedPayloads(item);
+      }
+      if (item && typeof item === "object") {
+        return {
+          ...item,
+          text: item.text ? redactEmbeddedPayloads(item.text) : item.text,
+          content: typeof item.content === "string" ? redactEmbeddedPayloads(item.content) : item.content
+        };
+      }
+      return item;
+    });
+  } else if (typeof message.content === "string") {
+    next.content = redactEmbeddedPayloads(message.content);
+  } else if (isHeavyContentBlock(message.content)) {
+    strippedBlockCount += 1;
+    next.content = dehydrateContentBlock(message.content, policy);
+  }
+
+  if (Array.isArray(message.blocks)) {
+    next.blocks = message.blocks.map((block) => {
+      if (isHeavyContentBlock(block)) {
+        strippedBlockCount += 1;
+        return dehydrateContentBlock(block, policy);
+      }
+      if (block && typeof block === "object") {
+        return {
+          ...block,
+          text: block.text ? redactEmbeddedPayloads(block.text) : block.text,
+          content: typeof block.content === "string" ? redactEmbeddedPayloads(block.content) : block.content
+        };
+      }
+      return block;
+    });
+  }
+
+  if (Array.isArray(message.attachments)) {
+    next.attachments = message.attachments.map((attachment) => {
+      if (isHeavyContentBlock(attachment) || estimateContextTokens(attachment) > policy.maxAttachmentTokens) {
+        dehydratedAttachmentCount += 1;
+        return dehydrateAttachment(attachment, policy);
+      }
+      return attachment;
+    });
+  }
+
+  const normalized = normalizeMessage(next, message.index || 0);
+  return {
+    message: {
+      ...normalized,
+      index: message.index,
+      apiRoundId: message.apiRoundId,
+      id: message.id
+    },
+    strippedBlockCount,
+    dehydratedAttachmentCount
+  };
+}
+
+function prepareWorkbenchMessages(messages = [], policy) {
+  const prepared = [];
+  let strippedBlockCount = 0;
+  let dehydratedAttachmentCount = 0;
+  for (const message of messages) {
+    const result = stripHeavyPayloadsFromMessage(message, policy);
+    strippedBlockCount += result.strippedBlockCount;
+    dehydratedAttachmentCount += result.dehydratedAttachmentCount;
+    prepared.push(result.message);
+  }
+  const originalTokens = estimateContextTokens(messages.map((message) => message.text).join("\n"));
+  const preparedTokens = estimateContextTokens(prepared.map((message) => message.text).join("\n"));
+  return {
+    messages: prepared,
+    strippedBlockCount,
+    dehydratedAttachmentCount,
+    changedCount: strippedBlockCount + dehydratedAttachmentCount,
+    originalTokens,
+    preparedTokens,
+    savedTokens: Math.max(0, originalTokens - preparedTokens)
   };
 }
 
@@ -761,6 +1120,136 @@ function microCompactMessages(messages = [], { policy, activeToolUseIds = [] } =
   };
 }
 
+function publicStrategyConfig(policy = {}) {
+  const strategy = asObject(policy.strategy);
+  const params = asObject(strategy.params);
+  return {
+    id: String(strategy.id || policy.strategyId || "").trim(),
+    paramKeys: Object.keys(params).sort()
+  };
+}
+
+function normalizeStrategyOutput(raw = {}, context = {}, fallbackStrategy = "") {
+  const output = asObject(raw);
+  const summaryResult = asObject(output.summaryResult);
+  const summary = String(
+    summaryResult.summary ||
+      output.summary ||
+      output.text ||
+      output.content ||
+      output.result?.summary ||
+      output.result?.text ||
+      ""
+  ).trim();
+  if (!summary) {
+    throw new Error("context_compaction_strategy_summary_missing");
+  }
+  return {
+    executionMode: String(
+      output.executionMode ||
+        output.mode ||
+        output.strategy ||
+        fallbackStrategy ||
+        context.policy?.strategy?.id ||
+        "custom"
+    ),
+    summaryResult: {
+      ...summaryResult,
+      summary: compactToBudget(summary, context.targetTokens || context.policy?.summaryReserveTokens || 4000),
+      structured: redactCompactionValue(
+        summaryResult.structured ||
+          output.structured ||
+          output.data ||
+          output.result?.structured ||
+          {}
+      )
+    },
+    degradedReasons: asArray(output.degradedReasons),
+    modelEvents: asArray(output.modelEvents),
+    memoryEvents: asArray(output.memoryEvents),
+    preprocessingEvents: asArray(output.preprocessingEvents),
+    adapter: output.adapter || null
+  };
+}
+
+function standardStrategyInput(context = {}) {
+  const policy = asObject(context.policy);
+  const strategy = asObject(policy.strategy);
+  return {
+    protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
+    strategy: {
+      id: String(strategy.id || policy.strategyId || "").trim(),
+      params: redactCompactionValue(asObject(strategy.params))
+    },
+    sessionId: context.sessionId || "",
+    source: context.source || "",
+    profileId: context.profile?.profileId || "",
+    budget: context.budget || {},
+    triggerReason: context.triggerReason || "",
+    sourceTokens: context.sourceTokens || 0,
+    targetTokens: context.targetTokens || 0,
+    sourceHash: context.sourceHash || "",
+    compactedRange: context.compactedRange || {},
+    runtimeState: redactCompactionValue(context.runtimeState || {}),
+    messages: context.messages || [],
+    compactedMessages: context.compactedMessages || [],
+    keptMessages: context.keptOriginal || [],
+    helpers: Object.freeze({
+      estimateTokens: estimateContextTokens,
+      compactToBudget,
+      redactText,
+      redactValue: redactCompactionValue
+    })
+  };
+}
+
+export function createContextCompactionStrategyAdapter({
+  id,
+  label = "",
+  inputAdapter = null,
+  run,
+  outputAdapter = null
+} = {}) {
+  const rawId = String(id || "").trim();
+  if (!rawId) {
+    throw new Error("context_compaction_strategy_id_required");
+  }
+  const normalizedId = normalizeStrategyId(rawId);
+  if (typeof run !== "function") {
+    throw new Error(`context_compaction_strategy_run_required:${normalizedId}`);
+  }
+  return Object.freeze({
+    adapterProtocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
+    id: normalizedId,
+    label: String(label || normalizedId),
+    async run(context = {}) {
+      const strategyInput = typeof inputAdapter === "function" ? inputAdapter(context) : standardStrategyInput(context);
+      const rawOutput = await run(strategyInput, context);
+      const output = typeof outputAdapter === "function"
+        ? await outputAdapter(rawOutput, context, strategyInput)
+        : rawOutput;
+      return normalizeStrategyOutput(output, context, normalizedId);
+    }
+  });
+}
+
+export function listContextCompactionStrategies(extraStrategies = []) {
+  const custom = asArray(extraStrategies)
+    .map((item) => item?.id || item?.strategyId || item?.name)
+    .filter(Boolean)
+    .map((id) => Object.freeze({
+      id: normalizeStrategyId(id),
+      label: String(id),
+      custom: true,
+      legacyStrategies: Object.freeze([])
+    }));
+  const byId = new Map();
+  for (const strategy of [...BUILTIN_COMPACTION_STRATEGIES, ...custom]) {
+    byId.set(strategy.id, strategy);
+  }
+  return [...byId.values()];
+}
+
 function publicRecordFromResult(result = {}) {
   return {
     protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
@@ -768,15 +1257,18 @@ function publicRecordFromResult(result = {}) {
     boundaryId: result.boundary?.boundaryId || "",
     sessionId: result.sessionId || "",
     profileId: result.profileId || "",
-    strategy: result.strategy || "",
     source: result.source || "",
     status: result.status || "",
     triggerReason: result.triggerReason || "",
+    strategy: result.strategy || null,
+    executionMode: result.executionMode || "",
     degraded: result.degraded === true,
     degradedReasons: result.degradedReasons || [],
     circuitBreaker: result.circuitBreaker || null,
+    preprocessingEvents: result.preprocessingEvents || [],
     cutPoint: result.cutPoint || null,
     tokenReport: result.tokenReport || null,
+    qualityReport: result.qualityReport || null,
     boundary: result.boundary || null,
     createdAt: result.createdAt || nowIso()
   };
@@ -816,12 +1308,16 @@ async function writeJson(filePath, value) {
 export function createContextCompactionRuntime({
   userDataPath,
   agentGatewayCall = null,
-  modelCompressor = null
+  modelCompressor = null,
+  agentMemory = null,
+  strategies = [],
+  compactionStrategies = []
 }) {
-  const rootPath = path.join(userDataPath, "context-runtime");
+  const rootPath = path.join(userDataPath, "context-core");
   const recordsPath = path.join(rootPath, "context-compaction-records.jsonl");
   const boundariesPath = path.join(rootPath, "context-compaction-boundaries.jsonl");
-  const sessionMemoryPath = path.join(rootPath, "context-session-memory.jsonl");
+  const memoryStore = agentMemory || createAgentMemory({ userDataPath });
+  const sessionMemoryPath = memoryStore.sessionMemoryPath;
   const statePath = path.join(rootPath, "context-compaction-state.json");
 
   async function getState() {
@@ -868,75 +1364,43 @@ export function createContextCompactionRuntime({
     return saveState({ autoFailureCount, circuitOpenUntil });
   }
 
-  async function latestSessionMemory({ sessionId = "", profileId = "" } = {}) {
-    const records = await readJsonlTail(sessionMemoryPath, 500);
-    for (const record of records) {
-      const matches =
-        (!sessionId || record.sessionId === sessionId) &&
-        (!profileId || !record.profileId || record.profileId === profileId);
-      if (!matches) {
-        continue;
-      }
-      return record.status === "cleared" ? null : record;
-    }
-    return null;
+  async function latestSessionMemory({ sessionId = "", profileId = "", sourceHash = "" } = {}) {
+    return memoryStore.latestSessionMemory({ sessionId, profileId, sourceHash });
   }
 
   async function appendSessionMemory(entry = {}) {
-    const record = {
-      protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
-      memoryId: entry.memoryId || `context_memory_${crypto.randomUUID()}`,
-      sessionId: entry.sessionId || "",
-      profileId: entry.profileId || "",
-      boundaryId: entry.boundaryId || "",
-      sourceHash: entry.sourceHash || "",
-      summaryChecksum: entry.summaryChecksum || hashValue(entry.summary || ""),
-      summary: redactText(entry.summary || ""),
-      structured: redactCompactionValue(entry.structured || {}),
-      sourceRange: entry.sourceRange || {},
-      createdAt: entry.createdAt || nowIso(),
-      status: entry.status || "active"
-    };
-    await appendJsonl(sessionMemoryPath, record);
-    return record;
+    return memoryStore.appendSessionMemory({
+      ...entry,
+      sourceProtocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION
+    });
   }
 
   async function listSessionMemory(input = {}) {
-    const records = await readJsonlTail(sessionMemoryPath, input.limit || 50);
-    return {
-      protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
-      path: sessionMemoryPath,
-      records: records.filter((record) =>
-        (!input.sessionId || record.sessionId === input.sessionId) &&
-        (!input.profileId || record.profileId === input.profileId)
-      )
-    };
+    return memoryStore.listSessionMemory(input);
   }
 
   async function clearSessionMemory(input = {}) {
-    const record = {
-      protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
-      memoryId: `context_memory_clear_${crypto.randomUUID()}`,
-      sessionId: String(input.sessionId || ""),
-      profileId: String(input.profileId || ""),
-      status: "cleared",
-      createdAt: nowIso(),
-      reason: redactText(input.reason || "manual_clear")
-    };
-    await appendJsonl(sessionMemoryPath, record);
+    const result = await memoryStore.clearSessionMemory(input);
     await resetFailureState();
-    return {
-      protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
-      ok: true,
-      record
-    };
+    return result;
   }
 
-  async function modelAssistedSummary({ profile, policy, messages, runtimeState, targetTokens, compactedRange }) {
+  async function modelAssistedSummary({
+    profile,
+    policy,
+    messages,
+    runtimeState,
+    targetTokens,
+    compactedRange,
+    inputForAttempt = null
+  }) {
     const attempts = [];
     const maxAttempts = Math.max(1, policy.ptlRetryLimit + 1);
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const attemptMessages = modelInputForAttempt(messages, attempt, policy.modelMaxInputTokens);
+      const selected = typeof inputForAttempt === "function"
+        ? inputForAttempt(messages, attempt, policy)
+        : modelInputForAttempt(messages, attempt, policy.modelMaxInputTokens);
+      const attemptMessages = Array.isArray(selected) ? selected : asArray(selected.messages);
       const prompt = buildModelPrompt({
         messages: attemptMessages,
         runtimeState,
@@ -946,7 +1410,8 @@ export function createContextCompactionRuntime({
       attempts.push({
         attempt,
         messageCount: attemptMessages.length,
-        promptTokens: estimateContextTokens(prompt)
+        promptTokens: estimateContextTokens(prompt),
+        ...asObject(selected.metadata)
       });
       try {
         const response = typeof modelCompressor === "function"
@@ -983,6 +1448,304 @@ export function createContextCompactionRuntime({
     throw new Error(attempts.at(-1)?.error || "model_compaction_failed");
   }
 
+  function modelCompressionConfigured(context) {
+    return context.profile.modelCompression?.enabled === true || context.input.modelAssisted === true;
+  }
+
+  async function runDeterministicStrategy(context) {
+    return normalizeStrategyOutput(
+      {
+        executionMode: "deterministic",
+        summaryResult: buildDeterministicSummary({
+          messages: context.compactedMessages,
+          runtimeState: context.runtimeState,
+          targetTokens: context.targetTokens,
+          compactedRange: context.compactedRange
+        })
+      },
+      context,
+      "deterministic"
+    );
+  }
+
+  async function runModelAssistedStrategy(context) {
+    const degradedReasons = [];
+    const modelEvents = [];
+    if (context.circuitOpen) {
+      degradedReasons.push("model_circuit_breaker_open");
+      return {
+        ...(await runDeterministicStrategy(context)),
+        degradedReasons,
+        modelEvents
+      };
+    }
+
+    const modelAllowed =
+      modelCompressionConfigured(context) &&
+      (typeof modelCompressor === "function" || typeof agentGatewayCall === "function");
+    if (!modelAllowed) {
+      return runDeterministicStrategy(context);
+    }
+
+    try {
+      const modelSummary = await modelAssistedSummary({
+        profile: context.profile,
+        policy: context.policy,
+        messages: context.compactedMessages,
+        runtimeState: context.runtimeState,
+        targetTokens: context.targetTokens,
+        compactedRange: context.compactedRange
+      });
+      modelEvents.push({
+        used: true,
+        degraded: false,
+        attempts: modelSummary.attempts
+      });
+      await resetFailureState();
+      return normalizeStrategyOutput(
+        {
+          executionMode: "model_assisted",
+          summaryResult: modelSummary,
+          modelEvents
+        },
+        context,
+        "model_assisted"
+      );
+    } catch (error) {
+      const nextState = await registerModelFailure(context.policy);
+      degradedReasons.push(error instanceof Error ? error.message : "model_compaction_failed");
+      modelEvents.push({
+        used: false,
+        degraded: true,
+        error: error instanceof Error ? error.message : "model_compaction_failed",
+        modelFailureCount: nextState.modelFailureCount
+      });
+      return {
+        ...(await runDeterministicStrategy(context)),
+        degradedReasons,
+        modelEvents
+      };
+    }
+  }
+
+  async function runWorkbenchReconstructionStrategy(context) {
+    const prepared = prepareWorkbenchMessages(context.compactedMessages, context.policy);
+    const preprocessingEvents = [{
+      type: "payload_dehydration",
+      strippedBlockCount: prepared.strippedBlockCount,
+      dehydratedAttachmentCount: prepared.dehydratedAttachmentCount,
+      originalTokens: prepared.originalTokens,
+      preparedTokens: prepared.preparedTokens,
+      savedTokens: prepared.savedTokens
+    }];
+    const preparedContext = {
+      ...context,
+      compactedMessages: prepared.messages
+    };
+    const degradedReasons = [];
+    const modelEvents = [];
+    if (context.circuitOpen) {
+      degradedReasons.push("model_circuit_breaker_open");
+      return {
+        ...(await normalizeStrategyOutput(
+          {
+            executionMode: "workbench_deterministic",
+            summaryResult: buildDeterministicSummary({
+              messages: prepared.messages,
+              runtimeState: context.runtimeState,
+              targetTokens: context.targetTokens,
+              compactedRange: context.compactedRange
+            }),
+            preprocessingEvents
+          },
+          preparedContext,
+          "workbench_deterministic"
+        )),
+        degradedReasons,
+        modelEvents,
+        preprocessingEvents
+      };
+    }
+
+    const modelAllowed =
+      modelCompressionConfigured(context) &&
+      (typeof modelCompressor === "function" || typeof agentGatewayCall === "function");
+    if (!modelAllowed) {
+      return normalizeStrategyOutput(
+        {
+          executionMode: "workbench_deterministic",
+          summaryResult: buildDeterministicSummary({
+            messages: prepared.messages,
+            runtimeState: context.runtimeState,
+            targetTokens: context.targetTokens,
+            compactedRange: context.compactedRange
+          }),
+          degradedReasons: ["model_compaction_not_configured"],
+          preprocessingEvents
+        },
+        preparedContext,
+        "workbench_deterministic"
+      );
+    }
+
+    try {
+      const modelSummary = await modelAssistedSummary({
+        profile: context.profile,
+        policy: context.policy,
+        messages: prepared.messages,
+        runtimeState: context.runtimeState,
+        targetTokens: context.targetTokens,
+        compactedRange: context.compactedRange,
+        inputForAttempt: (messages, attempt, policy) =>
+          workbenchInputForAttempt(messages, attempt, policy.modelMaxInputTokens, policy.ptlHeadTrimRatio)
+      });
+      modelEvents.push({
+        used: true,
+        degraded: false,
+        promptCacheCompatible: true,
+        attempts: modelSummary.attempts
+      });
+      await resetFailureState();
+      return normalizeStrategyOutput(
+        {
+          executionMode: "workbench_reconstruction",
+          summaryResult: modelSummary,
+          modelEvents,
+          preprocessingEvents
+        },
+        preparedContext,
+        "workbench_reconstruction"
+      );
+    } catch (error) {
+      const nextState = await registerModelFailure(context.policy);
+      degradedReasons.push(error instanceof Error ? error.message : "model_compaction_failed");
+      modelEvents.push({
+        used: false,
+        degraded: true,
+        error: error instanceof Error ? error.message : "model_compaction_failed",
+        modelFailureCount: nextState.modelFailureCount
+      });
+      return normalizeStrategyOutput(
+        {
+          executionMode: "workbench_deterministic",
+          summaryResult: buildDeterministicSummary({
+            messages: prepared.messages,
+            runtimeState: context.runtimeState,
+            targetTokens: context.targetTokens,
+            compactedRange: context.compactedRange
+          }),
+          degradedReasons,
+          modelEvents,
+          preprocessingEvents
+        },
+        preparedContext,
+        "workbench_deterministic"
+      );
+    }
+  }
+
+  async function runSessionMemoryFirstStrategy(context) {
+    const memoryEvents = [];
+    if (context.input.useSessionMemory !== false) {
+      const memory = await latestSessionMemory({
+        sessionId: context.sessionId,
+        profileId: context.profile.profileId || "",
+        sourceHash: context.sourceHash
+      });
+      if (memory?.summary) {
+        memoryEvents.push({ used: true, memoryId: memory.memoryId, sourceHash: context.sourceHash });
+        return normalizeStrategyOutput(
+          {
+            executionMode: "session_memory",
+            summaryResult: {
+              summary: memory.summary,
+              structured: memory.structured || {},
+              memoryId: memory.memoryId
+            },
+            memoryEvents
+          },
+          context,
+          "session_memory"
+        );
+      }
+
+      const latestMemory = await latestSessionMemory({
+        sessionId: context.sessionId,
+        profileId: context.profile.profileId || ""
+      });
+      if (latestMemory?.summary) {
+        memoryEvents.push({
+          used: false,
+          memoryId: latestMemory.memoryId,
+          reason: latestMemory.sourceHash ? "source_hash_mismatch" : "source_hash_missing",
+          expectedSourceHash: context.sourceHash,
+          actualSourceHash: latestMemory.sourceHash || ""
+        });
+      }
+    }
+
+    const fallback = await runModelAssistedStrategy(context);
+    return {
+      ...fallback,
+      memoryEvents: [
+        ...memoryEvents,
+        ...asArray(fallback.memoryEvents)
+      ]
+    };
+  }
+
+  const strategyAdapters = new Map([
+    ["deterministic-extractive", {
+      id: "deterministic-extractive",
+      label: "Deterministic extractive context summary",
+      run: runDeterministicStrategy
+    }],
+    ["workbench-reconstruction", {
+      id: "workbench-reconstruction",
+      label: "Model-assisted compaction with payload dehydration and workbench state reinjection",
+      run: runWorkbenchReconstructionStrategy
+    }],
+    ["model-assisted", {
+      id: "model-assisted",
+      label: "Model-assisted summary with deterministic fallback",
+      run: runModelAssistedStrategy
+    }],
+    ["session-memory-first", {
+      id: "session-memory-first",
+      label: "Session memory first with model-assisted fallback",
+      run: runSessionMemoryFirstStrategy
+    }]
+  ]);
+
+  for (const adapter of [...asArray(strategies), ...asArray(compactionStrategies)]) {
+    const normalized = adapter?.adapterProtocolVersion === CONTEXT_COMPACTION_PROTOCOL_VERSION
+      ? adapter
+      : createContextCompactionStrategyAdapter(adapter);
+    strategyAdapters.set(normalizeStrategyId(normalized.id), normalized);
+  }
+
+  function resolveStrategyAdapter(policy = {}) {
+    const strategyId = normalizeStrategyId(policy.strategy?.id || policy.strategyId, policy.legacyStrategy);
+    const adapter = strategyAdapters.get(strategyId);
+    if (!adapter) {
+      throw new Error(`context_compaction_strategy_unknown:${strategyId}`);
+    }
+    return adapter;
+  }
+
+  async function runConfiguredStrategy(context = {}) {
+    const adapter = resolveStrategyAdapter(context.policy);
+    const result = await adapter.run(context);
+    return {
+      ...result,
+      strategy: {
+        ...publicStrategyConfig(context.policy),
+        id: adapter.id,
+        label: adapter.label || adapter.id
+      }
+    };
+  }
+
   async function compactMessages(input = {}) {
     const profile = asObject(input.profile);
     const policy = normalizeCompactionPolicy(profile, input.compactionPolicy || input.policy);
@@ -1016,6 +1779,8 @@ export function createContextCompactionRuntime({
         triggerReason,
         shouldCompact: false,
         compacted: false,
+        strategy: publicStrategyConfig(policy),
+        executionMode: "",
         createdAt,
         tokenReport: {
           sourceTokens,
@@ -1069,74 +1834,41 @@ export function createContextCompactionRuntime({
         profileId: profile.profileId || "",
         compactedRange,
         messageIds: compactedMessages.map((message) => message.id),
-        sourceTokens
+        sourceTokens,
+        taskBrief: runtimeState.taskBrief || "",
+        activePlan: runtimeState.activePlan || null,
+        knowledgeReference: runtimeState.knowledgeReference || ""
       });
 
-      let strategy = "deterministic";
-      let summaryResult = null;
-      const degradedReasons = [];
-      const modelEvents = [];
-
-      if (policy.strategy === "session_memory_first" && input.useSessionMemory !== false) {
-        const memory = await latestSessionMemory({ sessionId, profileId: profile.profileId || "" });
-        if (memory?.summary) {
-          strategy = "session_memory";
-          summaryResult = {
-            summary: memory.summary,
-            structured: memory.structured || {},
-            memoryId: memory.memoryId
-          };
-        }
-      }
-
-      const modelConfigured = profile.modelCompression?.enabled === true || input.modelAssisted === true;
-      const modelAllowed = !summaryResult &&
-        !circuitOpen &&
-        modelConfigured &&
-        ["model_assisted", "hybrid", "session_memory_first"].includes(policy.strategy) &&
-        (typeof modelCompressor === "function" || typeof agentGatewayCall === "function");
-
-      if (modelAllowed) {
-        try {
-          const modelSummary = await modelAssistedSummary({
-            profile,
-            policy,
-            messages: compactedMessages,
-            runtimeState,
-            targetTokens,
-            compactedRange
-          });
-          strategy = "model_assisted";
-          summaryResult = modelSummary;
-          modelEvents.push({
-            used: true,
-            degraded: false,
-            attempts: modelSummary.attempts
-          });
-          await resetFailureState();
-        } catch (error) {
-          const nextState = await registerModelFailure(policy);
-          degradedReasons.push(error instanceof Error ? error.message : "model_compaction_failed");
-          modelEvents.push({
-            used: false,
-            degraded: true,
-            error: error instanceof Error ? error.message : "model_compaction_failed",
-            modelFailureCount: nextState.modelFailureCount
-          });
-        }
-      } else if (circuitOpen) {
-        degradedReasons.push("model_circuit_breaker_open");
-      }
-
-      if (!summaryResult) {
-        strategy = "deterministic";
-        summaryResult = buildDeterministicSummary({
-          messages: compactedMessages,
-          runtimeState,
-          targetTokens,
-          compactedRange
-        });
-      }
+      const strategyResult = await runConfiguredStrategy({
+        input,
+        profile,
+        policy,
+        budget,
+        sessionId,
+        source,
+        createdAt,
+        messages,
+        graph,
+        sourceTokens,
+        triggerReason,
+        state,
+        circuitOpen,
+        cutPoint,
+        compactedMessages,
+        keptOriginal,
+        runtimeState,
+        compactedRange,
+        targetTokens,
+        sourceHash
+      });
+      const executionMode = strategyResult.executionMode || "deterministic";
+      const summaryResult = strategyResult.summaryResult;
+      const degradedReasons = [...asArray(strategyResult.degradedReasons)];
+      const modelEvents = [...asArray(strategyResult.modelEvents)];
+      const memoryEvents = [...asArray(strategyResult.memoryEvents)];
+      const preprocessingEvents = [...asArray(strategyResult.preprocessingEvents)];
+      const strategy = strategyResult.strategy || publicStrategyConfig(policy);
 
       const reinjection = buildReinjectionPayload({
         input,
@@ -1171,6 +1903,21 @@ export function createContextCompactionRuntime({
         savedTokens: Math.max(0, sourceTokens - finalTokens),
         savingsRatio: Number((Math.max(0, sourceTokens - finalTokens) / Math.max(1, sourceTokens)).toFixed(6))
       };
+      const qualityReport = buildCompactionQualityReport({
+        input,
+        runtimeState,
+        summary,
+        messagesToKeep,
+        reinjection,
+        tokenReport
+      });
+      if (!qualityReport.passed) {
+        degradedReasons.push(
+          qualityReport.missingAnchorCount > 0
+            ? "required_anchor_loss"
+            : "compaction_quality_failed"
+        );
+      }
       const boundary = {
         type: "compact_boundary",
         boundaryId: `context_boundary_${crypto.randomUUID()}`,
@@ -1181,7 +1928,9 @@ export function createContextCompactionRuntime({
         summaryChecksum: hashValue(summary),
         preservedTailCount: messagesToKeep.length,
         tokenReport,
+        qualityReport,
         strategy,
+        executionMode,
         degraded: degradedReasons.length > 0,
         createdAt
       };
@@ -1204,9 +1953,12 @@ export function createContextCompactionRuntime({
         shouldCompact: true,
         compacted: true,
         strategy,
+        executionMode,
         degraded: degradedReasons.length > 0,
         degradedReasons,
         modelEvents,
+        memoryEvents,
+        preprocessingEvents,
         cutPoint,
         boundary,
         boundaryMessage,
@@ -1226,6 +1978,7 @@ export function createContextCompactionRuntime({
           openUntil: (await getState()).circuitOpenUntil
         },
         tokenReport,
+        qualityReport,
         createdAt
       };
 
@@ -1266,6 +2019,8 @@ export function createContextCompactionRuntime({
         shouldCompact: true,
         compacted: false,
         degraded: true,
+        strategy: publicStrategyConfig(policy),
+        executionMode: "",
         error: error instanceof Error ? redactText(error.message) : "context_compaction_failed",
         circuitBreaker: {
           open: Boolean(nextState.circuitOpenUntil && Date.parse(nextState.circuitOpenUntil) > Date.now()),
@@ -1323,6 +2078,18 @@ export function createContextCompactionRuntime({
     };
   }
 
+  function listStrategies() {
+    const builtinIds = new Set(BUILTIN_COMPACTION_STRATEGIES.map((item) => item.id));
+    return {
+      protocolVersion: CONTEXT_COMPACTION_PROTOCOL_VERSION,
+      strategies: [...strategyAdapters.values()].map((adapter) => ({
+        id: adapter.id,
+        label: adapter.label || adapter.id,
+        custom: !builtinIds.has(adapter.id)
+      }))
+    };
+  }
+
   function resumeTranscript(input = {}) {
     const messages = normalizeConversationInput(input);
     let boundaryIndex = -1;
@@ -1364,6 +2131,7 @@ export function createContextCompactionRuntime({
     recordsPath,
     boundariesPath,
     sessionMemoryPath,
+    agentMemory: memoryStore,
     statePath,
     computeBudget: computeCompactionBudget,
     normalizePolicy: normalizeCompactionPolicy,
@@ -1374,6 +2142,7 @@ export function createContextCompactionRuntime({
     maybeCompact,
     listRecords,
     listBoundaries,
+    listStrategies,
     listSessionMemory,
     clearSessionMemory,
     latestSessionMemory,

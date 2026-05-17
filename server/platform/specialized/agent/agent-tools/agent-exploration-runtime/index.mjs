@@ -28,6 +28,23 @@ function normalizeText(value) {
     .trim();
 }
 
+function uniqueStrings(values = [], limit = 100) {
+  const seen = new Set();
+  const output = [];
+  for (const value of Array.isArray(values) ? values : [values]) {
+    const item = normalizeText(value);
+    if (!item || seen.has(item)) {
+      continue;
+    }
+    seen.add(item);
+    output.push(item);
+    if (output.length >= limit) {
+      break;
+    }
+  }
+  return output;
+}
+
 function normalizeThinkingMode(value) {
   const mode = normalizeText(value || "default").toLowerCase();
   return ["enabled", "disabled", "default"].includes(mode) ? mode : "default";
@@ -1043,7 +1060,7 @@ export function createAgentExplorationRuntime({
     }
   }
 
-  async function executeKeywordSearch(args = {}, { limit: defaultLimit = 8 } = {}) {
+  async function executeKeywordSearch(args = {}, { limit: defaultLimit = 8, sourceIds = [] } = {}) {
     const knowledgeCore = getKnowledgeCore(runtime);
     if (!knowledgeCore || typeof knowledgeCore.search !== "function") {
       return {
@@ -1073,7 +1090,11 @@ export function createAgentExplorationRuntime({
       learningEnabled: keywordOnly ? false : args.learningEnabled !== false,
       clientId: normalizeText(args.clientId || "agent-exploration"),
       explain: true,
-      modalityPolicy: "multimodal"
+      modalityPolicy: "multimodal",
+      scopeSourceIds: uniqueStrings([
+        ...asArray(args.scopeSourceIds || args.sourceIds),
+        ...asArray(sourceIds)
+      ])
     });
     return {
       ok: true,
@@ -1222,7 +1243,7 @@ export function createAgentExplorationRuntime({
     };
   }
 
-  async function executeKnowledgeAggregate(args = {}) {
+  async function executeKnowledgeAggregate(args = {}, { sourceIds = [] } = {}) {
     const knowledgeCore = getKnowledgeCore(runtime);
     if (!knowledgeCore || typeof knowledgeCore.aggregate !== "function") {
       return {
@@ -1242,7 +1263,11 @@ export function createAgentExplorationRuntime({
       documentType: args.documentType || "email",
       classification: args.classification || (metric === "email_advertising_by_sender" ? "advertising" : ""),
       categoryId: args.categoryId || args.category_id || "",
-      categoryPath: args.categoryPath || args.category_path || ""
+      categoryPath: args.categoryPath || args.category_path || "",
+      scopeSourceIds: uniqueStrings([
+        ...asArray(args.scopeSourceIds || args.sourceIds),
+        ...asArray(sourceIds)
+      ])
     });
     return {
       ok: result?.ok !== false,
@@ -1460,7 +1485,7 @@ export function createAgentExplorationRuntime({
       return {
         tool: name,
         arguments: args,
-        result: await executeKnowledgeAggregate(args)
+        result: await executeKnowledgeAggregate(args, options)
       };
     }
     if (name === "open_evidence") {
@@ -1584,13 +1609,14 @@ export function createAgentExplorationRuntime({
     if (!contextRuntime) {
       throw new Error("AgentExplorationRuntime requires ContextRuntime.");
     }
+    const callerInput = asObject(input);
     const allocationResult = typeof clientRuntimeAllocator?.apply === "function"
-      ? await clientRuntimeAllocator.apply(input, {
-          taskType: input.taskType || "knowledge.agent_exploration",
+      ? await clientRuntimeAllocator.apply(callerInput, {
+          taskType: callerInput.taskType || "knowledge.agent_exploration",
           surface: "agent-exploration-runtime"
         })
       : null;
-    input = allocationResult?.input || input;
+    input = allocationResult?.input ? asObject(allocationResult.input) : callerInput;
     const query = normalizeText(input.query || input.question || input.q || "");
     if (!query) {
       throw new Error("智能探索缺少 query。");
@@ -1613,13 +1639,6 @@ export function createAgentExplorationRuntime({
       Math.min(Number(input.maxIterations || explorationDefaults.maxIterations || DEFAULT_MAX_ITERATIONS), 8)
     );
     const perSearchLimit = Math.max(1, Math.min(Number(input.limit || explorationDefaults.limit || 8), 20));
-    const effectiveContextProfileId = normalizeText(
-      input.contextProfileId ||
-        input.profileId ||
-        explorationDefaults.contextProfileId ||
-        input.modelAlias ||
-        ""
-    );
     const thinkingParameters = thinkingParametersForMode(input.thinkingMode || explorationDefaults.thinkingMode);
     const timestamp = nowIso();
     const workspaceId =
@@ -1637,14 +1656,60 @@ export function createAgentExplorationRuntime({
         }
       });
     const workspace = workspaceResult.workspace || workspaceResult;
+    const workspaceContext = typeof agentWorkspace.getWorkspaceContext === "function"
+      ? agentWorkspace.getWorkspaceContext(workspaceId) || null
+      : null;
+    const callerSelectedWorkspace = Boolean(normalizeText(callerInput.workspaceId || ""));
+    const explicitSourceIds = uniqueStrings([
+      ...asArray(callerInput.scopeSourceIds),
+      ...asArray(callerInput.sourceIds)
+    ]);
+    const allocatedSourceIds = uniqueStrings([
+      ...asArray(input.scopeSourceIds),
+      ...asArray(input.sourceIds)
+    ]);
+    const workspaceSourceIds = uniqueStrings(workspaceContext?.knowledgeSourceIds || []);
+    const effectiveSourceIds = explicitSourceIds.length
+      ? explicitSourceIds
+      : callerSelectedWorkspace
+        ? workspaceSourceIds.length ? workspaceSourceIds : allocatedSourceIds
+        : allocatedSourceIds.length ? allocatedSourceIds : workspaceSourceIds;
+    const explicitModelAlias = normalizeText(callerInput.modelAlias || callerInput.alias || "");
+    const allocatedModelAlias = normalizeText(input.modelAlias || input.alias || "");
+    const workspaceModelAlias = normalizeText(workspaceContext?.modelAlias || "");
+    const effectiveModelAlias = explicitModelAlias ||
+      (callerSelectedWorkspace ? workspaceModelAlias || allocatedModelAlias : allocatedModelAlias || workspaceModelAlias);
+    const explicitContextProfileId = normalizeText(callerInput.contextProfileId || callerInput.profileId || "");
+    const allocatedContextProfileId = normalizeText(input.contextProfileId || input.profileId || "");
+    const workspaceContextProfileId = normalizeText(workspaceContext?.contextProfileId || "");
+    const effectiveContextProfileId = normalizeText(
+      explicitContextProfileId ||
+        (callerSelectedWorkspace
+          ? workspaceContextProfileId || allocatedContextProfileId
+          : allocatedContextProfileId || workspaceContextProfileId) ||
+        explorationDefaults.contextProfileId ||
+        effectiveModelAlias ||
+        ""
+    );
+    const explicitToolGrantId = normalizeText(callerInput.toolGrantId || callerInput.grantId || "");
+    const allocatedToolGrantId = normalizeText(input.toolGrantId || input.grantId || "");
+    const workspaceToolGrantId = normalizeText(workspaceContext?.toolGrantId || "");
+    const effectiveToolGrantId = normalizeText(
+      explicitToolGrantId ||
+        (callerSelectedWorkspace ? workspaceToolGrantId || allocatedToolGrantId : allocatedToolGrantId || workspaceToolGrantId) ||
+        ""
+    );
     const runResult = agentWorkspace.createRun({
       workspaceId,
       runType: "knowledge_agent_exploration",
       status: "running",
       input: {
         query,
-        modelAlias: input.modelAlias || input.alias || "",
+        modelAlias: effectiveModelAlias,
         contextProfileId: effectiveContextProfileId,
+        toolGrantId: effectiveToolGrantId,
+        workspaceContext,
+        scopeSourceIds: effectiveSourceIds,
         clientRuntimeAllocation: allocationResult?.allocation || input.clientRuntimeAllocation || null,
         thinkingMode: normalizeThinkingMode(input.thinkingMode || explorationDefaults.thinkingMode),
         maxIterations,
@@ -1658,8 +1723,10 @@ export function createAgentExplorationRuntime({
       runId,
       workspaceId,
       query,
-      modelAlias: input.modelAlias || input.alias || "",
+      modelAlias: effectiveModelAlias,
       contextProfileId: effectiveContextProfileId,
+      toolGrantId: effectiveToolGrantId,
+      workspaceContext,
       maxIterations,
       limit: perSearchLimit
     });
@@ -1720,6 +1787,7 @@ export function createAgentExplorationRuntime({
       knowledgeSkillContext: knowledgeSkillContext || run?.coverage?.knowledgeSkillContext || null,
       contextPack: contextPack || run?.coverage?.contextPack || null,
       clientRuntimeAllocation: allocationResult?.allocation || input.clientRuntimeAllocation || null,
+      workspaceContext,
       degraded: run?.degraded === true || degraded,
       steps: asArray(run?.steps),
       error: error || run?.error || ""
@@ -1758,12 +1826,16 @@ export function createAgentExplorationRuntime({
       });
       try {
         const synthesisResult = await agentGatewayCall({
-          alias: input.modelAlias || input.alias || "",
-          modelAlias: input.modelAlias || input.alias || "",
+          alias: effectiveModelAlias,
+          modelAlias: effectiveModelAlias,
+          contextProfileId: effectiveContextProfileId,
+          toolGrantId: effectiveToolGrantId,
           clientUid: input.clientUid || "",
           clientRuntimeAllocation: input.clientRuntimeAllocation || allocationResult?.allocation || null,
           moduleId: input.moduleId || "agentTools",
           taskId: runId,
+          workspaceId,
+          workspaceContext,
           sessionId: workspaceId,
           question: query,
           messages: [
@@ -1917,9 +1989,11 @@ export function createAgentExplorationRuntime({
           .slice(0, 5);
         contextPack = await contextRuntime.assemble({
           contextProfileId: effectiveContextProfileId,
-          modelAlias: input.modelAlias || "",
+          modelAlias: effectiveModelAlias,
           clientUid: input.clientUid || "",
           clientRuntimeAllocation: input.clientRuntimeAllocation || allocationResult?.allocation || null,
+          workspaceContext,
+          knowledgeSourceIds: effectiveSourceIds,
           workspaceId,
           sessionId: workspaceId,
           inputSource: "knowledge-agent-exploration",
@@ -1989,12 +2063,16 @@ export function createAgentExplorationRuntime({
           }
         });
         const agentResult = await agentGatewayCall({
-          alias: input.modelAlias || input.alias || "",
-          modelAlias: input.modelAlias || input.alias || "",
+          alias: effectiveModelAlias,
+          modelAlias: effectiveModelAlias,
+          contextProfileId: effectiveContextProfileId,
+          toolGrantId: effectiveToolGrantId,
           clientUid: input.clientUid || "",
           clientRuntimeAllocation: input.clientRuntimeAllocation || allocationResult?.allocation || null,
           moduleId: input.moduleId || "agentTools",
           taskId: runId,
+          workspaceId,
+          workspaceContext,
           sessionId: workspaceId,
           question: query,
           messages: callMessages,
@@ -2103,10 +2181,13 @@ export function createAgentExplorationRuntime({
           });
           const executed = await executeToolCall(call, {
             limit: perSearchLimit,
+            sourceIds: effectiveSourceIds,
             query,
             runId,
             workspaceId,
-            modelAlias: input.modelAlias || input.alias || "",
+            modelAlias: effectiveModelAlias,
+            toolGrantId: effectiveToolGrantId,
+            workspaceContext,
             keywordSearchAlreadyRun: toolResults.some((entry) => entry.tool === "keyword_search"),
             aggregateAlreadyRun: toolResults.some((entry) => entry.tool === "knowledge_aggregate"),
             toolExecution

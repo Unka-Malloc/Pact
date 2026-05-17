@@ -311,6 +311,10 @@ export const TOOL_MANAGEMENT_PROFILES = Object.freeze(
 );
 
 const TOOL_ID_BY_OPERATION_ID = Object.freeze({
+  "runtime.info": "splitall.runtime.info",
+  "runtime.mounts": "splitall.runtime.mounts",
+  "runtime.set_mounts": "splitall.runtime.mounts.set",
+  "runtime.reload_mounts": "splitall.runtime.mounts.reload",
   "storage.summary": "splitall.storageSummary",
   "jobs.list": "splitall.jobs.list",
   "jobs.get": "splitall.jobs.get",
@@ -318,6 +322,7 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "knowledge.console": "splitall.knowledge.console",
   "knowledge.config_schema": "splitall.knowledge.configSchema",
   "knowledge.capabilities": "splitall.knowledge.capabilities",
+  "knowledge.export_docx": "splitall.knowledge.exportDocx",
   "knowledge.health": "splitall.knowledge.health",
   "knowledge.maintenance.get": "splitall.knowledge.maintenance.get",
   "knowledge.maintenance.set": "splitall.knowledge.maintenance.set",
@@ -372,12 +377,23 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "knowledge.evolution.deployments.rollback": "splitall.knowledge.evolution.deployments.rollback",
   "context.profiles.get": "splitall.context.profiles",
   "context.profiles.set": "splitall.context.profiles.set",
+  "context.session_memory.get": "splitall.agentMemory.sessionMemory.get",
+  "context.session_memory.clear": "splitall.agentMemory.sessionMemory.clear",
   "client_runtime.profiles.get": "splitall.clientRuntime.profiles",
   "client_runtime.profiles.set": "splitall.clientRuntime.profiles.set",
   "client_runtime.resolve": "splitall.clientRuntime.resolve",
   "client_runtime.status": "splitall.clientRuntime.status",
   "agent_workspaces.list": "splitall.agentWorkspace.list",
   "agent_workspaces.get": "splitall.agentWorkspace.get",
+  "agent_workspaces.context.get": "splitall.agentWorkspace.context",
+  "agent_workspaces.context_bundle.export": "splitall.agentWorkspace.contextBundle.export",
+  "agent_workspaces.context_bundle.restore": "splitall.agentWorkspace.contextBundle.restore",
+  "agent_workspaces.chain.get": "splitall.agentWorkspace.chain",
+  "agent_workspaces.parent.set": "splitall.agentWorkspace.parent.set",
+  "agent_workspaces.profile.hotswap": "splitall.agentWorkspace.profile.hotswap",
+  "agent_workspaces.sources.set": "splitall.agentWorkspace.sources.set",
+  "agent_workspaces.share": "splitall.agentWorkspace.share",
+  "agent_workspaces.unshare": "splitall.agentWorkspace.unshare",
   "agent_workspaces.submissions.resolve": "splitall.agentWorkspace.submissionResolve",
   "agent_workspaces.issues.resolve": "splitall.agentWorkspace.issueResolve",
   "agent_workspaces.locks.list": "splitall.agentWorkspace.locks",
@@ -396,6 +412,10 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
+  "runtime.info": "storage:read",
+  "runtime.mounts": "storage:read",
+  "runtime.set_mounts": "knowledge:maintain",
+  "runtime.reload_mounts": "knowledge:maintain",
   "storage.summary": "storage:read",
   "jobs.list": "jobs:read",
   "jobs.get": "jobs:read",
@@ -428,9 +448,16 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "knowledge.evolution.deployments.promote": "knowledge:maintain",
   "knowledge.evolution.deployments.rollback": "knowledge:maintain",
   "context.profiles.set": "knowledge:admin",
+  "context.session_memory.clear": "knowledge:admin",
   "client_runtime.profiles.set": "knowledge:admin",
   "agent_workspaces.submissions.resolve": "knowledge:maintain",
   "agent_workspaces.issues.resolve": "knowledge:maintain",
+  "agent_workspaces.context_bundle.restore": "knowledge:maintain",
+  "agent_workspaces.parent.set": "knowledge:maintain",
+  "agent_workspaces.profile.hotswap": "knowledge:maintain",
+  "agent_workspaces.sources.set": "knowledge:maintain",
+  "agent_workspaces.share": "knowledge:maintain",
+  "agent_workspaces.unshare": "knowledge:maintain",
   "agent_workspaces.locks.write": "knowledge:write",
   "knowledge.summarization.runs.create": "knowledge:write",
   "knowledge.summarization.runs.approve": "knowledge:maintain",
@@ -510,6 +537,13 @@ function normalizeRisk(operation = {}) {
 
 function inferToolsets(operation, scopes = [], toolId = "") {
   const toolsets = new Set(scopes.map((scope) => TOOLSET_BY_SCOPE[scope]).filter(Boolean));
+  if (toolId.startsWith("splitall.runtime.")) {
+    if (operation.id === "runtime.info" || operation.id === "runtime.mounts") {
+      toolsets.add("splitall.runtime.read");
+    } else {
+      toolsets.add("splitall.runtime.maintain");
+    }
+  }
   if (toolId.startsWith("splitall.agentWorkspace.")) {
     toolsets.add("splitall.agent.workspace");
   }

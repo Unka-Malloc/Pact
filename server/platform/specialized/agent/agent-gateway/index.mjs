@@ -503,7 +503,12 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
   const modelFieldPresent = ["model", "modelId", "engine"].some((key) =>
     Object.hasOwn(modelEntry, key)
   );
-  const model = readPresentString(modelEntry, ["model", "modelId", "engine"]) ?? "";
+  const configuredModel = readPresentString(modelEntry, ["model", "modelId", "engine"]);
+  const model = configuredModel ?? (
+    hasModelEntry
+      ? ""
+      : String(settings.deepSeekModel || process.env.SPLITALL_DEEPSEEK_MODEL || "").trim()
+  );
   const alias = adapterAlias(
     modelEntry.uid ||
       modelEntry.instanceId ||
@@ -723,13 +728,20 @@ export function resolveAgentGatewayConfig(settings = {}, input = {}) {
     }
   }
   if (requestedAlias) {
+    const explicitEntry = registry.find(
+      (entry) => entry.alias === requestedAlias || entry.model === requestedAlias
+    );
+    if (explicitEntry) {
+      return explicitEntry;
+    }
+    if (requestedAlias === "deepseek") {
+      return normalizeDeepSeekEntry(settings, {});
+    }
+    if (["openrouter", "copilot", "local-model"].includes(requestedAlias)) {
+      return normalizeOpenAiCompatibleEntry(settings, {}, requestedAlias);
+    }
     return (
-      registry.find(
-        (entry) =>
-          entry.alias === requestedAlias ||
-          entry.model === requestedAlias ||
-          entry.provider === requestedAlias
-      ) ||
+      registry.find((entry) => entry.provider === requestedAlias) ||
       normalizeCustomHttpAdapterEntry({ alias: requestedAlias }, settings)
     );
   }
@@ -761,6 +773,26 @@ export function buildAgentGatewayPayload(input = {}, settings = {}) {
       ...asPlainObject(input.parameters)
     }
   };
+  const contextProfileId = String(input.contextProfileId || input.profileId || "").trim();
+  const toolGrantId = String(input.toolGrantId || input.grantId || "").trim();
+  if (contextProfileId) {
+    payload.contextProfileId = contextProfileId;
+  }
+  if (toolGrantId) {
+    payload.toolGrantId = toolGrantId;
+    payload.grantId = toolGrantId;
+  }
+  if (input.workspaceContext && typeof input.workspaceContext === "object" && !Array.isArray(input.workspaceContext)) {
+    payload.workspaceContext = {
+      workspaceId: String(input.workspaceContext.workspaceId || "").trim(),
+      currentGeneration: Number(input.workspaceContext.currentGeneration || 0),
+      contextFingerprint: String(input.workspaceContext.contextFingerprint || "").trim(),
+      contextProfileId: String(input.workspaceContext.contextProfileId || "").trim(),
+      modelAlias: String(input.workspaceContext.modelAlias || "").trim(),
+      toolGrantId: String(input.workspaceContext.toolGrantId || "").trim(),
+      knowledgeSourceIds: asStringList(input.workspaceContext.knowledgeSourceIds)
+    };
+  }
   const systemPrompt = String(input.systemPrompt || config.systemPrompt || "").trim();
   if (systemPrompt) {
     payload.systemPrompt = systemPrompt;

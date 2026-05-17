@@ -95,6 +95,15 @@ const expectedToolIds = [
   "splitall.clientRuntime.status",
   "splitall.agentWorkspace.list",
   "splitall.agentWorkspace.get",
+  "splitall.agentWorkspace.context",
+  "splitall.agentWorkspace.contextBundle.export",
+  "splitall.agentWorkspace.contextBundle.restore",
+  "splitall.agentWorkspace.chain",
+  "splitall.agentWorkspace.parent.set",
+  "splitall.agentWorkspace.profile.hotswap",
+  "splitall.agentWorkspace.sources.set",
+  "splitall.agentWorkspace.share",
+  "splitall.agentWorkspace.unshare",
   "splitall.agentWorkspace.submissionResolve",
   "splitall.agentWorkspace.issueResolve",
   "splitall.agentWorkspace.locks",
@@ -181,6 +190,108 @@ try {
   assert.equal(search.status, 200);
   assert.equal(search.payload.result.protocolVersion, "splitall.knowledge.v1");
   assert.equal(Array.isArray(search.payload.result.items), true);
+
+  const adminGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: "verify-agent-workspace-context-tools-admin",
+      scopes: ["knowledge:read", "knowledge:write", "knowledge:maintain", "knowledge:admin"]
+    })
+  });
+  assert.equal(adminGrant.status, 201);
+  assert.ok(adminGrant.payload.token);
+
+  const workspace = await fetchJson(`${server.url}/api/agent-workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: "Tool Workspace Source",
+      objective: "Verify context bundle tool export"
+    })
+  });
+  assert.equal(workspace.status, 201);
+  const targetWorkspace = await fetchJson(`${server.url}/api/agent-workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: "Tool Workspace Target",
+      objective: "Verify context bundle tool restore"
+    })
+  });
+  assert.equal(targetWorkspace.status, 201);
+
+  const workspaceId = workspace.payload.workspace.workspaceId;
+  const targetWorkspaceId = targetWorkspace.payload.workspace.workspaceId;
+  const profile = await fetchJson(`${server.url}/api/agent-workspaces/${encodeURIComponent(workspaceId)}/profile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contextProfileId: "tool-context-profile",
+      modelAlias: "tool-model-alias",
+      toolGrantId: "tool-workspace-grant",
+      knowledgeScope: {
+        includeSourceIds: ["tool-source-a"]
+      }
+    })
+  });
+  assert.equal(profile.status, 200);
+
+  const workspaceContext = await executeTool(
+    server.url,
+    adminGrant.payload.token,
+    "splitall.agentWorkspace.context",
+    { workspaceId }
+  );
+  assert.equal(workspaceContext.status, 200);
+  assert.equal(workspaceContext.payload.result.contextProfileId, "tool-context-profile");
+  assert.equal(workspaceContext.payload.result.modelAlias, "tool-model-alias");
+  assert.equal(workspaceContext.payload.result.toolGrantId, "tool-workspace-grant");
+  assert.deepEqual(workspaceContext.payload.result.knowledgeSourceIds, ["tool-source-a"]);
+
+  const contextBundle = await executeTool(
+    server.url,
+    adminGrant.payload.token,
+    "splitall.agentWorkspace.contextBundle.export",
+    {
+      workspaceId,
+      format: "compressed"
+    }
+  );
+  assert.equal(contextBundle.status, 200);
+  assert.equal(contextBundle.payload.result.bundleVersion, "splitall.workspace-context-bundle.v1");
+  assert.equal(contextBundle.payload.result.compressed.encoding, "gzip+base64");
+  assert.ok(contextBundle.payload.result.bundleHash);
+
+  const restoreDenied = await executeTool(
+    server.url,
+    readGrant.payload.token,
+    "splitall.agentWorkspace.contextBundle.restore",
+    {
+      workspaceId: targetWorkspaceId,
+      compressed: contextBundle.payload.result.compressed,
+      bundleHash: contextBundle.payload.result.bundleHash
+    }
+  );
+  assert.equal(restoreDenied.status, 403);
+  assert.equal(restoreDenied.payload.error.code, "missing_scopes");
+
+  const restored = await executeTool(
+    server.url,
+    adminGrant.payload.token,
+    "splitall.agentWorkspace.contextBundle.restore",
+    {
+      workspaceId: targetWorkspaceId,
+      compressed: contextBundle.payload.result.compressed,
+      bundleHash: contextBundle.payload.result.bundleHash
+    }
+  );
+  assert.equal(restored.status, 200);
+  assert.equal(restored.payload.result.ok, true);
+  assert.equal(restored.payload.result.restoredContext.contextProfileId, "tool-context-profile");
+  assert.equal(restored.payload.result.restoredContext.modelAlias, "tool-model-alias");
+  assert.equal(restored.payload.result.restoredContext.toolGrantId, "tool-workspace-grant");
+  assert.deepEqual(restored.payload.result.restoredContext.knowledgeSourceIds, ["tool-source-a"]);
 
   const writeDenied = await executeTool(
     server.url,

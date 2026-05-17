@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { saveSettings } from "../platform/common/platform-core/settings.mjs";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
-import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
@@ -151,34 +151,28 @@ try {
   assert.ok(result.reinjection.items.some((item) => item.key === "maintenanceRun"));
   assert.ok(result.reinjection.items.some((item) => item.key === "enabledTools"));
   assert.ok(result.reinjection.items.some((item) => item.key === "operationCatalog"));
-  assert.equal(result.boundary.strategy, "deterministic");
+  assert.equal(result.boundary.strategy.id, "deterministic-extractive");
 
   const records = await runtime.listCompactionRecords({ limit: 10 });
   assert.ok(records.records.some((record) => record.boundaryId === result.boundary.boundaryId));
 
   const plannerServer = await startPlannerServer();
   const serverDataPath = path.join(userDataPath, "server");
+  const plannerAdapter = {
+    provider: "custom-http",
+    alias: "maintenance-planner",
+    url: plannerServer.url,
+    token: "maintenance-planner-token",
+    agentName: "maintenance-planner",
+    timeoutMs: 30000
+  };
   await saveSettings(serverDataPath, {
     defaultModelProvider: "custom-http",
     customModelAlias: "maintenance-planner",
     customModelLabel: "Maintenance Planner",
     modelLibraryEntries: ["custom-http"],
-    customHttpAdapter: {
-      provider: "custom-http",
-      alias: "maintenance-planner",
-      url: plannerServer.url,
-      token: "maintenance-planner-token",
-      agentName: "maintenance-planner",
-      timeoutMs: 30000
-    },
-    customHttpAdapter: {
-      provider: "custom-http",
-      alias: "maintenance-planner",
-      url: plannerServer.url,
-      token: "maintenance-planner-token",
-      agentName: "maintenance-planner",
-      timeoutMs: 30000
-    }
+    customHttpAdapter: plannerAdapter,
+    customHttpAdapters: [plannerAdapter]
   });
   const server = await startHttpServer({
     userDataPath: serverDataPath,
@@ -193,23 +187,8 @@ try {
         defaultModelProvider: "custom-http",
         customModelAlias: "maintenance-planner",
         customModelLabel: "Maintenance Planner",
-        modelLibraryEntries: ["custom-http"],
-        customHttpAdapter: {
-          provider: "custom-http",
-          alias: "maintenance-planner",
-          url: plannerServer.url,
-          token: "maintenance-planner-token",
-          agentName: "maintenance-planner",
-          timeoutMs: 30000
-        },
-        customHttpAdapter: {
-          provider: "custom-http",
-          alias: "maintenance-planner",
-          url: plannerServer.url,
-          token: "maintenance-planner-token",
-          agentName: "maintenance-planner",
-          timeoutMs: 30000
-        }
+        customHttpAdapter: plannerAdapter,
+        customHttpAdapters: [plannerAdapter]
       })
     });
     assert.equal(settingsUpdate.status, 200);
@@ -230,6 +209,8 @@ try {
       body: JSON.stringify({
         message: "请根据此前上下文继续巡检。",
         sessionId: "maintenance-chat-compaction",
+        modelAlias: "maintenance-planner",
+        agentName: "maintenance-planner",
         contextCompaction: { force: true },
         history: "管理员硬约束：不得执行 destructive 操作；repair_write 必须审批；证据 maint-evidence-42。".repeat(260),
         recentTurns: [

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "model-list",
+  "updatedAt": "2026-05-16T19:40:39.025Z",
+  "entries": [
+    {
+      "id": "model_c4f1ecb63170a783",
+      "file": "model_c4f1ecb63170a783.json",
+      "label": "custom-http business-model",
+      "enabled": true
+    }
+  ]
+}

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createAgentWorkspace } from "../platform/specialized/agent/agent-workspace/index.mjs";
+import { createSummarizationRuntime } from "../platform/specialized/knowledge/invocation/knowledge-summarization-runtime/index.mjs";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
@@ -43,6 +45,135 @@ async function createKnowledgeJob(baseUrl, title, body) {
   await waitForJob(baseUrl, job.id);
   return job;
 }
+
+async function verifySummarizationWorkspaceContextHotSwap() {
+  const directDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-summarization-direct-"));
+  const workspaceId = "verify-summarization-workspace-hot-swap";
+  const agentWorkspace = createAgentWorkspace({ userDataPath: directDataPath });
+  try {
+    agentWorkspace.createWorkspace({
+      workspaceId,
+      title: "Workspace scoped summarization",
+      objective: "Verify summarization runtime consumes workspace context"
+    });
+    agentWorkspace.hotSwapProfile(workspaceId, {
+      contextProfileId: "small-context",
+      modelAlias: "workspace-summarizer",
+      toolGrantId: "workspace-summary-grant",
+      knowledgeScope: {
+        includeSourceIds: ["summary-source-a"]
+      }
+    });
+
+    let searchInput = null;
+    let allocatorCallCount = 0;
+    const contextInputs = [];
+    const summarizationRuntime = createSummarizationRuntime({
+      userDataPath: directDataPath,
+      agentWorkspace,
+      contextRuntime: {
+        async assemble(input = {}) {
+          contextInputs.push(input);
+          assert.equal(input.contextProfileId, "small-context");
+          assert.equal(input.modelAlias, "workspace-summarizer");
+          assert.equal(input.workspaceContext.workspaceId, workspaceId);
+          assert.equal(input.workspaceContext.toolGrantId, "workspace-summary-grant");
+          assert.deepEqual(input.knowledgeSourceIds, ["summary-source-a"]);
+          return {
+            protocolVersion: "splitall.context.v1",
+            profileId: input.contextProfileId,
+            roleId: input.roleId,
+            budgetReport: { maxInputTokens: 4096, estimatedTokens: 256 },
+            citations: [],
+            workspaceContext: input.workspaceContext
+          };
+        }
+      },
+      runtime: {
+        mounts: {
+          knowledgeBase: {
+            enabled: true,
+            async search(input = {}) {
+              searchInput = input;
+              assert.deepEqual(input.scopeSourceIds, ["summary-source-a"]);
+              return {
+                protocolVersion: "splitall.knowledge.v1",
+                query: input.query,
+                items: [
+                  {
+                    id: "summary-evidence-1",
+                    evidenceId: "summary-evidence-1",
+                    title: "供应商发票抬头",
+                    snippet: "summary-source-a 提供供应商发票抬头、预算审批和付款风险证据。",
+                    confidence: 0.92,
+                    source: {
+                      sourceId: "summary-source-a",
+                      sourcePath: "summary-source-a.md",
+                      documentId: "summary-doc-a"
+                    },
+                    hierarchy: {
+                      documentId: "summary-doc-a",
+                      sectionId: "summary-section-a"
+                    }
+                  }
+                ]
+              };
+            }
+          }
+        }
+      },
+      clientRuntimeAllocator: {
+        async apply(input = {}, context = {}) {
+          allocatorCallCount += 1;
+          assert.equal(context.surface, "summarization-runtime");
+          assert.equal(input.workspaceId, workspaceId);
+          return {
+            input: {
+              ...input,
+              modelAlias: "allocator-summarizer",
+              contextProfileId: "allocator-context",
+              toolGrantId: "allocator-summary-grant",
+              scopeSourceIds: ["allocator-source"]
+            },
+            allocation: {
+              profileId: "allocator-defaults",
+              modelAlias: "allocator-summarizer"
+            }
+          };
+        }
+      }
+    });
+
+    const result = await summarizationRuntime.startRun({
+      workspaceId,
+      query: "供应商 发票抬头 预算审批",
+      limit: 4,
+      includeState: true
+    });
+    assert.equal(allocatorCallCount, 1);
+    assert.equal(result.run.status, "completed");
+    assert.equal(result.workspaceContext.workspaceId, workspaceId);
+    assert.equal(result.workspaceContext.modelAlias, "workspace-summarizer");
+    assert.equal(result.workspaceContext.contextProfileId, "small-context");
+    assert.equal(result.workspaceContext.toolGrantId, "workspace-summary-grant");
+    assert.deepEqual(result.workspaceContext.knowledgeSourceIds, ["summary-source-a"]);
+    assert.equal(result.run.input.modelAlias, "workspace-summarizer");
+    assert.equal(result.run.input.contextProfileId, "small-context");
+    assert.equal(result.run.input.toolGrantId, "workspace-summary-grant");
+    assert.deepEqual(result.run.input.scopeSourceIds, ["summary-source-a"]);
+    assert.equal(result.run.input.clientRuntimeAllocation.profileId, "allocator-defaults");
+    assert.deepEqual(searchInput.scopeSourceIds, ["summary-source-a"]);
+    assert.ok(contextInputs.length >= 2);
+  } finally {
+    agentWorkspace.close();
+    await fs.rm(directDataPath, {
+      recursive: true,
+      force: true
+    });
+  }
+}
+
+await verifySummarizationWorkspaceContextHotSwap();
 
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-multi-agent-summarization-"));
 const server = await startHttpServer({

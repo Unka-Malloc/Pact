@@ -5,7 +5,7 @@ import {
   CONTEXT_COMPACTION_PROTOCOL_VERSION,
   createContextCompactionRuntime,
   normalizeCompactionPolicy
-} from "../context-compaction-runtime/index.mjs";
+} from "../context-compact/index.mjs";
 import {
   appendJsonLineSerialized,
   atomicWriteJson
@@ -191,6 +191,7 @@ const DEFAULT_COMPACTION_POLICY = {
   recentMessageProtectionCount: 12,
   maxConsecutiveFailures: 3,
   ptlRetryLimit: 3,
+  ptlHeadTrimRatio: 0.2,
   reinjectionBudgetTokens: 1800,
   maxToolResultTokens: 900,
   maxAttachmentTokens: 600,
@@ -480,6 +481,26 @@ function evidenceIdOf(item = {}) {
   return String(item.evidenceId || item.id || item.ref || item.evidence_id || "").trim();
 }
 
+function evidenceIdAliasesOf(item = {}) {
+  return [
+    item.evidenceId,
+    item.id,
+    item.ref,
+    item.evidence_id,
+    item.original?.evidenceId,
+    item.original?.id,
+    item.original?.ref,
+    item.original?.evidence_id
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+}
+
+function evidenceMatchesAny(item = {}, evidenceIds = new Set()) {
+  if (!evidenceIds.size) {
+    return false;
+  }
+  return evidenceIdAliasesOf(item).some((id) => evidenceIds.has(id));
+}
+
 function sourceLocatorOf(item = {}) {
   return item.sourceLocator || item.source || item.hierarchy || item.path || item.url || null;
 }
@@ -603,6 +624,75 @@ function selectByBudget(items, budget, stringify = (item) => JSON.stringify(item
   };
 }
 
+function collectProtectedEvidenceIds(input = {}, expertGuidanceItems = []) {
+  return normalizeStringArray([
+    ...asArray(input.requiredEvidenceIds),
+    ...asArray(input.requiredEvidenceRefs),
+    ...asArray(input.protectedEvidenceIds),
+    ...asArray(input.mustKeepEvidenceIds),
+    ...asArray(input.evidenceRefs),
+    ...asArray(input.citations).map((item) => typeof item === "string" ? item : item?.evidenceId),
+    ...asArray(expertGuidanceItems).flatMap((item) => item.evidenceRefs || [])
+  ]);
+}
+
+function selectEvidenceByBudget(items, budget, protectedEvidenceIds = [], stringify = (item) => JSON.stringify(item)) {
+  const protectedSet = new Set(protectedEvidenceIds);
+  const selected = [];
+  const dropped = [];
+  const selectedKeys = new Set();
+  let used = 0;
+
+  for (const item of asArray(items)) {
+    if (!evidenceMatchesAny(item, protectedSet)) {
+      continue;
+    }
+    const key = evidenceIdOf(item) || JSON.stringify(item);
+    if (selectedKeys.has(key)) {
+      continue;
+    }
+    const tokens = estimateTokens(stringify(item));
+    selected.push({
+      ...item,
+      protectedEvidence: true,
+      protectionReason: "required_evidence"
+    });
+    selectedKeys.add(key);
+    used += tokens;
+  }
+
+  for (const item of asArray(items)) {
+    const key = evidenceIdOf(item) || JSON.stringify(item);
+    if (selectedKeys.has(key)) {
+      continue;
+    }
+    const tokens = estimateTokens(stringify(item));
+    if (selected.length > 0 && used + tokens > budget) {
+      dropped.push({ item, tokens, reason: "budget_exceeded" });
+      continue;
+    }
+    selected.push(item);
+    selectedKeys.add(key);
+    used += tokens;
+    if (used >= budget) {
+      continue;
+    }
+  }
+
+  return {
+    selected,
+    dropped,
+    usedTokens: used,
+    droppedCount: dropped.length,
+    protectedEvidenceIds: selected
+      .filter((item) => item.protectedEvidence)
+      .map((item) => item.evidenceId)
+      .filter(Boolean),
+    protectedEvidenceCount: selected.filter((item) => item.protectedEvidence).length,
+    protectedEvidenceBudgetOverrun: used > budget && selected.some((item) => item.protectedEvidence)
+  };
+}
+
 function normalizeExpertGuidance(input = {}) {
   return [
     ...asArray(input.expertGuidance),
@@ -713,16 +803,22 @@ export function createContextRuntime({
   userDataPath,
   modelCompressor = null,
   agentGatewayCall = null,
-  clientRuntimeAllocator = null
+  agentMemory = null,
+  clientRuntimeAllocator = null,
+  strategies = [],
+  compactionStrategies = []
 }) {
-  const rootPath = path.join(userDataPath, "context-runtime");
+  const rootPath = path.join(userDataPath, "context-core");
   const profilesPath = path.join(rootPath, "context-profiles.json");
   const buildRecordsPath = path.join(rootPath, "context-build-records.jsonl");
   const evaluationRunsPath = path.join(rootPath, "context-evaluation-runs.jsonl");
   const compactionRuntime = createContextCompactionRuntime({
     userDataPath,
     modelCompressor,
-    agentGatewayCall
+    agentGatewayCall,
+    agentMemory,
+    strategies,
+    compactionStrategies
   });
 
   async function readProfiles() {
@@ -825,6 +921,10 @@ export function createContextRuntime({
 
   async function listCompactionRecords(input = {}) {
     return compactionRuntime.listRecords(input);
+  }
+
+  async function listCompactionStrategies() {
+    return compactionRuntime.listStrategies();
   }
 
   async function listSessionMemory(input = {}) {
@@ -967,7 +1067,7 @@ export function createContextRuntime({
     const allocationResult = typeof clientRuntimeAllocator?.apply === "function"
       ? await clientRuntimeAllocator.apply(input, {
           taskType: input.taskType || input.operationId || "context.assemble",
-          surface: input.inputSource || "context-runtime"
+          surface: input.inputSource || "context-core"
         })
       : null;
     input = allocationResult?.input || input;
@@ -983,12 +1083,14 @@ export function createContextRuntime({
       budgets.expertGuidance,
       (item) => `${item.label}\n${item.instruction}\n${item.reason}\n${item.evidenceRefs?.join(",") || ""}`
     );
+    const protectedEvidenceIds = collectProtectedEvidenceIds(input, expertGuidance.selected);
     const normalizedEvidence = asArray(input.retrievedEvidence || input.evidence || [])
       .map((item) => normalizeEvidenceItem(item, { queryTokens, profile }))
       .sort((left, right) => right.score - left.score);
-    const selectedEvidence = selectByBudget(
+    const selectedEvidence = selectEvidenceByBudget(
       normalizedEvidence,
       budgets.knowledge,
+      protectedEvidenceIds,
       (item) => [
         item.evidenceId,
         item.title,
@@ -1005,6 +1107,8 @@ export function createContextRuntime({
       protectedFacts: item.protectedFacts,
       confidence: item.confidence,
       humanConfirmed: item.humanConfirmed,
+      protectedEvidence: item.protectedEvidence === true,
+      protectionReason: item.protectionReason || "",
       hierarchyLevel: item.hierarchyLevel,
       score: item.score,
       scoreBreakdown: item.scoreBreakdown
@@ -1020,6 +1124,7 @@ export function createContextRuntime({
     );
     const modelCompressionEvents = [];
     const protectedCitationIds = [
+      ...protectedEvidenceIds,
       ...selectedEvidence.selected.map((item) => item.evidenceId),
       ...expertGuidance.selected.flatMap((item) => item.evidenceRefs || [])
     ].filter(Boolean);
@@ -1061,8 +1166,8 @@ export function createContextRuntime({
         runtimeCompaction = await compactionRuntime.maybeCompact({
           profile,
           messages: compactionMessages,
-          sessionId: input.sessionId || input.conversationId || input.threadId || input.agentId || "context-runtime",
-          inputSource: input.inputSource || "context-runtime",
+          sessionId: input.sessionId || input.conversationId || input.threadId || input.agentId || "context-core",
+          inputSource: input.inputSource || "context-core",
           taskBrief,
           runtimeState: {
             ...(asObject(input.runtimeState)),
@@ -1100,6 +1205,8 @@ export function createContextRuntime({
       protocolVersion: CONTEXT_RUNTIME_PROTOCOL_VERSION,
       profileId: profile.profileId,
       clientRuntimeAllocation: allocationResult?.allocation || input.clientRuntimeAllocation || null,
+      workspaceContext: input.workspaceContext || null,
+      workspaceGeneration: input.workspaceContext?.currentGeneration || null,
       roleId: input.roleId || "",
       agentId: input.agentId || "",
       taskBrief,
@@ -1107,6 +1214,7 @@ export function createContextRuntime({
       expertGuidance: expertGuidance.selected,
       criticalEvidenceIndex: criticalEvidenceIndex(evidencePack, profile),
       evidencePack,
+      protectedEvidenceIds,
       sharedSnapshot,
       privateSummary,
       recentTurns: recentTurns.selected,
@@ -1124,6 +1232,7 @@ export function createContextRuntime({
       tailChecklist: {
         taskBrief: profile.placementPolicy.repeatTaskInTail ? taskBrief : "",
         evidenceIds: evidencePack.map((item) => item.evidenceId).filter(Boolean),
+        requiredEvidenceIds: protectedEvidenceIds,
         rules: [
           "Use evidenceId citations exactly as supplied.",
           "Do not treat compressed summaries as canonical evidence.",
@@ -1153,7 +1262,7 @@ export function createContextRuntime({
       pack.compressedHistory = compactText(compressedHistory, Math.floor(profile.historyBudget * profile.compression.targetRatio));
       pack.privateSummary = compactText(privateSummary, Math.floor(Math.min(profile.historyBudget, 4000) * profile.compression.targetRatio));
       const nextKnowledgeBudget = Math.max(512, Math.floor(budgets.knowledge * profile.compression.targetRatio));
-      const nextKnowledge = selectByBudget(pack.evidencePack, nextKnowledgeBudget);
+      const nextKnowledge = selectEvidenceByBudget(pack.evidencePack, nextKnowledgeBudget, protectedEvidenceIds);
       pack.evidencePack = nextKnowledge.selected;
       compressionDroppedEvidenceIds = nextKnowledge.dropped.map((entry) => entry.item.evidenceId).filter(Boolean);
       pack.retrievedKnowledge = nextKnowledge.selected;
@@ -1183,7 +1292,8 @@ export function createContextRuntime({
       runtimeCompaction: {
         status: runtimeCompaction.status,
         compacted: runtimeCompaction.compacted === true,
-        strategy: runtimeCompaction.strategy || "",
+        strategy: runtimeCompaction.strategy || null,
+        executionMode: runtimeCompaction.executionMode || "",
         triggerReason: runtimeCompaction.triggerReason || "",
         degraded: runtimeCompaction.degraded === true,
         boundaryId: runtimeCompaction.boundary?.boundaryId || "",
@@ -1199,6 +1309,9 @@ export function createContextRuntime({
       droppedKnowledgeCount: droppedEvidenceIds.length,
       droppedRecentTurnCount: recentTurns.droppedCount,
       droppedExpertGuidanceCount: expertGuidance.droppedCount,
+      protectedEvidenceIds,
+      protectedEvidenceCount: selectedEvidence.protectedEvidenceCount,
+      protectedEvidenceBudgetOverrun: selectedEvidence.protectedEvidenceBudgetOverrun,
       humanExpertGuidanceCount: pack.expertGuidance.length,
       protectedEvidenceFields: profile.protectedEvidenceFields
     };
@@ -1225,7 +1338,8 @@ export function createContextRuntime({
         enabled: profile.compactionPolicy.enabled,
         status: runtimeCompaction.status,
         compacted: runtimeCompaction.compacted === true,
-        strategy: runtimeCompaction.strategy || "",
+        strategy: runtimeCompaction.strategy || null,
+        executionMode: runtimeCompaction.executionMode || "",
         triggerReason: runtimeCompaction.triggerReason || "",
         degraded: runtimeCompaction.degraded === true,
         degradedReasons: runtimeCompaction.degradedReasons || [],
@@ -1239,6 +1353,9 @@ export function createContextRuntime({
       droppedKnowledgeCount: droppedEvidenceIds.length,
       droppedRecentTurnCount: recentTurns.droppedCount,
       droppedExpertGuidanceCount: expertGuidance.droppedCount,
+      protectedEvidenceIds,
+      protectedEvidenceCount: selectedEvidence.protectedEvidenceCount,
+      protectedEvidenceBudgetOverrun: selectedEvidence.protectedEvidenceBudgetOverrun,
       outputReserveTokens: profile.outputReserveTokens,
       toolReserveTokens: profile.toolReserveTokens
     };
@@ -1332,6 +1449,7 @@ export function createContextRuntime({
     previewCompaction,
     runCompaction,
     listCompactionRecords,
+    listCompactionStrategies,
     listSessionMemory,
     clearSessionMemory,
     estimateTokens

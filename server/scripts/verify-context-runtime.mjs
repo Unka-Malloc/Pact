@@ -2,13 +2,119 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CONTEXT_RUNTIME_PROTOCOL_VERSION,
+  callAgentContextMethod,
   createContextRuntime,
-  estimateTokens
-} from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+  estimateTokens,
+  getAgentContextInterface
+} from "../platform/specialized/agent/agent-context/interface/index.mjs";
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-context-runtime-"));
+const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const agentContextRoot = "server/platform/specialized/agent/agent-context/";
+const agentContextInternalRoots = [
+  "server/platform/specialized/agent/agent-context/context-core",
+  "server/platform/specialized/agent/agent-context/context-compact"
+];
+const scanRoots = ["server/services", "server/platform", "server/scripts", "tests"];
+const skippedScanRoots = ["server/platform/modules/knowledge/runtime", "tests/email-corpus"];
+
+function normalize(relativePath) {
+  return relativePath.split(path.sep).join("/");
+}
+
+async function pathExists(relativePath) {
+  try {
+    await fs.access(path.join(repoRoot, relativePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function walk(relativePath) {
+  if (skippedScanRoots.some((root) => relativePath === root || relativePath.startsWith(`${root}/`))) {
+    return [];
+  }
+  if (!(await pathExists(relativePath))) {
+    return [];
+  }
+  const root = path.join(repoRoot, relativePath);
+  const out = [];
+  for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+    const childRelative = normalize(path.join(relativePath, entry.name));
+    if (entry.isDirectory()) {
+      out.push(...(await walk(childRelative)));
+    } else if (entry.isFile() && childRelative.endsWith(".mjs")) {
+      out.push(childRelative);
+    }
+  }
+  return out;
+}
+
+function specifierTarget(fileRelativePath, specifier) {
+  const base = path.resolve(path.join(repoRoot, path.dirname(fileRelativePath)), specifier);
+  const candidates = [base, `${base}.mjs`, `${base}.js`, path.join(base, "index.mjs")];
+  return candidates.find((candidate) => candidate.startsWith(repoRoot)) || base;
+}
+
+function isAgentContextInternalTarget(target) {
+  const relativePath = normalize(path.relative(repoRoot, target));
+  return agentContextInternalRoots.some((root) => relativePath === root || relativePath.startsWith(`${root}/`));
+}
+
+async function assertAgentContextInterfaceBoundary() {
+  const contextInterface = getAgentContextInterface();
+  for (const methodName of [
+    "context.createRuntime",
+    "context.estimateTokens",
+    "context.compaction.createRuntime",
+    "context.compaction.createStrategyAdapter",
+    "context.compaction.listStrategies",
+    "context.compaction.computeBudget",
+    "context.compaction.normalizePolicy",
+    "context.compaction.buildMessageGraph",
+    "context.compaction.chooseCutPoint",
+    "context.compaction.estimateTokens",
+    "context.compaction.redactValue"
+  ]) {
+    assert.equal(contextInterface.has(methodName), true, `agent-context interface must register ${methodName}`);
+  }
+  assert.equal(
+    contextInterface.listMethods().every((methodName) => methodName === "context.createRuntime" || methodName.startsWith("context.compaction.") || methodName === "context.estimateTokens"),
+    true,
+    "agent-context interface must only expose context runtime and internal compaction methods"
+  );
+  assert.throws(
+    () => callAgentContextMethod("context.internal.unregistered"),
+    /agent_context_interface_method_unregistered/,
+    "agent-context interface must reject unregistered methods"
+  );
+
+  const importPattern =
+    /(\bfrom\s*["'])(\.{1,2}\/[^"']+)(["'])|(\bimport\s*\(\s*["'])(\.{1,2}\/[^"']+)(["']\s*\))/g;
+  const violations = [];
+  for (const root of scanRoots) {
+    for (const file of await walk(root)) {
+      if (file.startsWith(agentContextRoot)) {
+        continue;
+      }
+      const text = await fs.readFile(path.join(repoRoot, file), "utf8");
+      for (const match of text.matchAll(importPattern)) {
+        const specifier = match[2] || match[5];
+        if (isAgentContextInternalTarget(specifierTarget(file, specifier))) {
+          violations.push({ file, specifier });
+        }
+      }
+    }
+  }
+  assert.deepEqual(violations, [], "external agent-context calls must go through agent-context/interface");
+}
+
+await assertAgentContextInterfaceBoundary();
+
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-context-core-"));
 const runtime = createContextRuntime({ userDataPath });
 
 try {
@@ -60,7 +166,7 @@ try {
   }));
   const pack = await runtime.assemble({
     contextProfileId: "verify-small",
-    inputSource: "verify-context-runtime",
+    inputSource: "verify-context-core",
     roleId: "Reviewer",
     taskBrief: "总结合同金额和日期风险",
     systemMemory: "本地记忆规则：必须保护证据编号和来源定位。",
@@ -105,6 +211,43 @@ try {
   assert.ok(pack.evidencePack.some((item) => item.evidenceId === "ev-2"), "human-confirmed evidence should survive compression");
   assert.ok(pack.tailChecklist.evidenceIds.includes("ev-2"));
   assert.equal(pack.budgetReport.compressionMode, "deterministic");
+
+  const protectedEvidence = [
+    ...Array.from({ length: 60 }, (_, index) => ({
+      evidenceId: `ev-priority-${index}`,
+      title: `高分但非必需证据 ${index}`,
+      claim: "预算压缩时这些证据可以被淘汰。",
+      snippet: "高分证据片段。".repeat(30),
+      sourceLocator: `priority-${index}`,
+      confidence: 0.98,
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    })),
+    {
+      evidenceId: "ev-required-low",
+      title: "低分但显式必需证据",
+      claim: "这条证据虽然低分，但被调用方声明为必须保留。",
+      snippet: "低分必需证据片段。".repeat(30),
+      sourceLocator: "required-low",
+      confidence: 0.01,
+      updatedAt: "2020-01-01T00:00:00.000Z"
+    }
+  ];
+  const protectedPack = await runtime.assemble({
+    contextProfileId: "verify-small",
+    inputSource: "verify-context-core-protected-evidence",
+    taskBrief: "验证显式 requiredEvidenceIds 不会被预算压缩淘汰",
+    requiredEvidenceIds: ["ev-required-low"],
+    retrievedEvidence: protectedEvidence,
+    history: "触发压缩。\n".repeat(400),
+    record: false
+  });
+  assert.equal(protectedPack.budgetReport.compressed, true);
+  assert.ok(
+    protectedPack.evidencePack.some((item) => item.evidenceId === "ev-required-low" && item.protectedEvidence),
+    "required evidence should survive both ranking and second-pass compression"
+  );
+  assert.ok(protectedPack.tailChecklist.requiredEvidenceIds.includes("ev-required-low"));
+  assert.equal(protectedPack.budgetReport.protectedEvidenceCount, 1);
 
   const records = await runtime.listBuildRecords({ limit: 5 });
   assert.equal(records.protocolVersion, CONTEXT_RUNTIME_PROTOCOL_VERSION);

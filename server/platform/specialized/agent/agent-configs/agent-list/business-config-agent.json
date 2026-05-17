@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "business-config-agent",
+  "uid": "business-config-agent",
+  "instanceId": "business-config-agent",
+  "alias": "business-config-agent",
+  "modelUid": "model_c4f1ecb63170a783",
+  "label": "Business Config Agent",
+  "agentName": "Business Config Agent",
+  "systemPrompt": "",
+  "pluginList": [],
+  "parameters": {},
+  "permissionGroupId": "business-config-permission",
+  "moduleAccess": {
+    "mode": "all",
+    "moduleIds": []
+  },
+  "timeoutMs": 120000,
+  "enabled": true
+}

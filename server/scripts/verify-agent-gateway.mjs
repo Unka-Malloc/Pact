@@ -898,6 +898,53 @@ try {
   assert.equal(contentArrayProbe.ok, true);
   assert.equal(contentArrayProbe.answerSnippet, "SplitAllProbeOK");
 
+  const gatewayWorkspace = await fetchJson(`${server.url}/api/agent-workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: "Gateway Workspace",
+      objective: "Verify workspace model and tool context reaches agent gateway"
+    })
+  });
+  await fetchJson(`${server.url}/api/agent-workspaces/${encodeURIComponent(gatewayWorkspace.workspace.workspaceId)}/profile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contextProfileId: "gateway-workspace-context",
+      modelAlias: "qa-http",
+      toolGrantId: "gateway-workspace-tool-grant",
+      knowledgeScope: {
+        includeSourceIds: ["gateway-workspace-source"]
+      }
+    })
+  });
+  const workspaceGatewayRequestCount = mockAgent.requests.length;
+  const workspaceGatewayResult = await fetchJson(`${server.url}/api/agent-gateway/call`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspaceId: gatewayWorkspace.workspace.workspaceId,
+      question: "Use workspace-selected gateway adapter"
+    })
+  });
+  assert.equal(workspaceGatewayResult.ok, true);
+  assert.equal(workspaceGatewayResult.workspaceContext.workspaceId, gatewayWorkspace.workspace.workspaceId);
+  assert.equal(workspaceGatewayResult.workspaceContext.contextProfileId, "gateway-workspace-context");
+  assert.equal(workspaceGatewayResult.workspaceContext.modelAlias, "qa-http");
+  assert.equal(workspaceGatewayResult.workspaceContext.toolGrantId, "gateway-workspace-tool-grant");
+  assert.deepEqual(workspaceGatewayResult.workspaceContext.knowledgeSourceIds, ["gateway-workspace-source"]);
+  assert.equal(mockAgent.requests.length, workspaceGatewayRequestCount + 1);
+  const workspaceGatewayRequest = mockAgent.requests.at(-1);
+  assert.equal(workspaceGatewayRequest.headers.token, "second-token");
+  assert.equal(workspaceGatewayRequest.body.agentName, "second-agent");
+  assert.deepEqual(workspaceGatewayRequest.body.pluginList, ["qa"]);
+  assert.equal(workspaceGatewayRequest.body.question, "Use workspace-selected gateway adapter");
+  assert.equal(workspaceGatewayRequest.body.contextProfileId, "gateway-workspace-context");
+  assert.equal(workspaceGatewayRequest.body.toolGrantId, "gateway-workspace-tool-grant");
+  assert.equal(workspaceGatewayRequest.body.workspaceContext.workspaceId, gatewayWorkspace.workspace.workspaceId);
+  assert.equal(workspaceGatewayRequest.body.workspaceContext.contextFingerprint, workspaceGatewayResult.workspaceContext.contextFingerprint);
+  assert.deepEqual(workspaceGatewayRequest.body.workspaceContext.knowledgeSourceIds, ["gateway-workspace-source"]);
+
   const savedDeepSeekAlias = settings.modelLibraryAgents[0].alias;
   const redactedDeepSeekProbeBefore = mockAgent.requests.length;
   const redactedDeepSeekProbe = await fetchJson(`${server.url}/api/settings/model-probe`, {

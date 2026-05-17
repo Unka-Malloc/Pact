@@ -44,6 +44,10 @@ try {
   assert.equal(catalog.payload.schemaVersion, 1);
   assert.ok(catalog.payload.fingerprint);
   const toolIds = new Set(catalog.payload.tools.map((tool) => tool.id));
+  assert.equal(toolIds.has("splitall.runtime.info"), true);
+  assert.equal(toolIds.has("splitall.runtime.mounts"), true);
+  assert.equal(toolIds.has("splitall.runtime.mounts.set"), true);
+  assert.equal(toolIds.has("splitall.runtime.mounts.reload"), true);
   assert.equal(toolIds.has("splitall.knowledge.health"), true);
   assert.equal(toolIds.has("splitall.knowledge.search"), true);
   assert.equal(toolIds.has("agent-exploration.keyword_search"), true);
@@ -229,6 +233,158 @@ try {
     })
   });
   assert.equal(newTokenAllowed.status, 200);
+
+  const runtimeReadGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: "verify-runtime-read",
+      scopes: ["storage:read", "jobs:read"]
+    })
+  });
+  assert.equal(runtimeReadGrant.status, 201);
+
+  const runtimeMounts = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(runtimeReadGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts",
+      input: {}
+    })
+  });
+  assert.equal(runtimeMounts.status, 200);
+  assert.ok(runtimeMounts.payload.result.runtime.mountGeneration >= 1);
+  assert.ok(Array.isArray(runtimeMounts.payload.result.runtime.mounts));
+
+  const runtimeSetDeniedForReadGrant = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(runtimeReadGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts.set",
+      input: {
+        value: {
+          mountRouting: {
+            extensionRoutes: {
+              ".tmverify": { mountName: "documentParser", action: "extractDocument" }
+            }
+          }
+        }
+      }
+    })
+  });
+  assert.equal(runtimeSetDeniedForReadGrant.status, 403);
+  assert.equal(runtimeSetDeniedForReadGrant.payload.error.code, "missing_scopes");
+
+  const runtimeMaintainGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: "verify-runtime-maintain",
+      scopes: ["knowledge:maintain"],
+      metadata: {
+        maxRisk: "repair_write"
+      }
+    })
+  });
+  assert.equal(runtimeMaintainGrant.status, 201);
+
+  const setNeedsConfirmation = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: {
+      ...bearerHeaders(runtimeMaintainGrant.payload.token),
+      "x-splitall-safety-confirm": "false"
+    },
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts.set",
+      input: {
+        value: {
+          mountRouting: {
+            extensionRoutes: {
+              ".tmverify": { mountName: "documentParser", action: "extractDocument" }
+            }
+          }
+        }
+      }
+    })
+  });
+  assert.equal(setNeedsConfirmation.status, 409);
+  assert.equal(setNeedsConfirmation.payload.error.code, "confirmation_required");
+
+  const setMounts = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(runtimeMaintainGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts.set",
+      input: {
+        confirm: true,
+        value: {
+          mountRouting: {
+            extensionRoutes: {
+              ".tmverify": { mountName: "documentParser", action: "extractDocument" }
+            }
+          }
+        }
+      }
+    })
+  });
+  assert.equal(setMounts.status, 200);
+  assert.ok(setMounts.payload.result.runtime.mountGeneration > runtimeMounts.payload.result.runtime.mountGeneration);
+  assert.equal(
+    setMounts.payload.result.value.mountRouting.extensionRoutes[".tmverify"].mountName,
+    "documentParser"
+  );
+  assert.equal(
+    setMounts.payload.result.value.mountRouting.extensionRoutes[".tmverify"].action,
+    "extractDocument"
+  );
+
+  const runtimeMountsAfterSet = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(runtimeReadGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts",
+      input: {}
+    })
+  });
+  assert.equal(runtimeMountsAfterSet.status, 200);
+  assert.equal(
+    runtimeMountsAfterSet.payload.result.value.mountRouting.extensionRoutes[".tmverify"].mountName,
+    "documentParser"
+  );
+  assert.ok(
+    runtimeMountsAfterSet.payload.result.runtime.mountGeneration >=
+      setMounts.payload.result.runtime.mountGeneration
+  );
+
+  const reloadNeedsConfirmation = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: {
+      ...bearerHeaders(runtimeMaintainGrant.payload.token),
+      "x-splitall-safety-confirm": "false"
+    },
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts.reload",
+      input: {}
+    })
+  });
+  assert.equal(reloadNeedsConfirmation.status, 409);
+  assert.equal(reloadNeedsConfirmation.payload.error.code, "confirmation_required");
+
+  const reloadedMounts = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(runtimeMaintainGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "splitall.runtime.mounts.reload",
+      input: { confirm: true }
+    })
+  });
+  assert.equal(reloadedMounts.status, 200);
+  assert.equal(reloadedMounts.payload.result.ok, true);
+  assert.ok(reloadedMounts.payload.result.runtime.mountGeneration > setMounts.payload.result.runtime.mountGeneration);
+  assert.equal(
+    reloadedMounts.payload.result.value.mountRouting.extensionRoutes[".tmverify"].mountName,
+    "documentParser"
+  );
 
   const revoked = await fetchJson(`${server.url}/api/tool-management/v1/grants/${grantResult.payload.grant.id}/revoke`, {
     method: "POST",

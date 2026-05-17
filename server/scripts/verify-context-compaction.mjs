@@ -9,9 +9,12 @@ import {
   buildMessageGraph,
   chooseCompactionCutPoint,
   computeCompactionBudget,
-  createContextCompactionRuntime
-} from "../platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs";
-import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+  createContextCompactionStrategyAdapter,
+  createContextCompactionRuntime,
+  createContextRuntime,
+  listContextCompactionStrategies,
+  normalizeCompactionPolicy
+} from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
@@ -85,7 +88,15 @@ function sampleMessages() {
       id: "m3",
       role: "user",
       apiRoundId: "round-2",
-      content: "TODO: add session memory, boundary resume, audit redaction, and knowledge reference vocab:v7."
+      content: [
+        { type: "text", text: "TODO: add session memory, boundary resume, audit redaction, and knowledge reference vocab:v7." },
+        {
+          type: "image",
+          name: "whiteboard.png",
+          dataBase64: "RAW_IMAGE_PAYLOAD_SHOULD_NOT_REACH_MODEL".repeat(20),
+          summary: "Architecture whiteboard showing the compaction boundary."
+        }
+      ]
     },
     {
       id: "m4",
@@ -175,38 +186,180 @@ try {
   assert.equal(cutPoint.proposedCutIndex, 5);
   assert.equal(cutPoint.cutIndex, 4);
   assert.equal(cutPoint.adjustments.some((item) => item.reason === "tool_chain_protection"), true);
+  const availableStrategies = listContextCompactionStrategies();
+  assert.ok(availableStrategies.some((strategy) => strategy.id === "deterministic-extractive"));
+  assert.ok(availableStrategies.some((strategy) => strategy.id === "model-assisted"));
+  assert.ok(availableStrategies.some((strategy) => strategy.id === "session-memory-first"));
+  assert.ok(availableStrategies.some((strategy) => strategy.id === "workbench-reconstruction"));
+  const legacyPolicy = normalizeCompactionPolicy({
+    compactionPolicy: {
+      strategy: "model_assisted"
+    }
+  });
+  assert.equal(legacyPolicy.strategy.id, "model-assisted");
+  const workbenchAliasPolicy = normalizeCompactionPolicy({
+    compactionPolicy: {
+      strategy: "hybrid-extractive-abstractive"
+    }
+  });
+  assert.equal(workbenchAliasPolicy.strategy.id, "workbench-reconstruction");
+  const explicitPolicy = normalizeCompactionPolicy({
+    compactionPolicy: {
+      strategy: {
+        id: "deterministic-extractive",
+        params: {
+          preserveFacts: true
+        }
+      }
+    }
+  });
+  assert.equal(explicitPolicy.strategy.id, "deterministic-extractive");
+  assert.equal(explicitPolicy.strategy.params.preserveFacts, true);
 
   const directRuntime = createContextCompactionRuntime({ userDataPath });
+  assert.ok(directRuntime.listStrategies().strategies.some((strategy) => strategy.id === "session-memory-first"));
   const deterministic = await directRuntime.run({
     profile: {
       ...profile,
       modelCompression: { enabled: false },
       compactionPolicy: {
         ...profile.compactionPolicy,
-        strategy: "deterministic"
+        strategy: {
+          id: "deterministic-extractive",
+          params: {
+            preserveFacts: true
+          }
+        }
       }
     },
     sessionId: "deterministic",
     messages,
     taskBrief: "实现完整上下文压缩",
+    requiredAnchors: ["evidence:ev-critical", "risk-blocked"],
+    compactionQuality: {
+      minimumRetentionRatio: 1
+    },
     runtimeState: {
       activePlan: ["M0", "M1", "M2"],
       enabledTools: ["context.compaction.run"],
-      currentFiles: ["/Users/unka/DevSpace/Unka-Malloc/splitall/server/platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs"],
+      currentFiles: ["/Users/unka/DevSpace/Unka-Malloc/splitall/server/platform/specialized/agent/agent-context/interface/index.mjs"],
       knowledgeReference: "expert-vocabulary@v7",
       userConstraints: ["Do not copy Claude Code source"]
     }
   });
   assert.equal(deterministic.protocolVersion, CONTEXT_COMPACTION_PROTOCOL_VERSION);
-  assert.equal(deterministic.strategy, "deterministic");
+  assert.equal(deterministic.strategy.id, "deterministic-extractive");
+  assert.deepEqual(deterministic.strategy.paramKeys, ["preserveFacts"]);
+  assert.equal(deterministic.executionMode, "deterministic");
   assert.equal(deterministic.compacted, true);
   assert.equal(deterministic.boundary.type, "compact_boundary");
   assert.ok(deterministic.tokenReport.savingsRatio > 0);
   assert.equal(/redaction-test-value-12345/.test(deterministic.summary), false);
   assert.equal(/\/Users\/unka\/private/.test(deterministic.summary), false);
+  assert.equal(deterministic.qualityReport.protocolVersion, "splitall.context.compaction.quality.v1");
+  assert.equal(deterministic.qualityReport.passed, true);
+  assert.equal(deterministic.qualityReport.requiredAnchorCount, 2);
+  assert.equal(deterministic.qualityReport.missingAnchorCount, 0);
+  assert.equal(deterministic.boundary.qualityReport.retentionRatio, 1);
   assert.ok(deterministic.reinjection.items.some((item) => item.key === "taskBrief"));
   assert.ok(deterministic.microCompaction.changedCount > 0);
   assert.ok(deterministic.attachmentsToReinject.length > 0);
+
+  const qualityFailure = await directRuntime.run({
+    profile: {
+      ...profile,
+      modelCompression: { enabled: false },
+      compactionPolicy: {
+        ...profile.compactionPolicy,
+        strategy: {
+          id: "deterministic-extractive",
+          params: {
+            preserveFacts: true
+          }
+        }
+      }
+    },
+    persist: false,
+    sessionId: "quality-failure",
+    messages,
+    taskBrief: "验证必需锚点缺失会被质量报告标记",
+    requiredAnchors: ["anchor-that-should-not-survive"],
+    compactionQuality: {
+      minimumRetentionRatio: 1
+    }
+  });
+  assert.equal(qualityFailure.qualityReport.passed, false);
+  assert.equal(qualityFailure.qualityReport.missingAnchorCount, 1);
+  assert.ok(qualityFailure.degradedReasons.includes("required_anchor_loss"));
+
+  const workbenchPrompts = [];
+  const workbenchRuntime = createContextCompactionRuntime({
+    userDataPath: path.join(userDataPath, "workbench-runtime"),
+    modelCompressor: async ({ messages: attemptMessages, prompt }) => {
+      workbenchPrompts.push({ messages: attemptMessages, prompt });
+      assert.equal(/RAW_IMAGE_PAYLOAD_SHOULD_NOT_REACH_MODEL/.test(prompt), false);
+      if (attemptMessages.some((message) => message.apiRoundId === "round-1")) {
+        throw new Error("prompt_too_large");
+      }
+      return {
+        summary: JSON.stringify({
+          summary: "Workbench reconstruction summary keeps evidence:ev-critical, active plan, open tool state, risk-blocked, and vocab:v7.",
+          constraints: ["never split tool pairs"],
+          decisions: ["use ContextCompactionRuntime"],
+          risks: ["risk-blocked"],
+          todos: ["add boundary resume"],
+          evidenceRefs: ["evidence:ev-critical"],
+          fileRefs: ["server/platform/specialized/agent/agent-context/interface/index.mjs"],
+          knowledgeRefs: ["vocab:v7"]
+        })
+      };
+    }
+  });
+  const workbenchRun = await workbenchRuntime.run({
+    profile: {
+      ...profile,
+      compactionPolicy: {
+        ...profile.compactionPolicy,
+        strategy: {
+          id: "workbench-reconstruction",
+          params: {
+            preserveWorkbenchState: true
+          }
+        },
+        ptlHeadTrimRatio: 0.2,
+        persistSessionMemory: false
+      }
+    },
+    sessionId: "workbench",
+    messages,
+    taskBrief: "验证工作台重建式上下文压缩策略",
+    runtimeState: {
+      activePlan: ["M0", "M1", "M2"],
+      activeSkill: "splitall-context-compaction",
+      activeToolUseIds: ["tool-1"],
+      openToolCalls: [{ id: "tool-1", name: "knowledge.health" }],
+      enabledTools: ["context.compaction.run", "context.session_memory.clear"],
+      currentFiles: ["server/platform/specialized/agent/agent-context/context-compact/index.mjs"],
+      fileAttachments: [{ name: "current-file-snapshot", summary: "context-compact strategy library" }],
+      deferredToolDeltas: [{ op: "enable", tool: "context.compaction.run" }],
+      knowledgeReference: "vocab:v7",
+      mcpServers: ["knowledge"],
+      worktreeState: { branch: "main", dirty: true }
+    }
+  });
+  assert.equal(workbenchRun.strategy.id, "workbench-reconstruction");
+  assert.deepEqual(workbenchRun.strategy.paramKeys, ["preserveWorkbenchState"]);
+  assert.equal(workbenchRun.executionMode, "workbench_reconstruction");
+  assert.equal(workbenchRun.compacted, true);
+  assert.equal(workbenchRun.modelEvents[0].promptCacheCompatible, true);
+  assert.equal(workbenchRun.modelEvents[0].attempts.length >= 2, true);
+  assert.ok(workbenchRun.modelEvents[0].attempts.some((attempt) => attempt.droppedGroupCount >= 1));
+  assert.ok(workbenchRun.preprocessingEvents[0].strippedBlockCount >= 1);
+  assert.equal(/RAW_IMAGE_PAYLOAD_SHOULD_NOT_REACH_MODEL/.test(JSON.stringify(workbenchPrompts)), false);
+  assert.match(workbenchRun.summary, /Workbench reconstruction summary/);
+  assert.ok(workbenchRun.reinjection.items.some((item) => item.key === "activePlan"));
+  assert.ok(workbenchRun.reinjection.items.some((item) => item.key === "openToolCalls"));
+  assert.ok(workbenchRun.tokenReport.savingsRatio > 0);
 
   const resumed = directRuntime.resumeTranscript({
     messages: [
@@ -219,6 +372,89 @@ try {
   assert.equal(resumed.resumed, true);
   assert.equal(resumed.skippedMessageCount, 2);
   assert.equal(resumed.messages[0].type, "compact_boundary");
+
+  let customAdapterInput = null;
+  const customAdapter = createContextCompactionStrategyAdapter({
+    id: "verify-custom",
+    label: "Verify custom adapter",
+    inputAdapter: (context) => ({
+      ids: context.compactedMessages.map((message) => message.id),
+      limit: context.policy.strategy.params.limit,
+      targetTokens: context.targetTokens
+    }),
+    run: async (strategyInput) => {
+      customAdapterInput = strategyInput;
+      return {
+        executionMode: "custom_verify",
+        summary: `CUSTOM:${strategyInput.ids.join(",")}:limit=${strategyInput.limit}`,
+        structured: {
+          ids: strategyInput.ids,
+          limit: strategyInput.limit
+        }
+      };
+    }
+  });
+  const customRuntime = createContextCompactionRuntime({
+    userDataPath: path.join(userDataPath, "custom-runtime"),
+    strategies: [customAdapter]
+  });
+  const customRun = await customRuntime.run({
+    profile: {
+      ...profile,
+      modelCompression: { enabled: false },
+      compactionPolicy: {
+        ...profile.compactionPolicy,
+        strategy: {
+          id: "verify-custom",
+          params: {
+            limit: 7
+          }
+        },
+        persistSessionMemory: false
+      }
+    },
+    sessionId: "custom-adapter",
+    messages,
+    taskBrief: "验证自定义上下文压缩策略适配器"
+  });
+  assert.equal(customRun.strategy.id, "verify-custom");
+  assert.equal(customRun.executionMode, "custom_verify");
+  assert.deepEqual(customRun.strategy.paramKeys, ["limit"]);
+  assert.equal(customAdapterInput.limit, 7);
+  assert.match(customRun.summary, /CUSTOM:m1,m2,m3,m4/);
+
+  const customContextRuntime = createContextRuntime({
+    userDataPath: path.join(userDataPath, "custom-context-core"),
+    compactionStrategies: [customAdapter]
+  });
+  await customContextRuntime.saveProfiles({
+    profiles: [
+      {
+        ...profile,
+        profileId: "custom-context-small",
+        modelCompression: { enabled: false },
+        compactionPolicy: {
+          ...profile.compactionPolicy,
+          strategy: {
+            id: "verify-custom",
+            params: {
+              limit: 3
+            }
+          },
+          persistSessionMemory: false
+        }
+      }
+    ]
+  });
+  const customContextRun = await customContextRuntime.runCompaction({
+    contextProfileId: "custom-context-small",
+    sessionId: "custom-context-adapter",
+    messages,
+    taskBrief: "验证 ContextRuntime 归一化调用自定义压缩策略"
+  });
+  assert.equal(customContextRun.strategy.id, "verify-custom");
+  assert.equal(customContextRun.executionMode, "custom_verify");
+  assert.equal(customAdapterInput.limit, 3);
 
   const modelRuntime = createContextRuntime({
     userDataPath: path.join(userDataPath, "model-runtime"),
@@ -234,7 +470,7 @@ try {
           risks: ["risk-blocked"],
           todos: ["add boundary resume"],
           evidenceRefs: ["evidence:ev-critical"],
-          fileRefs: ["server/platform/specialized/agent/agent-context/context-compaction-runtime/index.mjs"],
+          fileRefs: ["server/platform/specialized/agent/agent-context/interface/index.mjs"],
           knowledgeRefs: ["vocab:v7"]
         })
       };
@@ -248,7 +484,8 @@ try {
     taskBrief: "模型辅助上下文压缩",
     useSessionMemory: false
   });
-  assert.equal(modelRun.strategy, "model_assisted");
+  assert.equal(modelRun.strategy.id, "session-memory-first");
+  assert.equal(modelRun.executionMode, "model_assisted");
   assert.equal(modelRun.modelEvents[0].attempts.length >= 2, true);
   assert.match(modelRun.summary, /ev-critical/);
 
@@ -258,9 +495,26 @@ try {
     messages,
     taskBrief: "模型辅助上下文压缩"
   });
-  assert.equal(memoryRun.strategy, "session_memory");
+  assert.equal(memoryRun.strategy.id, "session-memory-first");
+  assert.equal(memoryRun.executionMode, "session_memory");
   const memory = await modelRuntime.listSessionMemory({ sessionId: "model-session" });
   assert.ok(memory.records.length >= 1);
+  const changedMemoryRun = await modelRuntime.runCompaction({
+    contextProfileId: "compaction-small",
+    sessionId: "model-session",
+    messages: [
+      ...messages,
+      {
+        id: "m9",
+        role: "user",
+        apiRoundId: "round-5",
+        content: "New source state: session memory must not be reused for changed inputs."
+      }
+    ],
+    taskBrief: "模型辅助上下文压缩 - changed input"
+  });
+  assert.notEqual(changedMemoryRun.executionMode, "session_memory");
+  assert.ok(changedMemoryRun.memoryEvents.some((event) => event.reason === "source_hash_mismatch"));
   const cleared = await modelRuntime.clearSessionMemory({ sessionId: "model-session", reason: "verify" });
   assert.equal(cleared.ok, true);
   const afterClear = await modelRuntime.runCompaction({
@@ -270,7 +524,7 @@ try {
     taskBrief: "模型辅助上下文压缩",
     useSessionMemory: true
   });
-  assert.notEqual(afterClear.strategy, "session_memory");
+  assert.notEqual(afterClear.executionMode, "session_memory");
 
   let failingCalls = 0;
   const fallbackRuntime = createContextRuntime({
@@ -300,7 +554,7 @@ try {
       messages,
       useSessionMemory: false
     });
-    assert.equal(run.strategy, "deterministic");
+    assert.equal(run.executionMode, "deterministic");
     assert.equal(run.degraded, true);
   }
   const callsBeforeCircuit = failingCalls;
@@ -310,7 +564,7 @@ try {
     messages,
     useSessionMemory: false
   });
-  assert.equal(circuit.strategy, "deterministic");
+  assert.equal(circuit.executionMode, "deterministic");
   assert.equal(circuit.circuitBreaker.open, true);
   assert.equal(failingCalls, callsBeforeCircuit);
 

@@ -353,11 +353,13 @@ async function probeDeepSeek(settings, options) {
   const provider = "deepseek";
   const startedAt = Date.now();
   const model = String(settings.deepSeekModel ?? "").trim();
-  const selectedEntry = findModelLibraryProbeEntry(settings, {
-    provider,
-    modelAlias: options.modelAlias,
-    model
-  });
+  const selectedEntry = String(options.modelAlias || "").trim()
+    ? findModelLibraryProbeEntry(settings, {
+        provider,
+        modelAlias: options.modelAlias,
+        model
+      })
+    : null;
   const selectedAlias = String(
     selectedEntry?.uid || selectedEntry?.instanceId || selectedEntry?.alias || ""
   ).trim();

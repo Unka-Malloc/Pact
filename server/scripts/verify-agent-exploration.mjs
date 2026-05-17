@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { createAgentWorkspace } from "../platform/specialized/agent/agent-workspace/index.mjs";
-import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { createAgentExplorationRuntime } from "../platform/specialized/agent/agent-tools/agent-exploration-runtime/index.mjs";
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-explore-"));
@@ -293,6 +293,119 @@ try {
   assert.equal(loaded.run.runId, result.run.runId);
   assert.equal(loaded.answer, result.answer);
   assert.ok(loaded.steps[0].events.some((event) => event.type === "tool_selected"));
+
+  const scopedWorkspaceId = "verify-exploration-workspace-hot-swap";
+  agentWorkspace.createWorkspace({
+    workspaceId: scopedWorkspaceId,
+    title: "Workspace hot-swap exploration",
+    objective: "Verify AgentExplorationRuntime applies workspace context"
+  });
+  agentWorkspace.hotSwapProfile(scopedWorkspaceId, {
+    contextProfileId: "small-context",
+    modelAlias: "workspace-model",
+    toolGrantId: "workspace-tool-grant",
+    knowledgeScope: {
+      includeSourceIds: ["workspace-source-a"]
+    }
+  });
+  let scopedCallCount = 0;
+  let scopedAllocatorCallCount = 0;
+  let scopedSearchInput = null;
+  const scopedRuntime = createAgentExplorationRuntime({
+    userDataPath: tempRoot,
+    runtime: {
+      mounts: {
+        knowledgeBase: {
+          ...fakeKnowledgeCore,
+          async search(input = {}) {
+            scopedSearchInput = input;
+            assert.deepEqual(input.scopeSourceIds, ["workspace-source-a"]);
+            return fakeKnowledgeCore.search(input);
+          }
+        }
+      }
+    },
+    agentWorkspace,
+    contextRuntime,
+    clientRuntimeAllocator: {
+      async apply(input = {}, context = {}) {
+        scopedAllocatorCallCount += 1;
+        assert.equal(context.surface, "agent-exploration-runtime");
+        assert.equal(input.workspaceId, scopedWorkspaceId);
+        return {
+          input: {
+            ...input,
+            modelAlias: "allocator-model",
+            contextProfileId: "allocator-context",
+            toolGrantId: "allocator-tool-grant",
+            scopeSourceIds: ["allocator-source"]
+          },
+          allocation: {
+            profileId: "allocator-defaults",
+            modelAlias: "allocator-model"
+          }
+        };
+      }
+    },
+    agentGatewayCall: async (input = {}) => {
+      scopedCallCount += 1;
+      assert.equal(input.alias, "workspace-model");
+      assert.equal(input.modelAlias, "workspace-model");
+      assert.equal(input.contextProfileId, "small-context");
+      assert.equal(input.toolGrantId, "workspace-tool-grant");
+      assert.equal(input.workspaceId, scopedWorkspaceId);
+      assert.equal(input.sessionId, scopedWorkspaceId);
+      assert.equal(input.workspaceContext.workspaceId, scopedWorkspaceId);
+      assert.equal(input.workspaceContext.contextProfileId, "small-context");
+      assert.equal(input.workspaceContext.modelAlias, "workspace-model");
+      assert.equal(input.workspaceContext.toolGrantId, "workspace-tool-grant");
+      assert.deepEqual(input.workspaceContext.knowledgeSourceIds, ["workspace-source-a"]);
+      if (scopedCallCount === 1) {
+        return {
+          ok: true,
+          answer: "",
+          finish: true,
+          upstream: { provider: "mock", status: 200, contentType: "application/json" },
+          toolCalls: [
+            {
+              id: "call_scoped_keyword",
+              type: "function",
+              function: {
+                name: "keyword_search",
+                arguments: JSON.stringify({
+                  query: "workspace scoped bill",
+                  limit: 2
+                })
+              }
+            }
+          ]
+        };
+      }
+      assert.match(JSON.stringify(input.messages), /workspace scoped bill/);
+      return {
+        ok: true,
+        answer: "工作空间热切换检索已限定到 workspace-source-a。[ev_1]",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" }
+      };
+    }
+  });
+  const scopedResult = await scopedRuntime.run({
+    query: "workspace scoped bill",
+    workspaceId: scopedWorkspaceId,
+    maxIterations: 2,
+    limit: 2
+  });
+  assert.equal(scopedAllocatorCallCount, 1);
+  assert.equal(scopedCallCount, 2);
+  assert.deepEqual(scopedSearchInput.scopeSourceIds, ["workspace-source-a"]);
+  assert.equal(scopedResult.contextPack.profileId, "small-context");
+  assert.equal(scopedResult.workspaceContext.modelAlias, "workspace-model");
+  assert.equal(scopedResult.workspaceContext.toolGrantId, "workspace-tool-grant");
+  assert.equal(scopedResult.run.input.modelAlias, "workspace-model");
+  assert.equal(scopedResult.run.input.toolGrantId, "workspace-tool-grant");
+  assert.deepEqual(scopedResult.run.input.scopeSourceIds, ["workspace-source-a"]);
+  assert.equal(scopedResult.run.input.clientRuntimeAllocation.profileId, "allocator-defaults");
 
   let aggregateCallCount = 0;
   const aggregateRuntime = createAgentExplorationRuntime({
