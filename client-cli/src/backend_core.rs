@@ -4320,19 +4320,15 @@ fn console_session_for_config(
 }
 
 fn service_path_requires_console_auth(path: &str) -> bool {
-    if !path.starts_with('/') {
+    if !path.starts_with("/api/") {
         return false;
     }
-    path.starts_with("/api/interfaces")
-        || path.starts_with("/api/knowledge")
-        || path.starts_with("/api/agents")
-        || path.starts_with("/api/upload-sessions")
-        || path.starts_with("/api/jobs")
-        || path.starts_with("/api/export")
-        || path.starts_with("/api/events")
-        || path.starts_with("/api/agent-gateway")
-        || path.starts_with("/api/expert-vocabulary")
-        || path.starts_with("/api/console/")
+    !(path.starts_with("/api/bootstrap")
+        || path.starts_with("/api/healthz")
+        || path.starts_with("/api/discovery/check-in")
+        || path.starts_with("/api/auth/login")
+        || path.starts_with("/api/auth/session")
+        || path.starts_with("/api/auth/bootstrap"))
 }
 
 fn fetch_expert_vocabulary(
@@ -8146,6 +8142,9 @@ fn url_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let path = env::temp_dir().join(format!("splitall-{}-{}", name, Uuid::new_v4()));
@@ -8161,6 +8160,126 @@ mod tests {
         let dir = unique_temp_dir(name);
         let backend = Backend::new(dir.clone()).unwrap();
         (dir, backend)
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestHttpRequest {
+        method: String,
+        path: String,
+        headers: BTreeMap<String, String>,
+        body: Vec<u8>,
+    }
+
+    fn read_test_http_request(stream: &mut TcpStream) -> TestHttpRequest {
+        let mut buffer = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        loop {
+            let read = stream.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+            if find_header_end(&buffer).is_some() {
+                break;
+            }
+        }
+
+        let header_end = find_header_end(&buffer).expect("request should contain headers");
+        let header_text = String::from_utf8_lossy(&buffer[..header_end]).to_string();
+        let content_length = content_length(&header_text).unwrap_or(0);
+        let body_start = header_end + 4;
+        while buffer.len() < body_start + content_length {
+            let read = stream.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+        }
+
+        let mut lines = header_text.lines();
+        let request_line = lines.next().unwrap_or_default();
+        let mut request_parts = request_line.split_whitespace();
+        let method = request_parts.next().unwrap_or_default().to_string();
+        let path = request_parts.next().unwrap_or_default().to_string();
+        let headers = lines
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
+            .collect::<BTreeMap<_, _>>();
+
+        TestHttpRequest {
+            method,
+            path,
+            headers,
+            body: buffer[body_start..buffer.len().min(body_start + content_length)].to_vec(),
+        }
+    }
+
+    fn write_test_json_response(
+        stream: &mut TcpStream,
+        status: u16,
+        payload: &Value,
+        extra_headers: &[(&str, &str)],
+    ) {
+        let reason = if status == 200 { "OK" } else { "ERROR" };
+        let body = serde_json::to_vec(payload).unwrap();
+        let mut header = format!(
+            "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n",
+            status,
+            reason,
+            body.len()
+        );
+        for (name, value) in extra_headers {
+            header.push_str(&format!("{}: {}\r\n", name, value));
+        }
+        header.push_str("\r\n");
+        stream.write_all(header.as_bytes()).unwrap();
+        stream.write_all(&body).unwrap();
+    }
+
+    fn spawn_console_auth_test_server(
+        expected_requests: usize,
+    ) -> (
+        String,
+        Arc<Mutex<Vec<TestHttpRequest>>>,
+        thread::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let seen_requests = Arc::new(Mutex::new(Vec::new()));
+        let seen_requests_thread = Arc::clone(&seen_requests);
+        let handle = thread::spawn(move || {
+            for _ in 0..expected_requests {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_test_http_request(&mut stream);
+                let path = request.path.clone();
+                seen_requests_thread.lock().unwrap().push(request);
+                if path == "/api/auth/login" {
+                    write_test_json_response(
+                        &mut stream,
+                        200,
+                        &json!({
+                            "ok": true,
+                            "csrfToken": "csrf_test"
+                        }),
+                        &[(
+                            "Set-Cookie",
+                            "splitall_console_session=session_test; Path=/",
+                        )],
+                    );
+                } else {
+                    write_test_json_response(
+                        &mut stream,
+                        200,
+                        &json!({
+                            "ok": true,
+                            "path": path
+                        }),
+                        &[],
+                    );
+                }
+            }
+        });
+        (base_url, seen_requests, handle)
     }
 
     fn sample_vocab(checksum: &str) -> ExpertVocabulary {
@@ -9414,6 +9533,76 @@ mod tests {
         )
         .unwrap();
         assert!(!backend.try_auto_sync_vocabulary("test").unwrap());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn server_api_request_authenticates_runtime_info_routes() {
+        let (dir, backend) = make_backend("server-api-runtime-auth");
+        let (base_url, seen_requests, handle) = spawn_console_auth_test_server(2);
+        backend
+            .save_config_value(json!({
+                "serviceUsername": "owner",
+                "servicePassword": "secret"
+            }))
+            .unwrap();
+
+        let response = backend
+            .server_api_request(json!({
+                "serviceBaseUrl": base_url,
+                "method": "GET",
+                "path": "/api/runtime/info"
+            }))
+            .unwrap();
+        assert_eq!(response["path"], "/api/runtime/info");
+
+        handle.join().unwrap();
+        let requests = seen_requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/api/auth/login");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&requests[0].body).unwrap(),
+            json!({
+                "username": "owner",
+                "password": "secret"
+            })
+        );
+        assert_eq!(requests[1].method, "GET");
+        assert_eq!(requests[1].path, "/api/runtime/info");
+        assert_eq!(
+            requests[1].headers.get("cookie").map(String::as_str),
+            Some("splitall_console_session=session_test")
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn server_api_request_keeps_bootstrap_public_even_with_credentials() {
+        let (dir, backend) = make_backend("server-api-bootstrap-public");
+        let (base_url, seen_requests, handle) = spawn_console_auth_test_server(1);
+        backend
+            .save_config_value(json!({
+                "serviceUsername": "owner",
+                "servicePassword": "secret"
+            }))
+            .unwrap();
+
+        let response = backend
+            .server_api_request(json!({
+                "serviceBaseUrl": base_url,
+                "method": "GET",
+                "path": "/api/bootstrap"
+            }))
+            .unwrap();
+        assert_eq!(response["path"], "/api/bootstrap");
+
+        handle.join().unwrap();
+        let requests = seen_requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "GET");
+        assert_eq!(requests[0].path, "/api/bootstrap");
+        assert!(!requests[0].headers.contains_key("cookie"));
         cleanup(&dir);
     }
 }

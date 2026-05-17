@@ -250,7 +250,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/platform/specialized/knowledge/file-processor"]
+      "includePaths": ["server/platform/specialized/knowledge/preprocessing/file-processor"]
     },
     "server.KnowledgeCore": {
       "label": "Optional server KnowledgeCore module resources",
@@ -259,7 +259,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/platform/specialized/knowledge/datastore/knowledge-core"]
+      "includePaths": ["server/platform/specialized/knowledge/storage/knowledge-core"]
     },
     "server.EmbeddingRuntime": {
       "label": "Optional server EmbeddingRuntime module resources",
@@ -268,7 +268,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/platform/specialized/knowledge/embedding/embedding-runtime"]
+      "includePaths": ["server/platform/specialized/knowledge/retrieval/embedding-runtime"]
     },
     "server.VectorStore": {
       "label": "Optional server VectorStore module resources",
@@ -277,7 +277,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/platform/specialized/knowledge/embedding/vector-store"]
+      "includePaths": ["server/platform/specialized/knowledge/retrieval/vector-store"]
     },
     "server.AgentGateway": {
       "label": "Optional server AgentGateway module resources",
@@ -295,7 +295,7 @@
       "required": false,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "module-resources",
-      "includePaths": ["server/platform/specialized/knowledge/runtime/learning-runtime"]
+      "includePaths": ["server/platform/specialized/knowledge/retrieval/learning-runtime"]
     },
     "server.MaintenanceAgent": {
       "label": "Optional server MaintenanceAgent application resources",
