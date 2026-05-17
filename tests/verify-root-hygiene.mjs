@@ -17,7 +17,6 @@ const forbiddenNames = new Set([
   "protocols",
   "public",
   "release",
-  "scripts",
   "src",
   "testing",
   "tmp",
@@ -46,6 +45,9 @@ const allowedRootNames = new Set([
   ".git",
   ".gitattributes",
   ".gitignore",
+  ".github",
+  ".kilo",
+  ".vscode",
   "AGENT.md",
   "Dockerfile",
   "LICENSE",
@@ -56,6 +58,7 @@ const allowedRootNames = new Set([
   "docker-compose.yml",
   "docs",
   "node_modules",
+  "scripts",
   "package-lock.json",
   "package.json",
   "server",
@@ -87,8 +90,12 @@ const nestedScanExcludedPaths = new Set([
 ]);
 
 const nestedGeneratedNames = new Set([".DS_Store", "__pycache__"]);
-const nestedGeneratedPatterns = [/\.pyc$/u, /\.pyo$/u, /\.pyd$/u];
-const forbiddenNestedPaths = new Set(["server/communication", "client-cli/communication"]);
+const nestedGeneratedPatterns = [/\.pyc$/u, /\.pyo$/u, /\.pyd$/u, /\.eml$/u, /\.mbox$/u];
+const forbiddenNestedPaths = new Set([
+  "server/communication",
+  "client-cli/communication",
+  "tests/email-corpus"
+]);
 
 function toPosix(relativePath) {
   return relativePath.split(path.sep).join("/");

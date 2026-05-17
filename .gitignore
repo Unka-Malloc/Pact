@@ -3,6 +3,7 @@
 Thumbs.db
 .idea/
 .vscode/
+.kilo/
 *.swp
 *.swo
 __pycache__/
@@ -60,3 +61,9 @@ server/platform/modules/knowledge/ocr/runtime/**
 
 # Local test source data can contain large/private documents.
 /tests/fixtures/
+/tests/email-corpus/
+
+# Local browser/test artifacts
+.playwright-cli/
+output/
+test-results/

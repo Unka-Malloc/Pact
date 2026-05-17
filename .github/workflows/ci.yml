@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Hygiene ────────────────────────────────────────────────────────────────
+  hygiene:
+    name: Hygiene checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Repository hygiene
+        run: npm run repo:hygiene
+      - name: Security hygiene
+        run: npm run security:hygiene
+
+  # ── TypeScript type check ──────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # ── Frontend build ─────────────────────────────────────────────────────────
+  build-renderer:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Build renderer
+        run: npm run build:renderer
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-dist
+          path: build/dist/
+          retention-days: 7
+
+  # ── Fast test suite ────────────────────────────────────────────────────────
+  test-fast:
+    name: Fast tests
+    runs-on: ubuntu-latest
+    needs: [hygiene]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run fast tests
+        run: npm run test:fast
+
+  # ── Regression / smoke suite ───────────────────────────────────────────────
+  test-regression:
+    name: Regression tests
+    runs-on: ubuntu-latest
+    needs: [build-renderer, test-fast]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Download renderer dist
+        uses: actions/download-artifact@v4
+        with:
+          name: renderer-dist
+          path: build/dist/
+      - name: Run regression tests
+        run: npm run test:regression
+
+  # ── Docker build verification ──────────────────────────────────────────────
+  docker-build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: [hygiene, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: splitall-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

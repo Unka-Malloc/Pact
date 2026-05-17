@@ -41,7 +41,9 @@ const scannedExtensions = new Set([
   ".yaml",
   ".yml",
   ".toml",
-  ".sh"
+  ".sh",
+  ".eml",
+  ".mbox"
 ]);
 
 const secretPatterns = [
@@ -68,6 +70,17 @@ const secretPatterns = [
   {
     id: "google-api-key",
     pattern: /\bAIza[0-9A-Za-z_-]{35}\b/u
+  }
+];
+
+const emailArtifactSecretPatterns = [
+  {
+    id: "email-inline-token",
+    pattern: /\b(?:api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|auth[_-]?token|msg[_-]?token|emk[_-]?token|token)\s*(?:=|:|%3D|=3D)\s*["']?[A-Za-z0-9._~+/=%-]{20,}/iu
+  },
+  {
+    id: "email-password-reset-link",
+    pattern: /\b(?:Reset password|begin_password_reset|personal access token)\b/iu
   }
 ];
 
@@ -136,7 +149,10 @@ for (const scanRoot of scanRoots) {
   for (const relativePath of files) {
     const absolutePath = path.join(root, relativePath);
     const text = await fs.readFile(absolutePath, "utf8").catch(() => "");
-    for (const { id, pattern } of secretPatterns) {
+    const filePatterns = [".eml", ".mbox"].includes(path.extname(relativePath))
+      ? [...secretPatterns, ...emailArtifactSecretPatterns]
+      : secretPatterns;
+    for (const { id, pattern } of filePatterns) {
       const match = pattern.exec(text);
       if (match) {
         violations.push({

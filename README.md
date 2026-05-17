@@ -25,22 +25,22 @@
 npm install
 ```
 
-开发控制台：
+一键启动（推荐）：
 
 ```bash
-npm run dev
+npm run start:all
 ```
 
-启动服务端：
+默认启动模式为“服务端 + 控制台”。开发联调（API + Vite）可加参数：
+
+```bash
+npm run start:all -- --dev
+```
+
+启动服务端 API-only：
 
 ```bash
 npm run server:start
-```
-
-一键启动控制台和服务端：
-
-```bash
-npm run server:console
 ```
 
 本地运行时依赖采用程序目录内 `server/platform/modules/knowledge/` 资产，不向系统安装 Java/Tika：
@@ -107,9 +107,9 @@ npm run cli -- rpc --method POST --path /api/settings --body settings.json
 
 ## 目录
 
-- [SERVER.md](/Users/unka/DevSpace/Unka-Malloc/splitall/docs/SERVER.md)：服务端启动与接口
-- [USAGE.md](/Users/unka/DevSpace/Unka-Malloc/splitall/docs/USAGE.md)：控制台和薄客户端使用方式
-- [client-gui/README.md](/Users/unka/DevSpace/Unka-Malloc/splitall/client-gui/README.md)：Flutter 客户端构建与运行
+- [SERVER.md](docs/SERVER.md)：服务端启动与接口
+- [USAGE.md](docs/USAGE.md)：控制台和薄客户端使用方式
+- [client-gui/README.md](client-gui/README.md)：Flutter 客户端构建与运行
 
 ## 验证
 
@@ -120,4 +120,4 @@ npm run test:security
 npm run test:list
 ```
 
-统一测试框架见 [TEST-FRAMEWORK.md](/Users/unka/DevSpace/Unka-Malloc/splitall/docs/TEST-FRAMEWORK.md)。新增功能或重构时，必须同步更新对应层级的单元、契约、集成或平台测试。
+统一测试框架见 [TEST-FRAMEWORK.md](docs/TEST-FRAMEWORK.md)。新增功能或重构时，必须同步更新对应层级的单元、契约、集成或平台测试。

@@ -2,7 +2,33 @@
   "name": "splitall",
   "version": "0.1.0",
   "description": "SplitAll server, Vue control console, and thin client build tools.",
-  "author": "OpenAI Codex",
+  "author": "Unka Y.Y.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Unka-Malloc/splitall.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Unka-Malloc/splitall/issues"
+  },
+  "homepage": "https://github.com/Unka-Malloc/splitall#readme",
+  "files": [
+    "server/",
+    "!server/platform/modules/knowledge/runtime/jre/**",
+    "!server/platform/modules/knowledge/tika/**",
+    "!server/platform/modules/knowledge/ocr/runtime/**",
+    "server-web/",
+    "client-cli/",
+    "client-gui/",
+    "docs/",
+    "scripts/",
+    "build/README.md",
+    "README.md",
+    "LICENSE",
+    "Dockerfile",
+    "vite.config.ts",
+    "tsconfig.json"
+  ],
   "type": "module",
   "bin": {
     "splitall": "server/scripts/splitall.mjs"
@@ -10,6 +36,9 @@
   "scripts": {
     "dev": "npm run dev:web",
     "dev:web": "vite",
+    "dev:all": "bash scripts/start-all.sh --dev",
+    "restart:all": "bash scripts/restart-dev.sh",
+    "start:all": "bash scripts/start-all.sh",
     "cli": "node server/scripts/splitall.mjs",
     "prebuild:renderer": "npm run test:prebuild",
     "build:renderer": "npm run build:renderer:raw",
@@ -27,16 +56,21 @@
     "server:start:minimal": "node server/scripts/start-server.mjs --profile minimal",
     "server:start:public": "node server/scripts/start-server.mjs --host 0.0.0.0 --port 8787 --allow-public-console",
     "server:rebuild-metadata": "node server/scripts/rebuild-metadata.mjs",
+    "server:migrate-embeddings": "node server/scripts/migrate-embeddings.mjs",
     "server:doctor": "node server/scripts/doctor.mjs",
     "server:locate": "node server/scripts/locate-storage.mjs",
     "server:reconcile": "node server/scripts/reconcile-storage.mjs",
     "server:knowledge:distill-skills": "node server/scripts/distill-existing-knowledge-skills.mjs",
-    "server:verify": "npm run server:verify:language-policy && npm run server:verify:import-file-types && npm run server:verify:entity-config-layout && npm run server:verify:platform-layout && npm run server:verify:architecture-patterns && npm run server:verify:singleton-boundaries && npm run server:verify:headless && npm run server:verify:state-coordination && npm run server:verify:dispatcher-unified && npm run server:verify:trace-context && npm run server:verify:state-mutations && npm run server:verify:runtime-logging && npm run server:verify:continuity && npm run server:verify:checkpoints && npm run server:verify:rebuild && npm run server:verify:ops && npm run server:verify:knowledge && npm run server:verify:knowledge-multimodal && npm run server:verify:knowledge-maintenance && npm run server:verify:knowledge-learning && npm run server:verify:knowledge-evolution && npm run server:verify:knowledge-evolution-loop && npm run server:verify:knowledge-skillization && npm run server:verify:knowledge-golden-distillation && npm run server:verify:knowledge-rule-authoring && npm run server:verify:knowledge-hierarchy && npm run server:verify:knowledge-outline && npm run server:verify:agent-workspace && npm run server:verify:context-runtime && npm run server:verify:client-runtime-allocator && npm run server:verify:context-compaction && npm run server:verify:agent-exploration && npm run server:verify:multi-agent-summarization && npm run server:verify:agent-gateway && npm run server:verify:agent-gateway-compaction && npm run server:verify:agent-sync && npm run server:verify:agent-knowledge-tools && npm run server:verify:tool-management && npm run server:verify:console-auth && npm run server:verify:knowledge-console && npm run server:verify:source-evidence && npm run server:verify:multi-source-connectors && npm run server:verify:operation-policy && npm run server:verify:unified-registration && npm run server:verify:monitor-alerts && npm run server:verify:maintenance-agent && npm run server:verify:maintenance-agent-compaction && npm run server:verify:feature-profiles && npm run server:verify:business-scenarios",
+    "server:verify": "npm run server:verify:language-policy && npm run server:verify:import-file-types && npm run server:verify:entity-config-layout && npm run server:verify:platform-layout && npm run server:verify:architecture-patterns && npm run server:verify:knowledge-architecture-governance && npm run server:verify:external-knowledge-base && npm run server:verify:knowledge-markdown-chunking && npm run server:verify:knowledge-docx-export && npm run server:verify:singleton-boundaries && npm run server:verify:headless && npm run server:verify:state-coordination && npm run server:verify:dispatcher-unified && npm run server:verify:trace-context && npm run server:verify:state-mutations && npm run server:verify:runtime-logging && npm run server:verify:continuity && npm run server:verify:checkpoints && npm run server:verify:rebuild && npm run server:verify:ops && npm run server:verify:knowledge && npm run server:verify:knowledge-multimodal && npm run server:verify:knowledge-maintenance && npm run server:verify:knowledge-learning && npm run server:verify:knowledge-evolution && npm run server:verify:knowledge-evolution-loop && npm run server:verify:knowledge-skillization && npm run server:verify:knowledge-golden-distillation && npm run server:verify:knowledge-rule-authoring && npm run server:verify:knowledge-hierarchy && npm run server:verify:knowledge-retrieval-quality && npm run server:verify:knowledge-outline && npm run server:verify:agent-workspace && npm run server:verify:agent-memory && npm run server:verify:context-runtime && npm run server:verify:client-runtime-allocator && npm run server:verify:context-compaction && npm run server:verify:agent-exploration && npm run server:verify:multi-agent-summarization && npm run server:verify:agent-gateway && npm run server:verify:agent-gateway-compaction && npm run server:verify:agent-sync && npm run server:verify:agent-knowledge-tools && npm run server:verify:tool-management && npm run server:verify:console-auth && npm run server:verify:knowledge-console && npm run server:verify:source-evidence && npm run server:verify:multi-source-connectors && npm run server:verify:operation-policy && npm run server:verify:unified-registration && npm run server:verify:monitor-alerts && npm run server:verify:maintenance-agent && npm run server:verify:maintenance-agent-compaction && npm run server:verify:feature-profiles && npm run server:verify:frontend-feature-registry && npm run server:verify:business-scenarios",
     "server:verify:language-policy": "node server/scripts/verify-language-policy.mjs",
     "server:verify:import-file-types": "node server/scripts/verify-import-file-types.mjs",
     "server:verify:entity-config-layout": "node server/scripts/verify-entity-config-layout.mjs",
     "server:verify:platform-layout": "node server/scripts/verify-platform-layout.mjs",
     "server:verify:architecture-patterns": "node server/scripts/verify-architecture-patterns.mjs",
+    "server:verify:knowledge-architecture-governance": "node server/scripts/verify-knowledge-architecture-governance.mjs",
+    "server:verify:external-knowledge-base": "node server/scripts/verify-external-knowledge-base.mjs",
+    "server:verify:knowledge-markdown-chunking": "node server/scripts/verify-knowledge-markdown-chunking.mjs",
+    "server:verify:knowledge-docx-export": "node server/scripts/verify-knowledge-docx-export.mjs",
     "server:verify:singleton-boundaries": "node server/scripts/verify-singleton-boundaries.mjs",
     "server:verify:headless": "node server/scripts/verify-headless-server.mjs",
     "server:verify:dispatcher-unified": "node server/scripts/verify-dispatcher-unified.mjs",
@@ -57,8 +91,10 @@
     "server:verify:knowledge-golden-distillation": "node server/scripts/verify-knowledge-golden-distillation.mjs",
     "server:verify:knowledge-rule-authoring": "node server/scripts/verify-knowledge-rule-authoring.mjs",
     "server:verify:knowledge-hierarchy": "node server/scripts/verify-knowledge-hierarchy.mjs",
+    "server:verify:knowledge-retrieval-quality": "node server/scripts/verify-knowledge-retrieval-quality.mjs",
     "server:verify:knowledge-outline": "node server/scripts/verify-knowledge-outline.mjs",
     "server:verify:agent-workspace": "node server/scripts/verify-agent-workspace.mjs",
+    "server:verify:agent-memory": "node server/scripts/verify-agent-memory.mjs",
     "server:verify:context-runtime": "node server/scripts/verify-context-runtime.mjs",
     "server:verify:client-runtime-allocator": "node server/scripts/verify-client-runtime-allocator.mjs",
     "server:verify:context-compaction": "node server/scripts/verify-context-compaction.mjs",
@@ -79,6 +115,7 @@
     "server:verify:maintenance-agent": "node server/scripts/verify-maintenance-agent.mjs",
     "server:verify:maintenance-agent-compaction": "node server/scripts/verify-maintenance-agent-compaction.mjs",
     "server:verify:feature-profiles": "node server/scripts/feature-profiles.mjs verify --edition community && node server/scripts/feature-profiles.mjs verify --edition pro && node server/scripts/feature-profiles.mjs verify --edition enterprise",
+    "server:verify:frontend-feature-registry": "node server/scripts/verify-frontend-feature-registry.mjs",
     "server:verify:business-scenarios": "node server/scripts/verify-business-scenarios.mjs",
     "server:pack:offline:linux:x64": "node server/scripts/pack-offline-server.mjs --target linux-x64",
     "server:pack:offline:linux:arm64": "node server/scripts/pack-offline-server.mjs --target linux-arm64",
@@ -132,12 +169,16 @@
     "p-limit": "^7.3.0",
     "p-queue": "^9.2.0",
     "sqlite-vec": "^0.1.7-alpha.2",
-    "vue": "^3.5.32"
+    "vue": "^3.5.32",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",
     "@vitejs/plugin-vue": "^6.0.6",
     "typescript": "^5.8.3",
     "vite": "^7.0.0"
+  },
+  "optionalDependencies": {
+    "pg": "^8.20.0"
   }
 }
