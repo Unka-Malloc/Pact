@@ -53,47 +53,31 @@ function toggle() {
 .feature-toggle {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: fit-content;
-  min-width: 0;
-  min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 999px;
   background: transparent;
-  color: var(--text-secondary);
   cursor: pointer;
   line-height: 1;
-  transition:
-    background 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
-}
-
-.feature-toggle:hover:not(:disabled),
-.feature-toggle:focus-visible {
-  background: transparent;
-  color: var(--brand);
-  outline: none;
-}
-
-.feature-toggle:focus-visible .feature-toggle-track,
-.feature-toggle:hover:not(:disabled) .feature-toggle-track {
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
 .feature-toggle:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.45;
+}
+
+.feature-toggle:focus-visible { outline: none; }
+
+.feature-toggle:focus-visible .feature-toggle-track {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.20);
 }
 
 .feature-toggle-track {
-  width: 40px;
-  height: 22px;
-  padding: 2px;
-  border-radius: 999px;
-  background: #c6c6c6;
-  transition: background 140ms ease;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  transition: background var(--dur-base) var(--ease-std);
 }
 
 .feature-toggle[data-enabled="true"] .feature-toggle-track {
@@ -101,17 +85,19 @@ function toggle() {
 }
 
 .feature-toggle-knob {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(22, 22, 22, 0.25);
-  transform: translateX(0);
-  transition: transform 140ms ease;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  transition: transform var(--dur-base) var(--ease-spring);
+  will-change: transform;
 }
 
 .feature-toggle[data-enabled="true"] .feature-toggle-knob {
-  transform: translateX(18px);
+  transform: translateX(16px);
 }
 </style>

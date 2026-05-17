@@ -6,10 +6,16 @@ type BrowseSelectKind =
   | "local-directory"
   | "server-file"
   | "server-directory";
+type DirectoryMode = "files" | "path";
+type DirectorySelection = {
+  name: string;
+  path: string;
+};
 
 const props = withDefaults(
   defineProps<{
     kind: BrowseSelectKind;
+    directoryMode?: DirectoryMode;
     buttonText?: string;
     buttonType?: string;
     buttonClass?: string;
@@ -20,6 +26,7 @@ const props = withDefaults(
     accept?: string;
   }>(),
   {
+    directoryMode: "files",
     buttonText: "",
     buttonType: "",
     buttonClass: "",
@@ -34,6 +41,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   browse: [];
   select: [files: File[]];
+  directory: [directory: DirectorySelection];
 }>();
 
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -64,8 +72,99 @@ function openLocalPicker() {
   input.click();
 }
 
+type BrowserDirectoryHandle = {
+  kind: "directory";
+  name: string;
+  values?: () => AsyncIterable<BrowserFileHandle | BrowserDirectoryHandle>;
+  entries?: () => AsyncIterable<[string, BrowserFileHandle | BrowserDirectoryHandle]>;
+};
+
+type BrowserFileHandle = {
+  kind: "file";
+  name: string;
+  getFile: () => Promise<File>;
+};
+
+function fileWithRelativePath(file: File, relativePath: string) {
+  try {
+    Object.defineProperty(file, "webkitRelativePath", {
+      configurable: true,
+      value: relativePath,
+    });
+    return file;
+  } catch {
+    const clone = new File([file], file.name, {
+      lastModified: file.lastModified,
+      type: file.type,
+    });
+    Object.defineProperty(clone, "webkitRelativePath", {
+      configurable: true,
+      value: relativePath,
+    });
+    return clone;
+  }
+}
+
+async function collectDirectoryFiles(
+  directoryHandle: BrowserDirectoryHandle,
+  prefix = directoryHandle.name,
+): Promise<File[]> {
+  const files: File[] = [];
+  const iterable = directoryHandle.values
+    ? directoryHandle.values()
+    : directoryHandle.entries
+      ? (async function* () {
+          for await (const [, entry] of directoryHandle.entries?.() || []) {
+            yield entry;
+          }
+        })()
+      : null;
+  if (!iterable) {
+    return files;
+  }
+  for await (const entry of iterable) {
+    if (entry.kind === "file") {
+      const file = await entry.getFile();
+      files.push(fileWithRelativePath(file, `${prefix}/${file.name}`));
+      continue;
+    }
+    files.push(...await collectDirectoryFiles(entry, `${prefix}/${entry.name}`));
+  }
+  return files;
+}
+
+async function openLocalDirectoryPicker() {
+  const picker = (window as Window & {
+    showDirectoryPicker?: (options?: { mode?: "read" | "readwrite" }) => Promise<BrowserDirectoryHandle>;
+  }).showDirectoryPicker;
+  if (!picker) {
+    openLocalPicker();
+    return;
+  }
+  try {
+    const directoryHandle = await picker({ mode: "read" });
+    emit("directory", {
+      name: directoryHandle.name,
+      path: directoryHandle.name,
+    });
+    if (props.directoryMode === "path") {
+      return;
+    }
+    emit("select", await collectDirectoryFiles(directoryHandle));
+  } catch (nextError) {
+    if (nextError instanceof DOMException && nextError.name === "AbortError") {
+      return;
+    }
+    openLocalPicker();
+  }
+}
+
 function onClick() {
   if (props.disabled) {
+    return;
+  }
+  if (isLocalDirectory.value) {
+    void openLocalDirectoryPicker();
     return;
   }
   if (isLocal.value) {
@@ -77,7 +176,21 @@ function onClick() {
 
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
-  emit("select", Array.from(input.files || []));
+  const files = Array.from(input.files || []);
+  if (isLocalDirectory.value && props.directoryMode === "path") {
+    const firstRelativePath = String(
+      (files[0] as File & { webkitRelativePath?: string } | undefined)?.webkitRelativePath ||
+        files[0]?.name ||
+        "",
+    );
+    const rootPath = firstRelativePath.split(/[\\/]/g)[0] || firstRelativePath;
+    emit("directory", {
+      name: rootPath || "本地文件夹",
+      path: rootPath || `local-directory-${Date.now()}`,
+    });
+    return;
+  }
+  emit("select", files);
 }
 </script>
 

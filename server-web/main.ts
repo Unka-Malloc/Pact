@@ -6,6 +6,7 @@ import "element-plus/es/components/button/style/css";
 import "element-plus/es/components/select/style/css";
 import "element-plus/es/components/table/style/css";
 import "element-plus/es/components/table-column/style/css";
+import { router } from "./router/index";
 import ServerConsoleApp from "./ServerConsoleApp.vue";
 import "./styles.css";
 
@@ -16,6 +17,7 @@ document.body.setAttribute("translate", "no");
 document.body.classList.add("notranslate");
 
 createApp(ServerConsoleApp)
+  .use(router)
   .component(ElButton.name ?? "ElButton", ElButton)
   .component(ElSelect.name ?? "ElSelect", ElSelect)
   .component(ElOption.name ?? "ElOption", ElOption)

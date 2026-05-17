@@ -46,71 +46,76 @@ const accessibleLabel = computed(() => props.ariaLabel || displayLabel.value);
 
 <style scoped>
 .standard-status-pill {
-  --status-pill-border: var(--border-subtle);
-  --status-pill-bg: var(--bg-surface);
-  --status-pill-color: var(--text-secondary);
+  /* Default (neutral) */
+  --_border: var(--border-strong);
+  --_bg:     var(--bg-subtle);
+  --_color:  var(--text-secondary);
+
   pointer-events: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   flex: 0 0 auto;
-  min-height: 24px;
+  height: 22px;
   max-width: 100%;
-  padding: 0 9px;
-  border: 1px solid var(--status-pill-border);
-  border-radius: 999px;
-  background: var(--status-pill-bg);
-  color: var(--status-pill-color);
-  font-size: 0.76rem;
-  font-weight: 600;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--_border);
+  border-radius: var(--radius-full);
+  background: var(--_bg);
+  color: var(--_color);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   line-height: 1;
   white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 
+/* Tone overrides */
 .standard-status-pill[data-tone="queued"],
 .standard-status-pill[data-tone="warning"] {
-  --status-pill-border: var(--warning);
-  --status-pill-bg: var(--warning-surface);
-  --status-pill-color: var(--warning-text);
+  --_border: var(--warning-border);
+  --_bg:     var(--warning-surface);
+  --_color:  var(--warning-text);
 }
 
 .standard-status-pill[data-tone="running"],
 .standard-status-pill[data-tone="info"] {
-  --status-pill-border: var(--info);
-  --status-pill-bg: var(--info-surface);
-  --status-pill-color: var(--info);
+  --_border: var(--info-border);
+  --_bg:     var(--info-surface);
+  --_color:  var(--info);
 }
 
 .standard-status-pill[data-tone="completed"],
 .standard-status-pill[data-tone="success"] {
-  --status-pill-border: var(--success);
-  --status-pill-bg: var(--success-surface);
-  --status-pill-color: var(--success);
+  --_border: var(--success-border);
+  --_bg:     var(--success-surface);
+  --_color:  var(--success);
 }
 
 .standard-status-pill[data-tone="failed"],
 .standard-status-pill[data-tone="danger"],
 .standard-status-pill[data-tone="high"] {
-  --status-pill-border: var(--danger);
-  --status-pill-bg: var(--danger-surface);
-  --status-pill-color: var(--danger);
+  --_border: var(--danger-border);
+  --_bg:     var(--danger-surface);
+  --_color:  var(--danger);
 }
 
 .standard-status-pill[data-tone="muted"],
 .standard-status-pill[data-tone="neutral"],
 .standard-status-pill[data-tone="medium"],
 .standard-status-pill[data-tone="low"] {
-  --status-pill-border: var(--border-subtle);
-  --status-pill-bg: var(--bg-subtle);
-  --status-pill-color: var(--text-secondary);
+  --_border: var(--border-subtle);
+  --_bg:     var(--bg-subtle);
+  --_color:  var(--text-muted);
 }
 
 .standard-status-pill-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: currentColor;
+  opacity: 0.8;
 }
 
 .standard-status-pill-label {

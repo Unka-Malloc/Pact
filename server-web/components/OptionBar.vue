@@ -76,25 +76,17 @@ function changeValue(value: OptionBarValue) {
 <style scoped>
 .option-bar {
   display: grid;
-  gap: 6px;
+  gap: var(--space-1);
   min-width: 0;
-  color: var(--text-secondary, #4b5563);
-  font-size: 0.88rem;
-  font-weight: 600;
 }
 
-.option-bar[data-has-label="false"] {
-  gap: 0;
-}
+.option-bar[data-has-label="false"] { gap: 0; }
 
 .option-bar-label {
-  color: var(--text-secondary, #4b5563);
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
 }
 
-.option-bar-select {
-  width: 100%;
-  min-width: 0;
-}
+.option-bar-select { width: 100%; min-width: 0; }
 </style>

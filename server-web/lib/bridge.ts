@@ -32,6 +32,14 @@ import type {
   KnowledgeSourceMutationResponse,
   KnowledgeSourceState,
   KnowledgeSearchResponse,
+  KnowledgeWordCloudExportResponse,
+  KnowledgeWordCloudImportResponse,
+  KnowledgeWordCloudProposeResponse,
+  KnowledgeWordBag,
+  KnowledgeWordBagMutationResponse,
+  KnowledgeWordBagSet,
+  KnowledgeWordBagTermsResponse,
+  KnowledgeWordCloudState,
   MaintenanceAgentConfig,
   MaintenanceAgentRun,
   MaintenanceAgentSummary,
@@ -191,6 +199,54 @@ type Bridge = {
   getKnowledgeConsole: () => Promise<KnowledgeConsoleState>;
   getKnowledgeConfigSchema: () => Promise<KnowledgeConfigSchema>;
   getKnowledgeSources: () => Promise<KnowledgeSourceState>;
+  getKnowledgeWordClouds: (params?: {
+    wordBagSetId?: string;
+    wordBagId?: string;
+    limit?: number;
+    minFrequency?: number;
+    query?: string;
+    corpusPaths?: Array<{ path: string; type?: string }>;
+  }) => Promise<KnowledgeWordCloudState>;
+  saveKnowledgeWordClouds: (payload: {
+    wordBagSet?: Partial<KnowledgeWordBagSet>;
+    auditAction?: string;
+    auditPaths?: Array<{ path: string; type?: string }>;
+    limit?: number;
+    minFrequency?: number;
+  }) => Promise<{ ok: boolean; wordBagSet: KnowledgeWordBagSet }>;
+  exportKnowledgeWordClouds: (payload?: {
+    wordBagSetId?: string;
+  }) => Promise<KnowledgeWordCloudExportResponse>;
+  importKnowledgeWordClouds: (payload: {
+    importPayload?: Record<string, unknown> | string;
+    wordBagSet?: Partial<KnowledgeWordBagSet>;
+    mode?: "copy" | "overwrite" | string;
+    overwrite?: boolean;
+  }) => Promise<KnowledgeWordCloudImportResponse>;
+  addKnowledgeWordBag: (payload: {
+    wordBagSetId: string;
+    parentWordBagId?: string;
+    wordBag: Partial<KnowledgeWordBag>;
+  }) => Promise<KnowledgeWordBagMutationResponse>;
+  updateKnowledgeWordBag: (
+    wordBagId: string,
+    payload: {
+      wordBagSetId: string;
+      wordBag?: Partial<KnowledgeWordBag>;
+      patch?: Partial<KnowledgeWordBag>;
+    },
+  ) => Promise<KnowledgeWordBagMutationResponse>;
+  deleteKnowledgeWordBag: (
+    wordBagId: string,
+    params: { wordBagSetId: string },
+  ) => Promise<KnowledgeWordBagMutationResponse>;
+  getKnowledgeWordBagTerms: (payload: {
+    wordBagSetId?: string;
+    wordBagId?: string;
+    wordBagIds?: string[];
+    includeChildren?: boolean;
+  }) => Promise<KnowledgeWordBagTermsResponse>;
+  proposeKnowledgeWordClouds: (payload: Record<string, unknown>) => Promise<KnowledgeWordCloudProposeResponse>;
   listKnowledgeReviewItems: (params?: { status?: string; limit?: number }) => Promise<KnowledgeReviewItemsResponse>;
   resolveKnowledgeReviewItem: (
     reviewId: string,
@@ -220,6 +276,7 @@ type Bridge = {
     [key: string]: unknown;
   }) => Promise<Record<string, unknown>>;
   reindexKnowledge: (payload?: { confirm?: boolean; [key: string]: unknown }) => Promise<Record<string, unknown>>;
+  rebuildSourceVocabulary: (payload?: { confirm?: boolean; [key: string]: unknown }) => Promise<Record<string, unknown>>;
   searchKnowledge: (payload: Record<string, unknown>) => Promise<KnowledgeSearchResponse>;
   recordKnowledgeFeedback: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getContextProfiles: () => Promise<Record<string, unknown>>;
@@ -232,6 +289,13 @@ type Bridge = {
     format?: "markdown" | string;
   }) => Promise<RenderMarkdownResponse>;
   knowledgeAssetUrl: (assetId: string) => string;
+  knowledgeDocxExportUrl: (params?: {
+    documentId?: string;
+    batchId?: string;
+    sourceId?: string;
+    limit?: number;
+    includeMachineReadable?: boolean;
+  }) => string;
   createUploadSession: (payload: Record<string, unknown>) => Promise<UploadSessionResponse>;
   uploadSessionChunk: (
     sessionId: string,
@@ -357,6 +421,28 @@ async function deleteJson<T>(url: string, options: BridgeRequestOptions = {}): P
   return data;
 }
 
+async function getJson<T>(url: string, options: BridgeRequestOptions = {}): Promise<T> {
+  const headers: HeadersInit = {
+    Accept: "application/json",
+    ...(csrfToken ? { "x-splitall-csrf": csrfToken } : {}),
+  };
+  const response = await fetch(url, {
+    method: "GET",
+    headers,
+    credentials: "same-origin",
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response);
+    throw new Error(message || `Request failed: ${response.status}`);
+  }
+
+  const data = await parseJsonResponse<T>(response, url);
+  updateCsrfToken(data);
+  return data;
+}
+
 async function putBinaryJson<T>(url: string, payload: Blob | ArrayBuffer): Promise<T> {
   const response = await fetch(url, {
     method: "PUT",
@@ -379,17 +465,17 @@ async function putBinaryJson<T>(url: string, payload: Blob | ArrayBuffer): Promi
 }
 
 const browserBridge: Bridge = {
-  getAuthSession: () => postJson<ConsoleAuthSummary>("/api/auth/session"),
+  getAuthSession: () => getJson<ConsoleAuthSummary>("/api/auth/session"),
   loginAuth: (payload) => postJson<ConsoleAuthSummary & { ok: boolean }>("/api/auth/login", payload),
   logoutAuth: () => postJson<{ ok: boolean }>("/api/auth/logout", {}),
-  listAuthUsers: () => postJson<{ users: ConsoleUser[]; roles: ConsoleAuthSummary["roles"] }>("/api/auth/users"),
+  listAuthUsers: () => getJson<{ users: ConsoleUser[]; roles: ConsoleAuthSummary["roles"] }>("/api/auth/users"),
   updateAuthUser: (userId, payload) =>
     postJson<{ user: ConsoleUser; users: ConsoleUser[] }>(
       `/api/auth/users/${encodeURIComponent(userId)}`,
       payload,
       { safetyConfirm: true },
     ),
-  getAuthOidc: () => postJson<{ oidc: ConsoleOidcConfig }>("/api/auth/oidc"),
+  getAuthOidc: () => getJson<{ oidc: ConsoleOidcConfig }>("/api/auth/oidc"),
   saveAuthOidc: (payload) =>
     postJson<{ oidc: ConsoleOidcConfig }>("/api/auth/oidc", payload, { safetyConfirm: true }),
   listAuthAudit: (limit = 100) =>
@@ -397,16 +483,16 @@ const browserBridge: Bridge = {
   listAuthSessions: () => postJson<{ sessions: Array<Record<string, unknown>> }>("/api/auth/sessions"),
   revokeAuthSession: (sessionId) =>
     postJson<{ ok: boolean }>(`/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke`, {}),
-  getSettings: () => postJson<AgentSettings>("/api/settings"),
+  getSettings: () => getJson<AgentSettings>("/api/settings"),
   saveSettings: (settings) => postJson<AgentSettings>("/api/settings", settings, { safetyConfirm: true }),
   probeModel: (payload) =>
     postJson<ModelProbeResponse>("/api/settings/model-probe", payload),
-  getAgentGatewayConfig: () => postJson<{ config: AgentGatewayConfig }>("/api/agent-gateway/config"),
+  getAgentGatewayConfig: () => getJson<{ config: AgentGatewayConfig }>("/api/agent-gateway/config"),
   saveAgentGatewayConfig: (config) =>
     postJson<{ config: AgentGatewayConfig }>("/api/agent-gateway/config", { config }, { safetyConfirm: true }),
   callAgentGateway: (payload) =>
     postJson<AgentGatewayCallResponse>("/api/agent-gateway/call", payload),
-  listAgents: () => postJson<AgentRegistryResponse>("/api/agents"),
+  listAgents: () => getJson<AgentRegistryResponse>("/api/agents"),
   runKnowledgeAgentExplore: (payload) =>
     postJson<AgentExploreRunResponse>("/api/knowledge/agent-explore/runs", payload),
   getKnowledgeAgentExploreRun: (runId, params = {}) => {
@@ -442,7 +528,7 @@ const browserBridge: Bridge = {
       `/api/agent-workspaces/${encodeURIComponent(workspaceId)}${suffix}`,
     );
   },
-  getAgentSyncConfig: () => postJson<{ config: AgentSyncConfig }>("/api/agent-sync/config"),
+  getAgentSyncConfig: () => getJson<{ config: AgentSyncConfig }>("/api/agent-sync/config"),
   saveAgentSyncConfig: (config) =>
     postJson<{ config: AgentSyncConfig }>("/api/agent-sync/config", { config }, { safetyConfirm: true }),
   publishAgentSync: (payload) =>
@@ -462,11 +548,11 @@ const browserBridge: Bridge = {
       query.set("includeSnapshot", params.includeSnapshot ? "1" : "0");
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return postJson<EventSubscriptionResponse>(`/api/agent-sync/events${suffix}`);
+    return getJson<EventSubscriptionResponse>(`/api/agent-sync/events${suffix}`);
   },
-  getCodexOAuthStatus: () => postJson<CodexOAuthStatus>("/api/oauth/codex/status"),
+  getCodexOAuthStatus: () => getJson<CodexOAuthStatus>("/api/oauth/codex/status"),
   startCodexOAuthLogin: () => postJson<CodexOAuthLogin>("/api/oauth/codex/login", {}),
-  getRuntimeInfo: () => postJson<RuntimeInfoResponse>("/api/runtime/info"),
+  getRuntimeInfo: () => getJson<RuntimeInfoResponse>("/api/runtime/info"),
   browseServerPath: (payload) =>
     postJson<ServerPathBrowseResponse>("/api/runtime/path-browse", payload),
   saveRuntimeMounts: (payload) =>
@@ -479,9 +565,9 @@ const browserBridge: Bridge = {
       settings ? { settings } : {},
       { safetyConfirm: true },
     ),
-  getServerConsoleState: () => postJson<ServerConsoleState>("/api/console/state"),
+  getServerConsoleState: () => getJson<ServerConsoleState>("/api/console/state"),
   getMaintenanceAgentConfig: () =>
-    postJson<{ path: string; config: MaintenanceAgentConfig }>("/api/maintenance-agent/config"),
+    getJson<{ path: string; config: MaintenanceAgentConfig }>("/api/maintenance-agent/config"),
   saveMaintenanceAgentConfig: (config) =>
     postJson<{ config: MaintenanceAgentConfig }>("/api/maintenance-agent/config", { config }, { safetyConfirm: true }),
   chatMaintenanceAgent: (payload) =>
@@ -510,10 +596,10 @@ const browserBridge: Bridge = {
       payload,
     ),
   getBackgroundProcesses: () =>
-    postJson<BackgroundProcessStatus>("/api/system/background-processes"),
+    getJson<BackgroundProcessStatus>("/api/system/background-processes"),
   getClientRuntimeStatus: () => getJson<ClientRuntimeStatus>("/api/client-runtime/status"),
   getMonitorAlerts: () =>
-    postJson<MonitorAlertState>("/api/system/monitor-alerts"),
+    getJson<MonitorAlertState>("/api/system/monitor-alerts"),
   saveMonitorAlertConfig: (config) =>
     postJson<MonitorAlertState>(
       "/api/system/monitor-alerts/config",
@@ -543,16 +629,16 @@ const browserBridge: Bridge = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return postJson<EventSubscriptionResponse>(`/api/events${suffix}`, undefined, options);
   },
-  getToolManagementCatalog: () => postJson<ToolManagementCatalog>("/api/tool-management/v1/catalog"),
+  getToolManagementCatalog: () => getJson<ToolManagementCatalog>("/api/tool-management/v1/catalog"),
   getToolManagementAudit: (limit = 50) =>
     postJson<ToolManagementAuditResponse>(
       `/api/tool-management/v1/audit?limit=${encodeURIComponent(String(limit))}`,
     ),
   getToolManagementMetrics: () =>
-    postJson<ToolManagementMetricsResponse>("/api/tool-management/v1/metrics/summary"),
+    getJson<ToolManagementMetricsResponse>("/api/tool-management/v1/metrics/summary"),
   previewToolPolicy: (payload) =>
     postJson<Record<string, unknown>>("/api/tool-management/v1/policy/preview", payload),
-  getToolManagementGrants: () => postJson<ToolManagementGrantsResponse>("/api/tool-management/v1/grants"),
+  getToolManagementGrants: () => getJson<ToolManagementGrantsResponse>("/api/tool-management/v1/grants"),
   createToolGrant: async (payload) => {
     return postJson<ToolManagementGrantIssue>(
       "/api/tool-management/v1/grants",
@@ -581,50 +667,125 @@ const browserBridge: Bridge = {
       { safetyConfirm: true },
     );
   },
-  getDiscoveryConfig: () => postJson<DiscoveryConfigResponse>("/api/discovery/config"),
+  getDiscoveryConfig: () => getJson<DiscoveryConfigResponse>("/api/discovery/config"),
   saveDiscoveryConfig: (config) =>
     postJson<DiscoveryConfigResponse>("/api/discovery/config", {
       value: config
     }, { safetyConfirm: true }),
-  getEmailRules: () => postJson<EmailRuleSetResponse>("/api/email-rules"),
+  getEmailRules: () => getJson<EmailRuleSetResponse>("/api/email-rules"),
   saveEmailRules: (rules) =>
     postJson<EmailRuleSetResponse>("/api/email-rules", {
       rules
     }, { safetyConfirm: true }),
   getGoldenRules: () =>
-    postJson<Record<string, unknown>>("/api/knowledge/golden-rules?includeRules=true"),
+    getJson<Record<string, unknown>>("/api/knowledge/golden-rules?includeRules=true"),
   saveGoldenRules: (payload) =>
     postJson<Record<string, unknown>>("/api/knowledge/golden-rules", payload, {
       safetyConfirm: true
     }),
   getExpertVocabulary: () =>
-    postJson<ExpertVocabularyResponse>("/api/expert-vocabulary"),
+    getJson<ExpertVocabularyResponse>("/api/expert-vocabulary"),
   saveExpertVocabulary: (vocabulary) =>
     postJson<ExpertVocabularyResponse>("/api/expert-vocabulary", {
       vocabulary
     }, { safetyConfirm: true }),
   getExpertVocabularyVersions: () =>
-    postJson<ExpertVocabularyHistoryResponse>("/api/expert-vocabulary/versions"),
+    getJson<ExpertVocabularyHistoryResponse>("/api/expert-vocabulary/versions"),
   pickFiles: async () => [],
   pickFolders: async () => [],
   createJob: (payload) => postJson<SplitJob>("/api/jobs", payload),
   listJobs: (limit = 50) =>
-    postJson<SplitJobListResponse>(`/api/jobs?limit=${encodeURIComponent(String(limit))}`),
+    getJson<SplitJobListResponse>(`/api/jobs?limit=${encodeURIComponent(String(limit))}`),
   deleteJob: (jobId) =>
     deleteJson<{ ok: boolean; deletedJob: SplitJob }>(`/api/jobs/${encodeURIComponent(jobId)}`, { safetyConfirm: true }),
-  getJob: (jobId) => postJson<SplitJob>(`/api/jobs/${encodeURIComponent(jobId)}`),
+  getJob: (jobId) => getJson<SplitJob>(`/api/jobs/${encodeURIComponent(jobId)}`),
   getJobResult: (jobId) =>
-    postJson<SplitResult>(`/api/jobs/${encodeURIComponent(jobId)}/result`),
-  getDiscoveryClients: () => postJson<DiscoveryClientsResponse>("/api/discovery/clients"),
+    getJson<SplitResult>(`/api/jobs/${encodeURIComponent(jobId)}/result`),
+  getDiscoveryClients: () => getJson<DiscoveryClientsResponse>("/api/discovery/clients"),
   requestClientMigration: (clientId, payload = {}) =>
     postJson<ClientMigrationCommandResponse>(
       `/api/discovery/clients/${encodeURIComponent(clientId)}/migration`,
       payload,
       { safetyConfirm: true },
     ),
-  getKnowledgeConsole: () => postJson<KnowledgeConsoleState>("/api/knowledge/console"),
-  getKnowledgeConfigSchema: () => postJson<KnowledgeConfigSchema>("/api/knowledge/config-schema"),
-  getKnowledgeSources: () => postJson<KnowledgeSourceState>("/api/knowledge/sources"),
+  getKnowledgeConsole: () => getJson<KnowledgeConsoleState>("/api/knowledge/console"),
+  getKnowledgeConfigSchema: () => getJson<KnowledgeConfigSchema>("/api/knowledge/config-schema"),
+  getKnowledgeSources: () => getJson<KnowledgeSourceState>("/api/knowledge/sources"),
+  getKnowledgeWordClouds: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.wordBagSetId) {
+      query.set("wordBagSetId", params.wordBagSetId);
+    }
+    if (params.wordBagId) {
+      query.set("wordBagId", params.wordBagId);
+    }
+    if (params.limit !== undefined) {
+      query.set("limit", String(params.limit));
+    }
+    if (params.minFrequency !== undefined) {
+      query.set("minFrequency", String(params.minFrequency));
+    }
+    if (params.query) {
+      query.set("query", params.query);
+    }
+    for (const item of params.corpusPaths || []) {
+      const selectedPath = String(item?.path || "").trim();
+      if (!selectedPath) {
+        continue;
+      }
+      query.append("corpusPath", `${item.type || ""}:${selectedPath}`);
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return getJson<KnowledgeWordCloudState>(`/api/knowledge/word-clouds${suffix}`);
+  },
+  saveKnowledgeWordClouds: (payload) =>
+    postJson<{ ok: boolean; wordBagSet: KnowledgeWordBagSet }>(
+      "/api/knowledge/word-clouds",
+      payload,
+      { safetyConfirm: true },
+    ),
+  exportKnowledgeWordClouds: (payload = {}) =>
+    postJson<KnowledgeWordCloudExportResponse>(
+      "/api/knowledge/word-clouds/export",
+      payload,
+    ),
+  importKnowledgeWordClouds: (payload) =>
+    postJson<KnowledgeWordCloudImportResponse>(
+      "/api/knowledge/word-clouds/import",
+      payload,
+      { safetyConfirm: true },
+    ),
+  addKnowledgeWordBag: (payload) =>
+    postJson<KnowledgeWordBagMutationResponse>(
+      "/api/knowledge/word-clouds/word-bags",
+      payload,
+      { safetyConfirm: true },
+    ),
+  updateKnowledgeWordBag: (wordBagId, payload) =>
+    postJson<KnowledgeWordBagMutationResponse>(
+      `/api/knowledge/word-clouds/word-bags/${encodeURIComponent(wordBagId)}`,
+      payload,
+      { safetyConfirm: true },
+    ),
+  deleteKnowledgeWordBag: (wordBagId, params) => {
+    const query = new URLSearchParams();
+    query.set("wordBagSetId", params.wordBagSetId);
+    return deleteJson<KnowledgeWordBagMutationResponse>(
+      `/api/knowledge/word-clouds/word-bags/${encodeURIComponent(wordBagId)}?${query.toString()}`,
+      { safetyConfirm: true },
+    );
+  },
+  getKnowledgeWordBagTerms: (payload) =>
+    postJson<KnowledgeWordBagTermsResponse>(
+      "/api/knowledge/word-clouds/word-bags/terms",
+      payload,
+    ),
+  proposeKnowledgeWordClouds: (payload) =>
+    postJson<KnowledgeWordCloudProposeResponse>(
+      "/api/knowledge/word-clouds/propose",
+      payload,
+      { safetyConfirm: true },
+    ),
   listKnowledgeReviewItems: (params = {}) =>
     postJson<KnowledgeReviewItemsResponse>(
       `/api/knowledge/review-items?status=${encodeURIComponent(params.status || "pending")}&limit=${encodeURIComponent(String(params.limit || 100))}`,
@@ -665,7 +826,7 @@ const browserBridge: Bridge = {
     ),
   refreshAllKnowledgeSources: (payload = {}) =>
     postJson<KnowledgeSourceMutationResponse>("/api/knowledge/sources-refresh", payload),
-  getKnowledgeMaintenance: () => postJson<MaintenanceSettings>("/api/knowledge/maintenance"),
+  getKnowledgeMaintenance: () => getJson<MaintenanceSettings>("/api/knowledge/maintenance"),
   saveKnowledgeMaintenance: (settings) =>
     postJson<MaintenanceSettings>("/api/knowledge/maintenance", {
       value: settings
@@ -674,6 +835,8 @@ const browserBridge: Bridge = {
     postJson<Record<string, unknown>>("/api/knowledge/maintenance/run", payload),
   reindexKnowledge: (payload = { confirm: true }) =>
     postJson<Record<string, unknown>>("/api/knowledge/reindex", payload, { safetyConfirm: true }),
+  rebuildSourceVocabulary: (payload = { confirm: true }) =>
+    postJson<Record<string, unknown>>("/api/storage/source-vocabulary/rebuild", payload, { safetyConfirm: true }),
   searchKnowledge: (payload) => postJson<KnowledgeSearchResponse>("/api/knowledge/search", payload),
   recordKnowledgeFeedback: (payload) => postJson<Record<string, unknown>>("/api/knowledge/feedback", payload),
   getContextProfiles: () => getJson<Record<string, unknown>>("/api/context/profiles"),
@@ -682,10 +845,22 @@ const browserBridge: Bridge = {
     getJson<Record<string, unknown>>(`/api/context/build-records?limit=${encodeURIComponent(String(limit))}`),
   runContextEvaluation: (payload) => postJson<Record<string, unknown>>("/api/context/evaluation/runs", payload),
   getKnowledgeEvidence: (evidenceId) =>
-    postJson<EvidencePack>(`/api/knowledge/evidence/${encodeURIComponent(evidenceId)}`),
+    getJson<EvidencePack>(`/api/knowledge/evidence/${encodeURIComponent(evidenceId)}`),
   renderKnowledgeMarkdown: (payload) =>
     postJson<RenderMarkdownResponse>("/api/knowledge/render/markdown", payload),
   knowledgeAssetUrl: (assetId) => `/api/knowledge/assets/${encodeURIComponent(assetId)}`,
+  knowledgeDocxExportUrl: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.documentId) { query.set("documentId", params.documentId); }
+    if (params.batchId) { query.set("batchId", params.batchId); }
+    if (params.sourceId) { query.set("sourceId", params.sourceId); }
+    if (params.limit) { query.set("limit", String(params.limit)); }
+    if (typeof params.includeMachineReadable === "boolean") {
+      query.set("includeMachineReadable", String(params.includeMachineReadable));
+    }
+    const suffix = query.toString();
+    return `/api/knowledge/export/docx${suffix ? `?${suffix}` : ""}`;
+  },
   createUploadSession: (payload) => postJson<UploadSessionResponse>("/api/upload-sessions", payload),
   uploadSessionChunk: (sessionId, fileIndex, offset, chunk) =>
     putBinaryJson<UploadSessionResponse>(
@@ -695,7 +870,7 @@ const browserBridge: Bridge = {
       chunk,
     ),
   getUploadSession: (sessionId) =>
-    postJson<UploadSessionResponse>(`/api/upload-sessions/${encodeURIComponent(sessionId)}`),
+    getJson<UploadSessionResponse>(`/api/upload-sessions/${encodeURIComponent(sessionId)}`),
   getNormalizedDocuments: (jobId) =>
     postJson<SplitResult["normalizedDocuments"]>(
       `/api/jobs/${encodeURIComponent(jobId)}/normalized-documents`,

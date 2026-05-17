@@ -1,0 +1,196 @@
+version: 1
+owner: server-web
+routes:
+  - routePath: /workspaces
+    viewFile: server-web/views/WorkspacesView.vue
+    features:
+      - featureId: workspace.navigation
+        actions:
+          - workspace.list
+          - workspace.open
+          - workspace.switch
+      - featureId: workspace.knowledge-context
+        actions:
+          - workspace.knowledge-scope.inspect
+          - workspace.context-bundle.export
+          - workspace.context-bundle.restore
+
+  - routePath: /
+    viewFile: server-web/views/DashboardView.vue
+    features:
+      - featureId: dashboard.home
+        actions:
+          - dashboard.overview
+          - dashboard.quick-navigation
+
+  - routePath: /feed
+    viewFile: server-web/views/FeedView.vue
+    features:
+      - featureId: feed.stream
+        actions:
+          - feed.timeline
+          - feed.refresh
+
+  - routePath: /sources
+    viewFile: server-web/views/SourcesView.vue
+    features:
+      - featureId: sources.registry
+        actions:
+          - sources.list
+          - sources.sync
+          - sources.inspect
+
+  - routePath: /intelligence
+    viewFile: server-web/views/IntelligenceView.vue
+    features:
+      - featureId: intelligence.retrieval
+        actions:
+          - intelligence.query
+          - intelligence.result-panel
+
+  - routePath: /knowledge/:tab
+    viewFile: server-web/views/KnowledgeView.vue
+    features:
+      - featureId: knowledge.tab-navigation
+        actions:
+          - knowledge.tab.management
+          - knowledge.tab.chunking
+          - knowledge.tab.word-cloud
+          - knowledge.tab.conflicts
+          - knowledge.tab.maintenance
+      - featureId: knowledge.governance-console
+        actions:
+          - knowledge.console.inspect
+          - knowledge.source.manage
+          - knowledge.docx-export.download
+          - knowledge.review.resolve
+          - knowledge.maintenance.run
+      - featureId: knowledge.document-chunking
+        actions:
+          - knowledge.chunking.configure
+          - knowledge.chunking.preview
+          - knowledge.chunking.inspect-boundary
+          - knowledge.normalized-docx.download
+
+  - routePath: /debug/:tab
+    viewFile: server-web/views/DebugView.vue
+    features:
+      - featureId: debug.tab-navigation
+        actions:
+          - debug.tab.knowledge-recall
+          - debug.tab.agent-retrieval
+      - featureId: debug.knowledge-governance
+        actions:
+          - debug.knowledge-recall.compare
+          - debug.agent-retrieval.trace
+          - debug.evidence.open
+
+  - routePath: /admin/storage
+    viewFile: server-web/views/admin/StorageView.vue
+    features:
+      - featureId: admin.storage-control
+        actions:
+          - admin.storage.overview
+          - admin.storage.maintenance
+
+  - routePath: /admin/jobs
+    viewFile: server-web/views/admin/JobsView.vue
+    features:
+      - featureId: admin.jobs-control
+        actions:
+          - admin.jobs.list
+          - admin.jobs.control
+
+  - routePath: /admin/logs
+    viewFile: server-web/views/admin/LogsView.vue
+    features:
+      - featureId: admin.logs-observability
+        actions:
+          - admin.logs.list
+          - admin.logs.filter
+
+  - routePath: /admin/ops-monitor
+    viewFile: server-web/views/admin/OpsMonitorView.vue
+    features:
+      - featureId: admin.ops-monitor
+        actions:
+          - admin.ops-monitor.health
+          - admin.ops-monitor.alerts
+
+  - routePath: /admin/clients
+    viewFile: server-web/views/admin/ClientsView.vue
+    features:
+      - featureId: admin.clients-management
+        actions:
+          - admin.clients.list
+          - admin.clients.inspect
+
+  - routePath: /admin/tools
+    viewFile: server-web/views/admin/ToolsView.vue
+    features:
+      - featureId: admin.tools-management
+        actions:
+          - admin.tools.list
+          - admin.tools.invoke
+      - featureId: admin.tool-management-governance
+        actions:
+          - admin.tools.catalog.inspect
+          - admin.tools.policy.evaluate
+          - admin.tools.grants.manage
+
+  - routePath: /admin/modules
+    viewFile: server-web/views/admin/ModulesView.vue
+    features:
+      - featureId: admin.modules-management
+        actions:
+          - admin.modules.list
+          - admin.modules.status
+      - featureId: admin.knowledge-mount-governance
+        actions:
+          - admin.modules.knowledge-mount.configure
+          - admin.modules.mounts.reload
+          - admin.modules.generation.inspect
+
+  - routePath: /admin/agent-management
+    viewFile: server-web/views/admin/AgentManagementView.vue
+    features:
+      - featureId: admin.agent-management
+        actions:
+          - admin.agent-management.list
+          - admin.agent-management.update
+
+  - routePath: /admin/agent-permissions
+    viewFile: server-web/views/admin/AgentPermissionsView.vue
+    features:
+      - featureId: admin.agent-permissions
+        actions:
+          - admin.agent-permissions.list
+          - admin.agent-permissions.update
+
+  - routePath: /admin/agent-config
+    viewFile: server-web/views/admin/AgentConfigView.vue
+    features:
+      - featureId: admin.agent-config
+        actions:
+          - admin.agent-config.view
+          - admin.agent-config.update
+
+  - routePath: /admin/maintenance-agent
+    viewFile: server-web/views/admin/MaintenanceAgentView.vue
+    features:
+      - featureId: admin.maintenance-agent
+        actions:
+          - admin.maintenance-agent.runbook
+          - admin.maintenance-agent.audit
+
+systemConfigTabs:
+  - tabId: syncDirectories
+    hostFile: server-web/ServerConsoleApp.vue
+    features:
+      - featureId: system.sync-directories
+        actions:
+          - syncDirectories.list
+          - syncDirectories.create
+          - syncDirectories.refresh
+          - syncDirectories.enable-disable
+          - syncDirectories.delete

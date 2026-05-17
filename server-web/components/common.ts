@@ -1,4 +1,5 @@
 import BinaryCheckbox from "./BinaryCheckbox.vue";
+import AgentModelOptionBar from "./AgentModelOptionBar.vue";
 import BrowseSelectButton from "./BrowseSelectButton.vue";
 import ConfigFoldCard from "./ConfigFoldCard.vue";
 import FeatureToggle from "./FeatureToggle.vue";
@@ -7,7 +8,7 @@ import InfoFeedResultRow from "./InfoFeedResultRow.vue";
 import OptionBar from "./OptionBar.vue";
 import StatusPill from "./StatusPill.vue";
 
-export { BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, OptionBar, StatusPill };
+export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, OptionBar, StatusPill };
 
 export type CommonComponentRegistration = {
   name: string;
@@ -31,6 +32,13 @@ export const commonComponentRegistry: CommonComponentRegistration[] = [
     category: "choice",
     description: "选项栏的标准选择控件外壳。",
     usageRule: "页面需要下拉选项栏时使用；选项列表和值必须由调用方传入，组件不得写默认业务值。",
+  },
+  {
+    name: "AgentModelOptionBar",
+    file: "server-web/components/AgentModelOptionBar.vue",
+    category: "picker",
+    description: "智能体选择的标准选项框，统一候选项、空值和禁用原因展示。",
+    usageRule: "页面需要选择已有智能体时使用；业务页面只提供候选源，不重复实现智能体选项渲染。",
   },
   {
     name: "FeatureToggle",

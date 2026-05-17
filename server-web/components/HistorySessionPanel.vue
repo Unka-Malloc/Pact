@@ -1,145 +1,113 @@
 <script setup lang="ts">
-type HistorySessionPanelItem = {
-  id: string;
-  title: string;
-  meta?: string;
-  preview?: string;
-  active?: boolean;
-  disabled?: boolean;
-  deleteLabel?: string;
-};
+import { computed } from "vue";
 
-withDefaults(defineProps<{
+const props = defineProps<{
+  items: Array<{
+    id: string;
+    label: string;
+    sublabel?: string;
+    active?: boolean;
+  }>;
   title?: string;
-  subtitle?: string;
-  items: HistorySessionPanelItem[];
-}>(), {
-  title: "历史会话",
-  subtitle: "",
-});
-
-const emit = defineEmits<{
-  select: [id: string];
-  delete: [id: string];
+  maxHeight?: string;
+  open?: boolean;
 }>();
 
-function selectItem(item: HistorySessionPanelItem) {
-  if (!item.disabled) {
-    emit("select", item.id);
-  }
-}
+const emit = defineEmits<{
+  (e: "select", id: string): void;
+  (e: "delete", id: string): void;
+}>();
 
-function deleteItem(item: HistorySessionPanelItem) {
-  if (!item.disabled) {
-    emit("delete", item.id);
-  }
-}
+const resolvedTitle = computed(() => props.title || "历史记录");
+const resolvedMaxHeight = computed(() => props.maxHeight || "235px");
 </script>
 
 <template>
-  <details v-if="items.length" class="history-session-panel">
+  <details class="history-session-panel" :open="open">
     <summary>
-      <span>{{ title }}</span>
-      <small>{{ subtitle || `${items.length} 条，滚动查看` }}</small>
+      {{ resolvedTitle }}
+      <small v-if="items.length">{{ items.length }}</small>
     </summary>
-    <div class="history-session-list">
-      <article
+
+    <ul class="history-session-list" :style="{ maxHeight: resolvedMaxHeight }">
+      <li
         v-for="item in items"
         :key="item.id"
         class="history-session-item"
         :data-active="item.active"
+        @click="emit('select', item.id)"
       >
+        <div class="history-session-main">
+          <span class="history-session-label">{{ item.label }}</span>
+          <span v-if="item.sublabel" class="history-session-sublabel">{{ item.sublabel }}</span>
+        </div>
         <button
-          class="history-session-main"
-          type="button"
-          :disabled="item.disabled"
-          @click="selectItem(item)"
-        >
-          <strong>{{ item.title }}</strong>
-          <span v-if="item.meta">{{ item.meta }}</span>
-          <small v-if="item.preview">{{ item.preview }}</small>
-        </button>
-        <button
+          v-if="$attrs['onDelete'] !== undefined"
           class="history-session-delete"
           type="button"
-          title="删除历史会话"
-          :aria-label="item.deleteLabel || `删除历史会话 ${item.title}`"
-          :disabled="item.disabled"
-          @click.stop="deleteItem(item)"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 6h18" />
-            <path d="M8 6V4h8v2" />
-            <path d="M6 6l1 15h10l1-15" />
-            <path d="M10 11v6" />
-            <path d="M14 11v6" />
-          </svg>
-        </button>
-      </article>
-    </div>
+          :aria-label="`删除 ${item.label}`"
+          @click.stop="emit('delete', item.id)"
+        >×</button>
+      </li>
+      <li v-if="!items.length" class="history-session-empty">
+        暂无历史记录
+      </li>
+    </ul>
   </details>
 </template>
 
 <style scoped>
 .history-session-panel {
-  --history-session-list-gap: 8px;
-  --history-session-list-inset: 4px;
-  padding: 8px;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background: #f8fbff;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.04);
+  padding: var(--space-2);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-md);
+  background: var(--info-surface);
+  box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.06);
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+    background var(--dur-base) var(--ease-std),
+    border-color var(--dur-base) var(--ease-std);
 }
 
 .history-session-panel:not([open]) {
-  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+  background: var(--brand-subtle);
   box-shadow:
-    inset 0 0 0 1px rgba(37, 99, 235, 0.08),
-    0 1px 3px rgba(15, 23, 42, 0.06);
+    inset 0 0 0 1px rgba(88, 166, 255, 0.10),
+    var(--shadow-xs);
 }
 
 .history-session-panel:hover {
-  border-color: #93c5fd;
+  border-color: var(--brand);
   box-shadow:
-    inset 0 0 0 1px rgba(37, 99, 235, 0.1),
-    0 2px 7px rgba(15, 23, 42, 0.08);
+    inset 0 0 0 1px rgba(88, 166, 255, 0.16),
+    var(--shadow-sm);
 }
 
 .history-session-panel > summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 0 10px;
-  border-radius: 6px;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-2-5);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  color: var(--brand, #2563eb);
-  font-weight: 700;
+  color: var(--brand);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
   list-style: none;
   user-select: none;
 }
 
-.history-session-panel > summary::-webkit-details-marker {
-  display: none;
-}
-
-.history-session-panel > summary::marker {
-  content: "";
-}
+.history-session-panel > summary::-webkit-details-marker { display: none; }
+.history-session-panel > summary::marker { content: ""; }
 
 .history-session-panel > summary::before {
   content: "▸";
   display: inline-grid;
   width: 14px;
-  margin-right: 6px;
   place-items: center;
-  color: var(--brand, #2563eb);
-  font-size: 0.78rem;
-  transition: transform 160ms ease;
+  color: var(--brand);
+  font-size: var(--text-xs);
+  transition: transform var(--dur-base) var(--ease-std);
 }
 
 .history-session-panel[open] > summary::before {
@@ -148,101 +116,99 @@ function deleteItem(item: HistorySessionPanelItem) {
 
 .history-session-panel > summary small {
   margin-left: auto;
-  color: var(--text-secondary, #4b5563);
-  font-size: 0.78rem;
-  font-weight: 600;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
 }
 
 .history-session-list {
-  display: grid;
-  gap: var(--history-session-list-gap);
-  margin-top: 10px;
-  max-height: 235px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-1-5);
   overflow-y: auto;
-  padding: 0 var(--history-session-list-inset) var(--history-session-list-inset);
+  padding: 0 var(--space-1) var(--space-1);
+  list-style: none;
   scrollbar-gutter: stable;
 }
 
 .history-session-item {
   position: relative;
+  display: flex;
+  align-items: center;
   min-width: 0;
-  border: 1px solid var(--border-subtle, #d1d5db);
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std);
+}
+
+.history-session-item:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
 }
 
 .history-session-item[data-active="true"] {
-  border-color: var(--brand, #2563eb);
-  background: #edf5ff;
+  border-color: var(--brand);
+  background: var(--brand-subtle);
 }
 
 .history-session-main {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  width: 100%;
-  padding: 9px 42px 9px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-primary, #111827);
-  text-align: left;
-  cursor: pointer;
+  flex: 1;
+  padding: var(--space-1-5) var(--space-2-5);
 }
 
-.history-session-main:disabled,
-.history-session-delete:disabled {
-  cursor: wait;
-  opacity: 0.62;
-}
-
-.history-session-main strong,
-.history-session-main span,
-.history-session-main small {
-  min-width: 0;
+.history-session-label {
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.history-session-main span,
-.history-session-main small {
-  color: var(--text-secondary, #4b5563);
-  font-size: 0.78rem;
-  padding: 0;
+.history-session-sublabel {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-session-delete {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: inline-grid;
-  place-items: center;
+  flex-shrink: 0;
   width: 28px;
   height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: var(--space-1);
+  border-radius: var(--radius-sm);
+  border: none;
   background: transparent;
-  color: var(--text-secondary, #4b5563);
+  color: var(--text-muted);
+  font-size: var(--text-base);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-std),
+              color var(--dur-fast) var(--ease-std);
 }
 
-.history-session-delete:hover:not(:disabled),
-.history-session-delete:focus-visible:not(:disabled) {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #dc2626;
-  outline: none;
+.history-session-delete:hover {
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
-.history-session-delete svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.history-session-empty {
+  padding: var(--space-3) var(--space-2-5);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
 }
 </style>
