@@ -2,13 +2,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { runMigrations } from "../../../common/storage/sqlite-migrations.mjs";
 
 const SENSITIVE_KEY_PATTERN =
   /token|secret|password|passwd|authorization|cookie|api[-_]?key|client[-_]?secret|csrf/i;
 const SENSITIVE_VALUE_PATTERN =
   /(Bearer\s+[A-Za-z0-9._~+/=-]+|sk-[A-Za-z0-9._-]+|xox[baprs]-[A-Za-z0-9-]+|(?:(?:api[-_]?key|token|secret|password)\s*[:=]\s*)[^\s"',;]+)/gi;
+// M-8: extended pattern — covers any Unix absolute path (not just well-known roots)
+// and Windows UNC/drive paths.  Extra roots (data, srv, app, …) are now included.
 const ABSOLUTE_PATH_PATTERN =
-  /(?:[A-Za-z]:\\[^\s"'<>]+|\/(?:Users|home|var|tmp|private|Volumes|opt|etc)\/[^\s"'<>]+)/g;
+  /(?:[A-Za-z]:\\[^\s"'<>]+|\\\\[^\s"'<>]+|\/[a-zA-Z][a-zA-Z0-9._-]*(?:\/[^\s"',<>]+)+)/g;
 const MAX_JSON_BYTES = 12 * 1024;
 
 function nowIso() {
@@ -124,6 +127,16 @@ function actorFrom(value = {}) {
   };
 }
 
+function ensureOperationAuditColumns(db) {
+  const cols = new Set(db.prepare("PRAGMA table_info(operation_audit_log)").all().map((row) => row.name));
+  if (!cols.has("trace_id")) {
+    db.exec("ALTER TABLE operation_audit_log ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.has("request_id")) {
+    db.exec("ALTER TABLE operation_audit_log ADD COLUMN request_id TEXT NOT NULL DEFAULT ''");
+  }
+}
+
 function ensureSchema(db) {
   db.exec(`
     PRAGMA journal_mode = WAL;
@@ -146,15 +159,22 @@ function ensureSchema(db) {
       error TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
-
   `);
-  const columns = new Set(db.prepare("PRAGMA table_info(operation_audit_log)").all().map((row) => row.name));
-  if (!columns.has("trace_id")) {
-    db.exec("ALTER TABLE operation_audit_log ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''");
-  }
-  if (!columns.has("request_id")) {
-    db.exec("ALTER TABLE operation_audit_log ADD COLUMN request_id TEXT NOT NULL DEFAULT ''");
-  }
+
+  // Version-controlled migrations.
+  runMigrations(db, [
+    {
+      version: 1,
+      up: (d) => {
+        ensureOperationAuditColumns(d);
+      }
+    }
+  ]);
+
+  // Keep startup tolerant of databases whose user_version was advanced by
+  // earlier ad-hoc migrations before these columns were present.
+  ensureOperationAuditColumns(db);
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_operation_audit_trace ON operation_audit_log(trace_id);

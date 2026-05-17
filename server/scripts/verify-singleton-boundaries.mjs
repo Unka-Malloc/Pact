@@ -8,12 +8,12 @@ import {
   mutateState,
   stateFileKey
 } from "../platform/common/platform-core/state-coordinator.mjs";
-import { searchSourceFiles } from "../platform/specialized/knowledge/datastore/source-file-search-service.mjs";
+import { searchSourceFiles } from "../platform/specialized/knowledge/retrieval/source-file-search-service.mjs";
 import {
   importFileTypeConfigPath,
   mediaTypeForImportExtension,
   reloadImportFileTypeRegistry
-} from "../platform/specialized/knowledge/file-processor/import-file-types.mjs";
+} from "../platform/specialized/knowledge/preprocessing/file-processor/import-file-types.mjs";
 import { setRuntimeLogger } from "../platform/common/observability/runtime-logger.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -55,14 +55,14 @@ async function assertStaticSingletonBoundaries() {
   const maintenanceTools = await readText("server/services/agent/maintenance-agent/tool-registry.mjs");
   assert.ok(maintenanceTools.includes("concurrencyScope: operationConcurrencyScope"));
 
-  const sourceSearch = await readText("server/platform/specialized/knowledge/datastore/source-file-search-service.mjs");
+  const sourceSearch = await readText("server/platform/specialized/knowledge/retrieval/source-file-search-service.mjs");
   assert.ok(sourceSearch.includes("const SEARCH_CACHE = new Map();"));
   assert.ok(sourceSearch.includes("userDataPath: path.resolve(userDataPath)"));
   assert.ok(sourceSearch.includes("rulesUpdatedAt: rules.updatedAt"));
   assert.ok(sourceSearch.includes("scanRoots: sourceRoots.map((root) => ({"));
   assert.ok(sourceSearch.includes("setBoundedMapEntry(SEARCH_CACHE"));
 
-  const importTypes = await readText("server/platform/specialized/knowledge/file-processor/import-file-types.mjs");
+  const importTypes = await readText("server/platform/specialized/knowledge/preprocessing/file-processor/import-file-types.mjs");
   assert.ok(importTypes.includes("let cachedRegistry = null;"));
   assert.ok(importTypes.includes("cachedPath === filePath"));
   assert.ok(importTypes.includes("cachedMtimeMs === stat.mtimeMs"));

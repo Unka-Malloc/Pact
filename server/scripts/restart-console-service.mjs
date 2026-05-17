@@ -80,33 +80,6 @@ function runCommand(command, args = [], options = {}) {
   });
 }
 
-async function killPortListeners(port) {
-  const result = await runCommand("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    allowFailure: true
-  });
-  const pids = result.stdout
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  if (pids.length === 0) {
-    return;
-  }
-  await runCommand("kill", pids, { stdio: "ignore", allowFailure: true });
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  const stillAlive = await runCommand("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    allowFailure: true
-  });
-  const remaining = stillAlive.stdout
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  if (remaining.length > 0) {
-    await runCommand("kill", ["-9", ...remaining], { stdio: "ignore", allowFailure: true });
-  }
-}
-
 function buildPlist({ label, programArguments, logPath, errorLogPath, environment = {} }) {
   const argumentsXml = programArguments
     .map((item) => `    <string>${xmlEscape(item)}</string>`)
@@ -171,10 +144,6 @@ async function waitForHealth({ host, port, timeoutMs = 12000 }) {
 }
 
 async function restartLaunchAgent({ launchTarget, serviceTarget, plistPath }) {
-  await runCommand("/bin/launchctl", ["bootout", launchTarget, plistPath], {
-    stdio: "ignore",
-    allowFailure: true
-  });
   await runCommand("/bin/launchctl", ["bootstrap", launchTarget, plistPath], {
     stdio: "inherit"
   });
@@ -282,19 +251,25 @@ async function main() {
     "utf8"
   );
 
-  await runCommand("/bin/launchctl", ["bootout", launchTarget, plistPath], {
-    stdio: "ignore",
-    allowFailure: true
-  });
-  await runCommand("/bin/launchctl", ["bootout", launchTarget, supervisorPlistPath], {
-    stdio: "ignore",
-    allowFailure: true
-  });
-  await runCommand("/bin/launchctl", ["bootout", launchTarget, inspectionPlistPath], {
-    stdio: "ignore",
-    allowFailure: true
-  });
-  await killPortListeners(port);
+  await runCommand("bash", [
+    path.join(projectRoot, "scripts", "clean-existing-service.sh"),
+    "--port",
+    String(port),
+    "--data-dir",
+    dataDir,
+    "--launch-label",
+    label,
+    "--launch-label",
+    supervisorLabel,
+    "--launch-label",
+    inspectionLabel,
+    "--launch-plist",
+    plistPath,
+    "--launch-plist",
+    supervisorPlistPath,
+    "--launch-plist",
+    inspectionPlistPath
+  ]);
   await restartLaunchAgent({ launchTarget, serviceTarget, plistPath });
   await restartLaunchAgent({
     launchTarget,

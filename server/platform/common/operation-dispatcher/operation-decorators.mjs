@@ -78,6 +78,12 @@ const EXTERNAL_AUTH_OPERATION_IDS = new Set([
   "tool_management.dry_run"
 ]);
 
+const EXTERNAL_AUTH_MISSING_CODE_DECORATORS = new Map([
+  ["tool_management.execute", "missing_token"],
+  ["tool_management.batch", "missing_token"],
+  ["tool_management.dry_run", "missing_token"]
+]);
+
 const REQUIRED_SCOPE_DECORATORS = new Map([
   ["events.subscribe", ["console:read"]],
   ["agent_sync.subscribe", ["console:read"]],
@@ -146,7 +152,7 @@ const CONCURRENCY_GROUP_DECORATORS = new Map([
   ["knowledge.maintenance.run", "knowledge.maintenance"],
   ["knowledge.reindex", "knowledge.maintenance"],
   ["context.compaction.run", "context.compaction"],
-  ["context.session_memory.clear", "context.compaction"]
+  ["context.session_memory.clear", "agent.memory"]
 ]);
 
 function uniqueStrings(values = []) {
@@ -337,6 +343,10 @@ function normalizeOperationContract(operation) {
     ...operation,
     public: publicAccess,
     externalAuth,
+    externalAuthMissingCode:
+      operation.externalAuthMissingCode ||
+      EXTERNAL_AUTH_MISSING_CODE_DECORATORS.get(operation.id) ||
+      "missing_external_auth",
     requiredScopes: Array.isArray(operation.requiredScopes) ? uniqueStrings(operation.requiredScopes) : [],
     safety,
     readOnly: safety.readOnly,
@@ -503,10 +513,11 @@ function hasSafetyConfirmation(context = {}) {
     context.request?.headers?.["x-splitall-confirm"] ||
     ""
   ).trim();
+  // L-3: removed URL query-param confirm path — it appears in access logs and
+  // browser history.  Body and header are the only accepted confirmation signals.
   return isTruthyFlag(input.confirm) ||
     isTruthyFlag(input.safetyConfirm) ||
     isTruthyFlag(input.safety?.confirm) ||
-    isTruthyFlag(context.url?.searchParams?.get("confirm")) ||
     isTruthyFlag(safetyHeader);
 }
 

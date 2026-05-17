@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createEvidenceSufficiencyGate } from "../platform/specialized/knowledge/runtime/evidence-sufficiency-gate/index.mjs";
-import { createGoldenRuleRuntime } from "../platform/specialized/knowledge/golden-rules/golden-rule-runtime/index.mjs";
-import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/datastore/knowledge-core/index.mjs";
-import { createKnowledgeDistillationRuntime } from "../platform/specialized/knowledge/runtime/knowledge-distillation-runtime/index.mjs";
-import { createKnowledgeSkillRuntime } from "../platform/specialized/knowledge/runtime/knowledge-skill-runtime/index.mjs";
+import { createEvidenceSufficiencyGate } from "../platform/specialized/knowledge/retrieval/evidence-sufficiency-gate/index.mjs";
+import { createGoldenRuleRuntime } from "../platform/specialized/knowledge/invocation/golden-rule-runtime/index.mjs";
+import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/storage/knowledge-core/index.mjs";
+import { createKnowledgeDistillationRuntime } from "../platform/specialized/knowledge/invocation/knowledge-distillation-runtime/index.mjs";
+import { createKnowledgeSkillRuntime } from "../platform/specialized/knowledge/invocation/knowledge-skill-runtime/index.mjs";
 import {
   persistRawMailObject,
   resolveStoredObjectPath

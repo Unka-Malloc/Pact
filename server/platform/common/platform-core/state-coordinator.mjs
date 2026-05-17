@@ -24,14 +24,26 @@ export function queueStateMutation(key, task) {
   });
   const previousEntry = stateQueues.get(normalizedKey);
   const previous = previousEntry?.settled || Promise.resolve();
+  // L-5: task timeout — a hung task would permanently block the entire queue
+  const TASK_TIMEOUT_MS = 60_000;
   const operation = previous.catch(() => null).then(async () => {
     const startedAt = Date.now();
     logger?.debug?.("state.queue.started", {
       queueKey: summarizeForLog(normalizedKey),
       waitedMs: startedAt - queuedAt
     });
+    let timeoutId = null;
     try {
-      const result = await task();
+      const result = await Promise.race([
+        task(),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error(`State mutation timed out after ${TASK_TIMEOUT_MS} ms (key: ${normalizedKey})`)),
+            TASK_TIMEOUT_MS
+          );
+          timeoutId.unref?.();
+        })
+      ]);
       logger?.debug?.("state.queue.completed", {
         queueKey: summarizeForLog(normalizedKey),
         waitedMs: startedAt - queuedAt,
@@ -46,6 +58,10 @@ export function queueStateMutation(key, task) {
         error: summarizeError(error)
       });
       throw error;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   });
   const entry = {

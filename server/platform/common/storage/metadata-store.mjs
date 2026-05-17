@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { createClientRegistryService } from "./client-registry-repository.mjs";
-import { createSearchService } from "../../specialized/knowledge/datastore/search-service.mjs";
-import { createTransactionLifecycleService } from "../../specialized/knowledge/domain/rules/transaction-lifecycle-service.mjs";
+import { createSearchService } from "../../specialized/knowledge/retrieval/search-service.mjs";
+import { createTransactionLifecycleService } from "../../specialized/knowledge/preprocessing/domain/rules/transaction-lifecycle-service.mjs";
 import { createBatchRepository } from "./batch-repository.mjs";
 import { createKnowledgeRepository } from "./knowledge-repository.mjs";
 import { getRawMailObjectRoot } from "./raw-object-store.mjs";
@@ -29,6 +29,11 @@ export function createMetadataStore({ userDataPath }) {
     get objectRootPath() {
       return getRawMailObjectRoot(userDataPath);
     },
+    // Expose the underlying SQLite db for services that need direct access
+    // (e.g. agent blueprint store, workspace store).
+    get db() {
+      return db;
+    },
     close() {
       db.close();
     },
@@ -40,6 +45,9 @@ export function createMetadataStore({ userDataPath }) {
     },
     persistSources(input) {
       return batchRepository.persistSources(input);
+    },
+    persistPreprocessResult(input) {
+      return batchRepository.persistPreprocessResult(input);
     },
     persistAnalysis({ batchId, result, warnings, rules }) {
       const canonicalKnowledge = knowledgeRepository.buildCanonicalKnowledge({
@@ -79,6 +87,42 @@ export function createMetadataStore({ userDataPath }) {
     getBatch(batchId) {
       return batchRepository.getBatch(batchId);
     },
+    searchSourceDocuments(input = {}) {
+      return batchRepository.searchSourceDocuments(input);
+    },
+    getSignificantSourceTerms(input = {}) {
+      return batchRepository.getSignificantSourceTerms(input);
+    },
+    listSourceCorpusRawTerms(input = {}) {
+      return batchRepository.listSourceCorpusRawTerms(input);
+    },
+    listSourceVocabularyTermStats(input = {}) {
+      return batchRepository.listSourceVocabularyTermStatsByTerms(input);
+    },
+    async getKnowledgeWordCloudState(input = {}) {
+      return batchRepository.getKnowledgeWordCloudState(input);
+    },
+    async getKnowledgeWordBagTerms(input = {}) {
+      return batchRepository.getKnowledgeWordBagTerms(input);
+    },
+    async saveKnowledgeWordCloudSet(input = {}) {
+      return batchRepository.saveKnowledgeWordCloudSet(input);
+    },
+    async exportKnowledgeWordCloudSet(input = {}) {
+      return batchRepository.exportKnowledgeWordCloudSet(input);
+    },
+    async importKnowledgeWordCloudSet(input = {}) {
+      return batchRepository.importKnowledgeWordCloudSet(input);
+    },
+    async addKnowledgeWordBag(input = {}) {
+      return batchRepository.addKnowledgeWordBag(input);
+    },
+    async updateKnowledgeWordBag(input = {}) {
+      return batchRepository.updateKnowledgeWordBag(input);
+    },
+    async deleteKnowledgeWordBag(input = {}) {
+      return batchRepository.deleteKnowledgeWordBag(input);
+    },
     getStorageSummary() {
       return {
         databasePath: getMetadataDatabasePath(userDataPath),
@@ -90,6 +134,9 @@ export function createMetadataStore({ userDataPath }) {
     deleteBatchRecords(batchId) {
       knowledgeRepository.deleteBatch(batchId);
       return batchRepository.deleteBatchRecords(batchId);
+    },
+    rebuildSourceVocabulary(input = {}) {
+      return batchRepository.rebuildSourceVocabulary(input);
     },
     deleteBatchRow(batchId) {
       return batchRepository.deleteBatchRow(batchId);

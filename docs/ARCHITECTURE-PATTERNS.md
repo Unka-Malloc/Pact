@@ -56,6 +56,18 @@ HTTP 入口把当前运行状态、依赖和能力判断传入 Provider Registry
 
 权限、工具授权、接口过滤、风险审批、来源可信度等规则采用 Policy 模式。业务流程只询问裁决结果，具体策略可以独立测试和替换。
 
+## Agent capability baseline
+
+`docs/AGENT-CAPABILITY-AUDIT.md` 是知识库、工具链和上下文管理主线的能力审计基线。它把 OpenCode、LangChain Deep Agents、OpenClaw 和 Hermes Agent 的公开源码/官方文档模式映射到本仓库的 `AgentWorkspace`、`ContextRuntime`、`AgentGateway`、`Tool Management`、`AgentMemory`、知识检索质量回放和 runtime mount 热插拔实现。
+
+这份审计只允许作为模式对照，不允许复制外部项目代码。新增智能体、上下文、工具或知识库能力时，必须补充本仓库的可验证 artifact，而不是只写外部项目名或概念描述。
+
+## Knowledge governance baseline
+
+`docs/KNOWLEDGE-ARCHITECTURE-GOVERNANCE.md` 是知识库模块的架构治理基线。它把 `knowledgeBase` mount、`splitall.knowledge.v1`、`SERVER_API_OPERATIONS`、Tool Management v1、前端功能注册表和浏览器视觉检查串成一条可验证链路，并明确知识库必须满足七大设计原则。
+
+新增或调整知识库能力时，应同步更新协议、注册表、前端覆盖和验证脚本，避免后端能力、工具目录和控制台页面脱节。
+
 ## 架构校验
 
 `npm run server:verify:architecture-patterns` 会检查：
@@ -64,5 +76,7 @@ HTTP 入口把当前运行状态、依赖和能力判断传入 Provider Registry
 - HTTP 入口不得直接装配平台服务。
 - 组合根必须拥有平台注册、鉴权、审计、事件总线、运行时和操作过滤的装配职责。
 - HTTP 入口必须通过 Provider Registry 创建可选运行时服务。
+- Agent 能力审计必须引用外部对照项目，并映射到本仓库的知识库、工具链和上下文管理 artifact。
+- 知识库治理基线必须存在，并通过 `npm run server:verify:knowledge-architecture-governance` 单独校验。
 
 `npm run server:verify:platform-layout` 会继续检查平台层、产品层和交互层的目录边界。

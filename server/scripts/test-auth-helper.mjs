@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const AUTH_RULES = [];
 const ORIGINAL_FETCH = globalThis.fetch.bind(globalThis);
@@ -15,16 +17,16 @@ function cookieHeaderFrom(response) {
 }
 
 async function loginOwner(server) {
-  const password = server.initialOwner?.password || "";
-  assert.ok(password, "test auth helper requires a newly created server owner password");
+  const credentials = await readInitialOwnerCredentials(server);
+  assert.ok(credentials.password, "test auth helper requires a newly created server owner password");
   const response = await ORIGINAL_FETCH(`${server.url}/api/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      username: "owner",
-      password
+      username: credentials.username,
+      password: credentials.password
     })
   });
   const payload = await response.json();
@@ -32,6 +34,44 @@ async function loginOwner(server) {
   return {
     cookie: cookieHeaderFrom(response),
     csrf: payload.csrfToken
+  };
+}
+
+function parseInitialCredentials(content) {
+  const username = content.match(/^Username\s*:\s*(.+)$/m)?.[1]?.trim() || "owner";
+  const password = content.match(/^Password\s*:\s*(.+)$/m)?.[1]?.trim() || "";
+  return {
+    username,
+    password
+  };
+}
+
+export async function readInitialOwnerCredentials(server) {
+  const legacyPassword = server.initialOwner?.password || "";
+  if (legacyPassword) {
+    return {
+      username: server.initialOwner?.username || "owner",
+      password: legacyPassword,
+      credentialsPath: ""
+    };
+  }
+
+  const credentialsPath =
+    server.initialOwner?.credentialsPath ||
+    server.initialCredentialsPath ||
+    (server.userDataPath ? path.join(server.userDataPath, "auth", "initial-credentials.txt") : "");
+  if (!credentialsPath) {
+    return {
+      username: server.initialOwner?.username || "owner",
+      password: "",
+      credentialsPath: ""
+    };
+  }
+
+  const content = await fs.readFile(credentialsPath, "utf8").catch(() => "");
+  return {
+    ...parseInitialCredentials(content),
+    credentialsPath
   };
 }
 

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
-import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
+import { installAuthenticatedFetch, readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 import { createRuntimeLogger } from "../platform/common/observability/runtime-logger.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -91,9 +91,10 @@ try {
       mode: "active"
     }
   });
-  const auth = await installAuthenticatedFetch(server);
-  const ownerPassword = server.initialOwner?.password || "";
+  const ownerCredentials = await readInitialOwnerCredentials(server);
+  const ownerPassword = ownerCredentials.password;
   assert.ok(ownerPassword);
+  const auth = await installAuthenticatedFetch(server);
 
   const health = await requestJson(`${server.url}/api/healthz`);
   assert.equal(health.status, 200);

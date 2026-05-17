@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadEmailRules } from "../../specialized/knowledge/domain/rules/email-rules.mjs";
+import { loadEmailRules } from "../../specialized/knowledge/preprocessing/domain/rules/email-rules.mjs";
 import { createMetadataStore } from "./metadata-store.mjs";
 import { getMetadataDatabasePath } from "./schema-manager.mjs";
 
@@ -185,8 +185,15 @@ export async function rebuildMetadataStore({ userDataPath }) {
         metadataStore.persistSources({
           batchId,
           sources,
-          warnings
+          warnings,
+          rules
         });
+        if (batch.result.preprocess) {
+          metadataStore.persistPreprocessResult({
+            batchId,
+            preprocessResult: batch.result.preprocess
+          });
+        }
         metadataStore.persistAnalysis({
           batchId,
           result: batch.result,

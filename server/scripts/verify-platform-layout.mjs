@@ -30,19 +30,21 @@ const requiredPaths = [
   "server/platform/common/storage",
   "server/platform/common/module-manager",
   "server/platform/common/devops",
-  "server/platform/specialized/knowledge/chunking",
+  "server/platform/specialized/knowledge/preprocessing/chunking",
   "server/platform/modules/knowledge",
   "server/platform/modules/agent",
   "server/platform/specialized/agent/agent-configs",
+  "server/platform/specialized/agent/agent-memory",
   "server/platform/specialized/agent/agent-tools",
   "server/platform/specialized/agent/agent-gateway",
   "server/platform/specialized/agent/agent-context",
   "server/platform/specialized/agent/agent-workspace",
   "server/platform/specialized/knowledge",
-  "server/platform/specialized/knowledge/datastore",
-  "server/platform/specialized/knowledge/domain",
-  "server/platform/specialized/knowledge/embedding",
-  "server/platform/specialized/knowledge/golden-rules",
+  "server/platform/specialized/knowledge/preprocessing",
+  "server/platform/specialized/knowledge/storage",
+  "server/platform/specialized/knowledge/retrieval",
+  "server/platform/specialized/knowledge/invocation",
+  "server/platform/specialized/knowledge/preprocessing/domain",
   "server/platform/interactive/server-runtime-providers.mjs",
   "server/platform/interactive/features/feature-manifest.mjs",
   "server/platform/interactive/composition-root.mjs",
@@ -334,6 +336,7 @@ async function main() {
 
   const featureById = new Map(FEATURE_MANIFEST.features.map((feature) => [feature.featureId, feature]));
   assert.equal(featureById.get("maintenance-agent-runbooks")?.group, "core");
+  assert.equal(featureById.get("agent-memory")?.group, "agent");
   assert.equal(featureById.get("tool-management-core")?.group, "agent");
   assert.equal(featureById.get("work-queue-core")?.group, "client");
   assert.equal(featureById.get("storage-core")?.group, "storage");

@@ -1,14 +1,15 @@
 import os from "node:os";
-import { listAvailableAnalysisModules } from "../../../../platform/specialized/knowledge/runtime/analysis-engine-registry.mjs";
+import { listAvailableAnalysisModules } from "../../../../platform/specialized/knowledge/preprocessing/analysis-engine-registry.mjs";
+import { getAgentConfigRegistry } from "../../../specialized/agent/agent-configs/config-registry.mjs";
 import { getSettingsPath, loadSettings } from "../../platform-core/settings.mjs";
 import { buildBootstrapPayload, getDiscoveryConfigPath } from "../../platform-core/discovery/config.mjs";
-import { getEmailRulesPath, loadEmailRules } from "../../../specialized/knowledge/domain/rules/email-rules.mjs";
-import { getExpertVocabularyPath, loadExpertVocabulary } from "../../../specialized/knowledge/domain/rules/expert-vocabulary.mjs";
+import { getEmailRulesPath, loadEmailRules } from "../../../specialized/knowledge/preprocessing/domain/rules/email-rules.mjs";
+import { getExpertVocabularyPath, loadExpertVocabulary } from "../../../specialized/knowledge/preprocessing/domain/rules/expert-vocabulary.mjs";
 import {
   getKnowledgeGuidanceSummary,
   getKnowledgeTaxonomyPath,
   loadKnowledgeTaxonomy
-} from "../../../specialized/knowledge/domain/knowledge-taxonomy/index.mjs";
+} from "../../../specialized/knowledge/preprocessing/domain/knowledge-taxonomy/index.mjs";
 import {
   getMountConfigPath,
   getMountConfigPaths,
@@ -55,6 +56,126 @@ function featureEnabled(features, featureId) {
   return active.length === 0 || active.includes(featureId);
 }
 
+const AGENT_SELECTOR_SUPPORTED_PROVIDERS = new Set([
+  "deepseek",
+  "openrouter",
+  "copilot",
+  "custom-http",
+  "local-model"
+]);
+
+function stringValue(value) {
+  return String(value || "").trim();
+}
+
+function agentSelectorUid(entry = {}) {
+  return stringValue(entry.uid || entry.instanceId || entry.alias);
+}
+
+function agentSelectorLabel(entry = {}, agentUid = "") {
+  const name = stringValue(entry.label || entry.agentName || entry.alias || agentUid);
+  const model = stringValue(entry.model || entry.engine);
+  return model && model !== name ? `${name} · ${model}` : name;
+}
+
+function agentSelectorModuleIds(entry = {}) {
+  const access = entry?.moduleAccess && typeof entry.moduleAccess === "object"
+    ? entry.moduleAccess
+    : {};
+  if (access.mode !== "selected") {
+    return ["*"];
+  }
+  return Array.isArray(access.moduleIds)
+    ? access.moduleIds.map((item) => stringValue(item)).filter(Boolean)
+    : [];
+}
+
+function agentSelectorStatus(settings = {}, entry = {}) {
+  const provider = stringValue(entry.provider);
+  const model = stringValue(entry.model || entry.engine);
+  const hasModel = Boolean(model);
+  if (!AGENT_SELECTOR_SUPPORTED_PROVIDERS.has(provider)) {
+    return {
+      status: "unsupported",
+      selectable: false,
+      reason: "该智能体来源尚未接入服务端调用链路。"
+    };
+  }
+  if (provider === "custom-http") {
+    const hasUrl = Boolean(stringValue(entry.url || entry.baseUrl || settings.customHttpAdapter?.url));
+    const hasToken = Boolean(entry.tokenConfigured || entry.apiKeyConfigured || stringValue(entry.token || entry.apiKey));
+    if (!hasUrl || !hasToken) {
+      return {
+        status: "unconfigured",
+        selectable: false,
+        reason: "缺少调用地址或凭据。"
+      };
+    }
+    return { status: "available", selectable: true, reason: "" };
+  }
+  if (provider === "local-model") {
+    const hasUrl = Boolean(stringValue(entry.url || entry.baseUrl || settings.localModelEndpoint));
+    if (!hasModel || !hasUrl) {
+      return {
+        status: "unconfigured",
+        selectable: false,
+        reason: "缺少本地模型名称或调用地址。"
+      };
+    }
+    return { status: "available", selectable: true, reason: "" };
+  }
+  const providerCredentialConfigured =
+    provider === "deepseek"
+      ? Boolean(settings.deepSeekApiKeyConfigured || stringValue(settings.deepSeekApiKey) || entry.apiKeyConfigured || stringValue(entry.apiKey))
+      : provider === "openrouter"
+        ? Boolean(settings.openRouterApiKeyConfigured || stringValue(settings.openRouterApiKey) || entry.apiKeyConfigured || stringValue(entry.apiKey))
+        : provider === "copilot"
+          ? Boolean(settings.copilotApiKeyConfigured || stringValue(settings.copilotApiKey) || entry.apiKeyConfigured || stringValue(entry.apiKey))
+          : Boolean(entry.apiKeyConfigured || stringValue(entry.apiKey || entry.token));
+  if (!hasModel || !providerCredentialConfigured) {
+    return {
+      status: "unconfigured",
+      selectable: false,
+      reason: "缺少模型或凭据。"
+    };
+  }
+  return { status: "available", selectable: true, reason: "" };
+}
+
+function buildAgentSelector(settings = {}) {
+  const options = [];
+  const seen = new Set();
+  for (const entry of Array.isArray(settings.modelLibraryAgents) ? settings.modelLibraryAgents : []) {
+    const agentUid = agentSelectorUid(entry);
+    if (!agentUid || seen.has(agentUid)) {
+      continue;
+    }
+    seen.add(agentUid);
+    const state = agentSelectorStatus(settings, entry);
+    options.push({
+      agentUid,
+      value: agentUid,
+      label: agentSelectorLabel(entry, agentUid),
+      provider: stringValue(entry.provider),
+      model: stringValue(entry.model || entry.engine),
+      permissionGroupId: stringValue(entry.permissionGroupId),
+      moduleIds: agentSelectorModuleIds(entry),
+      capabilities: state.selectable
+        ? ["agent.invoke", "knowledge.agent.answer"]
+        : [],
+      status: state.status,
+      selectable: state.selectable,
+      reason: state.reason
+    });
+  }
+  return {
+    schemaVersion: 1,
+    source: "agent-configs",
+    updatedAt: new Date().toISOString(),
+    options
+  };
+}
+
 export async function buildKnowledgeConsoleSummary(runtime, jobManager) {
   const knowledgeBase = runtime?.mounts?.knowledgeBase;
   const [health, capabilities, maintenance, jobs] = await Promise.all([
@@ -91,6 +212,7 @@ export async function buildConsoleState({
 }) {
   const [
     settings,
+    rawSettings,
     rules,
     expertVocabulary,
     knowledgeTaxonomy,
@@ -100,6 +222,7 @@ export async function buildConsoleState({
     mountConfig
   ] = await Promise.all([
     loadSettings(userDataPath, { redactSecrets: true }),
+    loadSettings(userDataPath),
     loadEmailRules(userDataPath),
     loadExpertVocabulary(userDataPath),
     loadKnowledgeTaxonomy(userDataPath),
@@ -112,7 +235,15 @@ export async function buildConsoleState({
     ),
     loadMountConfig(userDataPath)
   ]);
-  const analysisModules = await listAvailableAnalysisModules(runtime, settings);
+  const agentConfigRegistry = getAgentConfigRegistry();
+  const agentConfigState = await agentConfigRegistry.refresh({ settingsFallback: rawSettings });
+  const projectedSettings = {
+    ...settings,
+    modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries(),
+    modelLibraryAgentIds: agentConfigRegistry.getModelLibraryAgents().map((agent) => agent.uid).filter(Boolean),
+    modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents({ redactSecrets: true })
+  };
+  const analysisModules = await listAvailableAnalysisModules(runtime, projectedSettings);
   const analysisRuntimeEnabled = featureEnabled(features, "analysis-runtime");
   const knowledgeCoreEnabled = featureEnabled(features, "knowledge-core");
 
@@ -134,11 +265,19 @@ export async function buildConsoleState({
       mountConfig,
       mounts: Object.entries(runtime.mounts || {}).map(([name, mount]) => summarizeMount(name, mount)),
       analysisModules: analysisRuntimeEnabled ? analysisModules : [],
-      currentAnalysisModuleId: settings.analysisModuleId
+      currentAnalysisModuleId: projectedSettings.analysisModuleId
     },
     settings: {
       path: getSettingsPath(userDataPath),
-      value: settings
+      value: projectedSettings
+    },
+    agentSelector: buildAgentSelector(projectedSettings),
+    agentConfigs: {
+      rootPath: agentConfigState.rootPath,
+      modelListPath: agentConfigState.modelListPath,
+      agentListPath: agentConfigState.agentListPath,
+      modelManifest: agentConfigState.modelManifest,
+      agentManifest: agentConfigState.agentManifest
     },
     discovery: {
       path: getDiscoveryConfigPath(userDataPath),

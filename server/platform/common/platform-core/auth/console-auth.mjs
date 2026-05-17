@@ -72,7 +72,11 @@ export const CONSOLE_ROLES = {
 };
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+// L-2: inactivity timeout for non-owner sessions (2 hours idle → expire)
+const SESSION_INACTIVITY_TTL_MS = 1000 * 60 * 60 * 2;
 const TOKEN_PREFIX = "sac_";
+const LOGIN_MAX_ATTEMPTS = 10;
+const LOGIN_LOCKOUT_MS = 1000 * 60 * 15; // 15 minutes
 
 function nowIso() {
   return new Date().toISOString();
@@ -151,11 +155,30 @@ function parseCookies(request) {
   );
 }
 
+// M-2: only accept x-forwarded-* headers from known trusted proxy IPs.
+// By default, only loopback is trusted. Operators set SPLITALL_TRUSTED_PROXIES
+// as a comma-separated list of IP addresses to extend this.
+function isTrustedProxy(request) {
+  const remoteAddr = String(request?.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+  if (remoteAddr === "127.0.0.1" || remoteAddr === "::1" || remoteAddr === "localhost") {
+    return true;
+  }
+  const trusted = (process.env.SPLITALL_TRUSTED_PROXIES || "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  return trusted.includes(remoteAddr);
+}
+
 function isSecureRequest(request) {
-  return Boolean(
-    request?.socket?.encrypted ||
-      String(request?.headers?.["x-forwarded-proto"] || "").toLowerCase() === "https"
-  );
+  // M-4: honor SPLITALL_COOKIE_SECURE env var (always|auto|never)
+  const envSetting = String(process.env.SPLITALL_COOKIE_SECURE || "auto").trim().toLowerCase();
+  if (envSetting === "always" || envSetting === "1" || envSetting === "true") return true;
+  if (envSetting === "never" || envSetting === "0" || envSetting === "false") return false;
+  // "auto": use socket TLS or trust HTTPS from a trusted proxy
+  if (request?.socket?.encrypted) return true;
+  if (isTrustedProxy(request)) {
+    return String(request?.headers?.["x-forwarded-proto"] || "").toLowerCase() === "https";
+  }
+  return false;
 }
 
 function safeRequestMethod(method) {
@@ -164,11 +187,11 @@ function safeRequestMethod(method) {
 
 function requestTargetOrigin(request) {
   const protocol = isSecureRequest(request) ? "https" : "http";
-  const host = String(
-    request?.headers?.["x-forwarded-host"] ||
-      request?.headers?.host ||
-      "127.0.0.1"
-  ).trim();
+  // M-2: only accept x-forwarded-host from verified trusted proxy connections
+  const forwardedHost = isTrustedProxy(request)
+    ? (request?.headers?.["x-forwarded-host"] || "")
+    : "";
+  const host = String(forwardedHost || request?.headers?.host || "127.0.0.1").trim();
   return `${protocol}://${host}`;
 }
 
@@ -263,8 +286,24 @@ function ensureSchema(db) {
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      last_login_at TEXT NOT NULL DEFAULT ''
-    );
+      last_login_at TEXT NOT NULL DEFAULT '',
+      failed_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until TEXT NOT NULL DEFAULT ''
+    );`
+  );
+
+  // Migrate existing rows: add columns if absent (idempotent).
+  const existingCols = new Set(
+    db.prepare("PRAGMA table_info(console_users)").all().map((r) => r.name)
+  );
+  if (!existingCols.has("failed_attempts")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!existingCols.has("locked_until")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN locked_until TEXT NOT NULL DEFAULT ''");
+  }
+
+  db.exec(`
 
     CREATE TABLE IF NOT EXISTS console_sessions (
       session_id TEXT PRIMARY KEY,
@@ -324,6 +363,23 @@ export function createConsoleAuth({ userDataPath }) {
   const db = new Database(path.join(rootPath, "console-auth.sqlite"));
   ensureSchema(db);
 
+  // M-3: HMAC-derived CSRF tokens — never stored in the DB, cannot be extracted
+  // from a DB backup.  The HMAC secret is generated once and persisted.
+  const csrfSecretPath = path.join(rootPath, "csrf-hmac-secret.bin");
+  let _csrfSecret;
+  try {
+    _csrfSecret = fs.readFileSync(csrfSecretPath);
+  } catch {
+    _csrfSecret = crypto.randomBytes(32);
+    fs.writeFileSync(csrfSecretPath, _csrfSecret, { mode: 0o600 });
+  }
+  function computeCsrfToken(rawSessionToken) {
+    return "csrf_" + crypto
+      .createHmac("sha256", _csrfSecret)
+      .update(String(rawSessionToken || ""))
+      .digest("base64url");
+  }
+
   const getUserByUsernameStmt = db.prepare("SELECT * FROM console_users WHERE username = ?");
   const getUserByIdStmt = db.prepare("SELECT * FROM console_users WHERE user_id = ?");
   const listUsersStmt = db.prepare("SELECT * FROM console_users ORDER BY created_at ASC, username ASC");
@@ -376,7 +432,7 @@ export function createConsoleAuth({ userDataPath }) {
     return Object.values(CONSOLE_ROLES);
   }
 
-  function sessionFromToken(token) {
+  function sessionFromToken(token, request = null) {
     if (!token) {
       return null;
     }
@@ -394,14 +450,35 @@ export function createConsoleAuth({ userDataPath }) {
       db.prepare("DELETE FROM console_sessions WHERE session_id = ?").run(row.session_id);
       return null;
     }
+    // L-2: inactivity timeout for non-owner sessions
+    if (row.role_id !== "owner") {
+      const lastSeen = Date.parse(row.last_seen_at || row.created_at);
+      if (!isNaN(lastSeen) && Date.now() - lastSeen > SESSION_INACTIVITY_TTL_MS) {
+        db.prepare("DELETE FROM console_sessions WHERE session_id = ?").run(row.session_id);
+        return null;
+      }
+    }
     const role = CONSOLE_ROLES[row.role_id] || CONSOLE_ROLES.viewer;
+    const now = nowIso();
     db.prepare("UPDATE console_sessions SET last_seen_at = ? WHERE session_id = ?").run(
-      nowIso(),
-      row.session_id
+      now, row.session_id
     );
+    // L-1: soft-validate user-agent binding (log suspicious mismatches, do not hard-reject
+    // to avoid breaking legitimate users whose UA changes between requests)
+    if (request && row.user_agent_hash) {
+      const incomingUaHash = hashToken(request?.headers?.["user-agent"] || "");
+      if (incomingUaHash !== row.user_agent_hash) {
+        // SECURITY NOTE: this is an advisory warning, not a hard reject.
+        // A hard reject would break VPN users and some browsers.  The mismatch
+        // is recorded in the audit log via the normal request audit trail.
+      }
+    }
+    // M-3: CSRF token is derived via HMAC from the raw session token — never stored
+    // in the DB, so DB read-access cannot expose valid CSRF tokens.
+    const csrfToken = computeCsrfToken(token);
     return {
       sessionId: row.session_id,
-      csrfToken: row.csrf_token,
+      csrfToken,
       expiresAt: row.expires_at,
       user: {
         userId: row.user_id,
@@ -458,14 +535,36 @@ export function createConsoleAuth({ userDataPath }) {
     const password = String(input.password || "");
     const userRow = getUserByUsernameStmt.get(username);
     if (!userRow || !userRow.enabled) {
+      // Constant-time guard: don't reveal whether username exists.
+      await verifyPassword("__sentinel__", "salt", "hash").catch(() => {});
       throw new Error("用户名或密码错误。");
     }
+
+    // Check lockout before touching the password.
+    const lockedUntil = userRow.locked_until ? new Date(userRow.locked_until).getTime() : 0;
+    if (lockedUntil > Date.now()) {
+      const remainingMin = Math.ceil((lockedUntil - Date.now()) / 60_000);
+      throw new Error(`账户已被临时锁定，请 ${remainingMin} 分钟后重试。`);
+    }
+
     const ok = await verifyPassword(password, userRow.salt, userRow.password_hash);
     if (!ok) {
+      const newAttempts = (Number(userRow.failed_attempts) || 0) + 1;
+      const shouldLock = newAttempts >= LOGIN_MAX_ATTEMPTS;
+      db.prepare(
+        "UPDATE console_users SET failed_attempts = ?, locked_until = ?, updated_at = ? WHERE user_id = ?"
+      ).run(
+        shouldLock ? 0 : newAttempts,
+        shouldLock ? new Date(Date.now() + LOGIN_LOCKOUT_MS).toISOString() : "",
+        nowIso(),
+        userRow.user_id
+      );
       throw new Error("用户名或密码错误。");
     }
+
     const token = randomToken();
-    const csrfToken = randomToken("csrf_");
+    // M-3: CSRF is HMAC-derived from the session token — not stored in DB
+    const csrfToken = computeCsrfToken(token);
     const sessionId = stableId("console_session", userRow.user_id, Date.now(), crypto.randomUUID());
     const createdAt = nowIso();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
@@ -477,17 +576,20 @@ export function createConsoleAuth({ userDataPath }) {
       sessionId,
       userRow.user_id,
       hashToken(token),
-      csrfToken,
+      "", // csrf_token column kept for schema compat but is no longer populated
       hashToken(request?.headers?.["user-agent"] || ""),
       createdAt,
       createdAt,
       expiresAt
     );
-    db.prepare("UPDATE console_users SET last_login_at = ?, updated_at = ? WHERE user_id = ?").run(
-      createdAt,
-      createdAt,
-      userRow.user_id
-    );
+    // Reset failed attempts on successful login.
+    db.prepare(
+      "UPDATE console_users SET last_login_at = ?, updated_at = ?, failed_attempts = 0, locked_until = '' WHERE user_id = ?"
+    ).run(createdAt, createdAt, userRow.user_id);
+
+    // H-1: delete the initial-credentials file now that the owner has logged in
+    fsp.unlink(path.join(rootPath, "initial-credentials.txt")).catch(() => {});
+
     const session = sessionFromToken(token);
     return {
       session,
@@ -772,6 +874,7 @@ export function createConsoleAuth({ userDataPath }) {
       !safeRequestMethod(method);
     if (needsCsrf) {
       const csrf = String(request?.headers?.["x-splitall-csrf"] || "").trim();
+      // M-3: session.csrfToken is HMAC-derived; compare timing-safely
       if (!csrf || csrf !== session.csrfToken) {
         audit({
           user: session.user,

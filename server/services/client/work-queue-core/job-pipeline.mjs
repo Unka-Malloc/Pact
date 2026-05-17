@@ -5,7 +5,8 @@ import {
   loadKnowledgeFileProcessorRuntime,
   loadKnowledgeNormalizedDocumentsRuntime,
   runConfiguredAnalysisModule,
-  saveSettings
+  saveSettings,
+  summarizePreprocessResult
 } from "../../../platform/interactive/product-api.mjs";
 import { resolveUploadSessionFiles } from "../../../protocols/checkpoint/upload-session-store.mjs";
 import { resolveArchiveBatchIdentity } from "./archive-batch-id.mjs";
@@ -101,6 +102,7 @@ function createInitialContext({
     uploadSessionFiles: [],
     sources: [],
     prepared: null,
+    preprocessResult: null,
     analysis: null,
     lifecycle: null,
     normalizedDocuments: null,
@@ -236,14 +238,23 @@ export function createJobPipeline({ userDataPath, payload, runtime, reportProgre
       context.metadataStore.persistSources({
         batchId: context.archiveBatchId,
         sources: context.sources,
-        warnings: context.warnings
+        warnings: context.warnings,
+        rules: context.rules
       });
 
       context.reportProgress({
         progressPercent: 54,
         stage: "提取正文结构"
       });
-      context.prepared = await pipeline.run(context.sources, generatedAt);
+      context.preprocessResult = await pipeline.run(context.sources, {
+        generatedAt,
+        warnings: context.warnings
+      });
+      context.prepared = context.preprocessResult;
+      context.metadataStore.persistPreprocessResult({
+        batchId: context.archiveBatchId,
+        preprocessResult: context.preprocessResult
+      });
 
       context.reportProgress({
         progressPercent: 76,
@@ -309,6 +320,8 @@ export function createJobPipeline({ userDataPath, payload, runtime, reportProgre
           selectedModuleId: analysisResult.runtimeInfo.moduleId
         },
         retrieval: context.analysis.retrieval,
+        preprocess: context.preprocessResult,
+        preprocessSummary: summarizePreprocessResult(context.preprocessResult),
         warnings: context.warnings,
         normalizedDocuments: context.normalizedDocuments,
         sourceFiles: serializeSourceFilesForClient(context.sources)

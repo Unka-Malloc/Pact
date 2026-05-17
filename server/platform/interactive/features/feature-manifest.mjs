@@ -49,6 +49,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         "tool-management-core",
         "work-queue-core",
         "client-runtime-core",
+        "agent-memory",
         "document-parser",
         "analysis-runtime",
         "knowledge-core"
@@ -61,6 +62,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         "tool-management-core",
         "work-queue-core",
         "client-runtime-core",
+        "agent-memory",
         "document-parser",
         "pdf-processor",
         "analysis-runtime",
@@ -79,6 +81,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         "tool-management-core",
         "work-queue-core",
         "client-runtime-core",
+        "agent-memory",
         "document-parser",
         "pdf-processor",
         "ocr",
@@ -108,7 +111,7 @@ export const FEATURE_MANIFEST = Object.freeze({
     }),
     custom: Object.freeze({
       label: "Custom",
-      includes: Object.freeze(["core-platform", "tool-management-core", "work-queue-core", "client-runtime-core"])
+      includes: Object.freeze(["core-platform", "tool-management-core", "work-queue-core", "client-runtime-core", "agent-memory"])
     })
   }),
   features: Object.freeze([
@@ -234,8 +237,8 @@ export const FEATURE_MANIFEST = Object.freeze({
       package: {
         includePaths: [
           "server/services/client/work-queue-core",
-          "server/platform/specialized/knowledge/chunking",
-          "server/platform/specialized/knowledge/domain",
+          "server/platform/specialized/knowledge/preprocessing/chunking",
+          "server/platform/specialized/knowledge/preprocessing/domain",
           "server/protocols/checkpoint/upload-session-store.mjs"
         ],
         excludePaths: []
@@ -248,6 +251,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       group: "client",
       required: true,
       defaultEnabled: true,
+      dependsOn: ["agent-memory"],
       server: {
         operationFeatures: ["client_runtime_allocator", "context_runtime"],
         eventTopics: ["client_runtime.status"],
@@ -258,10 +262,26 @@ export const FEATURE_MANIFEST = Object.freeze({
         panels: ["OpsMonitorPanel", "ClientRuntimeHeatmap"]
       },
       package: {
-        includePaths: ["server/services/client/client-runtime-core", "server/protocols/context-runtime"],
+        includePaths: ["server/services/client/client-runtime-core", "server/protocols/context-core"],
         excludePaths: []
       },
       tests: { suites: ["server:verify:client-runtime"] }
+    },
+    {
+      featureId: "agent-memory",
+      label: "Agent memory session store",
+      group: "agent",
+      required: true,
+      defaultEnabled: true,
+      server: {
+        operationFeatures: ["agent_memory"],
+        eventTopics: ["agent_memory.session"]
+      },
+      package: {
+        includePaths: ["server/platform/specialized/agent/agent-memory"],
+        excludePaths: []
+      },
+      tests: { suites: ["server:verify:agent-memory"] }
     },
     {
       featureId: "document-parser",
@@ -276,14 +296,14 @@ export const FEATURE_MANIFEST = Object.freeze({
       },
       package: {
         includePaths: [
-          "server/platform/specialized/knowledge/file-processor",
+          "server/platform/specialized/knowledge/preprocessing/file-processor",
           "server/platform/modules/knowledge/file-processor/FileNormalizer/Tika",
           "server/platform/modules/knowledge/tika",
           "server/platform/modules/knowledge/runtime/jre",
           "docs/PROTOCOLS.md"
         ],
         removePaths: [
-          "server/platform/specialized/knowledge/file-processor",
+          "server/platform/specialized/knowledge/preprocessing/file-processor",
           "server/platform/modules/knowledge/file-processor/FileNormalizer/Tika",
           "server/platform/modules/knowledge/tika",
           "server/platform/modules/knowledge/runtime/jre"
@@ -352,7 +372,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         panels: ["ModuleManagementPanel"]
       },
       package: {
-        includePaths: ["server/platform/specialized/knowledge/runtime/analysis-engine-registry.mjs", "docs/ENTITY-CONFIG-LAYOUT.md"],
+        includePaths: ["server/platform/specialized/knowledge/preprocessing/analysis-engine-registry.mjs", "docs/ENTITY-CONFIG-LAYOUT.md"],
         excludePaths: []
       }
     },
@@ -383,6 +403,10 @@ export const FEATURE_MANIFEST = Object.freeze({
           "knowledge.maintenance.run",
           "knowledge.sync",
           "knowledge.changes",
+          "knowledge.corpus.significant_terms",
+          "knowledge.word_clouds.get",
+          "knowledge.word_clouds.save",
+          "knowledge.word_clouds.propose",
           "knowledge.review_items",
           "knowledge.review_resolve",
           "knowledge.feedback",
@@ -403,31 +427,32 @@ export const FEATURE_MANIFEST = Object.freeze({
           "knowledge.golden_rules",
           "knowledge.changes",
           "knowledge.review_items",
-          "knowledge.sources"
+          "knowledge.sources",
+          "knowledge.word_clouds"
         ],
-        webPanels: ["knowledge-core-ui", "knowledge-recall-debug"]
+        webPanels: ["knowledge-core-ui", "knowledge-word-cloud", "knowledge-recall-debug"]
       },
       web: {
-        navItems: ["knowledge.management", "knowledge.conflicts", "knowledge.logs", "knowledge.maintenance", "debug.knowledgeRecall"],
-        panels: ["KnowledgeManagementPanel", "KnowledgeRecallDebugPanel"]
+        navItems: ["knowledge.management", "knowledge.wordCloud", "knowledge.conflicts", "knowledge.logs", "knowledge.maintenance", "debug.knowledgeRecall"],
+        panels: ["KnowledgeManagementPanel", "KnowledgeWordCloudPanel", "KnowledgeRecallDebugPanel"]
       },
       client: { modules: ["knowledge-mirror", "expert-vocabulary"] },
       package: {
         includePaths: [
-          "server/platform/specialized/knowledge/chunking",
-          "server/platform/specialized/knowledge/domain",
-          "server/platform/specialized/knowledge/datastore/knowledge-core",
+          "server/platform/specialized/knowledge/preprocessing/chunking",
+          "server/platform/specialized/knowledge/preprocessing/domain",
+          "server/platform/specialized/knowledge/storage/knowledge-core",
           "server/protocols/knowledge/README.md",
           "docs/PROTOCOLS.md"
         ],
         removePaths: [
-          "server/platform/specialized/knowledge/chunking",
-          "server/platform/specialized/knowledge/domain",
-          "server/platform/specialized/knowledge/datastore/knowledge-core",
-          "server/platform/specialized/knowledge/embedding/embedding-runtime",
-          "server/platform/specialized/knowledge/runtime/learning-runtime",
-          "server/platform/specialized/knowledge/embedding/vector-store",
-          "server/platform/specialized/knowledge/datastore/knowledge-source-service.mjs",
+          "server/platform/specialized/knowledge/preprocessing/chunking",
+          "server/platform/specialized/knowledge/preprocessing/domain",
+          "server/platform/specialized/knowledge/storage/knowledge-core",
+          "server/platform/specialized/knowledge/retrieval/embedding-runtime",
+          "server/platform/specialized/knowledge/retrieval/learning-runtime",
+          "server/platform/specialized/knowledge/retrieval/vector-store",
+          "server/platform/specialized/knowledge/storage/knowledge-source-service.mjs",
           "server/services/client/work-queue-core/background-workers/source-watcher-worker.mjs",
           "server/protocols/knowledge"
         ]
@@ -459,17 +484,17 @@ export const FEATURE_MANIFEST = Object.freeze({
         webPanels: ["knowledge-distillation"]
       },
       package: {
-        includePaths: ["server/platform/specialized/knowledge/datastore/knowledge-core"],
+        includePaths: ["server/platform/specialized/knowledge/storage/knowledge-core"],
         removePaths: [
           "server/platform/specialized/agent/agent-tools/agent-evaluation-runtime",
-          "server/platform/specialized/knowledge/runtime/evidence-sufficiency-gate",
-          "server/platform/specialized/knowledge/golden-rules/golden-rule-runtime",
-          "server/platform/specialized/knowledge/runtime/knowledge-agent-skill-runtime",
-          "server/platform/specialized/knowledge/runtime/knowledge-distillation-runtime",
-          "server/platform/specialized/knowledge/runtime/knowledge-rule-authoring-runtime",
-          "server/platform/specialized/knowledge/runtime/knowledge-skill-runtime",
+          "server/platform/specialized/knowledge/retrieval/evidence-sufficiency-gate",
+          "server/platform/specialized/knowledge/invocation/golden-rule-runtime",
+          "server/platform/specialized/knowledge/invocation/knowledge-agent-skill-runtime",
+          "server/platform/specialized/knowledge/invocation/knowledge-distillation-runtime",
+          "server/platform/specialized/knowledge/invocation/knowledge-rule-authoring-runtime",
+          "server/platform/specialized/knowledge/invocation/knowledge-skill-runtime",
           "server/platform/specialized/agent/agent-gateway/multi-agent-coordinator",
-          "server/platform/specialized/agent/agent-context/summarization-runtime",
+          "server/platform/specialized/knowledge/invocation/knowledge-summarization-runtime",
           "server/scripts/distill-existing-knowledge-skills.mjs",
           "server/scripts/verify-knowledge-golden-distillation.mjs",
           "server/scripts/verify-knowledge-rule-authoring.mjs",
@@ -497,8 +522,8 @@ export const FEATURE_MANIFEST = Object.freeze({
         webPanels: ["knowledge-evolution"]
       },
       package: {
-        includePaths: ["server/platform/specialized/knowledge/datastore/knowledge-core", "docs/PROTOCOLS.md"],
-        removePaths: ["server/platform/specialized/knowledge/runtime/knowledge-evolution-runtime"]
+        includePaths: ["server/platform/specialized/knowledge/storage/knowledge-core", "docs/PROTOCOLS.md"],
+        removePaths: ["server/platform/specialized/knowledge/invocation/knowledge-evolution-runtime"]
       },
       tests: { suites: ["server:verify:knowledge-evolution"] }
     },
@@ -515,7 +540,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       },
       package: {
         includePaths: ["server/protocols/knowledge/README.md"],
-        removePaths: ["server/platform/specialized/knowledge/datastore/knowledge-core/DocumentOutlineRuntime.mjs"]
+        removePaths: ["server/platform/specialized/knowledge/storage/knowledge-core/DocumentOutlineRuntime.mjs"]
       },
       tests: { suites: ["server:verify:knowledge-outline"] }
     },
@@ -998,6 +1023,9 @@ export function operationFeatureId(operation = {}) {
   if (operationId.startsWith("knowledge.agent_explore.") || operationId.startsWith("agent_workspaces.")) {
     return "agent-exploration";
   }
+  if (operationId.startsWith("context.session_memory.") || operationId.startsWith("agent_memory.")) {
+    return "agent-memory";
+  }
   if (operationId.startsWith("maintenance_agent.")) {
     return "maintenance-agent-runbooks";
   }
@@ -1023,6 +1051,7 @@ export function operationFeatureId(operation = {}) {
     jobs: "work-queue-core",
     uploads: "work-queue-core",
     tool_management: "tool-management-core",
+    agent_memory: "agent-memory",
     client_runtime_allocator: "client-runtime-core",
     context_runtime: "client-runtime-core",
     knowledge: "knowledge-core",

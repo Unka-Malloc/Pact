@@ -14,29 +14,31 @@ import {
   getDiscoveryConfigPath,
   saveDiscoveryConfig
 } from "../../../platform-core/discovery/config.mjs";
-import { getEmailRulesPath, loadEmailRules, saveEmailRules } from "../../../../specialized/knowledge/domain/rules/email-rules.mjs";
+import { getEmailRulesPath, loadEmailRules, saveEmailRules } from "../../../../specialized/knowledge/preprocessing/domain/rules/email-rules.mjs";
 import {
   getExpertVocabularyPath,
   getExpertVocabularySummary,
   listExpertVocabularyVersions,
   loadExpertVocabulary,
   saveExpertVocabulary
-} from "../../../../specialized/knowledge/domain/rules/expert-vocabulary.mjs";
+} from "../../../../specialized/knowledge/preprocessing/domain/rules/expert-vocabulary.mjs";
 import {
   getKnowledgeGuidanceSummary,
   getKnowledgeTaxonomyPath,
   listKnowledgeTaxonomyVersions,
   loadKnowledgeTaxonomy,
   saveKnowledgeTaxonomy
-} from "../../../../specialized/knowledge/domain/knowledge-taxonomy/index.mjs";
+} from "../../../../specialized/knowledge/preprocessing/domain/knowledge-taxonomy/index.mjs";
+import { preprocessWordCloudVocabulary } from "../../../../specialized/knowledge/preprocessing/word-cloud/preprocess.mjs";
 import { getCodexOAuthStatus, startCodexDeviceLogin } from "../../../platform-core/auth/codex-oauth-service.mjs";
-import { enhanceAffairTaxonomy } from "../../../../specialized/knowledge/domain/knowledge-taxonomy/service.mjs";
+import { getAgentConfigRegistry } from "../../../../specialized/agent/agent-configs/config-registry.mjs";
+import { enhanceAffairTaxonomy } from "../../../../specialized/knowledge/preprocessing/domain/knowledge-taxonomy/service.mjs";
 import { getBackgroundProcessStatus } from "../../../devops/process-status/background-process-status.mjs";
 import {
   getSourceFileEvidence,
   isSourceEvidenceId,
   searchSourceFiles
-} from "../../../../../platform/specialized/knowledge/datastore/source-file-search-service.mjs";
+} from "../../../../../platform/specialized/knowledge/retrieval/source-file-search-service.mjs";
 import {
   getMountConfigPath,
   getMountConfigPaths,
@@ -57,9 +59,880 @@ import {
 } from "../http-utils.mjs";
 import { hashClientString, serverToken } from "../../../platform-core/security/client-strings.mjs";
 import { reconcileStorage, runStorageDoctor } from "../../../storage/ops-tools.mjs";
+import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
 
 function parseJsonBody(requestBody) {
   return requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
+}
+
+function parseWordCloudRequestPayload(requestBody, url) {
+  const payload = requestBody?.length
+    ? parseJsonBody(requestBody)
+    : Object.fromEntries(url.searchParams.entries());
+  const queryCorpusPaths = [
+    ...url.searchParams.getAll("corpusPath"),
+    ...url.searchParams.getAll("corpusPaths")
+  ].filter(Boolean);
+  if (queryCorpusPaths.length > 0 && !payload.corpusPaths) {
+    payload.corpusPaths = queryCorpusPaths.map((item) => {
+      const [type, ...pathParts] = String(item).split(":");
+      const selectedPath = pathParts.join(":");
+      return selectedPath && ["file", "directory"].includes(type)
+        ? { type, path: selectedPath }
+        : { path: item };
+    });
+  }
+  return payload;
+}
+
+function sendWordCloudMutationError(response, error) {
+  const statusCode = Number(error?.statusCode || 500);
+  sendJson(response, statusCode >= 400 && statusCode < 600 ? statusCode : 500, {
+    ok: false,
+    code: error?.code || "word_cloud_error",
+    error: error?.message || "词袋操作失败。"
+  });
+}
+
+function clampRequestInteger(value, fallback, min = 1, max = 1000000000) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.floor(numeric)));
+}
+
+function isIntentPromptLike(input) {
+  const normalized = String(input || "").trim();
+  return normalized.length > 0;
+}
+
+function normalizeAuditCorpusPaths(values = []) {
+  const paths = [];
+  const source = Array.isArray(values) ? values : [values];
+  const seen = new Set();
+  for (const value of source) {
+    const record = typeof value === "string" ? { path: value } : value || {};
+    const selectedPath = String(record.path || "").trim();
+    if (!selectedPath) {
+      continue;
+    }
+    const type = String(record.type || "").trim();
+    const normalized = {
+      type: type === "file" || type === "directory" ? type : "",
+      path: selectedPath,
+      basename: path.basename(selectedPath)
+    };
+    const key = `${normalized.type}:${normalized.path}`.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    paths.push(normalized);
+  }
+  return paths;
+}
+
+function normalizeModelLibraryAgentAuditAgent(entry = {}) {
+  const provider = String(entry.provider || "").trim();
+  const model = String(entry.model || entry.engine || "").trim();
+  const alias = String(entry.alias || entry.uid || entry.instanceId || "").trim();
+  const agentName = String(entry.agentName || entry.label || alias || "").trim();
+  return {
+    uid: alias,
+    provider,
+    model,
+    agentName,
+    baseUrl: String(entry.baseUrl || entry.url || "").trim(),
+    timeoutMs: Number(entry.timeoutMs || 0),
+    apiKeyConfigured: Boolean(entry.apiKey || entry.token || entry.apiKeyConfigured || entry.tokenConfigured)
+  };
+}
+
+function normalizeModelLibraryAuditList(models = []) {
+  const normalized = [];
+  for (const model of Array.isArray(models) ? models : []) {
+    const item = normalizeModelLibraryAgentAuditAgent(model);
+    if (!item.provider && !item.model && !item.uid) {
+      continue;
+    }
+    normalized.push(item);
+  }
+  normalized.sort((left, right) => {
+    const providerSort = String(left.provider || "").localeCompare(String(right.provider || ""));
+    if (providerSort !== 0) {
+      return providerSort;
+    }
+    const modelSort = String(left.model || "").localeCompare(String(right.model || ""));
+    if (modelSort !== 0) {
+      return modelSort;
+    }
+    return String(left.uid || "").localeCompare(String(right.uid || ""));
+  });
+  return {
+    total: normalized.length,
+    providers: [...new Set(normalized.map((item) => String(item.provider || "").trim()).filter(Boolean))],
+    items: normalized
+  };
+}
+
+function modelLibraryAgentAuditKey(entry = {}) {
+  const uid = String(entry.uid || "").trim();
+  const provider = String(entry.provider || "").trim();
+  const model = String(entry.model || entry.engine || "").trim();
+  const alias = String(entry.alias || entry.agentName || entry.label || "").trim();
+  if (uid) {
+    return uid;
+  }
+  return `${provider}::${model}::${alias}`;
+}
+
+function diffModelLibraryAgents(before = [], after = []) {
+  const beforeMap = new Map(
+    (Array.isArray(before) ? before : [])
+      .map((agent) => [modelLibraryAgentAuditKey(agent), normalizeModelLibraryAgentAuditAgent(agent)])
+      .filter(([key]) => String(key).trim().length > 0)
+  );
+  const afterMap = new Map(
+    (Array.isArray(after) ? after : [])
+      .map((agent) => [modelLibraryAgentAuditKey(agent), normalizeModelLibraryAgentAuditAgent(agent)])
+      .filter(([key]) => String(key).trim().length > 0)
+  );
+  const added = [];
+  const removed = [];
+  const changed = [];
+  for (const [key, next] of afterMap.entries()) {
+    const previous = beforeMap.get(key) || null;
+    if (!previous) {
+      added.push(next);
+      continue;
+    }
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      changed.push({ before: previous, after: next, key });
+    }
+  }
+  for (const [key, item] of beforeMap.entries()) {
+    if (!afterMap.has(key)) {
+      removed.push(item);
+    }
+  }
+  return {
+    beforeCount: beforeMap.size,
+    afterCount: afterMap.size,
+    added,
+    removed,
+    changed
+  };
+}
+
+function extractJsonObjectFromText(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Some model adapters wrap JSON in prose or fenced blocks.
+  }
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {
+      // Fall through to brace extraction.
+    }
+  }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizePromptHint(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "目标分类";
+  }
+  const stopWords = new Set([
+    "词云",
+    "词汇",
+    "分组",
+    "分类",
+    "创建",
+    "生成",
+    "提取",
+    "列表",
+    "聚类"
+  ]);
+  const candidates = normalized
+    .replace(/[\u0000-\u001f]/g, " ")
+    .split(/[\s,/，。.!?！?、;；]/g)
+    .map((item) => String(item || "").trim())
+    .filter((item) => item && !stopWords.has(item));
+  return candidates[0] || "目标分类";
+}
+
+function buildWordCloudAgentPrompt({ terms, prompt }) {
+  const supervisorPrompt = String(prompt || "").trim();
+  const wordBagHint = normalizePromptHint(supervisorPrompt);
+  const lines = [
+    "你是 SplitAll 词云分组智能体。你只能根据输入的语料词频进行分组，不要编造新词。",
+    "任务：根据用户意图自动判断需要多少个分类卡片，把词语归集到可嵌套的词云树。",
+    "一个词可以属于多个顶层卡片；同一卡片内部如果词语被放进子分组，就不要再留在父卡片 terms 中。",
+    "无法归类的高置信词先放进 label 为 Default 的顶层卡片。",
+    "明显乱码、噪声、低置信词放到 otherTerms（后续会进入其它卡片）。",
+    "不要使用算法解释，只输出 JSON。每张卡片需要 label、summary、terms，可选 children。",
+    "每个 term 来源于输入词频，禁止新增新词。",
+    "relation 可用 separate、overlap、contains，表示与其它卡片的大致关系。"
+  ];
+  if (supervisorPrompt) {
+    lines.push(`人工监督要求：${supervisorPrompt}`);
+  }
+  lines.push(
+    "输出格式：",
+    `{"title":"语料词云","wordBags":[{"wordBagId":"word-bag-1","label":"${wordBagHint}","summary":"...","relation":"overlap","terms":[{"term":"...","weight":1}],"children":[{"wordBagId":"word-bag-1-1","label":"...","terms":[{"term":"..."}]}]}],"otherTerms":[{"term":"...","weight":0.1}],"defaultTerms":[{"term":"...","weight":0.1}]}`,
+    "说明：otherTerms 表示 low-weight/噪声词；defaultTerms 表示正常无法归类词。",
+    "语料词频：",
+    JSON.stringify(terms)
+  );
+  return lines.join("\n");
+}
+
+function wordCloudTermIdentity(value = {}) {
+  const term = typeof value === "string" ? value : value?.term;
+  return String(term || "").trim().toLowerCase();
+}
+
+function buildWordCloudTermFrequencyMap(terms = []) {
+  const map = new Map();
+  for (const item of Array.isArray(terms) ? terms : []) {
+    const identity = wordCloudTermIdentity(item);
+    if (!identity) {
+      continue;
+    }
+    const frequency = Number(item?.frequency || 0);
+    map.set(identity, Number.isFinite(frequency) ? Math.max(0, Math.floor(frequency)) : 0);
+  }
+  return map;
+}
+
+function normalizeWordCloudTermForAgent(value = {}, sourceFrequencyByTerm = new Map()) {
+  const identity = wordCloudTermIdentity(value);
+  if (!identity) {
+    return null;
+  }
+  const frequencyFromSource = sourceFrequencyByTerm.get(identity) || sourceFrequencyByTerm.get(identity.toLowerCase()) || 0;
+  const frequency = Number(value?.frequency ?? value?.count ?? frequencyFromSource);
+  const weight = Number(value?.weight || 0);
+  return {
+    term: identity,
+    frequency: Number.isFinite(frequency) ? Math.max(0, Math.floor(frequency)) : Number(frequencyFromSource || 0),
+    weight: Number.isFinite(weight) ? Math.max(0, weight) : 0
+  };
+}
+
+function normalizeWordCloudWordBagsFromAgent(rawWordBags = [], sourceFrequencyByTerm = new Map()) {
+  if (!Array.isArray(rawWordBags)) {
+    return [];
+  }
+
+  const usedWordBagIds = new Set();
+  const assignWordBagId = (rawCloud = {}, index = 0) => {
+    let rawWordBagId = String(rawCloud?.wordBagId || rawCloud?.id || `word-bag-${index + 1}`).trim();
+    if (!rawWordBagId) {
+      rawWordBagId = `word-bag-${index + 1}`;
+    }
+    let wordBagId = rawWordBagId;
+    let suffix = 1;
+    while (usedWordBagIds.has(wordBagId)) {
+      suffix += 1;
+      wordBagId = `${rawWordBagId}-${suffix}`;
+    }
+    usedWordBagIds.add(wordBagId);
+    return wordBagId;
+  };
+
+  return rawWordBags.map((rawCloud, index) => {
+    const source = rawCloud && typeof rawCloud === "object" ? rawCloud : {};
+    const usedTerms = new Set();
+    const terms = [];
+    const relation = String(source.relation || "separate").trim() || "separate";
+    for (const item of Array.isArray(source.terms) ? source.terms : []) {
+      const normalized = normalizeWordCloudTermForAgent(item, sourceFrequencyByTerm);
+      if (!normalized) {
+        continue;
+      }
+      const identity = wordCloudTermIdentity(normalized);
+      if (!identity || usedTerms.has(identity)) {
+        continue;
+      }
+      usedTerms.add(identity);
+      terms.push(normalized);
+    }
+
+    const children = normalizeWordCloudWordBagsFromAgent(source.children || source.subgroups || source.groups || [], sourceFrequencyByTerm);
+
+    return {
+      wordBagId: assignWordBagId(source, index),
+      label: String(source.label || "").trim() || "词云",
+      summary: typeof source.summary === "string" ? source.summary.trim() : "",
+      relation,
+      terms,
+      children: Array.isArray(children) ? children : [],
+      parentWordBagId: String(source.parentWordBagId || "").trim() || undefined
+    };
+  });
+}
+
+function normalizeWordCloudTermArray(rawTerms = [], sourceFrequencyByTerm = new Map(), reserved = new Set()) {
+  const used = new Set(Array.isArray(reserved) ? reserved : []);
+  const terms = [];
+  for (const item of Array.isArray(rawTerms) ? rawTerms : []) {
+    const normalized = normalizeWordCloudTermForAgent(item, sourceFrequencyByTerm);
+    if (!normalized) {
+      continue;
+    }
+    const identity = wordCloudTermIdentity(normalized);
+    if (!identity || used.has(identity)) {
+      continue;
+    }
+    used.add(identity);
+    terms.push(normalized);
+  }
+  return terms;
+}
+
+function ensureCloudCardByLabel(wordBags = [], label = "", terms = []) {
+  const list = Array.isArray(wordBags) ? [...wordBags] : [];
+  const normalizedLabel = String(label || "").trim();
+  const labelKey = normalizedLabel.toLowerCase();
+  if (!normalizedLabel) {
+    return list;
+  }
+
+  const fallback = {
+    wordBagId: labelKey,
+    label: normalizedLabel,
+    summary: `${normalizedLabel}卡片。`,
+    relation: "separate",
+    terms: [],
+    children: []
+  };
+  if (labelKey === "default") {
+    fallback.summary = "未归类词语。";
+  }
+  if (labelKey === "其它") {
+    fallback.summary = "低置信/噪声词。";
+  }
+
+  const existingIndex = list.findIndex((cloud) => String(cloud?.label || "").trim().toLowerCase() === labelKey);
+  if (existingIndex >= 0) {
+    const existing = list[existingIndex] || {};
+    const normalizedExistingTerms = normalizeWordCloudTermArray(existing?.terms || [], new Map(), []);
+    const dedupTerms = normalizeWordCloudTermArray(terms, new Map(), new Set(normalizedExistingTerms.map((item) => item.term)));
+    list[existingIndex] = {
+      ...existing,
+      wordBagId: String(existing.wordBagId || fallback.wordBagId).trim() || fallback.wordBagId,
+      label: normalizedLabel,
+      relation: String(existing.relation || fallback.relation).trim() || fallback.relation,
+      terms: [...normalizedExistingTerms, ...dedupTerms]
+    };
+    return list;
+  }
+
+  fallback.terms = normalizeWordCloudTermArray(terms, new Map(), new Set());
+  list.push(fallback);
+  return list;
+}
+
+function buildWordCloudFromAgentResponse({
+  parsed = {},
+  fullTerms = [],
+  fallbackRaw = {}
+}) {
+  const sourceTermList = Array.isArray(fullTerms) ? fullTerms : [];
+  const sourceFrequencyByTerm = buildWordCloudTermFrequencyMap(sourceTermList);
+  const sourceTerms = sourceTermList
+    .map((term) => normalizeWordCloudTermForAgent(term, sourceFrequencyByTerm))
+    .filter((term) => term && term.term);
+
+  const knownIdentities = new Set(
+    sourceTerms
+      .map((term) => wordCloudTermIdentity(term))
+      .filter(Boolean)
+  );
+
+  const parsedWordBags = normalizeWordCloudWordBagsFromAgent(parsed.wordBags || [], sourceFrequencyByTerm);
+  const assignedIdentities = collectWordCloudAssignedTermIds(parsedWordBags);
+
+  const parsedDefaultTerms = normalizeWordCloudTermArray(parsed.defaultTerms || [], sourceFrequencyByTerm, new Set());
+  const parsedOtherTerms = normalizeWordCloudTermArray(parsed.otherTerms || [], sourceFrequencyByTerm, new Set());
+  const fallbackKnownLowTerms = normalizeWordCloudTermArray(
+    Array.isArray(fallbackRaw?.lowQualityTerms) ? fallbackRaw.lowQualityTerms : [],
+    sourceFrequencyByTerm,
+    new Set()
+  );
+  const lowQualitySet = new Set(
+    sourceTerms
+      .filter((item) => String(item?.quality || "normal").toLowerCase() === "low")
+      .map((item) => wordCloudTermIdentity(item))
+      .filter(Boolean)
+  );
+
+  const mergedOtherSeed = normalizeWordCloudTermArray(
+    [...parsedOtherTerms, ...fallbackKnownLowTerms],
+    sourceFrequencyByTerm,
+    new Set()
+  );
+  const otherSet = new Set(mergedOtherSeed.map((term) => wordCloudTermIdentity(term)));
+  const defaultSet = new Set(parsedDefaultTerms.map((term) => wordCloudTermIdentity(term)));
+
+  if (otherSet.size > 0) {
+    for (const identity of otherSet) {
+      defaultSet.delete(identity);
+    }
+    for (const identity of otherSet) {
+      assignedIdentities.delete(identity);
+    }
+  }
+
+  const fallbackTerms = sourceTerms
+    .filter((term) => {
+      const identity = wordCloudTermIdentity(term);
+      return identity && !assignedIdentities.has(identity) && !otherSet.has(identity) && !lowQualitySet.has(identity);
+    })
+    .filter((term) => {
+      if (defaultSet.has(wordCloudTermIdentity(term))) {
+        return false;
+      }
+      return true;
+    });
+
+  const mergedDefaultTerms = normalizeWordCloudTermArray(
+    [...parsedDefaultTerms, ...fallbackTerms],
+    sourceFrequencyByTerm,
+    new Set(Array.isArray(fallbackRaw.excludedTerms) ? fallbackRaw.excludedTerms : [])
+  );
+  const mergedOtherTerms = normalizeWordCloudTermArray(
+    [...mergedOtherSeed, ...sourceTerms.filter((term) => lowQualitySet.has(wordCloudTermIdentity(term)))],
+    sourceFrequencyByTerm,
+    new Set()
+  );
+  const finalWordBags = ensureCloudCardByLabel(
+    ensureCloudCardByLabel(parsedWordBags, "Default", mergedDefaultTerms),
+    "其它",
+    mergedOtherTerms
+  );
+  const finalAssigned = collectWordCloudAssignedTermIds(finalWordBags);
+  const unassignedTerms = normalizeWordCloudTermArray(sourceTerms, sourceFrequencyByTerm, finalAssigned);
+
+  return {
+    title: String(parsed?.title || "").trim() || "语料词云",
+    wordBags: finalWordBags,
+    modelParsed: {
+      parsedKnownCount: assignedIdentities.size,
+      modelWordBagCount: parsedWordBags.length,
+      modelDefaultCount: mergedDefaultTerms.length,
+      modelOtherCount: mergedOtherTerms.length,
+      defaultCount: mergedDefaultTerms.length,
+      otherCount: mergedOtherTerms.length
+    },
+    unassignedTerms,
+    knownIdentities,
+    sourceTermCount: sourceTerms.length,
+    sourceFrequencyByTerm
+  };
+}
+
+function buildWordCloudFallbackResult(fullTerms = [], preprocess = null) {
+  const sourceTermList = Array.isArray(fullTerms) ? fullTerms : [];
+  const sourceFrequencyByTerm = buildWordCloudTermFrequencyMap(sourceTermList);
+  const sourceTerms = sourceTermList
+    .map((term) => normalizeWordCloudTermForAgent(term, sourceFrequencyByTerm))
+    .filter((term) => term && term.term);
+  const lowQualityTermSet = new Set(
+    sourceTerms
+      .filter((term) => String(term?.quality || "normal").toLowerCase() === "low")
+      .map((term) => wordCloudTermIdentity(term))
+      .filter(Boolean)
+  );
+  const fallbackKnownLowTerms = normalizeWordCloudTermArray(
+    Array.isArray(preprocess?.lowQualityTerms) ? preprocess.lowQualityTerms : [],
+    sourceFrequencyByTerm,
+    lowQualityTermSet
+  );
+  const otherTerms = normalizeWordCloudTermArray(
+    sourceTerms.filter((term) => lowQualityTermSet.has(wordCloudTermIdentity(term))),
+    sourceFrequencyByTerm,
+    new Set()
+  );
+  const mergedOtherTerms = normalizeWordCloudTermArray(
+    [...otherTerms, ...fallbackKnownLowTerms],
+    sourceFrequencyByTerm,
+    new Set()
+  );
+  const defaultTerms = normalizeWordCloudTermArray(
+    sourceTerms.filter((term) => !lowQualityTermSet.has(wordCloudTermIdentity(term))),
+    sourceFrequencyByTerm,
+    new Set(mergedOtherTerms.map((item) => wordCloudTermIdentity(item)))
+  );
+
+  const fallback = normalizeWordCloudWordBagsFromAgent([], sourceFrequencyByTerm);
+  const finalWordBags = ensureCloudCardByLabel(
+    ensureCloudCardByLabel(fallback, "Default", defaultTerms),
+    "其它",
+    mergedOtherTerms
+  );
+  const finalAssigned = collectWordCloudAssignedTermIds(finalWordBags);
+  const fallbackUnassignedTerms = normalizeWordCloudTermArray(sourceTerms, sourceFrequencyByTerm, finalAssigned);
+
+  return {
+    title: "语料词云",
+    wordBags: finalWordBags,
+    modelParsed: {
+      parsedKnownCount: 0,
+      modelWordBagCount: 0,
+      modelDefaultCount: defaultTerms.length,
+      modelOtherCount: mergedOtherTerms.length,
+      defaultCount: defaultTerms.length,
+      otherCount: mergedOtherTerms.length,
+      fallbackMode: true
+    },
+    unassignedTerms: fallbackUnassignedTerms,
+    knownIdentities: new Set(defaultTerms.map((item) => wordCloudTermIdentity(item)).concat(mergedOtherTerms.map((item) => wordCloudTermIdentity(item))).filter(Boolean)),
+    sourceTermCount: sourceTerms.length,
+    sourceFrequencyByTerm
+  };
+}
+
+function collectWordCloudAssignedTermIds(wordBags = [], target = new Set()) {
+  for (const cloud of Array.isArray(wordBags) ? wordBags : []) {
+    for (const term of Array.isArray(cloud?.terms) ? cloud.terms : []) {
+      const identity = wordCloudTermIdentity(term);
+      if (identity) {
+        target.add(identity);
+      }
+    }
+    collectWordCloudAssignedTermIds(cloud?.children || cloud?.subgroups || cloud?.groups || [], target);
+  }
+  return target;
+}
+
+function wordCloudQueueInput(run = {}, patch = {}) {
+  return {
+    kind: "knowledge_word_cloud",
+    ownerId: run.runId,
+    queueId: run.queueId,
+    label: "词云分类后台任务",
+    source: "knowledge-word-cloud",
+    phase: patch.phase || run.status || "queued",
+    status: patch.status || run.status || "queued",
+    checkpointId: run.checkpointId || "",
+    metadata: {
+      featureId: "knowledge-word-cloud",
+      modelAlias: run.modelAlias || "",
+      termCount: run.termCount || 0,
+      promptHash: run.promptHash || "",
+      ...(patch.metadata || {})
+    }
+  };
+}
+
+async function queueMonitorStarted(queueMonitor, input) {
+  if (typeof queueMonitor?.registerStarted === "function") {
+    return queueMonitor.registerStarted(input);
+  }
+  return null;
+}
+
+async function queueMonitorHeartbeat(queueMonitor, input) {
+  if (typeof queueMonitor?.registerHeartbeat === "function") {
+    return queueMonitor.registerHeartbeat(input);
+  }
+  return null;
+}
+
+async function queueMonitorClosed(queueMonitor, input) {
+  if (typeof queueMonitor?.registerClosed === "function") {
+    return queueMonitor.registerClosed(input);
+  }
+  return null;
+}
+
+async function runWordCloudClassificationTask({
+  userDataPath,
+  metadataStore,
+  protocolEventBus,
+  contextRuntime,
+  clientRuntimeAllocator,
+  queueMonitor,
+  run,
+  terms,
+  prompt,
+  modelAlias,
+  preprocess
+}) {
+  const preprocessing = preprocess && typeof preprocess === "object" ? preprocess : null;
+  const sourceTerms = Array.isArray(terms) ? terms : [];
+  const modelTerms = Array.isArray(preprocessing?.agentTerms) && preprocessing.agentTerms.length > 0
+    ? preprocessing.agentTerms
+    : sourceTerms;
+  try {
+    await queueMonitorHeartbeat(queueMonitor, wordCloudQueueInput(run, {
+      phase: "model_call",
+      status: "running"
+    }));
+    const { callAgentGateway } = await loadAgentGatewayModule();
+    const runtimeSettings = await loadSettings(userDataPath);
+    const agentConfigRegistry = getAgentConfigRegistry();
+    await agentConfigRegistry.refresh({ settingsFallback: runtimeSettings });
+    const gatewayResult = await callAgentGateway({
+      settings: {
+        ...runtimeSettings,
+        modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents(),
+        modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries()
+      },
+      userDataPath,
+      contextRuntime,
+      clientRuntimeAllocator,
+      contextCompactionSource: "knowledge-word-cloud",
+      input: {
+        modelAlias,
+        moduleId: "knowledge",
+        featureId: "knowledge-word-cloud",
+        taskId: "knowledge.word_clouds.propose",
+        question: buildWordCloudAgentPrompt({
+          terms: modelTerms,
+          prompt
+        }),
+        parameters: {
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+          max_tokens: 3200
+        }
+      }
+    });
+    await queueMonitorHeartbeat(queueMonitor, wordCloudQueueInput(run, {
+      phase: "persist_result",
+      status: "running"
+    }));
+    const parsed = extractJsonObjectFromText(gatewayResult.answer || gatewayResult.text || "");
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("智能体没有返回可解析的词云 JSON。");
+    }
+    const parsedResult = buildWordCloudFromAgentResponse({
+      parsed,
+      fullTerms: sourceTerms,
+      fallbackRaw: preprocessing
+    });
+    const saved = await metadataStore.saveKnowledgeWordCloudSet({
+      limit: sourceTerms.length || 1,
+      wordBagSet: {
+        wordBagSetId: run.wordBagSetId,
+        title: parsedResult.title || "语料词云",
+        status: "completed",
+        wordBagCount: parsedResult.wordBags.length,
+        termsSnapshot: sourceTerms,
+        wordBags: parsedResult.wordBags,
+        unassignedTerms: parsedResult.unassignedTerms || [],
+        modelAlias,
+        agentResponse: {
+          run: {
+          ...run,
+          status: "completed",
+          completedAt: new Date().toISOString()
+          },
+          preprocess: preprocessing,
+          parsedModel: {
+            fallbackMode: false,
+            sourceTermsCount: sourceTerms.length,
+            modelTermsCount: modelTerms.length
+          },
+          parsed,
+          upstream: gatewayResult.upstream || null,
+          answer: gatewayResult.answer || gatewayResult.text || ""
+        }
+      }
+    });
+    await queueMonitorClosed(queueMonitor, wordCloudQueueInput(
+      { ...run, status: "completed" },
+      {
+        phase: "closed",
+        status: "completed",
+        metadata: { wordBagSetId: saved.wordBagSet?.wordBagSetId || run.wordBagSetId }
+      }
+    ));
+    await publishProtocolEvent(
+      protocolEventBus,
+      "knowledge.word_clouds",
+      saved,
+      { type: "knowledge.word_clouds.proposed" }
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error || "词云分类任务失败。");
+    const fallback = sourceTerms.length > 0
+      ? buildWordCloudFallbackResult(sourceTerms, preprocessing)
+      : null;
+    if (fallback) {
+      const fallbackSaved = await metadataStore.saveKnowledgeWordCloudSet({
+        limit: sourceTerms.length || 1,
+        wordBagSet: {
+          wordBagSetId: run.wordBagSetId,
+          title: fallback.title || "语料词云",
+          status: "completed",
+          wordBagCount: fallback.wordBags.length,
+          termsSnapshot: sourceTerms,
+          wordBags: fallback.wordBags,
+          unassignedTerms: fallback.unassignedTerms || sourceTerms,
+          modelAlias,
+          agentResponse: {
+            run: {
+            ...run,
+            status: "completed",
+            completedAt: new Date().toISOString()
+            },
+            preprocess: preprocessing,
+            parsed: {
+              fallback: true,
+              wordBags: fallback.wordBags,
+              modelParsed: fallback.modelParsed,
+              errorMessage
+            },
+            fallback: true,
+            fallbackReason: errorMessage,
+            parsedModel: {
+              fallbackMode: true,
+              sourceTermsCount: sourceTerms.length,
+              modelTermsCount: modelTerms.length,
+              parsedKnownCount: fallback.modelParsed?.parsedKnownCount || 0
+            }
+          }
+        }
+      });
+      await queueMonitorClosed(queueMonitor, wordCloudQueueInput(
+        { ...run, status: "completed" },
+        {
+          phase: "closed",
+          status: "completed",
+          metadata: {
+            wordBagSetId: fallbackSaved.wordBagSet?.wordBagSetId || run.wordBagSetId,
+            degraded: true,
+            fallbackReason: errorMessage
+          }
+        }
+      ));
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        fallbackSaved,
+        { type: "knowledge.word_clouds.proposed" }
+      );
+      return;
+    }
+    const failed = await metadataStore.saveKnowledgeWordCloudSet({
+      limit: sourceTerms.length || 1,
+      wordBagSet: {
+        wordBagSetId: run.wordBagSetId,
+        title: "语料词云",
+        status: "failed",
+        wordBagCount: 0,
+        termsSnapshot: sourceTerms,
+        wordBags: [],
+        unassignedTerms: sourceTerms,
+        modelAlias,
+        agentResponse: {
+          run: {
+          ...run,
+          status: "failed",
+          failedAt: new Date().toISOString()
+          },
+          preprocess: preprocessing,
+          fallback: false,
+          parsedModel: {
+            fallbackMode: false,
+            sourceTermsCount: sourceTerms.length,
+            modelTermsCount: modelTerms.length
+          },
+          error: errorMessage
+        }
+      }
+    });
+    await queueMonitorClosed(queueMonitor, wordCloudQueueInput(
+      { ...run, status: "failed" },
+      {
+        phase: "closed",
+        status: "failed",
+        metadata: { error: errorMessage }
+      }
+    ));
+    await publishProtocolEvent(
+      protocolEventBus,
+      "knowledge.word_clouds",
+      failed,
+      { type: "knowledge.word_clouds.failed" }
+    );
+  }
+}
+
+async function resumeWordCloudClassificationTasks({
+  userDataPath,
+  metadataStore,
+  protocolEventBus,
+  contextRuntime,
+  clientRuntimeAllocator,
+  queueMonitor
+}) {
+  const state = await metadataStore.getKnowledgeWordCloudState({
+    limit: 100000,
+    setLimit: 100
+  });
+  const pendingSets = (state.wordBagSets || []).filter((wordBagSet) =>
+    ["queued", "running"].includes(String(wordBagSet?.status || ""))
+  );
+  for (const wordBagSet of pendingSets) {
+    const run = wordBagSet.agentResponse?.run;
+    const prompt = String(run?.prompt || "").trim();
+    const modelAlias = String(run?.modelAlias || wordBagSet.modelAlias || "").trim();
+    if (!run?.runId || !prompt || !modelAlias) {
+      continue;
+    }
+    const preprocess = wordBagSet.agentResponse?.preprocess && typeof wordBagSet.agentResponse.preprocess === "object"
+      ? wordBagSet.agentResponse.preprocess
+      : null;
+    const terms = wordBagSet.termsSnapshot?.length
+      ? wordBagSet.termsSnapshot
+      : metadataStore.listSourceCorpusRawTerms({ limit: 100000, minFrequency: 1 });
+    await queueMonitorHeartbeat(queueMonitor, wordCloudQueueInput(
+      { ...run, status: "running", termCount: terms.length },
+      {
+        phase: "resume",
+        status: "running",
+        metadata: { resumed: true }
+      }
+    ));
+    setImmediate(() => {
+      void runWordCloudClassificationTask({
+        userDataPath,
+        metadataStore,
+        protocolEventBus,
+        contextRuntime,
+        clientRuntimeAllocator,
+        queueMonitor,
+        run: { ...run, status: "running", termCount: terms.length },
+        terms,
+        prompt,
+        modelAlias,
+        preprocess
+      });
+    });
+  }
 }
 
 async function loadAgentGatewayModule() {
@@ -123,7 +996,7 @@ function normalizePathBrowserExtensions(value) {
     .map((item) => (item.startsWith(".") ? item : `.${item}`));
 }
 
-function createPathBrowserRoots({ userDataPath, distPath }) {
+function createPathBrowserRoots() {
   const roots = new Map();
   const addRoot = (label, value) => {
     const nextPath = String(value || "").trim();
@@ -134,13 +1007,18 @@ function createPathBrowserRoots({ userDataPath, distPath }) {
   };
 
   addRoot("当前项目", process.cwd());
-  addRoot("服务端数据", userDataPath);
   addRoot("当前用户", os.homedir());
+  const rootPath = path.parse(process.cwd()).root;
+  addRoot(rootPath === "/" ? "根目录" : rootPath, rootPath);
+
   const cloudStoragePath = path.join(os.homedir(), "Library", "CloudStorage");
   try {
     for (const entry of fsSync.readdirSync(cloudStoragePath, { withFileTypes: true })) {
-      if (entry.isDirectory() && /^OneDrive/i.test(entry.name)) {
-        addRoot(`OneDrive · ${entry.name.replace(/^OneDrive[- ]?/i, "") || "本机"}`, path.join(cloudStoragePath, entry.name));
+      if (entry.isDirectory()) {
+        const label = /^OneDrive/i.test(entry.name)
+          ? `OneDrive · ${entry.name.replace(/^OneDrive[- ]?/i, "") || "本机"}`
+          : `云盘 · ${entry.name}`;
+        addRoot(label, path.join(cloudStoragePath, entry.name));
       }
     }
   } catch {
@@ -155,14 +1033,17 @@ function createPathBrowserRoots({ userDataPath, distPath }) {
   } catch {
     // Ignore unreadable home entries.
   }
-  if (distPath) {
-    addRoot("控制台构建", distPath);
-  }
 
-  const rootPath = path.parse(process.cwd()).root;
-  addRoot(rootPath === "/" ? "根目录" : rootPath, rootPath);
   if (process.platform === "darwin") {
-    addRoot("Volumes", "/Volumes");
+    try {
+      for (const entry of fsSync.readdirSync("/Volumes", { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          addRoot(`磁盘 · ${entry.name}`, path.join("/Volumes", entry.name));
+        }
+      }
+    } catch {
+      // Mounted volumes are platform/user dependent.
+    }
   }
 
   return [...roots.entries()].map(([rootPathValue, label]) => ({
@@ -461,6 +1342,14 @@ function parseKnowledgeSearchInput({ requestBody, url }) {
           url.searchParams.get("clientId") ||
           url.searchParams.get("client-id") ||
           "",
+        clientUid:
+          url.searchParams.get("clientUid") ||
+          url.searchParams.get("client-uid") ||
+          "",
+        workspaceId:
+          url.searchParams.get("workspaceId") ||
+          url.searchParams.get("workspace-id") ||
+          "",
         learningEnabled: parseBooleanFlag(url.searchParams.get("learningEnabled") || url.searchParams.get("learning-enabled") || url.searchParams.get("learning") || "true"),
         hierarchyReasoning: parseBooleanFlag(url.searchParams.get("hierarchyReasoning") || url.searchParams.get("hierarchy-reasoning") || "false"),
         modelEnabled: parseBooleanFlag(url.searchParams.get("modelEnabled") || url.searchParams.get("model-enabled") || url.searchParams.get("useModel") || "false"),
@@ -488,6 +1377,84 @@ function enforceMultimodalKnowledgeSearch(payload = {}) {
     ...rest,
     ...(Object.keys(nextFilters).length ? { filters: nextFilters } : {}),
     modalityPolicy: "multimodal"
+  };
+}
+
+function arrayOfStrings(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function workspaceAccessOptions(authSession = null) {
+  const user = authSession?.user || {};
+  const scopes = new Set(Array.isArray(user.scopes) ? user.scopes : []);
+  const roleId = String(user.roleId || "");
+  return {
+    actorUserId: String(user.userId || ""),
+    canAccessAll: roleId === "owner" || roleId === "admin" || scopes.has("knowledge:admin")
+  };
+}
+
+function applyWorkspaceRuntimeContext(payload = {}, agentWorkspace = null, options = {}) {
+  const workspaceId = String(
+    payload.workspaceId ||
+      payload.workspace_id ||
+      payload.sessionWorkspaceId ||
+      ""
+  ).trim();
+  if (!workspaceId || !agentWorkspace || typeof agentWorkspace.getWorkspaceContext !== "function") {
+    return {
+      input: payload,
+      workspaceContext: null,
+      workspaceError: workspaceId
+        ? {
+            status: 503,
+            error: "工作空间上下文不可用。"
+          }
+        : null
+    };
+  }
+
+  const workspaceContext = agentWorkspace.getWorkspaceContext(workspaceId, options);
+  if (!workspaceContext) {
+    return {
+      input: payload,
+      workspaceContext: null,
+      workspaceError: {
+        status: 404,
+        error: "工作空间不存在或不可访问。"
+      }
+    };
+  }
+
+  const next = {
+    ...payload,
+    workspaceId,
+    workspaceContext
+  };
+  if (!next.contextProfileId && workspaceContext.contextProfileId) {
+    next.contextProfileId = workspaceContext.contextProfileId;
+  }
+  if (!next.modelAlias && !next.alias && !next.model && workspaceContext.modelAlias) {
+    next.modelAlias = workspaceContext.modelAlias;
+    next.alias = workspaceContext.modelAlias;
+  }
+  if (!next.toolGrantId && !next.grantId && workspaceContext.toolGrantId) {
+    next.toolGrantId = workspaceContext.toolGrantId;
+  }
+
+  const explicitSourceIds = [
+    ...arrayOfStrings(next.scopeSourceIds),
+    ...arrayOfStrings(next.sourceIds)
+  ];
+  if (explicitSourceIds.length === 0 && workspaceContext.knowledgeSourceIds?.length) {
+    next.scopeSourceIds = workspaceContext.knowledgeSourceIds;
+  }
+
+  return {
+    input: next,
+    workspaceContext
   };
 }
 
@@ -581,10 +1548,57 @@ export function createSystemController({
   agentExplorationRuntime = null,
   clientRuntimeAllocator = null,
   checkpointTreeApi = null,
+  queueMonitor = null,
   monitorAlertApi = null,
   getFeatureEntries = () => null,
   getToolManagementPlatform = () => null
 }) {
+  const agentConfigRegistry = getAgentConfigRegistry();
+
+  function appendConsoleOperationLog(entry = {}) {
+    if (operationAuditStore) {
+      try {
+        operationAuditStore.append({
+          transport: "http",
+          risk: entry.risk || "",
+          readOnly: entry.readOnly === true,
+          status: entry.status || "ok",
+          actor: entry.authSession || entry.actor || {},
+          operationId: entry.operationId || "console.operation",
+          input: entry.input || {},
+          output: entry.output,
+          error: entry.error || ""
+        });
+      } catch {
+        // Runtime logging below is best-effort and must not break the console path.
+      }
+    }
+    logRuntimeEvent(entry.level || (entry.status === "failed" ? "warn" : "info"), entry.event || entry.operationId || "console.operation", {
+      operationId: entry.operationId || "console.operation",
+      status: entry.status || "ok",
+      actor: entry.authSession?.user || entry.actor || {},
+      input: entry.input || {},
+      output: entry.output || {},
+      error: entry.error || ""
+    });
+  }
+
+  async function loadAgentRuntimeSettings(options = {}) {
+    const settings = await loadSettings(userDataPath, options);
+    const fallbackSettings = options.redactSecrets
+      ? await loadSettings(userDataPath)
+      : settings;
+    await agentConfigRegistry.refresh({ settingsFallback: fallbackSettings });
+    return {
+      ...settings,
+      modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries(),
+      modelLibraryAgentIds: agentConfigRegistry.getModelLibraryAgents().map((agent) => agent.uid).filter(Boolean),
+      modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents({
+        redactSecrets: options.redactSecrets === true
+      })
+    };
+  }
+
   function requireMaintenanceAgent(response) {
     if (!maintenanceAgent) {
       sendJson(response, 503, {
@@ -679,6 +1693,18 @@ export function createSystemController({
     return patch;
   }
 
+  function sanitizeAgentPatchForLog(patch = {}) {
+    const safe = {};
+    const entries = Object.entries(patch || {});
+    for (const [key, value] of entries) {
+      if (["apiKey", "token", "apiKeyConfigured", "tokenConfigured"].includes(key)) {
+        continue;
+      }
+      safe[key] = value;
+    }
+    return safe;
+  }
+
   function createAgentUid(entry = {}) {
     const digest = crypto
       .createHash("sha256")
@@ -732,12 +1758,20 @@ export function createSystemController({
 
   async function saveAgentModelLibrary(current, models) {
     const { publicAgentGatewayRegistry } = await loadAgentGatewayModule();
-    const saved = await saveSettings(userDataPath, {
+    await agentConfigRegistry.replaceFromModelLibraryAgents(models);
+    const savedBase = await saveSettings(userDataPath, {
       ...current,
       modelLibraryAgents: models,
-      modelLibraryEntries: agentModelProviders(models)
+      modelLibraryEntries: agentModelProviders(models),
+      modelLibraryAgentIds: models.map((model) => model.uid || model.instanceId || model.alias).filter(Boolean)
     });
-    const redactedSettings = await loadSettings(userDataPath, { redactSecrets: true });
+    await agentConfigRegistry.refresh({ settingsFallback: savedBase });
+    const saved = {
+      ...savedBase,
+      modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents(),
+      modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries()
+    };
+    const redactedSettings = await loadAgentRuntimeSettings({ redactSecrets: true });
     await publishProtocolEvent(
       protocolEventBus,
       "settings.current",
@@ -780,8 +1814,22 @@ export function createSystemController({
         sendJson(response, 503, { error: "控制台认证模块不可用。" });
         return;
       }
+      const payload = parseJsonBody(requestBody);
+      const username = String(payload.username || "").trim().toLowerCase();
+      const loginInputSummary = {
+        usernameHash: username ? hashClientString(username, "console.auth.username") : "",
+        usernameLength: username.length,
+        host: String(request?.headers?.host || ""),
+        origin: String(request?.headers?.origin || ""),
+        remoteAddressHash: request?.socket?.remoteAddress
+          ? hashClientString(request.socket.remoteAddress, "console.auth.remote")
+          : "",
+        userAgentHash: request?.headers?.["user-agent"]
+          ? hashClientString(request.headers["user-agent"], "console.auth.user_agent")
+          : ""
+      };
       try {
-        const login = await consoleAuth.login(parseJsonBody(requestBody), request);
+        const login = await consoleAuth.login(payload, request);
         consoleAuth.audit({
           user: login.session?.user,
           operationId: "auth.login",
@@ -789,6 +1837,19 @@ export function createSystemController({
           method: "POST",
           path: "/api/auth/login",
           status: "ok"
+        });
+        appendConsoleOperationLog({
+          operationId: "auth.login.session",
+          event: "console.auth.login.succeeded",
+          authSession: login.session,
+          status: "ok",
+          input: loginInputSummary,
+          output: {
+            userId: login.session?.user?.userId || "",
+            username: login.session?.user?.username || "",
+            roleId: login.session?.user?.roleId || "",
+            expiresAt: login.session?.expiresAt || ""
+          }
         });
         sendJsonWithHeaders(
           response,
@@ -802,8 +1863,25 @@ export function createSystemController({
           { "Set-Cookie": login.cookies }
         );
       } catch (error) {
+        const message = error instanceof Error ? error.message : "登录失败。";
+        consoleAuth.audit({
+          operationId: "auth.login",
+          action: "login",
+          method: "POST",
+          path: "/api/auth/login",
+          status: "failed",
+          target: loginInputSummary,
+          error: message
+        });
+        appendConsoleOperationLog({
+          operationId: "auth.login.session",
+          event: "console.auth.login.failed",
+          status: "failed",
+          input: loginInputSummary,
+          error: message
+        });
         sendJson(response, 401, {
-          error: error instanceof Error ? error.message : "登录失败。"
+          error: message
         });
       }
     },
@@ -820,6 +1898,17 @@ export function createSystemController({
         method: "POST",
         path: "/api/auth/logout",
         status: "ok"
+      });
+      appendConsoleOperationLog({
+        operationId: "auth.logout.session",
+        event: "console.auth.logout.succeeded",
+        authSession,
+        status: "ok",
+        input: {
+          userId: authSession?.user?.userId || "",
+          username: authSession?.user?.username || "",
+          roleId: authSession?.user?.roleId || ""
+        }
       });
       sendJsonWithHeaders(response, 200, { ok: true }, { "Set-Cookie": result.cookies });
     },
@@ -1348,6 +2437,7 @@ export function createSystemController({
     async handleSetMounts({ requestBody, response }) {
       const payload = requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
       const value = payload?.value || payload;
+      const currentSavedConfig = await loadMountConfig(userDataPath);
       const incomingMountModules =
         value?.mountModules && typeof value.mountModules === "object" && !Array.isArray(value.mountModules)
           ? value.mountModules
@@ -1359,12 +2449,43 @@ export function createSystemController({
       const nextMountRouting = {
         ...mergeMountRouting(runtime.runtimeOptions.mountRouting || {}, (value && value.mountRouting) || {})
       };
-      const savedConfig = await saveMountConfig(userDataPath, {
+      const candidateConfig = {
         mountModules: nextMountModules,
         mountRouting: nextMountRouting
-      });
+      };
       const settings = await loadSettings(userDataPath);
-      await runtime.applyMountConfig(savedConfig, { settings });
+      try {
+        await runtime.applyMountConfig(candidateConfig, { settings });
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "挂载配置不可用。",
+          value: currentSavedConfig,
+          runtime: {
+            mountGeneration: runtime.mountGeneration || 0,
+            mountModules: runtime.runtimeOptions.mountModules,
+            mountRouting: runtime.runtimeOptions.mountRouting
+          }
+        });
+        return;
+      }
+      let savedConfig;
+      try {
+        savedConfig = await saveMountConfig(userDataPath, candidateConfig);
+      } catch (error) {
+        await runtime.applyMountConfig(currentSavedConfig, { settings }).catch(() => {});
+        sendJson(response, 500, {
+          ok: false,
+          error: error instanceof Error ? error.message : "挂载配置持久化失败，运行态已回滚。",
+          value: currentSavedConfig,
+          runtime: {
+            mountGeneration: runtime.mountGeneration || 0,
+            mountModules: runtime.runtimeOptions.mountModules,
+            mountRouting: runtime.runtimeOptions.mountRouting
+          }
+        });
+        return;
+      }
       const result = {
         path: getMountConfigPath(userDataPath),
         paths: getMountConfigPaths(userDataPath),
@@ -1391,7 +2512,24 @@ export function createSystemController({
         ? await saveSettings(userDataPath, payload.settings, { redactSecrets: false })
         : await loadSettings(userDataPath);
       const savedConfig = await loadMountConfig(userDataPath);
-      await runtime.applyMountConfig(savedConfig, { settings });
+      try {
+        await runtime.applyMountConfig(savedConfig, { settings });
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "挂载配置不可用。",
+          value: savedConfig,
+          mountGeneration: runtime.mountGeneration || 0,
+          mountModules: runtime.runtimeOptions.mountModules,
+          mountRouting: runtime.runtimeOptions.mountRouting,
+          runtime: {
+            mountGeneration: runtime.mountGeneration || 0,
+            mountModules: runtime.runtimeOptions.mountModules,
+            mountRouting: runtime.runtimeOptions.mountRouting
+          }
+        });
+        return;
+      }
       const result = {
         ok: true,
         path: getMountConfigPath(userDataPath),
@@ -1554,53 +2692,177 @@ export function createSystemController({
       }
     },
     async handleGetSettings({ response }) {
-      const settings = await loadSettings(userDataPath, { redactSecrets: true });
+      const settings = await loadAgentRuntimeSettings({ redactSecrets: true });
       sendJson(response, 200, settings);
     },
-    async handleSetSettings({ requestBody, response }) {
+    async handleSetSettings({ requestBody, authSession, response }) {
       const settings = requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
-      const saved = await saveSettings(userDataPath, settings, {
+      const shouldAuditModelLibrary =
+        Object.hasOwn(settings, "modelLibraryAgents") ||
+        Object.hasOwn(settings, "modelLibraryEntries");
+      const explicitModelLibraryEntries = Object.hasOwn(settings, "modelLibraryEntries")
+        ? new Set(
+            (Array.isArray(settings.modelLibraryEntries) ? settings.modelLibraryEntries : [])
+              .map((entry) => String(entry || "").trim())
+              .filter(Boolean)
+          )
+        : null;
+      const incomingModelLibraryAgents =
+        Array.isArray(settings.modelLibraryAgents) && explicitModelLibraryEntries
+          ? settings.modelLibraryAgents.filter((agent) =>
+              explicitModelLibraryEntries.has(String(agent?.provider || "").trim())
+            )
+          : settings.modelLibraryAgents;
+      const beforeSettings = shouldAuditModelLibrary ? await loadAgentRuntimeSettings({ redactSecrets: true }) : null;
+      const beforeModelLibrarySummary = shouldAuditModelLibrary
+        ? normalizeModelLibraryAuditList(
+          (beforeSettings?.modelLibraryAgents || []).concat()
+        )
+        : null;
+      if (Array.isArray(incomingModelLibraryAgents)) {
+        await agentConfigRegistry.replaceFromModelLibraryAgents(incomingModelLibraryAgents);
+      }
+      const modelLibraryAgents = Array.isArray(incomingModelLibraryAgents)
+        ? incomingModelLibraryAgents
+        : agentConfigRegistry.getModelLibraryAgents();
+      const settingsToSave = { ...settings };
+      if (shouldAuditModelLibrary) {
+        settingsToSave.modelLibraryAgents = modelLibraryAgents;
+        settingsToSave.modelLibraryEntries = agentConfigRegistry.getModelLibraryEntries();
+        settingsToSave.modelLibraryAgentIds = agentConfigRegistry.getModelLibraryAgents().map((agent) => agent.uid).filter(Boolean);
+      }
+      const saved = await saveSettings(userDataPath, settingsToSave, {
         redactSecrets: false
       });
-      await runtime.refreshMounts({ settings: saved });
-      const redactedSettings = await loadSettings(userDataPath, { redactSecrets: true });
+      await agentConfigRegistry.refresh({ settingsFallback: saved });
+      const runtimeSettings = shouldAuditModelLibrary
+        ? {
+            ...saved,
+            modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents(),
+            modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries()
+          }
+        : saved;
+      await runtime.refreshMounts({ settings: runtimeSettings });
+      const redactedSettings = await loadAgentRuntimeSettings({ redactSecrets: true });
       await publishProtocolEvent(
         protocolEventBus,
         "settings.current",
         redactedSettings,
         { type: "settings.updated" }
       );
+      if (shouldAuditModelLibrary) {
+        const afterModelLibrarySummary = normalizeModelLibraryAuditList(modelLibraryAgents);
+        const modelLibraryDiff = diffModelLibraryAgents(
+          (beforeModelLibrarySummary?.items || []),
+          afterModelLibrarySummary.items || []
+        );
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.save",
+          event: "console.settings.model_library.saved",
+          authSession,
+          status: "ok",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            path: "/api/settings",
+            method: "POST",
+            settingsModelLibrary: {
+              before: beforeModelLibrarySummary || normalizeModelLibraryAuditList([]),
+              after: afterModelLibrarySummary,
+              diff: modelLibraryDiff
+            }
+          },
+          output: {
+            operation: "settings.set",
+            modelLibrarySaved: true,
+            savedCount: afterModelLibrarySummary.total,
+            addedCount: modelLibraryDiff.added.length,
+            removedCount: modelLibraryDiff.removed.length,
+            changedCount: modelLibraryDiff.changed.length
+          },
+          actor: authSession
+        });
+      }
       sendJson(response, 200, redactedSettings);
     },
-    async handleProbeModel({ requestBody, response }) {
+    async handleProbeModel({ requestBody, authSession, response }) {
       const payload = parseJsonBody(requestBody);
       const provider = String(payload.provider || payload.modelProvider || "").trim();
       const modelAlias = String(
         payload.modelAlias || payload.agentAlias || payload.agentId || payload.uid || ""
       ).trim();
-      const current = await loadSettings(userDataPath);
-      const candidateSettings = mergeSettingsForModelProbe(
-        current,
-        payload.settings || payload.value || {},
-        provider,
-        { modelAlias }
-      );
-      sendJson(
-        response,
-        200,
-        await (await loadModelProbeModule()).probeModelConnection({
+      const startedAt = Date.now();
+      let result;
+      let status = "ok";
+      let message = "";
+      try {
+        const current = await loadAgentRuntimeSettings();
+        const candidateSettings = mergeSettingsForModelProbe(
+          current,
+          payload.settings || payload.value || {},
+          provider,
+          { modelAlias }
+        );
+        result = await (await loadModelProbeModule()).probeModelConnection({
           provider,
           settings: candidateSettings,
           modelAlias,
           userDataPath
-        })
-      );
+        });
+      } catch (error) {
+        status = "failed";
+        message = error instanceof Error ? error.message : "模型探测失败。";
+        result = {
+          ok: false,
+          configured: false,
+          provider,
+          model: modelAlias,
+          statusCode: 0,
+          latencyMs: 0,
+          checkedAt: new Date().toISOString(),
+          message
+        };
+      }
+      appendConsoleOperationLog({
+        operationId: "settings.model_library.probe",
+        event: "console.settings.model_library.probe",
+        authSession,
+        status,
+        input: {
+          actor: {
+            userId: authSession?.user?.userId || "",
+            username: authSession?.user?.username || ""
+          },
+          method: "POST",
+          path: "/api/settings/model-probe",
+          provider,
+          modelAlias,
+          modelLibraryModelCount: normalizeModelLibraryAuditList((
+            payload.settings?.modelLibraryAgents || []
+          )).total
+        },
+        output: {
+          provider,
+          modelAlias,
+          ok: Boolean(result?.ok),
+          configured: Boolean(result?.configured),
+          latencyMs: Number(result?.latencyMs || 0),
+          statusCode: Number(result?.statusCode || 0),
+          message: result?.message || message || "",
+          checkedAt: result?.checkedAt || new Date().toISOString()
+        },
+        durationMs: Date.now() - startedAt,
+        actor: authSession
+      });
+      sendJson(response, 200, result);
     },
     async handleAgentGatewayConfig({ requestBody, response }) {
       const { publicAgentGatewayConfig } = await loadAgentGatewayModule();
       const method = requestBody.length > 0 ? "POST" : "GET";
       if (method === "GET") {
-        const settings = await loadSettings(userDataPath);
+        const settings = await loadAgentRuntimeSettings();
         sendJson(response, 200, {
           config: publicAgentGatewayConfig(settings)
         });
@@ -1608,7 +2870,7 @@ export function createSystemController({
       }
 
       const payload = parseJsonBody(requestBody);
-      const current = await loadSettings(userDataPath);
+      const current = await loadAgentRuntimeSettings();
       const adapterPatch = payload.value || payload.config || payload;
       const nextAdapter = {
         ...(current.customHttpAdapter || {}),
@@ -1623,7 +2885,7 @@ export function createSystemController({
           adapterPatch.alias || adapterPatch.modelAlias || current.customModelAlias,
         customHttpAdapter: nextAdapter
       });
-      const redactedSettings = await loadSettings(userDataPath, { redactSecrets: true });
+      const redactedSettings = await loadAgentRuntimeSettings({ redactSecrets: true });
       await publishProtocolEvent(
         protocolEventBus,
         "settings.current",
@@ -1631,36 +2893,58 @@ export function createSystemController({
         { type: "settings.updated" }
       );
       sendJson(response, 200, {
-        config: publicAgentGatewayConfig(saved)
+        config: publicAgentGatewayConfig({
+          ...saved,
+          modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents(),
+          modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries()
+        })
       });
     },
-    async handleAgentGatewayCall({ requestBody, response }) {
+    async handleAgentGatewayCall({ requestBody, response, authSession }) {
       const { callAgentGateway } = await loadAgentGatewayModule();
       const input = parseJsonBody(requestBody);
-      const settings = await loadSettings(userDataPath);
+      const workspaceApplied = applyWorkspaceRuntimeContext(
+        input,
+        agentWorkspace,
+        workspaceAccessOptions(authSession)
+      );
+      if (workspaceApplied.workspaceError) {
+        sendJson(response, workspaceApplied.workspaceError.status, {
+          error: workspaceApplied.workspaceError.error
+        });
+        return;
+      }
+      const settings = await loadAgentRuntimeSettings();
+      const result = await callAgentGateway({
+        settings,
+        input: workspaceApplied.input,
+        userDataPath,
+        contextRuntime,
+        contextCompactionSource: "api.agent_gateway.call",
+        clientRuntimeAllocator
+      });
       sendJson(
         response,
         200,
-        await callAgentGateway({
-          settings,
-          input,
-          userDataPath,
-          contextRuntime,
-          contextCompactionSource: "api.agent_gateway.call",
-          clientRuntimeAllocator
-        })
+        workspaceApplied.workspaceContext
+          ? {
+              ...result,
+              workspaceContext: workspaceApplied.workspaceContext
+            }
+          : result
       );
     },
     async handleAgentRegistry({ response }) {
       const { publicAgentGatewayRegistry } = await loadAgentGatewayModule();
-      const settings = await loadSettings(userDataPath);
+      const settings = await loadAgentRuntimeSettings();
       sendJson(response, 200, publicAgentGatewayRegistry(settings));
     },
-    async handleCreateAgent({ requestBody, response }) {
+    async handleCreateAgent({ requestBody, authSession, response }) {
+      const startedAt = Date.now();
       const patch = normalizeAgentModelPayload(parseJsonBody(requestBody));
       const provider = patch.provider || "deepseek";
       const model = patch.model || patch.engine || "";
-      const current = await loadSettings(userDataPath);
+      const current = await loadAgentRuntimeSettings();
       const fallbackLabel = `${provider} ${model}`.trim();
       const entry = {
         provider,
@@ -1674,23 +2958,104 @@ export function createSystemController({
         engine: Object.hasOwn(patch, "engine") ? patch.engine : model
       };
       const models = [entry, ...(current.modelLibraryAgents || [])];
-      const { registry } = await saveAgentModelLibrary(current, models);
-      const agent = registry.agents.find((item) => item.alias === entry.uid) || null;
-      sendJson(response, 200, {
-        ok: true,
-        action: "created",
-        agentId: entry.uid,
-        agent,
-        registry
-      });
+      try {
+        const { registry } = await saveAgentModelLibrary(current, models);
+        const agent = registry.agents.find((item) => item.alias === entry.uid) || null;
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.create",
+          event: "console.settings.model_library.created",
+          authSession,
+          status: "ok",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "POST",
+            path: "/api/agents",
+            agent: {
+              uid: entry.uid,
+              provider: entry.provider,
+              model: entry.model,
+              baseUrl: entry.baseUrl || entry.url || "",
+              label: entry.label || entry.agentName || ""
+            }
+          },
+          output: {
+            ok: true,
+            action: "created",
+            agentId: entry.uid,
+            registryVersion: registry.version || null,
+            savedCount: registry.agents?.length || 0
+          },
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 200, {
+          ok: true,
+          action: "created",
+          agentId: entry.uid,
+          agent,
+          registry
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "创建智能体模型配置失败。";
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.create",
+          event: "console.settings.model_library.create_failed",
+          authSession,
+          status: "failed",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "POST",
+            path: "/api/agents",
+            agent: {
+              provider,
+              model,
+              label: entry.label || entry.agentName || ""
+            }
+          },
+          error: message,
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 500, { error: message });
+      }
     },
-    async handleUpdateAgent({ agentId, requestBody, response }) {
+    async handleUpdateAgent({ agentId, requestBody, authSession, response }) {
+      const startedAt = Date.now();
       const patch = normalizeAgentModelPayload(parseJsonBody(requestBody));
-      const current = await loadSettings(userDataPath);
+      const current = await loadAgentRuntimeSettings();
       const models = [...(current.modelLibraryAgents || [])];
       const index = findAgentModelIndex(models, agentId);
       if (index < 0) {
-        sendJson(response, 404, { error: "智能体模型配置不存在。" });
+        const message = "智能体模型配置不存在。";
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.update",
+          event: "console.settings.model_library.update_failed",
+          authSession,
+          status: "failed",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "POST",
+            path: `/api/agents/${String(agentId || "")}`,
+            agentId: String(agentId || "")
+          },
+          error: message,
+          output: { notFound: true },
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 404, { error: message });
         return;
       }
       const previous = models[index];
@@ -1708,32 +3073,173 @@ export function createSystemController({
         next.engine = patch.model;
       }
       models[index] = next;
-      const { registry } = await saveAgentModelLibrary(current, models);
-      const agent = registry.agents.find((item) => item.alias === next.uid) || null;
-      sendJson(response, 200, {
-        ok: true,
-        action: "updated",
-        agentId: next.uid,
-        agent,
-        registry
-      });
+      try {
+        const { registry } = await saveAgentModelLibrary(current, models);
+        const agent = registry.agents.find((item) => item.alias === next.uid) || null;
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.update",
+          event: "console.settings.model_library.updated",
+          authSession,
+          status: "ok",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "POST",
+            path: `/api/agents/${String(agentId || "")}`,
+            previous: normalizeModelLibraryAgentAuditAgent(previous),
+            patch: sanitizeAgentPatchForLog(patch),
+            next: {
+              uid: next.uid,
+              provider: next.provider,
+              model: next.model || next.engine,
+              modelAlias: next.agentName || next.label || "",
+              baseUrl: next.baseUrl || next.url || ""
+            }
+          },
+          output: {
+            ok: true,
+            action: "updated",
+            agentId: next.uid,
+            registryVersion: registry.version || null,
+            savedCount: registry.agents?.length || 0
+          },
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 200, {
+          ok: true,
+          action: "updated",
+          agentId: next.uid,
+          agent,
+          registry
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "更新智能体模型配置失败。";
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.update",
+          event: "console.settings.model_library.update_failed",
+          authSession,
+          status: "failed",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "POST",
+            path: `/api/agents/${String(agentId || "")}`,
+            patch: sanitizeAgentPatchForLog(patch),
+            agentId: next.uid
+          },
+          output: {
+            ok: false,
+            action: "updated",
+            agentId: next.uid
+          },
+          error: message,
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 500, { error: message });
+      }
     },
-    async handleDeleteAgent({ agentId, response }) {
-      const current = await loadSettings(userDataPath);
+    async handleDeleteAgent({ agentId, authSession, response }) {
+      const startedAt = Date.now();
+      const current = await loadAgentRuntimeSettings();
       const models = [...(current.modelLibraryAgents || [])];
       const index = findAgentModelIndex(models, agentId);
+      const normalizedAgentId = String(agentId || "").trim();
       if (index < 0) {
-        sendJson(response, 404, { error: "智能体模型配置不存在。" });
+        const message = "智能体模型配置不存在。";
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.delete",
+          event: "console.settings.model_library.delete_failed",
+          authSession,
+          status: "failed",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "DELETE",
+            path: `/api/agents/${normalizedAgentId}`,
+            agentId: normalizedAgentId
+          },
+          error: message,
+          output: { notFound: true },
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 404, { error: message });
         return;
       }
       const [removed] = models.splice(index, 1);
-      const { registry } = await saveAgentModelLibrary(current, models);
-      sendJson(response, 200, {
-        ok: true,
-        action: "deleted",
-        agentId: removed.uid || removed.instanceId || removed.alias || String(agentId || ""),
-        registry
-      });
+      try {
+        const { registry } = await saveAgentModelLibrary(current, models);
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.delete",
+          event: "console.settings.model_library.deleted",
+          authSession,
+          status: "ok",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "DELETE",
+            path: `/api/agents/${normalizedAgentId}`,
+            agent: normalizeModelLibraryAgentAuditAgent(removed)
+          },
+          output: {
+            ok: true,
+            action: "deleted",
+            agentId: removed.uid || removed.instanceId || removed.alias || normalizedAgentId,
+            registryVersion: registry.version || null,
+            savedCount: registry.agents?.length || 0
+          },
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 200, {
+          ok: true,
+          action: "deleted",
+          agentId: removed.uid || removed.instanceId || removed.alias || String(agentId || ""),
+          registry
+        });
+      } catch (error) {
+        const removedAgentId = removed.uid || removed.instanceId || removed.alias || normalizedAgentId;
+        const message = error instanceof Error ? error.message : "删除智能体模型配置失败。";
+        appendConsoleOperationLog({
+          operationId: "settings.model_library.delete",
+          event: "console.settings.model_library.delete_failed",
+          authSession,
+          status: "failed",
+          risk: "content_write",
+          input: {
+            actor: {
+              userId: authSession?.user?.userId || "",
+              username: authSession?.user?.username || ""
+            },
+            method: "DELETE",
+            path: `/api/agents/${normalizedAgentId}`,
+            agentId: removedAgentId
+          },
+          output: {
+            ok: false,
+            action: "deleted",
+            agentId: removedAgentId
+          },
+          error: message,
+          durationMs: Date.now() - startedAt,
+          actor: authSession
+        });
+        sendJson(response, 500, { error: message });
+      }
     },
     async handleGetCodexOAuthStatus({ response }) {
       sendJson(response, 200, await getCodexOAuthStatus());
@@ -1836,6 +3342,341 @@ export function createSystemController({
     },
     async handleGetStorageSummary({ response }) {
       sendJson(response, 200, metadataStore.getStorageSummary());
+    },
+    async handleRebuildSourceVocabulary({ response }) {
+      const result = metadataStore.rebuildSourceVocabulary({
+        rules: await loadEmailRules(userDataPath)
+      });
+      await publishProtocolEvent(
+        protocolEventBus,
+        "storage.summary",
+        metadataStore.getStorageSummary(),
+        { type: "storage.summary.snapshot" }
+      );
+      sendJson(response, 200, result);
+    },
+    async handleGetSignificantSourceTerms({ requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      sendJson(response, 200, metadataStore.getSignificantSourceTerms(payload));
+    },
+    async handleKnowledgeWordClouds({ requestBody, url, response }) {
+      const payload = parseWordCloudRequestPayload(requestBody, url);
+      sendJson(response, 200, await metadataStore.getKnowledgeWordCloudState({
+        ...payload,
+        rules: await loadEmailRules(userDataPath)
+      }));
+    },
+    async handleGetKnowledgeWordBagTerms({ requestBody, url, response }) {
+      const payload = parseWordCloudRequestPayload(requestBody, url);
+      let result;
+      try {
+        result = await metadataStore.getKnowledgeWordBagTerms(payload);
+      } catch (error) {
+        sendWordCloudMutationError(response, error);
+        return;
+      }
+      sendJson(response, 200, result);
+    },
+    async handleSaveKnowledgeWordClouds({ requestBody, authSession, response }) {
+      const payload = parseJsonBody(requestBody);
+      const result = await metadataStore.saveKnowledgeWordCloudSet({
+        ...payload,
+        rules: await loadEmailRules(userDataPath)
+      });
+      const rawAuditAction = String(payload.auditAction || "").trim();
+      const auditAction = ["add", "remove", "clear", "save"].includes(rawAuditAction)
+        ? rawAuditAction
+        : rawAuditAction
+          ? "save"
+          : "";
+      const auditPaths = normalizeAuditCorpusPaths(payload.auditPaths || []);
+      if (auditAction) {
+        const corpusPaths = normalizeAuditCorpusPaths(result.wordBagSet?.corpusPaths || []);
+        appendConsoleOperationLog({
+          operationId: `knowledge.word_clouds.corpus_paths.${auditAction}`,
+          event: "knowledge.word_clouds.corpus_paths.changed",
+          authSession,
+          status: "ok",
+          risk: "content_write",
+          input: {
+            action: auditAction,
+            wordBagSetId: result.wordBagSet?.wordBagSetId || payload.wordBagSet?.wordBagSetId || "",
+            title: result.wordBagSet?.title || payload.wordBagSet?.title || "",
+            changedPathCount: auditPaths.length,
+            changedPaths: auditPaths,
+            corpusPathCount: corpusPaths.length,
+            corpusPathTypes: [...new Set(corpusPaths.map((item) => item.type || "unknown"))]
+          },
+          output: {
+            ok: true,
+            wordBagSetId: result.wordBagSet?.wordBagSetId || "",
+            corpusPathCount: corpusPaths.length
+          }
+        });
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        result,
+        { type: "knowledge.word_clouds.updated" }
+      );
+      sendJson(response, 200, result);
+    },
+    async handleExportKnowledgeWordClouds({ requestBody, url, response }) {
+      const payload = parseWordCloudRequestPayload(requestBody, url);
+      let result;
+      try {
+        result = await metadataStore.exportKnowledgeWordCloudSet(payload);
+      } catch (error) {
+        sendWordCloudMutationError(response, error);
+        return;
+      }
+      sendJson(response, 200, result);
+    },
+    async handleImportKnowledgeWordClouds({ requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      let result;
+      try {
+        result = await metadataStore.importKnowledgeWordCloudSet(payload);
+      } catch (error) {
+        sendWordCloudMutationError(response, error);
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        result,
+        { type: "knowledge.word_clouds.imported" }
+      );
+      sendJson(response, 201, result);
+    },
+    async handleAddKnowledgeWordBag({ requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      let result;
+      try {
+        result = await metadataStore.addKnowledgeWordBag(payload);
+      } catch (error) {
+        sendWordCloudMutationError(response, error);
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        result,
+        { type: "knowledge.word_clouds.word_bag.added" }
+      );
+      sendJson(response, 201, result);
+    },
+    async handleUpdateKnowledgeWordBag({ wordBagId, requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      let result;
+      try {
+        result = await metadataStore.updateKnowledgeWordBag({
+          ...payload,
+          wordBagId: payload.wordBagId || wordBagId
+        });
+      } catch (error) {
+        sendWordCloudMutationError(response, error);
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        result,
+        { type: "knowledge.word_clouds.word_bag.updated" }
+      );
+      sendJson(response, 200, result);
+    },
+    async handleDeleteKnowledgeWordBag({ wordBagId, requestBody, url, response }) {
+      const payload = parseWordCloudRequestPayload(requestBody, url);
+      let result;
+      try {
+        result = await metadataStore.deleteKnowledgeWordBag({
+          ...payload,
+          wordBagId: payload.wordBagId || wordBagId
+        });
+      } catch (error) {
+        sendWordCloudMutationError(response, error);
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        result,
+        { type: "knowledge.word_clouds.word_bag.deleted" }
+      );
+      sendJson(response, 200, result);
+    },
+    async handleProposeKnowledgeWordClouds({ requestBody, authSession, response }) {
+      const payload = parseJsonBody(requestBody);
+      const modelAlias = String(payload.modelAlias || "").trim();
+      if (!modelAlias) {
+        sendJson(response, 400, {
+          ok: false,
+          error: "请选择用于生成词云的智能体。"
+        });
+        return;
+      }
+      const prompt = String(payload.prompt || payload.message || "").trim();
+      if (!prompt) {
+        sendJson(response, 400, {
+          ok: false,
+          error: "请输入词云分组意图。"
+        });
+        return;
+      }
+      const corpusPaths = payload.corpusPaths || payload.corpusPath || [];
+      const rules = await loadEmailRules(userDataPath);
+      const minFrequency = clampRequestInteger(payload.minFrequency, 1, 1, 1000000000);
+      const candidateLimit = clampRequestInteger(payload.limit, 300, 20, 120000);
+      const modelTermLimit = clampRequestInteger(payload.modelTermLimit, 1800, 20, 120000);
+      let terms = metadataStore.listSourceCorpusRawTerms({
+        limit: 100000,
+        minFrequency,
+        corpusPaths,
+        rules
+      });
+      let rebuiltVocabulary = false;
+      if (terms.length === 0 && Array.isArray(corpusPaths) && corpusPaths.length > 0) {
+        const rebuildResult = metadataStore.rebuildSourceVocabulary({ rules });
+        rebuiltVocabulary = true;
+        terms = metadataStore.listSourceCorpusRawTerms({
+          limit: 100000,
+          minFrequency,
+          corpusPaths,
+          rules
+        });
+        appendConsoleOperationLog({
+          operationId: "knowledge.word_clouds.propose_scope_rebuild",
+          event: "knowledge.word_clouds.scope_rebuild",
+          authSession,
+          status: "ok",
+          risk: "repair_write",
+          input: {
+            modelAlias,
+            promptLength: prompt.length,
+            corpusPathCount: Array.isArray(corpusPaths) ? corpusPaths.length : 1,
+            scopeProvided: true,
+            corpusPaths,
+            rebuiltTermCount: rebuildResult?.sourceCorpusRawTermCount || 0
+          },
+          output: {
+            ok: true,
+            rebuiltCorpus: true,
+            rebuiltCount: Number(rebuildResult?.sourceCorpusRawTermCount || 0)
+          }
+        });
+      }
+      if (terms.length === 0) {
+        sendJson(response, 409, {
+          ok: false,
+          error: rebuiltVocabulary
+            ? "语料词频表已刷新，但这些语料范围还无话解析到可用文档。"
+            : "语料词频表为空，请先完成文档入库并重建语料词频。"
+        });
+        return;
+      }
+      const preprocessed = preprocessWordCloudVocabulary({
+        prompt,
+        rawTerms: terms,
+        termStats: metadataStore.listSourceVocabularyTermStats({
+          terms: terms.map((term) => term.term)
+        }),
+        limit: candidateLimit,
+        modelTermLimit,
+        minFrequency
+      });
+      const preprocessPayload = {
+        ok: preprocessed.ok !== false,
+        intentTerms: preprocessed.intentTerms || [],
+        targetTerms: (preprocessed.targetTerms || []).map((term) => ({
+          term: String(term.term || "").trim(),
+          frequency: Number(term.frequency || 0),
+          intentScore: Number(term.intentScore || 0),
+          weight: Number(term.weight || 0)
+        })),
+        lowQualityTerms: (preprocessed.lowQualityTerms || []).map((term) => ({
+          term: String(term.term || "").trim(),
+          frequency: Number(term.frequency || 0),
+          intentScore: Number(term.intentScore || 0),
+          weight: Number(term.weight || 0)
+        })),
+        summary: preprocessed.summary || {},
+        modelTermCount: Array.isArray(preprocessed.agentTerms)
+          ? preprocessed.agentTerms.length
+          : 0,
+        allTermCount: Array.isArray(preprocessed.allTerms) ? preprocessed.allTerms.length : 0
+      };
+      const now = new Date().toISOString();
+      const runId = serverToken("knowledge_word_cloud_run", modelAlias, prompt, now);
+      const queueId = serverToken("queue_item", "knowledge_word_cloud", runId);
+      const wordBagSetId = serverToken("knowledge_word_cloud_set", runId);
+      const candidateTerms = preprocessed.allTerms || [];
+      const modelInputTerms = preprocessed.agentTerms || candidateTerms;
+      const run = {
+        runId,
+        queueId,
+        wordBagSetId,
+        status: "queued",
+        modelAlias,
+        prompt,
+        termCount: candidateTerms.length,
+        sourceTermCount: terms.length,
+        modelTermCount: modelInputTerms.length,
+        preprocess: preprocessPayload,
+        promptHash: prompt ? hashClientString(prompt, "knowledge.word_cloud.prompt") : "",
+        startedAt: now
+      };
+      const queued = await metadataStore.saveKnowledgeWordCloudSet({
+        limit: candidateTerms.length || 1,
+        wordBagSet: {
+          wordBagSetId,
+          title: payload.title || "语料词云",
+          status: "queued",
+          wordBagCount: 0,
+          termsSnapshot: candidateTerms,
+          wordBags: [],
+          unassignedTerms: candidateTerms,
+          corpusPaths: payload.corpusPaths || payload.corpusPath || [],
+          modelAlias,
+          agentResponse: {
+            run,
+            preprocess: preprocessed
+          }
+        }
+      });
+      await queueMonitorStarted(queueMonitor, wordCloudQueueInput(run, {
+        phase: "queued",
+        status: "queued"
+      }));
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.word_clouds",
+        queued,
+        { type: "knowledge.word_clouds.queued" }
+      );
+      setImmediate(() => {
+        void runWordCloudClassificationTask({
+          userDataPath,
+          metadataStore,
+          protocolEventBus,
+          contextRuntime,
+          clientRuntimeAllocator,
+          queueMonitor,
+          run: { ...run, status: "running" },
+          terms: modelInputTerms,
+          prompt,
+          modelAlias,
+          preprocess: preprocessed
+        });
+      });
+      sendJson(response, 202, {
+        ok: true,
+        terms: candidateTerms,
+        preprocess: preprocessPayload,
+        run,
+        wordBagSet: queued.wordBagSet
+      });
     },
     async handleStorageDoctor({ response }) {
       sendJson(response, 200, await runStorageDoctor({ userDataPath }));
@@ -2083,6 +3924,34 @@ export function createSystemController({
       }
       sendJson(response, 503, {
         error: "知识库协议模块不可用。"
+      });
+    },
+    async handleKnowledgeDocxExport({ url, response }) {
+      const knowledgeCore = getKnowledgeCore(runtime);
+      if (knowledgeCore && typeof knowledgeCore.exportDocx === "function") {
+        const rawIncludeMachineReadable =
+          url.searchParams.get("includeMachineReadable") ||
+          url.searchParams.get("include-machine-readable");
+        const result = await knowledgeCore.exportDocx({
+          documentId: url.searchParams.get("documentId") || url.searchParams.get("document-id") || "",
+          batchId: url.searchParams.get("batchId") || url.searchParams.get("batch-id") || "",
+          sourceId: url.searchParams.get("sourceId") || url.searchParams.get("source-id") || "",
+          limit: Number(url.searchParams.get("limit") || 500),
+          includeMachineReadable: rawIncludeMachineReadable === null
+            ? true
+            : parseBooleanFlag(rawIncludeMachineReadable)
+        });
+        response.writeHead(200, {
+          "Content-Type": result.contentType,
+          "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
+          "Cache-Control": "no-store",
+          "X-SplitAll-Knowledge-Export": "docx"
+        });
+        response.end(result.buffer);
+        return;
+      }
+      sendJson(response, 503, {
+        error: "知识库 DOCX 导出模块不可用。"
       });
     },
     async handleKnowledgeHealth({ response }) {
@@ -2932,14 +4801,25 @@ export function createSystemController({
       }
       sendJson(response, 200, await clientRuntimeAllocator.getStatus());
     },
-    async handleContextPreview({ requestBody, response }) {
+    async handleContextPreview({ requestBody, response, authSession }) {
       if (!contextRuntime || typeof contextRuntime.preview !== "function") {
         sendJson(response, 503, {
           error: "上下文预览运行时不可用。"
         });
         return;
       }
-      sendJson(response, 200, await contextRuntime.preview(parseJsonBody(requestBody)));
+      const workspaceApplied = applyWorkspaceRuntimeContext(
+        parseJsonBody(requestBody),
+        agentWorkspace,
+        workspaceAccessOptions(authSession)
+      );
+      if (workspaceApplied.workspaceError) {
+        sendJson(response, workspaceApplied.workspaceError.status, {
+          error: workspaceApplied.workspaceError.error
+        });
+        return;
+      }
+      sendJson(response, 200, await contextRuntime.preview(workspaceApplied.input));
     },
     async handleContextCompactionPreview({ requestBody, response }) {
       if (!contextRuntime || typeof contextRuntime.previewCompaction !== "function") {
@@ -3012,7 +4892,7 @@ export function createSystemController({
       }
       sendJson(response, 201, await contextRuntime.runEvaluation(parseJsonBody(requestBody)));
     },
-    async handleAgentWorkspaces({ url, response }) {
+    async handleAgentWorkspaces({ url, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
           error: "智能体工作空间不可用。"
@@ -3025,11 +4905,12 @@ export function createSystemController({
         agentWorkspace.listWorkspaces({
           status: url.searchParams.get("status") || "",
           limit: Number(url.searchParams.get("limit") || 50),
-          includeSummary: parseBooleanFlag(url.searchParams.get("includeSummary") || "true")
+          includeSummary: parseBooleanFlag(url.searchParams.get("includeSummary") || "true"),
+          ...workspaceAccessOptions(authSession)
         })
       );
     },
-    async handleAgentWorkspace({ workspaceId, url, response }) {
+    async handleAgentWorkspace({ workspaceId, url, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
           error: "智能体工作空间不可用。"
@@ -3038,7 +4919,8 @@ export function createSystemController({
       }
       const result = agentWorkspace.getWorkspace({
         workspaceId,
-        includePrivate: parseBooleanFlag(url.searchParams.get("includePrivate") || url.searchParams.get("private") || "")
+        includePrivate: parseBooleanFlag(url.searchParams.get("includePrivate") || url.searchParams.get("private") || ""),
+        ...workspaceAccessOptions(authSession)
       });
       if (!result) {
         sendJson(response, 404, {
@@ -3048,7 +4930,7 @@ export function createSystemController({
       }
       sendJson(response, 200, result);
     },
-    async handleResolveAgentWorkspaceSubmission({ workspaceId, submissionId, requestBody, response }) {
+    async handleResolveAgentWorkspaceSubmission({ workspaceId, submissionId, requestBody, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
           error: "智能体工作空间不可用。"
@@ -3058,7 +4940,8 @@ export function createSystemController({
       const result = agentWorkspace.resolveSubmission({
         workspaceId,
         submissionId,
-        ...parseJsonBody(requestBody)
+        ...parseJsonBody(requestBody),
+        ...workspaceAccessOptions(authSession)
       });
       if (!result) {
         sendJson(response, 404, {
@@ -3068,7 +4951,7 @@ export function createSystemController({
       }
       sendJson(response, 200, result);
     },
-    async handleResolveAgentWorkspaceIssue({ workspaceId, issueId, requestBody, response }) {
+    async handleResolveAgentWorkspaceIssue({ workspaceId, issueId, requestBody, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
           error: "智能体工作空间不可用。"
@@ -3078,7 +4961,8 @@ export function createSystemController({
       const result = agentWorkspace.updateIssue({
         workspaceId,
         issueId,
-        ...parseJsonBody(requestBody)
+        ...parseJsonBody(requestBody),
+        ...workspaceAccessOptions(authSession)
       });
       if (!result) {
         sendJson(response, 404, {
@@ -3088,7 +4972,34 @@ export function createSystemController({
       }
       sendJson(response, 200, result);
     },
-    async handleAgentWorkspaceLocks({ workspaceId, url, response }) {
+    async handleCreateAgentWorkspace({ requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const body = parseJsonBody(requestBody);
+      const access = workspaceAccessOptions(authSession);
+      if (!body.title) return sendJson(response, 400, { error: "title 不能为空" });
+      const result = agentWorkspace.createWorkspace({
+        title: String(body.title || "").trim(),
+        objective: String(body.objective || "").trim(),
+        status: "active",
+        ownerUserId: access.actorUserId || body.ownerUserId || "",
+        metadata: body.metadata || {},
+      });
+      // If parentWorkspaceId is provided, set it right away
+      if (body.parentWorkspaceId && result.workspace?.workspaceId) {
+        const parentResult = agentWorkspace.setWorkspaceParent(
+          result.workspace.workspaceId,
+          body.parentWorkspaceId,
+          access
+        );
+        if (!parentResult.ok) {
+          return sendJson(response, 400, { error: parentResult.error });
+        }
+        result.workspace = parentResult.workspace;
+      }
+      sendJson(response, 201, result);
+    },
+
+    async handleAgentWorkspaceLocks({ workspaceId, url, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
           error: "智能体工作空间不可用。"
@@ -3100,11 +5011,12 @@ export function createSystemController({
         locks: agentWorkspace.listLocks({
           workspaceId,
           limit: Number(url.searchParams.get("limit") || 100),
-          includeExpired: parseBooleanFlag(url.searchParams.get("includeExpired") || "")
+          includeExpired: parseBooleanFlag(url.searchParams.get("includeExpired") || ""),
+          ...workspaceAccessOptions(authSession)
         })
       });
     },
-    async handleAgentWorkspaceLock({ workspaceId, requestBody, response }) {
+    async handleAgentWorkspaceLock({ workspaceId, requestBody, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
           error: "智能体工作空间不可用。"
@@ -3114,13 +5026,120 @@ export function createSystemController({
       const payload = parseJsonBody(requestBody);
       const action = String(payload.action || payload.operation || "acquire").trim();
       const result = action === "release"
-        ? agentWorkspace.releaseLock({ workspaceId, ...payload })
-        : agentWorkspace.acquireLock({ workspaceId, ...payload });
+        ? agentWorkspace.releaseLock({ workspaceId, ...payload, ...workspaceAccessOptions(authSession) })
+        : agentWorkspace.acquireLock({ workspaceId, ...payload, ...workspaceAccessOptions(authSession) });
       if (result?.ok === false) {
         sendJson(response, result.error === "lock_held" ? 409 : 400, result);
         return;
       }
       sendJson(response, 200, result);
+    },
+
+    // ── Workspace inheritance APIs ──────────────────────────────────────────
+
+    async handleGetWorkspaceContext({ workspaceId, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const result = agentWorkspace.getWorkspaceContext(workspaceId, workspaceAccessOptions(authSession));
+      if (!result) return sendJson(response, 404, { error: "工作空间不存在。" });
+      sendJson(response, 200, result);
+    },
+
+    async handleExportWorkspaceContextBundle({ workspaceId, url, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      if (typeof agentWorkspace.exportWorkspaceContextBundle !== "function") {
+        return sendJson(response, 503, { error: "工作空间上下文打包不可用。" });
+      }
+      const format = String(url.searchParams.get("format") || "").trim().toLowerCase();
+      const compressedOnly =
+        format === "compressed" ||
+        parseBooleanFlag(url.searchParams.get("compressedOnly") || url.searchParams.get("compressed-only") || "");
+      const result = agentWorkspace.exportWorkspaceContextBundle(workspaceId, {
+        ...workspaceAccessOptions(authSession),
+        compress: !["0", "false", "none"].includes(String(url.searchParams.get("compress") || "true").toLowerCase()),
+        includeBundle: !compressedOnly,
+        includePrivate: parseBooleanFlag(url.searchParams.get("includePrivate") || url.searchParams.get("include-private") || ""),
+        maxItems: Number(url.searchParams.get("maxItems") || url.searchParams.get("max-items") || 12),
+        contentPreviewChars: Number(
+          url.searchParams.get("contentPreviewChars") ||
+            url.searchParams.get("content-preview-chars") ||
+            600
+        )
+      });
+      if (!result) return sendJson(response, 404, { error: "工作空间不存在。" });
+      sendJson(response, 200, result);
+    },
+
+    async handleRestoreWorkspaceContextBundle({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      if (typeof agentWorkspace.restoreWorkspaceContextBundle !== "function") {
+        return sendJson(response, 503, { error: "工作空间上下文恢复不可用。" });
+      }
+      const result = agentWorkspace.restoreWorkspaceContextBundle(
+        workspaceId,
+        parseJsonBody(requestBody),
+        workspaceAccessOptions(authSession)
+      );
+      sendJson(response, result.ok ? 200 : 400, result);
+    },
+
+    async handleGetWorkspaceChain({ workspaceId, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      try {
+        if (!agentWorkspace.getWorkspace({ workspaceId, includeRuns: false, ...workspaceAccessOptions(authSession) })) {
+          return sendJson(response, 404, { error: "工作空间不存在。" });
+        }
+        const chain = agentWorkspace.resolveWorkspaceChain(workspaceId);
+        if (!chain.length) return sendJson(response, 404, { error: "工作空间不存在。" });
+        const sourceIds = agentWorkspace.resolveWorkspaceSourceIds(workspaceId);
+        const profile = agentWorkspace.resolveWorkspaceProfile(workspaceId);
+        sendJson(response, 200, { chain, resolvedSourceIds: sourceIds, resolvedProfile: profile });
+      } catch (err) {
+        sendJson(response, 400, { error: err.message });
+      }
+    },
+
+    async handleSetWorkspaceParent({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const { parentWorkspaceId = null } = parseJsonBody(requestBody);
+      const result = agentWorkspace.setWorkspaceParent(
+        workspaceId,
+        parentWorkspaceId || null,
+        workspaceAccessOptions(authSession)
+      );
+      sendJson(response, result.ok ? 200 : 400, result);
+    },
+
+    async handleHotSwapWorkspaceProfile({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const profilePatch = parseJsonBody(requestBody);
+      const result = agentWorkspace.hotSwapProfile(workspaceId, profilePatch, workspaceAccessOptions(authSession));
+      sendJson(response, result.ok ? 200 : 400, result);
+    },
+
+    async handleSetWorkspaceOwnedSources({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const { sourceIds = [] } = parseJsonBody(requestBody);
+      const result = agentWorkspace.setOwnedSourceIds(workspaceId, sourceIds, workspaceAccessOptions(authSession));
+      sendJson(response, result.ok ? 200 : 400, result);
+    },
+
+    async handleShareWorkspace({ workspaceId, targetWorkspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const body = parseJsonBody(requestBody);
+      // workspaceId = the one granting access; targetWorkspaceId = the one receiving
+      const target = targetWorkspaceId || body.targetWorkspaceId;
+      if (!target) return sendJson(response, 400, { error: "缺少 targetWorkspaceId" });
+      const result = agentWorkspace.shareWorkspace(workspaceId, target, workspaceAccessOptions(authSession));
+      sendJson(response, result.ok ? 200 : 400, result);
+    },
+
+    async handleUnshareWorkspace({ workspaceId, targetWorkspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace) return sendJson(response, 503, { error: "智能体工作空间不可用。" });
+      const body = parseJsonBody(requestBody);
+      const target = targetWorkspaceId || body.targetWorkspaceId;
+      if (!target) return sendJson(response, 400, { error: "缺少 targetWorkspaceId" });
+      const result = agentWorkspace.unshareWorkspace(workspaceId, target, workspaceAccessOptions(authSession));
+      sendJson(response, result.ok ? 200 : 400, result);
     },
     async handleKnowledgeSummarizationRun({ requestBody, response }) {
       if (!summarizationRuntime) {
@@ -3199,7 +5218,7 @@ export function createSystemController({
       }
       sendJson(response, 200, result);
     },
-    async handleKnowledgeSearch({ requestBody, url, response }) {
+    async handleKnowledgeSearch({ requestBody, url, response, authSession }) {
       let payload = parseKnowledgeSearchInput({ requestBody, url });
       if (payload?.rawSourceSearch === true || payload?.sourceSearch === true) {
         const result = await searchSourceFiles({
@@ -3213,7 +5232,6 @@ export function createSystemController({
       }
       const knowledgeCore = getKnowledgeCore(runtime);
       if (knowledgeCore && typeof knowledgeCore.search === "function") {
-        const query = payload?.query || payload?.q || "";
         const allocationResult = typeof clientRuntimeAllocator?.apply === "function"
           ? await clientRuntimeAllocator.apply(payload, {
               taskType: "knowledge.search",
@@ -3221,6 +5239,19 @@ export function createSystemController({
             })
           : null;
         payload = allocationResult?.input || payload;
+        const workspaceApplied = applyWorkspaceRuntimeContext(
+          payload,
+          agentWorkspace,
+          workspaceAccessOptions(authSession)
+        );
+        if (workspaceApplied.workspaceError) {
+          sendJson(response, workspaceApplied.workspaceError.status, {
+            error: workspaceApplied.workspaceError.error
+          });
+          return;
+        }
+        payload = workspaceApplied.input;
+        const query = payload?.query || payload?.q || "";
         const hierarchyReasoning =
           payload?.hierarchyReasoning === true ||
           payload?.retrievalProfile?.hierarchyReasoningEnabled === true ||
@@ -3231,6 +5262,7 @@ export function createSystemController({
             ? await knowledgeCore.prepareHierarchyReasoning({
                 query,
                 batchId: payload?.batchId || "",
+                sourceIds: payload?.scopeSourceIds || payload?.sourceIds || [],
                 limit: payload?.limit || 20,
                 modelEnabled: payload?.modelEnabled === true,
                 modelDecisionRuntime
@@ -3257,12 +5289,16 @@ export function createSystemController({
           localQuery: payload?.localQuery || payload?.localQueryResult || payload?.localQueryResults || null,
           localHits: payload?.localHits || payload?.localMirrorHits || payload?.sourceHits || [],
           clientId: payload?.clientId || payload?.client_id || "",
+          scopeSourceIds: payload?.scopeSourceIds || payload?.sourceIds || [],
           learningEnabled: payload?.learningEnabled !== false,
           explain: Boolean(payload?.explain),
           modalityPolicy: "multimodal"
         });
         if (allocationResult?.allocation) {
           result.clientRuntimeAllocation = allocationResult.allocation;
+        }
+        if (workspaceApplied.workspaceContext) {
+          result.workspaceContext = workspaceApplied.workspaceContext;
         }
         if (
           String(payload?.format || "").toLowerCase() === "markdown" &&
@@ -3446,5 +5482,15 @@ export function createSystemController({
       });
     }
   };
+  setImmediate(() => {
+    void resumeWordCloudClassificationTasks({
+      userDataPath,
+      metadataStore,
+      protocolEventBus,
+      contextRuntime,
+      clientRuntimeAllocator,
+      queueMonitor
+    });
+  });
   return controller;
 }

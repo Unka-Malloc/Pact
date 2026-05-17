@@ -1,4 +1,4 @@
-import { uniqueNormalizedStrings } from "../../specialized/knowledge/domain/rules/index.mjs";
+import { uniqueNormalizedStrings } from "../../specialized/knowledge/preprocessing/domain/rules/index.mjs";
 
 export function asJson(value) {
   return JSON.stringify(value ?? []);

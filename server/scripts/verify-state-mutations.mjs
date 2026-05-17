@@ -29,7 +29,7 @@ async function assertStaticStateGuard() {
   const guardedFiles = [
     "server/platform/common/platform-core/settings.mjs",
     "server/services/client/work-queue-core/jobs/job-manager.mjs",
-    "server/platform/specialized/knowledge/domain/rules/expert-vocabulary.mjs",
+    "server/platform/specialized/knowledge/preprocessing/domain/rules/expert-vocabulary.mjs",
     "server/protocols/pubsub/event-bus.mjs"
   ];
   if (await pathExists("server/services/agent/maintenance-agent/config.mjs")) {

@@ -118,7 +118,7 @@ async function createBuiltinPdfProcessorMount() {
 }
 
 async function createBuiltinKnowledgeCoreMount(userDataPath, runtimeOptions = {}) {
-  const { createKnowledgeCoreMount } = await import("../../specialized/knowledge/datastore/knowledge-core/index.mjs");
+  const { createKnowledgeCoreMount } = await import("../../specialized/knowledge/storage/knowledge-core/index.mjs");
   return createKnowledgeCoreMount({
     userDataPath,
     outlineEnabled: isMountRuntimeFeatureActive(runtimeOptions, "knowledge-outline-reasoning")
@@ -290,6 +290,38 @@ function buildPostCommitHooks(mounts) {
     }));
 }
 
+function mountSupportsRouteAction(mount, action = "") {
+  if (action === "extractDocument") {
+    return typeof mount?.extractDocument === "function" || typeof mount?.extractText === "function";
+  }
+  if (action === "extractText") {
+    return typeof mount?.extractText === "function" || typeof mount?.extractDocument === "function";
+  }
+  return Boolean(action && typeof mount?.[action] === "function");
+}
+
+function validateMountRoutingCapabilities(mounts = {}, mountRouting = {}) {
+  const routeEntries = [
+    ...Object.entries(mountRouting.kindRoutes || {}).map(([key, route]) => ["kind", key, route]),
+    ...Object.entries(mountRouting.extensionRoutes || {}).map(([key, route]) => ["extension", key, route]),
+    ...Object.entries(mountRouting.mediaTypeRoutes || {}).map(([key, route]) => ["mediaType", key, route])
+  ];
+  for (const [routeType, routeKey, route] of routeEntries) {
+    const mountName = String(route?.mountName || "").trim();
+    const action = String(route?.action || "extractDocument").trim() || "extractDocument";
+    if (!mountName) {
+      continue;
+    }
+    const mount = mounts[mountName];
+    if (!mount) {
+      throw new Error(`挂载路由 ${routeType}:${routeKey} 指向未加载模块 ${mountName}。`);
+    }
+    if (!mountSupportsRouteAction(mount, action)) {
+      throw new Error(`挂载路由 ${routeType}:${routeKey} 指向的 ${mountName} 不支持 ${action}。`);
+    }
+  }
+}
+
 async function closeMounts(mounts = {}) {
   await Promise.all(
     Object.values(mounts).map(async (mount) => {
@@ -392,10 +424,12 @@ export async function createMountManager({ userDataPath, runtimeOptions = {} }) 
         return [mountName, mount];
       })
     );
+    const mounts = Object.fromEntries(mountEntries);
+    validateMountRoutingCapabilities(mounts, nextRuntimeOptions.mountRouting || {});
 
     return {
       generation: nextGeneration,
-      mounts: Object.fromEntries(mountEntries)
+      mounts
     };
   }
 

@@ -4,7 +4,7 @@ import {
   normalizeWhitespace,
   truncateText,
   uniqueNormalizedStrings
-} from "../../specialized/knowledge/domain/rules/index.mjs";
+} from "../../specialized/knowledge/preprocessing/domain/rules/index.mjs";
 
 const KNOWLEDGE_ITEM_TYPES = new Set([
   "transaction",

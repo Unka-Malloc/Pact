@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -171,16 +172,20 @@ try {
   const bootstrap = await postJson(server.url, "/api/auth/bootstrap", {});
   assert.equal(bootstrap.status, 410);
 
-  const ownerPassword = server.initialOwner?.password || "";
+  const ownerCredentials = await readInitialOwnerCredentials(server);
+  const ownerPassword = ownerCredentials.password;
   assert.ok(ownerPassword);
+  assert.ok(ownerCredentials.credentialsPath);
+  await fs.access(ownerCredentials.credentialsPath);
   await assert.rejects(
     fs.access(path.join(userDataPath, "auth", "initial-owner-password.txt"))
   );
-  const owner = await login(server.url, "owner", ownerPassword);
+  const owner = await login(server.url, ownerCredentials.username, ownerPassword);
   const ownerCookie = owner.cookie;
   const ownerCsrf = owner.csrf;
   assert.ok(ownerCookie.includes("splitall_console_session="));
   assert.ok(ownerCsrf);
+  await assert.rejects(fs.access(ownerCredentials.credentialsPath));
 
   const headerSessionBypass = await requestJson(`${server.url}/api/knowledge/console`, {
     headers: {

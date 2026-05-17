@@ -43,7 +43,7 @@ function runCommand(command, args, options = {}) {
 }
 
 console.log("Building SplitAll server console...");
-await runCommand("npm", ["run", "build:renderer"]);
+await runCommand("npm", ["run", "build:renderer:raw"]);
 
 const passthroughArgs = process.argv.slice(2);
 const startupArgs = new Set(passthroughArgs);

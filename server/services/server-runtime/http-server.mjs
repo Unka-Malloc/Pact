@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import os from "node:os";
@@ -26,7 +27,9 @@ import {
 } from "../../platform/interactive/composition-root.mjs";
 import { createToolManagementPlatform } from "../../platform/specialized/agent/agent-tools/tool-management-core/index.mjs";
 import { createServerRuntimeProviders } from "../../platform/interactive/server-runtime-providers.mjs";
-import { createContextRuntime } from "../../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createContextRuntime } from "../../platform/specialized/agent/agent-context/interface/index.mjs";
+import { createAgentMemory } from "../../platform/specialized/agent/agent-memory/index.mjs";
+import { getAgentConfigRegistry } from "../../platform/specialized/agent/agent-configs/config-registry.mjs";
 import { loadSettings } from "../../platform/common/platform-core/settings.mjs";
 import {
   loadDiscoveryConfig,
@@ -135,11 +138,27 @@ async function proxyApiRequest({
           timeout: 30_000
         },
         (upstreamResponse) => {
+          // H-2: cap proxy response body to prevent memory exhaustion DoS
+          const MAX_PROXY_BYTES = 64 * 1024 * 1024; // 64 MB
           const chunks = [];
+          let totalBytes = 0;
+          let aborted = false;
           upstreamResponse.on("data", (chunk) => {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            if (aborted) return;
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            totalBytes += buf.length;
+            if (totalBytes > MAX_PROXY_BYTES) {
+              aborted = true;
+              upstreamResponse.destroy();
+              reject(new Error(
+                `上游响应体超过最大限制 ${MAX_PROXY_BYTES / 1024 / 1024} MB。`
+              ));
+              return;
+            }
+            chunks.push(buf);
           });
           upstreamResponse.on("end", () => {
+            if (aborted) return;
             resolve({
               status: upstreamResponse.statusCode || 502,
               headers: upstreamResponse.headers,
@@ -231,7 +250,7 @@ async function handleStaticFallback({ url, response, distPath, discoveryState })
   response.end(fallback);
 }
 
-function applySecurityHeaders(response) {
+function applySecurityHeaders(response, { isHttps = false } = {}) {
   if (response.headersSent) {
     return;
   }
@@ -240,6 +259,23 @@ function applySecurityHeaders(response) {
   response.setHeader("Referrer-Policy", "same-origin");
   response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'", // Vue runtime needs inline scripts
+      "style-src 'self' 'unsafe-inline'",  // Element Plus uses inline styles
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ].join("; ")
+  );
+  if (isHttps) {
+    response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
 }
 
 function resolveConsoleAuthEnabled({ runtimeOptions = {} }) {
@@ -301,6 +337,9 @@ export async function startHttpServer({
     component: "server"
   });
   setRuntimeLogger(runtimeLogger);
+  await getAgentConfigRegistry().refresh({
+    settingsFallback: await loadSettings(userDataPath)
+  });
   runtimeLogger.info("server.start.requested", {
     host,
     port,
@@ -356,10 +395,28 @@ export async function startHttpServer({
     consoleAuth,
     enabled: consoleAuthEnabled
   });
+  let initialCredentialsPath = "";
   if (initialOwner.created) {
+    // H-1: write credentials to a file with mode 0600 instead of printing them to stdout
+    // (stdout is captured by all process supervisors / log aggregators)
+    const credsPath = path.join(userDataPath, "auth", "initial-credentials.txt");
+    initialCredentialsPath = credsPath;
+    const credsContent = [
+      "SplitAll Console Initial Credentials",
+      "=====================================",
+      `Username : ${initialOwner.username}`,
+      `Password : ${initialOwner.password}`,
+      "",
+      "This file is created only once. After your first successful login it will be",
+      "automatically deleted. Keep it confidential; it will not be shown again.",
+      `Change/reset: npm run server:auth -- set-password --username owner --generate-password`,
+      "",
+      `Generated : ${new Date().toISOString()}`,
+    ].join("\n");
+    fsSync.writeFileSync(credsPath, credsContent, { mode: 0o600 });
     console.log(`Console initial owner username: ${initialOwner.username}`);
-    console.log(`Console initial owner password: ${initialOwner.password}`);
-    console.log("Console initial owner password is shown once and is not written to disk.");
+    console.log(`Console initial owner credentials written to: ${credsPath}`);
+    console.log("File will be deleted automatically after the first successful login.");
     console.log("Change/reset it with: npm run server:auth -- set-password --username owner --generate-password");
   }
   const jobManager =
@@ -387,8 +444,10 @@ export async function startHttpServer({
     acknowledge: (alertId) => acknowledgeQueueMonitorAlert(userDataPath, alertId)
   };
   const clientRuntimeAllocator = createClientRuntimeAllocator({ userDataPath });
+  const agentMemory = createAgentMemory({ userDataPath });
   const contextRuntime = createContextRuntime({
     userDataPath,
+    agentMemory,
     clientRuntimeAllocator,
     agentGatewayCall: async (input = {}) => callAgentGatewayIfAvailable(input, {
       settings: await loadSettings(userDataPath)
@@ -479,6 +538,7 @@ export async function startHttpServer({
     summarizationRuntime,
     agentExplorationRuntime,
     clientRuntimeAllocator,
+    queueMonitor: queueMonitorAdapter,
     checkpointTreeApi: {
       checkpointTreeSummary,
       listCheckpointTrees,
@@ -509,9 +569,73 @@ export async function startHttpServer({
   });
   toolManagementPlatformRef = toolManagementPlatform;
 
+  // ── H-3: IP-level rate limiting ─────────────────────────────────────────
+  const ipRateLimiter = (() => {
+    const buckets = new Map();
+    const WINDOW_MS = 60_000;
+    const MAX_REQ = 120;          // general: 120 req/min per IP
+    const AUTH_MAX_REQ = 15;      // auth endpoints: 15 req/min per IP
+    const AUTH_PATHS = new Set(["/api/auth/login", "/api/rpc"]);
+    const pruner = setInterval(() => {
+      const now = Date.now();
+      for (const [k, b] of buckets) if (now >= b.resetAt) buckets.delete(k);
+    }, WINDOW_MS).unref();
+    return {
+      check(ip, pathname) {
+        const isAuth = AUTH_PATHS.has(pathname);
+        const key = `${isAuth ? "a" : "r"}:${ip}`;
+        const limit = isAuth ? AUTH_MAX_REQ : MAX_REQ;
+        const now = Date.now();
+        let b = buckets.get(key);
+        if (!b || now >= b.resetAt) { b = { count: 0, resetAt: now + WINDOW_MS }; buckets.set(key, b); }
+        b.count++;
+        return b.count > limit
+          ? { allowed: false, retryAfterMs: b.resetAt - now }
+          : { allowed: true };
+      },
+      destroy() { clearInterval(pruner); }
+    };
+  })();
+
+  // ── H-4: in-flight request tracker for graceful drain ───────────────────
+  let inFlightCount = 0;
+  const drainCallbacks = [];
+  function incrementInflight() { inFlightCount++; }
+  function decrementInflight() {
+    inFlightCount--;
+    if (inFlightCount <= 0) drainCallbacks.splice(0).forEach((cb) => cb());
+  }
+  function waitForDrain(timeoutMs = 30_000) {
+    if (inFlightCount <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const t = setTimeout(() => {
+        const i = drainCallbacks.indexOf(resolve);
+        if (i >= 0) drainCallbacks.splice(i, 1);
+        resolve();
+      }, timeoutMs);
+      drainCallbacks.push(() => { clearTimeout(t); resolve(); });
+    });
+  }
+
   const server = http.createServer(async (request, response) => {
     const requestId = randomUUID();
     const startedAt = Date.now();
+
+    // H-3: rate limit check (before any work)
+    const remoteIp = request.socket?.remoteAddress || "";
+    try {
+      const urlForRate = new URL(request.url || "/", "http://x");
+      const rl = ipRateLimiter.check(remoteIp, urlForRate.pathname);
+      if (!rl.allowed) {
+        response.writeHead(429, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)),
+          "Cache-Control": "no-store"
+        });
+        response.end(JSON.stringify({ error: "请求过于频繁，请稍后重试。" }));
+        return;
+      }
+    } catch { /* ignore malformed URL — let main handler deal with it */ }
     const traceContext = createTraceContext({
       requestId,
       transport: "http",
@@ -558,9 +682,13 @@ export async function startHttpServer({
         durationMs: Date.now() - startedAt
       });
     });
+    // H-4: track in-flight to enable graceful drain before DB close
+    incrementInflight();
+    try {
     await runWithTraceContext(traceContext, async () => {
     try {
-      applySecurityHeaders(response);
+      const isHttps = Boolean(request.socket?.encrypted);
+      applySecurityHeaders(response, { isHttps });
       const method = request.method || "GET";
       const url = new URL(request.url || "/", "http://127.0.0.1");
       runtimeLogger.info("http.request.started", {
@@ -638,6 +766,7 @@ export async function startHttpServer({
         discoveryState
       });
     } catch (error) {
+      const statusCode = typeof error?.statusCode === "number" ? error.statusCode : 500;
       runtimeLogger.error("http.request.failed", {
         traceId: traceContext.traceId,
         requestId,
@@ -649,16 +778,23 @@ export async function startHttpServer({
             return request.url || "/";
           }
         })(),
+        statusCode,
         durationMs: Date.now() - startedAt,
         error: summarizeError(error)
       });
       const message = error instanceof Error ? error.message : "Internal error";
-      sendJson(response, 500, {
-        error: message
-      });
+      if (!response.headersSent) {
+        sendJson(response, statusCode, { error: message });
+      }
     }
     });
+    } finally {
+      // H-4: decrement in-flight counter so graceful shutdown can drain
+      decrementInflight();
+    }
   });
+  // M-9: limit concurrent connections to prevent file-descriptor exhaustion DoS
+  server.maxConnections = 2000;
   const openSockets = new Set();
   server.on("connection", (socket) => {
     openSockets.add(socket);
@@ -792,64 +928,61 @@ export async function startHttpServer({
     port: address.port,
     url: listenUrl,
     discovery: discoveryState,
+    // H-1: do NOT expose the raw password in the handle object
     initialOwner: initialOwner.created
-      ? {
-          created: true,
-          username: initialOwner.username,
-          password: initialOwner.password
-        }
+      ? { created: true, username: initialOwner.username, credentialsPath: initialCredentialsPath }
       : { created: false },
-    close: () =>
-      new Promise((resolve, reject) => {
-        runtimeLogger.info("server.close.started", {
-          openSocketCount: openSockets.size
-        });
-        for (const socket of openSockets) {
-          socket.destroy();
+    close: async () => {
+      // H-4: Graceful drain — stop accepting connections, wait for in-flight
+      // handlers to finish (max 30 s), THEN close databases.
+      runtimeLogger.info("server.close.started", {
+        openSocketCount: openSockets.size,
+        inFlightCount
+      });
+
+      // Stop accepting new connections (fire-and-forget; we drain explicitly)
+      server.close(() => {});
+
+      // Destroy idle keep-alive sockets so the server stops accepting faster
+      for (const socket of openSockets) {
+        socket.destroy();
+      }
+
+      // Wait for all in-flight request handlers to complete
+      await waitForDrain(30_000);
+      ipRateLimiter.destroy();
+
+      try {
+        if (ownsJobManager) {
+          await jobManager.close();
         }
-        server.close(async (error) => {
-          try {
-            if (ownsJobManager) {
-              await jobManager.close();
-            }
-            if (typeof maintenanceAgent?.close === "function") {
-              await maintenanceAgent.close();
-            }
-            if (typeof knowledgeSourceService?.close === "function") {
-              await knowledgeSourceService.close();
-            }
-            if (typeof agentWorkspace?.close === "function") {
-              agentWorkspace.close();
-            }
-            if (typeof knowledgeSkillRuntime?.close === "function") {
-              knowledgeSkillRuntime.close();
-            }
-            toolManagementPlatform.close();
-            await runtime.close();
-            consoleAuth.close();
-            operationAuditStore.close();
+        if (typeof maintenanceAgent?.close === "function") {
+          await maintenanceAgent.close();
+        }
+        if (typeof knowledgeSourceService?.close === "function") {
+          await knowledgeSourceService.close();
+        }
+        if (typeof agentWorkspace?.close === "function") {
+          agentWorkspace.close();
+        }
+        if (typeof knowledgeSkillRuntime?.close === "function") {
+          knowledgeSkillRuntime.close();
+        }
+        toolManagementPlatform.close();
+        await runtime.close();
+        consoleAuth.close();
+        operationAuditStore.close();
 
-            if (error) {
-              runtimeLogger.error("server.close.failed", {
-                error: summarizeError(error)
-              });
-              await runtimeLogger.close();
-              reject(error);
-              return;
-            }
-
-            runtimeLogger.info("server.close.completed", {});
-            await runtimeLogger.close();
-            resolve();
-          } catch (closeError) {
-            runtimeLogger.error("server.close.failed", {
-              error: summarizeError(closeError)
-            });
-            await runtimeLogger.close();
-            reject(closeError);
-          }
+        runtimeLogger.info("server.close.completed", {});
+        await runtimeLogger.close();
+      } catch (closeError) {
+        runtimeLogger.error("server.close.failed", {
+          error: summarizeError(closeError)
         });
-      })
+        await runtimeLogger.close();
+        throw closeError;
+      }
+    }
   };
 }
 

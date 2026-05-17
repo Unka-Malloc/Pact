@@ -101,10 +101,34 @@ async function assertRuntimeProvidersOwnProviderImports() {
   }
 }
 
+async function assertAgentCapabilityAuditCoversMainline() {
+  const file = "docs/AGENT-CAPABILITY-AUDIT.md";
+  const text = await read(file);
+  for (const needle of [
+    "OpenCode",
+    "LangChain Deep Agents",
+    "OpenClaw",
+    "Hermes Agent",
+    "AgentWorkspace",
+    "ContextRuntime",
+    "AgentGateway",
+    "Tool Management",
+    "AgentMemory",
+    "knowledge-retrieval-quality",
+    "workspace-context-bundle",
+    "runtime.mounts.reload",
+    "不修改词云",
+    "不复制外部实现代码"
+  ]) {
+    assertTextIncludes(text, needle, `${file} must keep agent capability audit evidence for ${needle}`);
+  }
+}
+
 async function main() {
   await assertHttpServerUsesCompositionRoot();
   await assertCompositionRootOwnsAssembly();
   await assertRuntimeProvidersOwnProviderImports();
+  await assertAgentCapabilityAuditCoversMainline();
 }
 
 await main();

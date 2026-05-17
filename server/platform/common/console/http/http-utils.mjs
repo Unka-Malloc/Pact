@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveWithin } from "../../platform-core/security/client-strings.mjs";
 
 const CONTENT_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -41,10 +42,21 @@ export function contentDispositionFileName(value) {
   return String(value || "download.bin").replace(/["\r\n]/g, "_");
 }
 
-export async function readRequestBody(request) {
+const DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024; // 32 MB
+
+export async function readRequestBody(request, maxBytes = DEFAULT_MAX_BODY_BYTES) {
   const chunks = [];
+  let total = 0;
 
   for await (const chunk of request) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      // Drain and discard so the socket stays clean.
+      request.resume();
+      const err = new Error(`请求体过大，最大允许 ${Math.round(maxBytes / 1024 / 1024)} MB。`);
+      err.statusCode = 413;
+      throw err;
+    }
     chunks.push(chunk);
   }
 
@@ -66,11 +78,15 @@ export async function serveStaticFile(response, distPath, pathname) {
   }
 
   const normalizedPath = pathname === "/" || pathname === "/console" ? "/index.html" : pathname;
-  const relativePath = path
-    .normalize(normalizedPath)
-    .replace(/^(\.\.(\/|\\|$))+/, "")
-    .replace(/^[/\\]+/, "");
-  const filePath = path.join(distPath, relativePath);
+  // M-5: use resolveWithin for reliable path-containment check instead of regex
+  let filePath;
+  try {
+    const relative = path.normalize(normalizedPath).replace(/^[/\\]+/, "");
+    filePath = resolveWithin(distPath, relative);
+  } catch {
+    // resolveWithin throws on path traversal attempts — treat as not found
+    return false;
+  }
 
   try {
     const stats = await fs.stat(filePath);

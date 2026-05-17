@@ -19,8 +19,8 @@ Feature profiles are defined in `server/platform/interactive/features/feature-ma
 | service/client | `server/services/client` |
 | specialized/agent | `server/platform/specialized/agent` |
 | specialized/knowledge | `server/platform/specialized/knowledge` |
-| specialized/knowledge/chunking | `server/platform/specialized/knowledge/chunking` |
-| specialized/knowledge/domain | `server/platform/specialized/knowledge/domain` |
+| specialized/knowledge/preprocessing/chunking | `server/platform/specialized/knowledge/preprocessing/chunking` |
+| specialized/knowledge/preprocessing/domain | `server/platform/specialized/knowledge/preprocessing/domain` |
 | modules/knowledge | `server/platform/modules/knowledge` |
 | modules/agent | `server/platform/modules/agent` |
 

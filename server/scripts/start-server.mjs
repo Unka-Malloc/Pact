@@ -197,10 +197,12 @@ console.log(
 );
 
 async function shutdown(code = 0) {
+  console.log("Shutting down...");
   try {
     await serverHandle.close();
-  } catch {
-    // Ignore shutdown errors.
+    console.log("Server closed cleanly.");
+  } catch (err) {
+    console.error("Error during shutdown:", err?.message || err);
   }
 
   process.exit(code);
@@ -212,4 +214,14 @@ process.on("SIGINT", () => {
 
 process.on("SIGTERM", () => {
   void shutdown(0);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err?.message || err, err?.stack || "");
+  void shutdown(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason?.message || reason);
+  void shutdown(1);
 });

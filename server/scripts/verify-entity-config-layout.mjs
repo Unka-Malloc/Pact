@@ -76,7 +76,7 @@ async function verifySkillBundles() {
   assert.equal(framework.frameworkId, "splitall.default-knowledge-skill-framework");
 
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-skill-"));
-  const { createKnowledgeSkillRuntime } = await import("../platform/specialized/knowledge/runtime/knowledge-skill-runtime/index.mjs");
+  const { createKnowledgeSkillRuntime } = await import("../platform/specialized/knowledge/invocation/knowledge-skill-runtime/index.mjs");
   const runtime = createKnowledgeSkillRuntime({ userDataPath });
   try {
     const proposal = await runtime.proposeSkill({
@@ -158,7 +158,7 @@ async function verifyStandards() {
   });
 
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-package-"));
-  const { createGoldenRuleRuntime } = await import("../platform/specialized/knowledge/golden-rules/golden-rule-runtime/index.mjs");
+  const { createGoldenRuleRuntime } = await import("../platform/specialized/knowledge/invocation/golden-rule-runtime/index.mjs");
   const goldenRuleRuntime = createGoldenRuleRuntime({ userDataPath });
   try {
     const rules = await goldenRuleRuntime.listRulePackages();

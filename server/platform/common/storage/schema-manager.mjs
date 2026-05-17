@@ -9,6 +9,36 @@ function ensureColumn(db, tableName, columnName, definition) {
   db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }
 
+function normalizeSourceCorpusRawTermsTable(db) {
+  const columns = db.prepare("PRAGMA table_info(source_corpus_raw_terms)").all();
+  const columnNames = columns.map((column) => column.name);
+  if (columnNames.length === 2 && columnNames.includes("term") && columnNames.includes("frequency")) {
+    return;
+  }
+
+  const canPreserveTerms = columnNames.includes("term") && columnNames.includes("frequency");
+  db.exec(`
+    DROP TABLE IF EXISTS source_corpus_raw_terms__minimal;
+    CREATE TABLE source_corpus_raw_terms__minimal (
+      term TEXT PRIMARY KEY,
+      frequency INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  if (canPreserveTerms) {
+    db.exec(`
+      INSERT INTO source_corpus_raw_terms__minimal (term, frequency)
+      SELECT term, SUM(COALESCE(frequency, 0)) AS frequency
+      FROM source_corpus_raw_terms
+      WHERE term IS NOT NULL AND trim(term) <> ''
+      GROUP BY term;
+    `);
+  }
+  db.exec(`
+    DROP TABLE source_corpus_raw_terms;
+    ALTER TABLE source_corpus_raw_terms__minimal RENAME TO source_corpus_raw_terms;
+  `);
+}
+
 function getDatabaseDirectory(userDataPath) {
   return path.join(userDataPath, "metadata");
 }
@@ -94,6 +124,100 @@ export function initializeMetadataSchema(db) {
       extracted_text TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       UNIQUE(batch_id, source_ref)
+    );
+
+    CREATE TABLE IF NOT EXISTS source_document_profiles (
+      document_id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      source_ref TEXT NOT NULL,
+      raw_object_id TEXT NOT NULL DEFAULT '',
+      file_hash TEXT NOT NULL DEFAULT '',
+      content_hash TEXT NOT NULL DEFAULT '',
+      original_file_name TEXT NOT NULL DEFAULT '',
+      source_path TEXT NOT NULL DEFAULT '',
+      source_type TEXT NOT NULL DEFAULT '',
+      provider_id TEXT NOT NULL DEFAULT '',
+      external_id TEXT NOT NULL DEFAULT '',
+      sync_batch_id TEXT NOT NULL DEFAULT '',
+      media_type TEXT NOT NULL DEFAULT '',
+      byte_size INTEGER NOT NULL DEFAULT 0,
+      captured_at TEXT NOT NULL DEFAULT '',
+      source_created_at TEXT NOT NULL DEFAULT '',
+      source_updated_at TEXT NOT NULL DEFAULT '',
+      source_collected_at TEXT NOT NULL DEFAULT '',
+      profile_version TEXT NOT NULL DEFAULT 'document-profile-v1',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(batch_id, source_ref)
+    );
+
+    CREATE TABLE IF NOT EXISTS source_corpus_raw_terms (
+      term TEXT PRIMARY KEY,
+      frequency INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_word_cloud_sets (
+      cloud_set_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      cloud_count INTEGER NOT NULL DEFAULT 0,
+      terms_snapshot_json TEXT NOT NULL DEFAULT '[]',
+      clouds_json TEXT NOT NULL DEFAULT '[]',
+      unassigned_terms_json TEXT NOT NULL DEFAULT '[]',
+      corpus_paths_json TEXT NOT NULL DEFAULT '[]',
+      model_alias TEXT NOT NULL DEFAULT '',
+      agent_response_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS source_vocabulary_terms (
+      term TEXT PRIMARY KEY,
+      frequency INTEGER NOT NULL DEFAULT 0,
+      document_frequency INTEGER NOT NULL DEFAULT 0,
+      bm25_weight REAL NOT NULL DEFAULT 0,
+      profile_version TEXT NOT NULL DEFAULT 'lexical-signals-v1',
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS source_vocabulary_batches (
+      batch_id TEXT PRIMARY KEY,
+      terms_json TEXT NOT NULL DEFAULT '{}',
+      file_keys_json TEXT NOT NULL DEFAULT '[]',
+      indexed_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS preprocess_blocks (
+      record_id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      source_ref TEXT NOT NULL,
+      block_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT '',
+      level INTEGER NOT NULL DEFAULT 0,
+      text TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(batch_id, block_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS preprocess_chunks (
+      record_id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      source_ref TEXT NOT NULL,
+      chunk_id TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      title_path_json TEXT NOT NULL DEFAULT '[]',
+      block_ids_json TEXT NOT NULL DEFAULT '[]',
+      chunk_type TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      token_count INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(batch_id, chunk_id)
     );
 
     CREATE TABLE IF NOT EXISTS people (
@@ -358,6 +482,16 @@ export function initializeMetadataSchema(db) {
       tokenize = 'unicode61 remove_diacritics 0'
     );
 
+    CREATE VIRTUAL TABLE IF NOT EXISTS source_document_fts USING fts5(
+      document_id UNINDEXED,
+      title,
+      text,
+      source_path,
+      source_type,
+      metadata,
+      tokenize = 'unicode61 remove_diacritics 0'
+    );
+
     CREATE TABLE IF NOT EXISTS knowledge_items (
       item_id TEXT PRIMARY KEY,
       batch_id TEXT NOT NULL,
@@ -484,6 +618,15 @@ export function initializeMetadataSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_batches_status ON import_batches(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_raw_mail_batch ON raw_mail_objects(batch_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sources_batch_kind ON source_files(batch_id, kind);
+    CREATE INDEX IF NOT EXISTS idx_source_document_profiles_batch ON source_document_profiles(batch_id, source_type, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_source_document_profiles_file_hash ON source_document_profiles(file_hash);
+    CREATE INDEX IF NOT EXISTS idx_source_corpus_raw_terms_frequency ON source_corpus_raw_terms(frequency DESC, term);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_word_cloud_sets_updated ON knowledge_word_cloud_sets(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_source_vocabulary_frequency ON source_vocabulary_terms(frequency DESC, term);
+    CREATE INDEX IF NOT EXISTS idx_source_vocabulary_document_frequency ON source_vocabulary_terms(document_frequency DESC, term);
+    CREATE INDEX IF NOT EXISTS idx_source_vocabulary_bm25 ON source_vocabulary_terms(bm25_weight DESC, document_frequency DESC, term);
+    CREATE INDEX IF NOT EXISTS idx_preprocess_blocks_source ON preprocess_blocks(batch_id, source_ref, position);
+    CREATE INDEX IF NOT EXISTS idx_preprocess_chunks_source ON preprocess_chunks(batch_id, source_ref, position);
     CREATE INDEX IF NOT EXISTS idx_messages_batch_sent ON email_messages(batch_id, sent_at DESC);
     CREATE INDEX IF NOT EXISTS idx_threads_batch_activity ON email_threads(batch_id, latest_activity_at DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_batch_activity ON transactions(batch_id, latest_activity_at DESC);
@@ -527,6 +670,13 @@ export function initializeMetadataSchema(db) {
   ensureColumn(db, "source_files", "content_hash", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "source_files", "captured_at", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "source_files", "source_metadata_json", "TEXT NOT NULL DEFAULT '{}'");
+  normalizeSourceCorpusRawTermsTable(db);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_source_corpus_raw_terms_frequency ON source_corpus_raw_terms(frequency DESC, term)");
+  ensureColumn(db, "knowledge_word_cloud_sets", "corpus_paths_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "source_vocabulary_terms", "document_frequency", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "source_vocabulary_terms", "bm25_weight", "REAL NOT NULL DEFAULT 0");
+  ensureColumn(db, "source_vocabulary_terms", "profile_version", "TEXT NOT NULL DEFAULT 'lexical-signals-v1'");
+  ensureColumn(db, "source_vocabulary_batches", "file_keys_json", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "transactions", "lineage_id", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "transactions", "lifecycle_stage", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "transactions", "lifecycle_previous_state", "TEXT NOT NULL DEFAULT ''");

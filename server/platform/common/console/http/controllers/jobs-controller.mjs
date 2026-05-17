@@ -13,7 +13,7 @@ import { hashClientString, serverToken } from "../../../platform-core/security/c
 import { contentDispositionFileName, sendJson } from "../http-utils.mjs";
 
 async function loadNormalizedDocumentStore() {
-  return import("../../../../specialized/knowledge/file-processor/FileNormalizer/NormalizedDocuments/store.mjs");
+  return import("../../../../specialized/knowledge/preprocessing/file-processor/FileNormalizer/NormalizedDocuments/store.mjs");
 }
 
 async function publishProtocolEvent(protocolEventBus, topic, payload, options = {}) {

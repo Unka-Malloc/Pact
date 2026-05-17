@@ -14,6 +14,9 @@ const runtimeAssetPrefixes = [
 const runtimeAssetFiles = new Set([
   "server/platform/modules/knowledge/ocr/paddle_ocr_extract.py"
 ]);
+const declarativeConfigFiles = new Set([
+  "server/config/frontend-feature-registry.yaml"
+]);
 
 function toPosix(relativePath) {
   return relativePath.split(path.sep).join("/");
@@ -22,6 +25,7 @@ function toPosix(relativePath) {
 function isRuntimeAsset(filePath) {
   const relativePath = toPosix(path.relative(projectRoot, filePath));
   return (
+    declarativeConfigFiles.has(relativePath) ||
     runtimeAssetFiles.has(relativePath) ||
     runtimeAssetPrefixes.some((prefix) => relativePath.startsWith(prefix))
   );

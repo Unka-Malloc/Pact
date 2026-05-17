@@ -21,6 +21,16 @@ async function fetchJson(url, options = {}) {
   return JSON.parse(rawText);
 }
 
+async function fetchJsonResponse(url, options = {}) {
+  const response = await fetch(url, options);
+  const rawText = await response.text();
+  return {
+    status: response.status,
+    ok: response.ok,
+    payload: rawText.trim() ? JSON.parse(rawText) : {}
+  };
+}
+
 async function waitForCompletedJob(baseUrl, jobId) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const job = await fetchJson(`${baseUrl}/api/jobs/${jobId}`);
@@ -510,6 +520,29 @@ try {
     "test/mock-structured-document-parser"
   );
 
+  const rejectedMountSwitch = await fetchJsonResponse(`${splitAllServer.url}/api/runtime/mounts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      mountModules: {
+        documentParser: path.join(userDataPath, "missing-document-parser.mjs")
+      }
+    })
+  });
+  assert.equal(rejectedMountSwitch.status, 400);
+  assert.equal(rejectedMountSwitch.payload.ok, false);
+  const runtimeMountsAfterRejectedSwitch = await fetchJson(`${splitAllServer.url}/api/runtime/mounts`);
+  assert.equal(
+    runtimeMountsAfterRejectedSwitch.runtime.mounts.find((item) => item.name === "documentParser")?.id,
+    "test/mock-structured-document-parser"
+  );
+  assert.notEqual(
+    runtimeMountsAfterRejectedSwitch.value.mountModules.documentParser,
+    path.join(userDataPath, "missing-document-parser.mjs")
+  );
+
   const acceptedMountSwitch = await fetchJson(`${splitAllServer.url}/api/runtime/mounts`, {
     method: "POST",
     headers: {
@@ -621,6 +654,28 @@ try {
     imageRouteInfo.runtime.mountRouting.extensionRoutes[".png"].mountName,
     "multimodalParser"
   );
+
+  const rejectedRouteSwitch = await fetchJsonResponse(`${splitAllServer.url}/api/runtime/mounts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      mountRouting: {
+        extensionRoutes: {
+          ".badroute": {
+            mountName: "multimodalParser",
+            action: "missingCapability"
+          }
+        }
+      }
+    })
+  });
+  assert.equal(rejectedRouteSwitch.status, 400);
+  assert.equal(rejectedRouteSwitch.payload.ok, false);
+  const runtimeMountsAfterRejectedRoute = await fetchJson(`${splitAllServer.url}/api/runtime/mounts`);
+  assert.equal(runtimeMountsAfterRejectedRoute.runtime.mountRouting.extensionRoutes[".badroute"], undefined);
+  assert.equal(runtimeMountsAfterRejectedRoute.value.mountRouting.extensionRoutes[".badroute"], undefined);
 
   const imageBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02, 0x03, 0x04]);
   const imageJob = await fetchJson(`${splitAllServer.url}/api/jobs`, {

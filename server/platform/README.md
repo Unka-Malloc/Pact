@@ -12,14 +12,17 @@
 | Common platform | `common/storage` | Metadata SQLite, raw object store, repositories, storage maintenance tools. |
 | Common platform | `common/module-manager` | Mount configuration, routing, and lazy module loading. |
 | Common platform | `common/devops` | Monitor alerts, process status, and unified registration. |
-| Specialized platform | `specialized/knowledge/chunking` | Knowledge ingestion parsing and chunk generation. |
-| Specialized platform | `specialized/knowledge/domain` | Knowledge taxonomy and stable rule semantics. |
+| Specialized platform | `specialized/knowledge/preprocessing` | File parsing, normalization, chunking, taxonomy, and stable rule semantics. |
+| Specialized platform | `specialized/knowledge/storage` | KnowledgeCore persistence, source management, and source file indexing. |
+| Specialized platform | `specialized/knowledge/retrieval` | Search services, evidence checks, embedding runtime, vector stores, and learning runtime. |
+| Specialized platform | `specialized/knowledge/invocation` | Knowledge skills, distillation, rule authoring, evolution, and golden-rule runtime. |
 | Interactive layer | `interactive` | Bottom-platform registration API, feature profile resolution, and product-facing call surface. |
 
 ## Access Rules
 
 Bottom platforms register capabilities through `interactive/platform-registry.mjs`.
 Products call bottom capabilities through `interactive/product-api.mjs` or a runtime registry handle passed by the composition root.
+Developers should check `interactive/interface-manifest.mjs` first and reuse those interfaces before adding new bottom-layer implementations.
 
 `server/services/agent` and `server/services/client` are service lines. They must not import `platform/common` directly; cross-layer calls go through `platform/interactive`.
 

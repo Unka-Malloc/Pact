@@ -56,7 +56,7 @@ export async function createServerRuntimeProviders({
   );
   const knowledgeSourceService = await createProvider(
     isFeatureActive("knowledge-core"),
-    "../specialized/knowledge/datastore/knowledge-source-service.mjs",
+    "../specialized/knowledge/storage/knowledge-source-service.mjs",
     "createKnowledgeSourceService",
     [{
       userDataPath,
@@ -85,12 +85,12 @@ export async function createServerRuntimeProviders({
   );
   const evidenceSufficiencyGate = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/knowledge/runtime/evidence-sufficiency-gate/index.mjs",
+    "../specialized/knowledge/retrieval/evidence-sufficiency-gate/index.mjs",
     "createEvidenceSufficiencyGate"
   );
   const knowledgeAgentSkill = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/knowledge/runtime/knowledge-agent-skill-runtime/index.mjs",
+    "../specialized/knowledge/invocation/knowledge-agent-skill-runtime/index.mjs",
     "createKnowledgeAgentSkillRuntime",
     [{
       runtime,
@@ -100,7 +100,7 @@ export async function createServerRuntimeProviders({
   );
   const goldenRuleRuntime = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/knowledge/golden-rules/golden-rule-runtime/index.mjs",
+    "../specialized/knowledge/invocation/golden-rule-runtime/index.mjs",
     "createGoldenRuleRuntime",
     [{
       userDataPath,
@@ -109,7 +109,7 @@ export async function createServerRuntimeProviders({
   );
   const knowledgeRuleAuthoringRuntime = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/knowledge/runtime/knowledge-rule-authoring-runtime/index.mjs",
+    "../specialized/knowledge/invocation/knowledge-rule-authoring-runtime/index.mjs",
     "createKnowledgeRuleAuthoringRuntime",
     [{
       userDataPath,
@@ -119,7 +119,7 @@ export async function createServerRuntimeProviders({
   );
   const knowledgeSkillRuntime = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/knowledge/runtime/knowledge-skill-runtime/index.mjs",
+    "../specialized/knowledge/invocation/knowledge-skill-runtime/index.mjs",
     "createKnowledgeSkillRuntime",
     [{
       userDataPath,
@@ -139,7 +139,7 @@ export async function createServerRuntimeProviders({
   );
   const knowledgeDistillationRuntime = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/knowledge/runtime/knowledge-distillation-runtime/index.mjs",
+    "../specialized/knowledge/invocation/knowledge-distillation-runtime/index.mjs",
     "createKnowledgeDistillationRuntime",
     [{
       userDataPath,
@@ -152,7 +152,7 @@ export async function createServerRuntimeProviders({
   );
   const knowledgeEvolutionRuntime = await createProvider(
     isFeatureActive("knowledge-evolution"),
-    "../specialized/knowledge/runtime/knowledge-evolution-runtime/index.mjs",
+    "../specialized/knowledge/invocation/knowledge-evolution-runtime/index.mjs",
     "createKnowledgeEvolutionRuntime",
     [{
       userDataPath,
@@ -166,7 +166,7 @@ export async function createServerRuntimeProviders({
   );
   const summarizationRuntime = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/agent/agent-context/summarization-runtime/index.mjs",
+    "../specialized/knowledge/invocation/knowledge-summarization-runtime/index.mjs",
     "createSummarizationRuntime",
     [{
       userDataPath,

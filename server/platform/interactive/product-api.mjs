@@ -23,13 +23,14 @@ export {
   serverToken
 } from "../common/platform-core/security/client-strings.mjs";
 export { sendJson } from "../common/console/http/http-utils.mjs";
-export { createKnowledgePipeline } from "../specialized/knowledge/chunking/pipeline.mjs";
+export { createKnowledgePipeline } from "../specialized/knowledge/preprocessing/chunking/pipeline.mjs";
+export { summarizePreprocessResult } from "../specialized/knowledge/preprocessing/preprocess-result.mjs";
 export {
   listAvailableAnalysisModules,
   runConfiguredAnalysisModule
-} from "../specialized/knowledge/runtime/analysis-engine-registry.mjs";
-export { loadEmailRules } from "../specialized/knowledge/domain/rules/email-rules.mjs";
-export { createKnowledgeSourceService } from "../specialized/knowledge/datastore/knowledge-source-service.mjs";
+} from "../specialized/knowledge/preprocessing/analysis-engine-registry.mjs";
+export { loadEmailRules } from "../specialized/knowledge/preprocessing/domain/rules/email-rules.mjs";
+export { createKnowledgeSourceService } from "../specialized/knowledge/storage/knowledge-source-service.mjs";
 export async function callAgentGateway(...args) {
   const module = await import("../specialized/agent/agent-gateway/index.mjs");
   return module.callAgentGateway(...args);
@@ -39,10 +40,10 @@ export async function publicAgentGatewayConfig(...args) {
   return module.publicAgentGatewayConfig(...args);
 }
 export async function loadKnowledgeFileProcessorRuntime() {
-  return import("../specialized/knowledge/file-processor/index.mjs");
+  return import("../specialized/knowledge/preprocessing/file-processor/index.mjs");
 }
 export async function loadKnowledgeNormalizedDocumentsRuntime() {
-  return import("../specialized/knowledge/file-processor/FileNormalizer/NormalizedDocuments/index.mjs");
+  return import("../specialized/knowledge/preprocessing/file-processor/FileNormalizer/NormalizedDocuments/index.mjs");
 }
 export {
   createRuntimeLogger,

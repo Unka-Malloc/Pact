@@ -463,6 +463,29 @@ export async function dispatchOperation({
     const authEnabled = true;
     const shouldRunConsoleAuthorization =
       !skipAuthorization && operation.externalAuth !== true && typeof authorizeOperation === "function";
+
+    // M-1: for externalAuth operations, require at least one credential header
+    // at the framework level, so that completely unauthenticated callers are
+    // rejected even if an individual handler forgets to validate its token.
+    if (!skipAuthorization && operation.externalAuth === true) {
+      const hasCredential = Boolean(
+        request?.headers?.["authorization"] ||
+        request?.headers?.["x-splitall-tool-token"]
+      );
+      if (!hasCredential) {
+        const errorCode = operation.externalAuthMissingCode || "missing_external_auth";
+        sendOperationDenied(response, 401, {
+          schemaVersion: 1,
+          error: {
+            code: errorCode,
+            message: "External authentication requires Authorization or x-splitall-tool-token."
+          },
+          traceId: traceContext.traceId
+        });
+        return { ok: false, handled: true, statusCode: 401, operation, input: operationInput, traceContext };
+      }
+    }
+
     if (shouldRunConsoleAuthorization) {
       const authorization = await authorizeOperation({
         request,
@@ -488,10 +511,11 @@ export async function dispatchOperation({
           error: authorization.error || "authorization denied",
           status: authorization.status || 403
         });
+        // L-4: omit operationId from auth-denied responses to reduce information
+        // disclosure to unauthenticated callers probing available endpoints
         sendOperationDenied(response, authorization.status || 403, {
           error: authorization.error || "权限不足。",
           bootstrap: authorization.bootstrap,
-          operationId: operation.id,
           traceId: traceContext.traceId
         });
         return {
@@ -876,7 +900,8 @@ export async function dispatchRpcOperation({
       reason: "invalid-json",
       error: summarizeError(error)
     });
-    sendJson(response, 400, rpcError(null, 400, `RPC body 不是有效 JSON：${error.message}`));
+    // L-6: do not reflect error.message — it may contain position/context info
+    sendJson(response, 400, rpcError(null, 400, "RPC 请求体必须是有效的 JSON。"));
     return;
   }
 

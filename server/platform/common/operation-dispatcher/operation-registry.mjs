@@ -648,7 +648,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     rpc: { method: "agent_gateway.call", body: "params" },
     cli: {
       command: ["agent-gateway", "call"],
-      usage: "agent-gateway call --question QUESTION [--agent-name NAME] [--plugin-list a,b]",
+      usage: "agent-gateway call --question QUESTION [--workspace-id WORKSPACE_ID] [--tool-grant-id GRANT_ID] [--agent-name NAME] [--plugin-list a,b]",
       bodyParams: [
         { name: "agentName", aliases: ["agent-name", "agentName"] },
         { name: "pluginList", aliases: ["plugin-list", "pluginList"] },
@@ -657,6 +657,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
         { name: "clientUid", aliases: ["client-uid", "clientUid"] },
         { name: "modelAlias", aliases: ["model-alias", "modelAlias", "alias", "model"] },
         { name: "contextProfileId", aliases: ["context-profile", "context-profile-id", "contextProfileId"] },
+        { name: "toolGrantId", aliases: ["tool-grant-id", "toolGrantId", "grant-id", "grantId"] },
         { name: "workspaceId", aliases: ["workspace-id", "workspaceId"] },
         { name: "userId", aliases: ["user-id", "userId"] },
         { name: "projectId", aliases: ["project-id", "projectId"] },
@@ -1092,6 +1093,218 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["console:read"]
   },
   {
+    id: "storage.source_vocabulary.rebuild",
+    feature: "storage",
+    label: "重建源文件词汇库",
+    target: { controller: "system", method: "handleRebuildSourceVocabulary" },
+    http: { method: "POST", path: "/api/storage/source-vocabulary/rebuild" },
+    rpc: { method: "storage.source_vocabulary.rebuild" },
+    cli: { command: ["storage", "source-vocabulary", "rebuild"], usage: "storage source-vocabulary rebuild" },
+    requiredScopes: ["runtime:admin"],
+    safety: { risk: "repair_write" }
+  },
+  {
+    id: "knowledge.corpus.significant_terms",
+    feature: "knowledge",
+    label: "计算语料显著词",
+    target: { controller: "system", method: "handleGetSignificantSourceTerms" },
+    http: { method: "POST", path: "/api/knowledge/corpus/significant-terms" },
+    rpc: { method: "knowledge.corpus.significant_terms", body: "params" },
+    cli: {
+      command: ["knowledge", "corpus", "significant-terms"],
+      usage: "knowledge corpus significant-terms --batch-id BATCH_ID --limit 50",
+      bodyParams: [
+        { name: "batchId", aliases: ["batch-id", "batchId"], type: "string" },
+        { name: "clientUid", aliases: ["client-uid", "clientUid"], type: "string" },
+        { name: "sourceType", aliases: ["source-type", "sourceType"], type: "string" },
+        { name: "providerId", aliases: ["provider-id", "providerId"], type: "string" },
+        { name: "syncBatchId", aliases: ["sync-batch-id", "syncBatchId"], type: "string" },
+        { name: "externalId", aliases: ["external-id", "externalId"], type: "string" },
+        { name: "limit", aliases: ["limit"], type: "number" },
+        { name: "minForegroundDocumentFrequency", aliases: ["min-df", "minDocumentFrequency"], type: "number" }
+      ]
+    },
+    requiredScopes: ["console:read"]
+  },
+  {
+    id: "knowledge.word_clouds.get",
+    feature: "knowledge",
+    label: "读取语料词云",
+    target: { controller: "system", method: "handleKnowledgeWordClouds" },
+    http: {
+      method: "GET",
+      path: "/api/knowledge/word-clouds",
+      query: [
+        { name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"] },
+        { name: "wordBagId", aliases: ["word-bag-id", "wordBagId", "id"] }
+      ]
+    },
+    rpc: { method: "knowledge.word_clouds.get" },
+    cli: {
+      command: ["knowledge", "word-clouds"],
+      usage: "knowledge word-clouds [--limit 300]",
+      bodyParams: [
+        { name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"], type: "string" },
+        { name: "wordBagId", aliases: ["word-bag-id", "wordBagId", "id"], type: "string" },
+        { name: "limit", aliases: ["limit"], type: "number" },
+        { name: "minFrequency", aliases: ["min-frequency", "minFrequency"], type: "number" }
+      ]
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.word_clouds.save",
+    feature: "knowledge",
+    label: "保存语料词云",
+    target: { controller: "system", method: "handleSaveKnowledgeWordClouds" },
+    http: { method: "POST", path: "/api/knowledge/word-clouds" },
+    rpc: { method: "knowledge.word_clouds.save", body: "params" },
+    cli: {
+      command: ["knowledge", "word-clouds", "save"],
+      usage: "knowledge word-clouds save --body word-cloud.json"
+    },
+    requiredScopes: ["knowledge:write"],
+    safety: { risk: "content_write" }
+  },
+  {
+    id: "knowledge.word_clouds.export",
+    feature: "knowledge",
+    label: "导出语料词袋",
+    target: { controller: "system", method: "handleExportKnowledgeWordClouds" },
+    http: {
+      method: "POST",
+      path: "/api/knowledge/word-clouds/export"
+    },
+    rpc: { method: "knowledge.word_clouds.export", body: "params" },
+    cli: {
+      command: ["knowledge", "word-clouds", "export"],
+      usage: "knowledge word-clouds export --word-bag-set-id SET_ID",
+      bodyParams: [
+        { name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"], type: "string" }
+      ]
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true
+  },
+  {
+    id: "knowledge.word_clouds.import",
+    feature: "knowledge",
+    label: "导入语料词袋",
+    target: { controller: "system", method: "handleImportKnowledgeWordClouds" },
+    http: { method: "POST", path: "/api/knowledge/word-clouds/import" },
+    rpc: { method: "knowledge.word_clouds.import", body: "params" },
+    cli: {
+      command: ["knowledge", "word-clouds", "import"],
+      usage: "knowledge word-clouds import --body word-cloud-export.json [--mode copy|overwrite]",
+      bodyParams: [
+        { name: "mode", aliases: ["mode", "strategy"], type: "string" },
+        { name: "overwrite", aliases: ["overwrite"], type: "boolean" }
+      ]
+    },
+    requiredScopes: ["knowledge:write"],
+    safety: { risk: "content_write" }
+  },
+  {
+    id: "knowledge.word_bags.add",
+    feature: "knowledge",
+    label: "新增语料词袋",
+    target: { controller: "system", method: "handleAddKnowledgeWordBag" },
+    http: { method: "POST", path: "/api/knowledge/word-clouds/word-bags" },
+    rpc: { method: "knowledge.word_bags.add", body: "params" },
+    cli: {
+      command: ["knowledge", "word-bags", "add"],
+      usage: "knowledge word-bags add --word-bag-set-id SET_ID --body word-bag.json",
+      bodyParams: [
+        { name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"], type: "string", required: true },
+        { name: "parentWordBagId", aliases: ["parent-word-bag-id", "parentWordBagId"], type: "string" }
+      ]
+    },
+    requiredScopes: ["knowledge:write"],
+    safety: { risk: "content_write" }
+  },
+  {
+    id: "knowledge.word_bags.terms",
+    feature: "knowledge",
+    label: "读取语料词袋全量词汇",
+    target: { controller: "system", method: "handleGetKnowledgeWordBagTerms" },
+    http: { method: "POST", path: "/api/knowledge/word-clouds/word-bags/terms" },
+    rpc: { method: "knowledge.word_bags.terms", body: "params" },
+    cli: {
+      command: ["knowledge", "word-bags", "terms"],
+      usage: "knowledge word-bags terms --word-bag-set-id SET_ID --word-bag-ids A,B",
+      bodyParams: [
+        { name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"], type: "string" },
+        { name: "wordBagIds", aliases: ["word-bag-ids", "wordBagIds", "ids"], type: "array", required: true },
+        { name: "includeChildren", aliases: ["include-children", "includeChildren"], type: "boolean" }
+      ]
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true
+  },
+  {
+    id: "knowledge.word_bags.update",
+    feature: "knowledge",
+    label: "更新语料词袋",
+    target: { controller: "system", method: "handleUpdateKnowledgeWordBag" },
+    http: { method: "POST", path: "/api/knowledge/word-clouds/word-bags/:wordBagId" },
+    rpc: {
+      method: "knowledge.word_bags.update",
+      body: "params",
+      params: [{ name: "wordBagId", aliases: ["word-bag-id", "wordBagId", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "word-bags", "update"],
+      usage: "knowledge word-bags update --id WORD_BAG_ID --word-bag-set-id SET_ID --body patch.json",
+      pathParams: { wordBagId: ["word-bag-id", "wordBagId", "id"] },
+      bodyParams: [
+        { name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"], type: "string", required: true }
+      ]
+    },
+    requiredScopes: ["knowledge:write"],
+    safety: { risk: "content_write" }
+  },
+  {
+    id: "knowledge.word_bags.delete",
+    feature: "knowledge",
+    label: "删除语料词袋",
+    target: { controller: "system", method: "handleDeleteKnowledgeWordBag" },
+    http: {
+      method: "DELETE",
+      path: "/api/knowledge/word-clouds/word-bags/:wordBagId",
+      query: [{ name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"] }]
+    },
+    rpc: {
+      method: "knowledge.word_bags.delete",
+      params: [{ name: "wordBagId", aliases: ["word-bag-id", "wordBagId", "id"], required: true }],
+      query: [{ name: "wordBagSetId", aliases: ["word-bag-set-id", "wordBagSetId"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "word-bags", "delete"],
+      usage: "knowledge word-bags delete --id WORD_BAG_ID --word-bag-set-id SET_ID",
+      pathParams: { wordBagId: ["word-bag-id", "wordBagId", "id"] }
+    },
+    requiredScopes: ["knowledge:write"],
+    safety: { risk: "content_write" }
+  },
+  {
+    id: "knowledge.word_clouds.propose",
+    feature: "knowledge",
+    label: "智能体生成语料词云",
+    target: { controller: "system", method: "handleProposeKnowledgeWordClouds" },
+    http: { method: "POST", path: "/api/knowledge/word-clouds/propose" },
+    rpc: { method: "knowledge.word_clouds.propose", body: "params" },
+    cli: {
+      command: ["knowledge", "word-clouds", "propose"],
+      usage: "knowledge word-clouds propose --model-alias MODEL --prompt TEXT",
+      bodyParams: [
+        { name: "modelAlias", aliases: ["model-alias", "modelAlias"], type: "string" },
+        { name: "prompt", aliases: ["prompt", "message"], type: "string", required: true }
+      ]
+    },
+    requiredScopes: ["knowledge:write"],
+    safety: { risk: "content_write" }
+  },
+  {
     id: "storage.doctor",
     feature: "storage",
     label: "诊断存储一致性",
@@ -1320,6 +1533,47 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     rpc: { method: "knowledge.capabilities" },
     cli: { command: ["knowledge", "capabilities"], usage: "knowledge capabilities" },
     requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.export_docx",
+    feature: "knowledge",
+    label: "导出知识库 DOCX",
+    target: { controller: "system", method: "handleKnowledgeDocxExport" },
+    http: {
+      method: "GET",
+      path: "/api/knowledge/export/docx",
+      query: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" },
+        { name: "includeMachineReadable", aliases: ["include-machine-readable", "includeMachineReadable"], type: "boolean" }
+      ],
+      coerce: { limit: "number", includeMachineReadable: "boolean" }
+    },
+    rpc: {
+      method: "knowledge.export.docx",
+      query: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" },
+        { name: "includeMachineReadable", aliases: ["include-machine-readable", "includeMachineReadable"], type: "boolean" }
+      ]
+    },
+    cli: {
+      command: ["knowledge", "export-docx"],
+      usage: "knowledge export-docx --output knowledge.docx [--document-id DOCUMENT_ID] [--batch-id BATCH_ID] [--source-id SOURCE_ID]",
+      bodyParams: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" },
+        { name: "includeMachineReadable", aliases: ["include-machine-readable", "includeMachineReadable"], type: "boolean" }
+      ]
+    },
+    requiredScopes: ["knowledge:read"],
+    binary: true
   },
   {
     id: "knowledge.health",
@@ -2229,6 +2483,19 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["knowledge:read"]
   },
   {
+    id: "agent_workspaces.create",
+    feature: "agent_workspace",
+    label: "创建智能体共享工作空间",
+    target: { controller: "system", method: "handleCreateAgentWorkspace" },
+    http: { method: "POST", path: "/api/agent-workspaces" },
+    rpc: { method: "agent_workspaces.create", body: "params" },
+    cli: {
+      command: ["agent-workspaces", "create"],
+      usage: "agent-workspaces create --body workspace.json"
+    },
+    requiredScopes: ["knowledge:write"]
+  },
+  {
     id: "agent_workspaces.list",
     feature: "agent_workspace",
     label: "列出智能体共享工作空间",
@@ -2374,6 +2641,180 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     },
     requiredScopes: ["knowledge:write"]
   },
+
+  // ── Workspace inheritance, profile & sharing operations ─────────────────
+  {
+    id: "agent_workspaces.context.get",
+    feature: "agent_workspace",
+    label: "获取工作空间完整运行上下文（继承链解析）",
+    target: { controller: "system", method: "handleGetWorkspaceContext" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/context",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.context.get" },
+    cli: {
+      command: ["agent-workspaces", "context"],
+      usage: "agent-workspaces context --workspace-id WORKSPACE_ID",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_workspaces.context_bundle.export",
+    feature: "agent_workspace",
+    label: "导出工作空间上下文压缩包",
+    target: { controller: "system", method: "handleExportWorkspaceContextBundle" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/context-bundle",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "format", aliases: ["format"] },
+        { name: "compress", aliases: ["compress"] },
+        { name: "compressedOnly", aliases: ["compressed-only", "compressedOnly"] },
+        { name: "includePrivate", aliases: ["include-private", "includePrivate", "private"] },
+        { name: "maxItems", aliases: ["max-items", "maxItems", "limit"] },
+        { name: "contentPreviewChars", aliases: ["content-preview-chars", "contentPreviewChars"] }
+      ],
+      coerce: {
+        includePrivate: "boolean",
+        compressedOnly: "boolean",
+        maxItems: "number",
+        contentPreviewChars: "number"
+      }
+    },
+    rpc: {
+      method: "agent_workspaces.context_bundle.export",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "format", aliases: ["format"] },
+        { name: "compress", aliases: ["compress"] },
+        { name: "compressedOnly", aliases: ["compressed-only", "compressedOnly"] },
+        { name: "includePrivate", aliases: ["include-private", "includePrivate", "private"] },
+        { name: "maxItems", aliases: ["max-items", "maxItems", "limit"] },
+        { name: "contentPreviewChars", aliases: ["content-preview-chars", "contentPreviewChars"] }
+      ]
+    },
+    cli: {
+      command: ["agent-workspaces", "context-bundle"],
+      usage: "agent-workspaces context-bundle --workspace-id WORKSPACE_ID [--format compressed]",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_workspaces.context_bundle.restore",
+    feature: "agent_workspace",
+    label: "恢复工作空间上下文压缩包",
+    target: { controller: "system", method: "handleRestoreWorkspaceContextBundle" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/context-bundle/restore",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_workspaces.context_bundle.restore",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "context-bundle", "restore"],
+      usage: "agent-workspaces context-bundle restore --workspace-id WORKSPACE_ID --body bundle.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "agent_workspaces.chain.get",
+    feature: "agent_workspace",
+    label: "读取工作空间继承链与解析后的知识范围",
+    target: { controller: "system", method: "handleGetWorkspaceChain" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/chain",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.chain.get" },
+    cli: {
+      command: ["agent-workspaces", "chain"],
+      usage: "agent-workspaces chain --workspace-id WORKSPACE_ID",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_workspaces.parent.set",
+    feature: "agent_workspace",
+    label: "设置工作空间继承父级",
+    target: { controller: "system", method: "handleSetWorkspaceParent" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/parent",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.parent.set" },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "agent_workspaces.profile.hotswap",
+    feature: "agent_workspace",
+    label: "热切换工作空间 profile（模型/工具/上下文/知识范围）",
+    target: { controller: "system", method: "handleHotSwapWorkspaceProfile" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/profile",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.profile.hotswap" },
+    cli: {
+      command: ["agent-workspaces", "profile"],
+      usage: "agent-workspaces profile --workspace-id WORKSPACE_ID --body profile.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "agent_workspaces.sources.set",
+    feature: "agent_workspace",
+    label: "设置工作空间自有知识源列表",
+    target: { controller: "system", method: "handleSetWorkspaceOwnedSources" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/sources",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.sources.set" },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "agent_workspaces.share",
+    feature: "agent_workspace",
+    label: "将当前工作空间的知识访问权共享给另一工作空间",
+    target: { controller: "system", method: "handleShareWorkspace" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/share",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.share" },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "agent_workspaces.unshare",
+    feature: "agent_workspace",
+    label: "撤销工作空间的访问共享",
+    target: { controller: "system", method: "handleUnshareWorkspace" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/unshare",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: { method: "agent_workspaces.unshare" },
+    requiredScopes: ["knowledge:maintain"]
+  },
+
   {
     id: "context.profiles.get",
     feature: "context_runtime",
@@ -2517,7 +2958,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   },
   {
     id: "context.session_memory.get",
-    feature: "context_runtime",
+    feature: "agent_memory",
     label: "读取上下文会话记忆",
     target: { controller: "system", method: "handleContextSessionMemory" },
     http: {
@@ -2536,7 +2977,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   },
   {
     id: "context.session_memory.clear",
-    feature: "context_runtime",
+    feature: "agent_memory",
     label: "清理上下文会话记忆",
     target: { controller: "system", method: "handleContextSessionMemoryClear" },
     http: { method: "POST", path: "/api/context/session-memory/clear" },

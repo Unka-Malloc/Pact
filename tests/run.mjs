@@ -193,6 +193,13 @@ const suites = [
     "packaging",
     "regression"
   ]),
+  suite("server.frontend-feature-registry", "Frontend feature registry gate", npm("run", "server:verify:frontend-feature-registry"), [
+    "server",
+    "web",
+    "feature-registry",
+    "gate",
+    "regression"
+  ]),
   suite("server.business-scenarios", "Server business scenario black-box framework", npm("run", "server:verify:business-scenarios"), [
     "server",
     "business",
@@ -281,6 +288,7 @@ const profileSuites = {
   fast: [
     "repo.hygiene.pre",
     "security.secret-hygiene",
+    "server.frontend-feature-registry",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test"
@@ -313,6 +321,7 @@ const profileSuites = {
     "server.maintenance-agent",
     "server.monitor-alerts",
     "server.feature-profiles",
+    "server.frontend-feature-registry",
     "server.business-scenarios",
     "client.flutter.analyze",
     "client.flutter.test",
@@ -347,6 +356,7 @@ const profileSuites = {
     "server.multi-source-connectors",
     "server.maintenance-agent",
     "server.feature-profiles",
+    "server.frontend-feature-registry",
     "client.native.test",
     "repo.hygiene.post"
   ],
@@ -374,6 +384,7 @@ const profileSuites = {
     "server.maintenance-agent",
     "server.monitor-alerts",
     "server.feature-profiles",
+    "server.frontend-feature-registry",
     "server.business-scenarios",
     "server.dispatcher-unified",
     "server.trace-context",
@@ -390,6 +401,7 @@ const profileSuites = {
     "server.trace-context",
     "server.state-mutations",
     "server.runtime-logging",
+    "server.frontend-feature-registry",
     "server.entity-config-layout",
     "server.singleton-boundaries",
     "smoke.server.lifecycle",
@@ -424,6 +436,7 @@ const profileSuites = {
     "server.multi-source-connectors",
     "server.maintenance-agent",
     "server.feature-profiles",
+    "server.frontend-feature-registry",
     "server.business-scenarios",
     "client.flutter.analyze",
     "client.flutter.test",
@@ -470,6 +483,8 @@ const profileSuites = {
     "server.multi-source-connectors",
     "server.maintenance-agent",
     "server.feature-profiles",
+    "server.frontend-feature-registry",
+    "server.frontend-feature-registry",
     "server.business-scenarios",
     "server.dispatcher-unified",
     "server.trace-context",
@@ -707,10 +722,12 @@ function changedSuiteIds(baseRef) {
       selected.add("server.multi-source-connectors");
       selected.add("server.maintenance-agent");
       selected.add("server.feature-profiles");
+      selected.add("server.frontend-feature-registry");
       selected.add("smoke.server.lifecycle");
     }
     if (file.startsWith("server-web/") || file === "vite.config.ts") {
       selected.add("server.web.build");
+      selected.add("server.frontend-feature-registry");
       selected.add("smoke.server.lifecycle");
     }
     if (file.startsWith("client-cli/")) {
