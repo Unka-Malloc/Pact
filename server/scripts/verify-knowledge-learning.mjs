@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
-import { createLanceDbVectorStore } from "../platform/specialized/knowledge/embedding/vector-store/LanceDB/index.mjs";
+import { createLanceDbVectorStore } from "../platform/specialized/knowledge/retrieval/vector-store/LanceDB/index.mjs";
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);

@@ -11,7 +11,7 @@ import {
   computeHealthFindings,
   summarizeMaintenanceRuns,
   validateKnowledgeQualityAssertions
-} from "../platform/specialized/knowledge/datastore/knowledge-core/maintenance.mjs";
+} from "../platform/specialized/knowledge/storage/knowledge-core/maintenance.mjs";
 
 const ONE_PIXEL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";

@@ -8,6 +8,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -426,13 +427,20 @@ export async function createBusinessHarness(options = {}) {
     return result;
   }
 
-  async function login(username = "owner", password = server.initialOwner?.password || "") {
+  async function login(username = "owner", password = "") {
+    let loginUsername = username;
+    let loginPassword = password;
+    if (!loginPassword && loginUsername === "owner") {
+      const ownerCredentials = await readInitialOwnerCredentials(server);
+      loginUsername = ownerCredentials.username || loginUsername;
+      loginPassword = ownerCredentials.password;
+    }
     const response = await fetch(`${server.url}/api/auth/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username: loginUsername, password: loginPassword })
     });
     const payload = await response.json();
     lastExchange = {
@@ -440,13 +448,13 @@ export async function createBusinessHarness(options = {}) {
       path: "/api/auth/login",
       status: response.status,
       ok: response.ok,
-      request: JSON.stringify({ username }),
+      request: JSON.stringify({ username: loginUsername }),
       response: summarize(payload)
     };
-    assert.equal(response.status, 200, `login failed for ${username}: ${summarize(payload)}`);
+    assert.equal(response.status, 200, `login failed for ${loginUsername}: ${summarize(payload)}`);
     return {
-      username,
-      password,
+      username: loginUsername,
+      password: loginPassword,
       cookie: cookieHeaderFrom(response),
       csrf: payload.csrfToken,
       session: payload.session,
@@ -455,8 +463,9 @@ export async function createBusinessHarness(options = {}) {
   }
 
   async function loginOwner() {
-    assert.ok(server.initialOwner?.password, "test server did not create an initial owner password");
-    return login("owner", server.initialOwner.password);
+    const ownerCredentials = await readInitialOwnerCredentials(server);
+    assert.ok(ownerCredentials.password, "test server did not create an initial owner password");
+    return login(ownerCredentials.username, ownerCredentials.password);
   }
 
   function runAuthCli(args) {

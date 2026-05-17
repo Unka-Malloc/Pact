@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { strFromU8, unzipSync } from "fflate";
-import { buildTransactionContinuityModel } from "../platform/specialized/knowledge/domain/rules/transaction-continuity-model.mjs";
+import { buildTransactionContinuityModel } from "../platform/specialized/knowledge/preprocessing/domain/rules/transaction-continuity-model.mjs";
 
 function eml({ from, to = "user@example.test", subject, date, messageId, listId = "", body }) {
   const lines = [

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { createAgentWorkspace } from "../platform/specialized/agent/agent-workspace/index.mjs";
-import { createContextRuntime } from "../platform/specialized/agent/agent-context/context-runtime/index.mjs";
+import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { createAgentExplorationRuntime } from "../platform/specialized/agent/agent-tools/agent-exploration-runtime/index.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 

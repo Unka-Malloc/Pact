@@ -6,4 +6,4 @@
 - `FileNormalizer/OCR`：PaddleOCR 运行时适配。
 - `FileNormalizer/PDFProcessor`：依赖 Tika 的 PDF 专用适配。
 
-知识库内部文件处理逻辑位于 `server/platform/specialized/knowledge/file-processor`。
+知识库内部文件处理逻辑位于 `server/platform/specialized/knowledge/preprocessing/file-processor`。

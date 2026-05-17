@@ -141,7 +141,7 @@ Rust 命令行工具必须可以独立运行。也就是说，同一个能力必
 - 上传会话、checkpoint、断点续传、任务恢复
 - worker 队列与任务生命周期
 - 下游 skill 管理
-- `server/platform/specialized/knowledge/file-processor` 文件处理模块加载、文档格式路由和归一化交付
+- `server/platform/specialized/knowledge/preprocessing/file-processor` 文件处理模块加载、文档格式路由和归一化交付
 - SQLite 元数据与检索索引
 - 原始文件对象存储
 - 事务、线程、人物、关联、lineage 等业务编排
@@ -283,7 +283,7 @@ skill 挂载支持：
 
 ### 4.1 路由原则
 
-文档归一化与文件处理统一收敛到 `server/platform/specialized/knowledge/file-processor`。Node.js 主服务不直接解析文件，而是引入 FileProcessor 模块；FileProcessor 先按模块内路由表选择处理流程，再调用对应组件。
+文档归一化与文件处理统一收敛到 `server/platform/specialized/knowledge/preprocessing/file-processor`。Node.js 主服务不直接解析文件，而是引入 FileProcessor 模块；FileProcessor 先按模块内路由表选择处理流程，再调用对应组件。
 
 路由维度：
 
@@ -301,7 +301,7 @@ skill 挂载支持：
 
 FileProcessor 模块目录边界：
 
-- `server/platform/specialized/knowledge/file-processor/file-routing-table`
+- `server/platform/specialized/knowledge/preprocessing/file-processor/file-routing-table`
   - 文件类型到处理流程的注册表
   - 例如 `.docx -> documentParser.extractDocument`
   - 例如 `.png -> ocr.extractText` 或 `.png -> ImageAgent.extractDocument`
@@ -313,7 +313,7 @@ FileProcessor 模块目录边界：
   - OCR 服务入口
 - `server/platform/modules/knowledge/file-processor/FileNormalizer/PDFProcessor`
   - PDF 专用流程入口，内部可调用 Tika
-- `server/platform/specialized/knowledge/file-processor/FileNormalizer/NormalizedDocuments`
+- `server/platform/specialized/knowledge/preprocessing/file-processor/FileNormalizer/NormalizedDocuments`
   - normalized DOCX 与 manifest 交付物生成
 
 ### 4.2 默认扩展名路由
@@ -342,7 +342,7 @@ FileProcessor 模块目录边界：
   - 管理挂载名到模块路径的映射
 - `mount-routing.json`
   - 管理扩展名、媒体类型、kind 到挂载动作的映射
-- `server/platform/specialized/knowledge/file-processor/module.json`
+- `server/platform/specialized/knowledge/preprocessing/file-processor/module.json`
   - 管理 FileProcessor 自身组件清单、默认加载策略、可选打包组件和只读运行时约束
 
 配置策略：
@@ -418,7 +418,11 @@ FileProcessor 模块目录边界：
 
 ### 6.2 文件归一化解析与处理工作流
 
-当前文件归一化链路的目标是：把用户输入的文件、目录、压缩包或粘贴文本，转换为可分析的 `sources / chunks`，再生成面向外部知识库摄取的多颗粒度 DOCX 包。
+当前文件归一化链路的目标是：把用户输入的文件、目录、压缩包或粘贴文本，转换为可分析的 `sources / chunks`，再生成面向外部知识库摄取的多颗粒度 DOCX 包。知识管理交付分三层：
+
+- 第一层 `raw-corpus-construction`：原始语料建构，把文件、邮件、聊天、本地镜像等材料解析、切分、保留结构并形成可导出的规范语料。邮件等时序材料必须尽可能保留 message、thread、transaction、timeline、sourceRange 和 lineage。
+- 第二层 `knowledge-index-construction`：知识索引建构，把第一层产物收纳为内置 `KnowledgeCore` 或外部知识库适配器的 document / section / block / asset / evidence / embedding / relationship。第二层必须继续承担规范语料到索引对象的解析和映射，并通过 `knowledge.search`、evidence pack、asset protocol 和 `knowledge.export.docx` 提供权威 RAG 查询面。
+- 第三层 `knowledge-distillation`：知识蒸馏，从第二层 evidence 中提取摘要、规则候选、主题背景和工作空间上下文。该层是有损压缩，只能作为 ContextRuntime、AgentWorkspace 和长任务运行时背景，不能替代第二层全量查询。
 
 完整流程：
 
@@ -439,7 +443,7 @@ FileProcessor 模块目录边界：
    - 每个 source 附加 `sourceCreatedAt / sourceUpdatedAt / sourceCollectedAt`。
 
 4. 格式识别与路由
-   - `server/platform/specialized/knowledge/file-processor` 读取模块内 `file-routing-table`。
+   - `server/platform/specialized/knowledge/preprocessing/file-processor` 读取模块内 `file-routing-table`。
    - 文本、邮件、图片、PDF、DOCX、普通文档按扩展名、media type、kind 和默认规则分类。
    - 默认路由：
      - 图片 -> `ocr.extractText`
@@ -483,7 +487,7 @@ FileProcessor 模块目录边界：
      - PDF -> `document`、`section`、`page-window`
      - HTML -> `page`、`section`、`block`
      - 其他格式 -> `source`
-   - 每个 DOCX 都写入归一化元数据、证据定位、正文和解析风险。
+   - 每个 DOCX 都写入归一化元数据、证据定位、正文和解析风险，并保留 chunk id、`sectionId` 与 `sourceRange`。
 
 10. 原始材料处理
     - PPT / PPTX / PDF / HTML 会复制允许入库的原始材料到 `normalized-documents/source-materials/`。
@@ -499,14 +503,30 @@ FileProcessor 模块目录边界：
 12. 下载与外部摄取
     - 归一化清单通过 `GET /api/jobs/:jobId/normalized-documents` 读取。
     - 单个 DOCX 或允许输出的原始材料通过 `GET /api/jobs/:jobId/normalized-documents/:documentId` 下载。
+    - 已收纳到 KnowledgeCore 的 canonical knowledge 通过 `GET /api/knowledge/export/docx`、RPC `knowledge.export.docx` 或 CLI `knowledge export-docx --output knowledge.docx` 导出标准 DOCX。
+    - 外部知识库适配器从同一 normalized document package、manifest、source metadata 和 asset locator 建立自己的索引，但必须把查询、证据读取和资产读取适配回 `splitall.knowledge.v1`。
     - CLI、server-web 和 client-gui 都必须使用同一套服务端协议，不各自解析 job 目录。
+
+13. 索引与蒸馏消费
+    - RAG、智能体问答、证据打开和 Markdown 渲染必须通过第二层 `knowledge.search` / evidence pack / asset protocol。
+    - `SummarizationRuntime`、`knowledge-distillation` runtime、`ContextRuntime` 和 `AgentWorkspace` 只能消费第二层 evidence 生成有损背景。
+    - 蒸馏结果必须保留 `evidenceRefs / citations / sourceTrace / coverage`，缺引用链路的内容只能进入补证或审核，不能写回 canonical evidence。
+
+14. 外部知识库适配器一致性
+    - 适配器最小方法集是 `knowledge.capabilities`、`knowledge.health`、`knowledge.ingest.batch`、`knowledge.upsert.documents`、`knowledge.search`、`knowledge.get.evidence`、`knowledge.asset`、`knowledge.export.docx`、`knowledge.delete.batch`、`knowledge.reindex` 和 `knowledge.sync`。
+    - conformance fixture 必须用同一份 normalized corpus 验证 ingest -> search -> evidence read -> asset read -> DOCX export -> delete/tombstone -> search/sync 隐藏已删除对象。
+    - 远端后端必须在检索前应用 tenant、workspace、source-scope 和权限过滤，不能先 topK 再做权限后过滤。
+    - 首批检测只纳入成熟开源后端：`PostgreSQL + pgvector`、`Qdrant`、`OpenSearch`，以及可选的 `Weaviate`。RAG 应用、编排框架、私有服务和实验性 graph/RAG 后端不作为首批必测对象。
+    - 实现入口是 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`，当前实现 `qdrant`、`opensearch` 和 `pgvector`。该 mount 以 `KnowledgeCore` 保存 canonical evidence / asset / DOCX export，并把第二层检索记录镜像到外部数据库。
 
 关键边界：
 
 - Node.js 负责路由、编排、落盘和结果回收，不在业务代码里硬编码每种格式的解析实现。
-- 文件解析由 FileProcessor 内的路由表分派到 mount 能力或子组件，归一化 DOCX 由 `FileNormalizer/NormalizedDocuments` 承担。
+- 第一层文件解析由 FileProcessor 内的路由表分派到 mount 能力或子组件，归一化 DOCX 由 `FileNormalizer/NormalizedDocuments` 承担。
+- 第二层索引解析由内置 `KnowledgeCore` 或外部知识库适配器承担，负责把 normalized package、manifest、source metadata、asset locator 和 chunk/section 边界转成可检索的 evidence。第二层不能假设第一层只给纯文本。
+- 第二层适配器必须保留 SplitAll id 到外部 id 的映射；映射丢失会破坏 evidence 回读、资产读取、删除、sync 和 DOCX export，必须作为 health failure 暴露。
 - 服务端 SQLite / raw object / job snapshot 是权威记录；客户端本地索引只做展示、恢复和证据打开加速。
-- Markdown 和旧 knowledge-package 导出不再作为主线；知识库交付主线是 normalized DOCX + manifest。
+- Markdown 和旧 knowledge-package 导出不再作为主线；知识管理交付主线是 normalized DOCX + manifest、`knowledge.export.docx` 的 canonical knowledge DOCX，以及只供上下文/工作空间运行时使用的有损蒸馏背景。
 
 ### 6.3 checkpoint
 
@@ -596,6 +616,8 @@ FileProcessor 模块目录边界：
 
 - `common` 提供稳定 API 和基础设施能力
 - `interactive` 是底座对外注册和服务侧调用的唯一跨层入口
+- 上层功能（`services`、HTTP 接口、worker、agent 功能）调用底座接口时，必须统一通过 `platform/interactive` 切面；禁止直接依赖 `platform/common`、`platform/specialized`、`platform/modules`
+- 开发新功能前必须先查 `server/platform/interactive/interface-manifest.mjs`，优先复用已登记的 interactive 接口，再评估是否新增接口
 - `specialized` 放知识库、智能体等专属底座，不能反向依赖服务条线
 - `modules` 放外置模块和本地运行时资源
 - 平台层不把具体业务流程写死在接口层
@@ -663,7 +685,7 @@ FileProcessor 模块目录边界：
 - retrieval index / FTS
 - 删除协调状态
 
-通用知识库不再继续扩展这组应用层表。新的多模态知识库由 `server/platform/specialized/knowledge/datastore/knowledge-core` 独立维护，应用层通过 `splitall.knowledge.v1` 调用：
+通用知识库不再继续扩展这组应用层表。新的多模态知识库由 `server/platform/specialized/knowledge/storage/knowledge-core` 独立维护，应用层通过 `splitall.knowledge.v1` 调用：
 
 - `knowledge-core/knowledge.sqlite`：collection / document / section / block / asset / evidence / embedding / relationship。
 - `knowledge-core/assets/`：按 SHA-256 存放图片等二进制资产。
@@ -678,9 +700,11 @@ FileProcessor 模块目录边界：
 - `retrieval`：`splitall.retrieval.v1`，负责混合召回、parent expansion、rerank 和 evidence shaping。
 - `DocumentOutlineRuntime`：`splitall.document-outline.v1`，把 PageIndex-style 自然章节树作为长文档局部增强写入 `kc_hierarchy_nodes`，仅保存 outline metadata、sourceRange 和 quality，不复制 PageIndex 代码、不修改源文件、不替代 FTS/vector/graph/localQuery 主检索路径。
 
-`ClientRuntimeAllocator` 位于应用层，不属于具体模型 provider 或知识库实现。它用 Strategy + Policy Resolver 模式把 `clientUid + taskType` 路由到一个运行时 profile，再把模型 alias、ContextProfile、RetrievalProfile、workspace/session 和工具 grant 作为切面注入 AgentGateway、ContextRuntime、KnowledgeSearch、SummarizationRuntime 和 AgentExplorationRuntime。它同时维护 `lru-lfu-v1` 冷却策略：每次标准调用记录到 usage store，热度由最近时间桶、总调用量和最近访问时间计算；低频且最旧的客户端可以降到冷上下文 profile 与冷 workspace 策略，高频客户端继续获得热路径资源。这个抽象保留 HTTP/RPC/CLI 标准调用面，同时允许同一服务端按客户端热切换上下文和工作空间；显式调用参数优先，避免分配器覆盖人工指定的模型或 workspace。`GET /api/client-runtime/status`、`client_runtime.status` 和 `client-runtime status` 输出同一份热力图数据，控制台系统状态直接消费该协议状态。`clientId` 不参与用户空间识别，避免与 KnowledgeCore canary 路由和服务发现客户端 ID 混用。
+在三层知识管理模型中，`metadata/splitall.sqlite`、raw object、job snapshot 和 normalized DOCX 属于第一层语料建构记录；`knowledge-core/knowledge.sqlite`、`knowledge-core/assets/`、外部知识库索引映射、evidence pack 和 hierarchy index 属于第二层权威索引；`SummarizationRuntime`、`knowledge-distillation` runtime、ContextRuntime 和 AgentWorkspace 产物属于第三层有损背景。第二层是外部知识库对接点，必须承担规范语料到索引/evidence 的解析和协议适配；第三层可以引用第二层 evidence，但不能覆盖第二层事实，也不能作为全量查询入口。
 
-多源连接器属于客户端侧架构：`DataConnector` 负责 OAuth、同步、本地 mirror、`localQuery` 和卸载；服务端只接收 `clientUid/sourceType/providerId/externalId/syncBatchId/contentHash/capturedAt/sourceMetadata` 等标准来源字段，并把它们归一成 KnowledgeCore evidence。外部连接器以配置包安装到 `portable-data/connectors/modules/<providerId>`，进程型运行时通过 `splitall.data-connector.process.v1` 标准输入/输出协议动态调用 `sync/localQuery/health/auth/uninstall` capability，卸载策略控制本地 mirror cache 和模块目录清理。聊天记录在客户端 `chat-index/chat.sqlite` 保留 workspace、conversation、participant、message、attachment 和 FTS 关系；服务端搜索结果只消费统一 evidence，不反向依赖具体连接器。`knowledge.search` 可以接收客户端附带的 `localQuery.items` 或 `localHits`，按统一 `SourceHit` 结构与服务端 evidence 做去重、加权融合和最终排序；本地-only 结果只作为 `localMirror` 补充项返回，不能被当作服务端 evidence 读取。知识蒸馏也只基于统一 evidence 运行，输出摘要、规则候选和实体关系候选时必须随对象保留 `evidenceRefs/citations/sourceTrace`，不能把连接器字段混入源文件或蒸馏结论正文。
+`ClientRuntimeAllocator` 位于应用层，不属于具体模型 provider 或知识库实现。它用 Strategy + Policy Resolver 模式把 `clientUid + taskType` 路由到一个运行时 profile，再把模型 alias、ContextProfile、RetrievalProfile、workspace/session 和工具 grant 作为切面注入 AgentGateway、AgentMemory、ContextRuntime、KnowledgeSearch、SummarizationRuntime 和 AgentExplorationRuntime。它同时维护 `lru-lfu-v1` 冷却策略：每次标准调用记录到 usage store，热度由最近时间桶、总调用量和最近访问时间计算；低频且最旧的客户端可以降到冷上下文 profile 与冷 workspace 策略，高频客户端继续获得热路径资源。这个抽象保留 HTTP/RPC/CLI 标准调用面，同时允许同一服务端按客户端热切换上下文和工作空间；显式调用参数优先，避免分配器覆盖人工指定的模型或 workspace。`GET /api/client-runtime/status`、`client_runtime.status` 和 `client-runtime status` 输出同一份热力图数据，控制台系统状态直接消费该协议状态。`clientId` 不参与用户空间识别，避免与 KnowledgeCore canary 路由和服务发现客户端 ID 混用。
+
+多源连接器属于客户端侧架构：`DataConnector` 负责 OAuth、同步、本地 mirror、`localQuery` 和卸载；服务端只接收 `clientUid/sourceType/providerId/externalId/syncBatchId/contentHash/capturedAt/sourceMetadata` 等标准来源字段，并把它们归一成第二层 evidence。外部连接器以配置包安装到 `portable-data/connectors/modules/<providerId>`，进程型运行时通过 `splitall.data-connector.process.v1` 标准输入/输出协议动态调用 `sync/localQuery/health/auth/uninstall` capability，卸载策略控制本地 mirror cache 和模块目录清理。聊天记录在客户端 `chat-index/chat.sqlite` 保留 workspace、conversation、participant、message、attachment 和 FTS 关系；服务端搜索结果只消费统一 evidence，不反向依赖具体连接器。`knowledge.search` 可以接收客户端附带的 `localQuery.items` 或 `localHits`，按统一 `SourceHit` 结构与第二层 evidence 做去重、加权融合和最终排序；本地-only 结果只作为 `localMirror` 补充项返回，不能被当作服务端 evidence 读取。知识蒸馏也只基于统一 evidence 运行，输出摘要、规则候选和实体关系候选时必须随对象保留 `evidenceRefs/citations/sourceTrace`，不能把连接器字段混入源文件或蒸馏结论正文；这些蒸馏输出只供上下文和工作空间运行时使用，不能替代 `knowledge.search`。
 
 资产对外只通过 `GET /api/knowledge/assets/:assetId` 或离线导出包内相对路径暴露。`assetId` 是不透明标识，不是文件路径；控制器、客户端和 Markdown 渲染器不能绕过协议读取 `knowledge-core/assets/`。
 
@@ -771,7 +795,7 @@ FileProcessor 模块目录边界：
 - 客户端可以保存部分本地知识索引，但这些索引必须可重建，不能取代服务端权威存储
 - `SQLite` 是唯一元数据真相源
 - Node.js 只做编排、模块加载、调度、持久化与 API，不再把本地文档解析 fallback 散落在主服务代码中
-- 文件型文档默认经 `server/platform/specialized/knowledge/file-processor` 路由到 Tika、OCR、PDFProcessor 或自定义智能体
+- 文件型文档默认经 `server/platform/specialized/knowledge/preprocessing/file-processor` 路由到 Tika、OCR、PDFProcessor 或自定义智能体
 - 任意命名挂载和未知扩展名都必须支持通过配置接入
 - 默认打包不应强制加载所有模块；FileProcessor、OCR、VectorStore 等应作为可选模块或可选子组件进入包
 - 离线 Ubuntu 包必须在构建机阶段完成 Node/JRE/Tika/native node_modules 准备，目标机运行期不能依赖 `apt`、宿主 Node/npm/Java 或隐式模型下载
@@ -788,7 +812,7 @@ FileProcessor 模块目录边界：
 - `server/platform/common/platform-core/auth/console-auth.mjs`：本地用户、角色、会话、CSRF、OIDC 配置占位和审计日志。
 - `server/platform/common/operation-dispatcher/operation-registry.mjs`：所有 HTTP/RPC/CLI 接口声明 `requiredScopes`。
 - `server/platform/common/console/http/controllers/system-controller.mjs`：只做请求解析、权限后处理和协议调用。
-- `server/platform/specialized/knowledge/datastore/knowledge-core`：继续作为 `knowledgeBase` mount，对外暴露 `splitall.knowledge.v1`。
+- `server/platform/specialized/knowledge/storage/knowledge-core`：继续作为 `knowledgeBase` mount，对外暴露 `splitall.knowledge.v1`。
 
 前端分层：
 
@@ -796,12 +820,21 @@ FileProcessor 模块目录边界：
 - `server-web/lib/bridge.ts`：唯一数据访问层，负责 CSRF、二进制资产 URL、DOCX 下载 URL 和认证接口。
 - `ServerConsoleApp.vue`：只渲染状态、表单、检索、证据、入库和维护任务，不读取 SQLite、对象目录或模块路径。
 
+前端功能登记与门禁：
+
+- 所有 `server-web` 前端功能必须先登记到 `server/config/frontend-feature-registry.yaml`，再允许开发和合并。
+- 登记模型必须为三级：`routePath/tabId -> featureId -> actionId`。
+- 未登记的前端路由页面或系统配置 Tab 功能视为违规，不允许通过门禁。
+- 门禁脚本为 `server/scripts/verify-frontend-feature-registry.mjs`，要求路由、系统配置 Tab 和登记表双向一致。
+
 控制台知识库页面：
 
 - 概览：KnowledgeCore、协议模块、计数、最近任务。
 - 检索：query、topK、batchId、模态过滤。
 - 证据/资产：evidence pack、图片资产、OCR/caption、Markdown 渲染。
 - 入库/归一化：浏览器文件/目录上传，经 upload-session/checkpoint/chunk 创建 job。
+- 蒸馏/上下文背景：展示摘要、coverage、evidenceRefs、未引用结论、审核状态和工作空间引用关系。
+- 同步目录：位于系统配置抽屉的“同步目录”Tab。
 - 维护/配置：由服务端 `config-schema` 渲染表单，可执行 reindex、validate、repair 等维护任务。
 
 安全边界：

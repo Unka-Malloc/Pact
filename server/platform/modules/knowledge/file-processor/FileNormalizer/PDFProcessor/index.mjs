@@ -3,7 +3,7 @@ import {
   importFileDescriptorForExtension,
   importFileDescriptorForMediaType,
   mediaTypeForImportExtension
-} from "../../../../../specialized/knowledge/file-processor/import-file-types.mjs";
+} from "../../../../../specialized/knowledge/preprocessing/file-processor/import-file-types.mjs";
 
 export function createPdfProcessorMount() {
   return {

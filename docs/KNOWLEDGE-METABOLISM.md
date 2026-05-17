@@ -17,7 +17,7 @@
 
 ### 1. 来源时间元数据
 
-当前受维护主线里，`server/platform/specialized/knowledge/file-processor/index.mjs` 会在读取材料时附加：
+当前受维护主线里，`server/platform/specialized/knowledge/preprocessing/file-processor/index.mjs` 会在读取材料时附加：
 
 - `sourceCreatedAt`
 - `sourceUpdatedAt`

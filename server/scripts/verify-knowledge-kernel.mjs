@@ -3,8 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
-import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/datastore/knowledge-core/index.mjs";
+import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/storage/knowledge-core/index.mjs";
+import { getMetadataDatabasePath } from "../platform/common/storage/schema-manager.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const mockDocumentParserModulePath = fileURLToPath(
@@ -546,6 +548,26 @@ try {
 
   await waitForJob(server.url, createdJob.id);
   const result = await fetchJson(`${server.url}/api/jobs/${createdJob.id}/result`);
+  assert.equal(result.preprocess?.resultType, "splitall.knowledge.preprocess-result");
+  assert.ok(result.preprocess.blocks.length > 0);
+  assert.ok(result.preprocess.chunks.length > 0);
+  assert.equal(result.preprocess.counts.sources, result.sourceFiles.length);
+  const storageSummary = await fetchJson(`${server.url}/api/storage/summary`);
+  assert.ok(storageSummary.preprocessBlockCount >= result.preprocess.counts.blocks);
+  assert.ok(storageSummary.preprocessChunkCount >= result.preprocess.counts.chunks);
+  assert.ok(storageSummary.sourceVocabularyTermCount > 0);
+  assert.ok(storageSummary.sourceVocabularyTotalFrequency >= storageSummary.sourceVocabularyTermCount);
+  const metadataDb = new Database(getMetadataDatabasePath(userDataPath), {
+    readonly: true
+  });
+  try {
+    const contractTerm = metadataDb
+      .prepare("SELECT frequency FROM source_vocabulary_terms WHERE term = ?")
+      .get("合同");
+    assert.ok(contractTerm?.frequency > 0);
+  } finally {
+    metadataDb.close();
+  }
   assert.ok(result.knowledge);
   assert.ok(result.knowledge.items.length > 0);
   assert.ok(result.knowledge.chunks.length > 0);

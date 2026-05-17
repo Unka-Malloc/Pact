@@ -7,12 +7,12 @@ import {
   getSourceFileIndexRun,
   indexKnowledgeSourceFiles,
   sourceEvidenceIdForPath
-} from "../platform/specialized/knowledge/datastore/source-file-index-service.mjs";
+} from "../platform/specialized/knowledge/storage/source-file-index-service.mjs";
 import {
   getSourceFileEvidence,
   searchSourceFiles
-} from "../platform/specialized/knowledge/datastore/source-file-search-service.mjs";
-import { getSourceSearchRulesPath } from "../platform/specialized/knowledge/domain/rules/source-search-rules.mjs";
+} from "../platform/specialized/knowledge/retrieval/source-file-search-service.mjs";
+import { getSourceSearchRulesPath } from "../platform/specialized/knowledge/preprocessing/domain/rules/source-search-rules.mjs";
 
 async function writeJson(filePath, value) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });

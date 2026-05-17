@@ -9,11 +9,11 @@
 
 ## 1. 服务端控制台
 
-先启动服务端：
+先启动服务端（推荐一键命令）：
 
 ```bash
 npm install
-npm run server:console
+npm run start:all
 ```
 
 默认地址：

@@ -1,4 +1,4 @@
-import { runEmailAnalysis } from "../../server/platform/specialized/knowledge/domain/rules/email-analysis.mjs";
+import { runEmailAnalysis } from "../../server/platform/specialized/knowledge/preprocessing/domain/rules/email-analysis.mjs";
 
 const modules = [
   {

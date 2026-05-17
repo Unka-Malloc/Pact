@@ -5,13 +5,13 @@ import path from "node:path";
 import {
   isSupportedImportFilePath,
   isSupportedImportPath
-} from "../platform/specialized/knowledge/file-processor/index.mjs";
+} from "../platform/specialized/knowledge/preprocessing/file-processor/index.mjs";
 import {
   getImportExtensionRoutes,
   importFileDescriptorForPath,
   importFileTypeConfigPath,
   reloadImportFileTypeRegistry
-} from "../platform/specialized/knowledge/file-processor/import-file-types.mjs";
+} from "../platform/specialized/knowledge/preprocessing/file-processor/import-file-types.mjs";
 import { TIKA_IMPORT_EXTENSIONS } from "../platform/modules/knowledge/file-processor/FileNormalizer/Tika/tika.mjs";
 import { normalizeMountRouting } from "../platform/common/module-manager/mount-config.mjs";
 

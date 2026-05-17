@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   buildTransactionContinuityModel,
   transactionContinuityDefaults
-} from "../platform/specialized/knowledge/domain/rules/transaction-continuity-model.mjs";
+} from "../platform/specialized/knowledge/preprocessing/domain/rules/transaction-continuity-model.mjs";
 
 function parseArgs(argv) {
   const args = {

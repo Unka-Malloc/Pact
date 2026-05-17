@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadCheckpointTree } from "../platform/common/data-structure/checkpoint-tree-store.mjs";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
+import { readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -116,7 +117,8 @@ const server = await startHttpServer({
 });
 
 try {
-  const auth = await login(server.url, "owner", server.initialOwner?.password || "");
+  const ownerCredentials = await readInitialOwnerCredentials(server);
+  const auth = await login(server.url, ownerCredentials.username, ownerCredentials.password);
 
   const consoleState = await fetchJson(
     `${server.url}/api/knowledge/console`,

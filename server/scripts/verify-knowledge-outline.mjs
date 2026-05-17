@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/datastore/knowledge-core/index.mjs";
+import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/storage/knowledge-core/index.mjs";
 
 function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");

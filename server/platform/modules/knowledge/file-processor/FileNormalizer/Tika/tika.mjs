@@ -7,7 +7,7 @@ import {
   getTikaImportExtensions,
   isTikaImportExtension,
   isTikaImportMediaType
-} from "../../../../../specialized/knowledge/file-processor/import-file-types.mjs";
+} from "../../../../../specialized/knowledge/preprocessing/file-processor/import-file-types.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

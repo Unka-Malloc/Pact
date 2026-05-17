@@ -1,0 +1,17 @@
+{
+  "name": "ExternalKnowledgeBase",
+  "version": 1,
+  "description": "Optional splitall.knowledge.v1 mount that mirrors KnowledgeCore records into mature external open-source knowledge backends.",
+  "defaultLoaded": false,
+  "protocol": "splitall.knowledge.v1",
+  "adapterProtocol": "splitall.external-knowledge-adapter.v1",
+  "components": {
+    "knowledgeBase": {
+      "path": "./index.mjs",
+      "factory": "createExternalKnowledgeBaseMount",
+      "packaging": "operator-configured",
+      "readOnlyRuntime": false,
+      "providers": ["qdrant", "opensearch", "pgvector"]
+    }
+  }
+}

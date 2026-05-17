@@ -29,7 +29,13 @@ npm run server:start
 一键构建控制台并启动：
 
 ```bash
-npm run server:console
+npm run start:all
+```
+
+开发联调（后端 + Vite）：
+
+```bash
+npm run start:all -- --dev
 ```
 
 公网或局域网监听：
@@ -111,7 +117,7 @@ node server/scripts/start-server.mjs
   - 挂载名到模块路径的映射
 - `mount-routing.json`
   - 扩展名 / 媒体类型 / kind 到挂载动作的映射
-- `server/platform/specialized/knowledge/file-processor/module.json`
+- `server/platform/specialized/knowledge/preprocessing/file-processor/module.json`
   - FileProcessor 的组件、路由表、可选打包和只读运行时声明
 
 服务端只读取 `mount-modules.json` 和 `mount-routing.json`。旧 `mounts.json` 布局已移除；历史数据需要通过外部脚本转换后再启动服务。
@@ -132,6 +138,18 @@ node server/scripts/start-server.mjs
 - `graphStore`
 
 `knowledgeBase` 默认由内置 `KnowledgeCore` 实现，协议版本为 `splitall.knowledge.v1`。应用层只调用知识库协议方法，不直接访问 KnowledgeCore 的 SQLite、资产目录、向量实现或 Markdown 渲染逻辑。外部知识库实现可以通过 `mount-modules.json` 替换 `knowledgeBase`，只要保持协议方法兼容。
+
+内置外部知识库 mount 位于 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`。它保留 `KnowledgeCore` 作为 canonical evidence / asset / DOCX export 真相源，同时把第二层检索记录镜像到成熟开源后端。当前支持 `qdrant`、`opensearch` 和 `pgvector`：
+
+```bash
+SPLITALL_SERVER_KNOWLEDGE_BASE_MODULE=server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs \
+SPLITALL_EXTERNAL_KB_PROVIDER=qdrant \
+SPLITALL_EXTERNAL_KB_URL=http://127.0.0.1:6333 \
+SPLITALL_EXTERNAL_KB_COLLECTION=splitall_knowledge \
+npm run server:start
+```
+
+`SPLITALL_EXTERNAL_KB_PROVIDER` 可取 `qdrant`、`opensearch` 或 `pgvector`。Qdrant/OpenSearch 使用 `SPLITALL_EXTERNAL_KB_URL`；pgvector 使用 `SPLITALL_EXTERNAL_KB_CONNECTION_STRING`，并要求部署环境提供 `pg` Node.js 驱动。
 
 ### 5.2 自定义挂载
 
@@ -185,13 +203,13 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 公开调用仍走接口注册制：
 
-- HTTP：`/api/knowledge/capabilities`、`/api/knowledge/search`、`/api/knowledge/documents/:documentId/structure`、`/api/knowledge/evidence/:evidenceId`、`/api/knowledge/assets/:assetId`、`/api/knowledge/render/markdown`、`/api/knowledge/health`、`/api/knowledge/maintenance`、`/api/knowledge/reindex`
-- JSON-RPC：`knowledge.capabilities`、`knowledge.search`、`knowledge.document.structure`、`knowledge.get.evidence`、`knowledge.asset`、`knowledge.render.markdown`、`knowledge.health`、`knowledge.maintenance.get/set`、`knowledge.reindex`
-- CLI：`knowledge capabilities`、`knowledge search --query ... [--hierarchy-reasoning]`、`knowledge structure --document-id ...`、`knowledge evidence --id ...`、`knowledge asset --id ... --output image.bin`、`knowledge render --evidence-id ...`、`knowledge maintenance ...`
+- HTTP：`/api/knowledge/capabilities`、`/api/knowledge/search`、`/api/knowledge/documents/:documentId/structure`、`/api/knowledge/evidence/:evidenceId`、`/api/knowledge/assets/:assetId`、`/api/knowledge/render/markdown`、`/api/knowledge/export/docx`、`/api/knowledge/health`、`/api/knowledge/maintenance`、`/api/knowledge/reindex`
+- JSON-RPC：`knowledge.capabilities`、`knowledge.search`、`knowledge.document.structure`、`knowledge.get.evidence`、`knowledge.asset`、`knowledge.render.markdown`、`knowledge.export.docx`、`knowledge.health`、`knowledge.maintenance.get/set`、`knowledge.reindex`
+- CLI：`knowledge capabilities`、`knowledge search --query ... [--hierarchy-reasoning]`、`knowledge structure --document-id ...`、`knowledge evidence --id ...`、`knowledge asset --id ... --output image.bin`、`knowledge render --evidence-id ...`、`knowledge export-docx --output knowledge.docx`、`knowledge maintenance ...`
 
 长文档检索支持 PageIndex-inspired 的局部章节树增强：`DocumentOutlineRuntime` 会把可靠 section 重建为父子树，并在结构过粗的长文档上生成 synthetic outline nodes。outline metadata 写入 KnowledgeCore SQLite，不写入源文件；`knowledge.search` 默认不调用模型，只有 `hierarchyReasoning=true` 或 retrieval profile 的 `hierarchyReasoningEnabled=true` 才启用树路由，且模型路由还必须显式传入 `modelEnabled=true`。结构读取接口只返回 compact outline tree、source ranges 和 quality findings，不返回全文正文。
 
-`ClientRuntimeAllocator` 负责按客户端维度动态分配模型、上下文和工作空间。服务端读取 `client-runtime/client-runtime-allocator.json`，只用标准字段 `clientUid + taskType` 匹配 profile，并把缺省的 `modelAlias`、`contextProfileId`、`retrievalProfileId/profileKey`、`workspaceId/sessionId` 和 `toolGrantId` 注入标准调用；调用方显式参数不会被覆盖。运行使用率写入 `client-runtime/client-runtime-usage.json`，由 `coolingPolicy.strategy = lru-lfu-v1` 按最近窗口、频次和访问时间形成冷却状态，低频客户端可以被切到冷上下文 profile，把预算留给高频连接。管理接口：HTTP `GET|POST /api/client-runtime/profiles`、`POST /api/client-runtime/resolve`、`GET /api/client-runtime/status`；RPC `client_runtime.profiles.get|set`、`client_runtime.resolve`、`client_runtime.status`；CLI `client-runtime profiles`、`client-runtime profiles set --body profiles.json`、`client-runtime resolve --client-uid CLIENT_UID`、`client-runtime status`。控制台“系统状态 / 运维监控”热力图来自 `/api/client-runtime/status`。`clientId` 不参与用户空间识别；它只属于检索灰度、服务发现等明确声明的其他协议。
+`ClientRuntimeAllocator` 负责按客户端维度动态分配模型、上下文和工作空间。服务端读取 `client-runtime/client-runtime-allocator.json`，只用标准字段 `clientUid + taskType` 匹配 profile，并把缺省的 `modelAlias`、`contextProfileId`、`retrievalProfileId/profileKey`、`workspaceId/sessionId` 和 `toolGrantId` 注入标准调用；调用方显式参数不会被覆盖。调用方显式选择已有 `workspaceId` 时，workspace 热切换后的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds` 优先于 allocator 注入默认值。运行使用率写入 `client-runtime/client-runtime-usage.json`，由 `coolingPolicy.strategy = lru-lfu-v1` 按最近窗口、频次和访问时间形成冷却状态，低频客户端可以被切到冷上下文 profile，把预算留给高频连接。管理接口：HTTP `GET|POST /api/client-runtime/profiles`、`POST /api/client-runtime/resolve`、`GET /api/client-runtime/status`；RPC `client_runtime.profiles.get|set`、`client_runtime.resolve`、`client_runtime.status`；CLI `client-runtime profiles`、`client-runtime profiles set --body profiles.json`、`client-runtime resolve --client-uid CLIENT_UID`、`client-runtime status`。控制台“系统状态 / 运维监控”热力图来自 `/api/client-runtime/status`。`clientId` 不参与用户空间识别；它只属于检索灰度、服务发现等明确声明的其他协议。
 
 ### 5.5 多智能体知识总结
 
@@ -199,6 +217,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 - `AgentWorkspace`：每个智能体有私有自治空间；共享空间只接收结构化 submission、issue、artifact 和 decision proposal。
 - `ContextRuntime`：按模型窗口生成 `ContextPack`，可保存 `ContextProfile` 调整证据、历史和压缩预算。
+- `AgentMemory`：独立保存智能体会话压缩记忆，默认写入 `<userDataPath>/agent-memory/session-memory.jsonl`，并兼容读取旧 `<userDataPath>/context-core/context-session-memory.jsonl`。
 - `MultiAgentCoordinator`：使用 LangGraph.js 固定状态图执行 `Plan -> Retrieve -> ExtractEvidence -> OrganizeTopics -> ParallelAnalysts -> Writer -> Reviewer -> Merger -> PublishArtifact`。
 - `SummarizationRuntime`：输出 `EvidenceUnitSummary`、`TopicSummary`、`ExecutiveSummary`、`ReviewReport`，并计算 evidence coverage。
 
@@ -209,6 +228,10 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 - `POST /api/knowledge/summarization/runs/:runId/approve`
 - `GET /api/agent-workspaces`
 - `GET /api/agent-workspaces/:workspaceId`
+- `GET /api/agent-workspaces/:workspaceId/context`
+- `GET /api/agent-workspaces/:workspaceId/context-bundle`
+- `POST /api/agent-workspaces/:workspaceId/context-bundle/restore`
+- `POST /api/agent-workspaces/:workspaceId/profile`
 - `POST /api/agent-workspaces/:workspaceId/submissions/:submissionId/resolve`
 - `POST /api/agent-workspaces/:workspaceId/issues/:issueId/resolve`
 - `GET /api/agent-workspaces/:workspaceId/locks`
@@ -216,6 +239,14 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 - `GET/POST /api/context/profiles`
 
 同等受限能力通过 Tool Management v1 的 `splitall.knowledge.*` 工具暴露给授权智能体。任何事实、实体、关系和分类法变更只允许生成审核项或建议，不允许由总结链路直接覆盖 canonical knowledge。
+
+工作空间上下文热切换接口直接面向运行时：`GET /api/agent-workspaces/:workspaceId/context` 返回解析继承链后的 profile、模型别名、工具授权、知识源和 fingerprint；`GET /api/agent-workspaces/:workspaceId/context-bundle?format=compressed` 导出带 `bundleHash` 的 `gzip+base64` 上下文包；`POST /api/agent-workspaces/:workspaceId/context-bundle/restore` 把该包恢复到调用方有权访问的目标工作空间。恢复会校验可选 `bundleHash`，失败时不改变目标上下文；成功时热切换目标 workspace 的 profile、`modelAlias`、`toolGrantId` 和知识源集合，并写入 `context_bundle_restore` run 与 handoff artifact。
+
+授权智能体使用 Tool Management v1 的同名能力：`splitall.agentWorkspace.context`、`splitall.agentWorkspace.contextBundle.export`、`splitall.agentWorkspace.contextBundle.restore`、`splitall.agentWorkspace.profile.hotswap`、`splitall.agentWorkspace.sources.set`、`splitall.agentWorkspace.share/unshare`。只读 grant 只能读取上下文和导出包；恢复、profile 热切换、继承和共享变更需要 `knowledge:maintain`。
+
+多智能体总结运行时也把 `workspaceId` 作为运行状态入口。传入已有 workspace 时不会覆盖该 workspace profile；调用方未显式指定模型、上下文 profile、工具授权或检索源时，运行时继承 workspace 的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds`，并把这些值传给上下文组装、AgentGateway 和 KnowledgeCore 检索。若 `ClientRuntimeAllocator` 同时注入默认值，优先级为调用方显式参数、已选 workspace 的 `workspaceContext`、allocator 默认值。响应和 run input 会保留 `workspaceContext`，便于核对长任务实际使用的上下文 generation。
+
+智能探索运行时把 `workspaceId` 视为运行状态入口。调用方未显式指定模型、上下文 profile、工具授权或检索源时，运行时会继承工作空间的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds`，并把这些值传给上下文组装、AgentGateway 和知识检索工具；响应、run input 和审计日志都会保留 `workspaceContext`，方便排查热切换后的实际运行状态。若 `ClientRuntimeAllocator` 同时注入默认值，优先级为调用方显式参数、已选 workspace 的 `workspaceContext`、allocator 默认值。
 
 共享空间锁是短 TTL 协作锁，用来保护 artifact、submission、issue 等目标的处理权。锁不代表 canonical 权威事实，只是多智能体运行期间的调度约束；释放或过期后其他智能体才能继续处理同一目标。
 
@@ -546,6 +577,8 @@ npm run server:reconcile -- --apply --prune-orphan-objects
 - `GET /api/runtime/mounts`
 - `POST /api/runtime/mounts`
 - `POST /api/runtime/mounts/reload`
+
+Tool Management v1 也暴露同一热插拔面：`splitall.runtime.info`、`splitall.runtime.mounts` 用于只读巡检；`splitall.runtime.mounts.set`、`splitall.runtime.mounts.reload` 需要 `knowledge:maintain` grant、`metadata.maxRisk=repair_write` 风险上限和 `confirm: true`。工具执行不会绕过 `runtime.set_mounts` / `runtime.reload_mounts` 的统一 Operation、审计、并发锁和 mount 路由能力校验。
 - `GET /api/settings`
 - `POST /api/settings`
 
@@ -579,6 +612,7 @@ npm run server:reconcile -- --apply --prune-orphan-objects
 - `GET /api/jobs/:id/normalized-documents/:documentId`
 
 任务完成后还会生成适配拆分 DOCX 包，落盘在 `<userDataPath>/jobs/<jobId>/normalized-documents/`。PPT/PDF/HTML 会同时输出允许入库的原始材料副本；EML/MSG 只输出 message/thread/transaction DOCX，原始邮件继续走 raw object 审计存储。
+归一化 DOCX 是第一层 `raw-corpus-construction` 语料包，manifest 标记 `external-knowledge-corpus`，每个 chunk 都必须保留 `sectionId`、`sourceRange` 和 chunk 定位。已收纳到第二层 `knowledge-index-construction` 的 canonical knowledge 还可以通过 `GET /api/knowledge/export/docx` 或 CLI `knowledge export-docx --output knowledge.docx` 导出为标准 DOCX，供外部知识库使用；第三层 `knowledge-distillation` 和智能体在线上下文仍通过 `knowledge.search`、evidence pack 和 context runtime 获取。
 
 ## 14. 注册式接口层
 
@@ -609,6 +643,7 @@ npm run cli -- --file a.txt --wait
 npm run cli -- --path ./local --wait
 npm run cli -- jobs normalized-docs --id JOB_ID
 npm run cli -- jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx
+npm run cli -- knowledge export-docx --output knowledge.docx
 npm run cli -- rpc-call jobs.list --params '{"limit":20}'
 npm run cli -- interfaces --format markdown
 npm run cli -- rpc --method PUT --path /api/upload-sessions/id/files/0?offset=0 --raw-file chunk.bin --content-type application/octet-stream
@@ -747,6 +782,7 @@ node server/scripts/build-transaction-continuity.mjs \
 | email_rules.set | email_rules | system.handleSetRules | POST /api/email-rules | email_rules.set | email-rules set --body rules.json |
 | storage.summary | storage | system.handleGetStorageSummary | GET /api/storage/summary | storage.summary | storage |
 | knowledge.affair_taxonomy | knowledge | system.handleEnhanceAffairTaxonomy | POST /api/knowledge/affair-taxonomy | knowledge.affair_taxonomy | knowledge --body taxonomy.json |
+| knowledge.export_docx | knowledge | system.handleKnowledgeDocxExport | GET /api/knowledge/export/docx | knowledge.export.docx | knowledge export-docx --output knowledge.docx |
 | search.query | search | system.handleSearch | GET /api/search | search.query | search --query QUERY [--limit 20] |
 | uploads.create_session | uploads | jobs.handleCreateUploadSession | POST /api/upload-sessions | uploads.create_session | upload-session --body session.json |
 | uploads.get_session | uploads | jobs.handleGetUploadSession | GET /api/upload-sessions/:sessionId | uploads.get_session | upload-session get --id SESSION_ID |
@@ -860,6 +896,7 @@ npm run server:auth -- disable --username alice
 - `GET /api/knowledge/evidence/:evidenceId`
 - `GET /api/knowledge/assets/:assetId`
 - `POST /api/knowledge/render/markdown`
+- `GET /api/knowledge/export/docx`
 
 控制台页面的知识库分区包括：检索概览、入库同步、知识库配置。检索结果的来源、正文、相关图片和 Markdown 导出在同一个检索概览工作台内展开；入库同步支持服务端本地受管目录，文件变化会自动触发整理任务，并把任务进度显示在对应目录卡片下方。页面只通过 `server-web/lib/bridge.ts` 调用注册接口，不读取真实 SQLite 路径、资产目录或模块内部对象。
 
@@ -936,6 +973,12 @@ OpenRouter、Gemini 等 API Key 模型会发起最小化连通性请求；ChatGP
   "sessionId": "session-1",
   "userId": "user-1",
   "projectId": "project-1",
+  "contextProfileId": "enterprise-context",
+  "toolGrantId": "grant-1",
+  "workspaceContext": {
+    "workspaceId": "workspace-1",
+    "contextFingerprint": "sha256..."
+  },
   "engine": "default",
   "parameters": {}
 }
@@ -951,7 +994,9 @@ OpenRouter、Gemini 等 API Key 模型会发起最小化连通性请求；ChatGP
 - `POST /api/agents/:agentId`
 - `DELETE /api/agents/:agentId`
 - RPC：`agent_gateway.config.get`、`agent_gateway.config.set`、`agent_gateway.call`、`agents.list`、`agents.create`、`agents.update`、`agents.delete`
-- CLI：`agent-gateway config`、`agent-gateway config set --body config.json`、`agent-gateway call --question "..."`、`agents list`、`agents create/update/delete`.
+- CLI：`agent-gateway config`、`agent-gateway config set --body config.json`、`agent-gateway call --question "..." [--workspace-id WORKSPACE_ID] [--tool-grant-id GRANT_ID]`、`agents list`、`agents create/update/delete`.
+
+`POST /api/agent-gateway/call` 传入 `workspaceId` 时，服务端会先解析该工作空间运行上下文。调用方未显式指定模型、上下文 profile、工具授权或检索源时，会自动使用工作空间的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds`；响应包含 `workspaceContext`，custom-http 出站请求也会携带精简后的同名字段，外部智能体可以据此确认本次热切换状态。权限不满足时返回 404，不会退回到其他用户的 workspace。
 
 模型分配示例：
 
