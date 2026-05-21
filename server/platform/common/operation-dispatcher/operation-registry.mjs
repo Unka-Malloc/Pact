@@ -1753,6 +1753,57 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["runtime:admin"]
   },
   {
+    id: "storage.backups.list",
+    feature: "storage",
+    label: "列出存储备份",
+    target: { controller: "system", method: "handleStorageBackups" },
+    http: { method: "GET", path: "/api/storage/backups" },
+    rpc: { method: "storage.backups.list" },
+    cli: { command: ["storage", "backups"], usage: "storage backups" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["backup-restore", "storage"]
+  },
+  {
+    id: "storage.backups.create",
+    feature: "storage",
+    label: "创建存储备份",
+    target: { controller: "system", method: "handleStorageBackupCreate" },
+    http: { method: "POST", path: "/api/storage/backups" },
+    rpc: { method: "storage.backups.create", body: "params" },
+    cli: { command: ["storage", "backup"], usage: "storage backup --body backup.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["backup-restore", "storage"],
+    safety: { risk: "safe_write" }
+  },
+  {
+    id: "storage.backups.restore_preview",
+    feature: "storage",
+    label: "预览存储恢复",
+    target: { controller: "system", method: "handleStorageBackupRestorePreview" },
+    http: { method: "POST", path: "/api/storage/backups/restore-preview" },
+    rpc: { method: "storage.backups.restore_preview", body: "params" },
+    cli: { command: ["storage", "restore-preview"], usage: "storage restore-preview --body restore.json" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: false,
+    aspects: ["backup-restore", "storage"],
+    safety: { risk: "read_only" }
+  },
+  {
+    id: "storage.backups.restore",
+    feature: "storage",
+    label: "恢复存储备份",
+    target: { controller: "system", method: "handleStorageBackupRestore" },
+    http: { method: "POST", path: "/api/storage/backups/restore" },
+    rpc: { method: "storage.backups.restore", body: "params" },
+    cli: { command: ["storage", "restore"], usage: "storage restore --body restore.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["backup-restore", "storage"],
+    safety: { risk: "repair_write", requiresConfirmation: true, approvalScope: "storage:restore" }
+  },
+  {
     id: "system.background_processes",
     feature: "system",
     label: "后台守护进程状态",

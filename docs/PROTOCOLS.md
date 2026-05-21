@@ -12,6 +12,7 @@
 - [Workspace Event](#workspace-event)
 - [Operation Protocol](#operation-protocol)
   - [Unified Checkpoint Tree Protocol](#unified-checkpoint-tree-protocol)
+- [Backup Restore Protocol](#backup-restore-protocol)
 - [Workspace Contribution Protocol](#workspace-contribution-protocol)
   - [MCP Demo Flows](#mcp-demo-flows)
 - [Workspace Governance Protocol](#workspace-governance-protocol)
@@ -49,6 +50,7 @@
 | `agentstudio.tool-management.v1` | Tool Management v1 catalog、grant、policy preview、execute、audit、metrics。 |
 | `agentstudio.security.v1` | subject、workspace、scope、grant、data class、secret ref、redaction、audit policy。 |
 | `agentstudio.workflow.v1` | 长任务、activity、checkpoint、retry、signal、timer、恢复和补偿语义。 |
+| `agentstudio.backup-restore.v1` | 服务端数据目录备份、manifest、restore preview、确认恢复和恢复报告。 |
 | `agentstudio.data-connector-governance.v1` | 服务端数据连接器合同、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载验收。 |
 | `agentstudio.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
 | `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
@@ -273,6 +275,23 @@ Checkpoint Tree 安全恢复演示：
 - `revertOperationScope`：按 operator / task / operation batch 回撤 A 本次所有操作。
 
 实现可以复用 git worktree 能力，例如 tree object、diff、commit graph、checkout-like restore、临时 worktree 预览和 branch / merge；但协议层不能暴露裸 git reset 作为恢复语义。AgentStudio 必须把文件状态恢复、数据库元数据、权限 overlay、knowledge evidence、loan record、contribution 引用和 audit record 作为一次完整 workspace restore 处理。
+
+## Backup Restore Protocol
+
+`agentstudio.backup-restore.v1` 管理服务端数据目录的备份、恢复预览和确认恢复。第一版恢复不删除备份中不存在的当前文件，只恢复 manifest 中声明的权威文件，避免误删运行期新增状态。
+
+备份 manifest 必须包含：
+
+- `backupId`、`createdAt`、`sourceRoot`、`backupPath`
+- `summary.fileCount/bytes/byCategory`
+- `files[].relativePath/category/bytes/sha256/mtimeMs`
+
+公开操作：
+
+- `storage.backups.list`：列出已生成备份。
+- `storage.backups.create`：生成 `backup-manifest.json` 并复制服务端数据文件。
+- `storage.backups.restore_preview`：比较当前数据目录和备份 manifest，输出 create/replace/noop/blocked。
+- `storage.backups.restore`：需要确认后执行恢复，并写出 restore report。
 
 ## Workspace Contribution Protocol
 

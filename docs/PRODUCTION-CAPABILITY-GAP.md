@@ -211,7 +211,15 @@
 - 定义 `agentstudio.trace.v1 -> OpenTelemetry` 映射：内部 Trace 是事实源，OTel/OTLP 是可选导出目标。
 - 为这些路径打 span：upload、parse、normalize、ingest、search、evidence、distill、agent gateway、tool execution、session fork、workspace context load。
 - 接入可选 OTLP exporter，默认本地可关闭，生产可接 Jaeger、Tempo、Phoenix 或其它 OTel backend。
-- 前端提供 trace drill-down：一个回答可以展开看到文档、检索、证据、模型、工具、成本。
+- 服务端提供 trace drill-down 数据：一个回答或操作可以追溯文档、检索、证据、模型、工具、成本。
+
+当前实现入口：
+
+- `server/platform/common/observability/trace-context.mjs` 提供 `traceId/spanId/parentSpanId/operationId/actor` 上下文，并由 operation dispatcher、HTTP 请求和审计链路继承。
+- `server/platform/common/observability/runtime-logger.mjs` 提供 JSONL 运行日志、trace 字段、敏感字段脱敏、路径脱敏和日志保留策略。
+- `server/scripts/verify-trace-context.mjs` 验证 HTTP header、operation audit、runtime log 和事件流都携带同一 trace。
+- `server/scripts/verify-runtime-logging.mjs` 验证日志文件生成、字段摘要和 token/secret 不落盘。
+- `npm run server:verify:production-readiness` 已把 `trace-observability` 纳入 P0 门禁。
 
 补全效果：生产问题可以定位到具体步骤；汇报时能展示“为什么这次回答用了这些证据、花了多少钱、慢在哪里、失败在哪里”。
 
@@ -231,6 +239,15 @@
 - 将高风险长任务拆成 workflow + activity：文档解析、外部 KB ingest、蒸馏、批量邮件整理、导出、重建索引。
 - activity 必须幂等，写入幂等 key、输入 hash、输出 hash、补偿动作。
 - 后续可接 Temporal / BullMQ / 自研 durable runner，但接口先稳定。
+
+当前实现入口：
+
+- `docs/PROTOCOLS.md` 已定义 `agentstudio.workflow.v1` 和 `agentstudio.checkpoint-tree.v1` 的协议边界。
+- `server/platform/common/data-structure/checkpoint-tree-store.mjs` 提供 checkpoint tree 持久化、节点状态、事件追加、tree lock 和恢复查询基础。
+- `server/scripts/verify-checkpoint-lifecycle.mjs` 验证 upload/job checkpoint、重复提交、恢复、重启恢复、checkpoint tree 查询和失败回收。
+- `server/scripts/verify-state-coordination.mjs` 验证队列、状态和监控注册的一致性。
+- `server/scripts/verify-transaction-continuity.mjs` 验证业务事务连续性模型。
+- `npm run server:verify:production-readiness` 已把 `durable-workflow` 纳入 P0 门禁。
 
 补全效果：服务重启、部署、超时、部分失败后不会丢任务；可以向生产运维解释“任务如何恢复、如何补偿、如何人工介入”。
 
@@ -252,6 +269,14 @@
 - 测试链路：ingest (针对本地/共享资产) -> search -> evidence read -> asset read -> hybrid/fusion -> delete/tombstone -> sync -> reindex -> permission prefilter。
 - 输出每个 backend 的能力矩阵和阻塞缺口。
 
+当前实现入口：
+
+- `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs` 定义 `agentstudio.external-knowledge-adapter.v1`，支持 `qdrant`、`opensearch`、`pgvector/postgres` 外部后端和本地 fallback。
+- adapter 覆盖 upsert、search、deleteBatch、health、permission/sourceIds 过滤、backendTrace、evidence pack 和混合检索能力声明。
+- `server/scripts/verify-external-knowledge-base.mjs` 验证 Qdrant/OpenSearch/pgvector 语义、batch 删除、回读、provider health 和 source 过滤。
+- `server/scripts/verify-knowledge-retrieval-quality.mjs` 与 `server/scripts/verify-source-evidence-preview.mjs` 验证检索质量和 evidence 回读。
+- `npm run server:verify:production-readiness` 已把 `external-knowledge-base-consistency` 和 `rag-evaluation` 纳入 P0 门禁。
+
 补全效果：底层检索引擎从“可配置连接”升级为“可替换生产后端”；业务现场已有数据库团队时可以有明确接入合同。
 
 ### P0-05 文档解析质量没有真实业务基准
@@ -270,6 +295,15 @@
 - 每个样例维护 expected structure：标题树、页序、图片序、表格数、表头、关键单元格、引用锚点。
 - 增加 parser score：structure recall、table accuracy、image order accuracy、text coverage、source anchor accuracy。
 - 对扫描件和图片型 PDF 引入 cloud multimodal parser mount；本地 OCR 只做可选 fallback。
+
+当前实现入口：
+
+- `server/platform/specialized/knowledge/preprocessing/dynamic-parameter-document-parsing.mjs` 提供动态解析策略、结构吸附参数和 dry-run 入口。
+- `server/platform/specialized/knowledge/preprocessing/file-processor/index.mjs` 处理 PDF/PPTX/DOCX/XLSX/EML/MSG/Markdown 等多文件入口和归一化。
+- `server/platform/specialized/knowledge/assets/asset-lineage/index.mjs` 记录 raw object、page/slide、bbox、parser/model/OCR 版本和重解析计划。
+- `server/platform/common/production-readiness/sample-business-pack.mjs` 提供 EML、PDF、PPTX、Markdown 项目和外部知识库 compose 的可物化样例包。
+- `server/scripts/verify-dynamic-document-parsing.mjs`、`server/scripts/verify-document-preview-consistency.mjs`、`server/scripts/verify-document-parser-dry-run.mjs`、`server/scripts/verify-knowledge-docx-export.mjs` 和 `server/scripts/verify-sample-business-pack.mjs` 共同覆盖真实样例、预览一致性、导出和样例物化。
+- `npm run server:verify:production-readiness` 已把 `document-parsing-real-sample` 纳入 P0 门禁。
 
 补全效果：文档切分和知识蒸馏有可量化输入质量；可以向业务方说明哪些文件类型已达标，哪些仍需要人工复核或云端解析。
 
@@ -290,6 +324,14 @@
 - 每个模型/profile/tool grant 变更必须跑离线评估。
 - 生产流量抽样进入 shadow eval，不直接影响用户但生成质量趋势。
 
+当前实现入口：
+
+- `server/platform/specialized/knowledge/retrieval/evidence-sufficiency-gate/index.mjs` 和 `retrieval-scoring.mjs` 提供 evidence sufficiency、score reason 和检索质量基础。
+- `server/platform/specialized/knowledge/invocation/knowledge-distillation-runtime/industrial-benchmark.mjs`、`knowledge-distillation-workbench/index.mjs` 和 `knowledge-evolution-runtime/index.mjs` 提供蒸馏基准、工作台、错误归因、趋势和候选改进闭环。
+- `server/platform/specialized/knowledge/invocation/golden-rule-runtime/index.mjs` 支持黄金规则、测试场景和规则命中评估。
+- `server/scripts/verify-knowledge-retrieval-quality.mjs`、`verify-knowledge-distillation-workbench.mjs`、`verify-knowledge-industrial-distillation.mjs`、`verify-knowledge-distillation-optimization.mjs`、`verify-knowledge-evolution-loop.mjs`、`verify-knowledge-rule-authoring.mjs` 和 `verify-business-scenarios.mjs` 覆盖 RAG、蒸馏、Agent/工具业务流和回归趋势。
+- `npm run server:verify:production-readiness` 已把 `rag-evaluation`、`distillation-evaluation` 和 `business-scenarios` 纳入门禁。
+
 补全效果：模型切换、解析算法、检索参数和蒸馏 prompt 的改动可以量化比较；“工业领先”有证据而不是感觉。
 
 ### P0-07 安全、租户、权限和密钥边界未达到生产审计标准
@@ -309,6 +351,16 @@
 - 工具执行必须按风险等级分层：read、write、repair、external side effect、shell/process。
 - 密钥只保存 secret ref，不进入 settings JSON、trace、export、bundle。
 - 增加安全门禁：越权检索、越权导出、工具越权、secret leak、trace leak。
+
+当前实现入口：
+
+- `server/platform/common/security/auth/console-auth.mjs` 和 `server/scripts/console-auth.mjs` 提供 owner/admin/operator/viewer、登录、session、token rotation、审计和初始凭据治理。
+- `server/platform/specialized/capabilities/tools/tool-management-core/catalog.mjs` 与 Tool Management runtime 提供 tool catalog、scope、toolset、grant、policy preview/evaluate、execute、audit 和 metrics。
+- `server/platform/common/operation-dispatcher/operation-decorators.mjs`、operation policy 和 safety-confirm 约束写操作、风险等级、CSRF 和审批边界。
+- `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 提供 source-level knowledge access、checkoutPolicy、receipt、loanRecord、export/context injection 裁决。
+- `server/platform/common/observability/runtime-logger.mjs` 对 token、password、secret、API key、cookie 和绝对路径做摘要/脱敏。
+- `server/scripts/verify-console-auth.mjs`、`verify-tool-management-platform.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、知识权限、CSRF/safety 和 secret leak。
+- `npm run server:verify:production-readiness` 已把 `tool-permission`、`agent-library-access` 和 `trace-observability` 纳入 P0 门禁。
 
 补全效果：能面向企业内审、安全团队和运维团队说明权限共享的边界；团队共享不是无审计共享。
 
@@ -334,6 +386,15 @@
 - 每次 schema migration 输出 migration report。
 - 外部知识库只作为可重建索引，必须能由 canonical evidence 重放。
 - 可以复用 git worktree 的 tree / diff / commit graph / checkout-like restore 能力，但生产语义必须覆盖 workspace 元数据、权限、knowledge evidence、loan record、contribution 引用和 audit record，不能只恢复文件树。
+
+当前实现入口：
+
+- `server/platform/common/storage/backup-restore.mjs` 定义 `agentstudio.backup-restore.v1`，支持服务端数据目录备份、`backup-manifest.json`、文件 hash、分类汇总、restore preview 和受控恢复报告。
+- `GET /api/storage/backups`、`POST /api/storage/backups`、`POST /api/storage/backups/restore-preview`、`POST /api/storage/backups/restore` 提供服务端调用面；Tool Management 暴露 `agentstudio.storageBackups.*`。
+- `server/platform/common/data-structure/checkpoint-tree-store.mjs` 和 `/api/system/checkpoint-trees` 提供长任务 checkpoint tree 查询、节点状态和事件链。
+- `server/platform/common/storage/rebuild-metadata.mjs`、`ops-tools.mjs` 和 `sqlite-migrations.mjs` 覆盖元数据重建、存储 doctor/reconcile 和 SQLite schema migration。
+- `server/scripts/verify-backup-restore.mjs` 验证备份 manifest、日志排除、文件恢复预览、确认恢复、恢复报告和路径约束。
+- `npm run server:verify:production-readiness` 已把 `backup-restore`、`upgrade-migration` 和 `offline-license` 纳入 P0 门禁。
 
 补全效果：生产事故后有恢复路径；升级时能解释哪些状态是权威、哪些可以重建。
 

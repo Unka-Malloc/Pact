@@ -256,6 +256,7 @@ const GATES = [
     coverage: ["backup-restore"],
     commands: [
       ["npm", "run", "server:verify:checkpoints"],
+      ["npm", "run", "server:verify:backup-restore"],
       ["npm", "run", "server:verify:rebuild"],
       ["npm", "run", "server:verify:ops"]
     ],

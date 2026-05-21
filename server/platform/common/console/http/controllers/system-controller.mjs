@@ -68,6 +68,11 @@ import {
 } from "../http-utils.mjs";
 import { hashClientString, serverToken } from "../../../security/client-strings.mjs";
 import { reconcileStorage, runStorageDoctor } from "../../../storage/ops-tools.mjs";
+import {
+  createStorageBackup,
+  listStorageBackups,
+  restoreStorageBackup
+} from "../../../storage/backup-restore.mjs";
 import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
 import { buildProductionHealthReport } from "../../../production-readiness/report-reader.mjs";
 import {
@@ -3865,6 +3870,56 @@ export function createSystemController({
         apply: payload.apply !== false,
         pruneOrphanObjects: payload.pruneOrphanObjects === true
       }));
+    },
+    async handleStorageBackups({ response }) {
+      sendJson(response, 200, await listStorageBackups({ userDataPath }));
+    },
+    async handleStorageBackupCreate({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await createStorageBackup({
+          userDataPath,
+          label: payload.label || ""
+        }));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Storage backup creation failed."
+        });
+      }
+    },
+    async handleStorageBackupRestorePreview({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await restoreStorageBackup({
+          userDataPath,
+          backupId: payload.backupId,
+          dryRun: true,
+          includePaths: payload.includePaths || []
+        }));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Storage restore preview failed."
+        });
+      }
+    },
+    async handleStorageBackupRestore({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await restoreStorageBackup({
+          userDataPath,
+          backupId: payload.backupId,
+          dryRun: false,
+          apply: payload.confirm === true || payload.apply === true,
+          includePaths: payload.includePaths || []
+        }));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Storage restore failed."
+        });
+      }
     },
     async handleFailedJobsReview({ limit, response }) {
       const jobs = await jobManager.listJobs({

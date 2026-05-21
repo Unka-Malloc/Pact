@@ -327,6 +327,10 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "module_ecosystem.scaffold": "agentstudio.modules.scaffold",
   "module_ecosystem.contract_test": "agentstudio.modules.contractTest",
   "storage.summary": "agentstudio.storageSummary",
+  "storage.backups.list": "agentstudio.storageBackups.list",
+  "storage.backups.create": "agentstudio.storageBackups.create",
+  "storage.backups.restore_preview": "agentstudio.storageBackups.restorePreview",
+  "storage.backups.restore": "agentstudio.storageBackups.restore",
   "jobs.list": "agentstudio.jobs.list",
   "jobs.get": "agentstudio.jobs.get",
   "knowledge.affair_taxonomy": "agentstudio.knowledge.affairTaxonomy",
@@ -464,6 +468,10 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "module_ecosystem.scaffold": "knowledge:admin",
   "module_ecosystem.contract_test": "knowledge:admin",
   "storage.summary": "storage:read",
+  "storage.backups.list": "storage:read",
+  "storage.backups.create": "knowledge:maintain",
+  "storage.backups.restore_preview": "storage:read",
+  "storage.backups.restore": "knowledge:maintain",
   "jobs.list": "jobs:read",
   "jobs.get": "jobs:read",
   "knowledge.affair_taxonomy": "knowledge:write",
@@ -618,6 +626,13 @@ function inferToolsets(operation, scopes = [], toolId = "") {
   }
   if (toolId.startsWith("agentstudio.sampleBusinessPack.")) {
     toolsets.add(operation.id === "sample_business_pack.materialize" ? "agentstudio.knowledge.maintain" : "agentstudio.runtime.read");
+  }
+  if (toolId.startsWith("agentstudio.storageBackups.")) {
+    toolsets.add(
+      operation.id === "storage.backups.list" || operation.id === "storage.backups.restore_preview"
+        ? "agentstudio.runtime.read"
+        : "agentstudio.runtime.maintain"
+    );
   }
   if (toolId.startsWith("agentstudio.modules.")) {
     toolsets.add(operation.id === "module_ecosystem.templates" ? "agentstudio.runtime.read" : "agentstudio.mount.dev");
