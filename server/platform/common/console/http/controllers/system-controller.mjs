@@ -75,6 +75,7 @@ import {
   createExecutiveReportStore
 } from "../../../production-readiness/executive-report.mjs";
 import { buildArchitectureLiveMap } from "../../../production-readiness/architecture-live-map.mjs";
+import { createSampleBusinessPackStore } from "../../../production-readiness/sample-business-pack.mjs";
 import {
   listModuleTemplates,
   planModuleScaffold,
@@ -6002,6 +6003,34 @@ export function createSystemController({
     },
     async handleArchitectureLiveMap({ response }) {
       sendJson(response, 200, await buildArchitectureLiveMap());
+    },
+    async handleSampleBusinessPacks({ response }) {
+      const store = createSampleBusinessPackStore({ userDataPath });
+      sendJson(response, 200, store.list());
+    },
+    async handleSampleBusinessPack({ packId, response }) {
+      const store = createSampleBusinessPackStore({ userDataPath });
+      const pack = store.get(packId);
+      if (!pack) {
+        sendJson(response, 404, {
+          ok: false,
+          error: "Sample business pack not found."
+        });
+        return;
+      }
+      sendJson(response, 200, pack);
+    },
+    async handleSampleBusinessPackMaterialize({ requestBody, response }) {
+      try {
+        const store = createSampleBusinessPackStore({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await store.materialize(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Sample business pack materialization failed."
+        });
+      }
     },
     async handleModuleTemplates({ response }) {
       sendJson(response, 200, listModuleTemplates());

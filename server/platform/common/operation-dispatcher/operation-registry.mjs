@@ -59,6 +59,44 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     aspects: ["architecture-live-map", "production-readiness"]
   },
   {
+    id: "sample_business_pack.list",
+    feature: "production",
+    label: "样例业务包列表",
+    target: { controller: "system", method: "handleSampleBusinessPacks" },
+    http: { method: "GET", path: "/api/sample-business-packs", localInForwardMode: true },
+    rpc: { method: "sample_business_pack.list" },
+    cli: { command: ["sample-business-packs"], usage: "sample-business-packs" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["sample-business-pack", "business-scenarios"]
+  },
+  {
+    id: "sample_business_pack.get",
+    feature: "production",
+    label: "样例业务包详情",
+    target: { controller: "system", method: "handleSampleBusinessPack" },
+    http: { method: "GET", path: "/api/sample-business-packs/:packId", localInForwardMode: true },
+    rpc: { method: "sample_business_pack.get" },
+    cli: { command: ["sample-business-packs", "get"], usage: "sample-business-packs get <packId>" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["sample-business-pack", "business-scenarios"]
+  },
+  {
+    id: "sample_business_pack.materialize",
+    feature: "production",
+    label: "生成样例业务包",
+    target: { controller: "system", method: "handleSampleBusinessPackMaterialize" },
+    http: { method: "POST", path: "/api/sample-business-packs/materialize", localInForwardMode: true },
+    rpc: { method: "sample_business_pack.materialize", body: "params" },
+    cli: { command: ["sample-business-packs", "materialize"], usage: "sample-business-packs materialize --body sample-pack.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["sample-business-pack", "business-scenarios"],
+    safety: { risk: "safe_write" }
+  },
+  {
     id: "executive_report.list",
     feature: "production",
     label: "管理层报告列表",

@@ -215,6 +215,15 @@ const GATES = [
     nextStep: "补齐核心架构节点到文档、实现路径和生产门禁状态的联动映射。"
   },
   {
+    id: "sample-business-pack",
+    title: "样例业务包",
+    blockerLevel: "P3",
+    owner: "product-quality",
+    coverage: [],
+    commands: [["npm", "run", "server:verify:sample-business-pack"]],
+    nextStep: "补齐邮件、PDF、PPT、Markdown 项目和外部知识库 compose 的可物化样例包。"
+  },
+  {
     id: "trace-observability",
     title: "内部 Trace 与日志脱敏",
     blockerLevel: "P0",

@@ -543,6 +543,14 @@
 
 补全方式：准备邮件、PDF、PPT、Markdown 项目、外部知识库 docker compose 的示例包。
 
+当前实现入口：
+
+- `server/platform/common/production-readiness/sample-business-pack.mjs` 定义 `agentstudio.sample-business-pack.v1`，内置 `enterprise-knowledge-pilot` 样例业务包。
+- 样例包可物化 EML 邮件线程、PDF 安全评审、PPTX 路线图、Markdown 项目文档和外部知识库 `docker-compose.yml`。
+- manifest 提供 `assets`、`ingestPlan`、`externalServices`、内容 `sha256` 和 parser route，便于新成员直接对照导入链路。
+- `GET /api/sample-business-packs`、`GET /api/sample-business-packs/:packId`、`POST /api/sample-business-packs/materialize` 提供服务端调用面；Tool Management 暴露 `agentstudio.sampleBusinessPack.*`。
+- `npm run server:verify:sample-business-pack` 验证样例包 manifest、真实文件物化、PDF/PPTX/compose 内容、路径约束、操作注册和 Tool Management 暴露。
+
 效果：新成员和业务方可以快速理解系统能力边界。
 
 ## 建议决策顺序

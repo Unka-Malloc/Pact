@@ -25,6 +25,7 @@
 - [Module Ecosystem Protocol](#module-ecosystem-protocol)
 - [Executive Report Protocol](#executive-report-protocol)
 - [Architecture Live Map Protocol](#architecture-live-map-protocol)
+- [Sample Business Pack Protocol](#sample-business-pack-protocol)
 - [Protocol Adapters](#protocol-adapters)
 - [版本与兼容](#版本与兼容)
 
@@ -53,6 +54,7 @@
 | `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
 | `agentstudio.executive-report.v1` | 管理层报告，聚合生产门禁、资产价值、评估、容量成本、trace 安全和风险决策。 |
 | `agentstudio.architecture-live-map.v1` | 架构活文档，链接核心架构节点、设计文档、服务端实现路径和生产门禁状态。 |
+| `agentstudio.sample-business-pack.v1` | 服务端样例业务包，物化邮件、PDF、PPT、Markdown 项目和外部知识库 compose 示例。 |
 | `agentstudio.module-ecosystem.v1` | 服务端模块模板、脚手架计划、生成、合同测试、CI 模板和 Tool/Skill 包 manifest 验收。 |
 | `agentstudio.asset-lineage.v1` | 多模态资产 raw object、page/slide、bbox、parser/model/OCR 版本、派生链和重解析计划。 |
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
@@ -769,6 +771,24 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 公开操作：
 
 - `architecture.live_map`：读取当前架构节点到文档、实现路径和生产门禁状态的映射。
+
+## Sample Business Pack Protocol
+
+`agentstudio.sample-business-pack.v1` 是服务端样例业务包协议，不依赖客户端。它把新成员和业务方最常见的验收材料打包成可物化目录：邮件线程、PDF、PPT、Markdown 项目文档和外部知识库 docker compose。
+
+样例业务包必须包含：
+
+- `packId`、`title`、`businessDomain`、`tags`
+- `assets[].relativePath/category/mediaType/parserRoute/evidenceRole/sha256`
+- `ingestPlan[].stepId/source/route/expectedSignals`
+- `externalServices[].serviceId/role/composePath/defaultEndpoint`
+- 物化结果中的 `targetRoot`、`manifestPath` 和 `writtenFiles`
+
+公开操作：
+
+- `sample_business_pack.list`：列出内置样例业务包。
+- `sample_business_pack.get`：读取指定样例业务包 manifest。
+- `sample_business_pack.materialize`：在服务端数据目录下生成样例文件和 manifest。
 
 ## Protocol Adapters
 
