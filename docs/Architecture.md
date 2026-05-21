@@ -1079,3 +1079,56 @@ npm run server:verify:platform-layout
 npm run server:verify:tool-management
 npm run server:verify:agent-workspace
 ```
+
+## 架构演进与长期提升规划 (Architecture Evolution)
+
+在当前“治理优先、安全审计闭环”的 P0/P1 基线之上，随着并发量、接入智能体数量以及数据规模的增长，架构在以下几个维度预留了演进空间，这些改进思想将在后续的迭代中逐步落地：
+
+### 1. 架构可扩展性：控制面与数据面的深度解耦 (Control/Data Plane Separation)
+
+- **当前状态：** Node.js 服务端兼顾了治理控制（鉴权、账本维护）与重型数据处理（文档解析、信息切分）。
+- **演进方向：** 显式分离控制面与数据面。Node.js + SQLite 作为控制面（Control Plane），专注于极度轻量的状态机流转、鉴权与生成 Token/Ticket。将 CPU/内存密集型的任务（如 PDF/OCR 解析、大型文档的动态切分、大模型 Context 压缩）剥离为独立的可水平扩展的 Worker 集群（Data Plane）。
+
+### 2. 智能体协同范式：从“主动轮询”到“事件订阅” (Reactive Collaboration)
+
+- **当前状态：** 智能体通过 MCP 客户端主动请求（Pull）工作空间状态，多智能体协同存在信息延迟。
+- **演进方向：** 强化 AgentStudio 作为“事件中心（Event Hub）”的角色。引入受权限控制的 Pub/Sub 机制。当公共空间的资产、权限或状态发生变更并产生新 Checkpoint 时，系统根据 `authorizationOverlay` 实时向有权限的智能体推送“状态失效”或“资产更新”信号，从而实现真正的响应式多智能体协同。
+
+### 3. 审计存储优化：读请求的“逻辑入树”与时序聚合 (Read Node Aggregation)
+
+- **当前状态：** 为了极致审计，所有读请求（Search, Read, Check Permission）均物理生成 Checkpoint Node。在高并发下可能导致 SQLite 写瓶颈及树结构噪声。
+- **演进方向：** 保持 100% 审计的底线不变，但在存储结构上进行优化。在特定的任务会话（Task Session）内，将同主体的高频冗余读取在内存中进行时序聚合（Temporal Aggregation），并在任务节点提交时生成单一的“聚合读节点（Aggregated Read Node）”。底层存储可将读日志下沉至专门的高吞吐时序引擎，核心 SQLite 树仅保留索引指针。
+
+### 4. 冲突治理升级：引入“语义合并” (Semantic Merging)
+
+- **当前状态：** 冲突处理默认降级为 `merge proposal`，依赖人工或更高阶干预。
+- **演进方向：** 减少协作阻塞。针对不同资产类型引入语义合并策略：对于结构化配置（JSON/Table）采用预定义的自动合并规则；对于知识性文本，可引入“合并评审大模型（Merge-Reviewer LLM）”进行后台静默合并，仅在置信度过低时才提升为需要人工干预的阻塞型 Proposal。
+
+### 5. 权限模型演进：动态上下文权限控制 (Context-Aware Dynamic Policies)
+
+- **当前状态：** 主要依赖基于身份和目标的静态策略（RBAC/ABAC）。
+- **演进方向：** 引入更动态的降级与风控机制。例如“预算驱动降级”：当智能体 Token 预算吃紧时，系统自动将长文档的 `read` 权限临时降级为仅提供蒸馏摘要的 `metadataOnly`；或“风险传播冻结”：当监测到某智能体产出质量极差时，系统自动挂起其将内容转为公共贡献（Publish）的权限，直至人工复核。
+
+## 核心工程原则与开发守则 (Core Engineering Principles)
+
+AgentStudio 的目标是从少数几个智能体平滑过渡到企业级规模，但这并不意味着我们要在初期堆砌过度复杂的架构。为防止“过早优化（Premature Optimization）”带来沉重的运维负担（DevOps Tax），所有开发必须遵循 **“逻辑隔离先行，物理拆分延后”（Logical Separation over Physical Separation）** 即“模块化单体（Modular Monolith）”的原则。
+
+### 1. 接口与契约先行，把实现藏起来 (Interface First)
+
+虽然系统早期可能只是在一个 Node.js 进程里执行同步或简单的异步操作，但组件间的交互必须通过严格定义的领域接口，严禁直接引用内部实例细节或裸调数据库。
+- **守则：** 即使是本地方法调用，也必须抽象为如 `TaskQueue.submit(type, payload)` 或 `AgentGateway.invoke()` 的形式。底层实现初期可以是简单的 `setTimeout` 或内存队列，以确保未来剥离为独立 Worker 服务或引入分布式消息队列时，业务调用方代码无需修改。
+
+### 2. 构建状态存储的“防腐层” (Anti-Corruption Layer)
+
+即使系统初期并发量很低，单节点 SQLite 就能满足所有请求，也绝不允许业务逻辑代码直接拼写 SQL 去操作核心的 Checkpoint Tree 或 Operation Ledger。
+- **守则：** 所有的状态变更和读取记录必须通过统一的领域服务网关（如 `OperationLedger.append()` 或 `AuditLogger.recordAccess()`）进行。这层防腐隔离使得未来能在底层无缝插入内存 Buffer、批量合并（Batch Flush）或更换时序数据库，而不会污染业务控制流。
+
+### 3. 事件驱动的本地化 (Local Pub/Sub)
+
+系统架构旨在支持智能体的响应式协同，但在初期不要引入外部的消息中间件（如 RabbitMQ）或复杂的集群架构。
+- **守则：** 采用进程内原生事件总线（如 Node.js 原生的 `EventEmitter`）来实现事件驱动。在核心业务路径上（如生成了新的 Checkpoint 或资产权限变更时）发布定义明确的事件 Topic（如 `workspace.asset.updated`）。订阅方在进程内存中监听，明确预留出未来切换为外部集中式 Pub/Sub 服务的“架构插槽”。
+
+### 4. 容忍“半自动”，保留“降级口” (Graceful Degradation)
+
+不要为小概率的并发冲突或极端的语义合并场景去设计庞大且脆弱的自动仲裁算法。
+- **守则：** 在遇到资产并发修改冲突且难以自动解决时，系统应直接降级并抛出 `Merge Proposal` 让流程“挂起”，转交人工或指定的高权限 Agent 处理。保持主干写入流程的极简与安全闭环：`Diff -> 发现冲突 -> 产生 Proposal -> 挂起等待 -> 收到决策 -> Apply`。未来只需在挂起阶段旁路插入更智能的 Reviewer 算法进行静默仲裁，而无需重构系统的核心状态机。

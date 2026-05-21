@@ -92,7 +92,7 @@
 | --- | --- |
 | `DEC-P2-01` 多租户 | Workspace boundary 优先；完整 tenant/org/team 在 P2 再做。 |
 | `DEC-P2-02` 密钥 | 系统内只暴露 secret ref；上下文、trace、export、checkpoint node 不出现 secret value。 |
-| `DEC-P2-03` 外部 KB 后端 | 首个真实后端选 pgvector。 |
+| `DEC-P2-03` 外部检索引擎后端 | 首个真实底层检索引擎后端选 pgvector。 |
 | `DEC-P2-04` 环境适配顺序 | 先做本机和容器；VM/云端复用 adapter contract。 |
 | `DEC-P2-05` 会话合并 | 冲突治理走 merge proposal，不自动写 decision。 |
 | `DEC-P2-06` 成本配额 | 建立按 workspace/subject/agentProfile 的 budget policy。 |
@@ -509,17 +509,17 @@
 
 决议后回写：`PRODUCTION-CAPABILITY-GAP.md`、`PROTOCOLS.md`。
 
-### DEC-P2-03 外部知识库真实后端一致性
+### DEC-P2-03 外部检索引擎后端一致性
 
 需要决策：
 
-- pgvector、qdrant、opensearch 哪个作为首个真实后端。
-- 外部知识库 adapter 的 conformance test 如何定义。
-- 上游删除、权限变化、索引不一致时如何同步。
+- pgvector、qdrant、opensearch 哪个作为首个真实后端（用于检索本工作空间资产）。
+- 检索后端 adapter 的 conformance test 如何定义。
+- 资产删除、权限变化、索引不一致时如何同步。
 
-默认建议：先选一个真实后端做硬基准；其它后端按同一 conformance suite 接入。
+默认建议：先选一个真实底层检索引擎做硬基准；其它后端按同一 conformance suite 接入。
 
-已决议：首个真实外部知识库后端选 pgvector。
+已决议：首个真实底层检索引擎后端选 pgvector。
 
 决议后回写：`KNOWLEDGE-GOVERNANCE.md`、`PRODUCTION-CAPABILITY-GAP.md`。
 

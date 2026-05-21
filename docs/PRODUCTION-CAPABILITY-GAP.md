@@ -96,6 +96,12 @@
 - 所有出馆信息必须产生 receipt；所有允许保留、导出、复制或跨 workspace 使用的信息必须产生 loan record；所有拒绝带走的请求必须进入 denied request audit。
 - 建立上游知识库 A/B 权限再授权演示：AgentStudio 从上游知识库获取文件后在本地配置权限，管控台设置 A 可以访问、B 不可以访问；对话页面中 A 能获取该文件并产生 receipt / loan record，B 返回权限错误并产生 denied request audit。
 
+当前实现入口：
+
+- `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 实现 `agentstudio.knowledge-access.v1` 和 `agentstudio.agent-library.v1` 的源头裁决、标准 `accessMode`、`requestedEgress`、`authorizationOverlay`、`knowledgeAccessReceipt`、`loanRecord` 和 denied request audit。
+- `npm run server:verify:agent-library-access` 验证 A/B 再授权：A 获取授权范围并产生 receipt / loan record，B 在所有出口 `searchResult`、`evidenceRead`、`contextBundle`、`artifactWrite`、`exportFile`、`distillationInput`、`distillationOutput`、`memoryWrite`、`toolCall`、`evaluationSample` 都被同一套裁决拒绝。
+- `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
+
 补全效果：AgentStudio 从“知识库能查什么”升级为“智能体在团队知识大楼里能进哪一层、能读哪本书、能不能借走”。同时，外部知识库成为上游资产源，AgentStudio 成为下游工作空间的再授权与资产治理层。这是本项目区别于普通知识库和普通 Agent 工具接入的第一安全边界。
 
 ### P0-00-02 终端贡献型资产治理缺失
@@ -120,6 +126,12 @@
 - 建立 OpenClaw 文档互通演示：两个 OpenClaw 都通过 AgentStudio MCP service 接入同一 workspace，A 上传本地文档，B 在授权范围内查询并下载，证明文档互通发生在公共工作空间而不是 agent 直连。
 - 建立 Skill 贡献排行榜演示：A 上传默认公开的 Skill，B 在面板或 MCP skill list 中发现、下载并使用，系统按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 刷新贡献值，`acceptedCount` 只作为报表维度。
 
+当前实现入口：
+
+- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `agentstudio.workspace-contribution.v1` 的贡献状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表。
+- `npm run server:verify:workspace-contribution-governance` 验证 Skill 贡献从 submitted -> scanned -> reviewed -> published，随后授权 B 下载/安装/执行，记录 usage event，并按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 生成排行榜；`acceptedCount` 只作为报表维度。
+- `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
+
 补全效果：AgentStudio 不再只从上游知识库拿信息，而是形成“终端贡献 -> 公共空间资产 -> 排行榜发现 -> 授权复用 -> 审计和撤销”的资产贡献闭环。
 
 ### P0-01 生产级验收门禁缺失
@@ -138,6 +150,12 @@
 - 输出 `reports/production-readiness/<run-id>/report.md` 和 `report.json`。
 - 汇总运行：架构门禁、文档解析真实样例、外部知识库一致性、RAG 评估、蒸馏评估、会话线程、工具权限、备份恢复、升级迁移、端到端 UI smoke、离线包 license gate。
 - 每个 gate 输出：状态、证据文件、阻塞级别、负责人、下一步。
+
+当前实现入口：
+
+- `server/scripts/production-readiness-gate.mjs` 聚合上述门禁并写出 Markdown / JSON 报告。
+- `npm run server:verify:production-readiness` 作为 release gate；存在 P0 未通过或必需覆盖缺失时，报告状态为 `blocked`，默认以非零退出码阻断发布。
+- 该 gate 只能证明被覆盖项，不会把单点 verify 的通过误判为整体生产就绪。
 
 补全效果：项目从“功能验证”升级为“可汇报验收”；每次决策可以基于同一份报告，而不是临时问当前能不能用。
 
@@ -180,25 +198,25 @@
 
 补全效果：服务重启、部署、超时、部分失败后不会丢任务；可以向生产运维解释“任务如何恢复、如何补偿、如何人工介入”。
 
-### P0-04 外部知识库一致性仍不够硬
+### P0-04 外部检索引擎后端一致性仍不够硬
 
-当前差距：已有 pgvector、Qdrant、OpenSearch 方向和协议说明，但还没有成熟的 conformance fixture 覆盖真实 Docker 服务、权限预过滤、增量同步、删除/tombstone、重建、资产/evidence 回读、混合检索和性能退化。
+当前差距：已有 pgvector、Qdrant、OpenSearch 方向和协议说明，但针对系统底层检索引擎（用于索引本工作空间内的知识，而非实时代理的上游知识库），还没有成熟的 conformance fixture 覆盖真实 Docker 服务、权限预过滤、增量更新、删除/tombstone、重建、资产/evidence 回读、混合检索和性能退化。
 
-对标依据：OpenSearch hybrid search 需要 ingest pipeline、index、search pipeline 和 score 融合；Qdrant 通过 payload index、strict mode、filter 和 rate limit 防止低效查询与过载。生产外部库不是“能连上”，而是要证明检索、过滤、删除和回读语义一致。
+对标依据：OpenSearch hybrid search 需要 ingest pipeline、index、search pipeline 和 score 融合；Qdrant 通过 payload index、strict mode、filter 和 rate limit 防止低效查询与过载。生产检索引擎不是“能连上”，而是要证明检索、过滤、删除和回读语义一致。
 
-为什么缺：当前适配器更偏“连接能力”和本地 mirror，缺少跨后端同一 corpus 的行为等价测试和性能/权限基准。
+为什么缺：当前检索后端适配器更偏“连接能力”，缺少跨不同数据库后端同一 corpus 的行为等价测试和性能/权限基准。
 
 能否补全：可以。
 
 怎么补：
 
-- 增加 `npm run server:verify:external-kb-conformance`。
+- 增加 `npm run server:verify:external-search-backend-conformance`。
 - docker compose 启动 pgvector、Qdrant、OpenSearch。
 - 固定 normalized corpus：文本、表格、图片资产、邮件线程、多租户 source scope。
-- 测试链路：ingest -> search -> evidence read -> asset read -> hybrid/fusion -> delete/tombstone -> sync -> reindex -> permission prefilter。
+- 测试链路：ingest (针对本地/共享资产) -> search -> evidence read -> asset read -> hybrid/fusion -> delete/tombstone -> sync -> reindex -> permission prefilter。
 - 输出每个 backend 的能力矩阵和阻塞缺口。
 
-补全效果：外部知识库从“可配置连接”升级为“可替换生产后端”；业务现场已有知识库团队时可以有明确接入合同。
+补全效果：底层检索引擎从“可配置连接”升级为“可替换生产后端”；业务现场已有数据库团队时可以有明确接入合同。
 
 ### P0-05 文档解析质量没有真实业务基准
 

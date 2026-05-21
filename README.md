@@ -1,127 +1,77 @@
-# AgentStudio
+# AgentStudio 🚀
 
-可控的智能体协作空间。
+English | [简体中文](README.zh-CN.md)
 
-License: GPL-3.0-only.
+> A Controllable Agent Collaboration Space.
 
-当前仓库主路径按职责收敛：
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL_3.0-blue.svg)](https://opensource.org/licenses/GPL-3.0)
 
-- `server`：`Node + SQLite` 服务端
-- `server-web`：服务端配套的 `Vue` 控制台
-- `client-cli`：`Rust` 客户端执行层
-- `client-gui`：`Flutter` 跨端桌面客户端
-- `docs`：项目级文档
-- `tests`：仓库级测试资产和大型 fixtures
-- `build`：本地生成物、运行态数据和打包产物
+While Large Language Models (LLMs) and local AI agents are becoming increasingly powerful, they often operate in isolated silos, lacking true collaboration. Traditional enterprise knowledge bases, on the other hand, store massive amounts of assets but fail to provide fine-grained, agent-centric access control.
 
-## 当前页面
+**AgentStudio was built to bridge this exact gap.**
 
-- 服务端控制台：`/`
-- 主要用途：管理运行时挂载、服务发现、规则库、任务和客户端迁移状态
+AgentStudio does not build yet another LLM, nor does it aim to be a monolithic autonomous agent platform. Instead, we focus exclusively on the missing **"Governance Middleware"**: providing a **secure, controllable, editable, and 100% auditable** shared workspace for various local agents, automation scripts, and human team members.
 
-薄客户端不是浏览器页面，而是 `client-gui` 的跨端桌面程序。
+## ✨ Core Features
 
-## 启动
+- 🛡️ **Zero Trust Agent Governance**: Agents are merely external operators. Every single state change (writes, exports) must pass through a strict Policy Engine and an immutable Operation Ledger.
+- 📚 **AgentLibrary (Governed Knowledge)**: Disrupting traditional "knowledge base proxies." Upstream knowledge is dynamically sliced and re-authorized upon entering the system. We support hyper-granular egress controls like `readInPlace`, `copyToContext`, and `checkoutAllowed`.
+- 🌳 **Unified Checkpoint Tree (100% Auditability)**: Every file modification, permission request, and even **every single knowledge retrieval or denied access** generates an immutable Checkpoint Node. This ensures an append-only, Git-like safe restore capability.
+- 🔌 **Ecosystem Protocol Compatibility (MCP Native)**: Seamlessly integrates with OpenClaw, Cursor Agent, Claude Code, or any other agent. We fully embrace the Model Context Protocol (MCP) to expose workspace capabilities securely.
+- 📊 **Asset Contribution Leaderboard**: Agents don't just burn compute; they accumulate digital assets. The built-in leaderboard quantifies and ranks which agent (or human) contributed the most reusable knowledge, rules, and skills to the team workspace.
 
-安装依赖：
+## 🏗️ Architecture & Tech Stack
+
+This project follows the "Modular Monolith" principle, strictly separating concerns into specific directories:
+
+- **`server`**: The core Control Plane (Node.js + SQLite), handling authentication, asset slicing, state machines, and the Ledger.
+- **`server-web`**: The management console (Vue 3), providing human-centric asset browsers, audit views, and permission configurations.
+- **`client-cli`**: The client execution layer (Rust), handling local environment adapters and high-throughput interactions.
+- **`client-gui`**: The cross-platform desktop application (Flutter), acting as a lightweight terminal.
+- **`docs`**: The source of truth for architectural principles and design decisions.
+
+## 🚀 Quick Start
+
+### 1. Prerequisites
 
 ```bash
+# Install server dependencies
 npm install
+
+# Install client dependencies (Flutter/Rust assets)
+npm run client:get
 ```
 
-一键启动（推荐）：
+### 2. Start the Services
+
+Start the complete backend API and the Web console with one command:
 
 ```bash
 npm run start:all
 ```
+*(For development with Vite HMR, append the `-- --dev` flag)*
 
-默认启动模式为“服务端 + 控制台”。开发联调（API + Vite）可加参数：
+Once mounted, you can access the management console via your browser or start collaborating by connecting your local agents to the MCP Service endpoint.
 
-```bash
-npm run start:all -- --dev
-```
+### 3. CLI Interactions
 
-启动服务端 API-only：
-
-```bash
-npm run server:start
-```
-
-本地运行时依赖采用程序目录内 `server/platform/modules/knowledge/` 资产，不向系统安装 Java/Tika：
-
-```bash
-npm run server:setup-runtime
-```
-
-构建控制台静态资源：
-
-```bash
-npm run build:renderer
-```
-
-安装 Flutter 客户端依赖：
-
-```bash
-npm run client:get
-```
-
-分析和测试 Flutter 客户端：
-
-```bash
-npm test
-npm run client:analyze
-npm run client:test
-npm run client:native:test
-```
-
-本机构建 macOS 客户端：
-
-```bash
-npm run client:build:macos
-```
-
-命令行调用服务端：
+AgentStudio provides a powerful CLI tool for CI/CD and quick terminal operations:
 
 ```bash
 npm run cli -- health
-npm run cli -- --file a.txt --wait
-npm run cli -- --path ./mail-folder --wait --output-result result.json
-npm run cli -- jobs normalized-docs --id JOB_ID
-npm run cli -- jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx
-npm run cli -- rpc --method GET --path /api/healthz
+npm run cli -- --file README.md --wait
 npm run cli -- rpc-call jobs.list --params '{"limit":20}'
-npm run cli -- interfaces --format markdown
-npm run cli -- rpc --method POST --path /api/settings --body settings.json
 ```
 
-## 当前能力
+## 📖 Essential Documentation
 
-- 批量导入 `.eml` 文件夹或 `.zip`
-- 原始邮件对象存储，保留原标题和原内容
-- `SQLite` 元数据分表与检索索引
-- 邮件线程、事务、时间线、参与人归纳
-- 大批量 `.eml` 目录的纯算法事务工程模型、接续索引与事务 DOCX 证据文档
-- PPT/PDF/HTML/邮件适配拆分为多颗粒度 DOCX 知识文档
-- 事务 lineage 的匹配、恢复、拉取
-- 上传与任务 checkpoint 恢复
-- 注册式 HTTP / JSON-RPC / CLI 接口映射
-- `agentstudio` CLI 覆盖文件/目录上传、任务轮询、归一化文档下载、通用 HTTP 调用和 JSON-RPC 调用
-- 服务发现、客户端迁移登记与控制台观测
-- Tika 挂载式文档解析与可选 OCR 挂载
+To understand the underlying philosophy and design decisions of AgentStudio, please read:
 
-## 目录
+- 🏛️ [Architecture Overview](docs/Architecture.md)
+- 🔒 [Workspace Asset Governance](docs/WORKSPACE-ASSET-GOVERNANCE.md)
+- 🧠 [Knowledge Governance & AgentLibrary](docs/KNOWLEDGE-GOVERNANCE.md)
+- 👨‍💻 [Developer Guidelines](docs/DEVELOPER-GUIDELINES.md)
 
-- [SERVER.md](docs/SERVER.md)：服务端启动与接口
-- [USAGE.md](docs/USAGE.md)：控制台和薄客户端使用方式
-- [client-gui/README.md](client-gui/README.md)：Flutter 客户端构建与运行
+---
 
-## 验证
-
-```bash
-npm test
-npm run test:regression
-npm run test:security
-npm run test:list
-```
-
-统一测试框架见 [TEST-FRAMEWORK.md](docs/TEST-FRAMEWORK.md)。新增功能或重构时，必须同步更新对应层级的单元、契约、集成或平台测试。
+*“In AgentStudio, agents are not trusted. We only trust verifiable asset states and a replayable operation ledger.”*
