@@ -516,6 +516,14 @@
 
 补全方式：管理驾驶舱优先，第一版突出资产价值：资产沉淀、贡献者、复用路径、授权请求、使用成功率、回滚热点和高价值受限资产。随后从 production readiness、eval、trace、benchmark 自动生成管理层报告。
 
+当前实现入口：
+
+- `server/platform/common/production-readiness/executive-report.mjs` 定义 `agentstudio.executive-report.v1`，生成并持久化服务端管理层报告。
+- 报告聚合 production health、workspace contribution reports、capacity summary、evaluation summary 和 trace summary，输出 `executiveSummary`、`productionReadiness`、`assetValue`、`qualityAndEvaluation`、`capacityAndCost`、`traceAndSecurity` 和 `risks`。
+- 资产价值统计覆盖 accepted/usage/unique workspace adoption、permission request/grant、rollback、asset type、contributor、top reusable assets、high-demand restricted assets、rollback hotspots 和 under-maintained assets。
+- `GET /api/executive-report`、`POST /api/executive-report/preview`、`POST /api/executive-report/generate` 提供服务端调用面；Tool Management 暴露 `agentstudio.executiveReport.*`。
+- `npm run server:verify:executive-report` 验证生产健康输入、资产贡献报告聚合、风险生成、报告持久化、操作注册和 Tool Management 暴露。
+
 效果：让管理者看到公共空间创造了什么价值、哪些资产值得推广、哪些资产需要治理，并减少阶段评审的人工汇总。
 
 ### P3-02 提供架构图和运行状态联动

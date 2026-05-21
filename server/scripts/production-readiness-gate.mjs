@@ -197,6 +197,15 @@ const GATES = [
     nextStep: "补齐 raw object、page/slide、bbox、parser/model/version、OCR、视觉模型和重解析计划。"
   },
   {
+    id: "executive-report",
+    title: "资产价值管理报告",
+    blockerLevel: "P3",
+    owner: "product-quality",
+    coverage: [],
+    commands: [["npm", "run", "server:verify:executive-report"]],
+    nextStep: "补齐 asset contribution、production readiness、eval、trace、benchmark 的管理层报告汇总。"
+  },
+  {
     id: "trace-observability",
     title: "内部 Trace 与日志脱敏",
     blockerLevel: "P0",

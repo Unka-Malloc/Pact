@@ -71,6 +71,10 @@ import { reconcileStorage, runStorageDoctor } from "../../../storage/ops-tools.m
 import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
 import { buildProductionHealthReport } from "../../../production-readiness/report-reader.mjs";
 import {
+  buildExecutiveReport,
+  createExecutiveReportStore
+} from "../../../production-readiness/executive-report.mjs";
+import {
   listModuleTemplates,
   planModuleScaffold,
   runModuleContractTest,
@@ -5967,6 +5971,33 @@ export function createSystemController({
     },
     async handleProductionHealth({ response }) {
       sendJson(response, 200, await buildProductionHealthReport());
+    },
+    async handleExecutiveReport({ response }) {
+      const store = createExecutiveReportStore({ userDataPath });
+      sendJson(response, 200, await store.list());
+    },
+    async handleExecutiveReportGenerate({ requestBody, response }) {
+      try {
+        const store = createExecutiveReportStore({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await store.generate(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Executive report generation failed."
+        });
+      }
+    },
+    async handleExecutiveReportPreview({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await buildExecutiveReport(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Executive report preview failed."
+        });
+      }
     },
     async handleModuleTemplates({ response }) {
       sendJson(response, 200, listModuleTemplates());

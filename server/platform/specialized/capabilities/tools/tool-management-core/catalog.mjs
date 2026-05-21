@@ -315,6 +315,9 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "runtime.mounts": "agentstudio.runtime.mounts",
   "runtime.set_mounts": "agentstudio.runtime.mounts.set",
   "runtime.reload_mounts": "agentstudio.runtime.mounts.reload",
+  "executive_report.list": "agentstudio.executiveReport.list",
+  "executive_report.preview": "agentstudio.executiveReport.preview",
+  "executive_report.generate": "agentstudio.executiveReport.generate",
   "module_ecosystem.templates": "agentstudio.modules.templates",
   "module_ecosystem.plan": "agentstudio.modules.plan",
   "module_ecosystem.scaffold": "agentstudio.modules.scaffold",
@@ -445,6 +448,9 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "runtime.mounts": "storage:read",
   "runtime.set_mounts": "knowledge:maintain",
   "runtime.reload_mounts": "knowledge:maintain",
+  "executive_report.list": "storage:read",
+  "executive_report.preview": "storage:read",
+  "executive_report.generate": "knowledge:maintain",
   "module_ecosystem.templates": "storage:read",
   "module_ecosystem.plan": "knowledge:admin",
   "module_ecosystem.scaffold": "knowledge:admin",
@@ -601,6 +607,9 @@ function inferToolsets(operation, scopes = [], toolId = "") {
   }
   if (toolId.startsWith("agentstudio.modules.")) {
     toolsets.add(operation.id === "module_ecosystem.templates" ? "agentstudio.runtime.read" : "agentstudio.mount.dev");
+  }
+  if (toolId.startsWith("agentstudio.executiveReport.")) {
+    toolsets.add(operation.id === "executive_report.generate" ? "agentstudio.knowledge.maintain" : "agentstudio.runtime.read");
   }
   if (
     toolId.startsWith("agentstudio.agentWorkspace.") ||

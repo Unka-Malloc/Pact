@@ -46,6 +46,44 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     aspects: ["observability", "production-readiness"]
   },
   {
+    id: "executive_report.list",
+    feature: "production",
+    label: "管理层报告列表",
+    target: { controller: "system", method: "handleExecutiveReport" },
+    http: { method: "GET", path: "/api/executive-report", localInForwardMode: true },
+    rpc: { method: "executive_report.list" },
+    cli: { command: ["executive-report"], usage: "executive-report" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["executive-report", "asset-value"]
+  },
+  {
+    id: "executive_report.preview",
+    feature: "production",
+    label: "管理层报告预览",
+    target: { controller: "system", method: "handleExecutiveReportPreview" },
+    http: { method: "POST", path: "/api/executive-report/preview", localInForwardMode: true },
+    rpc: { method: "executive_report.preview", body: "params" },
+    cli: { command: ["executive-report", "preview"], usage: "executive-report preview --body report-input.json" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    safety: { risk: "read_only" },
+    aspects: ["executive-report", "asset-value"]
+  },
+  {
+    id: "executive_report.generate",
+    feature: "production",
+    label: "生成管理层报告",
+    target: { controller: "system", method: "handleExecutiveReportGenerate" },
+    http: { method: "POST", path: "/api/executive-report/generate", localInForwardMode: true },
+    rpc: { method: "executive_report.generate", body: "params" },
+    cli: { command: ["executive-report", "generate"], usage: "executive-report generate --body report-input.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["executive-report", "asset-value"],
+    safety: { risk: "safe_write" }
+  },
+  {
     id: "module_ecosystem.templates",
     feature: "module_management",
     label: "模块生态模板",

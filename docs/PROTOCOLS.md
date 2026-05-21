@@ -23,6 +23,7 @@
 - [Tool Management Protocol](#tool-management-protocol)
 - [Agent Session Compatibility](#agent-session-compatibility)
 - [Module Ecosystem Protocol](#module-ecosystem-protocol)
+- [Executive Report Protocol](#executive-report-protocol)
 - [Protocol Adapters](#protocol-adapters)
 - [版本与兼容](#版本与兼容)
 
@@ -49,6 +50,7 @@
 | `agentstudio.data-connector-governance.v1` | 服务端数据连接器合同、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载验收。 |
 | `agentstudio.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
 | `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
+| `agentstudio.executive-report.v1` | 管理层报告，聚合生产门禁、资产价值、评估、容量成本、trace 安全和风险决策。 |
 | `agentstudio.module-ecosystem.v1` | 服务端模块模板、脚手架计划、生成、合同测试、CI 模板和 Tool/Skill 包 manifest 验收。 |
 | `agentstudio.asset-lineage.v1` | 多模态资产 raw object、page/slide、bbox、parser/model/OCR 版本、派生链和重解析计划。 |
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
@@ -728,6 +730,27 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 - `module_ecosystem.contract_test`：导入外部 mount factory，验证 `createMount`、`supports`、`extractDocument/extractText`、`onBatchCompleted`、`reload`、`close` 等合同；对 Tool/Skill 包则验证 capability package manifest。
 
 生成的 mount module manifest 使用 `agentstudio.mount-module.v1`，必须声明 `moduleId`、`templateId`、`mountName`、`entrypoint`、`capabilities`、`contract.factoryExports` 和 `contract.contractTest`。生成的 Tool/Skill 包必须继续服从 `agentstudio.tool-package.v1` / `agentstudio.skill-registry.v1` 生命周期治理。
+
+## Executive Report Protocol
+
+`agentstudio.executive-report.v1` 是服务端管理层报告协议，不依赖前端驾驶舱。它把生产门禁、资产贡献统计、容量成本、评估质量和 trace 安全摘要合并成可持久化、可审计、可给阶段评审使用的报告。
+
+报告必须包含：
+
+- `executiveSummary.keyFindings` 和 `recommendedDecisions`
+- `productionReadiness.status/latestRunId/blockedP0/failedGates/missingCoverage`
+- `assetValue.acceptedCount/usageCount/uniqueWorkspaceAdoptions/permissionRequestCount/permissionGrantCount/rollbackCount`
+- `assetValue.topReusableAssets/highDemandRestrictedAssets/rollbackHotspots/underMaintainedAssets`
+- `qualityAndEvaluation.ragScore/distillationScore/agentTaskSuccessRate/unsupportedClaimCount/regressions`
+- `capacityAndCost.capacityProfile/searchP95Ms/qps/estimatedCostUsd/failures`
+- `traceAndSecurity.redactionFailures/deniedRequests/highRiskToolCalls/costUsd`
+- `risks`，按 production gate、restricted asset、rollback hotspot 等来源生成
+
+公开操作：
+
+- `executive_report.list`：读取已生成报告。
+- `executive_report.preview`：基于输入和最新 production health 生成预览，不持久化。
+- `executive_report.generate`：生成并持久化报告。
 
 ## Protocol Adapters
 
