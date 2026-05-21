@@ -74,6 +74,7 @@ import {
   buildExecutiveReport,
   createExecutiveReportStore
 } from "../../../production-readiness/executive-report.mjs";
+import { buildArchitectureLiveMap } from "../../../production-readiness/architecture-live-map.mjs";
 import {
   listModuleTemplates,
   planModuleScaffold,
@@ -5998,6 +5999,9 @@ export function createSystemController({
           error: error instanceof Error ? error.message : "Executive report preview failed."
         });
       }
+    },
+    async handleArchitectureLiveMap({ response }) {
+      sendJson(response, 200, await buildArchitectureLiveMap());
     },
     async handleModuleTemplates({ response }) {
       sendJson(response, 200, listModuleTemplates());

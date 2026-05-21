@@ -46,6 +46,19 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     aspects: ["observability", "production-readiness"]
   },
   {
+    id: "architecture.live_map",
+    feature: "production",
+    label: "架构运行状态映射",
+    target: { controller: "system", method: "handleArchitectureLiveMap" },
+    http: { method: "GET", path: "/api/architecture/live-map", localInForwardMode: true },
+    rpc: { method: "architecture.live_map" },
+    cli: { command: ["architecture", "live-map"], usage: "architecture live-map" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["architecture-live-map", "production-readiness"]
+  },
+  {
     id: "executive_report.list",
     feature: "production",
     label: "管理层报告列表",

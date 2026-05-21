@@ -315,6 +315,7 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "runtime.mounts": "agentstudio.runtime.mounts",
   "runtime.set_mounts": "agentstudio.runtime.mounts.set",
   "runtime.reload_mounts": "agentstudio.runtime.mounts.reload",
+  "architecture.live_map": "agentstudio.architecture.liveMap",
   "executive_report.list": "agentstudio.executiveReport.list",
   "executive_report.preview": "agentstudio.executiveReport.preview",
   "executive_report.generate": "agentstudio.executiveReport.generate",
@@ -448,6 +449,7 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "runtime.mounts": "storage:read",
   "runtime.set_mounts": "knowledge:maintain",
   "runtime.reload_mounts": "knowledge:maintain",
+  "architecture.live_map": "storage:read",
   "executive_report.list": "storage:read",
   "executive_report.preview": "storage:read",
   "executive_report.generate": "knowledge:maintain",
@@ -604,6 +606,9 @@ function inferToolsets(operation, scopes = [], toolId = "") {
     } else {
       toolsets.add("agentstudio.runtime.maintain");
     }
+  }
+  if (toolId.startsWith("agentstudio.architecture.")) {
+    toolsets.add("agentstudio.runtime.read");
   }
   if (toolId.startsWith("agentstudio.modules.")) {
     toolsets.add(operation.id === "module_ecosystem.templates" ? "agentstudio.runtime.read" : "agentstudio.mount.dev");

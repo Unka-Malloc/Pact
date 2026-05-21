@@ -206,6 +206,15 @@ const GATES = [
     nextStep: "补齐 asset contribution、production readiness、eval、trace、benchmark 的管理层报告汇总。"
   },
   {
+    id: "architecture-live-map",
+    title: "架构图运行状态联动",
+    blockerLevel: "P3",
+    owner: "platform-architecture",
+    coverage: [],
+    commands: [["npm", "run", "server:verify:architecture-live-map"]],
+    nextStep: "补齐核心架构节点到文档、实现路径和生产门禁状态的联动映射。"
+  },
+  {
     id: "trace-observability",
     title: "内部 Trace 与日志脱敏",
     blockerLevel: "P0",

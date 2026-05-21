@@ -24,6 +24,7 @@
 - [Agent Session Compatibility](#agent-session-compatibility)
 - [Module Ecosystem Protocol](#module-ecosystem-protocol)
 - [Executive Report Protocol](#executive-report-protocol)
+- [Architecture Live Map Protocol](#architecture-live-map-protocol)
 - [Protocol Adapters](#protocol-adapters)
 - [版本与兼容](#版本与兼容)
 
@@ -51,6 +52,7 @@
 | `agentstudio.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
 | `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
 | `agentstudio.executive-report.v1` | 管理层报告，聚合生产门禁、资产价值、评估、容量成本、trace 安全和风险决策。 |
+| `agentstudio.architecture-live-map.v1` | 架构活文档，链接核心架构节点、设计文档、服务端实现路径和生产门禁状态。 |
 | `agentstudio.module-ecosystem.v1` | 服务端模块模板、脚手架计划、生成、合同测试、CI 模板和 Tool/Skill 包 manifest 验收。 |
 | `agentstudio.asset-lineage.v1` | 多模态资产 raw object、page/slide、bbox、parser/model/OCR 版本、派生链和重解析计划。 |
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
@@ -751,6 +753,22 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 - `executive_report.list`：读取已生成报告。
 - `executive_report.preview`：基于输入和最新 production health 生成预览，不持久化。
 - `executive_report.generate`：生成并持久化报告。
+
+## Architecture Live Map Protocol
+
+`agentstudio.architecture-live-map.v1` 是服务端架构活文档协议。它不要求实现客户端，而是把核心架构节点连接到设计文档、服务端实现路径和 production readiness gate，让阶段评审可以直接看到“设计是否落地、落地是否仍在运行门禁中通过”。
+
+每个架构节点必须包含：
+
+- `nodeId`、`label` 和节点级 `status`
+- `docRefs[].path/exists`，指向对应设计文档
+- `implementationPaths[].path/exists`，指向服务端实现入口
+- `gates[].gateId/status/title/nextStep`，指向生产就绪门禁
+- `missingDocs` 和 `missingImplementations`，明确活文档断链
+
+公开操作：
+
+- `architecture.live_map`：读取当前架构节点到文档、实现路径和生产门禁状态的映射。
 
 ## Protocol Adapters
 

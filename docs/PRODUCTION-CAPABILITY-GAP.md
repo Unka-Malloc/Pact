@@ -530,6 +530,13 @@
 
 补全方式：让 `docs/Architecture.md`、`docs/WORKSPACE-ASSET-GOVERNANCE.md` 和 `docs/KNOWLEDGE-GOVERNANCE.md` 中的核心节点能链接到当前实现路径、健康状态、门禁结果。
 
+当前实现入口：
+
+- `server/platform/common/production-readiness/architecture-live-map.mjs` 定义 `agentstudio.architecture-live-map.v1`，把核心架构节点映射到设计文档、服务端实现路径和 production readiness gate。
+- 节点覆盖 workspace asset governance、AgentLibrary access、knowledge core、module ecosystem、asset lineage 和 production readiness。
+- `GET /api/architecture/live-map` 提供服务端调用面；Tool Management 暴露 `agentstudio.architecture.liveMap`。
+- `npm run server:verify:architecture-live-map` 验证文档/实现路径存在、门禁状态联动、操作注册和 Tool Management 暴露。
+
 效果：架构图从静态设计变成活文档。
 
 ### P3-03 提供样例业务包
