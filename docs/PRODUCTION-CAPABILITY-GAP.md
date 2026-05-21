@@ -501,6 +501,13 @@
 
 补全方式：定义 `agentstudio.asset-lineage.v1`，资产必须能追溯 raw object、page/slide、bbox、parser/model/version。
 
+当前实现入口：
+
+- `server/platform/specialized/knowledge/assets/asset-lineage/index.mjs` 定义 `agentstudio.asset-lineage.v1`，持久化多模态资产血缘记录、派生链、重解析计划和审计事件。
+- lineage record 覆盖 `assetId`、`assetType`、`rawObject.objectId/uri/contentHash/mediaType`、`sourceAnchor.page/slideIndex/bbox/sourceRange`、`parser.id/version`、`visualModel.id/version/promptVersion`、`ocr.id/version`、`derivedFromAssetIds`、`producedBy` 和 `reparsePolicy`。
+- `GET /api/asset-lineage`、`POST /api/asset-lineage/records`、`POST /api/asset-lineage/trace`、`POST /api/asset-lineage/reparse-plan` 提供服务端调用面；Tool Management 暴露 `agentstudio.assetLineage.*`。
+- `npm run server:verify:asset-lineage` 验证 image/table lineage、raw object/page/bbox/parser/model/OCR 字段、派生链 trace、parser/model/source hash 变化触发重解析候选、操作注册和 Tool Management 暴露。
+
 效果：图文穿插蒸馏和 PDF/PPT 还原可以被审计和重放。
 
 ## P3 竞争力增强项

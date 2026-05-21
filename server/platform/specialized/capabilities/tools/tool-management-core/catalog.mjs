@@ -402,6 +402,10 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "workspace_governance.policy.set": "agentstudio.workspaceGovernance.policy.set",
   "workspace_governance.evaluate": "agentstudio.workspaceGovernance.evaluate",
   "workspace_governance.share_grant": "agentstudio.workspaceGovernance.shareGrant",
+  "asset_lineage.describe": "agentstudio.assetLineage.describe",
+  "asset_lineage.record": "agentstudio.assetLineage.record",
+  "asset_lineage.trace": "agentstudio.assetLineage.trace",
+  "asset_lineage.reparse_plan": "agentstudio.assetLineage.reparsePlan",
   "agent_sessions.list": "agentstudio.agentSession.list",
   "agent_sessions.get": "agentstudio.agentSession.get",
   "agent_sessions.context.get": "agentstudio.agentSession.context",
@@ -491,6 +495,10 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "workspace_governance.policy.set": "knowledge:admin",
   "workspace_governance.evaluate": "knowledge:read",
   "workspace_governance.share_grant": "knowledge:maintain",
+  "asset_lineage.describe": "knowledge:read",
+  "asset_lineage.record": "knowledge:maintain",
+  "asset_lineage.trace": "knowledge:read",
+  "asset_lineage.reparse_plan": "knowledge:maintain",
   "agent_workspaces.locks.write": "knowledge:write",
   "agent_sessions.events.append": "knowledge:write",
   "agent_sessions.fork": "knowledge:write",
@@ -606,6 +614,10 @@ function inferToolsets(operation, scopes = [], toolId = "") {
   }
   if (toolId.includes(".asset") || toolId.includes(".evidence")) {
     toolsets.add("agentstudio.document.parse");
+  }
+  if (toolId.startsWith("agentstudio.assetLineage.")) {
+    toolsets.add("agentstudio.document.parse");
+    toolsets.add("agentstudio.knowledge.maintain");
   }
   if (operation.id === "agent_sync.publish") {
     toolsets.add("agentstudio.agent.sync.publish");

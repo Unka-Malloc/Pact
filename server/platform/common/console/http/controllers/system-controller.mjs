@@ -79,6 +79,7 @@ import {
 } from "../../../module-manager/module-ecosystem/index.mjs";
 import { createWorkspaceGovernanceRegistry } from "../../../../specialized/agent/workspace-governance/index.mjs";
 import { createCapabilityPackageRegistry } from "../../../../specialized/capabilities/package-lifecycle/index.mjs";
+import { createAssetLineageRegistry } from "../../../../specialized/knowledge/assets/asset-lineage/index.mjs";
 import { createDataConnectorGovernance } from "../../../../specialized/knowledge/connectors/data-connector-governance/index.mjs";
 import {
   listCapacityBenchmarkTargets,
@@ -6045,6 +6046,46 @@ export function createSystemController({
         sendJson(response, 400, {
           ok: false,
           error: error instanceof Error ? error.message : "Workspace governance share grant failed."
+        });
+      }
+    },
+    async handleAssetLineage({ response }) {
+      const lineage = createAssetLineageRegistry({ userDataPath });
+      sendJson(response, 200, await lineage.describe());
+    },
+    async handleAssetLineageRecord({ requestBody, response }) {
+      try {
+        const lineage = createAssetLineageRegistry({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await lineage.record(payload.record || payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Asset lineage record failed."
+        });
+      }
+    },
+    async handleAssetLineageTrace({ requestBody, response }) {
+      try {
+        const lineage = createAssetLineageRegistry({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await lineage.trace(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Asset lineage trace failed."
+        });
+      }
+    },
+    async handleAssetLineageReparsePlan({ requestBody, response }) {
+      try {
+        const lineage = createAssetLineageRegistry({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await lineage.planReparse(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Asset lineage reparse plan failed."
         });
       }
     },

@@ -147,6 +147,55 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     safety: { risk: "safe_write", requiresConfirmation: true, approvalScope: "runtime:admin" }
   },
   {
+    id: "asset_lineage.describe",
+    feature: "knowledge",
+    label: "多模态资产血缘总览",
+    target: { controller: "system", method: "handleAssetLineage" },
+    http: { method: "GET", path: "/api/asset-lineage", localInForwardMode: true },
+    rpc: { method: "asset_lineage.describe" },
+    cli: { command: ["asset-lineage"], usage: "asset-lineage" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["asset-lineage", "multimodal"]
+  },
+  {
+    id: "asset_lineage.record",
+    feature: "knowledge",
+    label: "记录多模态资产血缘",
+    target: { controller: "system", method: "handleAssetLineageRecord" },
+    http: { method: "POST", path: "/api/asset-lineage/records", localInForwardMode: true },
+    rpc: { method: "asset_lineage.record", body: "params" },
+    cli: { command: ["asset-lineage", "record"], usage: "asset-lineage record --body record.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["asset-lineage", "multimodal"],
+    safety: { risk: "safe_write" }
+  },
+  {
+    id: "asset_lineage.trace",
+    feature: "knowledge",
+    label: "追踪多模态资产血缘",
+    target: { controller: "system", method: "handleAssetLineageTrace" },
+    http: { method: "POST", path: "/api/asset-lineage/trace", localInForwardMode: true },
+    rpc: { method: "asset_lineage.trace", body: "params" },
+    cli: { command: ["asset-lineage", "trace"], usage: "asset-lineage trace --body trace.json" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    aspects: ["asset-lineage", "multimodal"]
+  },
+  {
+    id: "asset_lineage.reparse_plan",
+    feature: "knowledge",
+    label: "多模态资产重解析计划",
+    target: { controller: "system", method: "handleAssetLineageReparsePlan" },
+    http: { method: "POST", path: "/api/asset-lineage/reparse-plan", localInForwardMode: true },
+    rpc: { method: "asset_lineage.reparse_plan", body: "params" },
+    cli: { command: ["asset-lineage", "reparse-plan"], usage: "asset-lineage reparse-plan --body runtime.json" },
+    requiredScopes: ["runtime:admin"],
+    readOnly: true,
+    aspects: ["asset-lineage", "multimodal"]
+  },
+  {
     id: "data_connectors.governance.describe",
     feature: "knowledge",
     label: "数据连接器治理总览",

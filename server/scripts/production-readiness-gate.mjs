@@ -188,6 +188,15 @@ const GATES = [
     nextStep: "补齐 organization/project/dataClass/retention/legalHold、外部协作者、跨空间复制和共享授权治理。"
   },
   {
+    id: "asset-lineage",
+    title: "多模态资产血缘",
+    blockerLevel: "P2",
+    owner: "knowledge-ingestion",
+    coverage: [],
+    commands: [["npm", "run", "server:verify:asset-lineage"]],
+    nextStep: "补齐 raw object、page/slide、bbox、parser/model/version、OCR、视觉模型和重解析计划。"
+  },
+  {
     id: "trace-observability",
     title: "内部 Trace 与日志脱敏",
     blockerLevel: "P0",

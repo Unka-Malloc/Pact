@@ -16,6 +16,7 @@
   - [MCP Demo Flows](#mcp-demo-flows)
 - [Workspace Governance Protocol](#workspace-governance-protocol)
 - [Knowledge Protocol](#knowledge-protocol)
+- [Asset Lineage Protocol](#asset-lineage-protocol)
 - [Knowledge Access Protocol](#knowledge-access-protocol)
   - [Upstream Permission Demo Flow](#upstream-permission-demo-flow)
 - [Context Bundle Protocol](#context-bundle-protocol)
@@ -49,6 +50,7 @@
 | `agentstudio.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
 | `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
 | `agentstudio.module-ecosystem.v1` | 服务端模块模板、脚手架计划、生成、合同测试、CI 模板和 Tool/Skill 包 manifest 验收。 |
+| `agentstudio.asset-lineage.v1` | 多模态资产 raw object、page/slide、bbox、parser/model/OCR 版本、派生链和重解析计划。 |
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
 | `agentstudio.agent-library.v1` | AgentLibrary / 图书馆的 library card、loanRecord、knowledgeAccessReceipt、share、checkout 和 revoke 语义。 |
 | `agentstudio.workspace-contribution.v1` | 终端贡献资产、Skills、工具、脚本、专家意见、黄金规则、排行榜、资产贡献统计报表和贡献授权。 |
@@ -518,6 +520,29 @@ Legal hold 必须阻断 delete/purge/expire/retention.dispose 等破坏性动作
 数据连接器治理保留在服务端协议层，不要求本轮实现客户端连接器。`agentstudio.data-connector-governance.v1` 校验 `agentstudio.data-connector.v1` manifest，并用 `agentstudio.local-mirror.v1` 验收 OAuth refresh 策略、增量 cursor、冲突处理、hash collision quarantine、rate limit、mirror cleanup、localQuery 禁远程和 uninstall policy。当前实现入口是 `server/platform/specialized/knowledge/connectors/data-connector-governance/index.mjs`。
 
 性能容量基准使用 `agentstudio.performance-capacity.v1`。该协议定义 `smoke`、`pilot`、`production` 容量目标，并用合成 corpus 实际经过 `KnowledgeCore` ingest/search，同时记录外部 mirror sync、蒸馏吞吐、估算成本和失败注入结果。当前实现入口是 `server/platform/specialized/knowledge/performance/capacity-benchmark/index.mjs`。
+
+## Asset Lineage Protocol
+
+`agentstudio.asset-lineage.v1` 是多模态资产治理协议。图片、表格、OCR 文本、PDF/PPT 视觉元素和图文穿插蒸馏材料都必须能回溯到原始对象、页面或幻灯片、坐标锚点、解析器版本和视觉模型版本。
+
+lineage record 必须包含：
+
+- `assetId`、`assetType`、`mediaType`
+- `rawObject.objectId`、`rawObject.uri`、`rawObject.contentHash`、`rawObject.mediaType`
+- `sourceAnchor.documentId`、`sourceAnchor.page`、`sourceAnchor.slideIndex`、`sourceAnchor.bbox`、`sourceAnchor.coordinateSystem`、`sourceAnchor.sourceRange`
+- `parser.id`、`parser.version`
+- `visualModel.id`、`visualModel.version`、`visualModel.promptVersion`
+- `ocr.id`、`ocr.version`
+- `derivedFromAssetIds`
+- `producedBy.operationId/jobId/batchId/mountName/parserRoute`
+- `reparsePolicy.whenParserChanges/whenModelChanges/whenSourceHashChanges`
+
+公开操作：
+
+- `asset_lineage.describe`：读取 lineage registry。
+- `asset_lineage.record`：记录或更新 asset lineage。
+- `asset_lineage.trace`：按 `assetId` 或 `lineageId` 回溯派生链和 root raw object。
+- `asset_lineage.reparse_plan`：当 parser、视觉模型、prompt 或 raw object hash 改变时输出重解析候选。
 
 ## Knowledge Access Protocol
 
