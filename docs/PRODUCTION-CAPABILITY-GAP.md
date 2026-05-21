@@ -2,6 +2,42 @@
 
 审计日期：2026-05-20（本地环境）。本文用于决策，不用于宣传。
 
+## 目录 / Table of Contents
+
+- [总结](#总结)
+- [对标依据](#对标依据)
+- [当前已有能力](#当前已有能力)
+- [优先级定义](#优先级定义)
+- [P0 生产阻塞项](#p0-生产阻塞项)
+  - [P0-00 智能体知识源头权限门禁缺失](#p0-00-智能体知识源头权限门禁缺失)
+  - [P0-00-02 终端贡献型资产治理缺失](#p0-00-02-终端贡献型资产治理缺失)
+  - [P0-01 生产级验收门禁缺失](#p0-01-生产级验收门禁缺失)
+  - [P0-02 内部 Trace 与可观测性不足](#p0-02-内部-trace-与可观测性不足)
+  - [P0-03 长任务缺少 durable execution 级别保证](#p0-03-长任务缺少-durable-execution-级别保证)
+  - [P0-04 外部检索引擎后端一致性仍不够硬](#p0-04-外部检索引擎后端一致性仍不够硬)
+  - [P0-05 文档解析质量没有真实业务基准](#p0-05-文档解析质量没有真实业务基准)
+  - [P0-06 评估体系没有覆盖 RAG、蒸馏、Agent 和工具调用全链路](#p0-06-评估体系没有覆盖-rag蒸馏agent-和工具调用全链路)
+  - [P0-07 安全、租户、权限和密钥边界未达到生产审计标准](#p0-07-安全租户权限和密钥边界未达到生产审计标准)
+  - [P0-08 备份、恢复、迁移和升级策略不足](#p0-08-备份恢复迁移和升级策略不足)
+- [P1 试点阻塞项](#p1-试点阻塞项)
+  - [P1-01 会话线程还缺 merge、compare 和冲突治理](#p1-01-会话线程还缺-mergecompare-和冲突治理)
+  - [P1-02 前端治理界面还不够"生产操作台"](#p1-02-前端治理界面还不够生产操作台)
+  - [P1-03 模型网关缺少生产成本与降级策略](#p1-03-模型网关缺少生产成本与降级策略)
+  - [P1-04 外部工具与技能缺少生命周期治理](#p1-04-外部工具与技能缺少生命周期治理)
+  - [P1-05 数据连接器和本地镜像同步还不完整](#p1-05-数据连接器和本地镜像同步还不完整)
+  - [P1-06 性能和容量基准不足](#p1-06-性能和容量基准不足)
+- [P2 规模化缺口](#p2-规模化缺口)
+  - [P2-01 知识蒸馏需要从"评估脚本"升级为"持续优化系统"](#p2-01-知识蒸馏需要从评估脚本升级为持续优化系统)
+  - [P2-02 插件/模块生态还缺 SDK 和模板](#p2-02-插件模块生态还缺-sdk-和模板)
+  - [P2-03 工作空间共享还缺组织级治理](#p2-03-工作空间共享还缺组织级治理)
+  - [P2-04 多模态资产治理不足](#p2-04-多模态资产治理不足)
+- [P3 竞争力增强项](#p3-竞争力增强项)
+  - [P3-01 提供资产价值管理驾驶舱和 executive report](#p3-01-提供资产价值管理驾驶舱和-executive-report)
+  - [P3-02 提供架构图和运行状态联动](#p3-02-提供架构图和运行状态联动)
+  - [P3-03 提供样例业务包](#p3-03-提供样例业务包)
+- [建议决策顺序](#建议决策顺序)
+- [当前上生产判断](#当前上生产判断)
+
 ## 总结
 
 当前项目已经形成了清晰的目标架构：管理层、服务层、应用层、基建层；应用层拆为知识转化、智能体、通用工具与技能；知识转化拆为原始语料、知识索引、知识蒸馏；智能体以会话线程、上下文、工作空间和记忆切换工作状态。项目也已经有不少验证脚本、协议文档和本地默认实现。
@@ -321,6 +357,13 @@
 
 补全方式：新增“生产健康”页面，读取 production readiness、telemetry、eval、workflow、backup 状态。
 
+当前实现入口：
+
+- `server/platform/common/production-readiness/report-reader.mjs` 读取 `reports/production-readiness/<run-id>/report.json`，输出 `agentstudio.production-health.v1`，按生产准入、知识质量、智能体运行时、权限安全、可观测性、连续性聚合状态。
+- `GET /api/production/health` / `production.health` 提供控制台和外部调用可复用的生产健康摘要，权限要求为 `console:read`。
+- `server-web/views/admin/ProductionHealthView.vue` 提供 `/admin/production-health` 管理页，展示最新 release gate、覆盖缺口、门禁明细、报告历史和执行入口。
+- `npm run server:verify:production-health-console` 验证报告读取、操作注册、前端路由、桥接方法和 feature registry 是否闭环。
+
 效果：业务汇报和运维排障不再依赖命令行和零散日志。
 
 ### P1-03 模型网关缺少生产成本与降级策略
@@ -331,6 +374,14 @@
 
 补全方式：`agentstudio.model-routing.v1` 增加 budget、circuit breaker、fallback chain、prompt version、cost ledger。
 
+当前实现入口：
+
+- `server/platform/specialized/agent/agent-gateway/model-routing/index.mjs` 实现 `agentstudio.model-routing.v1`，覆盖预算估算、fallback chain、熔断状态、prompt version、成本估算和 JSONL 成本台账。
+- `callAgentGateway()` 在请求携带 `modelRouting` 或全局 `settings.modelRouting` 时启用模型路由；同一次调用先做上下文压缩和客户端运行时分配，再按候选模型执行降级链。
+- `model-decision-runtime` 已把知识库模型角色调用接入模型路由，按角色生成 `model-decision.<roleId>` 路由、prompt version 和预算约束。
+- `GET /api/model-routing/health` / `model_routing.health` 读取模型路由熔断状态、最近台账、状态分布和估算成本。
+- `npm run server:verify:model-routing` 验证 primary 失败后 fallback 成功、熔断跳过、预算拒绝、成本台账和操作注册。
+
 效果：模型切换不再是配置变更，而是可观测、可回滚、可计费的运行策略。
 
 ### P1-04 外部工具与技能缺少生命周期治理
@@ -340,6 +391,14 @@
 对标依据：Haystack/LlamaIndex 的组件化和 pipeline 生态强调可替换组件；企业生产中可替换组件必须带版本和治理。
 
 补全方式：定义 `agentstudio.skill-registry.v1` 和 `agentstudio.tool-package.v1`，所有外部工具/技能必须声明 capability、risk、input schema、secret refs、version、license。
+
+当前实现入口：
+
+- `server/platform/specialized/capabilities/package-lifecycle/index.mjs` 实现 `agentstudio.capability-package-lifecycle.v1`，并定义 `agentstudio.tool-package.v1` 与 `agentstudio.skill-registry.v1` 的统一 manifest 校验。
+- 能力包 manifest 必须声明 `kind`、`name`、`version`、`capabilities`、`risk`、`inputSchema`、`secretRefs`、`dependencies`、`compatibility`、`sandbox`、`license` 和签名摘要；写能力包不能使用 `none` sandbox。
+- 新增 `/api/capability-packages`、`/api/capability-packages/plan`、`/api/capability-packages/:packageId/lifecycle`，覆盖预检、提交、审批、安装、激活、回滚、废弃。
+- Tool Management catalog 已暴露 `agentstudio.capabilityPackages.*` 工具入口，外部智能体必须通过 grant 和 policy 调用。
+- `npm run server:verify:capability-package-lifecycle` 验证签名/字段校验、依赖、审批、安装、激活、版本回滚、技能包注册、操作注册和 Tool Management 暴露。
 
 效果：外部团队能运营工具和技能，而不会把不受控代码塞进智能体上下文。
 

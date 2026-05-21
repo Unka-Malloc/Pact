@@ -4,6 +4,38 @@
 
 AgentStudio 不关心智能体之间如何互相协作，也不把智能体当作可信主体。系统只关心公共工作空间里的资产状态是否可治理。
 
+## 目录 / Table of Contents
+
+- [定位](#定位)
+- [被治理对象](#被治理对象)
+- [安全原则](#安全原则)
+- [状态类型](#状态类型)
+- [终端贡献型资产](#终端贡献型资产)
+- [排行榜与统计面板](#排行榜与统计面板)
+- [资产贡献统计报表](#资产贡献统计报表)
+- [贡献授权](#贡献授权)
+- [演示场景：OpenClaw 文档互通](#演示场景openclaw-文档互通)
+- [演示场景：Skill 贡献排行榜](#演示场景skill-贡献排行榜)
+- [五阶段本机 MCP 落地路径](#五阶段本机-mcp-落地路径)
+  - [阶段一：MCP 服务 + 本机工作空间](#阶段一mcp-服务--本机工作空间)
+  - [阶段二：知识贡献 + 知识授权](#阶段二知识贡献--知识授权)
+  - [阶段三：Skills 上传 + MCP 操作工作空间](#阶段三skills-上传--mcp-操作工作空间)
+  - [阶段四：授权管控](#阶段四授权管控)
+  - [阶段五：文件树回档能力](#阶段五文件树回档能力)
+  - [第一轮任务拆分和验证入口](#第一轮任务拆分和验证入口)
+- [资产门禁模型](#资产门禁模型)
+- [上游知识库隔离](#上游知识库隔离)
+- [演示场景：上游知识库 A/B 权限再授权](#演示场景上游知识库-ab-权限再授权)
+- [统一 Checkpoint Tree](#统一-checkpoint-tree)
+- [Operation Ledger](#operation-ledger)
+- [Snapshot Boundary](#snapshot-boundary)
+- [演示场景：Checkpoint Tree 安全恢复](#演示场景checkpoint-tree-安全恢复)
+- [Proposal To Decision](#proposal-to-decision)
+- [Context Compiler](#context-compiler)
+- [本地智能体接入](#本地智能体接入)
+- [可复制工作空间](#可复制工作空间)
+- [验收标准](#验收标准)
+
 ## 定位
 
 > AgentStudio 是面向智能体时代的 Workspace Asset Governance System。

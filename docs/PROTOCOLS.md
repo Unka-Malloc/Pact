@@ -2,6 +2,27 @@
 
 本文定义 AgentStudio 的协议边界。协议层只描述请求、响应、事件、版本、权限、错误语义和兼容策略；业务实现、算法实现和存储细节不写进协议层。
 
+## 目录 / Table of Contents
+
+- [核心原则](#核心原则)
+- [协议分组](#协议分组)
+- [Middle Layer Strategy](#middle-layer-strategy)
+- [Compatibility Strategy](#compatibility-strategy)
+- [Workspace API](#workspace-api)
+- [Workspace Event](#workspace-event)
+- [Operation Protocol](#operation-protocol)
+  - [Unified Checkpoint Tree Protocol](#unified-checkpoint-tree-protocol)
+- [Workspace Contribution Protocol](#workspace-contribution-protocol)
+  - [MCP Demo Flows](#mcp-demo-flows)
+- [Knowledge Protocol](#knowledge-protocol)
+- [Knowledge Access Protocol](#knowledge-access-protocol)
+  - [Upstream Permission Demo Flow](#upstream-permission-demo-flow)
+- [Context Bundle Protocol](#context-bundle-protocol)
+- [Tool Management Protocol](#tool-management-protocol)
+- [Agent Session Compatibility](#agent-session-compatibility)
+- [Protocol Adapters](#protocol-adapters)
+- [版本与兼容](#版本与兼容)
+
 ## 核心原则
 
 - 协议口径固定为“两个问题，一个能力，三个兼容”。

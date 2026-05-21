@@ -2,6 +2,28 @@
 
 本文定义 AgentStudio 的 `AgentLibrary / 图书馆` 治理边界。图书馆不是资产后台，也不是智能体私有记忆；它是公共工作空间可安全引用、可共享、可借阅、可登记、可管控的 evidence runtime。
 
+## 目录 / Table of Contents
+
+- [定位](#定位)
+- [智能体知识权限第一原则](#智能体知识权限第一原则)
+- [终端贡献与专家知识](#终端贡献与专家知识)
+  - [借阅登记](#借阅登记)
+  - [外部知识库再授权](#外部知识库再授权)
+  - [演示场景：上游知识库 A/B 权限再授权](#演示场景上游知识库-ab-权限再授权)
+- [三层知识模型](#三层知识模型)
+  - [1. Raw Corpus Construction](#1-raw-corpus-construction)
+  - [2. Knowledge Index Construction](#2-knowledge-index-construction)
+  - [3. Knowledge Distillation](#3-knowledge-distillation)
+- [Evidence Pack](#evidence-pack)
+- [知识权限](#知识权限)
+- [动态解析与预算](#动态解析与预算)
+- [Markdown 基线](#markdown-基线)
+- [Dossier](#dossier)
+- [外部知识库适配](#外部知识库适配)
+- [知识维护闭环](#知识维护闭环)
+- [工业级蒸馏验收流程](#工业级蒸馏验收流程)
+- [与工作空间的关系](#与工作空间的关系)
+
 ## 定位
 
 > AgentStudio 把资产型知识库转化为 AgentLibrary：面向智能体的受控图书馆。
