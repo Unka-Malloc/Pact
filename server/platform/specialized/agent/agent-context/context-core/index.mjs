@@ -11,7 +11,7 @@ import {
   atomicWriteJson
 } from "../../../../common/platform-core/state-coordinator.mjs";
 
-export const CONTEXT_RUNTIME_PROTOCOL_VERSION = "splitall.context.v1";
+export const CONTEXT_RUNTIME_PROTOCOL_VERSION = "agentstudio.context.v1";
 
 const DEFAULT_PROFILES = [
   {
@@ -951,7 +951,7 @@ export function createContextRuntime({
     }
     try {
       const prompt = [
-        "你是 SplitAll 本地上下文压缩器。只压缩上下文，不新增事实。",
+        "你是 AgentStudio 本地上下文压缩器。只压缩上下文，不新增事实。",
         "必须保留 evidenceId、文件路径、日期、金额、冲突和人类专家意见。",
         "如果输入中存在引用编号，输出必须保留原编号。",
         `压缩对象：${kind}`,

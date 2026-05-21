@@ -3,7 +3,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
-export const VECTOR_PROTOCOL_VERSION = "splitall.vector.v1";
+export const VECTOR_PROTOCOL_VERSION = "agentstudio.vector.v1";
 export const LANCEDB_PROVIDER_ID = "lancedb";
 
 function nowIso() {
@@ -23,7 +23,7 @@ function hashText(value, length = 32) {
 }
 
 function stableExternalId(batchId, entityId) {
-  return `splitall::${hashText(`${batchId}\u001f${entityId}`, 40)}`;
+  return `agentstudio::${hashText(`${batchId}\u001f${entityId}`, 40)}`;
 }
 
 function chunkText(chunk = {}) {
@@ -110,8 +110,8 @@ export function createLanceDbVectorStore(options = {}) {
   const rootPath = path.join(options.userDataPath || process.cwd(), "lancedb-vector-store");
   const spoolPath = options.spoolPath || path.join(rootPath, "upserts.json");
   const providerId = String(options.providerId || LANCEDB_PROVIDER_ID);
-  const uri = options.uri || options.settings?.uri || process.env.SPLITALL_LANCEDB_URI || "";
-  const explicitModel = options.embeddingModel || options.settings?.embeddingModel || process.env.SPLITALL_LANCEDB_EMBEDDING_MODEL || "";
+  const uri = options.uri || options.settings?.uri || process.env.AGENTSTUDIO_LANCEDB_URI || "";
+  const explicitModel = options.embeddingModel || options.settings?.embeddingModel || process.env.AGENTSTUDIO_LANCEDB_EMBEDDING_MODEL || "";
 
   function ensureSchema() {
     fs.mkdirSync(rootPath, { recursive: true });

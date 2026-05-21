@@ -168,8 +168,8 @@ async function main() {
 
   const bundleDir = findLinuxBundle();
   const flutterBinary = path.join(bundleDir, "flutter_client");
-  const cli = path.join(bundleDir, "splitall-client");
-  const daemon = path.join(bundleDir, "splitall-clientd");
+  const cli = path.join(bundleDir, "agentstudio-client");
+  const daemon = path.join(bundleDir, "agentstudio-clientd");
   const packagingManifest = path.join(bundleDir, "portable-data", "backend", "packaging-modules.json");
   for (const file of [flutterBinary, cli, daemon]) {
     if (!existsSync(file)) {
@@ -185,18 +185,18 @@ async function main() {
   if (enabledModuleIds.has("macos-mail-import") || skippedModuleIds.has("macos-mail-import")) {
     throw new Error("Linux GUI bundle manifest must not include macOS-only module: macos-mail-import");
   }
-  const macOSMailTool = path.join(bundleDir, "splitall-macos-mail-tool");
+  const macOSMailTool = path.join(bundleDir, "agentstudio-macos-mail-tool");
   if (existsSync(macOSMailTool)) {
     throw new Error(`Linux GUI bundle must not include macOS Mail sidecar: ${macOSMailTool}`);
   }
 
   const artifactDir = path.resolve(
-    process.env.SPLITALL_GUI_ARTIFACT_DIR ||
+    process.env.AGENTSTUDIO_GUI_ARTIFACT_DIR ||
       path.join(flutterClientRoot, "build", "linux-gui-smoke"),
   );
   mkdirSync(artifactDir, { recursive: true });
 
-  const dataDir = path.join(os.tmpdir(), `splitall-linux-gui-${process.pid}-${Date.now()}`);
+  const dataDir = path.join(os.tmpdir(), `agentstudio-linux-gui-${process.pid}-${Date.now()}`);
   mkdirSync(dataDir, { recursive: true });
   writeSmokeWorkspace(dataDir);
 
@@ -208,8 +208,8 @@ async function main() {
     GDK_GL: "software",
     LIBGL_ALWAYS_SOFTWARE: "1",
     NO_AT_BRIDGE: "1",
-    SPLITALL_PORTABLE_DIR: dataDir,
-    SPLITALL_CLIENTD_PATH: daemon,
+    AGENTSTUDIO_PORTABLE_DIR: dataDir,
+    AGENTSTUDIO_CLIENTD_PATH: daemon,
   };
   const xvfb = spawn(
     "Xvfb",
@@ -241,7 +241,7 @@ async function main() {
         );
       }
       for (const args of [
-        ["search", "--onlyvisible", "--name", "SplitAll|splitall|flutter_client|Flutter"],
+        ["search", "--onlyvisible", "--name", "AgentStudio|agentstudio|flutter_client|Flutter"],
         ["search", "--onlyvisible", "--name", ".*"],
       ]) {
         const result = spawnSync("xdotool", args, {
@@ -264,7 +264,7 @@ async function main() {
 
     await sleep(1500);
     const initial = await waitForScreenshot(
-      path.join(artifactDir, "splitall-linux-initial.png"),
+      path.join(artifactDir, "agentstudio-linux-initial.png"),
       env,
       windowId,
       30_000,
@@ -274,7 +274,7 @@ async function main() {
     });
     await sleep(750);
     const afterInteraction = await waitForScreenshot(
-      path.join(artifactDir, "splitall-linux-after-interaction.png"),
+      path.join(artifactDir, "agentstudio-linux-after-interaction.png"),
       env,
       windowId,
       10_000,
@@ -302,8 +302,8 @@ async function main() {
       ],
     }, null, 2));
   } finally {
-    writeFileSync(path.join(artifactDir, "splitall-linux-app-stdout.log"), stdout.join(""));
-    writeFileSync(path.join(artifactDir, "splitall-linux-app-stderr.log"), stderr.join(""));
+    writeFileSync(path.join(artifactDir, "agentstudio-linux-app-stdout.log"), stdout.join(""));
+    writeFileSync(path.join(artifactDir, "agentstudio-linux-app-stderr.log"), stderr.join(""));
     if (app && app.exitCode == null) {
       app.kill("SIGTERM");
       await sleep(500);

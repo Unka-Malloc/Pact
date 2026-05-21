@@ -46,7 +46,7 @@ const routing = normalizeMountRouting();
 assert.equal(routing.extensionRoutes[".go"]?.mountName, "documentParser");
 assert.equal(routing.extensionRoutes[".pdf"]?.mountName, "pdfProcessor");
 
-const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-import-types-"));
+const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-import-types-"));
 try {
   const unknownTextPath = path.join(tempDir, "module.customlang");
   const binaryPath = path.join(tempDir, "blob.custombin");

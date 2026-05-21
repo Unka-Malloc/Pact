@@ -32,95 +32,95 @@ async function executeTool(baseUrl, token, toolId, input = {}) {
 }
 
 const expectedToolIds = [
-  "splitall.knowledge.console",
-  "splitall.knowledge.configSchema",
-  "splitall.knowledge.capabilities",
-  "splitall.knowledge.health",
-  "splitall.knowledge.maintenance.get",
-  "splitall.knowledge.maintenance.set",
-  "splitall.knowledge.reindex",
-  "splitall.knowledge.maintenance.run",
-  "splitall.knowledge.sync",
-  "splitall.knowledge.changes",
-  "splitall.knowledge.reviewItems",
-  "splitall.knowledge.reviewResolve",
-  "splitall.knowledge.feedback",
-  "splitall.knowledge.suggestions",
-  "splitall.knowledge.suggestionResolve",
-  "splitall.knowledge.learning.jobs",
-  "splitall.knowledge.learning.health",
-  "splitall.knowledge.evidenceGate.evaluate",
-  "splitall.knowledge.agentSkill",
-  "splitall.knowledge.agentSkill.plan",
-  "splitall.knowledge.agentSkill.run",
-  "splitall.knowledge.skills.list",
-  "splitall.knowledge.skills.get",
-  "splitall.knowledge.skills.generate",
-  "splitall.knowledge.skills.propose",
-  "splitall.knowledge.skills.resolve",
-  "splitall.knowledge.skillFramework",
-  "splitall.knowledge.skillFramework.set",
-  "splitall.knowledge.goldenRules.list",
-  "splitall.knowledge.goldenRules.set",
-  "splitall.knowledge.goldenRules.publish",
-  "splitall.knowledge.goldenRules.rollback",
-  "splitall.knowledge.ruleAuthoring.chat",
-  "splitall.knowledge.ruleAuthoring.run",
-  "splitall.knowledge.goldCases.list",
-  "splitall.knowledge.goldCases.set",
-  "splitall.knowledge.distillation.runs.create",
-  "splitall.knowledge.distillation.runs.get",
-  "splitall.knowledge.skills.evaluation.runs.create",
-  "splitall.knowledge.skills.deployments.create",
-  "splitall.knowledge.skills.deployments.rollback",
-  "splitall.knowledge.trainingSets.export",
-  "splitall.knowledge.evaluation.runs.create",
-  "splitall.knowledge.evaluation.runs.list",
-  "splitall.knowledge.evaluation.runs.get",
-  "splitall.knowledge.modelRoles",
-  "splitall.knowledge.modelDecision",
-  "splitall.knowledge.evolution",
-  "splitall.knowledge.evolution.runs.create",
-  "splitall.knowledge.evolution.runs.list",
-  "splitall.knowledge.evolution.runs.get",
-  "splitall.knowledge.hierarchy.audit",
-  "splitall.knowledge.evolution.deployments.list",
-  "splitall.knowledge.evolution.deployments.promote",
-  "splitall.knowledge.evolution.deployments.rollback",
-  "splitall.context.profiles",
-  "splitall.context.profiles.set",
-  "splitall.clientRuntime.profiles",
-  "splitall.clientRuntime.profiles.set",
-  "splitall.clientRuntime.resolve",
-  "splitall.clientRuntime.status",
-  "splitall.agentWorkspace.list",
-  "splitall.agentWorkspace.get",
-  "splitall.agentWorkspace.context",
-  "splitall.agentWorkspace.contextBundle.export",
-  "splitall.agentWorkspace.contextBundle.restore",
-  "splitall.agentWorkspace.chain",
-  "splitall.agentWorkspace.parent.set",
-  "splitall.agentWorkspace.profile.hotswap",
-  "splitall.agentWorkspace.sources.set",
-  "splitall.agentWorkspace.share",
-  "splitall.agentWorkspace.unshare",
-  "splitall.agentWorkspace.submissionResolve",
-  "splitall.agentWorkspace.issueResolve",
-  "splitall.agentWorkspace.locks",
-  "splitall.agentWorkspace.lock",
-  "splitall.knowledge.summarization.runs.create",
-  "splitall.knowledge.summarization.runs.get",
-  "splitall.knowledge.summarization.runs.approve",
-  "splitall.knowledge.search",
-  "splitall.knowledge.documentStructure",
-  "splitall.knowledge.item",
-  "splitall.knowledge.evidence",
-  "splitall.knowledge.asset",
-  "splitall.knowledge.renderMarkdown",
-  "splitall.knowledge.graph"
+  "agentstudio.knowledge.console",
+  "agentstudio.knowledge.configSchema",
+  "agentstudio.knowledge.capabilities",
+  "agentstudio.knowledge.health",
+  "agentstudio.knowledge.maintenance.get",
+  "agentstudio.knowledge.maintenance.set",
+  "agentstudio.knowledge.reindex",
+  "agentstudio.knowledge.maintenance.run",
+  "agentstudio.knowledge.sync",
+  "agentstudio.knowledge.changes",
+  "agentstudio.knowledge.reviewItems",
+  "agentstudio.knowledge.reviewResolve",
+  "agentstudio.knowledge.feedback",
+  "agentstudio.knowledge.suggestions",
+  "agentstudio.knowledge.suggestionResolve",
+  "agentstudio.knowledge.learning.jobs",
+  "agentstudio.knowledge.learning.health",
+  "agentstudio.knowledge.evidenceGate.evaluate",
+  "agentstudio.knowledge.agentSkill",
+  "agentstudio.knowledge.agentSkill.plan",
+  "agentstudio.knowledge.agentSkill.run",
+  "agentstudio.knowledge.skills.list",
+  "agentstudio.knowledge.skills.get",
+  "agentstudio.knowledge.skills.generate",
+  "agentstudio.knowledge.skills.propose",
+  "agentstudio.knowledge.skills.resolve",
+  "agentstudio.knowledge.skillFramework",
+  "agentstudio.knowledge.skillFramework.set",
+  "agentstudio.knowledge.goldenRules.list",
+  "agentstudio.knowledge.goldenRules.set",
+  "agentstudio.knowledge.goldenRules.publish",
+  "agentstudio.knowledge.goldenRules.rollback",
+  "agentstudio.knowledge.ruleAuthoring.chat",
+  "agentstudio.knowledge.ruleAuthoring.run",
+  "agentstudio.knowledge.goldCases.list",
+  "agentstudio.knowledge.goldCases.set",
+  "agentstudio.knowledge.distillation.runs.create",
+  "agentstudio.knowledge.distillation.runs.get",
+  "agentstudio.knowledge.skills.evaluation.runs.create",
+  "agentstudio.knowledge.skills.deployments.create",
+  "agentstudio.knowledge.skills.deployments.rollback",
+  "agentstudio.knowledge.trainingSets.export",
+  "agentstudio.knowledge.evaluation.runs.create",
+  "agentstudio.knowledge.evaluation.runs.list",
+  "agentstudio.knowledge.evaluation.runs.get",
+  "agentstudio.knowledge.modelRoles",
+  "agentstudio.knowledge.modelDecision",
+  "agentstudio.knowledge.evolution",
+  "agentstudio.knowledge.evolution.runs.create",
+  "agentstudio.knowledge.evolution.runs.list",
+  "agentstudio.knowledge.evolution.runs.get",
+  "agentstudio.knowledge.hierarchy.audit",
+  "agentstudio.knowledge.evolution.deployments.list",
+  "agentstudio.knowledge.evolution.deployments.promote",
+  "agentstudio.knowledge.evolution.deployments.rollback",
+  "agentstudio.context.profiles",
+  "agentstudio.context.profiles.set",
+  "agentstudio.clientRuntime.profiles",
+  "agentstudio.clientRuntime.profiles.set",
+  "agentstudio.clientRuntime.resolve",
+  "agentstudio.clientRuntime.status",
+  "agentstudio.agentWorkspace.list",
+  "agentstudio.agentWorkspace.get",
+  "agentstudio.agentWorkspace.context",
+  "agentstudio.agentWorkspace.contextBundle.export",
+  "agentstudio.agentWorkspace.contextBundle.restore",
+  "agentstudio.agentWorkspace.chain",
+  "agentstudio.agentWorkspace.parent.set",
+  "agentstudio.agentWorkspace.profile.hotswap",
+  "agentstudio.agentWorkspace.sources.set",
+  "agentstudio.agentWorkspace.share",
+  "agentstudio.agentWorkspace.unshare",
+  "agentstudio.agentWorkspace.submissionResolve",
+  "agentstudio.agentWorkspace.issueResolve",
+  "agentstudio.agentWorkspace.locks",
+  "agentstudio.agentWorkspace.lock",
+  "agentstudio.knowledge.summarization.runs.create",
+  "agentstudio.knowledge.summarization.runs.get",
+  "agentstudio.knowledge.summarization.runs.approve",
+  "agentstudio.knowledge.search",
+  "agentstudio.knowledge.documentStructure",
+  "agentstudio.knowledge.item",
+  "agentstudio.knowledge.evidence",
+  "agentstudio.knowledge.asset",
+  "agentstudio.knowledge.renderMarkdown",
+  "agentstudio.knowledge.graph"
 ];
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-knowledge-tools-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-knowledge-tools-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -160,7 +160,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      toolId: "splitall.knowledge.health",
+      toolId: "agentstudio.knowledge.health",
       input: {}
     })
   });
@@ -169,7 +169,7 @@ try {
   const health = await executeTool(
     server.url,
     readGrant.payload.token,
-    "splitall.knowledge.health",
+    "agentstudio.knowledge.health",
     {}
   );
   assert.equal(health.status, 200);
@@ -180,7 +180,7 @@ try {
   const search = await executeTool(
     server.url,
     readGrant.payload.token,
-    "splitall.knowledge.search",
+    "agentstudio.knowledge.search",
     {
       query: "agent knowledge tool verification",
       limit: 3,
@@ -188,7 +188,7 @@ try {
     }
   );
   assert.equal(search.status, 200);
-  assert.equal(search.payload.result.protocolVersion, "splitall.knowledge.v1");
+  assert.equal(search.payload.result.protocolVersion, "agentstudio.knowledge.v1");
   assert.equal(Array.isArray(search.payload.result.items), true);
 
   const adminGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
@@ -240,7 +240,7 @@ try {
   const workspaceContext = await executeTool(
     server.url,
     adminGrant.payload.token,
-    "splitall.agentWorkspace.context",
+    "agentstudio.agentWorkspace.context",
     { workspaceId }
   );
   assert.equal(workspaceContext.status, 200);
@@ -252,21 +252,21 @@ try {
   const contextBundle = await executeTool(
     server.url,
     adminGrant.payload.token,
-    "splitall.agentWorkspace.contextBundle.export",
+    "agentstudio.agentWorkspace.contextBundle.export",
     {
       workspaceId,
       format: "compressed"
     }
   );
   assert.equal(contextBundle.status, 200);
-  assert.equal(contextBundle.payload.result.bundleVersion, "splitall.workspace-context-bundle.v1");
+  assert.equal(contextBundle.payload.result.bundleVersion, "agentstudio.workspace-context-bundle.v1");
   assert.equal(contextBundle.payload.result.compressed.encoding, "gzip+base64");
   assert.ok(contextBundle.payload.result.bundleHash);
 
   const restoreDenied = await executeTool(
     server.url,
     readGrant.payload.token,
-    "splitall.agentWorkspace.contextBundle.restore",
+    "agentstudio.agentWorkspace.contextBundle.restore",
     {
       workspaceId: targetWorkspaceId,
       compressed: contextBundle.payload.result.compressed,
@@ -279,7 +279,7 @@ try {
   const restored = await executeTool(
     server.url,
     adminGrant.payload.token,
-    "splitall.agentWorkspace.contextBundle.restore",
+    "agentstudio.agentWorkspace.contextBundle.restore",
     {
       workspaceId: targetWorkspaceId,
       compressed: contextBundle.payload.result.compressed,
@@ -296,7 +296,7 @@ try {
   const writeDenied = await executeTool(
     server.url,
     readGrant.payload.token,
-    "splitall.knowledge.feedback",
+    "agentstudio.knowledge.feedback",
     {
       query: "agent knowledge tool verification",
       action: "searchMiss"

@@ -29,15 +29,15 @@
 CLI 对应：
 
 ```bash
-splitall-client upload enqueue '<json>'
-splitall-client upload list
-splitall-client upload get <task-id>
-splitall-client upload run [task-id]
-splitall-client upload pause <task-id>
-splitall-client upload resume <task-id>
-splitall-client upload cancel <task-id>
-splitall-client upload retry <task-id>
-splitall-client upload clear-completed
+agentstudio-client upload enqueue '<json>'
+agentstudio-client upload list
+agentstudio-client upload get <task-id>
+agentstudio-client upload run [task-id]
+agentstudio-client upload pause <task-id>
+agentstudio-client upload resume <task-id>
+agentstudio-client upload cancel <task-id>
+agentstudio-client upload retry <task-id>
+agentstudio-client upload clear-completed
 ```
 
 ## enqueue 请求

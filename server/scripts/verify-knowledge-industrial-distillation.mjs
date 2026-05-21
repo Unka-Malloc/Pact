@@ -17,7 +17,7 @@ async function writeFile(filePath, text) {
   await fs.writeFile(filePath, text, "utf8");
 }
 
-const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-industrial-distillation-"));
+const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-industrial-distillation-"));
 const projectPath = path.join(rootPath, "project");
 const emailPath = path.join(rootPath, "mail");
 
@@ -48,7 +48,7 @@ try {
       "Build Markdown project digest from every source document.",
       "",
       "## Phase 2",
-      "Compare external skill output with SplitAll distillation."
+      "Compare external skill output with AgentStudio distillation."
     ].join("\n")
   );
   await writeFile(

@@ -1,5 +1,5 @@
 {
-  "id": "splitall.knowledge.admin",
+  "id": "agentstudio.knowledge.admin",
   "label": "Knowledge admin",
   "requiredScopes": [
     "knowledge:read",

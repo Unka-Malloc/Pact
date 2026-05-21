@@ -34,9 +34,9 @@
 手动命令：
 
 ```bash
-splitall-client events sync --topic jobs.job --include-snapshot
-splitall-client upload retry <task-id>
-splitall-client upload run
+agentstudio-client events sync --topic jobs.job --include-snapshot
+agentstudio-client upload retry <task-id>
+agentstudio-client upload run
 ```
 
 原则：

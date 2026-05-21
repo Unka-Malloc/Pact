@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "bundleType": "splitall.spec.bundle",
-  "specId": "splitall.source-search-rules",
+  "bundleType": "agentstudio.spec.bundle",
+  "specId": "agentstudio.source-search-rules",
   "sourceSeed": "server/config/default-source-search-rules.json",
   "runtimeAuthority": "<userDataPath>/rules/source-search-rules.json",
   "lightweightBundle": true

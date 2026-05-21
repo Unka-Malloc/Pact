@@ -115,6 +115,6 @@ jobs:
         with:
           context: .
           push: false
-          tags: splitall-server:ci
+          tags: agentstudio-server:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

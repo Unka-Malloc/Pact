@@ -1,8 +1,8 @@
 {
-  "id": "splitall.storage.read",
-  "label": "Storage read",
+  "id": "agentstudio.jobs.read",
+  "label": "Jobs read",
   "requiredScopes": [
-    "storage:read"
+    "jobs:read"
   ],
   "maxRisk": "read_only",
   "grantable": true,

@@ -96,7 +96,7 @@ function evaluateCases(cases = []) {
   };
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-retrieval-quality-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-retrieval-quality-"));
 const knowledgeCore = await createKnowledgeCoreMount({ userDataPath });
 
 try {
@@ -236,7 +236,7 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    protocolVersion: "splitall.knowledge.retrieval-quality.v1",
+    protocolVersion: "agentstudio.knowledge.retrieval-quality.v1",
     metrics: quality.metrics,
     caseCount: quality.caseCount,
     cases: quality.caseResults.map((item) => ({

@@ -11,16 +11,16 @@ use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 fn unique_temp_dir(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("splitall-cli-{}-{}", name, Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("agentstudio-cli-{}-{}", name, Uuid::new_v4()));
     fs::create_dir_all(&path).unwrap();
     path
 }
 
 fn client_bin() -> PathBuf {
-    std::env::var_os("CARGO_BIN_EXE_splitall-client")
+    std::env::var_os("CARGO_BIN_EXE_agentstudio-client")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/splitall-client")
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/agentstudio-client")
         })
 }
 
@@ -78,7 +78,7 @@ fn write_mail_workspace(dir: &Path) {
 
 fn run_cli_output(dir: &Path, args: &[&str]) -> Output {
     Command::new(client_bin())
-        .env("SPLITALL_PORTABLE_DIR", dir)
+        .env("AGENTSTUDIO_PORTABLE_DIR", dir)
         .args(args)
         .output()
         .unwrap()
@@ -88,14 +88,14 @@ fn run_cli_json(dir: &Path, args: &[&str]) -> Value {
     let output = run_cli_output(dir, args);
     assert!(
         output.status.success(),
-        "splitall-client {} failed\nstdout:\n{}\nstderr:\n{}",
+        "agentstudio-client {} failed\nstdout:\n{}\nstderr:\n{}",
         args.join(" "),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
         panic!(
-            "splitall-client {} did not print JSON: {}\nstdout:\n{}",
+            "agentstudio-client {} did not print JSON: {}\nstdout:\n{}",
             args.join(" "),
             error,
             String::from_utf8_lossy(&output.stdout)
@@ -107,7 +107,7 @@ fn run_cli_failure(dir: &Path, args: &[&str]) -> Output {
     let output = run_cli_output(dir, args);
     assert!(
         !output.status.success(),
-        "splitall-client {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        "agentstudio-client {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
         args.join(" "),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
@@ -176,7 +176,7 @@ fn cli_prints_usage_for_empty_and_unknown_commands() {
     assert!(unknown.status.success());
     assert!(
         String::from_utf8_lossy(&unknown.stderr)
-            .contains("splitall-client daemon start|status|stop")
+            .contains("agentstudio-client daemon start|status|stop")
     );
 
     let _ = fs::remove_dir_all(dir);
@@ -187,7 +187,7 @@ fn cli_daemon_start_status_and_stop_are_functional() {
     let dir = unique_temp_dir("daemon-start");
     write_mail_workspace(&dir);
     let mut child = Command::new(client_bin())
-        .env("SPLITALL_PORTABLE_DIR", &dir)
+        .env("AGENTSTUDIO_PORTABLE_DIR", &dir)
         .args(["daemon", "start"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -373,7 +373,7 @@ fn cli_files_and_server_commands_are_covered() {
             server_help["stdout"]
                 .as_str()
                 .unwrap()
-                .contains("splitall --file")
+                .contains("agentstudio --file")
         );
     }
 
@@ -542,7 +542,7 @@ fn cli_external_data_connector_package_lifecycle_invokes_process_runtime() {
         &script,
         r#"#!/bin/sh
 cat >/dev/null
-case "$SPLITALL_CONNECTOR_OPERATION" in
+case "$AGENTSTUDIO_CONNECTOR_OPERATION" in
   sync)
     printf '%s\n' '{"ok":true,"items":[{"externalId":"acme-invoice-1","title":"ACME 3 月账单","snippet":"3 月账单来自外部连接器。","timestamp":"2026-03-18T12:00:00Z","score":0.91}]}'
     ;;
@@ -553,8 +553,8 @@ case "$SPLITALL_CONNECTOR_OPERATION" in
     printf '%s\n' '{"ok":true,"status":"healthy","runtime":"process"}'
     ;;
   uninstall)
-    mkdir -p "$SPLITALL_CONNECTOR_CACHE_DIR"
-    : > "$SPLITALL_CONNECTOR_CACHE_DIR/uninstalled.flag"
+    mkdir -p "$AGENTSTUDIO_CONNECTOR_CACHE_DIR"
+    : > "$AGENTSTUDIO_CONNECTOR_CACHE_DIR/uninstalled.flag"
     printf '%s\n' '{"ok":true,"status":"uninstalled"}'
     ;;
   *)

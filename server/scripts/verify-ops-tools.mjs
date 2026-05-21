@@ -46,7 +46,7 @@ async function waitForJob(baseUrl, jobId) {
   throw new Error("Job did not complete in time.");
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-ops-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-ops-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {

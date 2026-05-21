@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde_json::{Value, json};
-use splitall_client_native::backend_core::{Backend, load_rpc_endpoint_from_portable_data};
+use agentstudio_client_native::backend_core::{Backend, load_rpc_endpoint_from_portable_data};
 use std::env;
 use std::path::Path;
 
@@ -14,7 +14,7 @@ fn main() -> Result<()> {
 
     match args.as_slice() {
         [scope, action] if scope == "daemon" && action == "start" => {
-            splitall_client_native::backend_core::run_daemon_forever()
+            agentstudio_client_native::backend_core::run_daemon_forever()
         }
         [scope, action] if scope == "daemon" && action == "status" => {
             let backend = Backend::from_portable_data_dir()?;
@@ -538,48 +538,48 @@ fn parse_json_arg(value: &str) -> Value {
 fn print_usage() {
     eprintln!(
         "Usage:
-  splitall-client daemon start|status|stop
-  splitall-client config get|set <json>|patch <json>
-  splitall-client logs tail|clear
-  splitall-client files collect <path>
-  splitall-client files open <path>
-  splitall-client server api <GET|POST|PUT|DELETE> <path> [json-body] [service-base-url]
-  splitall-client server <splitall-server-cli-args...>
-  splitall-client vocabulary pull|apply
-  splitall-client index rebuild
-  splitall-client mail auth
-  splitall-client mail import start|status|pause|resume|cancel
-  splitall-client mail stats
-  splitall-client mail search <query>
-  splitall-client mail open --doc-id <id>
-  splitall-client mail open --message-key <key>
-  splitall-client upload enqueue <json>
-  splitall-client upload list|get <task-id>|run [task-id]
-  splitall-client upload pause|resume|cancel|retry <task-id>
-  splitall-client upload clear-completed
-  splitall-client events sync [--service-url URL] [--topic TOPIC] [--cursor N]
-  splitall-client knowledge status
-  splitall-client knowledge sync [--push-outbox]
-  splitall-client knowledge search <query>
-  splitall-client connectors list
-  splitall-client connectors install <provider-id-or-manifest-json-or-package-path>
-  splitall-client connectors enable|disable|uninstall <provider-id>
-  splitall-client connectors auth start|status|revoke <provider-id> [json]
-  splitall-client connectors sync <provider-id> [json]
-  splitall-client connectors health [provider-id]
-  splitall-client connectors query-local <query>
-  splitall-client knowledge document get|open <document-id>
-  splitall-client knowledge export [document-id]
-  splitall-client knowledge agent-context <query>
-  splitall-client knowledge agent-answer [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <query>
-  splitall-client agent invoke [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <question>
-  splitall-client agents sync [--service-url URL]
-  splitall-client agents list
-  splitall-client context compaction run|preview <json-or-question>
-  splitall-client context compaction records
-  splitall-client context session-memory get|clear [json-or-session-id]
-  splitall-client rpc <method> [json-params]
-  splitall-client task cancel <task-id>"
+  agentstudio-client daemon start|status|stop
+  agentstudio-client config get|set <json>|patch <json>
+  agentstudio-client logs tail|clear
+  agentstudio-client files collect <path>
+  agentstudio-client files open <path>
+  agentstudio-client server api <GET|POST|PUT|DELETE> <path> [json-body] [service-base-url]
+  agentstudio-client server <agentstudio-server-cli-args...>
+  agentstudio-client vocabulary pull|apply
+  agentstudio-client index rebuild
+  agentstudio-client mail auth
+  agentstudio-client mail import start|status|pause|resume|cancel
+  agentstudio-client mail stats
+  agentstudio-client mail search <query>
+  agentstudio-client mail open --doc-id <id>
+  agentstudio-client mail open --message-key <key>
+  agentstudio-client upload enqueue <json>
+  agentstudio-client upload list|get <task-id>|run [task-id]
+  agentstudio-client upload pause|resume|cancel|retry <task-id>
+  agentstudio-client upload clear-completed
+  agentstudio-client events sync [--service-url URL] [--topic TOPIC] [--cursor N]
+  agentstudio-client knowledge status
+  agentstudio-client knowledge sync [--push-outbox]
+  agentstudio-client knowledge search <query>
+  agentstudio-client connectors list
+  agentstudio-client connectors install <provider-id-or-manifest-json-or-package-path>
+  agentstudio-client connectors enable|disable|uninstall <provider-id>
+  agentstudio-client connectors auth start|status|revoke <provider-id> [json]
+  agentstudio-client connectors sync <provider-id> [json]
+  agentstudio-client connectors health [provider-id]
+  agentstudio-client connectors query-local <query>
+  agentstudio-client knowledge document get|open <document-id>
+  agentstudio-client knowledge export [document-id]
+  agentstudio-client knowledge agent-context <query>
+  agentstudio-client knowledge agent-answer [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <query>
+  agentstudio-client agent invoke [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <question>
+  agentstudio-client agents sync [--service-url URL]
+  agentstudio-client agents list
+  agentstudio-client context compaction run|preview <json-or-question>
+  agentstudio-client context compaction records
+  agentstudio-client context session-memory get|clear [json-or-session-id]
+  agentstudio-client rpc <method> [json-params]
+  agentstudio-client task cancel <task-id>"
     );
 }
 

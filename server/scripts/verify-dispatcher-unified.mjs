@@ -81,7 +81,7 @@ async function main() {
     assert.ok(operation.log?.redaction, `${operation.id} must declare log redaction policy`);
   }
 
-  const migrationDir = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-operation-audit-migration-"));
+  const migrationDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-operation-audit-migration-"));
   const securityDir = path.join(migrationDir, "security");
   await fs.mkdir(securityDir, { recursive: true });
   const legacyDb = new Database(path.join(securityDir, "operation-audit.sqlite"));
@@ -115,7 +115,7 @@ async function main() {
   migratedStore.close();
   await fs.rm(migrationDir, { recursive: true, force: true });
 
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-dispatcher-unified-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-dispatcher-unified-"));
   const server = await startHttpServer({
     userDataPath,
     runtimeOptions: { profile: "minimal" }
@@ -124,7 +124,7 @@ async function main() {
     const auth = await installAuthenticatedFetch(server);
     const health = await requestJson(`${server.url}/api/healthz`);
     assert.equal(health.status, 200);
-    assert.ok(health.headers.get("x-splitall-trace-id"));
+    assert.ok(health.headers.get("x-agentstudio-trace-id"));
 
     const rpcHealth = await requestJson(`${server.url}/api/rpc`, {
       method: "POST",
@@ -160,7 +160,7 @@ async function main() {
         Authorization: `Bearer ${grant.payload.token}`
       },
       body: JSON.stringify({
-        toolId: "splitall.knowledge.health",
+        toolId: "agentstudio.knowledge.health",
         input: {}
       })
     });

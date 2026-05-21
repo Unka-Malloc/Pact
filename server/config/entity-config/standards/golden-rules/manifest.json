@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "bundleType": "splitall.standard.bundle",
-  "standardId": "splitall.golden-rules",
-  "protocolVersion": "splitall.golden-rule.v1",
+  "bundleType": "agentstudio.standard.bundle",
+  "standardId": "agentstudio.golden-rules",
+  "protocolVersion": "agentstudio.golden-rule.v1",
   "sourceSeed": "server/platform/specialized/knowledge/invocation/golden-rule-runtime/index.mjs:createDefaultPackage",
   "runtimeAuthority": "<userDataPath>/knowledge-golden/packages/<packageId>/manifest.json",
   "files": {

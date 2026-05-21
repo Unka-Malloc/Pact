@@ -8,7 +8,7 @@ import {
 } from "../platform/specialized/agent/agent-memory/index.mjs";
 import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-memory-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-memory-"));
 
 function message(index) {
   return {
@@ -63,7 +63,7 @@ await fs.mkdir(path.dirname(legacyPath), { recursive: true });
 await fs.appendFile(
   legacyPath,
   `${JSON.stringify({
-    protocolVersion: "splitall.context.compaction.v1",
+    protocolVersion: "agentstudio.context.compaction.v1",
     memoryId: "legacy-memory",
     sessionId: "legacy-session",
     profileId: "balanced",

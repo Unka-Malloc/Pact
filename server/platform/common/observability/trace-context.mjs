@@ -64,13 +64,13 @@ export function runWithTraceContext(traceContext, callback) {
 }
 
 export function traceContextFromRequest(request) {
-  return request?.__splitallTraceContext || getTraceContext() || null;
+  return request?.__agentstudioTraceContext || getTraceContext() || null;
 }
 
 export function setTraceContextOnRequest(request, traceContext) {
   if (request) {
-    request.__splitallTraceContext = traceContext;
-    request.__splitallRequestId = traceContext?.requestId || request.__splitallRequestId || "";
+    request.__agentstudioTraceContext = traceContext;
+    request.__agentstudioRequestId = traceContext?.requestId || request.__agentstudioRequestId || "";
   }
   return traceContext;
 }

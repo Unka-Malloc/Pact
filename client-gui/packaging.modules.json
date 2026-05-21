@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "SplitAll client packaging module selection. Set enabled=false to omit optional modules from desktop bundles.",
+  "description": "AgentStudio client packaging module selection. Set enabled=false to omit optional modules from desktop bundles.",
   "bundle": {
     "moduleResourceDirectory": "modules",
     "manifestPath": "portable-data/backend/packaging-modules.json"
@@ -21,7 +21,7 @@
       "required": true,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "sidecar-binary",
-      "cargoBin": "splitall-client"
+      "cargoBin": "agentstudio-client"
     },
     "client-daemon": {
       "label": "Rust local daemon",
@@ -30,7 +30,7 @@
       "required": true,
       "platforms": ["macos", "linux", "windows"],
       "packaging": "sidecar-binary",
-      "cargoBin": "splitall-clientd"
+      "cargoBin": "agentstudio-clientd"
     },
     "local-rpc": {
       "label": "Local GUI to daemon command/RPC bridge",
@@ -231,7 +231,7 @@
       "platforms": ["macos"],
       "packaging": "swift-sidecar",
       "swiftSource": "client-gui/macos/Runner/MacOSMailImporter.swift",
-      "artifactName": "splitall-macos-mail-tool",
+      "artifactName": "agentstudio-macos-mail-tool",
       "requires": ["mail-index"]
     },
     "knowledge-graph-ui": {

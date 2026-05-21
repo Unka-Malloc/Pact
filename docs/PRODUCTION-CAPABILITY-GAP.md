@@ -1,4 +1,4 @@
-# SplitAll 生产级能力差距清单
+# AgentStudio 生产级能力差距清单
 
 审计日期：2026-05-20（本地环境）。本文用于决策，不用于宣传。
 
@@ -18,7 +18,7 @@
 - 一个能力：工作空间管理，覆盖权限控制、统一 Checkpoint Tree、Operation Ledger、回溯、恢复、审计和资产贡献统计报表。
 - 三个兼容：智能体兼容、信息源兼容、工作空间环境兼容。
 
-生产验收必须证明：不论接入的是哪种智能体、哪种信息源、哪种工作空间运行环境，只要通过 SplitAll MCP service / Workspace API 和 SplitAll 管理软件进入公共空间，就会被统一权限管控、统一快照、统一审计和统一恢复。
+生产验收必须证明：不论接入的是哪种智能体、哪种信息源、哪种工作空间运行环境，只要通过 AgentStudio MCP service / Workspace API 和 AgentStudio 管理软件进入公共空间，就会被统一权限管控、统一快照、统一审计和统一恢复。
 
 但如果按“真实业务场景、可上生产、可向管理层汇报”的标准判断，当前仍不能视为生产就绪。它更接近“架构基线明确、局部闭环可验证的工程原型”。最大差距不是某个按钮或某个算法，而是缺少一套能证明系统在真实数据、真实故障、真实权限、真实成本和真实外部依赖下仍然可靠的生产级框架能力。
 
@@ -36,7 +36,7 @@
 - LlamaIndex：把 ingestion 做成 transformation pipeline，支持缓存、远端 vector store、docstore 和基于 document hash 的去重/重处理。参考：<https://developers.llamaindex.ai/python/framework/module_guides/loading/ingestion_pipeline/>
 - Haystack：用可组合、可分支、可序列化的 pipeline 表达索引、查询、预处理、agent 等多类流程。参考：<https://docs.haystack.deepset.ai/docs/pipelines>
 - Dify：知识库检索测试和生产检索共享同一 API endpoint，并记录测试与生产检索事件。参考：<https://docs.dify.ai/en/use-dify/knowledge/test-retrieval>
-- OpenTelemetry：作为 SplitAll 内部 Trace 的可选导出目标，提供 vendor/tool agnostic traces、metrics、logs 对接能力。参考：<https://opentelemetry.io/docs/what-is-opentelemetry/>
+- OpenTelemetry：作为 AgentStudio 内部 Trace 的可选导出目标，提供 vendor/tool agnostic traces、metrics、logs 对接能力。参考：<https://opentelemetry.io/docs/what-is-opentelemetry/>
 - LlamaIndex Observability：RAG、Agent、LLM 等事件可导出为 OpenTelemetry trace，说明内部事件模型可以映射到外部观测协议。参考：<https://developers.llamaindex.ai/python/framework/module_guides/observability/>
 - Arize Phoenix：评估不仅给分，还记录输入、judge prompt、模型推理、最终分数和耗时，支持生产流量上的持续评估思路。参考：<https://arize.com/docs/phoenix/evaluation/llm-evals>
 - Temporal：长任务用 durable workflow / activity / retry / task queue / signal / timer 保存执行状态并恢复，而不是只靠进程内 job。参考：<https://temporal.io/>
@@ -71,11 +71,11 @@
 
 ### P0-00 智能体知识源头权限门禁缺失
 
-当前差距：传统知识库倾向于把已经存进去的内容按召回和排序结果提供给智能体，重点放在优化切分、召回、排序和摘要。SplitAll 的路线不同：知识能力应命名和治理为 `AgentLibrary / 图书馆`，必须从 source / asset 入库开始治理智能体是否能发现、读取、引用、复制进上下文、导出、下载或写入长期 memory。当前代码还没有完整的 `splitall.knowledge-access.v1`、`splitall.agent-library.v1`、accessMode / checkoutPolicy / loanRecord 闭环。
+当前差距：传统知识库倾向于把已经存进去的内容按召回和排序结果提供给智能体，重点放在优化切分、召回、排序和摘要。AgentStudio 的路线不同：知识能力应命名和治理为 `AgentLibrary / 图书馆`，必须从 source / asset 入库开始治理智能体是否能发现、读取、引用、复制进上下文、导出、下载或写入长期 memory。当前代码还没有完整的 `agentstudio.knowledge-access.v1`、`agentstudio.agent-library.v1`、accessMode / checkoutPolicy / loanRecord 闭环。
 
 为什么重要：随着大模型基座智力、上下文窗口和注意力能力提升，知识库不应主要承担“有限信息投喂器”的角色，而应成为一栋权限严密、分类清楚、索引完备的团队知识图书馆。智能体有门禁卡才能进入，有楼层权限才能访问 source group，有图书权限才能读具体内容，有借阅权限才能带走。高敏感资产可以只允许受控读取，不允许导出、下载、写 artifact、写 memory 或送入未授权模型上下文。
 
-外部知识库接入也必须受这条原则约束。SplitAll 不做外部知识库的同型复制或裸代理，而是在中间形成 `derivedKnowledgeSpace` 和 `authorizationOverlay`：上游知识库里存在的内容，不代表下游某个人、某个 workspace 或某个智能体可见。某些智能体应永远访问不到最上游知识库，只能访问 SplitAll 重新切分、脱敏、授权后的派生 evidence 或只读阅览会话。
+外部知识库接入也必须受这条原则约束。AgentStudio 不做外部知识库的同型复制或裸代理，而是在中间形成 `derivedKnowledgeSpace` 和 `authorizationOverlay`：上游知识库里存在的内容，不代表下游某个人、某个 workspace 或某个智能体可见。某些智能体应永远访问不到最上游知识库，只能访问 AgentStudio 重新切分、脱敏、授权后的派生 evidence 或只读阅览会话。
 
 上游知识库的信息和资源权限再分配是 AgentLibrary 的核心功能，不是外部知识库 adapter 的附属能力。生产实现必须证明同一份上游资源可以被拆成不同下游视图，并对不同 subject / workspace / agent profile 应用不同发现、阅读、引用、上下文注入、导出和借阅策略。
 
@@ -83,7 +83,7 @@
 
 怎么补：
 
-- 定义并实现 `splitall.knowledge-access.v1` 和 `splitall.agent-library.v1`。
+- 定义并实现 `agentstudio.knowledge-access.v1` 和 `agentstudio.agent-library.v1`。
 - 增加 `libraryCardId`、`knowledgeAccessReceipt`、`loanRecord`、`requestedEgress`、`canRetain`、`canShare`、`revocationPolicy`。
 - 定义外部知识库再授权模型：`upstreamKnowledgeRef`、`upstreamPolicyRef`、`derivedKnowledgeSpace`、`authorizationOverlay`、`upstreamAccessDenied`。
 - 支持同一 `upstreamKnowledgeRef` 映射多个 `derivedViewRef`，并按 subject / workspace / agent profile 分配不同权限。
@@ -92,15 +92,15 @@
 - 检索、上下文编译、evidence 回读、导出、蒸馏、memory 写入和 artifact 生成都必须先做权限裁决。
 - 支持 `deny`、`discoverOnly`、`metadataOnly`、`readInPlace`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
 - 没有权限的内容不能进入 retrieval candidate、rerank hint、hidden context、distillation input、memory summary 或评估样本。
-- 下游智能体不能持有上游知识库 token，不能看到上游私有对象路径，不能绕过 SplitAll 直接查上游索引。
+- 下游智能体不能持有上游知识库 token，不能看到上游私有对象路径，不能绕过 AgentStudio 直接查上游索引。
 - 所有出馆信息必须产生 receipt；所有允许保留、导出、复制或跨 workspace 使用的信息必须产生 loan record；所有拒绝带走的请求必须进入 denied request audit。
-- 建立上游知识库 A/B 权限再授权演示：SplitAll 从上游知识库获取文件后在本地配置权限，管控台设置 A 可以访问、B 不可以访问；对话页面中 A 能获取该文件并产生 receipt / loan record，B 返回权限错误并产生 denied request audit。
+- 建立上游知识库 A/B 权限再授权演示：AgentStudio 从上游知识库获取文件后在本地配置权限，管控台设置 A 可以访问、B 不可以访问；对话页面中 A 能获取该文件并产生 receipt / loan record，B 返回权限错误并产生 denied request audit。
 
-补全效果：SplitAll 从“知识库能查什么”升级为“智能体在团队知识大楼里能进哪一层、能读哪本书、能不能借走”。同时，外部知识库成为上游资产源，SplitAll 成为下游工作空间的再授权与资产治理层。这是本项目区别于普通知识库和普通 Agent 工具接入的第一安全边界。
+补全效果：AgentStudio 从“知识库能查什么”升级为“智能体在团队知识大楼里能进哪一层、能读哪本书、能不能借走”。同时，外部知识库成为上游资产源，AgentStudio 成为下游工作空间的再授权与资产治理层。这是本项目区别于普通知识库和普通 Agent 工具接入的第一安全边界。
 
 ### P0-00-02 终端贡献型资产治理缺失
 
-当前差距：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统还没有完整的 `splitall.workspace-contribution.v1`、贡献排行榜、统计面板、贡献授权和跨 workspace 复用治理。
+当前差距：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统还没有完整的 `agentstudio.workspace-contribution.v1`、贡献排行榜、统计面板、贡献授权和跨 workspace 复用治理。
 
 为什么重要：人过滤和精加工的信息往往最有效。过去如果只用知识库视角看这些材料，会把专家意见、黄金规则、Skills、脚本、文件和工具都压成“知识条目”，失去可操作性。AgentLibrary 应允许下游智能体向上提交资产，并让贡献资产在公共工作空间中被发现、授权、复用和审计。
 
@@ -108,7 +108,7 @@
 
 怎么补：
 
-- 定义 `splitall.workspace-contribution.v1`。
+- 定义 `agentstudio.workspace-contribution.v1`。
 - 每个 workspace 固定提供 `skills/`、`tools/`、`scripts/`、`files/`、`knowledge/`、`rules/`、`expert-opinions/` 存放位置。
 - 允许下游智能体选择一个或多个可访问 workspace 上传贡献。
 - 贡献类型覆盖 `knowledge`、`skill`、`tool`、`script`、`file`、`goldenRule`、`expertOpinion`。
@@ -117,10 +117,10 @@
 - 建立资产贡献统计报表：按 workspace、贡献者、资产类型、时间窗口、使用动作、授权流、风险和维护状态汇总，让管理者看到公共空间的资产沉淀质量和复用价值。
 - 贡献资产被下载、安装、复制、执行、写入上下文或跨 workspace 使用时，必须生成 grant、loan record、usage event 和 audit。
 - 其它智能体或人可以请求贡献者、workspace owner 或资产管理员授权，让贡献资产给其它智能体下载或安装。
-- 建立 OpenClaw 文档互通演示：两个 OpenClaw 都通过 SplitAll MCP service 接入同一 workspace，A 上传本地文档，B 在授权范围内查询并下载，证明文档互通发生在公共工作空间而不是 agent 直连。
+- 建立 OpenClaw 文档互通演示：两个 OpenClaw 都通过 AgentStudio MCP service 接入同一 workspace，A 上传本地文档，B 在授权范围内查询并下载，证明文档互通发生在公共工作空间而不是 agent 直连。
 - 建立 Skill 贡献排行榜演示：A 上传默认公开的 Skill，B 在面板或 MCP skill list 中发现、下载并使用，系统按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 刷新贡献值，`acceptedCount` 只作为报表维度。
 
-补全效果：SplitAll 不再只从上游知识库拿信息，而是形成“终端贡献 -> 公共空间资产 -> 排行榜发现 -> 授权复用 -> 审计和撤销”的资产贡献闭环。
+补全效果：AgentStudio 不再只从上游知识库拿信息，而是形成“终端贡献 -> 公共空间资产 -> 排行榜发现 -> 授权复用 -> 审计和撤销”的资产贡献闭环。
 
 ### P0-01 生产级验收门禁缺失
 
@@ -143,7 +143,7 @@
 
 ### P0-02 内部 Trace 与可观测性不足
 
-当前差距：项目有日志、审计和若干状态接口，但还没有统一的 `splitall.trace.v1` 内部 Trace schema；模型调用、检索、文档解析、外部知识库、工具调用、会话分叉、队列任务之间无法用同一个 trace 串起来。OpenTelemetry 应作为导出映射，不是内部事实源。
+当前差距：项目有日志、审计和若干状态接口，但还没有统一的 `agentstudio.trace.v1` 内部 Trace schema；模型调用、检索、文档解析、外部知识库、工具调用、会话分叉、队列任务之间无法用同一个 trace 串起来。OpenTelemetry 应作为导出映射，不是内部事实源。
 
 对标依据：OpenTelemetry 是 vendor/tool agnostic 的 traces、metrics、logs 标准；LlamaIndex 已把 LLM、Agent、RAG pipeline 事件导出为 OpenTelemetry；Phoenix 的 evaluator traces 会记录输入、judge prompt、推理、分数和耗时。
 
@@ -153,8 +153,8 @@
 
 怎么补：
 
-- 定义 `splitall.trace.v1`：trace/span 命名、属性、敏感字段脱敏、采样、成本、token、权限裁决、asset/evidence/checkpoint 引用。
-- 定义 `splitall.trace.v1 -> OpenTelemetry` 映射：内部 Trace 是事实源，OTel/OTLP 是可选导出目标。
+- 定义 `agentstudio.trace.v1`：trace/span 命名、属性、敏感字段脱敏、采样、成本、token、权限裁决、asset/evidence/checkpoint 引用。
+- 定义 `agentstudio.trace.v1 -> OpenTelemetry` 映射：内部 Trace 是事实源，OTel/OTLP 是可选导出目标。
 - 为这些路径打 span：upload、parse、normalize、ingest、search、evidence、distill、agent gateway、tool execution、session fork、workspace context load。
 - 接入可选 OTLP exporter，默认本地可关闭，生产可接 Jaeger、Tempo、Phoenix 或其它 OTel backend。
 - 前端提供 trace drill-down：一个回答可以展开看到文档、检索、证据、模型、工具、成本。
@@ -173,7 +173,7 @@
 
 怎么补：
 
-- 定义 `splitall.workflow.v1`，先不强依赖 Temporal，但协议语义向 durable workflow 对齐。
+- 定义 `agentstudio.workflow.v1`，先不强依赖 Temporal，但协议语义向 durable workflow 对齐。
 - 将高风险长任务拆成 workflow + activity：文档解析、外部 KB ingest、蒸馏、批量邮件整理、导出、重建索引。
 - activity 必须幂等，写入幂等 key、输入 hash、输出 hash、补偿动作。
 - 后续可接 Temporal / BullMQ / 自研 durable runner，但接口先稳定。
@@ -231,7 +231,7 @@
 
 怎么补：
 
-- 定义 `splitall.evaluation.v1`：dataset、case、expected、rubric、judge model、deterministic metric、result、trace。
+- 定义 `agentstudio.evaluation.v1`：dataset、case、expected、rubric、judge model、deterministic metric、result、trace。
 - 建立真实业务基准集：项目 Markdown、邮件线程、合同/发票/审批、PDF 表格、图文 PPT。
 - 每个模型/profile/tool grant 变更必须跑离线评估。
 - 生产流量抽样进入 shadow eval，不直接影响用户但生成质量趋势。
@@ -250,7 +250,7 @@
 
 怎么补：
 
-- 定义 `splitall.security.v1`：tenant、workspace、subject、role、grant、data class、secret ref、audit event。
+- 定义 `agentstudio.security.v1`：tenant、workspace、subject、role、grant、data class、secret ref、audit event。
 - 所有 trace/eval/export 必须走 redaction policy。
 - 工具执行必须按风险等级分层：read、write、repair、external side effect、shell/process。
 - 密钥只保存 secret ref，不进入 settings JSON、trace、export、bundle。
@@ -272,9 +272,9 @@
 
 怎么补：
 
-- 增加 `splitall.backup.v1`：metadata DB、knowledge DB、raw objects、assets、jobs、settings、mount configs、model configs、auth DB 的 manifest。
+- 增加 `agentstudio.backup.v1`：metadata DB、knowledge DB、raw objects、assets、jobs、settings、mount configs、model configs、auth DB 的 manifest。
 - 增加 `server:backup`、`server:restore --dry-run`、`server:verify:restore-drill`。
-- 增加 `splitall.checkpoint-tree.v1`：统一 Checkpoint Tree，覆盖访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露、diff、restore preview、restore commit 和按 operation scope 回撤。
+- 增加 `agentstudio.checkpoint-tree.v1`：统一 Checkpoint Tree，覆盖访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露、diff、restore preview、restore commit 和按 operation scope 回撤。
 - 访问请求也必须进入树：search、evidence read、asset download、context bundle、export、checkout、memory write、tool call input 都会改变 receipt、loan record、usage event、denied request audit 或上下文暴露状态。
 - 建立 Checkpoint Tree 安全恢复演示：A 逐个删除工作空间很多文件，管控台下滑找到 A 操作前节点，点击“恢复到此节点”，系统以新的 restore operation 回到目标状态，同时保留 A 的删除历史和恢复审计。
 - 每次 schema migration 输出 migration report。
@@ -311,7 +311,7 @@
 
 对标依据：Phoenix 评估和 traces 会记录模型、prompt、score、耗时；生产 Agent 需要知道改了哪个模型或 prompt 后质量/成本如何变化。
 
-补全方式：`splitall.model-routing.v1` 增加 budget、circuit breaker、fallback chain、prompt version、cost ledger。
+补全方式：`agentstudio.model-routing.v1` 增加 budget、circuit breaker、fallback chain、prompt version、cost ledger。
 
 效果：模型切换不再是配置变更，而是可观测、可回滚、可计费的运行策略。
 
@@ -321,7 +321,7 @@
 
 对标依据：Haystack/LlamaIndex 的组件化和 pipeline 生态强调可替换组件；企业生产中可替换组件必须带版本和治理。
 
-补全方式：定义 `splitall.skill-registry.v1` 和 `splitall.tool-package.v1`，所有外部工具/技能必须声明 capability、risk、input schema、secret refs、version、license。
+补全方式：定义 `agentstudio.skill-registry.v1` 和 `agentstudio.tool-package.v1`，所有外部工具/技能必须声明 capability、risk、input schema、secret refs、version、license。
 
 效果：外部团队能运营工具和技能，而不会把不受控代码塞进智能体上下文。
 
@@ -359,7 +359,7 @@
 
 当前差距：mount 机制存在，但外部团队要写 parser、knowledgeBase、tool、skill 仍需要读很多内部代码。
 
-补全方式：提供 `splitall create-module`、contract test、示例模块、CI 模板、schema docs。
+补全方式：提供 `agentstudio create-module`、contract test、示例模块、CI 模板、schema docs。
 
 效果：外部知识库、工具、技能团队能按合同接入，减少核心团队重复造轮子。
 
@@ -375,7 +375,7 @@
 
 当前差距：图片、表格、OCR、视觉模型、图文流导出已有方向，但缺少统一 asset lineage、视觉模型版本、坐标锚点和重解析策略。
 
-补全方式：定义 `splitall.asset-lineage.v1`，资产必须能追溯 raw object、page/slide、bbox、parser/model/version。
+补全方式：定义 `agentstudio.asset-lineage.v1`，资产必须能追溯 raw object、page/slide、bbox、parser/model/version。
 
 效果：图文穿插蒸馏和 PDF/PPT 还原可以被审计和重放。
 

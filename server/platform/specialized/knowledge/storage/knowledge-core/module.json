@@ -1,9 +1,9 @@
 {
   "name": "KnowledgeCore",
   "version": 1,
-  "description": "Built-in splitall.knowledge.v1 module for multimodal knowledge storage, retrieval, Markdown evidence rendering, and maintenance.",
+  "description": "Built-in agentstudio.knowledge.v1 module for multimodal knowledge storage, retrieval, Markdown evidence rendering, and maintenance.",
   "defaultLoaded": true,
-  "protocol": "splitall.knowledge.v1",
+  "protocol": "agentstudio.knowledge.v1",
   "components": {
     "knowledgeBase": {
       "path": "./index.mjs",
@@ -12,12 +12,12 @@
     },
     "vectorFallback": {
       "path": "./index.mjs",
-      "protocol": "splitall.vector.v1",
+      "protocol": "agentstudio.vector.v1",
       "packaging": "core"
     },
     "embeddingFallback": {
       "path": "./index.mjs",
-      "protocol": "splitall.embedding.v1",
+      "protocol": "agentstudio.embedding.v1",
       "packaging": "core"
     }
   }

@@ -1,5 +1,5 @@
 [package]
-name = "splitall-client-native"
+name = "agentstudio-client-native"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
@@ -25,12 +25,12 @@ ureq = { version = "2.10", features = ["json"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
 
 [[bin]]
-name = "splitall-clientd"
-path = "src/bin/splitall-clientd.rs"
+name = "agentstudio-clientd"
+path = "src/bin/agentstudio-clientd.rs"
 
 [[bin]]
-name = "splitall-client"
-path = "src/bin/splitall-client.rs"
+name = "agentstudio-client"
+path = "src/bin/agentstudio-client.rs"
 
 [profile.release]
 codegen-units = 1

@@ -24,7 +24,7 @@ function cookieHeaderFrom(response) {
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
       : String(response.headers.get("set-cookie") || "")
-          .split(/,(?=\s*splitall_)/)
+          .split(/,(?=\s*agentstudio_)/)
           .filter(Boolean);
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
@@ -33,8 +33,8 @@ function sessionTokenFromCookie(cookie) {
   return String(cookie || "")
     .split(";")
     .map((part) => part.trim())
-    .find((part) => part.startsWith("splitall_console_session="))
-    ?.slice("splitall_console_session=".length) || "";
+    .find((part) => part.startsWith("agentstudio_console_session="))
+    ?.slice("agentstudio_console_session=".length) || "";
 }
 
 async function postJson(baseUrl, pathName, payload, { cookie = "", csrf = "", safetyConfirm = false } = {}) {
@@ -43,8 +43,8 @@ async function postJson(baseUrl, pathName, payload, { cookie = "", csrf = "", sa
     headers: {
       "Content-Type": "application/json",
       ...(cookie ? { Cookie: cookie } : {}),
-      ...(csrf ? { "x-splitall-csrf": csrf } : {}),
-      ...(safetyConfirm ? { "x-splitall-safety-confirm": "true" } : {})
+      ...(csrf ? { "x-agentstudio-csrf": csrf } : {}),
+      ...(safetyConfirm ? { "x-agentstudio-safety-confirm": "true" } : {})
     },
     body: JSON.stringify(payload || {})
   });
@@ -77,12 +77,12 @@ function runAuthCli(args) {
 }
 
 async function assertConsoleAuthCannotBeDisabled() {
-  const previousAuth = process.env.SPLITALL_CONSOLE_AUTH;
-  delete process.env.SPLITALL_CONSOLE_AUTH;
+  const previousAuth = process.env.AGENTSTUDIO_CONSOLE_AUTH;
+  delete process.env.AGENTSTUDIO_CONSOLE_AUTH;
   try {
     await assert.rejects(
       startHttpServer({
-        userDataPath: await fs.mkdtemp(path.join(os.tmpdir(), "splitall-auth-disabled-blocked-")),
+        userDataPath: await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-auth-disabled-blocked-")),
         host: "127.0.0.1",
         port: 0,
         runtimeOptions: {
@@ -92,10 +92,10 @@ async function assertConsoleAuthCannotBeDisabled() {
       }),
       /已被移除/
     );
-    process.env.SPLITALL_CONSOLE_AUTH = "disabled";
+    process.env.AGENTSTUDIO_CONSOLE_AUTH = "disabled";
     await assert.rejects(
       startHttpServer({
-        userDataPath: await fs.mkdtemp(path.join(os.tmpdir(), "splitall-auth-env-disabled-blocked-")),
+        userDataPath: await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-auth-env-disabled-blocked-")),
         host: "127.0.0.1",
         port: 0,
         runtimeOptions: {
@@ -106,9 +106,9 @@ async function assertConsoleAuthCannotBeDisabled() {
     );
   } finally {
     if (previousAuth === undefined) {
-      delete process.env.SPLITALL_CONSOLE_AUTH;
+      delete process.env.AGENTSTUDIO_CONSOLE_AUTH;
     } else {
-      process.env.SPLITALL_CONSOLE_AUTH = previousAuth;
+      process.env.AGENTSTUDIO_CONSOLE_AUTH = previousAuth;
     }
   }
 }
@@ -117,7 +117,7 @@ await assertConsoleAuthCannotBeDisabled();
 
 await assert.rejects(
   startHttpServer({
-    userDataPath: await fs.mkdtemp(path.join(os.tmpdir(), "splitall-public-listen-blocked-")),
+    userDataPath: await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-public-listen-blocked-")),
     host: "0.0.0.0",
     port: 0,
     runtimeOptions: {
@@ -127,7 +127,7 @@ await assert.rejects(
   /默认只允许监听本机回环地址/
 );
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-console-auth-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-console-auth-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -183,13 +183,13 @@ try {
   const owner = await login(server.url, ownerCredentials.username, ownerPassword);
   const ownerCookie = owner.cookie;
   const ownerCsrf = owner.csrf;
-  assert.ok(ownerCookie.includes("splitall_console_session="));
+  assert.ok(ownerCookie.includes("agentstudio_console_session="));
   assert.ok(ownerCsrf);
   await assert.rejects(fs.access(ownerCredentials.credentialsPath));
 
   const headerSessionBypass = await requestJson(`${server.url}/api/knowledge/console`, {
     headers: {
-      "x-splitall-console-session": sessionTokenFromCookie(ownerCookie)
+      "x-agentstudio-console-session": sessionTokenFromCookie(ownerCookie)
     }
   });
   assert.equal(headerSessionBypass.status, 401);
@@ -212,7 +212,7 @@ try {
     headers: {
       "Content-Type": "application/json",
       Cookie: ownerCookie,
-      "x-splitall-csrf": ownerCsrf,
+      "x-agentstudio-csrf": ownerCsrf,
       Origin: "https://evil.example"
     },
     body: JSON.stringify({ taskType: "validate_assets" })
@@ -339,7 +339,7 @@ try {
     {
       enabled: true,
       issuer: "https://idp.example.local",
-      clientId: "splitall-console",
+      clientId: "agentstudio-console",
       clientSecret: "secret-value",
       redirectUri: `${server.url}/api/auth/oidc/callback`,
       allowedDomains: ["example.local"],

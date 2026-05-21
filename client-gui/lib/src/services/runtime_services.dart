@@ -31,7 +31,7 @@ class ClientWorkspaceManifest {
   });
 
   static const currentSchemaVersion = 1;
-  static const splitAllClientAppId = 'splitall-client';
+  static const agentStudioClientAppId = 'agentstudio-client';
 
   final int schemaVersion;
   final String appId;
@@ -45,7 +45,7 @@ class ClientWorkspaceManifest {
     final workspaceId = sha256.convert(utf8.encode(seed)).toString();
     return ClientWorkspaceManifest(
       schemaVersion: currentSchemaVersion,
-      appId: splitAllClientAppId,
+      appId: agentStudioClientAppId,
       workspaceId: workspaceId,
       createdAt: now,
       updatedAt: now,
@@ -210,7 +210,7 @@ class ClientBackendApi {
       const [],
       environment: {
         ...Platform.environment,
-        'SPLITALL_PORTABLE_DIR': dataDirectory.path,
+        'AGENTSTUDIO_PORTABLE_DIR': dataDirectory.path,
       },
       mode: ProcessStartMode.detached,
     );
@@ -410,7 +410,7 @@ class ClientBackendApi {
       timeout: const Duration(minutes: 5),
     );
     return ExportArtifact(
-      fileName: (response['fileName'] ?? 'splitall-result.${format.apiFormat}')
+      fileName: (response['fileName'] ?? 'agentstudio-result.${format.apiFormat}')
           .toString(),
       bytes: base64Decode((response['base64'] ?? '').toString()),
       contentType: (response['contentType'] ?? format.mimeType).toString(),
@@ -424,7 +424,7 @@ class ClientBackendApi {
     Map<String, dynamic>? body,
   }) async {
     final params = <String, dynamic>{
-      'serviceBaseUrl': SplitAllServiceUrls.normalizeBaseUrl(serviceBaseUrl),
+      'serviceBaseUrl': AgentStudioServiceUrls.normalizeBaseUrl(serviceBaseUrl),
       'method': method,
       'path': path,
     };
@@ -819,7 +819,7 @@ class ClientBackendApi {
 
   Future<BootstrapInfo> fetchBootstrap(String baseUrl) async {
     final decoded = await serverApi(
-      serviceBaseUrl: SplitAllServiceUrls.normalizeBaseUrl(baseUrl),
+      serviceBaseUrl: AgentStudioServiceUrls.normalizeBaseUrl(baseUrl),
       method: 'GET',
       path: '/api/bootstrap',
     );
@@ -845,7 +845,7 @@ class ClientBackendApi {
         'appVersion': '0.1.0-flutter',
         'platform': Platform.operatingSystem,
         'hostname': Platform.localHostname,
-        'bootstrapUrl': SplitAllServiceUrls.normalizeBaseUrl(bootstrapBaseUrl),
+        'bootstrapUrl': AgentStudioServiceUrls.normalizeBaseUrl(bootstrapBaseUrl),
         'currentServiceUrl': currentServiceUrl,
         'desiredServiceUrl': currentServiceUrl,
         'currentJobServiceUrl': currentServiceUrl,
@@ -977,7 +977,7 @@ class ClientBackendApi {
           Uri.parse('$base/rpc'),
           headers: {
             'content-type': 'application/json',
-            'x-splitall-client-token': config.token,
+            'x-agentstudio-client-token': config.token,
           },
           body: jsonEncode({
             'jsonrpc': '2.0',
@@ -1134,12 +1134,12 @@ class ClientBackendApi {
 
   Future<File?> _resolveDaemonBinary() async {
     final suffix = Platform.isWindows ? '.exe' : '';
-    final override = Platform.environment['SPLITALL_CLIENTD_PATH'];
+    final override = Platform.environment['AGENTSTUDIO_CLIENTD_PATH'];
     final candidates = <String>[
       if (override != null && override.trim().isNotEmpty) override.trim(),
       p.join(
         File(Platform.resolvedExecutable).parent.path,
-        'splitall-clientd$suffix',
+        'agentstudio-clientd$suffix',
       ),
       p.join(
         Directory.current.path,
@@ -1147,14 +1147,14 @@ class ClientBackendApi {
         'client-cli',
         'target',
         'debug',
-        'splitall-clientd$suffix',
+        'agentstudio-clientd$suffix',
       ),
       p.join(
         Directory.current.path,
         'client-cli',
         'target',
         'debug',
-        'splitall-clientd$suffix',
+        'agentstudio-clientd$suffix',
       ),
     ];
     for (final candidate in candidates) {
@@ -1176,7 +1176,7 @@ class PortableStorage {
     : _dataDirectoryOverride = dataDirectoryOverride;
 
   static final RegExp _moduleIdPattern = RegExp(r'^[a-z][a-z0-9-]{0,63}$');
-  static const String _workspaceManifestFileName = '.splitall-workspace.json';
+  static const String _workspaceManifestFileName = '.agentstudio-workspace.json';
   static const int _clientLogTailBytes = 4 * 1024 * 1024;
   static const int _clientLogFlushBatchSize = 120;
   static const Duration _clientLogFlushDelay = Duration(milliseconds: 300);
@@ -1490,7 +1490,7 @@ class PortableStorage {
       return _cachedDataDir!;
     }
 
-    final override = Platform.environment['SPLITALL_PORTABLE_DIR'];
+    final override = Platform.environment['AGENTSTUDIO_PORTABLE_DIR'];
     if (override != null && override.trim().isNotEmpty) {
       _cachedDataDir = await _prepareDataDirectory(Directory(override.trim()));
       return _cachedDataDir!;
@@ -1540,11 +1540,11 @@ class PortableStorage {
         await file.rename(corruptFile.path);
       }
       if (manifest != null) {
-        if (manifest.appId != ClientWorkspaceManifest.splitAllClientAppId ||
+        if (manifest.appId != ClientWorkspaceManifest.agentStudioClientAppId ||
             manifest.schemaVersion >
                 ClientWorkspaceManifest.currentSchemaVersion ||
             manifest.workspaceId.isEmpty) {
-          throw StateError('不是 SplitAll 客户端工作空间：${directory.path}');
+          throw StateError('不是 AgentStudio 客户端工作空间：${directory.path}');
         }
         final touched = manifest.touch();
         await _writeJsonAtomically(file, touched.toJson());
@@ -1658,7 +1658,7 @@ class PortableStorage {
   Future<bool> _tryUseDirectory(Directory directory) async {
     try {
       await directory.create(recursive: true);
-      final probe = File(p.join(directory.path, '.splitall-probe'));
+      final probe = File(p.join(directory.path, '.agentstudio-probe'));
       await probe.writeAsString('ok');
       await probe.delete();
       return true;
@@ -1668,8 +1668,8 @@ class PortableStorage {
   }
 }
 
-class SplitAllServiceUrls {
-  const SplitAllServiceUrls._();
+class AgentStudioServiceUrls {
+  const AgentStudioServiceUrls._();
 
   static String normalizeBaseUrl(String value) {
     var normalized = value.trim();

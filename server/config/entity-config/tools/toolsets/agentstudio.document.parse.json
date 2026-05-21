@@ -1,6 +1,6 @@
 {
-  "id": "splitall.result.export",
-  "label": "Result export",
+  "id": "agentstudio.document.parse",
+  "label": "Document parse",
   "requiredScopes": [
     "knowledge:read"
   ],

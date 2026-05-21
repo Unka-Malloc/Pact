@@ -13,7 +13,7 @@ import 'package:path/path.dart' as p;
 void main() {
   test('portable storage creates a workspace manifest', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-workspace-',
+      'agentstudio-workspace-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -26,10 +26,10 @@ void main() {
     final manifest = await storage.loadWorkspaceManifest();
 
     expect(dataDirectory.path, directory.path);
-    expect(manifest.appId, ClientWorkspaceManifest.splitAllClientAppId);
+    expect(manifest.appId, ClientWorkspaceManifest.agentStudioClientAppId);
     expect(manifest.workspaceId, isNotEmpty);
     expect(
-      File(p.join(directory.path, '.splitall-workspace.json')).existsSync(),
+      File(p.join(directory.path, '.agentstudio-workspace.json')).existsSync(),
       isTrue,
     );
   });
@@ -38,7 +38,7 @@ void main() {
     'module workspace is constrained to a validated child directory',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'splitall-modules-',
+        'agentstudio-modules-',
       );
       addTearDown(() async {
         if (await directory.exists()) {
@@ -72,7 +72,7 @@ void main() {
     'shared json config is saved and loaded through portable storage',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'splitall-config-',
+        'agentstudio-config-',
       );
       addTearDown(() async {
         if (await directory.exists()) {
@@ -94,7 +94,7 @@ void main() {
 
   test('mail expert vocabulary is stored under the mail workspace', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-vocabulary-',
+      'agentstudio-vocabulary-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -140,7 +140,7 @@ void main() {
 
   test('client backend api reads shared state files', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-backend-',
+      'agentstudio-backend-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -220,7 +220,7 @@ void main() {
 
   test('client backend api submits workspace command files', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-command-',
+      'agentstudio-command-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -319,7 +319,7 @@ void main() {
 
   test('client backend api normalizes bare bootstrap URLs', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-bootstrap-url-',
+      'agentstudio-bootstrap-url-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -412,7 +412,7 @@ void main() {
 
     expect(bootstrap.bootstrapBaseUrl, 'http://127.0.0.1:8787');
     expect(
-      SplitAllServiceUrls.normalizeBaseUrl('localhost:8787/api/bootstrap/'),
+      AgentStudioServiceUrls.normalizeBaseUrl('localhost:8787/api/bootstrap/'),
       'http://localhost:8787',
     );
   });
@@ -421,7 +421,7 @@ void main() {
     'client backend api rejects incompatible shared protocol files',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'splitall-incompatible-backend-',
+        'agentstudio-incompatible-backend-',
       );
       addTearDown(() async {
         if (await directory.exists()) {
@@ -463,7 +463,7 @@ void main() {
 
   test('client backend api treats stale heartbeat as stopped', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-stale-backend-',
+      'agentstudio-stale-backend-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -504,7 +504,7 @@ void main() {
 
   test('client backend api surfaces failed command results', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-command-failure-',
+      'agentstudio-command-failure-',
     );
     addTearDown(() async {
       if (await directory.exists()) {
@@ -596,7 +596,7 @@ void main() {
     'client backend api times out when command result never arrives',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'splitall-command-timeout-',
+        'agentstudio-command-timeout-',
       );
       addTearDown(() async {
         if (await directory.exists()) {
@@ -656,7 +656,7 @@ void main() {
   );
 
   test('client backend api rpc maps backend errors', () async {
-    final directory = await Directory.systemTemp.createTemp('splitall-rpc-');
+    final directory = await Directory.systemTemp.createTemp('agentstudio-rpc-');
     addTearDown(() async {
       if (await directory.exists()) {
         await directory.delete(recursive: true);
@@ -680,7 +680,7 @@ void main() {
       storage: PortableStorage(dataDirectoryOverride: directory),
       client: MockClient((request) async {
         expect(request.url.toString(), 'http://127.0.0.1:12345/rpc');
-        expect(request.headers['x-splitall-client-token'], 'secret');
+        expect(request.headers['x-agentstudio-client-token'], 'secret');
         return http.Response(
           jsonEncode({
             'jsonrpc': '2.0',
@@ -709,7 +709,7 @@ void main() {
     'portable storage keeps recent runs, logs and mail docs bounded',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'splitall-storage-more-',
+        'agentstudio-storage-more-',
       );
       addTearDown(() async {
         if (await directory.exists()) {
@@ -758,7 +758,7 @@ void main() {
     'portable storage filters semantic suggestions to cloud useful items',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'splitall-suggestions-',
+        'agentstudio-suggestions-',
       );
       addTearDown(() async {
         if (await directory.exists()) {
@@ -827,15 +827,15 @@ void main() {
       expect(vocabulary.activeEntryCount, 1);
       expect(vocabulary.entries.single.pathSegments, ['专家', '合同']);
       expect(
-        SplitAllServiceUrls.normalizeBaseUrl(' http://server/api/bootstrap/ '),
+        AgentStudioServiceUrls.normalizeBaseUrl(' http://server/api/bootstrap/ '),
         'http://server',
       );
       expect(
-        SplitAllServiceUrls.normalizeBaseUrl('127.0.0.1:8787'),
+        AgentStudioServiceUrls.normalizeBaseUrl('127.0.0.1:8787'),
         'http://127.0.0.1:8787',
       );
       expect(
-        SplitAllServiceUrls.normalizeBaseUrl('https://example.test:9443/'),
+        AgentStudioServiceUrls.normalizeBaseUrl('https://example.test:9443/'),
         'https://example.test:9443',
       );
     },

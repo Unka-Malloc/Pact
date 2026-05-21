@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 
-export const KNOWLEDGE_SKILL_PROTOCOL_VERSION = "splitall.knowledge-skill.v1";
+export const KNOWLEDGE_SKILL_PROTOCOL_VERSION = "agentstudio.knowledge-skill.v1";
 
 const LEGACY_DEFAULT_FRAMEWORK_PATH = fileURLToPath(
   new URL("../../../../../config/knowledge-skill-framework.json", import.meta.url)
@@ -354,7 +354,7 @@ function normalizeFramework(value = {}) {
   const agentCreation = asObject(raw.agentCreation);
   return {
     schemaVersion: Number(raw.schemaVersion || 1),
-    frameworkId: normalizeText(raw.frameworkId || "splitall.default-knowledge-skill-framework"),
+    frameworkId: normalizeText(raw.frameworkId || "agentstudio.default-knowledge-skill-framework"),
     version: Number(raw.version || 1),
     layers: asArray(raw.layers),
     qualityGates: {
@@ -436,7 +436,7 @@ function knowledgeSkillBundleDirectory(rootPath, skillId) {
 function knowledgeSkillDependencies(skill = {}) {
   return {
     schemaVersion: 1,
-    dependencyType: "splitall.knowledge-skill.dependencies",
+    dependencyType: "agentstudio.knowledge-skill.dependencies",
     protocolVersion: KNOWLEDGE_SKILL_PROTOCOL_VERSION,
     runtimeModules: [
       "KnowledgeSkillRuntime",
@@ -445,21 +445,21 @@ function knowledgeSkillDependencies(skill = {}) {
     ],
     requiredTools: [
       {
-        toolId: "splitall.knowledge.search",
+        toolId: "agentstudio.knowledge.search",
         reason: "Retrieve coarse-to-fine evidence before applying the skill."
       },
       {
-        toolId: "splitall.knowledge.evidence",
+        toolId: "agentstudio.knowledge.evidence",
         reason: "Open cited evidence references when validating or answering."
       },
       {
-        toolId: "splitall.knowledge.renderMarkdown",
+        toolId: "agentstudio.knowledge.renderMarkdown",
         reason: "Render evidence packs into readable context when needed."
       }
     ],
     requiredProtocols: [
-      "splitall.knowledge.v1",
-      "splitall.knowledge-agent-skill.v1",
+      "agentstudio.knowledge.v1",
+      "agentstudio.knowledge-agent-skill.v1",
       KNOWLEDGE_SKILL_PROTOCOL_VERSION
     ],
     heavyDependencies: [],
@@ -477,7 +477,7 @@ function writeKnowledgeSkillBundle(rootPath, skill) {
   const dependencies = knowledgeSkillDependencies(skill);
   const manifest = {
     schemaVersion: 1,
-    bundleType: "splitall.knowledge-skill.bundle",
+    bundleType: "agentstudio.knowledge-skill.bundle",
     protocolVersion: KNOWLEDGE_SKILL_PROTOCOL_VERSION,
     skillId: skill.skillId,
     version: skill.version,
@@ -528,7 +528,7 @@ function writeKnowledgeSkillBundle(rootPath, skill) {
       "",
       skill.summary || "",
       "",
-      "This is a lightweight SplitAll KnowledgeSkill bundle. The runnable tool contracts and local dependencies are declared in `dependencies.json`; large evidence payloads are referenced by id instead of being copied into the bundle.",
+      "This is a lightweight AgentStudio KnowledgeSkill bundle. The runnable tool contracts and local dependencies are declared in `dependencies.json`; large evidence payloads are referenced by id instead of being copied into the bundle.",
       ""
     ].join("\n")
   );
@@ -1779,7 +1779,7 @@ export function createKnowledgeSkillRuntime({
   function describe() {
     return {
       protocolVersion: KNOWLEDGE_SKILL_PROTOCOL_VERSION,
-      name: "splitall.knowledge.skill-runtime",
+      name: "agentstudio.knowledge.skill-runtime",
       purpose:
         "Distill evidence-backed knowledge into reusable, reviewable, and publishable KnowledgeSkill units.",
       storagePath: path.join(rootPath, "knowledge-skills.sqlite"),

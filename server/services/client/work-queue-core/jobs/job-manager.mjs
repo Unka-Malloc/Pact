@@ -389,14 +389,14 @@ export function createJobManager({
   runtimeOptions = {},
   getRuntimeOptions = null,
   protocolEventBus = null,
-  processingEnabled = process.env.SPLITALL_IMPORT_WORKER_EXTERNAL !== "1",
+  processingEnabled = process.env.AGENTSTUDIO_IMPORT_WORKER_EXTERNAL !== "1",
   logger = getRuntimeLogger()
 }) {
   const jobs = new Map();
   const checkpointJobs = new Map();
   const activeManifestJobs = new Map();
   const workerConcurrency = normalizeWorkerConcurrency(
-    runtimeOptions?.workerConcurrency || process.env.SPLITALL_JOB_WORKER_CONCURRENCY
+    runtimeOptions?.workerConcurrency || process.env.AGENTSTUDIO_JOB_WORKER_CONCURRENCY
   );
   const importQueue = new PQueue({
     concurrency: workerConcurrency,

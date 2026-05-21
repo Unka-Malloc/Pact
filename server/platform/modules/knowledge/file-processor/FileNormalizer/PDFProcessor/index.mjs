@@ -75,9 +75,9 @@ export function createPdfProcessorMount() {
         warnings: [...warnings, ...(visual.warnings || [])],
         metadata: {
           ...(document.metadata || {}),
-          "X-SplitAll:pdfVisualPageCount": visual.pageCount || 0,
-          "X-SplitAll:pdfVisualImageCount": visual.imageCount || 0,
-          "X-SplitAll:pdfVisualTableCount": visual.tableCount || 0
+          "X-AgentStudio:pdfVisualPageCount": visual.pageCount || 0,
+          "X-AgentStudio:pdfVisualImageCount": visual.imageCount || 0,
+          "X-AgentStudio:pdfVisualTableCount": visual.tableCount || 0
         }
       };
     },

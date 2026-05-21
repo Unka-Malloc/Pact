@@ -648,8 +648,8 @@ export function createToolExecutionRuntime({
       };
     }
 
-    const previousAuthorization = request.__splitallToolRuntimeAuthorization;
-    request.__splitallToolRuntimeAuthorization = {
+    const previousAuthorization = request.__agentstudioToolRuntimeAuthorization;
+    request.__agentstudioToolRuntimeAuthorization = {
       ok: true,
       grant: authorization.grant,
       toolExecutionId,
@@ -900,7 +900,7 @@ export function createToolExecutionRuntime({
         }
       };
     } finally {
-      request.__splitallToolRuntimeAuthorization = previousAuthorization;
+      request.__agentstudioToolRuntimeAuthorization = previousAuthorization;
     }
   }
 

@@ -100,7 +100,7 @@ function buildKnowledgeIntentDocument({ id, title, text, sourcePath }) {
 }
 
 async function verifyBillingIntentSearch() {
-  const directUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-intent-"));
+  const directUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-intent-"));
   const knowledgeCore = await createKnowledgeCoreMount({ userDataPath: directUserDataPath });
   try {
     knowledgeCore.upsertDocuments({
@@ -411,7 +411,7 @@ async function verifyBillingIntentSearch() {
 }
 
 async function verifyKnowledgeIngestConflictReview() {
-  const directUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-conflict-"));
+  const directUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-conflict-"));
   const knowledgeCore = await createKnowledgeCoreMount({ userDataPath: directUserDataPath });
   try {
     const first = await knowledgeCore.ingestSources({
@@ -473,7 +473,7 @@ async function verifyKnowledgeIngestConflictReview() {
   }
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-"));
 await verifyBillingIntentSearch();
 await verifyKnowledgeIngestConflictReview();
 const server = await startHttpServer({
@@ -548,7 +548,7 @@ try {
 
   await waitForJob(server.url, createdJob.id);
   const result = await fetchJson(`${server.url}/api/jobs/${createdJob.id}/result`);
-  assert.equal(result.preprocess?.resultType, "splitall.knowledge.preprocess-result");
+  assert.equal(result.preprocess?.resultType, "agentstudio.knowledge.preprocess-result");
   assert.ok(result.preprocess.blocks.length > 0);
   assert.ok(result.preprocess.chunks.length > 0);
   assert.equal(result.preprocess.counts.sources, result.sourceFiles.length);

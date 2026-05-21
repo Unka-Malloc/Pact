@@ -59,7 +59,7 @@ const emit = defineEmits<{
   change: [value: AgentOptionValue];
 }>();
 
-const EMPTY_MODEL_LIBRARY_ACTION = "__splitall_empty_model_library_action__";
+const EMPTY_MODEL_LIBRARY_ACTION = "__agentstudio_empty_model_library_action__";
 
 function normalizedValue(option: AgentOption) {
   return option.agentUid ?? option.value ?? "";

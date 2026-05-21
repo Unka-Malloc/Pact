@@ -40,8 +40,8 @@ const projectRoot =
   path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dataDir =
   args.dataDir ||
-  process.env.SPLITALL_SERVER_DATA_DIR ||
-  path.join(projectRoot, ".splitall-server-data");
+  process.env.AGENTSTUDIO_SERVER_DATA_DIR ||
+  path.join(projectRoot, ".agentstudio-server-data");
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,7 +63,7 @@ async function loop() {
           updatedAt: nowIso(),
           projectRoot,
           dataDir,
-          supervisorServiceLabel: config.serviceLabel || "dev.splitall.background-supervisor",
+          supervisorServiceLabel: config.serviceLabel || "dev.agentstudio.background-supervisor",
           runtime: "node"
         }
       });

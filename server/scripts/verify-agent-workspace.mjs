@@ -41,7 +41,7 @@ function cookieHeaderFrom(response) {
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
       : String(response.headers.get("set-cookie") || "")
-          .split(/,(?=\s*splitall_)/)
+          .split(/,(?=\s*agentstudio_)/)
           .filter(Boolean);
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
@@ -117,7 +117,7 @@ function buildUploadedEmail(name, body) {
   };
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-workspace-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-workspace-"));
 const workspace = createAgentWorkspace({ userDataPath });
 
 try {
@@ -303,7 +303,7 @@ try {
     contentPreviewChars: 12,
     compress: true
   });
-  assert.equal(publicBundle.bundleVersion, "splitall.workspace-context-bundle.v1");
+  assert.equal(publicBundle.bundleVersion, "agentstudio.workspace-context-bundle.v1");
   assert.equal(publicBundle.restoreEvidence.artifactCount, 1);
   assert.equal(publicBundle.restoreEvidence.privateStateCount, 0);
   assert.equal(publicBundle.compressed.encoding, "gzip+base64");
@@ -558,7 +558,7 @@ try {
 }
 
 async function verifyHttpWorkspaceRuntimeInjection() {
-  const httpUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-workspace-http-"));
+  const httpUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-workspace-http-"));
   const server = await startHttpServer({
     userDataPath: httpUserDataPath,
     runtimeOptions: {
@@ -731,7 +731,7 @@ async function verifyHttpWorkspaceRuntimeInjection() {
     const contextBundle = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(childId)}/context-bundle?maxItems=4&contentPreviewChars=64`
     );
-    assert.equal(contextBundle.bundleVersion, "splitall.workspace-context-bundle.v1");
+    assert.equal(contextBundle.bundleVersion, "agentstudio.workspace-context-bundle.v1");
     assert.equal(contextBundle.contextFingerprint, context.contextFingerprint);
     assert.equal(contextBundle.bundle.context.workspaceId, childId);
     assert.equal(contextBundle.bundle.context.contextProfileId, "http-workspace-context");

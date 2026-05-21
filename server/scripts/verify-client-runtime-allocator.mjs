@@ -99,7 +99,7 @@ const mockGateway = await createMockGateway();
 let httpServer = null;
 
 try {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-client-runtime-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-client-runtime-"));
   roots.push(userDataPath);
   const allocator = createClientRuntimeAllocator({ userDataPath });
   await allocator.saveProfiles(createRuntimeConfig("client-a"));
@@ -242,7 +242,7 @@ try {
   const cooledStatus = await allocator.getStatus();
   assert.ok(cooledStatus.cooledClients.some((row) => row.clientUid === "low-frequency-client"));
 
-  const httpUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-client-runtime-http-"));
+  const httpUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-client-runtime-http-"));
   roots.push(httpUserDataPath);
   httpServer = await startHttpServer({
     userDataPath: httpUserDataPath,
@@ -317,7 +317,7 @@ try {
     await httpServer.close();
   }
   await mockGateway.close();
-  if (!process.env.SPLITALL_KEEP_TEST_DATA) {
+  if (!process.env.AGENTSTUDIO_KEEP_TEST_DATA) {
     await Promise.all(roots.map((root) => fs.rm(root, { recursive: true, force: true })));
   }
 }

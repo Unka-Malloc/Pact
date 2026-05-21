@@ -3,11 +3,11 @@
   "label": "Agent Exploration",
   "agentType": "exploration",
   "toolsets": [
-    "splitall.knowledge.read"
+    "agentstudio.knowledge.read"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "splitall.admin"
+    "agentstudio.admin"
   ],
   "maxRisk": "read_only",
   "approvalPolicy": "deny_repair",

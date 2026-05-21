@@ -67,7 +67,7 @@ const ROLE_FEATURE_IDS = Object.freeze({
 });
 
 function activeConsoleFeatureIdsFromEnv() {
-  const explicit = String(process.env.SPLITALL_FEATURES || "").trim();
+  const explicit = String(process.env.AGENTSTUDIO_FEATURES || "").trim();
   if (!explicit) {
     return null;
   }
@@ -86,7 +86,7 @@ function isRoleEnabledByFeatures(role = "") {
 const SERVER_PROCESS_DEFINITIONS = [
   {
     role: "server-main",
-    label: "SplitAll 服务端",
+    label: "AgentStudio 服务端",
     description: "承载控制台、HTTP API、JSON-RPC、CLI 转发和本地运行时的主服务进程。",
     processType: "service",
     responsibility: "运行服务端主调用面和控制台 API。",

@@ -38,7 +38,7 @@ void main() {
     () async {
       final harness = await _ControllerHarness.create(
         initialConfig: const ClientConfig(
-          resolvedServiceBaseUrl: 'http://splitall.test',
+          resolvedServiceBaseUrl: 'http://agentstudio.test',
         ),
         backend: _FakeBackendScenario.available(
           vocabulary: _testVocabulary(version: 12, checksum: 'controller-pull'),
@@ -143,7 +143,7 @@ void main() {
     }
     final harness = await _ControllerHarness.create(
       initialConfig: const ClientConfig(
-        resolvedServiceBaseUrl: 'http://splitall.test',
+        resolvedServiceBaseUrl: 'http://agentstudio.test',
         macOSMailUploadToCloudEnabled: true,
       ),
       backend: _FakeBackendScenario.available(),
@@ -170,7 +170,7 @@ void main() {
       }
       final harness = await _ControllerHarness.create(
         initialConfig: const ClientConfig(
-          resolvedServiceBaseUrl: 'http://splitall.test',
+          resolvedServiceBaseUrl: 'http://agentstudio.test',
           macOSMailUploadToCloudEnabled: true,
         ),
         backend: _FakeBackendScenario.available(submitAsQueued: true),
@@ -200,7 +200,7 @@ void main() {
     }
     final harness = await _ControllerHarness.create(
       initialConfig: const ClientConfig(
-        resolvedServiceBaseUrl: 'http://splitall.test',
+        resolvedServiceBaseUrl: 'http://agentstudio.test',
         macOSMailUploadToCloudEnabled: true,
       ),
       backend: _FakeBackendScenario.available(
@@ -356,7 +356,7 @@ void main() {
     () async {
       final harness = await _ControllerHarness.create(
         initialConfig: const ClientConfig(
-          resolvedServiceBaseUrl: 'http://splitall.test',
+          resolvedServiceBaseUrl: 'http://agentstudio.test',
         ),
         backend: _FakeBackendScenario.available(),
       );
@@ -384,7 +384,7 @@ void main() {
     () async {
       final harness = await _ControllerHarness.create(
         initialConfig: const ClientConfig(
-          resolvedServiceBaseUrl: 'http://splitall.test',
+          resolvedServiceBaseUrl: 'http://agentstudio.test',
         ),
         backend: _FakeBackendScenario.available(),
       );
@@ -430,7 +430,7 @@ class _ControllerHarness {
     required _FakeBackendScenario backend,
   }) async {
     final directory = await Directory.systemTemp.createTemp(
-      'splitall-controller-',
+      'agentstudio-controller-',
     );
     final storage = PortableStorage(dataDirectoryOverride: directory);
     await storage.saveConfig(initialConfig);

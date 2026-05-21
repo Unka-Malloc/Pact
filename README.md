@@ -1,4 +1,4 @@
-# SplitAll
+# AgentStudio
 
 可控的智能体协作空间。
 
@@ -105,7 +105,7 @@ npm run cli -- rpc --method POST --path /api/settings --body settings.json
 - 事务 lineage 的匹配、恢复、拉取
 - 上传与任务 checkpoint 恢复
 - 注册式 HTTP / JSON-RPC / CLI 接口映射
-- `splitall` CLI 覆盖文件/目录上传、任务轮询、归一化文档下载、通用 HTTP 调用和 JSON-RPC 调用
+- `agentstudio` CLI 覆盖文件/目录上传、任务轮询、归一化文档下载、通用 HTTP 调用和 JSON-RPC 调用
 - 服务发现、客户端迁移登记与控制台观测
 - Tika 挂载式文档解析与可选 OCR 挂载
 

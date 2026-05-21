@@ -11,7 +11,7 @@ function cookieHeaderFrom(response) {
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
       : String(response.headers.get("set-cookie") || "")
-          .split(/,(?=\s*splitall_)/)
+          .split(/,(?=\s*agentstudio_)/)
           .filter(Boolean);
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
@@ -96,11 +96,11 @@ function ensureFetchInstalled() {
 
     const method = String(init.method || input?.method || "GET").toUpperCase();
     if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-      if (!headers.has("x-splitall-csrf")) {
-        headers.set("x-splitall-csrf", rule.auth.csrf);
+      if (!headers.has("x-agentstudio-csrf")) {
+        headers.set("x-agentstudio-csrf", rule.auth.csrf);
       }
-      if (rule.safetyConfirm && !headers.has("x-splitall-safety-confirm")) {
-        headers.set("x-splitall-safety-confirm", "true");
+      if (rule.safetyConfirm && !headers.has("x-agentstudio-safety-confirm")) {
+        headers.set("x-agentstudio-safety-confirm", "true");
       }
     }
 
@@ -128,9 +128,9 @@ export async function installAuthenticatedFetch(server, options = {}) {
 
   ensureFetchInstalled();
   if (options.setProcessEnv !== false) {
-    process.env.SPLITALL_CONSOLE_COOKIE = auth.cookie;
-    process.env.SPLITALL_CONSOLE_CSRF = auth.csrf;
-    process.env.SPLITALL_SAFETY_CONFIRM = options.safetyConfirm === false ? "" : "1";
+    process.env.AGENTSTUDIO_CONSOLE_COOKIE = auth.cookie;
+    process.env.AGENTSTUDIO_CONSOLE_CSRF = auth.csrf;
+    process.env.AGENTSTUDIO_SAFETY_CONFIRM = options.safetyConfirm === false ? "" : "1";
   }
   return auth;
 }
@@ -140,9 +140,9 @@ export function authHeaders(auth, { safetyConfirm = true, method = "GET" } = {})
     Cookie: auth.cookie
   };
   if (!["GET", "HEAD", "OPTIONS"].includes(String(method || "GET").toUpperCase())) {
-    headers["x-splitall-csrf"] = auth.csrf;
+    headers["x-agentstudio-csrf"] = auth.csrf;
     if (safetyConfirm) {
-      headers["x-splitall-safety-confirm"] = "true";
+      headers["x-agentstudio-safety-confirm"] = "true";
     }
   }
   return headers;

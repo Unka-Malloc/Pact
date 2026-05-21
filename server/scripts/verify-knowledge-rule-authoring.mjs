@@ -15,7 +15,7 @@ async function fetchJson(url, options = {}) {
   return payload;
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-rule-authoring-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-rule-authoring-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -33,7 +33,7 @@ try {
       modelEnabled: false
     })
   });
-  assert.equal(generated.protocolVersion, "splitall.knowledge-rule-authoring.v1");
+  assert.equal(generated.protocolVersion, "agentstudio.knowledge-rule-authoring.v1");
   assert.equal(generated.ok, true);
   assert.equal(generated.status, "pending_human_confirmation");
   assert.equal(generated.intent.needsRule, true);

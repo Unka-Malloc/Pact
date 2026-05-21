@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "frameworkId": "splitall.default-knowledge-skill-framework",
+  "frameworkId": "agentstudio.default-knowledge-skill-framework",
   "version": 1,
   "layers": [
     {

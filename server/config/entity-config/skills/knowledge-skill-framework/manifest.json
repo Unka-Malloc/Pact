@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "bundleType": "splitall.skill-framework.bundle",
-  "skillFrameworkId": "splitall.default-knowledge-skill-framework",
+  "bundleType": "agentstudio.skill-framework.bundle",
+  "skillFrameworkId": "agentstudio.default-knowledge-skill-framework",
   "version": 1,
   "files": {
     "framework": "framework.json",

@@ -5,7 +5,7 @@ import path from "node:path";
 import { loadSettings } from "../../../../common/platform-core/settings.mjs";
 import { createToolManagementStore } from "../tool-management-core/store.mjs";
 
-export const AGENT_EXPLORATION_PROTOCOL_VERSION = "splitall.agent-exploration.v1";
+export const AGENT_EXPLORATION_PROTOCOL_VERSION = "agentstudio.agent-exploration.v1";
 
 const EXPLORER_AGENT_ID = "knowledge-explorer";
 const DEFAULT_MAX_ITERATIONS = 4;
@@ -54,12 +54,12 @@ function thinkingParametersForMode(modeValue) {
   const mode = normalizeThinkingMode(modeValue);
   if (mode === "enabled") {
     return {
-      splitall_thinking_mode: "enabled"
+      agentstudio_thinking_mode: "enabled"
     };
   }
   if (mode === "disabled") {
     return {
-      splitall_thinking_mode: "disabled"
+      agentstudio_thinking_mode: "disabled"
     };
   }
   return {};
@@ -117,7 +117,7 @@ function toolDefinitions() {
       function: {
         name: "knowledge_skill_search",
         description:
-          "Search published SplitAll KnowledgeSkills before raw evidence recall. Use this first for broad topics so the agent can apply reusable concepts, heuristics, anti-patterns, and honest boundaries.",
+          "Search published AgentStudio KnowledgeSkills before raw evidence recall. Use this first for broad topics so the agent can apply reusable concepts, heuristics, anti-patterns, and honest boundaries.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -147,7 +147,7 @@ function toolDefinitions() {
       function: {
         name: "keyword_search",
         description:
-          "Use SplitAll local knowledge recall over the knowledge base. It follows the active retrieval profile, learning switch, and coarse-to-fine hierarchy before opening detailed evidence.",
+          "Use AgentStudio local knowledge recall over the knowledge base. It follows the active retrieval profile, learning switch, and coarse-to-fine hierarchy before opening detailed evidence.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -189,7 +189,7 @@ function toolDefinitions() {
       function: {
         name: "knowledge_aggregate",
         description:
-          "Use SplitAll local knowledge aggregation for counting, ranking, totals, and 'which has the most' questions. Use this before keyword_search when the user asks for counts such as which sender mailbox has the most advertising emails.",
+          "Use AgentStudio local knowledge aggregation for counting, ranking, totals, and 'which has the most' questions. Use this before keyword_search when the user asks for counts such as which sender mailbox has the most advertising emails.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -257,7 +257,7 @@ function toolDefinitions() {
       function: {
         name: "knowledge_skill_propose",
         description:
-          "Create a pending-review SplitAll KnowledgeSkill from reusable, evidence-backed reasoning discovered during this run. Use only after local evidence exists; this does not publish or mutate canonical facts.",
+          "Create a pending-review AgentStudio KnowledgeSkill from reusable, evidence-backed reasoning discovered during this run. Use only after local evidence exists; this does not publish or mutate canonical facts.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -686,7 +686,7 @@ function evidenceItemsForContext(toolResults = []) {
 
 const DEFAULT_EXPLORATION_PROMPT = {
   systemPrompt:
-    "You are SplitAll Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
+    "You are AgentStudio Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
   toolPolicyPrompt:
     "Always search from coarse to fine. For broad topic questions, first inspect KnowledgeSkillContext or call knowledge_skill_search. For counts, totals, rankings, frequency, or 'which has the most' questions, first call knowledge_aggregate. For normal evidence recall, call keyword_search with broad but meaningful keywords, then open_evidence only for promising evidenceId values. If the user asks to create a golden/review/deduplication rule, call golden_rule_authoring. If the run discovers a reusable evidence-backed procedure, call knowledge_skill_propose to create a pending-review Skill.",
   continuationPrompt:
@@ -907,7 +907,7 @@ function compactAgentResponse(agentResult = {}) {
 }
 
 function normalizeToolName(value) {
-  const name = normalizeText(value).replace(/^splitall[._-]/i, "");
+  const name = normalizeText(value).replace(/^agentstudio[._-]/i, "");
   if (["keyword_search", "keywordSearch", "search", "knowledge_search"].includes(name)) {
     return "keyword_search";
   }
@@ -1028,7 +1028,7 @@ export function createAgentExplorationRuntime({
         traceId,
         toolId: `agent-exploration.${tool}`,
         toolVersion: AGENT_EXPLORATION_PROTOCOL_VERSION,
-        toolsetIds: ["splitall.knowledge.read"],
+        toolsetIds: ["agentstudio.knowledge.read"],
         subjectType: "agent-profile",
         subjectId: "agent-exploration",
         grantId: "",
@@ -1572,7 +1572,7 @@ export function createAgentExplorationRuntime({
   function describe() {
     return {
       protocolVersion: AGENT_EXPLORATION_PROTOCOL_VERSION,
-      name: "splitall.knowledge.agent-exploration",
+      name: "agentstudio.knowledge.agent-exploration",
       purpose:
         "Let a stateless model use native JSON function calls to iteratively operate local knowledge recall tools.",
       modelInterface: "OpenAI-compatible chat/completions tools/function_call",

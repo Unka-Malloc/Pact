@@ -30,7 +30,7 @@ async function waitForJob(baseUrl, jobId) {
   throw new Error("Job did not complete in time.");
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-learning-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-learning-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {

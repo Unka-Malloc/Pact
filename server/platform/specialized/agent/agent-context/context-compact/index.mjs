@@ -7,7 +7,7 @@ import {
 } from "../../../../common/platform-core/state-coordinator.mjs";
 import { createAgentMemory } from "../../agent-memory/index.mjs";
 
-export const CONTEXT_COMPACTION_PROTOCOL_VERSION = "splitall.context.compaction.v1";
+export const CONTEXT_COMPACTION_PROTOCOL_VERSION = "agentstudio.context.compaction.v1";
 
 const SENSITIVE_KEY_PATTERN =
   /token|secret|password|passwd|authorization|cookie|api[-_]?key|client[-_]?secret|csrf/i;
@@ -695,7 +695,7 @@ function buildCompactionQualityReport({
     ? Number((retained.length / requiredAnchors.length).toFixed(6))
     : 1;
   return {
-    protocolVersion: "splitall.context.compaction.quality.v1",
+    protocolVersion: "agentstudio.context.compaction.quality.v1",
     requiredAnchorCount: requiredAnchors.length,
     retainedAnchorCount: retained.length,
     missingAnchorCount: missing.length,
@@ -854,7 +854,7 @@ function buildModelPrompt({ messages, runtimeState, targetTokens, compactedRange
     toolResultIds: toolResultIds(message)
   }));
   return [
-    "You are SplitAll ContextCompactionRuntime.",
+    "You are AgentStudio ContextCompactionRuntime.",
     "Compress context only. Do not invent facts. The output is auxiliary memory, not canonical evidence.",
     "Preserve user constraints, decisions, errors, TODOs, evidence/source ids, dates, amounts, file refs, tool call ids, and knowledge references.",
     "Return strict JSON with keys: summary, constraints, decisions, risks, todos, evidenceRefs, fileRefs, knowledgeRefs.",

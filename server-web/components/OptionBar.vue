@@ -25,7 +25,7 @@ withDefaults(defineProps<{
   filterable: false,
   teleported: true,
   persistent: false,
-  popperClass: "splitall-select-popper",
+  popperClass: "agentstudio-select-popper",
   disabled: false,
   clearable: false,
   size: "default",

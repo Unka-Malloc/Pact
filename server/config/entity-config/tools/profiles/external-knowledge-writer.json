@@ -3,12 +3,12 @@
   "label": "External Knowledge Writer",
   "agentType": "external",
   "toolsets": [
-    "splitall.knowledge.read",
-    "splitall.knowledge.write"
+    "agentstudio.knowledge.read",
+    "agentstudio.knowledge.write"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "splitall.admin"
+    "agentstudio.admin"
   ],
   "maxRisk": "safe_write",
   "approvalPolicy": "deny_repair",

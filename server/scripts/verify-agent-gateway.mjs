@@ -40,12 +40,12 @@ async function readJsonl(filePath) {
     .map((line) => JSON.parse(line));
 }
 
-function runSplitallCli(serverUrl, args = []) {
+function runAgentStudioCli(serverUrl, args = []) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
       [
-        new URL("./splitall.mjs", import.meta.url).pathname,
+        new URL("./agentstudio.mjs", import.meta.url).pathname,
         ...args,
         "--server-url",
         serverUrl
@@ -66,13 +66,13 @@ function runSplitallCli(serverUrl, args = []) {
     child.once("error", reject);
     child.once("close", (code) => {
       if (code !== 0) {
-        reject(new Error(stderr || stdout || `splitall CLI exited with ${code}`));
+        reject(new Error(stderr || stdout || `agentstudio CLI exited with ${code}`));
         return;
       }
       try {
         resolve(JSON.parse(stdout || "{}"));
       } catch (error) {
-        reject(new Error(`splitall CLI JSON parse failed: ${error.message}\n${stdout}\n${stderr}`));
+        reject(new Error(`agentstudio CLI JSON parse failed: ${error.message}\n${stdout}\n${stderr}`));
       }
     });
   });
@@ -231,7 +231,7 @@ assert.equal(
   "{\"query\":\"账单\",\"limit\":2}"
 );
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-gateway-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-gateway-"));
 const mockAgent = await startMockAgentServer();
 const server = await startHttpServer({
   userDataPath,
@@ -430,7 +430,7 @@ try {
   assert.equal(libraryHttpAgent.model, "http-engine");
   assert.equal(libraryHttpAgent.agentName, "HTTP Analyst");
 
-  const createdAgent = await runSplitallCli(server.url, [
+  const createdAgent = await runAgentStudioCli(server.url, [
     "agents",
     "create",
     "--name",
@@ -450,7 +450,7 @@ try {
   assert.match(createdAgent.agentId, /^agent_[0-9a-f]{16}$/);
   assert.equal(createdAgent.agent.agentName, "CLI Managed Agent");
   assert.equal(createdAgent.agent.model, "deepseek-v4-flash");
-  const updatedAgent = await runSplitallCli(server.url, [
+  const updatedAgent = await runAgentStudioCli(server.url, [
     "agents",
     "update",
     "--id",
@@ -472,7 +472,7 @@ try {
   );
   assert.equal(managedAgentSettings.apiKey, "managed-secret");
   assert.equal(managedAgentSettings.parameters.temperature, 0.2);
-  const deletedAgent = await runSplitallCli(server.url, [
+  const deletedAgent = await runAgentStudioCli(server.url, [
     "agents",
     "delete",
     "--id",
@@ -656,7 +656,7 @@ try {
   assert.equal(mockAgent.requests.length, 5);
   assert.equal(mockAgent.requests[4].url, "/chat/completions");
   assert.equal(mockAgent.requests[4].headers.authorization, "Bearer deepseek-secret");
-  assert.equal(mockAgent.requests[4].body.messages[0].content.includes("SplitAll 模型库连通性探测"), true);
+  assert.equal(mockAgent.requests[4].body.messages[0].content.includes("AgentStudio 模型库连通性探测"), true);
   assert.equal(mockAgent.requests[4].body.max_tokens, 128);
   assert.deepEqual(mockAgent.requests[4].body.thinking, { type: "disabled" });
 
@@ -882,7 +882,7 @@ try {
                 reasoning_content: "Internal reasoning should not be treated as the final answer.",
                 content: [
                   { type: "reasoning", text: "not the visible answer" },
-                  { type: "text", text: "SplitAllProbeOK" }
+                  { type: "text", text: "AgentStudioProbeOK" }
                 ]
               },
               finish_reason: "stop"
@@ -896,7 +896,7 @@ try {
       )
   });
   assert.equal(contentArrayProbe.ok, true);
-  assert.equal(contentArrayProbe.answerSnippet, "SplitAllProbeOK");
+  assert.equal(contentArrayProbe.answerSnippet, "AgentStudioProbeOK");
 
   const gatewayWorkspace = await fetchJson(`${server.url}/api/agent-workspaces`, {
     method: "POST",

@@ -34,5 +34,5 @@ npm run feature:verify -- --edition pro
 npm run feature:diff -- --from community --to enterprise
 npm run feature:build:server -- --edition enterprise --target linux-x64
 npm run feature:build:client -- --edition enterprise --platform macos --dry-run
-npm run feature:instantiate:minimal -- --output splitall-v1 --force --install
+npm run feature:instantiate:minimal -- --output agentstudio-v1 --force --install
 ```

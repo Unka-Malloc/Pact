@@ -5,14 +5,14 @@ import 'src/services/runtime_services.dart';
 import 'src/ui/client_shell.dart';
 import 'src/ui/theme.dart';
 
-class SplitAllApp extends StatefulWidget {
-  const SplitAllApp({super.key});
+class AgentStudioApp extends StatefulWidget {
+  const AgentStudioApp({super.key});
 
   @override
-  State<SplitAllApp> createState() => _SplitAllAppState();
+  State<AgentStudioApp> createState() => _AgentStudioAppState();
 }
 
-class _SplitAllAppState extends State<SplitAllApp> {
+class _AgentStudioAppState extends State<AgentStudioApp> {
   late final AppController _controller;
 
   @override
@@ -30,9 +30,9 @@ class _SplitAllAppState extends State<SplitAllApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SplitAll 便携客户端',
+      title: 'AgentStudio 便携客户端',
       debugShowCheckedModeBanner: false,
-      theme: buildSplitAllTheme(),
+      theme: buildAgentStudioTheme(),
       home: ClientShell(controller: _controller),
     );
   }

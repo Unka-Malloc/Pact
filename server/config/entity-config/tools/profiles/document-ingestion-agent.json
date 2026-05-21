@@ -3,13 +3,13 @@
   "label": "Document Ingestion Agent",
   "agentType": "ingestion",
   "toolsets": [
-    "splitall.document.parse",
-    "splitall.document.convert",
-    "splitall.knowledge.write"
+    "agentstudio.document.parse",
+    "agentstudio.document.convert",
+    "agentstudio.knowledge.write"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "splitall.admin"
+    "agentstudio.admin"
   ],
   "maxRisk": "safe_write",
   "approvalPolicy": "deny_repair",

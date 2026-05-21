@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Clean stale SplitAll service processes before starting a new local service.
+# Clean stale AgentStudio service processes before starting a new local service.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DATA_DIR="$PROJECT_ROOT/.splitall-server-data"
+DATA_DIR="$PROJECT_ROOT/.agentstudio-server-data"
 PORTS=()
 LAUNCH_LABELS=()
 LAUNCH_PLISTS=()
@@ -19,7 +19,7 @@ Usage:
 Options:
   --port <n>            Kill listeners on a server port. Can be repeated.
   --vite-port <n>       Alias for --port, intended for local Vite dev server.
-  --data-dir <path>     Data dir used by SplitAll service processes.
+  --data-dir <path>     Data dir used by AgentStudio service processes.
   --project-root <path> Project root used for command-line matching.
   --launch-label <name> Best-effort launchctl bootout for a user service label.
   --launch-plist <path> Best-effort launchctl bootout for a LaunchAgent plist.
@@ -89,7 +89,7 @@ pid_cwd() {
   lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true
 }
 
-command_has_splitall_entrypoint() {
+command_has_agentstudio_entrypoint() {
   local command_line="$1"
 
   case "$command_line" in
@@ -115,7 +115,7 @@ command_has_data_dir() {
   local command_line="$1"
 
   case "$command_line" in
-    *"--data-dir $DATA_DIR"*|*"--data-dir=$DATA_DIR"*|*"SPLITALL_SERVER_DATA_DIR=$DATA_DIR"*)
+    *"--data-dir $DATA_DIR"*|*"--data-dir=$DATA_DIR"*|*"AGENTSTUDIO_SERVER_DATA_DIR=$DATA_DIR"*)
       return 0
       ;;
     *)
@@ -124,7 +124,7 @@ command_has_data_dir() {
   esac
 }
 
-pid_is_splitall_owned() {
+pid_is_agentstudio_owned() {
   local pid="$1"
   local command_line
   local cwd
@@ -136,7 +136,7 @@ pid_is_splitall_owned() {
     return 1
   fi
 
-  if command_has_splitall_entrypoint "$command_line"; then
+  if command_has_agentstudio_entrypoint "$command_line"; then
     if [[ "$cwd" == "$PROJECT_ROOT" ]] || command_has_data_dir "$command_line"; then
       return 0
     fi
@@ -181,7 +181,7 @@ kill_port_listeners() {
   fi
 
   for pid in $pids; do
-    if pid_is_splitall_owned "$pid"; then
+    if pid_is_agentstudio_owned "$pid"; then
       own_pids+=("$pid")
     else
       external_pids+=("$pid")
@@ -189,7 +189,7 @@ kill_port_listeners() {
   done
 
   if [[ "${#external_pids[@]}" -gt 0 ]]; then
-    log "[clean] port ${port} is occupied by non-SplitAll process(es); refusing to stop them"
+    log "[clean] port ${port} is occupied by non-AgentStudio process(es); refusing to stop them"
     for pid in "${external_pids[@]}"; do
       describe_process "$pid"
     done
@@ -197,11 +197,11 @@ kill_port_listeners() {
   fi
 
   if [[ "${#own_pids[@]}" -eq 0 ]]; then
-    log "[clean] port ${port} has no SplitAll-owned listeners"
+    log "[clean] port ${port} has no AgentStudio-owned listeners"
     return 0
   fi
 
-  log "[clean] stopping SplitAll-owned listeners on port ${port}: ${own_pids[*]}"
+  log "[clean] stopping AgentStudio-owned listeners on port ${port}: ${own_pids[*]}"
   for pid in "${own_pids[@]}"; do
     kill "$pid" 2>/dev/null || true
   done
@@ -221,7 +221,7 @@ kill_port_listeners() {
     external_pids=()
 
     for pid in $remaining; do
-      if pid_is_splitall_owned "$pid"; then
+      if pid_is_agentstudio_owned "$pid"; then
         own_pids+=("$pid")
       else
         external_pids+=("$pid")
@@ -229,7 +229,7 @@ kill_port_listeners() {
     done
 
     if [[ "${#external_pids[@]}" -gt 0 ]]; then
-      log "[clean] port ${port} is still occupied by non-SplitAll process(es); refusing to stop them"
+      log "[clean] port ${port} is still occupied by non-AgentStudio process(es); refusing to stop them"
       for pid in "${external_pids[@]}"; do
         describe_process "$pid"
       done
@@ -237,7 +237,7 @@ kill_port_listeners() {
     fi
 
     if [[ "${#own_pids[@]}" -gt 0 ]]; then
-      log "[clean] force stopping SplitAll-owned listeners on port ${port}: ${own_pids[*]}"
+      log "[clean] force stopping AgentStudio-owned listeners on port ${port}: ${own_pids[*]}"
       for pid in "${own_pids[@]}"; do
         kill -9 "$pid" 2>/dev/null || true
       done
@@ -271,7 +271,7 @@ bootout_launch_plist() {
   launchctl bootout "$target" "$plist_path" >/dev/null 2>&1 || true
 }
 
-find_stale_splitall_pids() {
+find_stale_agentstudio_pids() {
   ps -Ao pid=,command= |
     awk -v root="$PROJECT_ROOT" -v data_dir="$DATA_DIR" -v self="$$" '
       {
@@ -296,7 +296,7 @@ find_stale_splitall_pids() {
 
         if (!(index(cmd, "--data-dir " data_dir) > 0 ||
           index(cmd, "--data-dir=" data_dir) > 0 ||
-          index(cmd, "SPLITALL_SERVER_DATA_DIR=" data_dir) > 0)) {
+          index(cmd, "AGENTSTUDIO_SERVER_DATA_DIR=" data_dir) > 0)) {
           next;
         }
 
@@ -307,19 +307,19 @@ find_stale_splitall_pids() {
     sort -u
 }
 
-kill_stale_splitall_processes() {
+kill_stale_agentstudio_processes() {
   local pids
   local remaining=()
   local pid
   local i
 
-  pids="$(find_stale_splitall_pids)"
+  pids="$(find_stale_agentstudio_pids)"
   if [[ -z "$pids" ]]; then
-    log "[clean] no stale SplitAll service processes for ${DATA_DIR}"
+    log "[clean] no stale AgentStudio service processes for ${DATA_DIR}"
     return 0
   fi
 
-  log "[clean] stopping stale SplitAll service processes: $(echo "$pids" | tr '\n' ' ')"
+  log "[clean] stopping stale AgentStudio service processes: $(echo "$pids" | tr '\n' ' ')"
   for pid in $pids; do
     if kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
@@ -335,13 +335,13 @@ kill_stale_splitall_processes() {
     done
 
     if [[ "${#remaining[@]}" -eq 0 ]]; then
-      log "[clean] stale SplitAll service processes stopped"
+      log "[clean] stale AgentStudio service processes stopped"
       return 0
     fi
     sleep 0.5
   done
 
-  log "[clean] force stopping stale SplitAll service processes: ${remaining[*]}"
+  log "[clean] force stopping stale AgentStudio service processes: ${remaining[*]}"
   for pid in "${remaining[@]}"; do
     kill -9 "$pid" 2>/dev/null || true
   done
@@ -359,7 +359,7 @@ if [[ "${#LAUNCH_PLISTS[@]}" -gt 0 ]]; then
   done
 fi
 
-kill_stale_splitall_processes
+kill_stale_agentstudio_processes
 
 if [[ "${#PORTS[@]}" -gt 0 ]]; then
   for port in "${PORTS[@]}"; do
@@ -367,4 +367,4 @@ if [[ "${#PORTS[@]}" -gt 0 ]]; then
   done
 fi
 
-log "[clean] existing SplitAll service cleanup complete"
+log "[clean] existing AgentStudio service cleanup complete"

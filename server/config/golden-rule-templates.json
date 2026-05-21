@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "splitall.golden-rule-templates.v1",
+  "protocolVersion": "agentstudio.golden-rule-templates.v1",
   "templates": [
     {
       "templateId": "exact_duplicate_skip_existing",
@@ -26,7 +26,7 @@
         "source": "agent-rule-authoring-template"
       },
       "package": {
-        "protocolVersion": "splitall.golden-rule.v1",
+        "protocolVersion": "agentstudio.golden-rule.v1",
         "schemaVersion": 1,
         "packageId": "{{packageId}}",
         "version": 1,

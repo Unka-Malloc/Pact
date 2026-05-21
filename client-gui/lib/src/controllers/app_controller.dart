@@ -999,7 +999,7 @@ class AppController extends ChangeNotifier {
 
     try {
       config = config.copyWith(
-        bootstrapBaseUrl: SplitAllServiceUrls.normalizeBaseUrl(rawBaseUrl),
+        bootstrapBaseUrl: AgentStudioServiceUrls.normalizeBaseUrl(rawBaseUrl),
         serviceUsername: serviceUsername,
         servicePassword: servicePassword,
       );
@@ -1011,9 +1011,9 @@ class AppController extends ChangeNotifier {
       final bootstrap = await _backendApi.fetchBootstrap(rawBaseUrl);
       config = config.copyWith(
         bootstrapBaseUrl: bootstrap.bootstrapBaseUrl.isEmpty
-            ? SplitAllServiceUrls.normalizeBaseUrl(rawBaseUrl)
-            : SplitAllServiceUrls.normalizeBaseUrl(bootstrap.bootstrapBaseUrl),
-        resolvedServiceBaseUrl: SplitAllServiceUrls.normalizeBaseUrl(
+            ? AgentStudioServiceUrls.normalizeBaseUrl(rawBaseUrl)
+            : AgentStudioServiceUrls.normalizeBaseUrl(bootstrap.bootstrapBaseUrl),
+        resolvedServiceBaseUrl: AgentStudioServiceUrls.normalizeBaseUrl(
           bootstrap.activeServiceUrl,
         ),
         lastDiscoveryConfigVersion: bootstrap.configVersion,
@@ -1866,7 +1866,7 @@ class AppController extends ChangeNotifier {
     final files = await openFiles(
       acceptedTypeGroups: [
         XTypeGroup(
-          label: 'SplitAll 数据源',
+          label: 'AgentStudio 数据源',
           extensions: _supportedExtensions.toList()..sort(),
         ),
       ],
@@ -2026,7 +2026,7 @@ class AppController extends ChangeNotifier {
 
       targetServiceUrl = resolvedServiceUrl;
       if (targetServiceUrl.isEmpty && bootstrapUrl.isNotEmpty) {
-        targetServiceUrl = SplitAllServiceUrls.normalizeBaseUrl(bootstrapUrl);
+        targetServiceUrl = AgentStudioServiceUrls.normalizeBaseUrl(bootstrapUrl);
       }
       if (targetServiceUrl.isEmpty) {
         _setError('请先配置服务端地址，再同步 Mail 到云端。');
@@ -2772,7 +2772,7 @@ class AppController extends ChangeNotifier {
     } on PlatformException catch (error) {
       final message = error.message ?? error.code;
       _setError(
-        'Mail.app 授权失败：$message。请在系统设置 > 隐私与安全性 > 自动化中允许 SplitAll 控制 Mail。',
+        'Mail.app 授权失败：$message。请在系统设置 > 隐私与安全性 > 自动化中允许 AgentStudio 控制 Mail。',
       );
     } catch (error) {
       _setError('Mail.app 授权失败：$error');
@@ -4483,7 +4483,7 @@ class AppController extends ChangeNotifier {
     }
     var targetServiceUrl = resolvedServiceUrl;
     if (targetServiceUrl.isEmpty && bootstrapUrl.isNotEmpty) {
-      targetServiceUrl = SplitAllServiceUrls.normalizeBaseUrl(bootstrapUrl);
+      targetServiceUrl = AgentStudioServiceUrls.normalizeBaseUrl(bootstrapUrl);
     }
     if (targetServiceUrl.isEmpty) {
       _setError('请先配置服务端地址。服务端暂时不可用时，客户端会先保存任务并在恢复后自动接续。');
@@ -4675,7 +4675,7 @@ class AppController extends ChangeNotifier {
     try {
       final artifact = switch (kind) {
         ExportKind.sourceLogs => ExportArtifact(
-          fileName: 'splitall-source-logs.txt',
+          fileName: 'agentstudio-source-logs.txt',
           bytes: utf8.encode(logs.join('\n')),
           contentType: 'text/plain',
         ),

@@ -24,7 +24,7 @@ async function writeJson(filePath, value) {
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-monitor-alerts-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-monitor-alerts-"));
 const queueMonitor = {
   inspect: (input) => inspectQueueMonitor({ userDataPath, ...input }),
   acknowledge: (alertId) => acknowledgeQueueMonitorAlert(userDataPath, alertId)

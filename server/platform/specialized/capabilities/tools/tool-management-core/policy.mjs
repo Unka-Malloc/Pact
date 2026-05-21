@@ -18,8 +18,8 @@ function hasConfirmation(input = {}, request = null) {
     return true;
   }
   const header = String(
-    request?.headers?.["x-splitall-confirm"] ||
-      request?.headers?.["x-splitall-safety-confirm"] ||
+    request?.headers?.["x-agentstudio-confirm"] ||
+      request?.headers?.["x-agentstudio-safety-confirm"] ||
       ""
   ).toLowerCase();
   return ["1", "true", "yes"].includes(header);

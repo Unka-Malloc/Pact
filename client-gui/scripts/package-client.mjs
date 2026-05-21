@@ -426,11 +426,11 @@ function publicModuleRecord(moduleConfig) {
 
 function writeBundleNotes(config, selected, bundle, options) {
   const lines = [
-    `SplitAll ${options.platform} Client Bundle`,
+    `AgentStudio ${options.platform} Client Bundle`,
     "",
     "Run the Flutter desktop frontend from this bundle.",
-    "The frontend resolves splitall-clientd as its local backend sidecar.",
-    "Run splitall-client for command-line operations against the same portable-data workspace.",
+    "The frontend resolves agentstudio-clientd as its local backend sidecar.",
+    "Run agentstudio-client for command-line operations against the same portable-data workspace.",
     "",
     "Enabled modules:",
     ...selected.map((item) => `- ${item.id}: ${item.label || item.id}`),

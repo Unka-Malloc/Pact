@@ -1,6 +1,6 @@
-# SplitAll Knowledge Protocol
+# AgentStudio Knowledge Protocol
 
-Protocol version: `splitall.knowledge.v1`
+Protocol version: `agentstudio.knowledge.v1`
 
 The application layer talks to a knowledge module through this method protocol. It must not depend on the module's database, vector index, embedding runtime, or storage layout.
 
@@ -11,7 +11,7 @@ This protocol is intentionally independent from HTTP, JSON-RPC, CLI, SQLite, and
 | Method | Purpose |
 | --- | --- |
 | `knowledge.capabilities` | Return supported modalities, storage backends, output formats, internal protocol versions, and license policy. |
-| `knowledge.ingest.batch` | Ingest a completed SplitAll job result into the knowledge module. |
+| `knowledge.ingest.batch` | Ingest a completed AgentStudio job result into the knowledge module. |
 | `knowledge.upsert.documents` | Upsert already-normalized knowledge documents. |
 | `knowledge.delete.batch` | Remove all knowledge objects derived from a batch/job. |
 | `knowledge.search` | Return evidence packs, not bare chunks. Evidence may include text blocks and image assets. |
@@ -36,33 +36,33 @@ This protocol is intentionally independent from HTTP, JSON-RPC, CLI, SQLite, and
 | --- | --- |
 | HTTP | Routes such as `POST /api/knowledge/search`, `GET /api/knowledge/evidence/:evidenceId`, `GET /api/knowledge/assets/:assetId`, `POST /api/knowledge/render/markdown`, and `GET /api/knowledge/export/docx` map into protocol methods. |
 | JSON-RPC | Methods keep the same protocol names, for example `knowledge.search`, `knowledge.get.evidence`, `knowledge.asset`, `knowledge.render.markdown`, and `knowledge.export.docx`. |
-| CLI | `splitall knowledge ...` commands call the registered HTTP/RPC surfaces; they do not read module storage. |
+| CLI | `agentstudio knowledge ...` commands call the registered HTTP/RPC surfaces; they do not read module storage. |
 | Module/RPC adapter | An external knowledge module may call a local or remote service internally, but it must adapt the result back to this method protocol. |
 
 The application layer owns orchestration. The knowledge module owns knowledge storage, retrieval, asset, embedding, and rendering details. Neither side reaches across the boundary through private imports, SQLite table reads, or asset path concatenation.
 
 ## Three-Layer Knowledge Boundary
 
-SplitAll separates knowledge management into three layers:
+AgentStudio separates knowledge management into three layers:
 
 | Layer | Responsibility |
 | --- | --- |
 | `raw-corpus-construction` | Provide format-conversion-only tools first: every supported raw input format must be exportable to DOCX without chunking, filing, or indexing. Supported inputs include Markdown, HTML, PDF, PPT/PPTX, DOC/DOCX, XLS/XLSX, mail, image-based documents, and plain text; Markdown is only one supported input type. Then parse raw files, mail, attachments, chats, local mirrors, and directories into structure-preserving `sources`, normalized DOCX packages, source ranges, timelines, transaction chains, and raw object references. User-facing export is `raw-corpus.format.convert`, selected by `targetFormat`. |
-| `knowledge-index-construction` | Continue the same corpus-filing business line by filing normalized corpus into callable documents, roughly concatenating multiple sources about the same matter into newest-to-oldest unified dossiers, then parsing and mapping them into the built-in `KnowledgeCore` or an external knowledge-base adapter. This layer owns document/section/block/asset/evidence/embedding/relationship indexing, exposes RAG-safe evidence through `splitall.knowledge.v1`, and exports same-matter timeline dossiers through `knowledge.dossier.export`. |
+| `knowledge-index-construction` | Continue the same corpus-filing business line by filing normalized corpus into callable documents, roughly concatenating multiple sources about the same matter into newest-to-oldest unified dossiers, then parsing and mapping them into the built-in `KnowledgeCore` or an external knowledge-base adapter. This layer owns document/section/block/asset/evidence/embedding/relationship indexing, exposes RAG-safe evidence through `agentstudio.knowledge.v1`, and exports same-matter timeline dossiers through `knowledge.dossier.export`. |
 | `knowledge-distillation` | Read first-layer raw corpus full text first, cover long sources through batches/steps, then generate self-contained Markdown/DOCX/HTML/PDF-style portable documents. Second-layer evidence is used for validation, citations, remediation, and audit; distillation must not replace `knowledge.search` as the full-query surface. User-facing export is `knowledge.distillation.export`, selected by `outputFormat`. |
 
 The first and second layers are one business workflow: format conversion, corpus filing, same-matter dossier aggregation, then indexing. The second layer is the external knowledge-base integration point. For that reason raw document parsing is shared across the first two layers: the first layer preserves and normalizes original structure; the second layer parses normalized packages, manifests, source metadata, and asset locators into whichever index backend is active. Same-matter dossier aggregation must work before advanced simplification: emails, back-and-forth messages, document revisions, or related files are first sorted by `capturedAt`, `sourceUpdatedAt`, `sourceCreatedAt`, or `sourceCollectedAt` from newest to oldest and concatenated into an auditable unified document. The protocol has three user-facing export semantics: `raw-corpus.format.convert` for raw format conversion without persistence side effects, `knowledge.dossier.export` for timeline-concatenated documents, and `knowledge.distillation.export` for refined portable knowledge documents. Export support does not replace the local knowledge-base runtime shape: the local `KnowledgeCore` or external-backend mapping must still retain documents, sections, blocks, structure artifacts, fragments, evidence, assets, hierarchy, embeddings, dossiers, and distillation runs for local agent retrieval. External knowledge-base adapters may call remote ingestion/search APIs internally, but public search, evidence, asset, export, and render behavior must adapt back to this protocol.
 
 ## Industrial Distillation Benchmark Protocol
 
-Industrial knowledge distillation is tracked by `splitall.knowledge-distillation-industrial.v1`. It is a benchmark and gate protocol, not a new persistence backend.
+Industrial knowledge distillation is tracked by `agentstudio.knowledge-distillation-industrial.v1`. It is a benchmark and gate protocol, not a new persistence backend.
 
 | Stage | Contract |
 | --- | --- |
 | Markdown project digest | `buildMarkdownProjectDigest()` scans all Markdown files under a project, excludes dependency/build/cache folders, and preserves directory tree, relative path, heading outline, file order, and full source text. External baseline tools include Repomix and Gitingest. |
 | Email thread digest | `buildEmailThreadDigest()` scans `.eml` files, groups same-matter messages through RFC 5322 `Message-ID`, `In-Reply-To`, and `References`, follows the RFC 5256 `REFERENCES` threading semantics where applicable, and sorts each thread from oldest to newest. |
-| Framework run | SplitAll passes the generated digest documents as first-layer `rawDocuments`; the default industrial model alias is `deepseek-v4-flash`, while actual model calls still require `modelEnabled=true`. |
-| Gap evaluation | `evaluateIndustrialDistillationGap()` compares external mature skill output and SplitAll framework output by `coverage`, `same-matter merge`, `timeline order`, `source trace`, and `unsupported claims`. |
+| Framework run | AgentStudio passes the generated digest documents as first-layer `rawDocuments`; the default industrial model alias is `deepseek-v4-flash`, while actual model calls still require `modelEnabled=true`. |
+| Gap evaluation | `evaluateIndustrialDistillationGap()` compares external mature skill output and AgentStudio framework output by `coverage`, `same-matter merge`, `timeline order`, `source trace`, and `unsupported claims`. |
 
 CLI entry:
 
@@ -99,13 +99,13 @@ Payload size is a separate budget from knowledge tokens. Requests may pass `payl
 
 ## External Knowledge-Base Adapter Protocol
 
-External knowledge-base adapters implement the `knowledgeBase` mount behind `splitall.knowledge.v1`. The first conformance target is mature open-source knowledge-base backends only: PostgreSQL + pgvector, Qdrant, OpenSearch, and optional Weaviate. Product-level RAG apps, orchestration frameworks, proprietary services, and experimental graph/RAG stacks stay outside the required adapter matrix until the mature OSS fixture is stable.
+External knowledge-base adapters implement the `knowledgeBase` mount behind `agentstudio.knowledge.v1`. The first conformance target is mature open-source knowledge-base backends only: PostgreSQL + pgvector, Qdrant, OpenSearch, and optional Weaviate. Product-level RAG apps, orchestration frameworks, proprietary services, and experimental graph/RAG stacks stay outside the required adapter matrix until the mature OSS fixture is stable.
 
 Reference conformance backends:
 
 | Backend | Test purpose | First-pass status |
 | --- | --- | --- |
-| PostgreSQL + pgvector | Baseline relational knowledge store: SplitAll ids, sourceTrace, permission scopes, tombstones, DOCX export state, and vector retrieval live in one auditable database. | Required |
+| PostgreSQL + pgvector | Baseline relational knowledge store: AgentStudio ids, sourceTrace, permission scopes, tombstones, DOCX export state, and vector retrieval live in one auditable database. | Required |
 | Qdrant | Vector backend with payload filters: validates tenant/workspace/source-scope prefiltering and sidecar evidence/asset mapping. | Required |
 | OpenSearch | Full-text + vector hybrid search backend: validates lexical retrieval, semantic retrieval, score fusion, and production-style filtering. | Required |
 | Weaviate | Object-oriented vector/hybrid backend: useful when testing collection schema and object properties, but not required for the first fixture. | Optional |
@@ -128,7 +128,7 @@ Minimum conformance set:
 | Evidence read | `knowledge.get.evidence` | Rehydrate a materialized evidence pack without requiring callers to know backend ids or storage paths. | Yes |
 | Asset read | `knowledge.asset` | Resolve opaque `assetId` to bytes, stream metadata, or a missing-asset status without exposing filesystem or backend private paths. | Conditional: required when evidence can reference assets |
 | Export | `knowledge.export.docx` | Export accepted knowledge objects from the active mount as a standard DOCX corpus with evidence locators. | Yes |
-| Lifecycle | `knowledge.delete.batch`, `knowledge.reindex`, `knowledge.sync` | Delete, rebuild, and mirror index state while preserving SplitAll ids and tombstones. | Required for production adapters |
+| Lifecycle | `knowledge.delete.batch`, `knowledge.reindex`, `knowledge.sync` | Delete, rebuild, and mirror index state while preserving AgentStudio ids and tombstones. | Required for production adapters |
 | Governance | `knowledge.feedback`, `knowledge.suggestions`, `knowledge.suggestion_resolve`, `knowledge.learning.*` | Accept feedback and expose reviewable evolution suggestions without mutating canonical facts directly. | Optional unless advertised in capabilities |
 
 ### Adapter Capability Shape
@@ -137,8 +137,8 @@ Minimum conformance set:
 
 ```json
 {
-  "protocolVersion": "splitall.knowledge.v1",
-  "adapterProtocolVersion": "splitall.external-knowledge-adapter.v1",
+  "protocolVersion": "agentstudio.knowledge.v1",
+  "adapterProtocolVersion": "agentstudio.external-knowledge-adapter.v1",
   "backend": {
     "adapterId": "enterprise-search",
     "backendKind": "external",
@@ -197,10 +197,10 @@ Adapters ingest first-layer corpus packages through `knowledge.ingest.batch` or 
 
 ```json
 {
-  "protocolVersion": "splitall.knowledge.v1",
+  "protocolVersion": "agentstudio.knowledge.v1",
   "batchId": "job-123",
   "corpus": {
-    "packageType": "splitall.normalized-documents",
+    "packageType": "agentstudio.normalized-documents",
     "manifestId": "manifest::job-123",
     "generatedAt": "2026-05-17T00:00:00.000Z"
   },
@@ -289,13 +289,13 @@ Ingest response:
 
 ```json
 {
-  "protocolVersion": "splitall.knowledge.v1",
+  "protocolVersion": "agentstudio.knowledge.v1",
   "batchId": "job-123",
   "backend": {"adapterId": "enterprise-search", "generation": 17},
   "indexedCounts": {"documents": 1, "sections": 1, "blocks": 1, "assets": 1, "relationships": 1},
   "mappings": [
     {
-      "splitallId": "document::job-123::message-1",
+      "agentstudioId": "document::job-123::message-1",
       "externalId": "kb-doc-987",
       "kind": "document"
     }
@@ -305,7 +305,7 @@ Ingest response:
 }
 ```
 
-Adapters must persist or reconstruct mappings from SplitAll ids to backend ids. Mapping loss is a health issue because evidence, asset reads, delete, sync, and export all depend on stable ids.
+Adapters must persist or reconstruct mappings from AgentStudio ids to backend ids. Mapping loss is a health issue because evidence, asset reads, delete, sync, and export all depend on stable ids.
 
 ### Search Contract
 
@@ -357,7 +357,7 @@ Search response must be evidence-first:
 
 ```json
 {
-  "protocolVersion": "splitall.knowledge.v1",
+  "protocolVersion": "agentstudio.knowledge.v1",
   "queryId": "query-1",
   "backend": {"adapterId": "enterprise-search", "generation": 17},
   "evidence": [
@@ -423,13 +423,13 @@ Adapters may return backend-specific diagnostics under `backendTrace`, but calle
 - `knowledge.get.evidence` accepts `evidenceId` plus optional `includeBlocks`, `includeAssets`, `renderMarkdown`, `contextBudget`, `payloadBudget`, and `continuationToken` fields. It returns the same evidence shape as search and must work after the original query response has been cached.
 - When evidence payload is too large, search and evidence reads must support resumable reads with `payload.nextContinuationToken`. The token is opaque to callers and must be rechecked against tenant, workspace/source scope, query hash, artifact id, range cursor, and expiration before returning the next range.
 - `knowledge.asset` accepts only opaque `assetId`. It returns `{ found, mediaType, byteLength, sha256, stream|bytes|url, missingReason }`. If the external backend owns the asset, the adapter must proxy or sign access without exposing private backend paths.
-- `knowledge.export.docx` exports from the active mount. External adapters may regenerate DOCX from their backend objects, but exports must preserve SplitAll ids, evidence locators, citations, sourceTrace, and asset references.
+- `knowledge.export.docx` exports from the active mount. External adapters may regenerate DOCX from their backend objects, but exports must preserve AgentStudio ids, evidence locators, citations, sourceTrace, and asset references.
 - `knowledge.delete.batch` must remove or tombstone every object derived from a batch. If the backend only supports soft delete, search and sync must hide tombstoned objects.
-- `knowledge.reindex` may rebuild backend indexes, embeddings, graph projections, or payload indexes, but must not change SplitAll ids or evidence locators.
+- `knowledge.reindex` may rebuild backend indexes, embeddings, graph projections, or payload indexes, but must not change AgentStudio ids or evidence locators.
 
 ### Failure And Consistency Semantics
 
-- Partial ingest must return `warnings` and `failedItems` with SplitAll ids. Silent drop is invalid.
+- Partial ingest must return `warnings` and `failedItems` with AgentStudio ids. Silent drop is invalid.
 - Search degradation must set `warnings` and `backend.degraded=true`; callers can still use evidence if citations and sourceTrace are intact.
 - Adapter retries must be idempotent by `batchId`, `documentId`, `sectionId`, `blockId`, and `assetId`.
 - Remote backends must enforce tenant, workspace, and source-scope filters before returning evidence. Post-filtering after topK is not sufficient for permission boundaries.
@@ -462,7 +462,7 @@ Mirror responses use the same cursor envelope as summary sync but carry Knowledg
 
 ```json
 {
-  "protocolVersion": "splitall.knowledge.v1",
+  "protocolVersion": "agentstudio.knowledge.v1",
   "scope": "mirror",
   "cursor": "12",
   "latestCursor": "12",
@@ -495,13 +495,13 @@ Allowed mirror `kind` values are `document`, `section`, `block`, `asset`, `relat
 
 ## Knowledge Export Boundary
 
-SplitAll keeps three user-facing export semantics plus one canonical corpus export for external knowledge bases. They may share renderers, but they must not share input scope or persistence side effects:
+AgentStudio keeps three user-facing export semantics plus one canonical corpus export for external knowledge bases. They may share renderers, but they must not share input scope or persistence side effects:
 
 | Export | Interface | Use |
 | --- | --- | --- |
 | Raw corpus format conversion | `raw-corpus.format.convert`, `POST /api/knowledge/format-convert`, `knowledge convert --to <format>` | Convert original materials to a requested `targetFormat` such as DOCX, Markdown, HTML, or PDF without filing, chunking, indexing, or creating canonical evidence. |
 | Timeline dossier export | `knowledge.dossier.export`, `POST /api/knowledge/dossiers/export`, `knowledge dossier-export --to <format>` | Export emails, message exchanges, document revisions, or related sources about the same matter as a timestamped newest-to-oldest document before deduplication or summarization. |
-| Distillation result export | `knowledge.distillation.export`, `POST /api/knowledge/distillations/export`, `knowledge distill-export --to <format>` | Export refined self-contained distillation results as Markdown, DOCX, HTML, PDF, or another supported `outputFormat`; the document must be understandable outside SplitAll. |
+| Distillation result export | `knowledge.distillation.export`, `POST /api/knowledge/distillations/export`, `knowledge distill-export --to <format>` | Export refined self-contained distillation results as Markdown, DOCX, HTML, PDF, or another supported `outputFormat`; the document must be understandable outside AgentStudio. |
 | Canonical knowledge corpus export | `knowledge.export.docx`, `GET /api/knowledge/export/docx`, `knowledge export-docx --output knowledge.docx` | Export accepted knowledge objects from the active `knowledgeBase` mount as standard DOCX for external KB ingestion and audit without bypassing the protocol boundary. |
 
 Offline exports are portable artifacts. Agents must still use `knowledge.search`, evidence packs, asset protocol, and configured workspace source scopes for live context assembly. Exported files are not a runtime index, and `knowledge.export.docx` must not be treated as a replacement for raw format conversion, timeline dossier export, or distillation result export.
@@ -550,11 +550,11 @@ Knowledge modules may call internal modules through these protocol names:
 
 | Protocol | Responsibility |
 | --- | --- |
-| `splitall.vector.v1` | Vector upsert/search/delete. |
-| `splitall.embedding.v1` | Text, image, and joint embedding generation. |
-| `splitall.assetStore.v1` | Binary asset persistence, validation, and URL/path policy. |
-| `splitall.retrieval.v1` | Retrieval fusion, parent expansion, reranking, and evidence shaping. |
-| `splitall.learning.v1` | Feedback aggregation, retrieval profile tuning, suggestion generation, and audited self-evolution. |
+| `agentstudio.vector.v1` | Vector upsert/search/delete. |
+| `agentstudio.embedding.v1` | Text, image, and joint embedding generation. |
+| `agentstudio.assetStore.v1` | Binary asset persistence, validation, and URL/path policy. |
+| `agentstudio.retrieval.v1` | Retrieval fusion, parent expansion, reranking, and evidence shaping. |
+| `agentstudio.learning.v1` | Feedback aggregation, retrieval profile tuning, suggestion generation, and audited self-evolution. |
 
 The built-in module currently provides local SQLite/object-storage implementations for these protocols. External implementations can replace them if the method shapes remain compatible.
 
@@ -562,12 +562,12 @@ The built-in module currently provides local SQLite/object-storage implementatio
 
 | Component | Protocol | Bundled status | Notes |
 | --- | --- | --- | --- |
-| `KnowledgeCore` | `splitall.knowledge.v1` | bundled by default | Owns `knowledge-core/knowledge.sqlite`, `knowledge-core/assets/`, evidence shaping, and Markdown rendering. |
-| `EmbeddingRuntime` | `splitall.embedding.v1` | bundled fallback | Uses project-internal deterministic text/image fallback; it must not download model files at startup. |
-| `VectorStore` | `splitall.vector.v1` | optional module plus KnowledgeCore fallback | Built-in local backend uses `sqlite-vec` when available and keeps JSON vectors as deterministic fallback. Native/vector DB adapters must remain behind this protocol. |
-| `assetStore` | `splitall.assetStore.v1` | bundled fallback | Stores assets by SHA-256 and enforces URL/path policy. |
-| `retrieval` | `splitall.retrieval.v1` | bundled fallback | Handles fusion, parent expansion, rerank, and evidence pack construction. |
-| `LearningRuntime` | `splitall.learning.v1` | bundled deterministic JavaScript fallback; external JS adapter optional | Uses feedback to tune retrieval profiles automatically and emits reviewable suggestions for canonical knowledge changes. Optional framework or store integrations must be called through JavaScript and must not download models implicitly. |
+| `KnowledgeCore` | `agentstudio.knowledge.v1` | bundled by default | Owns `knowledge-core/knowledge.sqlite`, `knowledge-core/assets/`, evidence shaping, and Markdown rendering. |
+| `EmbeddingRuntime` | `agentstudio.embedding.v1` | bundled fallback | Uses project-internal deterministic text/image fallback; it must not download model files at startup. |
+| `VectorStore` | `agentstudio.vector.v1` | optional module plus KnowledgeCore fallback | Built-in local backend uses `sqlite-vec` when available and keeps JSON vectors as deterministic fallback. Native/vector DB adapters must remain behind this protocol. |
+| `assetStore` | `agentstudio.assetStore.v1` | bundled fallback | Stores assets by SHA-256 and enforces URL/path policy. |
+| `retrieval` | `agentstudio.retrieval.v1` | bundled fallback | Handles fusion, parent expansion, rerank, and evidence pack construction. |
+| `LearningRuntime` | `agentstudio.learning.v1` | bundled deterministic JavaScript fallback; external JS adapter optional | Uses feedback to tune retrieval profiles automatically and emits reviewable suggestions for canonical knowledge changes. Optional framework or store integrations must be called through JavaScript and must not download models implicitly. |
 
 ## Offline Package And License Gate
 

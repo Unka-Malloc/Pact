@@ -44,7 +44,7 @@ function getDatabaseDirectory(userDataPath) {
 }
 
 export function getMetadataDatabasePath(userDataPath) {
-  return path.join(getDatabaseDirectory(userDataPath), "splitall.sqlite");
+  return path.join(getDatabaseDirectory(userDataPath), "agentstudio.sqlite");
 }
 
 export function initializeMetadataSchema(db) {

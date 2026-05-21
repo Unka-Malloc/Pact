@@ -47,7 +47,7 @@ content-type: application/json
     "clientUid": "string",
     "sourceType": "string",
     "parentCheckpointId": "string",
-    "mode": "initial|resume|append|branch|splitall-cli"
+    "mode": "initial|resume|append|branch|agentstudio-cli"
   },
   "manifest": {
     "manifestDigest": "sha256-hex",
@@ -179,7 +179,7 @@ content-type: application/json
     "clientBatchId": "string",
     "clientUid": "string",
     "sourceType": "string",
-    "mode": "initial|resume|append|branch|splitall-cli"
+    "mode": "initial|resume|append|branch|agentstudio-cli"
   },
   "uploadSessionId": "string",
   "archiveBatchId": "string",

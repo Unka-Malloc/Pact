@@ -1,5 +1,5 @@
 {
-  "id": "splitall.document.convert",
+  "id": "agentstudio.document.convert",
   "label": "Document convert",
   "requiredScopes": [
     "knowledge:write"

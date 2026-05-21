@@ -1,6 +1,6 @@
 {
-  "id": "splitall.agent.workspace",
-  "label": "Agent workspace",
+  "id": "agentstudio.knowledge.write",
+  "label": "Knowledge write",
   "requiredScopes": [
     "knowledge:read",
     "knowledge:write"

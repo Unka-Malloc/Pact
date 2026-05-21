@@ -179,7 +179,7 @@ function buildCheckpointBundle(uploadedFile, checkpointId, options = {}) {
   };
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-checkpoint-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-checkpoint-"));
 const delayedDataPath = path.join(userDataPath, "delayed");
 const recoveryDataPath = path.join(userDataPath, "recovery");
 const parseResumeDataPath = path.join(userDataPath, "parse-resume");

@@ -1,17 +1,17 @@
 {
-  "name": "splitall",
+  "name": "agentstudio",
   "version": "0.1.0",
   "description": "可控的智能体协作空间。",
   "author": "Unka Y.Y.",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Unka-Malloc/splitall.git"
+    "url": "git+https://github.com/Unka-Malloc/AgentStudio.git"
   },
   "bugs": {
-    "url": "https://github.com/Unka-Malloc/splitall/issues"
+    "url": "https://github.com/Unka-Malloc/AgentStudio/issues"
   },
-  "homepage": "https://github.com/Unka-Malloc/splitall#readme",
+  "homepage": "https://github.com/Unka-Malloc/AgentStudio#readme",
   "files": [
     "server/",
     "!server/platform/modules/knowledge/runtime/jre/**",
@@ -31,7 +31,7 @@
   ],
   "type": "module",
   "bin": {
-    "splitall": "server/scripts/splitall.mjs"
+    "agentstudio": "server/scripts/agentstudio.mjs"
   },
   "scripts": {
     "dev": "npm run dev:web",
@@ -39,7 +39,7 @@
     "dev:all": "bash scripts/start-all.sh --dev",
     "restart:all": "bash scripts/restart-dev.sh",
     "start:all": "bash scripts/start-all.sh",
-    "cli": "node server/scripts/splitall.mjs",
+    "cli": "node server/scripts/agentstudio.mjs",
     "prebuild:renderer": "npm run test:prebuild",
     "build:renderer": "npm run build:renderer:raw",
     "build:renderer:raw": "vite build",

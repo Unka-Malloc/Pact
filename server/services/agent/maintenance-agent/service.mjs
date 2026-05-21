@@ -210,7 +210,7 @@ export function createMaintenanceAgentService({
   operationConcurrencyScope = "maintenance-agent",
   toolManagementStore: incomingToolManagementStore = null,
   queueMonitor = null,
-  schedulerEnabled = process.env.SPLITALL_MAINTENANCE_WORKER_EXTERNAL !== "1",
+  schedulerEnabled = process.env.AGENTSTUDIO_MAINTENANCE_WORKER_EXTERNAL !== "1",
   logger = getRuntimeLogger()
 }) {
   const auditStore = createMaintenanceAgentAuditStore({ userDataPath });
@@ -503,8 +503,8 @@ export function createMaintenanceAgentService({
         toolExecutionId,
         traceId,
         toolId: `maintenance-agent.${rawStep.toolId}`,
-        toolVersion: "splitall.maintenance-agent.v1",
-        toolsetIds: ["splitall.runtime.maintain"],
+        toolVersion: "agentstudio.maintenance-agent.v1",
+        toolsetIds: ["agentstudio.runtime.maintain"],
         subjectType: "agent-profile",
         subjectId: "maintenance-agent",
         grantId: "",
@@ -571,8 +571,8 @@ export function createMaintenanceAgentService({
         toolExecutionId,
         traceId,
         toolId: `maintenance-agent.${rawStep.toolId}`,
-        toolVersion: "splitall.maintenance-agent.v1",
-        toolsetIds: ["splitall.runtime.maintain"],
+        toolVersion: "agentstudio.maintenance-agent.v1",
+        toolsetIds: ["agentstudio.runtime.maintain"],
         subjectType: "agent-profile",
         subjectId: "maintenance-agent",
         grantId: "",

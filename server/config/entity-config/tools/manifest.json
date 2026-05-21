@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "entityType": "splitall.tool-management.entities",
+  "entityType": "agentstudio.tool-management.entities",
   "description": "Human-maintainable tool management entity configs. Runtime falls back to code defaults when this directory is absent.",
   "groups": [
     {

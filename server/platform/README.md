@@ -1,6 +1,6 @@
-# SplitAll Server Platform Layout
+# AgentStudio Server Platform Layout
 
-`server/platform` follows `docs/Architecture.md` as the target boundary. SplitAll is workspace-state-first rather than agent-first: local agents, external knowledge bases, model gateways, tools, and skills are replaceable operators or adapters around the governed workspace asset state.
+`server/platform` follows `docs/Architecture.md` as the target boundary. AgentStudio is workspace-state-first rather than agent-first: local agents, external knowledge bases, model gateways, tools, and skills are replaceable operators or adapters around the governed workspace asset state.
 
 | Target layer | 中文名 | Module id | Current directory | Responsibility |
 | --- | --- | --- | --- | --- |

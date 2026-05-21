@@ -32,7 +32,7 @@ assert.throws(
 
 const processRegistration = new ProcessUnifiedRegistration({
   role: "server-main",
-  label: "SplitAll 服务端",
+  label: "AgentStudio 服务端",
   status: "running",
   processType: "service",
   pid: process.pid,
@@ -104,7 +104,7 @@ assert.equal(composed.summary.monitorCount, 1);
 assert.equal(composed.summary.alertCount, 1);
 assert.equal(composed.registrations.length, 5);
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-unified-registration-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-unified-registration-"));
 const queueMonitorAdapter = {
   inspect: (input) => inspectQueueMonitor({ userDataPath, ...input })
 };

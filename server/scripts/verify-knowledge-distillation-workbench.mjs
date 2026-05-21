@@ -5,13 +5,13 @@ import path from "node:path";
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { createKnowledgeDistillationWorkbench } from "../platform/specialized/knowledge/invocation/knowledge-distillation-workbench/index.mjs";
 
-const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-distillation-workbench-"));
+const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-distillation-workbench-"));
 
 const fakeResult = {
   generatedAt: "2026-05-20T00:00:00.000Z",
   normalizedDocuments: {
     schemaVersion: 1,
-    packageType: "splitall.normalized-documents",
+    packageType: "agentstudio.normalized-documents",
     batchId: "job-project-1",
     generatedAt: "2026-05-20T00:00:00.000Z",
     documents: [

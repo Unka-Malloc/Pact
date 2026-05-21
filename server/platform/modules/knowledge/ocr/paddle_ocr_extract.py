@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--lang",
-        default=os.environ.get("SPLITALL_PADDLEOCR_LANG", "ch"),
+        default=os.environ.get("AGENTSTUDIO_PADDLEOCR_LANG", "ch"),
         help="PaddleOCR language code, defaults to ch.",
     )
     return parser.parse_args()

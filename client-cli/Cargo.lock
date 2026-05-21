@@ -9,6 +9,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "agentstudio-client-native"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "directories",
+ "env_logger",
+ "fs2",
+ "icu_segmenter",
+ "interprocess",
+ "libc",
+ "log",
+ "mime_guess",
+ "notify",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "time",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1124,30 +1148,6 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
-name = "splitall-client-native"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "directories",
- "env_logger",
- "fs2",
- "icu_segmenter",
- "interprocess",
- "libc",
- "log",
- "mime_guess",
- "notify",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "time",
- "ureq",
- "uuid",
-]
 
 [[package]]
 name = "stable_deref_trait"

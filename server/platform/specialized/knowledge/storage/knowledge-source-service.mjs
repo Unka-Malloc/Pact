@@ -78,7 +78,7 @@ function normalizeInteger(value, fallback, min, max) {
 
 function sourceStartupIndexEnabled() {
   return ["1", "true", "yes"].includes(
-    String(process.env.SPLITALL_SOURCE_INDEX_ON_STARTUP || "").trim().toLowerCase()
+    String(process.env.AGENTSTUDIO_SOURCE_INDEX_ON_STARTUP || "").trim().toLowerCase()
   );
 }
 
@@ -779,7 +779,7 @@ export function createKnowledgeSourceService({
   userDataPath,
   jobManager,
   protocolEventBus = null,
-  watchingEnabled = process.env.SPLITALL_SOURCE_WATCHER_EXTERNAL !== "1"
+  watchingEnabled = process.env.AGENTSTUDIO_SOURCE_WATCHER_EXTERNAL !== "1"
 }) {
   const fingerprintStore = createKnowledgeSourceFingerprintStore(userDataPath);
   const sources = new Map();

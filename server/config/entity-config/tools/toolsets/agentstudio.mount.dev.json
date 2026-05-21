@@ -1,5 +1,5 @@
 {
-  "id": "splitall.mount.dev",
+  "id": "agentstudio.mount.dev",
   "label": "Mount development",
   "requiredScopes": [
     "knowledge:admin"

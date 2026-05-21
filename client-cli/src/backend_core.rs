@@ -113,7 +113,7 @@ impl Backend {
     }
 
     pub fn macos_mail_tool_path(&self) -> PathBuf {
-        self.backend_dir().join("splitall-macos-mail-tool")
+        self.backend_dir().join("agentstudio-macos-mail-tool")
     }
 
     pub fn command_inbox_dir(&self) -> PathBuf {
@@ -1029,14 +1029,14 @@ impl Backend {
     }
 
     pub fn run_server_cli(&self, args: &[String]) -> Result<Value> {
-        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../server/scripts/splitall.mjs");
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../server/scripts/agentstudio.mjs");
         if !script.exists() {
             return Err(anyhow!("server CLI is missing: {}", script.display()));
         }
         let output = Command::new("node")
             .arg(script)
             .args(args)
-            .env("SPLITALL_CLIENT_DATA_DIR", &self.data_dir)
+            .env("AGENTSTUDIO_CLIENT_DATA_DIR", &self.data_dir)
             .output()?;
         if !output.status.success() {
             return Err(anyhow!(
@@ -1473,7 +1473,7 @@ impl Backend {
             .unwrap_or(12_000) as usize;
         if !force && source_tokens < threshold_tokens {
             return Ok(json!({
-                "protocolVersion": "splitall.context.compaction.v1",
+                "protocolVersion": "agentstudio.context.compaction.v1",
                 "status": "skipped",
                 "compacted": false,
                 "sessionId": session_id,
@@ -1521,7 +1521,7 @@ impl Backend {
             "createdAt": timestamp()
         });
         let result = json!({
-            "protocolVersion": "splitall.context.compaction.v1",
+            "protocolVersion": "agentstudio.context.compaction.v1",
             "recordId": &record_id,
             "status": "completed",
             "source": params.get("inputSource").and_then(Value::as_str).unwrap_or("client-backend"),
@@ -1538,7 +1538,7 @@ impl Backend {
             append_jsonl_value(
                 &self.context_compaction_records_path(),
                 &json!({
-                    "protocolVersion": "splitall.context.compaction.v1",
+                    "protocolVersion": "agentstudio.context.compaction.v1",
                     "recordId": &record_id,
                     "boundaryId": &boundary_id,
                     "sessionId": &session_id,
@@ -1552,7 +1552,7 @@ impl Backend {
             append_jsonl_value(
                 &self.context_session_memory_path(),
                 &json!({
-                    "protocolVersion": "splitall.context.compaction.v1",
+                    "protocolVersion": "agentstudio.context.compaction.v1",
                     "memoryId": format!("client_context_memory_{}", Uuid::new_v4()),
                     "sessionId": &session_id,
                     "boundaryId": &boundary_id,
@@ -1577,7 +1577,7 @@ impl Backend {
     pub fn context_compaction_records(&self, params: Value) -> Result<Value> {
         let limit = params.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
         Ok(json!({
-            "protocolVersion": "splitall.context.compaction.v1",
+            "protocolVersion": "agentstudio.context.compaction.v1",
             "records": read_jsonl_tail(&self.context_compaction_records_path(), limit)?
         }))
     }
@@ -1600,7 +1600,7 @@ impl Backend {
             })
             .collect::<Vec<_>>();
         Ok(json!({
-            "protocolVersion": "splitall.context.compaction.v1",
+            "protocolVersion": "agentstudio.context.compaction.v1",
             "records": records
         }))
     }
@@ -1611,7 +1611,7 @@ impl Backend {
             .and_then(Value::as_str)
             .unwrap_or_default();
         let record = json!({
-            "protocolVersion": "splitall.context.compaction.v1",
+            "protocolVersion": "agentstudio.context.compaction.v1",
             "memoryId": format!("client_context_memory_clear_{}", Uuid::new_v4()),
             "sessionId": session_id,
             "status": "cleared",
@@ -1624,7 +1624,7 @@ impl Backend {
             json!({ "sessionId": session_id }),
         )?;
         Ok(json!({
-            "protocolVersion": "splitall.context.compaction.v1",
+            "protocolVersion": "agentstudio.context.compaction.v1",
             "ok": true,
             "record": record
         }))
@@ -1994,7 +1994,7 @@ impl Backend {
             "syncBatchId": sync_batch_id.clone(),
             "contentHash": content_hash.clone(),
             "capturedAt": captured_at.clone(),
-            "mode": "splitall-client-backend"
+            "mode": "agentstudio-client-backend"
         });
         let manifest = json!({
             "inputDigest": input_digest,
@@ -2369,7 +2369,7 @@ impl Backend {
             .to_string();
         let disposition = response.header("content-disposition").unwrap_or("");
         let file_name = content_disposition_filename(disposition)
-            .unwrap_or_else(|| format!("splitall-result.{}", format));
+            .unwrap_or_else(|| format!("agentstudio-result.{}", format));
         let mut reader = response.into_reader();
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes)?;
@@ -2649,7 +2649,7 @@ impl Backend {
         let mut child = Command::new(tool)
             .arg("export")
             .arg(&workspace)
-            .env("SPLITALL_PORTABLE_DIR", &self.data_dir)
+            .env("AGENTSTUDIO_PORTABLE_DIR", &self.data_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(stderr_file))
@@ -2858,7 +2858,7 @@ impl Backend {
         let tool = self.ensure_macos_mail_tool()?;
         let output = Command::new(tool)
             .args(args)
-            .env("SPLITALL_PORTABLE_DIR", &self.data_dir)
+            .env("AGENTSTUDIO_PORTABLE_DIR", &self.data_dir)
             .output()?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -2876,7 +2876,7 @@ impl Backend {
         if !cfg!(target_os = "macos") {
             return Err(anyhow!("macOS Mail helper is only available on macOS"));
         }
-        if let Ok(value) = env::var("SPLITALL_MACOS_MAIL_TOOL_PATH") {
+        if let Ok(value) = env::var("AGENTSTUDIO_MACOS_MAIL_TOOL_PATH") {
             let path = PathBuf::from(value.trim());
             if path.exists() {
                 return Ok(path);
@@ -2884,7 +2884,7 @@ impl Backend {
         }
         if let Ok(exe) = env::current_exe() {
             if let Some(parent) = exe.parent() {
-                let sibling = parent.join("splitall-macos-mail-tool");
+                let sibling = parent.join("agentstudio-macos-mail-tool");
                 if sibling.exists() {
                     return Ok(sibling);
                 }
@@ -3823,7 +3823,7 @@ struct TaxonomyRule {
 }
 
 pub fn portable_data_dir() -> Result<PathBuf> {
-    if let Ok(value) = env::var("SPLITALL_PORTABLE_DIR") {
+    if let Ok(value) = env::var("AGENTSTUDIO_PORTABLE_DIR") {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             let path = PathBuf::from(trimmed);
@@ -3841,7 +3841,7 @@ pub fn portable_data_dir() -> Result<PathBuf> {
         }
     }
 
-    let project_dirs = directories::ProjectDirs::from("com", "splitall", "flutter-client")
+    let project_dirs = directories::ProjectDirs::from("com", "agentstudio", "flutter-client")
         .ok_or_else(|| anyhow!("cannot resolve application support directory"))?;
     let fallback = project_dirs.config_dir().join("portable-data");
     fs::create_dir_all(&fallback)?;
@@ -4024,7 +4024,7 @@ pub fn rpc_call(endpoint: &RpcEndpoint, method: &str, params: Value) -> Result<V
     let response: Value = http_json_agent()
         .post(&format!("{}/rpc", endpoint.base_url.trim_end_matches('/')))
         .set("content-type", "application/json")
-        .set("x-splitall-client-token", &endpoint.token)
+        .set("x-agentstudio-client-token", &endpoint.token)
         .send_json(request)?
         .into_json()?;
 
@@ -4135,13 +4135,13 @@ fn start_local_socket_rpc(
 ) -> Result<String> {
     let print_name = if GenericNamespaced::is_supported() {
         format!(
-            "splitall-clientd-{}.sock",
+            "agentstudio-clientd-{}.sock",
             workspace_token(&backend.data_dir)
         )
     } else {
         backend
             .backend_dir()
-            .join("splitall-clientd.sock")
+            .join("agentstudio-clientd.sock")
             .to_string_lossy()
             .to_string()
     };
@@ -4202,7 +4202,7 @@ fn handle_rpc_stream<S: Read + Write>(mut stream: S, backend: &Backend, token: &
 
     let header_text = String::from_utf8_lossy(&buffer[..header_end]).to_string();
     let content_length = content_length(&header_text).unwrap_or(0);
-    let provided_token = header_value(&header_text, "x-splitall-client-token").unwrap_or_default();
+    let provided_token = header_value(&header_text, "x-agentstudio-client-token").unwrap_or_default();
     let body_start = header_end + 4;
     while buffer.len() < body_start + content_length {
         let read = stream.read(&mut chunk)?;
@@ -4271,12 +4271,12 @@ fn service_console_auth(config: &ClientConfig) -> Option<ConsoleServiceAuth> {
 fn extract_console_session_cookie(header: &str) -> String {
     for part in header.split(',') {
         let cookie = part.split(';').next().unwrap_or("").trim();
-        if cookie.starts_with("splitall_console_session=") {
+        if cookie.starts_with("agentstudio_console_session=") {
             return cookie.to_string();
         }
     }
     let cookie = header.split(';').next().unwrap_or("").trim();
-    if cookie.starts_with("splitall_console_session=") {
+    if cookie.starts_with("agentstudio_console_session=") {
         return cookie.to_string();
     }
     String::new()
@@ -4865,9 +4865,9 @@ fn apply_console_session_auth(
     }
     if !request_is_safe(method) {
         if !session.csrf.trim().is_empty() {
-            request = request.set("x-splitall-csrf", session.csrf.trim());
+            request = request.set("x-agentstudio-csrf", session.csrf.trim());
         }
-        request = request.set("x-splitall-safety-confirm", "true");
+        request = request.set("x-agentstudio-safety-confirm", "true");
     }
     request
 }
@@ -7327,7 +7327,7 @@ fn render_cached_document(
         atomic_write_json(
             &PathBuf::from(json_path),
             &json!({
-                "schemaVersion": "splitall.client.knowledge.document.v1",
+                "schemaVersion": "agentstudio.client.knowledge.document.v1",
                 "document": document,
                 "sections": sections,
                 "blocks": blocks,
@@ -8147,7 +8147,7 @@ mod tests {
     use std::thread;
 
     fn unique_temp_dir(name: &str) -> PathBuf {
-        let path = env::temp_dir().join(format!("splitall-{}-{}", name, Uuid::new_v4()));
+        let path = env::temp_dir().join(format!("agentstudio-{}-{}", name, Uuid::new_v4()));
         fs::create_dir_all(&path).unwrap();
         path
     }
@@ -8263,7 +8263,7 @@ mod tests {
                         }),
                         &[(
                             "Set-Cookie",
-                            "splitall_console_session=session_test; Path=/",
+                            "agentstudio_console_session=session_test; Path=/",
                         )],
                     );
                 } else {
@@ -9472,7 +9472,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(result["protocolVersion"], "splitall.context.compaction.v1");
+        assert_eq!(result["protocolVersion"], "agentstudio.context.compaction.v1");
         assert_eq!(result["compacted"], true);
         assert!(
             result["summary"]
@@ -9572,7 +9572,7 @@ mod tests {
         assert_eq!(requests[1].path, "/api/runtime/info");
         assert_eq!(
             requests[1].headers.get("cookie").map(String::as_str),
-            Some("splitall_console_session=session_test")
+            Some("agentstudio_console_session=session_test")
         );
         cleanup(&dir);
     }

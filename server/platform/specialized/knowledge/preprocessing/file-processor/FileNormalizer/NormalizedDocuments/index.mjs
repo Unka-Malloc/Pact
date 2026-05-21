@@ -276,7 +276,7 @@ async function writeDocxSpec({
   const documentId = docId(adapterId.replace(/[^a-z0-9]+/gi, "-"), source, `${granularity}:${fileName}`);
   const machineYaml = buildMachineYamlDocument({
     schemaVersion: 1,
-    artifactType: "splitall.normalized-document.machine.v1",
+    artifactType: "agentstudio.normalized-document.machine.v1",
     role: "machine-readable-normalization",
     humanDocumentId: documentId,
     humanDocumentRelativePath: relativePath,
@@ -1141,7 +1141,7 @@ export async function generateNormalizedDocuments({
 
   const manifest = {
     schemaVersion: 1,
-    packageType: "splitall.normalized-documents",
+    packageType: "agentstudio.normalized-documents",
     packageRole: "external-knowledge-corpus",
     batchId: jobId,
     generatedAt,

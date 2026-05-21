@@ -22,7 +22,7 @@ function cookieHeaderFrom(response) {
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
       : String(response.headers.get("set-cookie") || "")
-          .split(/,(?=\s*splitall_)/)
+          .split(/,(?=\s*agentstudio_)/)
           .filter(Boolean);
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
@@ -53,7 +53,7 @@ function authOptions(auth, options = {}) {
       ...(options.headers || {}),
       Cookie: auth.cookie,
       ...(!["GET", "HEAD", "OPTIONS"].includes(method)
-        ? { "x-splitall-csrf": auth.csrf }
+        ? { "x-agentstudio-csrf": auth.csrf }
         : {})
     }
   };
@@ -102,7 +102,7 @@ function buildUploadedText(name, relativePath, text) {
   };
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-console-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-console-"));
 const mockDocumentParserModulePath = fileURLToPath(
   new URL("../../tests/server/mock-structured-document-parser.mjs", import.meta.url)
 );
@@ -154,7 +154,7 @@ try {
             "console-kb-note.txt",
             "notes/console-kb-note.txt",
             [
-              "SplitAll knowledge console verification note.",
+              "AgentStudio knowledge console verification note.",
               "The console can search evidence packs, render markdown, and inspect normalized DOCX output.",
               "The retrieval phrase is console evidence markdown operations."
             ].join("\n")
@@ -205,7 +205,7 @@ try {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-splitall-safety-confirm": "true"
+        "x-agentstudio-safety-confirm": "true"
       },
       body: JSON.stringify({
         label: "Conflict Fixture",
@@ -289,7 +289,7 @@ try {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-splitall-safety-confirm": "true"
+        "x-agentstudio-safety-confirm": "true"
       },
       body: JSON.stringify({
         label: "Hydration Command Fixture",
@@ -389,7 +389,7 @@ try {
       })
     })
   );
-  assert.match(rendered.markdown, /splitall_knowledge|console evidence markdown/i);
+  assert.match(rendered.markdown, /agentstudio_knowledge|console evidence markdown/i);
 
   const maintenance = await fetchJson(
     `${server.url}/api/knowledge/maintenance`,

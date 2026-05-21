@@ -67,11 +67,11 @@ import { buildKnowledgeDocxExport } from "./knowledge-docx-export.mjs";
 import { buildKnowledgeMarkdownExport } from "./knowledge-markdown-export.mjs";
 import { buildKnowledgeHtmlExport } from "./knowledge-html-export.mjs";
 
-export const KNOWLEDGE_PROTOCOL_VERSION = "splitall.knowledge.v1";
-export const VECTOR_PROTOCOL_VERSION = "splitall.vector.v1";
-export const EMBEDDING_PROTOCOL_VERSION = "splitall.embedding.v1";
-export const ASSET_STORE_PROTOCOL_VERSION = "splitall.assetStore.v1";
-export const RETRIEVAL_PROTOCOL_VERSION = "splitall.retrieval.v1";
+export const KNOWLEDGE_PROTOCOL_VERSION = "agentstudio.knowledge.v1";
+export const VECTOR_PROTOCOL_VERSION = "agentstudio.vector.v1";
+export const EMBEDDING_PROTOCOL_VERSION = "agentstudio.embedding.v1";
+export const ASSET_STORE_PROTOCOL_VERSION = "agentstudio.assetStore.v1";
+export const RETRIEVAL_PROTOCOL_VERSION = "agentstudio.retrieval.v1";
 export const LEARNING_RUNTIME_PROTOCOL_VERSION = LEARNING_PROTOCOL_VERSION;
 
 function nowIso() {
@@ -4353,7 +4353,7 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
     };
     const lines = [
       "---",
-      "splitall_knowledge:",
+      "agentstudio_knowledge:",
       `  protocolVersion: ${machineReadable.protocolVersion}`,
       `  evidenceId: ${machineReadable.evidenceId}`,
       `  score: ${Number(machineReadable.score || 0).toFixed(4)}`,
@@ -6845,7 +6845,7 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
           HAVING n > 1
         )) AS duplicate_source_hash_documents,
         (SELECT COUNT(*) FROM kc_assets WHERE asset_type = 'image' AND caption = '' AND ocr_text = '') AS images_without_text,
-        (SELECT COUNT(*) FROM kc_evidence_packs WHERE markdown NOT LIKE '%splitall_knowledge:%') AS evidence_without_machine_metadata,
+        (SELECT COUNT(*) FROM kc_evidence_packs WHERE markdown NOT LIKE '%agentstudio_knowledge:%') AS evidence_without_machine_metadata,
         (SELECT COUNT(*) FROM kc_embeddings) AS embedding_count,
         ((SELECT COUNT(*) FROM kc_blocks) + (SELECT COUNT(*) FROM kc_assets)) AS embeddable_count
     `).get();

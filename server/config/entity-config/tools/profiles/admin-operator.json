@@ -3,9 +3,9 @@
   "label": "Admin Operator",
   "agentType": "operator",
   "toolsets": [
-    "splitall.admin",
-    "splitall.knowledge.admin",
-    "splitall.runtime.maintain"
+    "agentstudio.admin",
+    "agentstudio.knowledge.admin",
+    "agentstudio.runtime.maintain"
   ],
   "toolAllow": [],
   "toolDeny": [],

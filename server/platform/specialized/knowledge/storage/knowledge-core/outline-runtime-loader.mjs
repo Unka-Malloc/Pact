@@ -1,9 +1,9 @@
 export function createNoopDocumentOutlineRuntime() {
   return {
-    protocolVersion: "splitall.document-outline.v1",
+    protocolVersion: "agentstudio.document-outline.v1",
     build({ document = {}, sections = [], blocks = [], assets = [] } = {}) {
       return {
-        protocolVersion: "splitall.document-outline.v1",
+        protocolVersion: "agentstudio.document-outline.v1",
         documentId: document.documentId || "",
         nodeCount: 0,
         syntheticNodeCount: 0,

@@ -3,7 +3,7 @@ import {
   EVIDENCE_GATE_PROTOCOL_VERSION
 } from "../../retrieval/evidence-sufficiency-gate/index.mjs";
 
-export const KNOWLEDGE_AGENT_SKILL_PROTOCOL_VERSION = "splitall.knowledge-agent-skill.v1";
+export const KNOWLEDGE_AGENT_SKILL_PROTOCOL_VERSION = "agentstudio.knowledge-agent-skill.v1";
 
 const DEFAULT_TOOL_POLICY = {
   coarseToFineRequired: true,
@@ -114,7 +114,7 @@ function mergeSearchResults(results = [], query = "", limit = 20) {
     .slice(0, limit);
   return {
     ...primary,
-    protocolVersion: primary.protocolVersion || "splitall.knowledge.v1",
+    protocolVersion: primary.protocolVersion || "agentstudio.knowledge.v1",
     query,
     limit,
     mergedQueryCount: results.length,
@@ -135,7 +135,7 @@ export function createKnowledgeAgentSkillRuntime({
   function describe() {
     return {
       protocolVersion: KNOWLEDGE_AGENT_SKILL_PROTOCOL_VERSION,
-      name: "splitall.knowledge.agent-skill",
+      name: "agentstudio.knowledge.agent-skill",
       purpose: "Plan and execute evidence-grounded knowledge-base operations for stateless agents.",
       toolPolicy: DEFAULT_TOOL_POLICY,
       evidenceGateProtocolVersion: EVIDENCE_GATE_PROTOCOL_VERSION,

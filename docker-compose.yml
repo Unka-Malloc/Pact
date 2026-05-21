@@ -1,22 +1,22 @@
 services:
-  splitall-server:
+  agentstudio-server:
     build:
       context: .
       dockerfile: Dockerfile
-    image: splitall-server:local
-    container_name: splitall-server
+    image: agentstudio-server:local
+    container_name: agentstudio-server
     restart: unless-stopped
     ports:
       - "8787:8787"
     environment:
-      SPLITALL_SERVER_HOST: 0.0.0.0
-      SPLITALL_SERVER_PORT: 8787
-      SPLITALL_SERVER_DATA_DIR: /data
-      SPLITALL_SERVER_WITH_UI: "1"
-      SPLITALL_BOOTSTRAP_URL: http://127.0.0.1:8787
-      SPLITALL_ADVERTISED_BASE_URL: http://127.0.0.1:8787
-      SPLITALL_ACTIVE_SERVICE_URL: http://127.0.0.1:8787
+      AGENTSTUDIO_SERVER_HOST: 0.0.0.0
+      AGENTSTUDIO_SERVER_PORT: 8787
+      AGENTSTUDIO_SERVER_DATA_DIR: /data
+      AGENTSTUDIO_SERVER_WITH_UI: "1"
+      AGENTSTUDIO_BOOTSTRAP_URL: http://127.0.0.1:8787
+      AGENTSTUDIO_ADVERTISED_BASE_URL: http://127.0.0.1:8787
+      AGENTSTUDIO_ACTIVE_SERVICE_URL: http://127.0.0.1:8787
       CODEX_HOME: /codex-home
     volumes:
-      - ./.splitall-server-data:/data
+      - ./.agentstudio-server-data:/data
       - ${HOME}/.codex:/codex-home

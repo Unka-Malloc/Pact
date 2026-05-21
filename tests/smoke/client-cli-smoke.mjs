@@ -7,7 +7,7 @@ import path from "node:path";
 import process from "node:process";
 
 const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
-const portableDir = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-cli-smoke-"));
+const portableDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-cli-smoke-"));
 
 function runClient(args) {
   return new Promise((resolve, reject) => {
@@ -17,14 +17,14 @@ function runClient(args) {
       "--manifest-path",
       "client-cli/Cargo.toml",
       "--bin",
-      "splitall-client",
+      "agentstudio-client",
       "--",
       ...args
     ], {
       cwd: repoRoot,
       env: {
         ...process.env,
-        SPLITALL_PORTABLE_DIR: portableDir
+        AGENTSTUDIO_PORTABLE_DIR: portableDir
       },
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -45,11 +45,11 @@ function runClient(args) {
 
 async function runJson(args) {
   const result = await runClient(args);
-  assert.equal(result.code, 0, `splitall-client ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  assert.equal(result.code, 0, `agentstudio-client ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
   try {
     return JSON.parse(result.stdout || "{}");
   } catch (error) {
-    throw new Error(`splitall-client ${args.join(" ")} did not print JSON: ${error.message}\n${result.stdout}`);
+    throw new Error(`agentstudio-client ${args.join(" ")} did not print JSON: ${error.message}\n${result.stdout}`);
   }
 }
 

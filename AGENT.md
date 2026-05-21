@@ -1,4 +1,4 @@
-# SplitAll Agent Rules
+# AgentStudio Agent Rules
 
 ## 用户配置真实性
 

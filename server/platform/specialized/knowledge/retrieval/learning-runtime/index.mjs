@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const LEARNING_PROTOCOL_VERSION = "splitall.learning.v1";
+export const LEARNING_PROTOCOL_VERSION = "agentstudio.learning.v1";
 
 const DEFAULT_PROFILE = {
   profileId: "balanced",

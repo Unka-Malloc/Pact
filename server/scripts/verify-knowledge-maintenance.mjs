@@ -118,7 +118,7 @@ async function seedGarbageCleanupData(userDataPath) {
   }
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-maint-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-maint-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -290,9 +290,9 @@ try {
     })
   });
   assert.equal(rendered.contentType, "text/markdown; charset=utf-8");
-  assert.match(rendered.markdown, /^---\nsplitall_knowledge:/);
+  assert.match(rendered.markdown, /^---\nagentstudio_knowledge:/);
   const markdownMetadata = parseMarkdownJsonBlock(rendered.markdown);
-  assert.equal(markdownMetadata.protocolVersion, "splitall.knowledge.v1");
+  assert.equal(markdownMetadata.protocolVersion, "agentstudio.knowledge.v1");
   assert.equal(markdownMetadata.evidenceId, evidence.evidenceId);
   assert.ok(markdownMetadata.modalities.includes("image"));
 
@@ -408,7 +408,7 @@ try {
         requiredMetadataKeys: ["protocolVersion", "evidenceId", "modalities"],
         expected: {
           metadata: {
-            protocolVersion: "splitall.knowledge.v1",
+            protocolVersion: "agentstudio.knowledge.v1",
             evidenceId: evidence.evidenceId
           },
           assetRefs: [`/api/knowledge/assets/${encodeURIComponent(asset.assetId)}`]

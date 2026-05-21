@@ -190,7 +190,7 @@ const scenarios = [
             id: "business-config-permission",
             label: "Business Config Permission",
             scopeIds: ["knowledge:read"],
-            toolsetIds: ["splitall.knowledge.read"]
+            toolsetIds: ["agentstudio.knowledge.read"]
           }
         ]
       });
@@ -253,7 +253,7 @@ const scenarios = [
             id: "business-agent-readers",
             label: "Business Agent Readers",
             scopeIds: ["knowledge:read"],
-            toolsetIds: ["splitall.knowledge.read"]
+            toolsetIds: ["agentstudio.knowledge.read"]
           },
           {
             id: "business-agent-readers",
@@ -296,14 +296,14 @@ const scenarios = [
         {
           label: "business-scenario-tool-grant",
           scopes: ["knowledge:read"],
-          toolAllow: ["splitall.knowledge.health"]
+          toolAllow: ["agentstudio.knowledge.health"]
         },
         { auth: state.owner }
       );
       state.previewAllowed = await harness.post(
         "/api/tool-management/v1/policy/preview",
         {
-          toolId: "splitall.knowledge.health",
+          toolId: "agentstudio.knowledge.health",
           grantId: state.grant.payload.grant.id
         },
         { auth: state.owner }
@@ -311,7 +311,7 @@ const scenarios = [
       state.executed = await harness.post(
         "/api/tool-management/v1/execute",
         {
-          toolId: "splitall.knowledge.health",
+          toolId: "agentstudio.knowledge.health",
           input: {}
         },
         {
@@ -321,7 +321,7 @@ const scenarios = [
       state.denied = await harness.post(
         "/api/tool-management/v1/execute",
         {
-          toolId: "splitall.knowledge.search",
+          toolId: "agentstudio.knowledge.search",
           input: {}
         },
         {
@@ -341,7 +341,7 @@ const scenarios = [
       state.oldTokenAfterRotate = await harness.post(
         "/api/tool-management/v1/execute",
         {
-          toolId: "splitall.knowledge.health",
+          toolId: "agentstudio.knowledge.health",
           input: {}
         },
         {
@@ -365,7 +365,7 @@ const scenarios = [
       assert.equal([...ids].some((id) => id.startsWith("tool_platform.")), false);
       assert.equal([...ids].some((id) => id.startsWith("agent_tools.")), false);
       expectOk(state.catalog, "tool catalog");
-      assert.ok(state.catalog.payload.tools.some((tool) => tool.id === "splitall.knowledge.health"));
+      assert.ok(state.catalog.payload.tools.some((tool) => tool.id === "agentstudio.knowledge.health"));
       expectStatus(state.grant, 201, "create grant");
       expectOk(state.previewAllowed, "policy preview");
       assert.equal(state.previewAllowed.payload.decision.effect, "allow");

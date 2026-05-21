@@ -63,7 +63,7 @@ function normalizeDiscoveryConfig(config = {}, context = {}) {
 
   return {
     serverId: String(config.serverId || context.serverId || randomUUID()).trim(),
-    serverLabel: String(config.serverLabel || context.serverLabel || os.hostname() || "SplitAll")
+    serverLabel: String(config.serverLabel || context.serverLabel || os.hostname() || "AgentStudio")
       .trim(),
     bootstrapBaseUrl,
     advertisedBaseUrl,

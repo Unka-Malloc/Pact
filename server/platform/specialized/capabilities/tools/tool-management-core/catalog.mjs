@@ -77,7 +77,7 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
 
 const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
   {
-    id: "splitall.knowledge.read",
+    id: "agentstudio.knowledge.read",
     label: "Knowledge read",
     requiredScopes: ["knowledge:read"],
     maxRisk: "read_only",
@@ -85,7 +85,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: true
   },
   {
-    id: "splitall.knowledge.write",
+    id: "agentstudio.knowledge.write",
     label: "Knowledge write",
     requiredScopes: ["knowledge:read", "knowledge:write"],
     maxRisk: "safe_write",
@@ -93,7 +93,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.knowledge.maintain",
+    id: "agentstudio.knowledge.maintain",
     label: "Knowledge maintenance",
     requiredScopes: ["knowledge:read", "knowledge:write", "knowledge:maintain"],
     maxRisk: "repair_write",
@@ -101,7 +101,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.knowledge.admin",
+    id: "agentstudio.knowledge.admin",
     label: "Knowledge admin",
     requiredScopes: ["knowledge:read", "knowledge:write", "knowledge:maintain", "knowledge:admin"],
     maxRisk: "repair_write",
@@ -109,7 +109,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.storage.read",
+    id: "agentstudio.storage.read",
     label: "Storage read",
     requiredScopes: ["storage:read"],
     maxRisk: "read_only",
@@ -117,7 +117,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: true
   },
   {
-    id: "splitall.jobs.read",
+    id: "agentstudio.jobs.read",
     label: "Jobs read",
     requiredScopes: ["jobs:read"],
     maxRisk: "read_only",
@@ -125,7 +125,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: true
   },
   {
-    id: "splitall.document.parse",
+    id: "agentstudio.document.parse",
     label: "Document parse",
     requiredScopes: ["knowledge:read"],
     maxRisk: "read_only",
@@ -133,7 +133,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.document.convert",
+    id: "agentstudio.document.convert",
     label: "Document convert",
     requiredScopes: ["knowledge:write"],
     maxRisk: "safe_write",
@@ -141,7 +141,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.mail.import",
+    id: "agentstudio.mail.import",
     label: "Mail import",
     requiredScopes: ["knowledge:write"],
     maxRisk: "safe_write",
@@ -149,7 +149,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.result.export",
+    id: "agentstudio.result.export",
     label: "Result export",
     requiredScopes: ["knowledge:read"],
     maxRisk: "read_only",
@@ -157,7 +157,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.agent.workspace",
+    id: "agentstudio.agent.workspace",
     label: "Agent workspace",
     requiredScopes: ["knowledge:read", "knowledge:write"],
     maxRisk: "safe_write",
@@ -165,7 +165,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.agent.sync.publish",
+    id: "agentstudio.agent.sync.publish",
     label: "Agent sync publish",
     requiredScopes: ["agent_sync:publish"],
     maxRisk: "safe_write",
@@ -173,7 +173,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.runtime.read",
+    id: "agentstudio.runtime.read",
     label: "Runtime read",
     requiredScopes: ["storage:read", "jobs:read"],
     maxRisk: "read_only",
@@ -181,7 +181,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.runtime.maintain",
+    id: "agentstudio.runtime.maintain",
     label: "Runtime maintain",
     requiredScopes: ["knowledge:maintain"],
     maxRisk: "repair_write",
@@ -189,7 +189,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.mount.dev",
+    id: "agentstudio.mount.dev",
     label: "Mount development",
     requiredScopes: ["knowledge:admin"],
     maxRisk: "repair_write",
@@ -197,8 +197,8 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "splitall.admin",
-    label: "SplitAll admin",
+    id: "agentstudio.admin",
+    label: "AgentStudio admin",
     requiredScopes: ["knowledge:admin", "storage:read", "jobs:read", "agent_sync:publish"],
     maxRisk: "repair_write",
     grantable: false,
@@ -211,9 +211,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "maintenance-agent",
     label: "Maintenance Agent",
     agentType: "maintenance",
-    toolsets: ["splitall.runtime.read", "splitall.storage.read", "splitall.jobs.read", "splitall.knowledge.maintain"],
+    toolsets: ["agentstudio.runtime.read", "agentstudio.storage.read", "agentstudio.jobs.read", "agentstudio.knowledge.maintain"],
     toolAllow: [],
-    toolDeny: ["splitall.admin"],
+    toolDeny: ["agentstudio.admin"],
     maxRisk: "repair_write",
     approvalPolicy: "confirm_repair",
     concurrencyLimit: 1,
@@ -224,9 +224,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "agent-exploration",
     label: "Agent Exploration",
     agentType: "exploration",
-    toolsets: ["splitall.knowledge.read"],
+    toolsets: ["agentstudio.knowledge.read"],
     toolAllow: [],
-    toolDeny: ["splitall.admin"],
+    toolDeny: ["agentstudio.admin"],
     maxRisk: "read_only",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 4,
@@ -237,9 +237,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "document-ingestion-agent",
     label: "Document Ingestion Agent",
     agentType: "ingestion",
-    toolsets: ["splitall.document.parse", "splitall.document.convert", "splitall.knowledge.write"],
+    toolsets: ["agentstudio.document.parse", "agentstudio.document.convert", "agentstudio.knowledge.write"],
     toolAllow: [],
-    toolDeny: ["splitall.admin"],
+    toolDeny: ["agentstudio.admin"],
     maxRisk: "safe_write",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 2,
@@ -250,9 +250,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "mail-import-agent",
     label: "Mail Import Agent",
     agentType: "mail-import",
-    toolsets: ["splitall.mail.import", "splitall.document.parse", "splitall.knowledge.write"],
+    toolsets: ["agentstudio.mail.import", "agentstudio.document.parse", "agentstudio.knowledge.write"],
     toolAllow: [],
-    toolDeny: ["splitall.admin"],
+    toolDeny: ["agentstudio.admin"],
     maxRisk: "safe_write",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 2,
@@ -263,9 +263,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "external-knowledge-reader",
     label: "External Knowledge Reader",
     agentType: "external",
-    toolsets: ["splitall.knowledge.read"],
+    toolsets: ["agentstudio.knowledge.read"],
     toolAllow: [],
-    toolDeny: ["splitall.admin"],
+    toolDeny: ["agentstudio.admin"],
     maxRisk: "read_only",
     approvalPolicy: "deny_write",
     concurrencyLimit: 4,
@@ -276,9 +276,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "external-knowledge-writer",
     label: "External Knowledge Writer",
     agentType: "external",
-    toolsets: ["splitall.knowledge.read", "splitall.knowledge.write"],
+    toolsets: ["agentstudio.knowledge.read", "agentstudio.knowledge.write"],
     toolAllow: [],
-    toolDeny: ["splitall.admin"],
+    toolDeny: ["agentstudio.admin"],
     maxRisk: "safe_write",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 2,
@@ -289,7 +289,7 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "admin-operator",
     label: "Admin Operator",
     agentType: "operator",
-    toolsets: ["splitall.admin", "splitall.knowledge.admin", "splitall.runtime.maintain"],
+    toolsets: ["agentstudio.admin", "agentstudio.knowledge.admin", "agentstudio.runtime.maintain"],
     toolAllow: [],
     toolDeny: [],
     maxRisk: "repair_write",
@@ -311,109 +311,109 @@ export const TOOL_MANAGEMENT_PROFILES = Object.freeze(
 );
 
 const TOOL_ID_BY_OPERATION_ID = Object.freeze({
-  "runtime.info": "splitall.runtime.info",
-  "runtime.mounts": "splitall.runtime.mounts",
-  "runtime.set_mounts": "splitall.runtime.mounts.set",
-  "runtime.reload_mounts": "splitall.runtime.mounts.reload",
-  "storage.summary": "splitall.storageSummary",
-  "jobs.list": "splitall.jobs.list",
-  "jobs.get": "splitall.jobs.get",
-  "knowledge.affair_taxonomy": "splitall.knowledge.affairTaxonomy",
-  "knowledge.console": "splitall.knowledge.console",
-  "knowledge.config_schema": "splitall.knowledge.configSchema",
-  "knowledge.capabilities": "splitall.knowledge.capabilities",
-  "knowledge.export_docx": "splitall.knowledge.exportDocx",
-  "knowledge.health": "splitall.knowledge.health",
-  "knowledge.maintenance.get": "splitall.knowledge.maintenance.get",
-  "knowledge.maintenance.set": "splitall.knowledge.maintenance.set",
-  "knowledge.reindex": "splitall.knowledge.reindex",
-  "knowledge.maintenance.run": "splitall.knowledge.maintenance.run",
-  "knowledge.sync": "splitall.knowledge.sync",
-  "knowledge.changes": "splitall.knowledge.changes",
-  "knowledge.review_items": "splitall.knowledge.reviewItems",
-  "knowledge.review_resolve": "splitall.knowledge.reviewResolve",
-  "knowledge.feedback": "splitall.knowledge.feedback",
-  "knowledge.suggestions": "splitall.knowledge.suggestions",
-  "knowledge.suggestion_resolve": "splitall.knowledge.suggestionResolve",
-  "knowledge.learning.jobs": "splitall.knowledge.learning.jobs",
-  "knowledge.learning.health": "splitall.knowledge.learning.health",
-  "knowledge.evidence_gate.evaluate": "splitall.knowledge.evidenceGate.evaluate",
-  "knowledge.agent_skill.describe": "splitall.knowledge.agentSkill",
-  "knowledge.agent_skill.plan": "splitall.knowledge.agentSkill.plan",
-  "knowledge.agent_skill.run": "splitall.knowledge.agentSkill.run",
-  "knowledge.skills.list": "splitall.knowledge.skills.list",
-  "knowledge.skills.get": "splitall.knowledge.skills.get",
-  "knowledge.skills.generate": "splitall.knowledge.skills.generate",
-  "knowledge.skills.propose": "splitall.knowledge.skills.propose",
-  "knowledge.skills.resolve": "splitall.knowledge.skills.resolve",
-  "knowledge.skills.framework": "splitall.knowledge.skillFramework",
-  "knowledge.skills.framework_save": "splitall.knowledge.skillFramework.set",
-  "knowledge.golden_rules.list": "splitall.knowledge.goldenRules.list",
-  "knowledge.golden_rules.save": "splitall.knowledge.goldenRules.set",
-  "knowledge.golden_rules.publish": "splitall.knowledge.goldenRules.publish",
-  "knowledge.golden_rules.rollback": "splitall.knowledge.goldenRules.rollback",
-  "knowledge.rule_authoring.chat": "splitall.knowledge.ruleAuthoring.chat",
-  "knowledge.rule_authoring.runs.get": "splitall.knowledge.ruleAuthoring.run",
-  "knowledge.gold_cases.list": "splitall.knowledge.goldCases.list",
-  "knowledge.gold_cases.save": "splitall.knowledge.goldCases.set",
-  "knowledge.distillation.runs.create": "splitall.knowledge.distillation.runs.create",
-  "knowledge.distillation.runs.get": "splitall.knowledge.distillation.runs.get",
-  "knowledge.skills.evaluation.runs.create": "splitall.knowledge.skills.evaluation.runs.create",
-  "knowledge.skills.deployments.create": "splitall.knowledge.skills.deployments.create",
-  "knowledge.skills.deployments.rollback": "splitall.knowledge.skills.deployments.rollback",
-  "knowledge.training_sets.export": "splitall.knowledge.trainingSets.export",
-  "knowledge.evaluation.runs.create": "splitall.knowledge.evaluation.runs.create",
-  "knowledge.evaluation.runs.list": "splitall.knowledge.evaluation.runs.list",
-  "knowledge.evaluation.runs.get": "splitall.knowledge.evaluation.runs.get",
-  "knowledge.model_roles": "splitall.knowledge.modelRoles",
-  "knowledge.model_decision": "splitall.knowledge.modelDecision",
-  "knowledge.evolution.describe": "splitall.knowledge.evolution",
-  "knowledge.evolution.runs.create": "splitall.knowledge.evolution.runs.create",
-  "knowledge.evolution.runs.list": "splitall.knowledge.evolution.runs.list",
-  "knowledge.evolution.runs.get": "splitall.knowledge.evolution.runs.get",
-  "knowledge.hierarchy.audit": "splitall.knowledge.hierarchy.audit",
-  "knowledge.evolution.deployments.list": "splitall.knowledge.evolution.deployments.list",
-  "knowledge.evolution.deployments.promote": "splitall.knowledge.evolution.deployments.promote",
-  "knowledge.evolution.deployments.rollback": "splitall.knowledge.evolution.deployments.rollback",
-  "context.profiles.get": "splitall.context.profiles",
-  "context.profiles.set": "splitall.context.profiles.set",
-  "context.session_memory.get": "splitall.agentMemory.sessionMemory.get",
-  "context.session_memory.clear": "splitall.agentMemory.sessionMemory.clear",
-  "client_runtime.profiles.get": "splitall.clientRuntime.profiles",
-  "client_runtime.profiles.set": "splitall.clientRuntime.profiles.set",
-  "client_runtime.resolve": "splitall.clientRuntime.resolve",
-  "client_runtime.status": "splitall.clientRuntime.status",
-  "agent_workspaces.list": "splitall.agentWorkspace.list",
-  "agent_workspaces.get": "splitall.agentWorkspace.get",
-  "agent_workspaces.context.get": "splitall.agentWorkspace.context",
-  "agent_workspaces.context_bundle.export": "splitall.agentWorkspace.contextBundle.export",
-  "agent_workspaces.context_bundle.restore": "splitall.agentWorkspace.contextBundle.restore",
-  "agent_workspaces.chain.get": "splitall.agentWorkspace.chain",
-  "agent_workspaces.parent.set": "splitall.agentWorkspace.parent.set",
-  "agent_workspaces.profile.hotswap": "splitall.agentWorkspace.profile.hotswap",
-  "agent_workspaces.sources.set": "splitall.agentWorkspace.sources.set",
-  "agent_workspaces.share": "splitall.agentWorkspace.share",
-  "agent_workspaces.unshare": "splitall.agentWorkspace.unshare",
-  "agent_sessions.list": "splitall.agentSession.list",
-  "agent_sessions.get": "splitall.agentSession.get",
-  "agent_sessions.context.get": "splitall.agentSession.context",
-  "agent_sessions.events.append": "splitall.agentSession.events.append",
-  "agent_sessions.fork": "splitall.agentSession.fork",
-  "agent_workspaces.submissions.resolve": "splitall.agentWorkspace.submissionResolve",
-  "agent_workspaces.issues.resolve": "splitall.agentWorkspace.issueResolve",
-  "agent_workspaces.locks.list": "splitall.agentWorkspace.locks",
-  "agent_workspaces.locks.write": "splitall.agentWorkspace.lock",
-  "knowledge.summarization.runs.create": "splitall.knowledge.summarization.runs.create",
-  "knowledge.summarization.runs.get": "splitall.knowledge.summarization.runs.get",
-  "knowledge.summarization.runs.approve": "splitall.knowledge.summarization.runs.approve",
-  "knowledge.search": "splitall.knowledge.search",
-  "knowledge.document_structure": "splitall.knowledge.documentStructure",
-  "knowledge.item": "splitall.knowledge.item",
-  "knowledge.evidence": "splitall.knowledge.evidence",
-  "knowledge.asset": "splitall.knowledge.asset",
-  "knowledge.render_markdown": "splitall.knowledge.renderMarkdown",
-  "knowledge.graph": "splitall.knowledge.graph",
-  "agent_sync.publish": "splitall.agentSync.publish"
+  "runtime.info": "agentstudio.runtime.info",
+  "runtime.mounts": "agentstudio.runtime.mounts",
+  "runtime.set_mounts": "agentstudio.runtime.mounts.set",
+  "runtime.reload_mounts": "agentstudio.runtime.mounts.reload",
+  "storage.summary": "agentstudio.storageSummary",
+  "jobs.list": "agentstudio.jobs.list",
+  "jobs.get": "agentstudio.jobs.get",
+  "knowledge.affair_taxonomy": "agentstudio.knowledge.affairTaxonomy",
+  "knowledge.console": "agentstudio.knowledge.console",
+  "knowledge.config_schema": "agentstudio.knowledge.configSchema",
+  "knowledge.capabilities": "agentstudio.knowledge.capabilities",
+  "knowledge.export_docx": "agentstudio.knowledge.exportDocx",
+  "knowledge.health": "agentstudio.knowledge.health",
+  "knowledge.maintenance.get": "agentstudio.knowledge.maintenance.get",
+  "knowledge.maintenance.set": "agentstudio.knowledge.maintenance.set",
+  "knowledge.reindex": "agentstudio.knowledge.reindex",
+  "knowledge.maintenance.run": "agentstudio.knowledge.maintenance.run",
+  "knowledge.sync": "agentstudio.knowledge.sync",
+  "knowledge.changes": "agentstudio.knowledge.changes",
+  "knowledge.review_items": "agentstudio.knowledge.reviewItems",
+  "knowledge.review_resolve": "agentstudio.knowledge.reviewResolve",
+  "knowledge.feedback": "agentstudio.knowledge.feedback",
+  "knowledge.suggestions": "agentstudio.knowledge.suggestions",
+  "knowledge.suggestion_resolve": "agentstudio.knowledge.suggestionResolve",
+  "knowledge.learning.jobs": "agentstudio.knowledge.learning.jobs",
+  "knowledge.learning.health": "agentstudio.knowledge.learning.health",
+  "knowledge.evidence_gate.evaluate": "agentstudio.knowledge.evidenceGate.evaluate",
+  "knowledge.agent_skill.describe": "agentstudio.knowledge.agentSkill",
+  "knowledge.agent_skill.plan": "agentstudio.knowledge.agentSkill.plan",
+  "knowledge.agent_skill.run": "agentstudio.knowledge.agentSkill.run",
+  "knowledge.skills.list": "agentstudio.knowledge.skills.list",
+  "knowledge.skills.get": "agentstudio.knowledge.skills.get",
+  "knowledge.skills.generate": "agentstudio.knowledge.skills.generate",
+  "knowledge.skills.propose": "agentstudio.knowledge.skills.propose",
+  "knowledge.skills.resolve": "agentstudio.knowledge.skills.resolve",
+  "knowledge.skills.framework": "agentstudio.knowledge.skillFramework",
+  "knowledge.skills.framework_save": "agentstudio.knowledge.skillFramework.set",
+  "knowledge.golden_rules.list": "agentstudio.knowledge.goldenRules.list",
+  "knowledge.golden_rules.save": "agentstudio.knowledge.goldenRules.set",
+  "knowledge.golden_rules.publish": "agentstudio.knowledge.goldenRules.publish",
+  "knowledge.golden_rules.rollback": "agentstudio.knowledge.goldenRules.rollback",
+  "knowledge.rule_authoring.chat": "agentstudio.knowledge.ruleAuthoring.chat",
+  "knowledge.rule_authoring.runs.get": "agentstudio.knowledge.ruleAuthoring.run",
+  "knowledge.gold_cases.list": "agentstudio.knowledge.goldCases.list",
+  "knowledge.gold_cases.save": "agentstudio.knowledge.goldCases.set",
+  "knowledge.distillation.runs.create": "agentstudio.knowledge.distillation.runs.create",
+  "knowledge.distillation.runs.get": "agentstudio.knowledge.distillation.runs.get",
+  "knowledge.skills.evaluation.runs.create": "agentstudio.knowledge.skills.evaluation.runs.create",
+  "knowledge.skills.deployments.create": "agentstudio.knowledge.skills.deployments.create",
+  "knowledge.skills.deployments.rollback": "agentstudio.knowledge.skills.deployments.rollback",
+  "knowledge.training_sets.export": "agentstudio.knowledge.trainingSets.export",
+  "knowledge.evaluation.runs.create": "agentstudio.knowledge.evaluation.runs.create",
+  "knowledge.evaluation.runs.list": "agentstudio.knowledge.evaluation.runs.list",
+  "knowledge.evaluation.runs.get": "agentstudio.knowledge.evaluation.runs.get",
+  "knowledge.model_roles": "agentstudio.knowledge.modelRoles",
+  "knowledge.model_decision": "agentstudio.knowledge.modelDecision",
+  "knowledge.evolution.describe": "agentstudio.knowledge.evolution",
+  "knowledge.evolution.runs.create": "agentstudio.knowledge.evolution.runs.create",
+  "knowledge.evolution.runs.list": "agentstudio.knowledge.evolution.runs.list",
+  "knowledge.evolution.runs.get": "agentstudio.knowledge.evolution.runs.get",
+  "knowledge.hierarchy.audit": "agentstudio.knowledge.hierarchy.audit",
+  "knowledge.evolution.deployments.list": "agentstudio.knowledge.evolution.deployments.list",
+  "knowledge.evolution.deployments.promote": "agentstudio.knowledge.evolution.deployments.promote",
+  "knowledge.evolution.deployments.rollback": "agentstudio.knowledge.evolution.deployments.rollback",
+  "context.profiles.get": "agentstudio.context.profiles",
+  "context.profiles.set": "agentstudio.context.profiles.set",
+  "context.session_memory.get": "agentstudio.agentMemory.sessionMemory.get",
+  "context.session_memory.clear": "agentstudio.agentMemory.sessionMemory.clear",
+  "client_runtime.profiles.get": "agentstudio.clientRuntime.profiles",
+  "client_runtime.profiles.set": "agentstudio.clientRuntime.profiles.set",
+  "client_runtime.resolve": "agentstudio.clientRuntime.resolve",
+  "client_runtime.status": "agentstudio.clientRuntime.status",
+  "agent_workspaces.list": "agentstudio.agentWorkspace.list",
+  "agent_workspaces.get": "agentstudio.agentWorkspace.get",
+  "agent_workspaces.context.get": "agentstudio.agentWorkspace.context",
+  "agent_workspaces.context_bundle.export": "agentstudio.agentWorkspace.contextBundle.export",
+  "agent_workspaces.context_bundle.restore": "agentstudio.agentWorkspace.contextBundle.restore",
+  "agent_workspaces.chain.get": "agentstudio.agentWorkspace.chain",
+  "agent_workspaces.parent.set": "agentstudio.agentWorkspace.parent.set",
+  "agent_workspaces.profile.hotswap": "agentstudio.agentWorkspace.profile.hotswap",
+  "agent_workspaces.sources.set": "agentstudio.agentWorkspace.sources.set",
+  "agent_workspaces.share": "agentstudio.agentWorkspace.share",
+  "agent_workspaces.unshare": "agentstudio.agentWorkspace.unshare",
+  "agent_sessions.list": "agentstudio.agentSession.list",
+  "agent_sessions.get": "agentstudio.agentSession.get",
+  "agent_sessions.context.get": "agentstudio.agentSession.context",
+  "agent_sessions.events.append": "agentstudio.agentSession.events.append",
+  "agent_sessions.fork": "agentstudio.agentSession.fork",
+  "agent_workspaces.submissions.resolve": "agentstudio.agentWorkspace.submissionResolve",
+  "agent_workspaces.issues.resolve": "agentstudio.agentWorkspace.issueResolve",
+  "agent_workspaces.locks.list": "agentstudio.agentWorkspace.locks",
+  "agent_workspaces.locks.write": "agentstudio.agentWorkspace.lock",
+  "knowledge.summarization.runs.create": "agentstudio.knowledge.summarization.runs.create",
+  "knowledge.summarization.runs.get": "agentstudio.knowledge.summarization.runs.get",
+  "knowledge.summarization.runs.approve": "agentstudio.knowledge.summarization.runs.approve",
+  "knowledge.search": "agentstudio.knowledge.search",
+  "knowledge.document_structure": "agentstudio.knowledge.documentStructure",
+  "knowledge.item": "agentstudio.knowledge.item",
+  "knowledge.evidence": "agentstudio.knowledge.evidence",
+  "knowledge.asset": "agentstudio.knowledge.asset",
+  "knowledge.render_markdown": "agentstudio.knowledge.renderMarkdown",
+  "knowledge.graph": "agentstudio.knowledge.graph",
+  "agent_sync.publish": "agentstudio.agentSync.publish"
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
@@ -472,13 +472,13 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
 });
 
 const TOOLSET_BY_SCOPE = Object.freeze({
-  "knowledge:read": "splitall.knowledge.read",
-  "knowledge:write": "splitall.knowledge.write",
-  "knowledge:maintain": "splitall.knowledge.maintain",
-  "knowledge:admin": "splitall.knowledge.admin",
-  "storage:read": "splitall.storage.read",
-  "jobs:read": "splitall.jobs.read",
-  "agent_sync:publish": "splitall.agent.sync.publish"
+  "knowledge:read": "agentstudio.knowledge.read",
+  "knowledge:write": "agentstudio.knowledge.write",
+  "knowledge:maintain": "agentstudio.knowledge.maintain",
+  "knowledge:admin": "agentstudio.knowledge.admin",
+  "storage:read": "agentstudio.storage.read",
+  "jobs:read": "agentstudio.jobs.read",
+  "agent_sync:publish": "agentstudio.agent.sync.publish"
 });
 
 const RISK_RANK = Object.freeze({
@@ -545,24 +545,24 @@ function normalizeRisk(operation = {}) {
 
 function inferToolsets(operation, scopes = [], toolId = "") {
   const toolsets = new Set(scopes.map((scope) => TOOLSET_BY_SCOPE[scope]).filter(Boolean));
-  if (toolId.startsWith("splitall.runtime.")) {
+  if (toolId.startsWith("agentstudio.runtime.")) {
     if (operation.id === "runtime.info" || operation.id === "runtime.mounts") {
-      toolsets.add("splitall.runtime.read");
+      toolsets.add("agentstudio.runtime.read");
     } else {
-      toolsets.add("splitall.runtime.maintain");
+      toolsets.add("agentstudio.runtime.maintain");
     }
   }
-  if (toolId.startsWith("splitall.agentWorkspace.") || toolId.startsWith("splitall.agentSession.")) {
-    toolsets.add("splitall.agent.workspace");
+  if (toolId.startsWith("agentstudio.agentWorkspace.") || toolId.startsWith("agentstudio.agentSession.")) {
+    toolsets.add("agentstudio.agent.workspace");
   }
   if (toolId.includes(".renderMarkdown")) {
-    toolsets.add("splitall.result.export");
+    toolsets.add("agentstudio.result.export");
   }
   if (toolId.includes(".asset") || toolId.includes(".evidence")) {
-    toolsets.add("splitall.document.parse");
+    toolsets.add("agentstudio.document.parse");
   }
   if (operation.id === "agent_sync.publish") {
-    toolsets.add("splitall.agent.sync.publish");
+    toolsets.add("agentstudio.agent.sync.publish");
   }
   return [...toolsets];
 }
@@ -580,7 +580,7 @@ function createInternalToolDefinition({
   id,
   label,
   description,
-  owner = "splitall",
+  owner = "agentstudio",
   source = "handler-backed",
   handlerId,
   featureId = "core-platform",
@@ -639,9 +639,9 @@ function createInternalToolDefinitions() {
     createInternalToolDefinition({
       id: "agent-exploration.knowledge_skill_search",
       label: "Agent exploration skill search",
-      description: "Search published SplitAll KnowledgeSkills inside the agent exploration runtime.",
+      description: "Search published AgentStudio KnowledgeSkills inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.knowledge_skill_search",
-      toolsets: ["splitall.knowledge.read"],
+      toolsets: ["agentstudio.knowledge.read"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -651,7 +651,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration keyword search",
       description: "Run local knowledge recall inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.keyword_search",
-      toolsets: ["splitall.knowledge.read"],
+      toolsets: ["agentstudio.knowledge.read"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -661,7 +661,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration aggregate",
       description: "Run knowledge aggregation inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.knowledge_aggregate",
-      toolsets: ["splitall.knowledge.read"],
+      toolsets: ["agentstudio.knowledge.read"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -671,7 +671,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration open evidence",
       description: "Open a specific evidence pack inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.open_evidence",
-      toolsets: ["splitall.knowledge.read", "splitall.document.parse"],
+      toolsets: ["agentstudio.knowledge.read", "agentstudio.document.parse"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -681,7 +681,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration skill proposal",
       description: "Create a pending-review KnowledgeSkill from evidence found by an exploration run.",
       handlerId: "AgentExplorationRuntime.knowledge_skill_propose",
-      toolsets: ["splitall.knowledge.write", "splitall.agent.workspace"],
+      toolsets: ["agentstudio.knowledge.write", "agentstudio.agent.workspace"],
       requiredScopes: ["knowledge:read", "knowledge:write"],
       risk: "safe_write",
       featureId: "agent-exploration",
@@ -692,7 +692,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration HTTP request",
       description: "Call an allowlisted HTTP endpoint from the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.http_request",
-      toolsets: ["splitall.agent.workspace"],
+      toolsets: ["agentstudio.agent.workspace"],
       requiredScopes: ["knowledge:read", "knowledge:write"],
       risk: "safe_write",
       featureId: "agent-exploration",
@@ -703,25 +703,25 @@ function createInternalToolDefinitions() {
       label: "Agent exploration local command",
       description: "Run an allowlisted local command from the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.local_command",
-      toolsets: ["splitall.mount.dev"],
+      toolsets: ["agentstudio.mount.dev"],
       requiredScopes: ["knowledge:admin"],
       risk: "repair_write",
       featureId: "agent-exploration",
       tags: ["agent-exploration", "allowlisted-command"]
     }),
     ...[
-      ["system.health", "System health", "splitall.runtime.read", "storage:read", "read_only"],
-      ["runtime.info", "Runtime info", "splitall.runtime.read", "storage:read", "read_only"],
-      ["storage.summary", "Storage summary", "splitall.storage.read", "storage:read", "read_only"],
-      ["storage.doctor", "Storage doctor", "splitall.runtime.read", "storage:read", "read_only"],
-      ["storage.reconcile", "Storage reconcile", "splitall.runtime.maintain", "knowledge:maintain", "repair_write"],
-      ["jobs.list", "Jobs list", "splitall.jobs.read", "jobs:read", "read_only"],
-      ["jobs.failed_review", "Failed jobs review", "splitall.jobs.read", "jobs:read", "read_only"],
-      ["knowledge.health", "Knowledge health", "splitall.knowledge.read", "knowledge:read", "read_only"],
-      ["knowledge.maintenance.settings", "Knowledge maintenance settings", "splitall.knowledge.maintain", "knowledge:maintain", "read_only"],
-      ["knowledge.maintenance.run", "Knowledge maintenance run", "splitall.knowledge.maintain", "knowledge:maintain", "safe_write"],
-      ["knowledge.reindex", "Knowledge reindex", "splitall.knowledge.maintain", "knowledge:maintain", "repair_write"],
-      ["runtime.reload_mounts", "Runtime reload mounts", "splitall.runtime.maintain", "knowledge:maintain", "repair_write"]
+      ["system.health", "System health", "agentstudio.runtime.read", "storage:read", "read_only"],
+      ["runtime.info", "Runtime info", "agentstudio.runtime.read", "storage:read", "read_only"],
+      ["storage.summary", "Storage summary", "agentstudio.storage.read", "storage:read", "read_only"],
+      ["storage.doctor", "Storage doctor", "agentstudio.runtime.read", "storage:read", "read_only"],
+      ["storage.reconcile", "Storage reconcile", "agentstudio.runtime.maintain", "knowledge:maintain", "repair_write"],
+      ["jobs.list", "Jobs list", "agentstudio.jobs.read", "jobs:read", "read_only"],
+      ["jobs.failed_review", "Failed jobs review", "agentstudio.jobs.read", "jobs:read", "read_only"],
+      ["knowledge.health", "Knowledge health", "agentstudio.knowledge.read", "knowledge:read", "read_only"],
+      ["knowledge.maintenance.settings", "Knowledge maintenance settings", "agentstudio.knowledge.maintain", "knowledge:maintain", "read_only"],
+      ["knowledge.maintenance.run", "Knowledge maintenance run", "agentstudio.knowledge.maintain", "knowledge:maintain", "safe_write"],
+      ["knowledge.reindex", "Knowledge reindex", "agentstudio.knowledge.maintain", "knowledge:maintain", "repair_write"],
+      ["runtime.reload_mounts", "Runtime reload mounts", "agentstudio.runtime.maintain", "knowledge:maintain", "repair_write"]
     ].map(([toolName, label, toolset, scope, risk]) =>
       createInternalToolDefinition({
         id: `maintenance-agent.${toolName}`,
@@ -818,7 +818,7 @@ export function createToolCatalog({ operations = [], activeFeatureIds = null } =
       version: "1",
       label: String(operation.label || toolId),
       description: String(operation.description || operation.label || toolId),
-      owner: "splitall",
+      owner: "agentstudio",
       source: "operation-backed",
       featureId: operation.featureId || "",
       operationId: operation.id,

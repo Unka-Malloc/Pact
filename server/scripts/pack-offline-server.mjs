@@ -56,7 +56,7 @@ const DOCKER_PATH =
 
 export const KNOWLEDGE_LICENSE_POLICY = Object.freeze({
   schemaVersion: 1,
-  id: "splitall.offline.knowledge-license.v1",
+  id: "agentstudio.offline.knowledge-license.v1",
   policy: "PERMISSIVE_OFFLINE_ONLY",
   allowedLicenses: [
     "MIT",
@@ -851,18 +851,18 @@ async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
     "set -euo pipefail",
     'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
     'export PATH="$ROOT/runtime/node/bin:$PATH"',
-    `export SPLITALL_SERVER_PROFILE="\${SPLITALL_SERVER_PROFILE:-${packagingPlan.includeFileProcessor ? "default" : "minimal"}}"`,
-    `export SPLITALL_FEATURE_EDITION="\${SPLITALL_FEATURE_EDITION:-${packagingPlan.featureProfile?.edition || "enterprise"}}"`,
-    'export SPLITALL_FEATURE_PROFILE="${SPLITALL_FEATURE_PROFILE:-$ROOT/feature-profile/feature-profile.json}"',
-    `export SPLITALL_FEATURES="\${SPLITALL_FEATURES:-${(packagingPlan.featureProfile?.activeFeatureIds || []).join(",")}}"`,
-    'export SPLITALL_SERVER_DATA_DIR="${SPLITALL_SERVER_DATA_DIR:-$ROOT/data}"',
-    'export SPLITALL_SERVER_HOST="${SPLITALL_SERVER_HOST:-0.0.0.0}"',
-    'export SPLITALL_SERVER_PORT="${SPLITALL_SERVER_PORT:-8787}"'
+    `export AGENTSTUDIO_SERVER_PROFILE="\${AGENTSTUDIO_SERVER_PROFILE:-${packagingPlan.includeFileProcessor ? "default" : "minimal"}}"`,
+    `export AGENTSTUDIO_FEATURE_EDITION="\${AGENTSTUDIO_FEATURE_EDITION:-${packagingPlan.featureProfile?.edition || "enterprise"}}"`,
+    'export AGENTSTUDIO_FEATURE_PROFILE="${AGENTSTUDIO_FEATURE_PROFILE:-$ROOT/feature-profile/feature-profile.json}"',
+    `export AGENTSTUDIO_FEATURES="\${AGENTSTUDIO_FEATURES:-${(packagingPlan.featureProfile?.activeFeatureIds || []).join(",")}}"`,
+    'export AGENTSTUDIO_SERVER_DATA_DIR="${AGENTSTUDIO_SERVER_DATA_DIR:-$ROOT/data}"',
+    'export AGENTSTUDIO_SERVER_HOST="${AGENTSTUDIO_SERVER_HOST:-0.0.0.0}"',
+    'export AGENTSTUDIO_SERVER_PORT="${AGENTSTUDIO_SERVER_PORT:-8787}"'
   ];
   if (packagingPlan.includeTika) {
     commonHeader.push(
-      `export SPLITALL_JAVA_BIN_PATH="\${SPLITALL_JAVA_BIN_PATH:-${javaPath}}"`,
-      `export SPLITALL_TIKA_JAR_PATH="\${SPLITALL_TIKA_JAR_PATH:-$ROOT/server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar}"`
+      `export AGENTSTUDIO_JAVA_BIN_PATH="\${AGENTSTUDIO_JAVA_BIN_PATH:-${javaPath}}"`,
+      `export AGENTSTUDIO_TIKA_JAR_PATH="\${AGENTSTUDIO_TIKA_JAR_PATH:-$ROOT/server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar}"`
     );
   }
   await fs.writeFile(
@@ -875,17 +875,17 @@ async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
     "utf8"
   );
   await fs.writeFile(
-    path.join(binDir, "splitall"),
+    path.join(binDir, "agentstudio"),
     [
       ...commonHeader,
-      'export SPLITALL_SERVER_URL="${SPLITALL_SERVER_URL:-http://127.0.0.1:${SPLITALL_SERVER_PORT}}"',
-      'exec "$ROOT/runtime/node/bin/node" "$ROOT/server/scripts/splitall.mjs" "$@"',
+      'export AGENTSTUDIO_SERVER_URL="${AGENTSTUDIO_SERVER_URL:-http://127.0.0.1:${AGENTSTUDIO_SERVER_PORT}}"',
+      'exec "$ROOT/runtime/node/bin/node" "$ROOT/server/scripts/agentstudio.mjs" "$@"',
       ""
     ].join("\n"),
     "utf8"
   );
   await fs.chmod(path.join(binDir, "start-server"), 0o755);
-  await fs.chmod(path.join(binDir, "splitall"), 0o755);
+  await fs.chmod(path.join(binDir, "agentstudio"), 0o755);
 }
 
 async function writeRunbook(stagingPath, targetKey, packagingPlan) {
@@ -909,7 +909,7 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
   await fs.writeFile(
     path.join(stagingPath, "OFFLINE-UBUNTU-RUNBOOK.md"),
     [
-      "# SplitAll Offline Ubuntu Server",
+      "# AgentStudio Offline Ubuntu Server",
       "",
       "This package is designed for a closed LAN Ubuntu host. Do not run `apt update` or `apt install` on the target host.",
       "",
@@ -938,8 +938,8 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       "## Start",
       "",
       "```bash",
-      "tar -xzf splitall-server-*.tar.gz",
-      "cd splitall-server-*",
+      "tar -xzf agentstudio-server-*.tar.gz",
+      "cd agentstudio-server-*",
       "./bin/start-server --host 0.0.0.0 --port 8787 --data-dir ./data",
       "```",
       "",
@@ -950,21 +950,21 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       "```bash",
       "./runtime/node/bin/node -v",
       packagingPlan.includeTika ? `./server/platform/modules/knowledge/runtime/jre/${targetKey}/bin/java -version` : "# Java/Tika omitted by this package plan.",
-      "./bin/splitall health --server-url http://127.0.0.1:8787",
+      "./bin/agentstudio health --server-url http://127.0.0.1:8787",
       "```",
       "",
       "## Important Environment Variables",
       "",
-      "- `SPLITALL_SERVER_DATA_DIR`: defaults to `<package>/data`",
-      "- `SPLITALL_SERVER_HOST`: defaults to `0.0.0.0`",
-      "- `SPLITALL_SERVER_PORT`: defaults to `8787`",
-      "- `SPLITALL_SERVER_PROFILE`: defaults to `minimal` unless FileProcessor is included",
+      "- `AGENTSTUDIO_SERVER_DATA_DIR`: defaults to `<package>/data`",
+      "- `AGENTSTUDIO_SERVER_HOST`: defaults to `0.0.0.0`",
+      "- `AGENTSTUDIO_SERVER_PORT`: defaults to `8787`",
+      "- `AGENTSTUDIO_SERVER_PROFILE`: defaults to `minimal` unless FileProcessor is included",
       packagingPlan.includeTika
-        ? "- `SPLITALL_JAVA_BIN_PATH`: defaults to bundled JRE"
-        : "- `SPLITALL_JAVA_BIN_PATH`: not set unless supplied by operator",
+        ? "- `AGENTSTUDIO_JAVA_BIN_PATH`: defaults to bundled JRE"
+        : "- `AGENTSTUDIO_JAVA_BIN_PATH`: not set unless supplied by operator",
       packagingPlan.includeTika
-        ? "- `SPLITALL_TIKA_JAR_PATH`: defaults to bundled Tika"
-        : "- `SPLITALL_TIKA_JAR_PATH`: not set unless supplied by operator",
+        ? "- `AGENTSTUDIO_TIKA_JAR_PATH`: defaults to bundled Tika"
+        : "- `AGENTSTUDIO_TIKA_JAR_PATH`: not set unless supplied by operator",
       "",
       packagingPlan.includeTika
         ? "The package still requires a compatible Linux kernel and glibc from the host OS, but it does not require host Node.js, npm, Java, Tika, Python, or any apt-installed application dependency."
@@ -1053,7 +1053,7 @@ async function installLinuxNodeModules(stagingPath, target) {
 async function writeOfflineManifest(stagingPath, targetKey, nodeVersion, packagingPlan) {
   const manifest = {
     schemaVersion: 1,
-    packageType: "splitall.offline-server",
+    packageType: "agentstudio.offline-server",
     target: targetKey,
     generatedAt: new Date().toISOString(),
     nodeVersion,
@@ -1099,7 +1099,7 @@ export async function createKnowledgeLicenseManifest({
 
   const manifest = {
     schemaVersion: 2,
-    packageType: "splitall.license-manifest",
+    packageType: "agentstudio.license-manifest",
     generatedAt,
     policy: KNOWLEDGE_LICENSE_POLICY,
     enforcement: {
@@ -1137,7 +1137,7 @@ export async function createKnowledgeLicenseManifest({
         bundled: Boolean(packagingPlan.includeKnowledgeCore),
         license: "project-internal",
         status: packagingPlan.includeKnowledgeCore ? "allowed" : "not-bundled",
-        protocolVersion: "splitall.knowledge.v1",
+        protocolVersion: "agentstudio.knowledge.v1",
         storage: {
           sqlite: "knowledge-core/knowledge.sqlite",
           assets: "knowledge-core/assets"
@@ -1147,7 +1147,7 @@ export async function createKnowledgeLicenseManifest({
       EmbeddingRuntime: {
         included: Boolean(packagingPlan.includeKnowledgeCore),
         bundled: Boolean(packagingPlan.includeKnowledgeCore),
-        protocolVersion: "splitall.embedding.v1",
+        protocolVersion: "agentstudio.embedding.v1",
         license: "project-internal",
         status: packagingPlan.includeKnowledgeCore ? "allowed" : "not-bundled",
         bundledProviders: [
@@ -1191,7 +1191,7 @@ export async function createKnowledgeLicenseManifest({
       VectorStore: {
         included: Boolean(packagingPlan.includeVectorStore),
         bundled: Boolean(packagingPlan.includeVectorStore),
-        protocolVersion: "splitall.vector.v1",
+        protocolVersion: "agentstudio.vector.v1",
         license: packagingPlan.includeVectorStore ? "project-internal" : "",
         status: packagingPlan.includeVectorStore ? "allowed" : "not-bundled",
         primaryBackend: packagingPlan.includeVectorStore ? "sqlite-vec" : "not-bundled",
@@ -1225,8 +1225,8 @@ export function validateKnowledgeLicenseManifest(manifest) {
   const policyReport = validateKnowledgeLicensePolicy(manifest?.policy || KNOWLEDGE_LICENSE_POLICY);
   errors.push(...policyReport.errors);
 
-  if (!manifest || manifest.packageType !== "splitall.license-manifest") {
-    errors.push("Manifest packageType must be splitall.license-manifest");
+  if (!manifest || manifest.packageType !== "agentstudio.license-manifest") {
+    errors.push("Manifest packageType must be agentstudio.license-manifest");
   }
 
   const dependencies = Array.isArray(manifest?.npm?.productionDependencies)
@@ -1334,7 +1334,7 @@ async function verifyUbuntuPackage(stagingPath, target, packagingPlan) {
       ? "/pkg/server/platform/modules/knowledge/runtime/jre/linux-x64/bin/java -version >/tmp/java-version.log 2>&1 || /pkg/server/platform/modules/knowledge/runtime/jre/linux-arm64/bin/java -version >/tmp/java-version.log 2>&1"
       : "true",
     "/pkg/bin/start-server --help >/tmp/start-help.log",
-    "SPLITALL_SERVER_DATA_DIR=/tmp/splitall-data SPLITALL_SERVER_HOST=127.0.0.1 SPLITALL_SERVER_PORT=18787 /pkg/bin/start-server >/tmp/splitall-server.log 2>&1 &",
+    "AGENTSTUDIO_SERVER_DATA_DIR=/tmp/agentstudio-data AGENTSTUDIO_SERVER_HOST=127.0.0.1 AGENTSTUDIO_SERVER_PORT=18787 /pkg/bin/start-server >/tmp/agentstudio-server.log 2>&1 &",
     "pid=$!",
     "trap 'kill $pid 2>/dev/null || true' EXIT",
     "ready=0",
@@ -1342,7 +1342,7 @@ async function verifyUbuntuPackage(stagingPath, target, packagingPlan) {
     "  if /pkg/runtime/node/bin/node -e \"fetch('http://127.0.0.1:18787/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"; then ready=1; break; fi",
     "  sleep 0.25",
     "done",
-    "if [ \"$ready\" != \"1\" ]; then cat /tmp/splitall-server.log; exit 1; fi",
+    "if [ \"$ready\" != \"1\" ]; then cat /tmp/agentstudio-server.log; exit 1; fi",
     "/pkg/runtime/node/bin/node -e \"fetch('http://127.0.0.1:18787/api/healthz').then(async r=>{const j=await r.json(); console.log(JSON.stringify(j)); if(!r.ok) process.exit(1);}).catch(error=>{console.error(error); process.exit(1);})\""
   ].join("\n");
 
@@ -1401,7 +1401,7 @@ async function main() {
   }
   const packagingPlan = createPackagingPlan(args);
   const outputDir = path.resolve(String(args["output-dir"] || path.join("build", "release")));
-  const packageName = `splitall-server-${targetKey}`;
+  const packageName = `agentstudio-server-${targetKey}`;
   const stagingPath = path.join(outputDir, packageName);
 
   if (!(await pathExists(path.join(projectRoot, "build", "dist", "index.html")))) {
@@ -1427,7 +1427,7 @@ async function main() {
   process.stdout.write(
     `${JSON.stringify(
       {
-        packageType: "splitall.offline-server",
+        packageType: "agentstudio.offline-server",
         target: targetKey,
         archivePath,
         sha256,

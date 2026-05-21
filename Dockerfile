@@ -41,10 +41,10 @@ RUN curl -fsSL --retry 3 "${TIKA_URL}" -o /modules/tika/tika-app-${TIKA_VERSION}
 FROM node:24-bookworm-slim AS runtime
 
 ENV NODE_ENV=production \
-    SPLITALL_SERVER_HOST=0.0.0.0 \
-    SPLITALL_SERVER_PORT=8787 \
-    SPLITALL_SERVER_DATA_DIR=/data \
-    SPLITALL_SERVER_WITH_UI=1 \
+    AGENTSTUDIO_SERVER_HOST=0.0.0.0 \
+    AGENTSTUDIO_SERVER_PORT=8787 \
+    AGENTSTUDIO_SERVER_DATA_DIR=/data \
+    AGENTSTUDIO_SERVER_WITH_UI=1 \
     CODEX_HOME=/codex-home \
     PATH=/app/node_modules/.bin:$PATH
 

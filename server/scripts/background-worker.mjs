@@ -65,8 +65,8 @@ const role = normalizeBackgroundRoleList(args.role || args.roles)[0] || "import-
 const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
-      process.env.SPLITALL_SERVER_DATA_DIR ||
-      path.join(projectRoot, ".splitall-server-data")
+      process.env.AGENTSTUDIO_SERVER_DATA_DIR ||
+      path.join(projectRoot, ".agentstudio-server-data")
   )
 );
 const intervalMs = normalizePositiveInteger(args["interval-ms"], 2500, 500, 60000);
@@ -75,7 +75,7 @@ const logger = createRuntimeLogger({
   userDataPath,
   runtimeOptions: {
     cwd: projectRoot,
-    logDir: args["log-dir"] || process.env.SPLITALL_LOG_DIR || ""
+    logDir: args["log-dir"] || process.env.AGENTSTUDIO_LOG_DIR || ""
   },
   component: `background-worker-${role}`
 });

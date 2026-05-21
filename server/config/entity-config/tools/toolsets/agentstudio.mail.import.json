@@ -1,8 +1,7 @@
 {
-  "id": "splitall.knowledge.write",
-  "label": "Knowledge write",
+  "id": "agentstudio.mail.import",
+  "label": "Mail import",
   "requiredScopes": [
-    "knowledge:read",
     "knowledge:write"
   ],
   "maxRisk": "safe_write",

@@ -15,7 +15,7 @@ import {
   resolveFeatureRuntimeFromEnv
 } from "../platform/interactive/features/feature-manifest.mjs";
 
-const DEFAULT_SERVER_URL = process.env.SPLITALL_SERVER_URL || "http://127.0.0.1:8787";
+const DEFAULT_SERVER_URL = process.env.AGENTSTUDIO_SERVER_URL || "http://127.0.0.1:8787";
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
 
 function parseArgs(argv) {
@@ -64,26 +64,26 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage:",
-    "  splitall --file a.txt [--wait] [--output-result result.json]",
-    "  splitall --path ./local [--wait] [--output-result result.json]",
-    "  splitall upload --path ./local --server-url http://127.0.0.1:8787",
-    "  splitall rpc --method GET --path /api/healthz",
-    "  splitall rpc-call jobs.list --params '{\"limit\":20}'",
-    "  splitall interfaces --format markdown",
-    "  splitall health",
-    "  splitall jobs list|get|result|delete ...",
-    "  splitall jobs normalized-docs --id JOB_ID",
-    "  splitall jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx",
-    "  splitall settings get|set --body settings.json",
-    "  splitall agents create --name NAME --model MODEL [--provider deepseek] [--api-key KEY]",
-    "  splitall agents update --id AGENT_UID [--name NAME] [--model MODEL] [--system-prompt TEXT]",
-    "  splitall agents delete --id AGENT_UID",
-    "  splitall tools catalog|toolsets|toolsets resolve|execute|dry-run|audit|metrics ...",
-    "  splitall tools grants list|create|rotate|revoke ...",
-    "  splitall tools policy preview --body preview.json",
+    "  agentstudio --file a.txt [--wait] [--output-result result.json]",
+    "  agentstudio --path ./local [--wait] [--output-result result.json]",
+    "  agentstudio upload --path ./local --server-url http://127.0.0.1:8787",
+    "  agentstudio rpc --method GET --path /api/healthz",
+    "  agentstudio rpc-call jobs.list --params '{\"limit\":20}'",
+    "  agentstudio interfaces --format markdown",
+    "  agentstudio health",
+    "  agentstudio jobs list|get|result|delete ...",
+    "  agentstudio jobs normalized-docs --id JOB_ID",
+    "  agentstudio jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx",
+    "  agentstudio settings get|set --body settings.json",
+    "  agentstudio agents create --name NAME --model MODEL [--provider deepseek] [--api-key KEY]",
+    "  agentstudio agents update --id AGENT_UID [--name NAME] [--model MODEL] [--system-prompt TEXT]",
+    "  agentstudio agents delete --id AGENT_UID",
+    "  agentstudio tools catalog|toolsets|toolsets resolve|execute|dry-run|audit|metrics ...",
+    "  agentstudio tools grants list|create|rotate|revoke ...",
+    "  agentstudio tools policy preview --body preview.json",
     "",
     "Global options:",
-    "  --server-url URL        Defaults to SPLITALL_SERVER_URL or http://127.0.0.1:8787",
+    "  --server-url URL        Defaults to AGENTSTUDIO_SERVER_URL or http://127.0.0.1:8787",
     "  --body JSON_OR_FILE     JSON string or path to a JSON file",
     "  --body-file FILE        JSON request body file",
     "  --params JSON_OR_FILE   JSON-RPC params string or path to a JSON file",
@@ -240,7 +240,7 @@ function applyCommonSafetyHeaders(args, headers = {}) {
   }
   return {
     ...headers,
-    "x-splitall-safety-confirm": headers["x-splitall-safety-confirm"] || "true"
+    "x-agentstudio-safety-confirm": headers["x-agentstudio-safety-confirm"] || "true"
   };
 }
 
@@ -271,14 +271,14 @@ function readHeaders(args) {
 
 function envAuthHeaders() {
   const headers = {};
-  if (process.env.SPLITALL_CONSOLE_COOKIE) {
-    headers.Cookie = process.env.SPLITALL_CONSOLE_COOKIE;
+  if (process.env.AGENTSTUDIO_CONSOLE_COOKIE) {
+    headers.Cookie = process.env.AGENTSTUDIO_CONSOLE_COOKIE;
   }
-  if (process.env.SPLITALL_CONSOLE_CSRF) {
-    headers["x-splitall-csrf"] = process.env.SPLITALL_CONSOLE_CSRF;
+  if (process.env.AGENTSTUDIO_CONSOLE_CSRF) {
+    headers["x-agentstudio-csrf"] = process.env.AGENTSTUDIO_CONSOLE_CSRF;
   }
-  if (["1", "true", "yes"].includes(String(process.env.SPLITALL_SAFETY_CONFIRM || "").toLowerCase())) {
-    headers["x-splitall-safety-confirm"] = "true";
+  if (["1", "true", "yes"].includes(String(process.env.AGENTSTUDIO_SAFETY_CONFIRM || "").toLowerCase())) {
+    headers["x-agentstudio-safety-confirm"] = "true";
   }
   return headers;
 }
@@ -523,7 +523,7 @@ async function runUpload(args) {
     method: "POST",
     apiPath: "/api/upload-sessions",
     body: {
-      checkpoint: { checkpointId, mode: "splitall-cli" },
+      checkpoint: { checkpointId, mode: "agentstudio-cli" },
       manifest: { manifestDigest, inputDigest: manifestDigest },
       files: files.map(({ name, relativePath, mediaType, sha256, byteSize }) => ({
         name,
@@ -567,7 +567,7 @@ async function runUpload(args) {
     method: "POST",
     apiPath: "/api/jobs",
     body: {
-      checkpoint: { checkpointId, mode: "splitall-cli" },
+      checkpoint: { checkpointId, mode: "agentstudio-cli" },
       uploadSessionId: session.sessionId,
       uploadedFiles: [],
       settings
@@ -639,7 +639,7 @@ async function runRpc(args) {
 async function runServerRpcCall(args) {
   const rpcMethod = args["rpc-method"] || args._[1];
   if (!rpcMethod || rpcMethod === true) {
-    throw new Error("rpc-call requires a RPC method, for example: splitall rpc-call jobs.list");
+    throw new Error("rpc-call requires a RPC method, for example: agentstudio rpc-call jobs.list");
   }
   const params = applyCommonSafetyFlags(args, await readRpcParams(args));
   const result = await requestJson({

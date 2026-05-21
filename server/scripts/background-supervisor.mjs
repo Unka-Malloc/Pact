@@ -74,8 +74,8 @@ const args = parseArgs(process.argv.slice(2));
 const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
-      process.env.SPLITALL_SERVER_DATA_DIR ||
-      path.join(projectRoot, ".splitall-server-data")
+      process.env.AGENTSTUDIO_SERVER_DATA_DIR ||
+      path.join(projectRoot, ".agentstudio-server-data")
   )
 );
 const roles = normalizeBackgroundRoleList(args.roles || args.role);
@@ -85,7 +85,7 @@ const logger = createRuntimeLogger({
   userDataPath,
   runtimeOptions: {
     cwd: projectRoot,
-    logDir: args["log-dir"] || process.env.SPLITALL_LOG_DIR || ""
+    logDir: args["log-dir"] || process.env.AGENTSTUDIO_LOG_DIR || ""
   },
   component: "background-supervisor"
 });
@@ -150,8 +150,8 @@ function spawnRole(role) {
     cwd: projectRoot,
     env: {
       ...process.env,
-      SPLITALL_BACKGROUND_WORKER_ROLE: role,
-      SPLITALL_IMPORT_WORKER_EXTERNAL: role === "import-worker" ? "0" : process.env.SPLITALL_IMPORT_WORKER_EXTERNAL || ""
+      AGENTSTUDIO_BACKGROUND_WORKER_ROLE: role,
+      AGENTSTUDIO_IMPORT_WORKER_EXTERNAL: role === "import-worker" ? "0" : process.env.AGENTSTUDIO_IMPORT_WORKER_EXTERNAL || ""
     },
     stdio: ["ignore", "ignore", "ignore", "ipc"]
   });

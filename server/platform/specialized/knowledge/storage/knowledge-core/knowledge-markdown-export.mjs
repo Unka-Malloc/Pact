@@ -1,4 +1,4 @@
-export const KNOWLEDGE_MARKDOWN_EXPORT_PACKAGE_TYPE = "splitall.knowledge.markdown-export";
+export const KNOWLEDGE_MARKDOWN_EXPORT_PACKAGE_TYPE = "agentstudio.knowledge.markdown-export";
 export const KNOWLEDGE_MARKDOWN_EXPORT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 
 function scalar(value) {
@@ -46,7 +46,7 @@ function sectionHeadingPrefix(level) {
 function suggestedFileName(filters = {}, generatedAt = new Date().toISOString()) {
   const scope = filters.documentId || filters.batchId || filters.sourceId || "all";
   const stamp = generatedAt.replace(/[^0-9a-z]+/gi, "").slice(0, 14);
-  return `splitall-knowledge-${slug(scope)}-${stamp}.md`;
+  return `agentstudio-knowledge-${slug(scope)}-${stamp}.md`;
 }
 
 function buildDocumentMarkdown(doc, index) {
@@ -133,7 +133,7 @@ export function buildKnowledgeMarkdownExport({
   filters = {}
 } = {}) {
   const lines = [];
-  lines.push("# SplitAll 知识库导出", "");
+  lines.push("# AgentStudio 知识库导出", "");
   lines.push(`> 导出时间：${generatedAt}  `);
   lines.push(`> 文档数量：${documents.length}  `);
   if (filters.documentId) lines.push(`> 文档 ID：\`${escapeMarkdown(filters.documentId)}\`  `);

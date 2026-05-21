@@ -1,5 +1,5 @@
 {
-  "id": "splitall.runtime.maintain",
+  "id": "agentstudio.runtime.maintain",
   "label": "Runtime maintain",
   "requiredScopes": [
     "knowledge:maintain"

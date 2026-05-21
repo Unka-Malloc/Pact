@@ -416,7 +416,7 @@ type BridgeRequestOptions = SafetyRequestOptions & {
 };
 
 function safetyHeaders(options: SafetyRequestOptions = {}): Record<string, string> {
-  return options.safetyConfirm ? { "x-splitall-safety-confirm": "true" } : {};
+  return options.safetyConfirm ? { "x-agentstudio-safety-confirm": "true" } : {};
 }
 
 async function postJson<T>(url: string, payload?: unknown, options: BridgeRequestOptions = {}): Promise<T> {
@@ -424,7 +424,7 @@ async function postJson<T>(url: string, payload?: unknown, options: BridgeReques
     ? {
         "Content-Type": "application/json",
         Accept: "application/json",
-        ...(csrfToken ? { "x-splitall-csrf": csrfToken } : {}),
+        ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
         ...safetyHeaders(options)
       }
     : { Accept: "application/json" };
@@ -449,7 +449,7 @@ async function postJson<T>(url: string, payload?: unknown, options: BridgeReques
 async function deleteJson<T>(url: string, options: BridgeRequestOptions = {}): Promise<T> {
   const headers: HeadersInit = {
     Accept: "application/json",
-    ...(csrfToken ? { "x-splitall-csrf": csrfToken } : {}),
+    ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
     ...safetyHeaders(options)
   };
   const response = await fetch(url, {
@@ -472,7 +472,7 @@ async function deleteJson<T>(url: string, options: BridgeRequestOptions = {}): P
 async function getJson<T>(url: string, options: BridgeRequestOptions = {}): Promise<T> {
   const headers: HeadersInit = {
     Accept: "application/json",
-    ...(csrfToken ? { "x-splitall-csrf": csrfToken } : {}),
+    ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
   };
   const response = await fetch(url, {
     method: "GET",
@@ -496,7 +496,7 @@ async function putBinaryJson<T>(url: string, payload: Blob | ArrayBuffer): Promi
     method: "PUT",
     headers: {
       Accept: "application/json",
-      ...(csrfToken ? { "x-splitall-csrf": csrfToken } : {}),
+      ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
     },
     body: payload,
     credentials: "same-origin"

@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "dependencyType": "splitall.skill-framework.dependencies",
+  "dependencyType": "agentstudio.skill-framework.dependencies",
   "runtimeModules": [
     "KnowledgeSkillRuntime",
     "KnowledgeAgentSkillRuntime",
     "EvidenceSufficiencyGate"
   ],
   "requiredProtocols": [
-    "splitall.knowledge-skill.v1",
-    "splitall.knowledge-agent-skill.v1",
-    "splitall.knowledge.v1"
+    "agentstudio.knowledge-skill.v1",
+    "agentstudio.knowledge-agent-skill.v1",
+    "agentstudio.knowledge.v1"
   ],
   "heavyDependencies": [],
   "manifestOnlyDependencies": []

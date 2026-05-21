@@ -16,7 +16,7 @@ const ALERT_DIR = "background";
 const ALERT_CONFIG_FILE = "monitor-alerts.json";
 const ALERT_SHELL_CONFIG_FILE = "monitor-alerts.sh.conf";
 const ALERT_STATE_FILE = "monitor-alerts-state.json";
-const DEFAULT_SERVICE_LABEL = "dev.splitall.background-supervisor";
+const DEFAULT_SERVICE_LABEL = "dev.agentstudio.background-supervisor";
 
 function nowIso() {
   return new Date().toISOString();

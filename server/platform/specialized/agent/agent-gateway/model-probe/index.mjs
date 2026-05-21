@@ -5,8 +5,8 @@ import {
 import { callAgentGateway } from "../index.mjs";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const PROBE_EXPECTED_ANSWER = "SplitAllProbeOK";
-const PROBE_PROMPT = `这是 SplitAll 模型库连通性探测。请只回复：${PROBE_EXPECTED_ANSWER}`;
+const PROBE_EXPECTED_ANSWER = "AgentStudioProbeOK";
+const PROBE_PROMPT = `这是 AgentStudio 模型库连通性探测。请只回复：${PROBE_EXPECTED_ANSWER}`;
 
 function asPlainObject(value, fallback = {}) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;

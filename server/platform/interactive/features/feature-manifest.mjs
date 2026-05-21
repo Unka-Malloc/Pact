@@ -29,7 +29,7 @@ const CORE_CLIENT_REQUIRED_MODULE_IDS = new Set([
 
 export const FEATURE_MANIFEST = Object.freeze({
   schemaVersion: 1,
-  label: "SplitAll FeatureManifest",
+  label: "AgentStudio FeatureManifest",
   groups: Object.freeze([
     "core",
     "security",
@@ -1016,7 +1016,7 @@ export async function resolveFeatureRuntimeFromEnv({
     args["feature-profile"] ||
     args.featureProfile ||
     runtimeOptions.featureProfile ||
-    env.SPLITALL_FEATURE_PROFILE ||
+    env.AGENTSTUDIO_FEATURE_PROFILE ||
     "";
   const profile = await loadFeatureProfile(profilePath);
   return resolveFeatureRuntime({
@@ -1024,18 +1024,18 @@ export async function resolveFeatureRuntimeFromEnv({
       args.edition ||
       args.featureEdition ||
       runtimeOptions.featureEdition ||
-      env.SPLITALL_FEATURE_EDITION ||
+      env.AGENTSTUDIO_FEATURE_EDITION ||
       DEFAULT_FEATURE_EDITION,
     profile: profile || {},
     enableFeatures: [
       ...splitFeatureList(args.features),
       ...splitFeatureList(args.enableFeatures),
-      ...splitFeatureList(env.SPLITALL_FEATURES)
+      ...splitFeatureList(env.AGENTSTUDIO_FEATURES)
     ],
     disableFeatures: [
       ...splitFeatureList(args["without-features"]),
       ...splitFeatureList(args.disableFeatures),
-      ...splitFeatureList(env.SPLITALL_DISABLED_FEATURES)
+      ...splitFeatureList(env.AGENTSTUDIO_DISABLED_FEATURES)
     ]
   });
 }

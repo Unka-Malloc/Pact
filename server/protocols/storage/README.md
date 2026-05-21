@@ -33,7 +33,7 @@
 
 | 记录位置 | 权威职责 | 可用于检索 | 不允许承担的职责 |
 | --- | --- | --- | --- |
-| `metadata/splitall.sqlite` | batch、source、raw object、message、thread、transaction、people、timeline、retrieval/FTS、删除协调状态 | 是 | 不存原始文件字节 |
+| `metadata/agentstudio.sqlite` | batch、source、raw object、message、thread、transaction、people、timeline、retrieval/FTS、删除协调状态 | 是 | 不存原始文件字节 |
 | `upload-sessions/<sessionId>/meta.json` | 上传会话、分块 offset、sha256/byteSize 校验、断点续传状态 | 否 | 不作为长期索引，不作为业务检索入口 |
 | job 的 `checkpointReceipt` | 创建 job 时的服务端凭证，证明 upload session 已完成校验 | 否 | 不作为文件归档目录，不作为检索元数据源 |
 | `jobs/<jobId>/result.json` | 任务结果快照、回放、排障、SQLite 重建输入 | 否，正常在线检索不读它 | 不与 SQLite 竞争权威元数据 |

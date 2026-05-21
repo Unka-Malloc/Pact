@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const INDUSTRIAL_DISTILLATION_PROTOCOL_VERSION = "splitall.knowledge-distillation-industrial.v1";
+export const INDUSTRIAL_DISTILLATION_PROTOCOL_VERSION = "agentstudio.knowledge-distillation-industrial.v1";
 export const DEFAULT_INDUSTRIAL_DISTILLATION_MODEL = "deepseek-v4-flash";
 export const DEFAULT_PROJECT_DIGEST_BASELINES = ["repomix", "gitingest"];
 export const DEFAULT_EVALUATION_BASELINES = ["deepeval", "geval-style-rubric"];
@@ -21,7 +21,7 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   ".vite",
   ".turbo",
   ".cache",
-  ".splitall-server-data"
+  ".agentstudio-server-data"
 ]);
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkdn", ".mdx"]);
@@ -721,7 +721,7 @@ export function buildIndustrialDistillationPlan({
     baselineSkills: {
       projectDigest: projectDigestBaselines,
       evaluation: evaluationBaselines,
-      note: "Use mature external repository digest/evaluation tools as comparison baselines; do not replace SplitAll source coverage and evidence checks."
+      note: "Use mature external repository digest/evaluation tools as comparison baselines; do not replace AgentStudio source coverage and evidence checks."
     },
     phases: [
       {
@@ -739,7 +739,7 @@ export function buildIndustrialDistillationPlan({
       {
         id: "framework_project_distillation",
         modelAlias,
-        output: "SplitAll portable distilled document",
+        output: "AgentStudio portable distilled document",
         acceptance: ["rawDocuments input", "self-contained output", "sourceTrace retained internally", "portable document has no framework lookup dependency"]
       },
       {
@@ -756,7 +756,7 @@ export function buildIndustrialDistillationPlan({
       {
         id: "framework_email_distillation",
         modelAlias,
-        output: "SplitAll portable distilled email knowledge document",
+        output: "AgentStudio portable distilled email knowledge document",
         acceptance: ["same thread merged", "time order stable", "quotes/noise reduced", "source evidence markers retained"]
       },
       {

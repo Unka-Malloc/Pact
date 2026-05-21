@@ -5,7 +5,7 @@
 它不会被打进 Flutter 客户端；应该部署在服务端所在机器。
 在当前方案里，它属于**可选补充能力**，不是主 OCR 方案。云端或外部视觉解析能力应通过 `docs/KNOWLEDGE-GOVERNANCE.md` 中的 parser / evidence 边界接入，而不是让 OCR sidecar 成为公共知识事实源。
 
-如果要做带 OCR sidecar 的本地服务部署，本地 Python 运行时需要按 [runtime/README.md](/Users/unka/DevSpace/Unka-Malloc/splitall/server/platform/modules/knowledge/ocr/runtime/README.md) 的目录约定预先放好。
+如果要做带 OCR sidecar 的本地服务部署，本地 Python 运行时需要按 `server/platform/modules/knowledge/ocr/runtime/README.md` 的目录约定预先放好。
 这些运行时二进制默认不进入 GitHub 源码仓。
 
 ## 配置项
@@ -19,9 +19,9 @@
 
 也可以通过环境变量设置：
 
-- `SPLITALL_OCR_ENABLED`
-- `SPLITALL_OCR_PYTHON_PATH`
-- `SPLITALL_PADDLEOCR_LANG`
+- `AGENTSTUDIO_OCR_ENABLED`
+- `AGENTSTUDIO_OCR_PYTHON_PATH`
+- `AGENTSTUDIO_PADDLEOCR_LANG`
 
 如果没有手工填写 `ocrPythonPath`，程序会按下面顺序找：
 

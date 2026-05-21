@@ -196,7 +196,7 @@ function compactedMessagesForGateway(result = {}) {
     messages.push({
       role: "system",
       content: [
-        "SplitAll context compaction summary follows. It is auxiliary memory, not canonical evidence.",
+        "AgentStudio context compaction summary follows. It is auxiliary memory, not canonical evidence.",
         summary
       ].join("\n")
     });
@@ -274,7 +274,7 @@ async function prepareAgentGatewayInputWithCompaction({
   }
   const gatewayMessages = compactedMessagesForGateway(compaction);
   const compactedQuestion = [
-    "SplitAll compacted prior context before this agent call.",
+    "AgentStudio compacted prior context before this agent call.",
     `Boundary: ${compaction.boundary?.boundaryId || ""}`,
     compaction.summary || "",
     compaction.reinjection?.items?.length
@@ -441,7 +441,7 @@ function normalizeCustomHttpAdapterEntry(value = {}, settings = {}, fallbacks = 
       gateway.modelAlias ||
       fallbacks.alias ||
       settings.customModelAlias ||
-      process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_ALIAS
+      process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_ALIAS
   );
   const model = String(gateway.model || gateway.engine || "").trim();
   return {
@@ -455,35 +455,35 @@ function normalizeCustomHttpAdapterEntry(value = {}, settings = {}, fallbacks = 
         settings.customModelLabel ||
         "自定义 HTTP Adapter"
     ).trim(),
-    url: String(gateway.url || process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_URL || "").trim(),
+    url: String(gateway.url || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_URL || "").trim(),
     token: String(
       gateway.token ||
         gateway.apiKey ||
         fallbacks.token ||
         settings.customModelApiKey ||
-        process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TOKEN ||
+        process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN ||
         ""
     ).trim(),
     tokenHeader:
       String(
-        gateway.tokenHeader || process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TOKEN_HEADER || "token"
+        gateway.tokenHeader || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN_HEADER || "token"
       ).trim() || "token",
     tokenPrefix: String(
-      gateway.tokenPrefix ?? process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TOKEN_PREFIX ?? ""
+      gateway.tokenPrefix ?? process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN_PREFIX ?? ""
     ),
     agentName: String(
       gateway.agentName ||
         gateway.label ||
-        process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_AGENT_NAME ||
+        process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_AGENT_NAME ||
         ""
     ).trim(),
     pluginList: asStringList(gateway.pluginList),
     engine: String(
-      gateway.engine || gateway.model || process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_ENGINE || ""
+      gateway.engine || gateway.model || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_ENGINE || ""
     ).trim(),
     parameters: asPlainObject(gateway.parameters),
     timeoutMs: normalizeTimeout(
-      gateway.timeoutMs || process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TIMEOUT_MS
+      gateway.timeoutMs || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TIMEOUT_MS
     ),
     systemPrompt: String(gateway.systemPrompt || gateway.prompt || "").trim()
   };
@@ -497,7 +497,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
       modelEntry.baseUrl ||
         modelEntry.url ||
         settings.deepSeekBaseUrl ||
-        process.env.SPLITALL_DEEPSEEK_BASE_URL ||
+        process.env.AGENTSTUDIO_DEEPSEEK_BASE_URL ||
         "https://api.deepseek.com"
     ).trim() || "https://api.deepseek.com";
   const modelFieldPresent = ["model", "modelId", "engine"].some((key) =>
@@ -507,7 +507,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
   const model = configuredModel ?? (
     hasModelEntry
       ? ""
-      : String(settings.deepSeekModel || process.env.SPLITALL_DEEPSEEK_MODEL || "").trim()
+      : String(settings.deepSeekModel || process.env.AGENTSTUDIO_DEEPSEEK_MODEL || "").trim()
   );
   const alias = adapterAlias(
     modelEntry.uid ||
@@ -531,7 +531,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
       modelEntry.apiKey ||
         modelEntry.token ||
         settings.deepSeekApiKey ||
-        process.env.SPLITALL_DEEPSEEK_API_KEY ||
+        process.env.AGENTSTUDIO_DEEPSEEK_API_KEY ||
         ""
     ).trim(),
     tokenHeader: "Authorization",
@@ -544,7 +544,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
     parameters: asPlainObject(modelEntry.parameters),
     systemPrompt: String(modelEntry.systemPrompt || modelEntry.prompt || "").trim(),
     timeoutMs: normalizeTimeout(
-      modelEntry.timeoutMs || settings.deepSeekTimeoutMs || process.env.SPLITALL_DEEPSEEK_TIMEOUT_MS
+      modelEntry.timeoutMs || settings.deepSeekTimeoutMs || process.env.AGENTSTUDIO_DEEPSEEK_TIMEOUT_MS
     )
   };
 }
@@ -1243,14 +1243,14 @@ function resolveDeepSeekModel(input = {}, config = {}) {
   return "deepseek-v4-pro";
 }
 
-function normalizeSplitAllThinkingMode(value) {
+function normalizeAgentStudioThinkingMode(value) {
   const mode = String(value || "").trim().toLowerCase();
   return ["enabled", "disabled"].includes(mode) ? mode : "";
 }
 
-function applySplitAllThinkingMode(parameters = {}, config = {}, input = {}) {
-  const mode = normalizeSplitAllThinkingMode(parameters.splitall_thinking_mode);
-  delete parameters.splitall_thinking_mode;
+function applyAgentStudioThinkingMode(parameters = {}, config = {}, input = {}) {
+  const mode = normalizeAgentStudioThinkingMode(parameters.agentstudio_thinking_mode);
+  delete parameters.agentstudio_thinking_mode;
   if (!mode) {
     return parameters;
   }
@@ -1295,7 +1295,7 @@ function buildDeepSeekRequest(input = {}, config = {}) {
     ...asPlainObject(config.parameters),
     ...asPlainObject(input.parameters)
   };
-  applySplitAllThinkingMode(parameters, config, input);
+  applyAgentStudioThinkingMode(parameters, config, input);
   const messages = buildChatMessages(input, config, parameters);
   delete parameters.systemPrompt;
 
@@ -1326,7 +1326,7 @@ function buildOpenAiCompatibleRequest(input = {}, config = {}) {
     ...configParameters,
     ...inputParameters
   };
-  applySplitAllThinkingMode(parameters, config, input);
+  applyAgentStudioThinkingMode(parameters, config, input);
   const extraBody = {
     ...asPlainObject(configParameters.extra_body),
     ...asPlainObject(inputParameters.extra_body)

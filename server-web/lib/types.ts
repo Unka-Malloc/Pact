@@ -931,7 +931,7 @@ export type NormalizedDocumentEntry = {
 
 export type NormalizedDocumentsManifest = {
   schemaVersion: number;
-  packageType: "splitall.normalized-documents";
+  packageType: "agentstudio.normalized-documents";
   batchId: string;
   generatedAt: string;
   rootRelativePath: string;
@@ -1911,7 +1911,7 @@ export type KnowledgeWordBagTermsResponse = {
 
 export type KnowledgeWordCloudExportResponse = {
   ok: boolean;
-  exportType: "splitall.knowledge.word_bags.export" | string;
+  exportType: "agentstudio.knowledge.word_bags.export" | string;
   schemaVersion?: number;
   exportedAt: string;
   wordBagSet: KnowledgeWordBagSet;

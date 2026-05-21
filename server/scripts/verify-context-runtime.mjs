@@ -114,7 +114,7 @@ async function assertAgentContextInterfaceBoundary() {
 
 await assertAgentContextInterfaceBoundary();
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-context-core-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-context-core-"));
 const runtime = createContextRuntime({ userDataPath });
 
 try {

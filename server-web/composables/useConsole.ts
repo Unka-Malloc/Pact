@@ -135,7 +135,7 @@ const modelLibraryProviderDefinitions: Array<{
   {
     id: "custom-http",
     label: "自定义 HTTP Adapter",
-    description: "SplitAll agent 报文格式的外部智能体网关。",
+    description: "AgentStudio agent 报文格式的外部智能体网关。",
   },
   {
     id: "local-model",
@@ -187,7 +187,7 @@ const emptySettings: AgentSettings = {
   agentPermissionGroups: [],
   agentExploreDefaults: {
     systemPrompt:
-      "You are SplitAll Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
+      "You are AgentStudio Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
     toolPolicyPrompt:
       "Always search from coarse to fine. For counts, totals, rankings, frequency, or 'which has the most' questions, first call knowledge_aggregate. For normal evidence recall, first call keyword_search with broad but meaningful keywords, then open_evidence only for promising evidenceId values.",
     continuationPrompt:
@@ -233,7 +233,7 @@ const emptySettings: AgentSettings = {
     toolChoice: "auto",
     reviewFusionModelAlias: "",
     reviewFusionSystemPrompt:
-      "你是 SplitAll 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
+      "你是 AgentStudio 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
     reviewFusionTemperature: 0.1,
     reviewFusionMaxTokens: 1200,
   },
@@ -558,8 +558,8 @@ let pendingRefreshStateTimer: number | null = null;
 let pendingRefreshStateOptions: RefreshStateOptions | null = null;
 let pendingRefreshStatePromise: Promise<void> | null = null;
 let pendingRefreshStateResolve: (() => void) | null = null;
-const AGENT_EXPLORE_STORAGE_KEY = "splitall.agentExplore.sessions.v1";
-const INFO_FEED_STORAGE_KEY = "splitall.infoFeed.history.v1";
+const AGENT_EXPLORE_STORAGE_KEY = "agentstudio.agentExplore.sessions.v1";
+const INFO_FEED_STORAGE_KEY = "agentstudio.infoFeed.history.v1";
 const filter = ref("");
 const drawerOpen = ref(false);
 const drawerTab = ref<DrawerTab>("discovery");
@@ -573,14 +573,14 @@ const clientMigrationMessages = ref<Record<string, string>>({});
 const editingMountPaths = ref<Record<string, boolean>>({});
 const newGrantLabel = ref("默认智能体");
 const newGrantScopes = ref<string[]>(["knowledge:read"]);
-const newGrantToolsets = ref<string[]>(["splitall.knowledge.read"]);
+const newGrantToolsets = ref<string[]>(["agentstudio.knowledge.read"]);
 const issuedToolToken = ref("");
 const toolManagementCatalogState = ref<ToolManagementCatalog | null>(null);
 const toolManagementGrantsState = ref<ToolManagementGrant[]>([]);
 const toolManagementMetricsState = ref<ToolManagementMetrics | null>(null);
 const toolManagementAuditItems = ref<ToolManagementAuditItem[]>([]);
-const selectedToolManagementToolId = ref("splitall.knowledge.health");
-const policyPreviewToolId = ref("splitall.knowledge.health");
+const selectedToolManagementToolId = ref("agentstudio.knowledge.health");
+const policyPreviewToolId = ref("agentstudio.knowledge.health");
 const policyPreviewProfileId = ref("external-knowledge-reader");
 const policyPreviewGrantId = ref("");
 const policyPreviewResult = ref<Record<string, unknown> | null>(null);
@@ -1481,7 +1481,7 @@ async function clearBrowserLocalStateFromUrl() {
   infoFeedKeywordCache.clear();
   url.searchParams.delete(CLEAR_LOCAL_STATE_PARAM);
   window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  (window as Window & { __splitallLocalStateClearReport?: Record<string, unknown> }).__splitallLocalStateClearReport = report;
+  (window as Window & { __agentstudioLocalStateClearReport?: Record<string, unknown> }).__agentstudioLocalStateClearReport = report;
   return true;
 }
 
@@ -4775,12 +4775,12 @@ function agentExploreThinkingParameters() {
   const mode = selectedAgentExploreThinkingMode.value;
   if (mode === "enabled") {
     return {
-      splitall_thinking_mode: "enabled",
+      agentstudio_thinking_mode: "enabled",
     };
   }
   if (mode === "disabled") {
     return {
-      splitall_thinking_mode: "disabled",
+      agentstudio_thinking_mode: "disabled",
     };
   }
   return {};
@@ -5722,14 +5722,14 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
   const exportPayload = {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    type: "splitall.agent-model-config.v1",
+    type: "agentstudio.agent-model-config.v1",
     source: "server-console-model-library",
     note: "导出的是当前智能体配置；密钥和 Token 字段已脱敏，未包含其它智能体配置。",
     model: redactAgentModelEntryForExport(normalizedEntry),
     providerSettings: redactedProviderSettingsForAgentExport(normalizedEntry, payload),
   };
   downloadTextFile(
-    `splitall-agent-${safeDownloadName(normalizedEntry.label || modelEntryStatusKey(normalizedEntry), "model")}-${timestamp}.json`,
+    `agentstudio-agent-${safeDownloadName(normalizedEntry.label || modelEntryStatusKey(normalizedEntry), "model")}-${timestamp}.json`,
     `${JSON.stringify(exportPayload, null, 2)}\n`,
     "application/json;charset=utf-8",
   );
@@ -6787,7 +6787,7 @@ function buildInfoFeedSummaryQuestion(run: InfoFeedRunState) {
     "2. 保留 evidence:: 或 ev_ 证据编号，便于页面点击查看。",
     "3. 如果原文检索和智能规划互相冲突，要明确说明冲突。",
     "4. 不要编造附件、证据、日期、金额或来源。",
-    "5. 不要频繁提问。只有在没有人类选择就无法继续检索、归纳或执行下一步时，才在答案末尾追加 fenced block：```splitall_user_options 换行 JSON 换行 ```。",
+    "5. 不要频繁提问。只有在没有人类选择就无法继续检索、归纳或执行下一步时，才在答案末尾追加 fenced block：```agentstudio_user_options 换行 JSON 换行 ```。",
     "   JSON 示例：{\"prompt\":\"你希望优先确认哪类内容？\",\"reason\":\"当前证据覆盖不足。\",\"options\":[{\"label\":\"继续补证据\",\"description\":\"扩大检索范围。\",\"followUpQuestion\":\"请继续补充直接证据。\"}]}",
   ].join("\n");
 }
@@ -6838,7 +6838,7 @@ function extractInfoFeedClarification(answer: string): { answer: string; clarifi
   const source = String(answer || "");
   let cleaned = source;
   let clarification: InfoFeedClarification | undefined;
-  const blockPattern = /```(?:splitall_user_options|splitall-options|json)\s*([\s\S]*?)```/gi;
+  const blockPattern = /```(?:agentstudio_user_options|agentstudio-options|json)\s*([\s\S]*?)```/gi;
   for (const match of source.matchAll(blockPattern)) {
     try {
       const parsed = JSON.parse(match[1].trim().replace(/^json\s*/i, ""));
@@ -7032,7 +7032,7 @@ async function runInfoFeedSummaryAgent(sequence = infoFeedRunSequence) {
         sessionId: run.agent?.workspaceId || run.runId,
         question: buildInfoFeedSummaryQuestion(run),
         systemPrompt:
-          "你是 SplitAll 信息流总结智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
+          "你是 AgentStudio 信息流总结智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
         parameters: {
           ...agentExploreThinkingParameters(),
           temperature: summaryTemperature,
@@ -8474,11 +8474,11 @@ function extractEvidenceRefsFromText(value: string) {
 }
 
 function evidenceRefHref(evidenceId: string) {
-  return `#splitall-evidence-${encodeURIComponent(evidenceId)}`;
+  return `#agentstudio-evidence-${encodeURIComponent(evidenceId)}`;
 }
 
 function evidenceIdFromHref(href: string) {
-  const prefix = "#splitall-evidence-";
+  const prefix = "#agentstudio-evidence-";
   if (!String(href || "").startsWith(prefix)) {
     return "";
   }
@@ -10348,7 +10348,7 @@ async function publishRuleAuthoringPackage() {
     });
     ruleAuthoringResult.value = {
       ...(ruleAuthoringResult.value || {
-        protocolVersion: "splitall.knowledge-rule-authoring.v1",
+        protocolVersion: "agentstudio.knowledge-rule-authoring.v1",
         ok: true,
         status: "published",
       }),
@@ -12047,7 +12047,7 @@ function contextPreviewPayload() {
     contextProfileId: selectedAgentExploreContextProfile.value.value,
     inputSource: "server-console-context-preview",
     taskBrief: contextPreviewTask.value,
-    systemMemory: "SplitAll server console preview. Preserve evidence ids and human expert guidance.",
+    systemMemory: "AgentStudio server console preview. Preserve evidence ids and human expert guidance.",
     expertGuidance: [
       {
         feedbackId: "preview-human-guidance",
@@ -12285,7 +12285,7 @@ async function beginCodexOAuthLogin() {
     codexOAuthLogin.value = login;
     codexOAuthStatus.value = login.status;
     if (login.authorizationUrl) {
-      window.open(login.authorizationUrl, "splitall-codex-oauth");
+      window.open(login.authorizationUrl, "agentstudio-codex-oauth");
     }
     startCodexOAuthPolling();
     return login.status.valid;
@@ -13592,7 +13592,7 @@ const serverIdentity = computed(
   () =>
     consoleState.value?.discovery?.value?.serverLabel ||
     consoleState.value?.server.hostname ||
-    "SplitAll Server",
+    "AgentStudio Server",
 );
 
 const enabledMountCount = computed(

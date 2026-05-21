@@ -57,7 +57,7 @@ async function assertStaticStateGuard() {
 async function main() {
   await assertStaticStateGuard();
 
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-state-mutations-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-state-mutations-"));
   try {
     const settings = await saveSettings(userDataPath, {
       analysisModuleId: "builtin:state-mutations"

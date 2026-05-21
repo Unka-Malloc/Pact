@@ -80,7 +80,7 @@ async function proxyApiRequest({
   const upstreamUrl = new URL(request.url || "/", targetBaseUrl);
   const startedAt = Date.now();
   logger?.info?.("http.proxy.started", {
-    requestId: request.__splitallRequestId || "",
+    requestId: request.__agentstudioRequestId || "",
     method: request.method || "GET",
     route: upstreamUrl.pathname,
     targetBaseUrl,
@@ -94,10 +94,10 @@ async function proxyApiRequest({
     "authorization",
     "content-type",
     "cookie",
-    "x-splitall-csrf",
-    "x-splitall-safety-confirm",
-    "x-splitall-confirm",
-    "x-splitall-tool-token"
+    "x-agentstudio-csrf",
+    "x-agentstudio-safety-confirm",
+    "x-agentstudio-confirm",
+    "x-agentstudio-tool-token"
   ]);
 
   for (const [name, value] of Object.entries(request.headers || {})) {
@@ -120,8 +120,8 @@ async function proxyApiRequest({
     headers.set(name, value);
   }
 
-  headers.set("x-splitall-forwarded-by", discoveryState.serverId);
-  headers.set("x-splitall-active-service", discoveryState.activeServiceUrl);
+  headers.set("x-agentstudio-forwarded-by", discoveryState.serverId);
+  headers.set("x-agentstudio-active-service", discoveryState.activeServiceUrl);
   if (request.method !== "GET" && request.method !== "HEAD") {
     headers.set("content-length", String(requestBody?.length || 0));
   }
@@ -178,7 +178,7 @@ async function proxyApiRequest({
     });
   } catch (error) {
     logger?.error?.("http.proxy.failed", {
-      requestId: request.__splitallRequestId || "",
+      requestId: request.__agentstudioRequestId || "",
       method: request.method || "GET",
       route: upstreamUrl.pathname,
       targetBaseUrl,
@@ -196,13 +196,13 @@ async function proxyApiRequest({
 
     upstreamHeaders[name] = value;
   }
-  upstreamHeaders["x-splitall-forwarded-by"] = discoveryState.serverId;
-  upstreamHeaders["x-splitall-active-service"] = discoveryState.activeServiceUrl;
+  upstreamHeaders["x-agentstudio-forwarded-by"] = discoveryState.serverId;
+  upstreamHeaders["x-agentstudio-active-service"] = discoveryState.activeServiceUrl;
 
   response.writeHead(upstream.status, upstreamHeaders);
   response.end(upstream.body);
   logger?.info?.("http.proxy.completed", {
-    requestId: request.__splitallRequestId || "",
+    requestId: request.__agentstudioRequestId || "",
     method: request.method || "GET",
     route: upstreamUrl.pathname,
     targetBaseUrl,
@@ -216,7 +216,7 @@ async function handleStaticFallback({ url, response, distPath, discoveryState })
   if (url.pathname === "/" && !distPath) {
     sendJson(response, 200, {
       ok: true,
-      service: "SplitAll Server",
+      service: "AgentStudio Server",
       serverId: discoveryState.serverId,
       activeServiceUrl: discoveryState.activeServiceUrl
     });
@@ -279,12 +279,12 @@ function applySecurityHeaders(response, { isHttps = false } = {}) {
 }
 
 function resolveConsoleAuthEnabled({ runtimeOptions = {} }) {
-  const mode = String(runtimeOptions.consoleAuth || process.env.SPLITALL_CONSOLE_AUTH || "enabled")
+  const mode = String(runtimeOptions.consoleAuth || process.env.AGENTSTUDIO_CONSOLE_AUTH || "enabled")
     .trim()
     .toLowerCase();
   if (mode === "disabled") {
     throw new Error(
-      "SPLITALL_CONSOLE_AUTH=disabled 已被移除；服务端控制台认证必须始终开启。"
+      "AGENTSTUDIO_CONSOLE_AUTH=disabled 已被移除；服务端控制台认证必须始终开启。"
     );
   }
   return true;
@@ -293,7 +293,7 @@ function resolveConsoleAuthEnabled({ runtimeOptions = {} }) {
 function parseAllowPublicConsoleFlag(runtimeOptions = {}) {
   const value =
     runtimeOptions.allowPublicConsole ??
-    process.env.SPLITALL_ALLOW_PUBLIC_CONSOLE ??
+    process.env.AGENTSTUDIO_ALLOW_PUBLIC_CONSOLE ??
     "";
   return value === true || ["1", "true", "yes"].includes(String(value).trim().toLowerCase());
 }
@@ -316,7 +316,7 @@ function assertSafeListenHost(host, runtimeOptions = {}) {
     return;
   }
   throw new Error(
-    "服务端默认只允许监听本机回环地址。若确需暴露到局域网/公网，请显式设置 SPLITALL_ALLOW_PUBLIC_CONSOLE=1 或 --allow-public-console，并确保前置网络访问控制已配置。"
+    "服务端默认只允许监听本机回环地址。若确需暴露到局域网/公网，请显式设置 AGENTSTUDIO_ALLOW_PUBLIC_CONSOLE=1 或 --allow-public-console，并确保前置网络访问控制已配置。"
   );
 }
 
@@ -402,7 +402,7 @@ export async function startHttpServer({
     const credsPath = path.join(userDataPath, "auth", "initial-credentials.txt");
     initialCredentialsPath = credsPath;
     const credsContent = [
-      "SplitAll Console Initial Credentials",
+      "AgentStudio Console Initial Credentials",
       "=====================================",
       `Username : ${initialOwner.username}`,
       `Password : ${initialOwner.password}`,
@@ -599,8 +599,8 @@ export async function startHttpServer({
       actor: { type: "http-request" }
     });
     setTraceContextOnRequest(request, traceContext);
-    response.setHeader("X-SplitAll-Trace-Id", traceContext.traceId);
-    request.__splitallRequestId = requestId;
+    response.setHeader("X-AgentStudio-Trace-Id", traceContext.traceId);
+    request.__agentstudioRequestId = requestId;
     let finished = false;
     response.once("finish", () => {
       finished = true;

@@ -44,7 +44,7 @@ async function createKnowledgeJob(baseUrl, title, body) {
   return job;
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-evolution-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-evolution-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -80,7 +80,7 @@ try {
   );
 
   const skill = await fetchJson(`${server.url}/api/knowledge/agent-skill`);
-  assert.equal(skill.protocolVersion, "splitall.knowledge-agent-skill.v1");
+  assert.equal(skill.protocolVersion, "agentstudio.knowledge-agent-skill.v1");
   assert.equal(skill.toolPolicy.coarseToFineRequired, true);
 
   const plan = await fetchJson(`${server.url}/api/knowledge/agent-skill/plan`, {
@@ -108,7 +108,7 @@ try {
       }
     })
   });
-  assert.equal(run.protocolVersion, "splitall.knowledge-agent-skill.v1");
+  assert.equal(run.protocolVersion, "agentstudio.knowledge-agent-skill.v1");
   assert.equal(run.plan.coarseIndexFirst, true);
   assert.equal(run.searchResult.hierarchy.enforced, true);
   assert.equal(run.gate.ok, true);
@@ -154,7 +154,7 @@ try {
       }
     })
   });
-  assert.equal(evalRun.protocolVersion, "splitall.agent-evaluation.v1");
+  assert.equal(evalRun.protocolVersion, "agentstudio.agent-evaluation.v1");
   assert.equal(evalRun.status, "completed");
   assert.equal(evalRun.passed, true);
   assert.equal(evalRun.metrics.recallAtK, 1);

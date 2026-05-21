@@ -1,6 +1,6 @@
 {
-  "id": "splitall.admin",
-  "label": "SplitAll admin",
+  "id": "agentstudio.admin",
+  "label": "AgentStudio admin",
   "requiredScopes": [
     "knowledge:admin",
     "storage:read",

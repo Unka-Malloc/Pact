@@ -45,7 +45,7 @@ function usage() {
   return [
     "Usage:",
     "  node server/scripts/verify-knowledge-license-manifest.mjs",
-    "  node server/scripts/verify-knowledge-license-manifest.mjs --manifest build/release/splitall-server-linux-x64/license-manifest.json",
+    "  node server/scripts/verify-knowledge-license-manifest.mjs --manifest build/release/agentstudio-server-linux-x64/license-manifest.json",
     "  node server/scripts/verify-knowledge-license-manifest.mjs --write build/license-manifest.json",
     "  node server/scripts/verify-knowledge-license-manifest.mjs --temp-manifest",
     "  node server/scripts/verify-knowledge-license-manifest.mjs --check-allowlist",
@@ -145,7 +145,7 @@ async function main() {
       await writeManifest(manifestPath, manifest);
       mode = "generated-written";
     } else if (args["temp-manifest"]) {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-license-"));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-license-"));
       manifestPath = path.join(tempDir, "license-manifest.json");
       await writeManifest(manifestPath, manifest);
       mode = "generated-temp";

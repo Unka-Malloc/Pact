@@ -1,5 +1,5 @@
 export const PREPROCESS_RESULT_SCHEMA_VERSION = 1;
-export const PREPROCESS_RESULT_TYPE = "splitall.knowledge.preprocess-result";
+export const PREPROCESS_RESULT_TYPE = "agentstudio.knowledge.preprocess-result";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];

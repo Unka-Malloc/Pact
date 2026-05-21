@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const DEFAULT_IMPORT_FILE_TYPES_PATH = path.resolve(__dirname, "../../../config/default-import-file-types.json");
 
 function readDefaultImportRoutes() {
-  const filePath = path.resolve(process.env.SPLITALL_IMPORT_FILE_TYPES_PATH || DEFAULT_IMPORT_FILE_TYPES_PATH);
+  const filePath = path.resolve(process.env.AGENTSTUDIO_IMPORT_FILE_TYPES_PATH || DEFAULT_IMPORT_FILE_TYPES_PATH);
   try {
     const parsed = JSON.parse(fsSync.readFileSync(filePath, "utf8"));
     const normalizeRoute = (route = {}, fallbackMountName = "", fallbackAction = "extractDocument") =>

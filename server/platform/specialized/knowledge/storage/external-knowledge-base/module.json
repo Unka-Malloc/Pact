@@ -1,10 +1,10 @@
 {
   "name": "ExternalKnowledgeBase",
   "version": 1,
-  "description": "Optional splitall.knowledge.v1 mount that mirrors KnowledgeCore records into mature external open-source knowledge backends.",
+  "description": "Optional agentstudio.knowledge.v1 mount that mirrors KnowledgeCore records into mature external open-source knowledge backends.",
   "defaultLoaded": false,
-  "protocol": "splitall.knowledge.v1",
-  "adapterProtocol": "splitall.external-knowledge-adapter.v1",
+  "protocol": "agentstudio.knowledge.v1",
+  "adapterProtocol": "agentstudio.external-knowledge-adapter.v1",
   "components": {
     "knowledgeBase": {
       "path": "./index.mjs",

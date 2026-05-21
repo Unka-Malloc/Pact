@@ -157,11 +157,11 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const host = String(args.host || "127.0.0.1").trim();
   const port = normalizePort(args.port);
-  const label = String(args.label || `dev.splitall.server.${port}`).trim();
-  const supervisorLabel = String(args["supervisor-label"] || "dev.splitall.background-supervisor").trim();
-  const inspectionLabel = String(args["inspection-label"] || "dev.splitall.system-inspection").trim();
+  const label = String(args.label || `dev.agentstudio.server.${port}`).trim();
+  const supervisorLabel = String(args["supervisor-label"] || "dev.agentstudio.background-supervisor").trim();
+  const inspectionLabel = String(args["inspection-label"] || "dev.agentstudio.system-inspection").trim();
   const dataDir = path.resolve(
-    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, ".splitall-server-data"))
+    String(args["data-dir"] || process.env.AGENTSTUDIO_SERVER_DATA_DIR || path.join(projectRoot, ".agentstudio-server-data"))
   );
   const logsDir = path.join(projectRoot, "build", "logs");
   const logPath = path.join(logsDir, `server-${port}.log`);
@@ -203,11 +203,11 @@ async function main() {
       logPath,
       errorLogPath,
       environment: {
-        SPLITALL_SERVER_DATA_DIR: dataDir,
-        SPLITALL_BACKGROUND_SUPERVISOR: "1",
-        SPLITALL_IMPORT_WORKER_EXTERNAL: "1",
-        SPLITALL_SOURCE_WATCHER_EXTERNAL: "1",
-        SPLITALL_MAINTENANCE_WORKER_EXTERNAL: "1"
+        AGENTSTUDIO_SERVER_DATA_DIR: dataDir,
+        AGENTSTUDIO_BACKGROUND_SUPERVISOR: "1",
+        AGENTSTUDIO_IMPORT_WORKER_EXTERNAL: "1",
+        AGENTSTUDIO_SOURCE_WATCHER_EXTERNAL: "1",
+        AGENTSTUDIO_MAINTENANCE_WORKER_EXTERNAL: "1"
       }
     }),
     "utf8"
@@ -225,7 +225,7 @@ async function main() {
       logPath: supervisorLogPath,
       errorLogPath: supervisorErrorLogPath,
       environment: {
-        SPLITALL_SERVER_DATA_DIR: dataDir
+        AGENTSTUDIO_SERVER_DATA_DIR: dataDir
       }
     }),
     "utf8"
@@ -245,7 +245,7 @@ async function main() {
       logPath: inspectionLogPath,
       errorLogPath: inspectionErrorLogPath,
       environment: {
-        SPLITALL_SERVER_DATA_DIR: dataDir
+        AGENTSTUDIO_SERVER_DATA_DIR: dataDir
       }
     }),
     "utf8"

@@ -1,5 +1,5 @@
 {
-  "id": "splitall.knowledge.maintain",
+  "id": "agentstudio.knowledge.maintain",
   "label": "Knowledge maintenance",
   "requiredScopes": [
     "knowledge:read",

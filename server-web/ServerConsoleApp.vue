@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useConsole } from "./composables/useConsole";
 
 // ─── Theme toggle ────────────────────────────────────────────────────────────
-const THEME_KEY = 'splitall-theme';
+const THEME_KEY = 'agentstudio-theme';
 type ThemeMode = 'system' | 'dark' | 'light';
 const themeMode = ref<ThemeMode>('system');
 
@@ -164,7 +164,7 @@ const {
       <div class="brand-block" :class="{ 'is-loading': !consoleState }">
         <div class="brand-mark" aria-hidden="true">S</div>
         <div class="brand-text">
-          <h1>SplitAll</h1>
+          <h1>AgentStudio</h1>
           <p class="brand-subtitle">
             <span v-if="!consoleState" class="brand-loading-label" aria-live="polite">
               正在初始化
@@ -459,7 +459,7 @@ const {
               <div class="auth-brand">
                 <div class="brand-mark" aria-hidden="true">S</div>
                 <div>
-                  <h1 class="auth-brand-name">SplitAll</h1>
+                  <h1 class="auth-brand-name">AgentStudio</h1>
                   <p class="brand-subtitle">知识管理控制台</p>
                 </div>
                 <!-- connecting spinner -->

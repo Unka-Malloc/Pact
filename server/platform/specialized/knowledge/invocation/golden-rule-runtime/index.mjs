@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const GOLDEN_RULE_PROTOCOL_VERSION = "splitall.golden-rule.v1";
+export const GOLDEN_RULE_PROTOCOL_VERSION = "agentstudio.golden-rule.v1";
 export const DEFAULT_GOLDEN_RULE_PACKAGE_ID = "default-golden-rules";
 
 function nowIso() {

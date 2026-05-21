@@ -50,7 +50,7 @@ export async function createServerRuntimeProviders({
       operationConcurrencyScope,
       toolManagementStore: createToolManagementStore({ userDataPath }),
       queueMonitor,
-      schedulerEnabled: process.env.SPLITALL_MAINTENANCE_WORKER_EXTERNAL !== "1",
+      schedulerEnabled: process.env.AGENTSTUDIO_MAINTENANCE_WORKER_EXTERNAL !== "1",
       logger: runtimeLogger
     }]
   );
@@ -62,7 +62,7 @@ export async function createServerRuntimeProviders({
       userDataPath,
       jobManager,
       protocolEventBus,
-      watchingEnabled: process.env.SPLITALL_SOURCE_WATCHER_EXTERNAL !== "1"
+      watchingEnabled: process.env.AGENTSTUDIO_SOURCE_WATCHER_EXTERNAL !== "1"
     }]
   );
   const agentWorkspace = await createProvider(

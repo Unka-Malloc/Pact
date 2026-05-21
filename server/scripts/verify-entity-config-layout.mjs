@@ -44,7 +44,7 @@ function assertUniqueIds(items, label) {
 
 async function verifyToolEntityConfigs() {
   await assertManifest(path.join(ENTITY_ROOT, "tools/manifest.json"), {
-    entityType: "splitall.tool-management.entities"
+    entityType: "agentstudio.tool-management.entities"
   });
   const groups = [
     ["scopes", TOOL_MANAGEMENT_SCOPES],
@@ -53,7 +53,7 @@ async function verifyToolEntityConfigs() {
   ];
   for (const [kind, loaded] of groups) {
     await assertManifest(path.join(ENTITY_ROOT, `tools/${kind}/manifest.json`), {
-      entityType: `splitall.tool-management.${kind}`
+      entityType: `agentstudio.tool-management.${kind}`
     });
     const files = await listJsonFiles(path.join(ENTITY_ROOT, "tools", kind));
     assert.equal(files.length, loaded.length, `tool ${kind} file count must match loaded catalog`);
@@ -67,15 +67,15 @@ async function verifyToolEntityConfigs() {
 
 async function verifySkillBundles() {
   await assertManifest(path.join(ENTITY_ROOT, "skills/knowledge-skill-framework/manifest.json"), {
-    bundleType: "splitall.skill-framework.bundle"
+    bundleType: "agentstudio.skill-framework.bundle"
   });
   await assertManifest(path.join(ENTITY_ROOT, "skills/knowledge-agent-skill/manifest.json"), {
-    bundleType: "splitall.agent-skill.bundle"
+    bundleType: "agentstudio.agent-skill.bundle"
   });
   const framework = await readJson(path.join(ENTITY_ROOT, "skills/knowledge-skill-framework/framework.json"));
-  assert.equal(framework.frameworkId, "splitall.default-knowledge-skill-framework");
+  assert.equal(framework.frameworkId, "agentstudio.default-knowledge-skill-framework");
 
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-skill-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-entity-skill-"));
   const { createKnowledgeSkillRuntime } = await import("../platform/specialized/knowledge/invocation/knowledge-skill-runtime/index.mjs");
   const runtime = createKnowledgeSkillRuntime({ userDataPath });
   try {
@@ -98,7 +98,7 @@ async function verifySkillBundles() {
     const bundleDirs = await fs.readdir(bundleRoot);
     assert.equal(bundleDirs.length, 1);
     const manifest = await readJson(path.join(bundleRoot, bundleDirs[0], "manifest.json"));
-    assert.equal(manifest.bundleType, "splitall.knowledge-skill.bundle");
+    assert.equal(manifest.bundleType, "agentstudio.knowledge-skill.bundle");
     assert.equal(manifest.skillId, skillId);
     const dependencies = await readJson(path.join(bundleRoot, bundleDirs[0], "dependencies.json"));
     assert.equal(Array.isArray(dependencies.requiredTools), true);
@@ -116,7 +116,7 @@ async function verifySkillBundles() {
 }
 
 async function verifyModelAgentEntityFiles() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-agent-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-entity-agent-"));
   try {
     await saveSettings(userDataPath, {
       modelLibraryEntries: ["deepseek"],
@@ -148,16 +148,16 @@ async function verifyModelAgentEntityFiles() {
 
 async function verifyStandards() {
   await assertManifest(path.join(ENTITY_ROOT, "standards/golden-rules/manifest.json"), {
-    bundleType: "splitall.standard.bundle"
+    bundleType: "agentstudio.standard.bundle"
   });
   await assertManifest(path.join(ENTITY_ROOT, "specs/import-file-types/manifest.json"), {
-    bundleType: "splitall.spec.bundle"
+    bundleType: "agentstudio.spec.bundle"
   });
   await assertManifest(path.join(ENTITY_ROOT, "specs/source-search-rules/manifest.json"), {
-    bundleType: "splitall.spec.bundle"
+    bundleType: "agentstudio.spec.bundle"
   });
 
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-entity-package-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-entity-package-"));
   const { createGoldenRuleRuntime } = await import("../platform/specialized/knowledge/invocation/golden-rule-runtime/index.mjs");
   const goldenRuleRuntime = createGoldenRuleRuntime({ userDataPath });
   try {
@@ -173,7 +173,7 @@ async function verifyStandards() {
 
 async function main() {
   await assertManifest(path.join(ENTITY_ROOT, "manifest.json"), {
-    entityType: "splitall.entity-config-root"
+    entityType: "agentstudio.entity-config-root"
   });
   await verifyToolEntityConfigs();
   await verifySkillBundles();

@@ -36,7 +36,7 @@ async function waitForJob(baseUrl, jobId) {
   throw new Error("Job did not complete in time.");
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-knowledge-mm-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-mm-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -76,7 +76,7 @@ try {
   await waitForJob(server.url, createdJob.id);
 
   const capabilities = await fetchJson(`${server.url}/api/knowledge/capabilities`);
-  assert.equal(capabilities.protocolVersion, "splitall.knowledge.v1");
+  assert.equal(capabilities.protocolVersion, "agentstudio.knowledge.v1");
   assert.equal(capabilities.modalities.text, true);
   assert.equal(capabilities.modalities.image, true);
 
@@ -150,7 +150,7 @@ try {
       limit: 5
     })
   });
-  assert.equal(search.protocolVersion, "splitall.knowledge.v1");
+  assert.equal(search.protocolVersion, "agentstudio.knowledge.v1");
   assert.equal(search.modalityPolicy.mode, "multimodal");
   assert.equal(search.modalityPolicy.filtersAllowed, false);
   assert.ok(search.items.length > 0);
@@ -179,7 +179,7 @@ try {
     })
   });
   assert.equal(rendered.contentType, "text/markdown; charset=utf-8");
-  assert.match(rendered.markdown, /splitall_knowledge:/);
+  assert.match(rendered.markdown, /agentstudio_knowledge:/);
   const encodedAssetId = encodeURIComponent(assetId).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(rendered.markdown, new RegExp(`/api/knowledge/assets/${encodedAssetId}`));
 
@@ -200,7 +200,7 @@ try {
   const cliResult = await execFileAsync(
     process.execPath,
     [
-      "server/scripts/splitall.mjs",
+      "server/scripts/agentstudio.mjs",
       "knowledge",
       "search",
       "--server-url",
@@ -217,9 +217,9 @@ try {
     }
   );
   const cliPayload = JSON.parse(cliResult.stdout);
-  assert.equal(cliPayload.protocolVersion, "splitall.knowledge.v1");
+  assert.equal(cliPayload.protocolVersion, "agentstudio.knowledge.v1");
   assert.ok(cliPayload.items.length > 0);
-  assert.match(cliPayload.rendered.markdown, /splitall_knowledge:/);
+  assert.match(cliPayload.rendered.markdown, /agentstudio_knowledge:/);
 
   const deleted = await fetchJson(`${server.url}/api/jobs/${encodeURIComponent(createdJob.id)}`, {
     method: "DELETE"

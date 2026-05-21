@@ -11,7 +11,7 @@ import { evaluateOperationSafety } from "../platform/common/operation-dispatcher
 import { SERVER_API_OPERATIONS, listInterfaceCatalog } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { installAuthenticatedFetch, readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 
-const splitallCliPath = fileURLToPath(new URL("./splitall.mjs", import.meta.url));
+const agentstudioCliPath = fileURLToPath(new URL("./agentstudio.mjs", import.meta.url));
 const consoleAuthCliPath = fileURLToPath(new URL("./console-auth.mjs", import.meta.url));
 
 async function requestJson(url, options = {}) {
@@ -39,7 +39,7 @@ function cookieHeaderFrom(response) {
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
       : String(response.headers.get("set-cookie") || "")
-          .split(/,(?=\s*splitall_)/)
+          .split(/,(?=\s*agentstudio_)/)
           .filter(Boolean);
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
@@ -67,7 +67,7 @@ function authOptions(auth, options = {}) {
       ...(options.headers || {}),
       Cookie: auth.cookie,
       ...(!["GET", "HEAD", "OPTIONS"].includes(method)
-        ? { "x-splitall-csrf": auth.csrf }
+        ? { "x-agentstudio-csrf": auth.csrf }
         : {})
     }
   };
@@ -75,7 +75,7 @@ function authOptions(auth, options = {}) {
 
 function runCli(args, env = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [splitallCliPath, ...args], {
+    const child = spawn(process.execPath, [agentstudioCliPath, ...args], {
       env: {
         ...process.env,
         ...env
@@ -86,7 +86,7 @@ function runCli(args, env = {}) {
     let stderr = "";
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error(`splitall CLI timed out: ${args.join(" ")}`));
+      reject(new Error(`agentstudio CLI timed out: ${args.join(" ")}`));
     }, 15000);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -103,7 +103,7 @@ function runCli(args, env = {}) {
     child.on("close", (code) => {
       clearTimeout(timeout);
       if (code !== 0) {
-        reject(new Error(stderr || stdout || "splitall CLI failed"));
+        reject(new Error(stderr || stdout || "agentstudio CLI failed"));
         return;
       }
       try {
@@ -252,7 +252,7 @@ function assertOperationDecorators() {
 }
 
 async function verifyCoreApiRpcAndCli() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-maintenance-agent-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-maintenance-agent-"));
   let server = await startHttpServer({
     userDataPath,
     runtimeOptions: {
@@ -292,7 +292,7 @@ async function verifyCoreApiRpcAndCli() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: "检查服务端健康，路径 /Users/example/.splitall/token-secret 不应进入审计明文"
+        message: "检查服务端健康，路径 /Users/example/.agentstudio/token-secret 不应进入审计明文"
       })
     });
     assert.equal(healthChat.run.status, "completed");
@@ -461,7 +461,7 @@ async function verifyCoreApiRpcAndCli() {
 }
 
 async function verifyAuthScopes() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-maintenance-auth-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-maintenance-auth-"));
   const server = await startHttpServer({
     userDataPath,
     runtimeOptions: {

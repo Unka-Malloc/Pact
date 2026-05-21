@@ -26,31 +26,31 @@ const MODEL_LIBRARY_PROVIDERS = new Set([
   "local-model"
 ]);
 const DEFAULT_GOOGLE_MODEL =
-  process.env.SPLITALL_GOOGLE_MODEL || "gemini-flash-lite-latest";
-const DEFAULT_OPENAI_MODEL = process.env.SPLITALL_OPENAI_MODEL || "gpt-5.4-mini";
+  process.env.AGENTSTUDIO_GOOGLE_MODEL || "gemini-flash-lite-latest";
+const DEFAULT_OPENAI_MODEL = process.env.AGENTSTUDIO_OPENAI_MODEL || "gpt-5.4-mini";
 const DEFAULT_DEEPSEEK_MODEL =
-  process.env.SPLITALL_DEEPSEEK_MODEL || "deepseek-v4-pro";
-const DEFAULT_MODEL_PROVIDER = process.env.SPLITALL_DEFAULT_MODEL_PROVIDER || "";
-const DEFAULT_MODEL = process.env.SPLITALL_DEFAULT_MODEL || "";
+  process.env.AGENTSTUDIO_DEEPSEEK_MODEL || "deepseek-v4-pro";
+const DEFAULT_MODEL_PROVIDER = process.env.AGENTSTUDIO_DEFAULT_MODEL_PROVIDER || "";
+const DEFAULT_MODEL = process.env.AGENTSTUDIO_DEFAULT_MODEL || "";
 const DEFAULT_CUSTOM_HTTP_ADAPTER = {
   alias:
-    process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_ALIAS ||
-    process.env.SPLITALL_CUSTOM_MODEL_ALIAS ||
+    process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_ALIAS ||
+    process.env.AGENTSTUDIO_CUSTOM_MODEL_ALIAS ||
     "external-agent",
-  url: process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_URL || "",
-  token: process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TOKEN || "",
-  tokenHeader: process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TOKEN_HEADER || "token",
-  tokenPrefix: process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TOKEN_PREFIX || "",
-  agentName: process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_AGENT_NAME || "",
+  url: process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_URL || "",
+  token: process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN || "",
+  tokenHeader: process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN_HEADER || "token",
+  tokenPrefix: process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN_PREFIX || "",
+  agentName: process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_AGENT_NAME || "",
   pluginList: [],
-  engine: process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_ENGINE || "",
+  engine: process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_ENGINE || "",
   parameters: {},
-  timeoutMs: Number(process.env.SPLITALL_CUSTOM_HTTP_ADAPTER_TIMEOUT_MS || 120000)
+  timeoutMs: Number(process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TIMEOUT_MS || 120000)
 };
 
 const DEFAULT_AGENT_EXPLORE_DEFAULTS = {
   systemPrompt:
-    "You are SplitAll Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
+    "You are AgentStudio Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
   toolPolicyPrompt:
     "Always search from coarse to fine. For counts, totals, rankings, frequency, or 'which has the most' questions, first call knowledge_aggregate. For normal evidence recall, first call keyword_search with broad but meaningful keywords, then open_evidence only for promising evidenceId values.",
   continuationPrompt:
@@ -97,7 +97,7 @@ const DEFAULT_AGENT_EXPLORE_DEFAULTS = {
   toolChoice: "auto",
   reviewFusionModelAlias: "",
   reviewFusionSystemPrompt:
-    "你是 SplitAll 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
+    "你是 AgentStudio 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
   reviewFusionTemperature: 0.1,
   reviewFusionMaxTokens: 1200
 };
@@ -167,14 +167,14 @@ function defaultModuleIntelligence() {
 }
 
 export const DEFAULT_SETTINGS = {
-  tikaJarPath: process.env.SPLITALL_TIKA_JAR_PATH || "",
-  javaBinPath: process.env.SPLITALL_JAVA_BIN_PATH || "",
+  tikaJarPath: process.env.AGENTSTUDIO_TIKA_JAR_PATH || "",
+  javaBinPath: process.env.AGENTSTUDIO_JAVA_BIN_PATH || "",
   modelIntelligenceEnabled:
-    process.env.SPLITALL_MODEL_INTELLIGENCE_ENABLED === "1" ||
-    process.env.SPLITALL_GOOGLE_API_KEY
+    process.env.AGENTSTUDIO_MODEL_INTELLIGENCE_ENABLED === "1" ||
+    process.env.AGENTSTUDIO_GOOGLE_API_KEY
       ? true
       : false,
-  googleApiKey: process.env.SPLITALL_GOOGLE_API_KEY || "",
+  googleApiKey: process.env.AGENTSTUDIO_GOOGLE_API_KEY || "",
   googleModel: DEFAULT_GOOGLE_MODEL,
   openAiModel: DEFAULT_OPENAI_MODEL,
   defaultModelProvider: DEFAULT_MODEL_PROVIDER,
@@ -188,39 +188,39 @@ export const DEFAULT_SETTINGS = {
   moduleModelAssignments: {},
   moduleAgentProfiles: {},
   moduleIntelligence: defaultModuleIntelligence(),
-  openRouterApiKey: process.env.SPLITALL_OPENROUTER_API_KEY || "",
+  openRouterApiKey: process.env.AGENTSTUDIO_OPENROUTER_API_KEY || "",
   openRouterBaseUrl:
-    process.env.SPLITALL_OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-  openRouterModel: process.env.SPLITALL_OPENROUTER_MODEL || "openai/gpt-4.1-mini",
-  deepSeekApiKey: process.env.SPLITALL_DEEPSEEK_API_KEY || "",
-  deepSeekBaseUrl: process.env.SPLITALL_DEEPSEEK_BASE_URL || "https://api.deepseek.com",
+    process.env.AGENTSTUDIO_OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+  openRouterModel: process.env.AGENTSTUDIO_OPENROUTER_MODEL || "openai/gpt-4.1-mini",
+  deepSeekApiKey: process.env.AGENTSTUDIO_DEEPSEEK_API_KEY || "",
+  deepSeekBaseUrl: process.env.AGENTSTUDIO_DEEPSEEK_BASE_URL || "https://api.deepseek.com",
   deepSeekModel: DEFAULT_DEEPSEEK_MODEL,
-  deepSeekTimeoutMs: Number(process.env.SPLITALL_DEEPSEEK_TIMEOUT_MS || 120000),
-  copilotEndpoint: process.env.SPLITALL_COPILOT_ENDPOINT || "",
-  copilotApiKey: process.env.SPLITALL_COPILOT_API_KEY || "",
-  copilotModel: process.env.SPLITALL_COPILOT_MODEL || "copilot-default",
-  localModelEndpoint: process.env.SPLITALL_LOCAL_MODEL_ENDPOINT || "",
-  localModelName: process.env.SPLITALL_LOCAL_MODEL_NAME || "local-default",
+  deepSeekTimeoutMs: Number(process.env.AGENTSTUDIO_DEEPSEEK_TIMEOUT_MS || 120000),
+  copilotEndpoint: process.env.AGENTSTUDIO_COPILOT_ENDPOINT || "",
+  copilotApiKey: process.env.AGENTSTUDIO_COPILOT_API_KEY || "",
+  copilotModel: process.env.AGENTSTUDIO_COPILOT_MODEL || "copilot-default",
+  localModelEndpoint: process.env.AGENTSTUDIO_LOCAL_MODEL_ENDPOINT || "",
+  localModelName: process.env.AGENTSTUDIO_LOCAL_MODEL_NAME || "local-default",
   customModelAlias:
-    process.env.SPLITALL_CUSTOM_MODEL_ALIAS || DEFAULT_CUSTOM_HTTP_ADAPTER.alias,
-  customModelLabel: process.env.SPLITALL_CUSTOM_MODEL_LABEL || "自定义 HTTP 模型",
-  customModelApiKey: process.env.SPLITALL_CUSTOM_MODEL_API_KEY || "",
+    process.env.AGENTSTUDIO_CUSTOM_MODEL_ALIAS || DEFAULT_CUSTOM_HTTP_ADAPTER.alias,
+  customModelLabel: process.env.AGENTSTUDIO_CUSTOM_MODEL_LABEL || "自定义 HTTP 模型",
+  customModelApiKey: process.env.AGENTSTUDIO_CUSTOM_MODEL_API_KEY || "",
   customHttpAdapter: DEFAULT_CUSTOM_HTTP_ADAPTER,
   customHttpAdapters: [],
   analysisModuleId:
-    process.env.SPLITALL_ANALYSIS_MODULE_ID ||
-    process.env.SPLITALL_ANALYSIS_ALGORITHM ||
+    process.env.AGENTSTUDIO_ANALYSIS_MODULE_ID ||
+    process.env.AGENTSTUDIO_ANALYSIS_ALGORITHM ||
     "builtin:heuristic-hybrid-v1",
   ocrEnabled:
-    process.env.SPLITALL_OCR_ENABLED === undefined
+    process.env.AGENTSTUDIO_OCR_ENABLED === undefined
       ? true
-      : process.env.SPLITALL_OCR_ENABLED !== "0",
-  ocrPythonPath: process.env.SPLITALL_OCR_PYTHON_PATH || "",
-  ocrLanguage: process.env.SPLITALL_PADDLEOCR_LANG || "ch",
-  pdfVisualPythonPath: process.env.SPLITALL_PDF_VISUAL_PYTHON_PATH || "",
-  retrievalHalfLifeDays: Number(process.env.SPLITALL_RETRIEVAL_HALF_LIFE_DAYS || 45),
-  staleAfterDays: Number(process.env.SPLITALL_STALE_AFTER_DAYS || 180),
-  transactionWindowDays: Number(process.env.SPLITALL_TRANSACTION_WINDOW_DAYS || 30)
+      : process.env.AGENTSTUDIO_OCR_ENABLED !== "0",
+  ocrPythonPath: process.env.AGENTSTUDIO_OCR_PYTHON_PATH || "",
+  ocrLanguage: process.env.AGENTSTUDIO_PADDLEOCR_LANG || "ch",
+  pdfVisualPythonPath: process.env.AGENTSTUDIO_PDF_VISUAL_PYTHON_PATH || "",
+  retrievalHalfLifeDays: Number(process.env.AGENTSTUDIO_RETRIEVAL_HALF_LIFE_DAYS || 45),
+  staleAfterDays: Number(process.env.AGENTSTUDIO_STALE_AFTER_DAYS || 180),
+  transactionWindowDays: Number(process.env.AGENTSTUDIO_TRANSACTION_WINDOW_DAYS || 30)
 };
 
 export function getSettingsPath(userDataPath) {

@@ -7,8 +7,8 @@ import Database from "better-sqlite3";
 
 const scryptAsync = promisify(crypto.scrypt);
 
-export const CONSOLE_SESSION_COOKIE = "splitall_console_session";
-export const CONSOLE_CSRF_COOKIE = "splitall_console_csrf";
+export const CONSOLE_SESSION_COOKIE = "agentstudio_console_session";
+export const CONSOLE_CSRF_COOKIE = "agentstudio_console_csrf";
 
 export const CONSOLE_SCOPES = [
   "console:read",
@@ -156,21 +156,21 @@ function parseCookies(request) {
 }
 
 // M-2: only accept x-forwarded-* headers from known trusted proxy IPs.
-// By default, only loopback is trusted. Operators set SPLITALL_TRUSTED_PROXIES
+// By default, only loopback is trusted. Operators set AGENTSTUDIO_TRUSTED_PROXIES
 // as a comma-separated list of IP addresses to extend this.
 function isTrustedProxy(request) {
   const remoteAddr = String(request?.socket?.remoteAddress || "").replace(/^::ffff:/, "");
   if (remoteAddr === "127.0.0.1" || remoteAddr === "::1" || remoteAddr === "localhost") {
     return true;
   }
-  const trusted = (process.env.SPLITALL_TRUSTED_PROXIES || "")
+  const trusted = (process.env.AGENTSTUDIO_TRUSTED_PROXIES || "")
     .split(",").map((s) => s.trim()).filter(Boolean);
   return trusted.includes(remoteAddr);
 }
 
 function isSecureRequest(request) {
-  // M-4: honor SPLITALL_COOKIE_SECURE env var (always|auto|never)
-  const envSetting = String(process.env.SPLITALL_COOKIE_SECURE || "auto").trim().toLowerCase();
+  // M-4: honor AGENTSTUDIO_COOKIE_SECURE env var (always|auto|never)
+  const envSetting = String(process.env.AGENTSTUDIO_COOKIE_SECURE || "auto").trim().toLowerCase();
   if (envSetting === "always" || envSetting === "1" || envSetting === "true") return true;
   if (envSetting === "never" || envSetting === "0" || envSetting === "false") return false;
   // "auto": use socket TLS or trust HTTPS from a trusted proxy
@@ -873,7 +873,7 @@ export function createConsoleAuth({ userDataPath }) {
       !operation?.skipCsrf &&
       !safeRequestMethod(method);
     if (needsCsrf) {
-      const csrf = String(request?.headers?.["x-splitall-csrf"] || "").trim();
+      const csrf = String(request?.headers?.["x-agentstudio-csrf"] || "").trim();
       // M-3: session.csrfToken is HMAC-derived; compare timing-safely
       if (!csrf || csrf !== session.csrfToken) {
         audit({

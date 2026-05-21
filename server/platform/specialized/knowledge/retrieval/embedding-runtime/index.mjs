@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const EMBEDDING_PROTOCOL_VERSION = "splitall.embedding.v1";
+export const EMBEDDING_PROTOCOL_VERSION = "agentstudio.embedding.v1";
 
 export const DEFAULT_EMBEDDING_DIMENSION = 128;
 export const DEFAULT_RUNTIME_PROVIDER_ID = "builtin:hashing-vector-runtime";

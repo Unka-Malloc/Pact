@@ -52,14 +52,14 @@ Usage:
   node server/scripts/knowledge-distillation-industrial-benchmark.mjs \\
     --project-dir /path/to/project \\
     --email-dir /path/to/eml-folder \\
-    --output /tmp/splitall-industrial-distillation.json
+    --output /tmp/agentstudio-industrial-distillation.json
 
 Options:
   --project-dir        Scan all Markdown files under this project directory.
   --email-dir          Scan all .eml files and build RFC 5322/RFC 5256-style threads.
   --model-alias        Framework model alias. Default: ${DEFAULT_INDUSTRIAL_DISTILLATION_MODEL}
   --baseline-document  Optional external skill baseline Markdown file.
-  --framework-document Optional SplitAll framework output Markdown file to score against baseline.
+  --framework-document Optional AgentStudio framework output Markdown file to score against baseline.
   --output, -o         Write benchmark JSON to this path. Defaults to stdout.
 `.trim();
 }

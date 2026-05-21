@@ -8,7 +8,7 @@ final class MacOSMailImporter {
 #if canImport(FlutterMacOS)
   static func register(with controller: FlutterViewController) {
     let channel = FlutterMethodChannel(
-      name: "splitall/macos_mail_importer",
+      name: "agentstudio/macos_mail_importer",
       binaryMessenger: controller.engine.binaryMessenger)
     let importer = MacOSMailImporter(channel: channel)
 
@@ -40,10 +40,10 @@ final class MacOSMailImporter {
 #endif
 
   private let queue = DispatchQueue(
-    label: "splitall.macos_mail_importer",
+    label: "agentstudio.macos_mail_importer",
     qos: .userInitiated)
   private let stateQueue = DispatchQueue(
-    label: "splitall.macos_mail_importer.state")
+    label: "agentstudio.macos_mail_importer.state")
 #if canImport(FlutterMacOS)
   private let channel: FlutterMethodChannel
 #endif
@@ -1548,7 +1548,7 @@ private final class MailImportProgressMonitor {
   private let exportDirectory: URL
   private let progressSink: ([String: Any]) -> Void
   private let queue = DispatchQueue(
-    label: "splitall.macos_mail_importer.progress")
+    label: "agentstudio.macos_mail_importer.progress")
   private var timer: DispatchSourceTimer?
   private var readOffset: UInt64 = 0
   private var pendingText = ""
@@ -1792,7 +1792,7 @@ private final class MailExportDeduperCoordinator {
   private let resultsDirectory: URL
   private let store: MailExportDeduperStore
   private let queue = DispatchQueue(
-    label: "splitall.mail_export_deduper",
+    label: "agentstudio.mail_export_deduper",
     qos: .utility)
   private var timer: DispatchSourceTimer?
   private var readOffset: UInt64 = 0
@@ -2579,7 +2579,7 @@ private final class MailIndexCoordinator {
   private let store: MailIndexStore
   private let sourceEventsFile: URL
   private let queue = DispatchQueue(
-    label: "splitall.mail_index.coordinator",
+    label: "agentstudio.mail_index.coordinator",
     qos: .utility)
   private var timer: DispatchSourceTimer?
   private var readOffset: UInt64 = 0
@@ -2648,7 +2648,7 @@ private final class MailIndexMergeScheduler {
   static let shared = MailIndexMergeScheduler()
 
   private let queue = DispatchQueue(
-    label: "splitall.mail_index.merge_scheduler",
+    label: "agentstudio.mail_index.merge_scheduler",
     qos: .utility)
   private var scheduledKeys: Set<String> = []
   private let maxBatchesPerWake = 6
@@ -3824,7 +3824,7 @@ extension MacOSMailImporter {
 }
 
 @main
-struct SplitAllMacOSMailTool {
+struct AgentStudioMacOSMailTool {
   static func main() {
     let status = run(arguments: Array(CommandLine.arguments.dropFirst()))
     Foundation.exit(Int32(status))

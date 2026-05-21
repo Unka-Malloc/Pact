@@ -3,11 +3,11 @@
   "label": "External Knowledge Reader",
   "agentType": "external",
   "toolsets": [
-    "splitall.knowledge.read"
+    "agentstudio.knowledge.read"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "splitall.admin"
+    "agentstudio.admin"
   ],
   "maxRisk": "read_only",
   "approvalPolicy": "deny_write",

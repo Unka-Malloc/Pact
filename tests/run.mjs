@@ -620,7 +620,7 @@ function splitCsv(value) {
 }
 
 function printHelp() {
-  console.log(`SplitAll unified test runner
+  console.log(`AgentStudio unified test runner
 
 Usage:
   node tests/run.mjs [--profile fast|standard|coverage|security|server|smoke|prebuild|client|linux|ubuntu|release|changed]
@@ -828,7 +828,7 @@ async function main() {
   const startedAt = new Date();
   const results = [];
 
-  console.log(`SplitAll test runner: profile=${options.profile} suites=${selectedIds.length}`);
+  console.log(`AgentStudio test runner: profile=${options.profile} suites=${selectedIds.length}`);
   console.log(`Report directory: ${defaultReportDir}`);
 
   for (const id of selectedIds) {
@@ -883,7 +883,7 @@ async function main() {
   const summary = summarize(results);
   const report = {
     schemaVersion: 1,
-    runner: "splitall-unified-test-runner",
+    runner: "agentstudio-unified-test-runner",
     profile: options.profile,
     selectedSuites: selectedIds,
     options: {
@@ -910,7 +910,7 @@ async function main() {
   const timestamp = startedAt.toISOString().replace(/[:.]/gu, "-");
   const reportPath = options.report
     ? path.resolve(repoRoot, options.report)
-    : path.join(defaultReportDir, `splitall-test-report-${timestamp}.json`);
+    : path.join(defaultReportDir, `agentstudio-test-report-${timestamp}.json`);
   await writeJsonAtomic(reportPath, report);
   await writeJsonAtomic(path.join(defaultReportDir, "latest.json"), report);
 
