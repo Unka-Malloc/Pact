@@ -44,4 +44,4 @@ Optional LlamaIndex + LanceDB support is exposed through JavaScript adapters or 
 
 ## License Policy
 
-The module enforces the project policy that production-bundled knowledge dependencies must be MIT, Apache-2.0, project-internal, or explicitly compatible. Unknown model weights, GPL/AGPL components, cloud-only runtimes, and implicit downloads are not acceptable for offline server packages. LlamaIndex, LanceDB, and reranker/embedding models remain license-gated optional runtime components until explicitly configured.
+The repository is licensed as GPL-3.0-only. This module also enforces a stricter production-bundle policy for third-party knowledge dependencies: bundled dependencies must be MIT, Apache-2.0, project-internal, or explicitly compatible with the offline server package policy. Unknown model weights, GPL/AGPL components, cloud-only runtimes, and implicit downloads are not acceptable for offline server packages until that policy is deliberately changed. LlamaIndex, LanceDB, and reranker/embedding models remain license-gated optional runtime components until explicitly configured.

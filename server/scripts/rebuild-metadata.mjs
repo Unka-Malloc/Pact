@@ -4,7 +4,7 @@ import { rebuildMetadataStore } from "../platform/common/storage/rebuild-metadat
 
 function parseArgs(argv) {
   const args = {
-    userDataPath: path.resolve(process.cwd(), "build/server-data")
+    userDataPath: path.resolve(process.cwd(), ".splitall-server-data")
   };
 
   for (let index = 0; index < argv.length; index += 1) {

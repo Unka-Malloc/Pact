@@ -21,7 +21,7 @@ import StorageView from "../views/admin/StorageView.vue";
 import ToolsView from "../views/admin/ToolsView.vue";
 
 // ─── Route definitions ─────────────────────────────────────────────────────
-export type KnowledgeTab = "management" | "chunking" | "wordCloud" | "conflicts" | "maintenance";
+export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance";
 export type DebugTab = "knowledgeRecall" | "agentRetrieval";
 export type AdminSection =
   | "storage"
@@ -47,7 +47,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/intelligence", component: IntelligenceView, meta: { viewId: "intelligence" } },
 
   // Knowledge sub-tabs
-  { path: "/knowledge", redirect: "/knowledge/management" },
+  { path: "/knowledge", redirect: "/knowledge/wordCloud" },
   {
     path: "/knowledge/:tab",
     component: KnowledgeView,
@@ -103,7 +103,7 @@ export function viewToPath(
     case "sources":     return "/sources";
     case "intelligence": return "/intelligence";
     case "knowledge":
-      return `/knowledge/${opts?.tab ?? "management"}`;
+      return `/knowledge/${opts?.tab ?? "wordCloud"}`;
     case "debug":
       return `/debug/${opts?.tab ?? "knowledgeRecall"}`;
     case "admin":

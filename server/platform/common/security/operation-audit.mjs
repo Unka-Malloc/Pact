@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { runMigrations } from "../../../common/storage/sqlite-migrations.mjs";
+import { runMigrations } from "../storage/sqlite-migrations.mjs";
 
 const SENSITIVE_KEY_PATTERN =
   /token|secret|password|passwd|authorization|cookie|api[-_]?key|client[-_]?secret|csrf/i;

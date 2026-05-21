@@ -394,6 +394,11 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.sources.set": "splitall.agentWorkspace.sources.set",
   "agent_workspaces.share": "splitall.agentWorkspace.share",
   "agent_workspaces.unshare": "splitall.agentWorkspace.unshare",
+  "agent_sessions.list": "splitall.agentSession.list",
+  "agent_sessions.get": "splitall.agentSession.get",
+  "agent_sessions.context.get": "splitall.agentSession.context",
+  "agent_sessions.events.append": "splitall.agentSession.events.append",
+  "agent_sessions.fork": "splitall.agentSession.fork",
   "agent_workspaces.submissions.resolve": "splitall.agentWorkspace.submissionResolve",
   "agent_workspaces.issues.resolve": "splitall.agentWorkspace.issueResolve",
   "agent_workspaces.locks.list": "splitall.agentWorkspace.locks",
@@ -459,6 +464,8 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.share": "knowledge:maintain",
   "agent_workspaces.unshare": "knowledge:maintain",
   "agent_workspaces.locks.write": "knowledge:write",
+  "agent_sessions.events.append": "knowledge:write",
+  "agent_sessions.fork": "knowledge:write",
   "knowledge.summarization.runs.create": "knowledge:write",
   "knowledge.summarization.runs.approve": "knowledge:maintain",
   "agent_sync.publish": "agent_sync:publish"
@@ -514,7 +521,8 @@ function operationScope(operation) {
     operationId.startsWith("knowledge.") ||
     operationId.startsWith("context.") ||
     operationId.startsWith("client_runtime.") ||
-    operationId.startsWith("agent_workspaces.")
+    operationId.startsWith("agent_workspaces.") ||
+    operationId.startsWith("agent_sessions.")
   ) {
     return "knowledge:read";
   }
@@ -544,7 +552,7 @@ function inferToolsets(operation, scopes = [], toolId = "") {
       toolsets.add("splitall.runtime.maintain");
     }
   }
-  if (toolId.startsWith("splitall.agentWorkspace.")) {
+  if (toolId.startsWith("splitall.agentWorkspace.") || toolId.startsWith("splitall.agentSession.")) {
     toolsets.add("splitall.agent.workspace");
   }
   if (toolId.includes(".renderMarkdown")) {

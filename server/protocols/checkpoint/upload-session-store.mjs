@@ -15,7 +15,7 @@ import {
   hashClientString,
   resolveWithin,
   serverToken
-} from "../../platform/common/platform-core/security/client-strings.mjs";
+} from "../../platform/common/security/client-strings.mjs";
 
 const SESSION_SCHEMA_VERSION = 1;
 

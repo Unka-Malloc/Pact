@@ -11,7 +11,7 @@ const moduleResourceRoot = path.join(projectRoot, "server", "modules");
 const jreRoot = path.join(moduleResourceRoot, "jre");
 const tikaRoot = path.join(moduleResourceRoot, "tika");
 const platformKey = `${process.platform}-${process.arch}`;
-const userDataPath = path.join(projectRoot, "build", "server-data");
+const userDataPath = path.join(projectRoot, ".splitall-server-data");
 
 const JRE_DOWNLOADS = {
   "darwin-arm64": {

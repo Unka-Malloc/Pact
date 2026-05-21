@@ -8,6 +8,7 @@ import { gunzipSync } from "node:zlib";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { authHeaders, installAuthenticatedFetch } from "./test-auth-helper.mjs";
 import {
+  AGENT_SESSION_THREAD_VERSION,
   AGENT_WORKSPACE_PROTOCOL_VERSION,
   createAgentWorkspace
 } from "../platform/specialized/agent/agent-workspace/index.mjs";
@@ -126,6 +127,35 @@ try {
     objective: "Validate shared-space gate"
   }).workspace;
   assert.ok(created.workspaceId);
+
+  const sessionList = workspace.listSessions({ workspaceId: created.workspaceId });
+  assert.equal(sessionList.sessionProtocolVersion, AGENT_SESSION_THREAD_VERSION);
+  assert.equal(sessionList.appendOnly, true);
+  const rootSession = sessionList.sessions.find((item) => item.workspaceId === created.workspaceId);
+  assert.ok(rootSession?.sessionId);
+
+  const appendedSessionEvent = workspace.appendSessionEvent({
+    sessionId: rootSession.sessionId,
+    type: "task_note",
+    title: "验证会话加载",
+    summary: "会话线程以追加事件保存工作状态"
+  });
+  assert.equal(appendedSessionEvent.session.eventCount, 2);
+
+  const forkedSession = workspace.forkSession({
+    sessionId: rootSession.sessionId,
+    title: "验证会话分叉"
+  });
+  assert.equal(forkedSession.ok, true);
+  assert.equal(forkedSession.appendOnly, true);
+  assert.equal(forkedSession.session.parentSessionId, rootSession.sessionId);
+  assert.ok(forkedSession.session.eventCount >= appendedSessionEvent.session.eventCount);
+  const parentAfterFork = workspace.getSession(rootSession.sessionId);
+  assert.equal(parentAfterFork.session.eventCount, appendedSessionEvent.session.eventCount);
+  const forkContext = workspace.getSessionContext(forkedSession.session.sessionId);
+  assert.equal(forkContext.agentSessionId, forkedSession.session.sessionId);
+  assert.equal(forkContext.workspaceId, created.workspaceId);
+  assert.ok(forkContext.contextFingerprint);
 
   const run = workspace.createRun({
     workspaceId: created.workspaceId,
@@ -302,13 +332,13 @@ try {
   const tenantAlpha = workspace.createWorkspace({
     workspaceId: "verify-tenant-alpha-workspace",
     title: "Tenant Alpha",
-    objective: "Tenant isolated workspace",
+    objective: "Team-shared workspace attribution",
     ownerUserId: "user-alpha"
   }).workspace;
   const tenantBeta = workspace.createWorkspace({
     workspaceId: "verify-tenant-beta-workspace",
     title: "Tenant Beta",
-    objective: "Tenant isolated workspace",
+    objective: "Team-shared workspace attribution",
     ownerUserId: "user-beta"
   }).workspace;
   assert.equal(tenantAlpha.ownerUserId, "user-alpha");
@@ -318,23 +348,23 @@ try {
     includeSummary: false
   }).workspaces.map((item) => item.workspaceId);
   assert.ok(alphaVisible.includes("verify-tenant-alpha-workspace"));
-  assert.equal(alphaVisible.includes("verify-tenant-beta-workspace"), false);
+  assert.ok(alphaVisible.includes("verify-tenant-beta-workspace"));
   assert.ok(workspace.getWorkspace({
     workspaceId: "verify-tenant-alpha-workspace",
     actorUserId: "user-alpha"
   }));
-  assert.equal(workspace.getWorkspace({
+  assert.ok(workspace.getWorkspace({
     workspaceId: "verify-tenant-beta-workspace",
     actorUserId: "user-alpha"
-  }), null);
-  assert.equal(workspace.getWorkspaceContext("verify-tenant-beta-workspace", {
+  }));
+  assert.ok(workspace.getWorkspaceContext("verify-tenant-beta-workspace", {
     actorUserId: "user-alpha"
-  }), null);
+  }));
   assert.equal(workspace.hotSwapProfile(
     "verify-tenant-beta-workspace",
     { modelAlias: "blocked-cross-tenant-model" },
     { actorUserId: "user-alpha" }
-  ).ok, false);
+  ).ok, true);
   assert.equal(workspace.hotSwapProfile(
     "verify-tenant-beta-workspace",
     { modelAlias: "admin-approved-model" },
@@ -650,6 +680,54 @@ async function verifyHttpWorkspaceRuntimeInjection() {
     assert.ok(!context.knowledgeSourceIds.includes("source-parent-profile"));
     assert.ok(context.contextFingerprint);
 
+    const httpSessions = await fetchJson(
+      `${server.url}/api/agent-sessions?workspaceId=${encodeURIComponent(childId)}&limit=20`
+    );
+    assert.equal(httpSessions.sessionProtocolVersion, AGENT_SESSION_THREAD_VERSION);
+    assert.equal(httpSessions.appendOnly, true);
+    const httpRootSession = httpSessions.sessions.find((item) => item.workspaceId === childId);
+    assert.ok(httpRootSession?.sessionId);
+    const httpSessionEvent = await fetchJson(
+      `${server.url}/api/agent-sessions/${encodeURIComponent(httpRootSession.sessionId)}/events`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "http_verify",
+          title: "HTTP 会话事件",
+          summary: "HTTP 入口只能追加会话事件"
+        })
+      }
+    );
+    assert.equal(httpSessionEvent.event.type, "http_verify");
+    const httpFork = await fetchJson(
+      `${server.url}/api/agent-sessions/${encodeURIComponent(httpRootSession.sessionId)}/fork`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "HTTP 会话分叉" })
+      }
+    );
+    assert.equal(httpFork.ok, true);
+    assert.equal(httpFork.session.parentSessionId, httpRootSession.sessionId);
+    const httpForkContext = await fetchJson(
+      `${server.url}/api/agent-sessions/${encodeURIComponent(httpFork.session.sessionId)}/context`
+    );
+    assert.equal(httpForkContext.agentSessionId, httpFork.session.sessionId);
+    assert.equal(httpForkContext.workspaceId, childId);
+    assert.equal(httpForkContext.contextProfileId, "http-workspace-context");
+    const previewBySession = await fetchJson(`${server.url}/api/context/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentSessionId: httpFork.session.sessionId,
+        taskBrief: "session context preview",
+        record: false
+      })
+    });
+    assert.equal(previewBySession.contextPack.workspaceContext.agentSessionId, httpFork.session.sessionId);
+    assert.equal(previewBySession.contextPack.profileId, "http-workspace-context");
+
     const contextBundle = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(childId)}/context-bundle?maxItems=4&contentPreviewChars=64`
     );
@@ -833,8 +911,8 @@ async function verifyHttpWorkspaceRuntimeInjection() {
     });
     const operatorAVisibleIds = operatorAList.workspaces.map((item) => item.workspaceId);
     assert.ok(operatorAVisibleIds.includes(operatorAWorkspaceId));
-    assert.equal(operatorAVisibleIds.includes(operatorBWorkspaceId), false);
-    assert.equal(operatorAVisibleIds.includes(childId), false);
+    assert.ok(operatorAVisibleIds.includes(operatorBWorkspaceId));
+    assert.ok(operatorAVisibleIds.includes(childId));
 
     const operatorBOwnContext = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(operatorBWorkspaceId)}/context`,
@@ -879,28 +957,28 @@ async function verifyHttpWorkspaceRuntimeInjection() {
     assert.equal(operatorABundle.bundle, undefined);
     assert.equal(operatorABundle.compressed.encoding, "gzip+base64");
 
-    const deniedOtherTenantContext = await fetchJsonResponse(
+    const sharedOtherOperatorContext = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(operatorBWorkspaceId)}/context`,
       { headers: authHeaders(operatorA) }
     );
-    assert.equal(deniedOtherTenantContext.status, 404);
+    assert.equal(sharedOtherOperatorContext.workspaceId, operatorBWorkspaceId);
 
-    const deniedOwnerWorkspaceContext = await fetchJsonResponse(
+    const sharedOwnerWorkspaceContext = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(childId)}/context`,
       { headers: authHeaders(operatorA) }
     );
-    assert.equal(deniedOwnerWorkspaceContext.status, 404);
+    assert.equal(sharedOwnerWorkspaceContext.workspaceId, childId);
 
-    const deniedOtherTenantBundle = await fetchJsonResponse(
+    const sharedOtherOperatorBundle = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(operatorBWorkspaceId)}/context-bundle`,
       { headers: authHeaders(operatorA) }
     );
-    assert.equal(deniedOtherTenantBundle.status, 404);
-    const deniedOperatorABundleToB = await fetchJsonResponse(
+    assert.equal(sharedOtherOperatorBundle.bundle.context.workspaceId, operatorBWorkspaceId);
+    const sharedOperatorABundleToB = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(operatorAWorkspaceId)}/context-bundle`,
       { headers: authHeaders(operatorB) }
     );
-    assert.equal(deniedOperatorABundleToB.status, 404);
+    assert.equal(sharedOperatorABundleToB.bundle.context.workspaceId, operatorAWorkspaceId);
 
     const operatorBBeforeRestore = await fetchJson(
       `${server.url}/api/agent-workspaces/${encodeURIComponent(operatorBWorkspaceId)}/context`,
@@ -952,7 +1030,7 @@ async function verifyHttpWorkspaceRuntimeInjection() {
       new Set(["operator-a-owned-source", "operator-a-profile-source"])
     );
 
-    const deniedOtherTenantPreview = await fetchJsonResponse(`${server.url}/api/context/preview`, {
+    const sharedOtherWorkspacePreview = await fetchJson(`${server.url}/api/context/preview`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -960,13 +1038,13 @@ async function verifyHttpWorkspaceRuntimeInjection() {
       },
       body: JSON.stringify({
         workspaceId: operatorBWorkspaceId,
-        taskBrief: "cross tenant preview should be rejected",
+        taskBrief: "team-shared preview should load another workspace",
         record: false
       })
     });
-    assert.equal(deniedOtherTenantPreview.status, 404);
+    assert.equal(sharedOtherWorkspacePreview.contextPack.workspaceContext.workspaceId, operatorBWorkspaceId);
 
-    const deniedOtherTenantSearch = await fetchJsonResponse(`${server.url}/api/knowledge/search`, {
+    const sharedOtherWorkspaceSearch = await fetchJson(`${server.url}/api/knowledge/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -979,7 +1057,7 @@ async function verifyHttpWorkspaceRuntimeInjection() {
         limit: 10
       })
     });
-    assert.equal(deniedOtherTenantSearch.status, 404);
+    assert.equal(sharedOtherWorkspaceSearch.workspaceContext.workspaceId, operatorBWorkspaceId);
   } finally {
     await server.close();
     await fs.rm(httpUserDataPath, {

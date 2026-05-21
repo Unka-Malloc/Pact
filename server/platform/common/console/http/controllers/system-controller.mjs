@@ -30,7 +30,15 @@ import {
   saveKnowledgeTaxonomy
 } from "../../../../specialized/knowledge/preprocessing/domain/knowledge-taxonomy/index.mjs";
 import { preprocessWordCloudVocabulary } from "../../../../specialized/knowledge/preprocessing/word-cloud/preprocess.mjs";
-import { getCodexOAuthStatus, startCodexDeviceLogin } from "../../../platform-core/auth/codex-oauth-service.mjs";
+import {
+  createDocumentParsingRuntime,
+  toPublicDocumentParsingResult
+} from "../../../../specialized/knowledge/preprocessing/document-parsing-runtime.mjs";
+import {
+  deleteUploadSession,
+  resolveUploadSessionFiles
+} from "../../../../../protocols/checkpoint/upload-session-store.mjs";
+import { getCodexOAuthStatus, startCodexDeviceLogin } from "../../../security/auth/codex-oauth-service.mjs";
 import { getAgentConfigRegistry } from "../../../../specialized/agent/agent-configs/config-registry.mjs";
 import { enhanceAffairTaxonomy } from "../../../../specialized/knowledge/preprocessing/domain/knowledge-taxonomy/service.mjs";
 import { getBackgroundProcessStatus } from "../../../devops/process-status/background-process-status.mjs";
@@ -39,6 +47,7 @@ import {
   isSourceEvidenceId,
   searchSourceFiles
 } from "../../../../../platform/specialized/knowledge/retrieval/source-file-search-service.mjs";
+import { createKnowledgeDistillationWorkbench } from "../../../../specialized/knowledge/invocation/knowledge-distillation-workbench/index.mjs";
 import {
   getMountConfigPath,
   getMountConfigPaths,
@@ -57,7 +66,7 @@ import {
   parseEntityTypes,
   sendJson
 } from "../http-utils.mjs";
-import { hashClientString, serverToken } from "../../../platform-core/security/client-strings.mjs";
+import { hashClientString, serverToken } from "../../../security/client-strings.mjs";
 import { reconcileStorage, runStorageDoctor } from "../../../storage/ops-tools.mjs";
 import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
 
@@ -418,18 +427,18 @@ function ensureCloudCardByLabel(wordBags = [], label = "", terms = []) {
   }
 
   const fallback = {
-    wordBagId: labelKey,
+    wordBagId: labelKey === "默认" || labelKey === "default" ? "default" : labelKey === "其它" || labelKey === "其他" ? "other" : labelKey,
     label: normalizedLabel,
     summary: `${normalizedLabel}卡片。`,
     relation: "separate",
     terms: [],
     children: []
   };
-  if (labelKey === "default") {
-    fallback.summary = "未归类词语。";
+  if (labelKey === "default" || labelKey === "默认") {
+    fallback.summary = "所有尚未进入明确分组的词汇。";
   }
-  if (labelKey === "其它") {
-    fallback.summary = "低置信/噪声词。";
+  if (labelKey === "其它" || labelKey === "其他") {
+    fallback.summary = "低权重、低置信或噪声词汇。";
   }
 
   const existingIndex = list.findIndex((cloud) => String(cloud?.label || "").trim().toLowerCase() === labelKey);
@@ -526,7 +535,7 @@ function buildWordCloudFromAgentResponse({
     new Set()
   );
   const finalWordBags = ensureCloudCardByLabel(
-    ensureCloudCardByLabel(parsedWordBags, "Default", mergedDefaultTerms),
+    ensureCloudCardByLabel(parsedWordBags, "默认", mergedDefaultTerms),
     "其它",
     mergedOtherTerms
   );
@@ -586,7 +595,7 @@ function buildWordCloudFallbackResult(fullTerms = [], preprocess = null) {
 
   const fallback = normalizeWordCloudWordBagsFromAgent([], sourceFrequencyByTerm);
   const finalWordBags = ensureCloudCardByLabel(
-    ensureCloudCardByLabel(fallback, "Default", defaultTerms),
+    ensureCloudCardByLabel(fallback, "默认", defaultTerms),
     "其它",
     mergedOtherTerms
   );
@@ -1388,21 +1397,70 @@ function arrayOfStrings(value) {
 
 function workspaceAccessOptions(authSession = null) {
   const user = authSession?.user || {};
-  const scopes = new Set(Array.isArray(user.scopes) ? user.scopes : []);
-  const roleId = String(user.roleId || "");
   return {
     actorUserId: String(user.userId || ""),
-    canAccessAll: roleId === "owner" || roleId === "admin" || scopes.has("knowledge:admin")
+    canAccessAll: true,
+    sharingMode: "team-shared"
   };
 }
 
 function applyWorkspaceRuntimeContext(payload = {}, agentWorkspace = null, options = {}) {
+  const agentSessionId = String(
+    payload.agentSessionId ||
+      payload.agent_session_id ||
+      payload.sessionThreadId ||
+      payload.session_thread_id ||
+      payload.workspaceSessionId ||
+      payload.workspace_session_id ||
+      ""
+  ).trim();
   const workspaceId = String(
     payload.workspaceId ||
       payload.workspace_id ||
       payload.sessionWorkspaceId ||
       ""
   ).trim();
+  if (agentSessionId && agentWorkspace && typeof agentWorkspace.getSessionContext === "function") {
+    const sessionContext = agentWorkspace.getSessionContext(agentSessionId, options);
+    if (!sessionContext) {
+      return {
+        input: payload,
+        workspaceContext: null,
+        workspaceError: {
+          status: 404,
+          error: "会话线程不存在或不可访问。"
+        }
+      };
+    }
+    const next = {
+      ...payload,
+      agentSessionId,
+      workspaceId: sessionContext.workspaceId,
+      workspaceContext: sessionContext,
+      agentSessionContext: sessionContext
+    };
+    if (!next.contextProfileId && sessionContext.contextProfileId) {
+      next.contextProfileId = sessionContext.contextProfileId;
+    }
+    if (!next.modelAlias && !next.alias && !next.model && sessionContext.modelAlias) {
+      next.modelAlias = sessionContext.modelAlias;
+      next.alias = sessionContext.modelAlias;
+    }
+    if (!next.toolGrantId && !next.grantId && sessionContext.toolGrantId) {
+      next.toolGrantId = sessionContext.toolGrantId;
+    }
+    const explicitSourceIds = [
+      ...arrayOfStrings(next.scopeSourceIds),
+      ...arrayOfStrings(next.sourceIds)
+    ];
+    if (explicitSourceIds.length === 0 && sessionContext.knowledgeSourceIds?.length) {
+      next.scopeSourceIds = sessionContext.knowledgeSourceIds;
+    }
+    return {
+      input: next,
+      workspaceContext: sessionContext
+    };
+  }
   if (!workspaceId || !agentWorkspace || typeof agentWorkspace.getWorkspaceContext !== "function") {
     return {
       input: payload,
@@ -1554,6 +1612,13 @@ export function createSystemController({
   getToolManagementPlatform = () => null
 }) {
   const agentConfigRegistry = getAgentConfigRegistry();
+  const documentParsingRuntime = createDocumentParsingRuntime();
+  const knowledgeDistillationWorkbench = createKnowledgeDistillationWorkbench({
+    userDataPath,
+    jobManager,
+    knowledgeDistillationRuntime,
+    queueMonitor
+  });
 
   function appendConsoleOperationLog(entry = {}) {
     if (operationAuditStore) {
@@ -3359,6 +3424,42 @@ export function createSystemController({
       const payload = parseJsonBody(requestBody);
       sendJson(response, 200, metadataStore.getSignificantSourceTerms(payload));
     },
+    async handleKnowledgeDocumentParse({ requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      const settings = payload.settings || await loadSettings(userDataPath);
+      const uploadSessionId = String(payload.uploadSessionId || "").trim();
+      const cleanupUploadSession = Boolean(uploadSessionId && payload.dryRun === true && payload.cleanupUploadSession === true);
+      try {
+        const uploadedFiles = uploadSessionId
+          ? await resolveUploadSessionFiles(userDataPath, uploadSessionId)
+          : Array.isArray(payload.uploadedFiles)
+            ? payload.uploadedFiles
+            : [];
+        const documentParsing = payload.documentParsing && typeof payload.documentParsing === "object"
+          ? payload.documentParsing
+          : {};
+        const result = await documentParsingRuntime.parseDocuments({
+          ...payload,
+          sources: uploadSessionId ? [] : payload.sources,
+          uploadedFiles,
+          settings,
+          userDataPath,
+          runtime,
+          expectedOutput:
+            payload.expectedOutput ||
+            payload.expectedOutputs ||
+            documentParsing.expectedOutput ||
+            documentParsing.expectedOutputs ||
+            "chunks",
+          dryRun: true
+        });
+        sendJson(response, 200, toPublicDocumentParsingResult(result));
+      } finally {
+        if (cleanupUploadSession) {
+          await deleteUploadSession(userDataPath, uploadSessionId).catch(() => null);
+        }
+      }
+    },
     async handleKnowledgeWordClouds({ requestBody, url, response }) {
       const payload = parseWordCloudRequestPayload(requestBody, url);
       sendJson(response, 200, await metadataStore.getKnowledgeWordCloudState({
@@ -3938,7 +4039,7 @@ export function createSystemController({
           sourceId: url.searchParams.get("sourceId") || url.searchParams.get("source-id") || "",
           limit: Number(url.searchParams.get("limit") || 500),
           includeMachineReadable: rawIncludeMachineReadable === null
-            ? true
+            ? false
             : parseBooleanFlag(rawIncludeMachineReadable)
         });
         response.writeHead(200, {
@@ -3952,6 +4053,50 @@ export function createSystemController({
       }
       sendJson(response, 503, {
         error: "知识库 DOCX 导出模块不可用。"
+      });
+    },
+    async handleKnowledgeMarkdownExport({ url, response }) {
+      const knowledgeCore = getKnowledgeCore(runtime);
+      if (knowledgeCore && typeof knowledgeCore.exportMarkdown === "function") {
+        const result = await knowledgeCore.exportMarkdown({
+          documentId: url.searchParams.get("documentId") || url.searchParams.get("document-id") || "",
+          batchId: url.searchParams.get("batchId") || url.searchParams.get("batch-id") || "",
+          sourceId: url.searchParams.get("sourceId") || url.searchParams.get("source-id") || "",
+          limit: Number(url.searchParams.get("limit") || 500)
+        });
+        response.writeHead(200, {
+          "Content-Type": result.contentType,
+          "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
+          "Cache-Control": "no-store",
+          "X-SplitAll-Knowledge-Export": "markdown"
+        });
+        response.end(result.buffer);
+        return;
+      }
+      sendJson(response, 503, {
+        error: "知识库 Markdown 导出模块不可用。"
+      });
+    },
+    async handleKnowledgeHtmlExport({ url, response }) {
+      const knowledgeCore = getKnowledgeCore(runtime);
+      if (knowledgeCore && typeof knowledgeCore.exportHtml === "function") {
+        const result = await knowledgeCore.exportHtml({
+          documentId: url.searchParams.get("documentId") || url.searchParams.get("document-id") || "",
+          batchId: url.searchParams.get("batchId") || url.searchParams.get("batch-id") || "",
+          sourceId: url.searchParams.get("sourceId") || url.searchParams.get("source-id") || "",
+          limit: Number(url.searchParams.get("limit") || 500)
+        });
+        response.writeHead(200, {
+          "Content-Type": result.contentType,
+          "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
+          "Cache-Control": "no-store",
+          "X-SplitAll-Knowledge-Export": "html"
+        });
+        response.end(result.buffer);
+        return;
+      }
+      sendJson(response, 503, {
+        error: "知识库 HTML 导出模块不可用。"
       });
     },
     async handleKnowledgeHealth({ response }) {
@@ -4359,6 +4504,174 @@ export function createSystemController({
       if (!result) {
         sendJson(response, 404, {
           error: "知识蒸馏任务不存在。"
+        });
+        return;
+      }
+      sendJson(response, 200, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunsList({ url, response }) {
+      const result = await knowledgeDistillationWorkbench.listRuns({
+        limit: Number(url.searchParams.get("limit") || 50),
+        includeArchived: url.searchParams.get("includeArchived") === "1" ||
+          url.searchParams.get("includeArchived") === "true"
+      });
+      sendJson(response, 200, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunsCreate({ requestBody, response }) {
+      const result = await knowledgeDistillationWorkbench.createRun(parseJsonBody(requestBody));
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.distillation.workbench",
+        result,
+        { type: "knowledge.distillation.workbench.created" }
+      );
+      sendJson(response, 202, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunGet({ runId, response }) {
+      const result = await knowledgeDistillationWorkbench.getRun({ runId });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台任务不存在。"
+        });
+        return;
+      }
+      sendJson(response, 200, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunResume({ runId, response }) {
+      const result = await knowledgeDistillationWorkbench.resumeRun({ runId });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台任务不存在。"
+        });
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.distillation.workbench",
+        result,
+        { type: "knowledge.distillation.workbench.resumed" }
+      );
+      sendJson(response, 202, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunCancel({ runId, requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      const result = await knowledgeDistillationWorkbench.cancelRun({
+        runId,
+        reason: payload.reason || payload.message || ""
+      });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台任务不存在。"
+        });
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.distillation.workbench",
+        result,
+        { type: "knowledge.distillation.workbench.canceled" }
+      );
+      sendJson(response, 202, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunArchive({ runId, response }) {
+      const result = await knowledgeDistillationWorkbench.archiveRun({ runId });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台任务不存在。"
+        });
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.distillation.workbench",
+        result,
+        { type: "knowledge.distillation.workbench.archived" }
+      );
+      sendJson(response, 202, result);
+    },
+    async handleKnowledgeDistillationWorkbenchRunDelete({ runId, response }) {
+      const result = await knowledgeDistillationWorkbench.deleteRun({ runId });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台任务不存在。"
+        });
+        return;
+      }
+      await publishProtocolEvent(
+        protocolEventBus,
+        "knowledge.distillation.workbench",
+        result,
+        { type: "knowledge.distillation.workbench.deleted" }
+      );
+      sendJson(response, 200, result);
+    },
+    async handleKnowledgeDistillationWorkbenchStageRerun({ runId, stageId, response }) {
+      try {
+        const result = await knowledgeDistillationWorkbench.rerunStage({ runId, stageId });
+        if (!result) {
+          sendJson(response, 404, {
+            error: "知识蒸馏工作台任务不存在。"
+          });
+          return;
+        }
+        await publishProtocolEvent(
+          protocolEventBus,
+          "knowledge.distillation.workbench",
+          result,
+          { type: "knowledge.distillation.workbench.stage.rerun" }
+        );
+        sendJson(response, 202, result);
+      } catch (error) {
+        sendJson(response, error?.code === "UNKNOWN_STAGE" ? 400 : 500, {
+          error: error instanceof Error ? error.message : "重跑知识蒸馏阶段失败。"
+        });
+      }
+    },
+    async handleKnowledgeDistillationWorkbenchStageExport({ url, runId, stageId, response }) {
+      const result = await knowledgeDistillationWorkbench.exportStage({
+        runId,
+        stageId,
+        format: url.searchParams.get("format") || "markdown"
+      });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台阶段导出不存在。"
+        });
+        return;
+      }
+      response.writeHead(200, {
+        "Content-Type": result.contentType,
+        "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
+        "Cache-Control": "no-store",
+        "X-SplitAll-Knowledge-Export": "distillation-workbench"
+      });
+      response.end(result.buffer);
+    },
+    async handleKnowledgeDistillationWorkbenchRunPackageExport({ runId, response }) {
+      const result = await knowledgeDistillationWorkbench.exportRunPackage({ runId });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台整包导出不存在。"
+        });
+        return;
+      }
+      response.writeHead(200, {
+        "Content-Type": result.contentType,
+        "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
+        "Cache-Control": "no-store",
+        "X-SplitAll-Knowledge-Export": "distillation-workbench-package"
+      });
+      response.end(result.buffer);
+    },
+    async handleKnowledgeDistillationWorkbenchRunCompare({ url, runId, response }) {
+      const rightRunId = url.searchParams.get("rightRunId") || url.searchParams.get("right") || "";
+      const result = await knowledgeDistillationWorkbench.compareRuns({
+        leftRunId: runId,
+        rightRunId
+      });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "知识蒸馏工作台比较对象不存在。"
         });
         return;
       }
@@ -4929,6 +5242,84 @@ export function createSystemController({
         return;
       }
       sendJson(response, 200, result);
+    },
+    async handleAgentSessions({ url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.listSessions !== "function") {
+        sendJson(response, 503, {
+          error: "会话线程不可用。"
+        });
+        return;
+      }
+      sendJson(
+        response,
+        200,
+        agentWorkspace.listSessions({
+          status: url.searchParams.get("status") || "",
+          workspaceId: url.searchParams.get("workspaceId") || url.searchParams.get("workspace-id") || "",
+          limit: Number(url.searchParams.get("limit") || 100),
+          includeLastEvent: parseBooleanFlag(url.searchParams.get("includeLastEvent") || url.searchParams.get("include-last-event") || "true"),
+          ...workspaceAccessOptions(authSession)
+        })
+      );
+    },
+    async handleAgentSession({ sessionId, url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.getSession !== "function") {
+        sendJson(response, 503, {
+          error: "会话线程不可用。"
+        });
+        return;
+      }
+      const result = agentWorkspace.getSession({
+        sessionId,
+        includeEvents: parseBooleanFlag(url.searchParams.get("includeEvents") || url.searchParams.get("include-events") || "true"),
+        eventLimit: Number(url.searchParams.get("eventLimit") || url.searchParams.get("event-limit") || 200),
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result) {
+        sendJson(response, 404, {
+          error: "会话线程不存在。"
+        });
+        return;
+      }
+      sendJson(response, 200, result);
+    },
+    async handleGetAgentSessionContext({ sessionId, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.getSessionContext !== "function") {
+        return sendJson(response, 503, { error: "会话线程上下文不可用。" });
+      }
+      const result = agentWorkspace.getSessionContext(sessionId, workspaceAccessOptions(authSession));
+      if (!result) {
+        return sendJson(response, 404, { error: "会话线程不存在。" });
+      }
+      sendJson(response, 200, result);
+    },
+    async handleAppendAgentSessionEvent({ sessionId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.appendSessionEvent !== "function") {
+        return sendJson(response, 503, { error: "会话线程不可用。" });
+      }
+      const result = agentWorkspace.appendSessionEvent({
+        sessionId,
+        ...parseJsonBody(requestBody),
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result) {
+        return sendJson(response, 404, { error: "会话线程不存在。" });
+      }
+      sendJson(response, 201, result);
+    },
+    async handleForkAgentSession({ sessionId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.forkSession !== "function") {
+        return sendJson(response, 503, { error: "会话线程不可用。" });
+      }
+      const result = agentWorkspace.forkSession({
+        sessionId,
+        ...parseJsonBody(requestBody),
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result?.ok) {
+        return sendJson(response, result?.error === "会话不存在" ? 404 : 400, result || { ok: false, error: "会话分叉失败。" });
+      }
+      sendJson(response, 201, result);
     },
     async handleResolveAgentWorkspaceSubmission({ workspaceId, submissionId, requestBody, response, authSession }) {
       if (!agentWorkspace) {

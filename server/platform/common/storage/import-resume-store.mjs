@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveWithin } from "../platform-core/security/client-strings.mjs";
+import { resolveWithin } from "../security/client-strings.mjs";
 
 const CHECKPOINT_SCHEMA_VERSION = 1;
 const TMP_ROOT_NAMES = ["tika", "ocr"];

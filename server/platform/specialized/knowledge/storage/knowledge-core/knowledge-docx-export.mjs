@@ -9,6 +9,10 @@ import {
   TextRun,
   WidthType
 } from "docx";
+import {
+  buildMachineYamlDocument,
+  renderHumanDocxBodyBlocks
+} from "../../document-export/docx-human-renderer.mjs";
 
 export const KNOWLEDGE_DOCX_EXPORT_PACKAGE_TYPE = "splitall.knowledge.docx-export";
 export const KNOWLEDGE_DOCX_EXPORT_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -83,11 +87,15 @@ function paragraphChunks(text) {
 function bodyParagraphs(text, emptyText = "未记录正文。") {
   const normalized = normalizeText(text);
   if (!normalized) {
-    return [paragraph(emptyText)];
+    return renderHumanDocxBodyBlocks("", { emptyText });
   }
   return normalized
     .split(/\n{2,}/)
-    .flatMap((block) => paragraphChunks(block.trim()).map((item) => paragraph(item, 140)))
+    .flatMap((block) =>
+      paragraphChunks(block.trim()).flatMap((item) =>
+        renderHumanDocxBodyBlocks(item, { emptyText })
+      )
+    )
     .filter(Boolean);
 }
 
@@ -230,7 +238,8 @@ function compactDocumentForAppendix(document = {}) {
       sectionId: block.sectionId,
       title: block.title,
       blockType: block.blockType,
-      sourceLocator: sourceLocatorFor(block)
+      sourceLocator: sourceLocatorFor(block),
+      metadata: block.metadata
     })),
     assets: sortByPosition(document.assets).map((asset) => ({
       assetId: asset.assetId,
@@ -245,23 +254,8 @@ function compactDocumentForAppendix(document = {}) {
 
 function buildExportChildren({ documents, generatedAt, filters, includeMachineReadable }) {
   const children = [
-    heading("SplitAll Knowledge Export"),
-    heading("导出定位", HeadingLevel.HEADING_2),
-    metadataTable({
-      packageType: KNOWLEDGE_DOCX_EXPORT_PACKAGE_TYPE,
-      packageRole: "external-knowledge-corpus",
-      generatedAt,
-      documentCount: documents.length,
-      filterDocumentId: filters.documentId,
-      filterBatchId: filters.batchId,
-      filterSourceId: filters.sourceId,
-      limit: filters.limit,
-      agentContextBoundary: "agent-context is served by knowledge.search and evidence packs; this DOCX is for external KB ingestion."
-    }),
-    heading("架构原则", HeadingLevel.HEADING_2),
-    paragraph("第一层：所有输入材料先归一化为可导出的标准 DOCX 知识文档，作为外部知识库可复用语料。"),
-    paragraph("第二层：已收纳知识通过 KnowledgeCore 检索、证据包和上下文编排直接供给智能体。"),
-    paragraph("DOCX 导出保留文档、章节、块、资产与证据定位元数据，便于外部知识库重新切分和追溯。")
+    heading("SplitAll 知识文档导出"),
+    paragraph("本 DOCX 面向人类阅读和外部知识库导入，按文档、章节和段落顺序组织。")
   ];
 
   if (documents.length === 0) {
@@ -283,7 +277,9 @@ function buildExportChildren({ documents, generatedAt, filters, includeMachineRe
     }
 
     children.push(heading(documentTitle, HeadingLevel.HEADING_1));
-    children.push(metadataTable(documentMetadata(knowledgeDocument)));
+    if (scalar(knowledgeDocument.sourcePath)) {
+      children.push(paragraph(`来源：${knowledgeDocument.sourcePath}`, 100));
+    }
     if (scalar(knowledgeDocument.summary)) {
       children.push(heading("摘要", HeadingLevel.HEADING_2), ...bodyParagraphs(knowledgeDocument.summary));
     }
@@ -292,14 +288,14 @@ function buildExportChildren({ documents, generatedAt, filters, includeMachineRe
     for (const section of sections) {
       renderedSectionIds.add(scalar(section.sectionId));
       children.push(heading(scalar(section.title) || "未命名章节", sectionHeadingLevel(section.level)));
-      children.push(metadataTable(sectionMetadata(section)));
       const sectionBlocks = blocksBySection.get(scalar(section.sectionId)) || [];
       if (sectionBlocks.length === 0) {
         children.push(paragraph("该章节未记录独立知识块。"));
       }
       for (const block of sectionBlocks) {
-        children.push(heading(scalar(block.title) || `${block.blockType || "block"} ${block.position || ""}`.trim(), HeadingLevel.HEADING_4));
-        children.push(metadataTable(blockMetadata(block)));
+        if (scalar(block.title)) {
+          children.push(heading(scalar(block.title), HeadingLevel.HEADING_4));
+        }
         children.push(...bodyParagraphs(block.text || block.snippet || ""));
       }
     }
@@ -312,7 +308,6 @@ function buildExportChildren({ documents, generatedAt, filters, includeMachineRe
       children.push(heading("未归属章节知识块", HeadingLevel.HEADING_2));
       for (const block of unsectionedBlocks) {
         children.push(heading(scalar(block.title) || `${block.blockType || "block"} ${block.position || ""}`.trim(), HeadingLevel.HEADING_3));
-        children.push(metadataTable(blockMetadata(block)));
         children.push(...bodyParagraphs(block.text || block.snippet || ""));
       }
     }
@@ -321,7 +316,6 @@ function buildExportChildren({ documents, generatedAt, filters, includeMachineRe
       children.push(heading("资产与多模态证据", HeadingLevel.HEADING_2));
       for (const asset of assets) {
         children.push(heading(scalar(asset.title) || scalar(asset.assetId) || "资产", HeadingLevel.HEADING_3));
-        children.push(metadataTable(assetMetadata(asset)));
         const assetText = normalizeText([asset.caption, asset.ocrText, asset.text].filter(Boolean).join("\n\n"));
         if (assetText) {
           children.push(...bodyParagraphs(assetText));
@@ -330,10 +324,11 @@ function buildExportChildren({ documents, generatedAt, filters, includeMachineRe
     }
   }
 
-  if (includeMachineReadable !== false) {
-    children.push(heading("机器可读附录", HeadingLevel.HEADING_1));
-    children.push(...bodyParagraphs(stableJson({
+  if (includeMachineReadable === true) {
+    children.push(heading("机器可读 YAML 附录", HeadingLevel.HEADING_1));
+    children.push(...bodyParagraphs(buildMachineYamlDocument({
       packageType: KNOWLEDGE_DOCX_EXPORT_PACKAGE_TYPE,
+      packageRole: "machine-readable-export-appendix",
       generatedAt,
       filters,
       documents: documents.map(compactDocumentForAppendix)
@@ -353,7 +348,7 @@ export async function buildKnowledgeDocxExport({
   documents = [],
   generatedAt = new Date().toISOString(),
   filters = {},
-  includeMachineReadable = true
+  includeMachineReadable = false
 } = {}) {
   const normalizedDocuments = asArray(documents);
   const document = new Document({
@@ -376,6 +371,8 @@ export async function buildKnowledgeDocxExport({
     manifest: {
       packageType: KNOWLEDGE_DOCX_EXPORT_PACKAGE_TYPE,
       packageRole: "external-knowledge-corpus",
+      documentRole: "human-readable-normalized-knowledge-document",
+      machineReadableAppendixFormat: includeMachineReadable === true ? "yaml" : "",
       generatedAt,
       filters,
       documentCount: normalizedDocuments.length,

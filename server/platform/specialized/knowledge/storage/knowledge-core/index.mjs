@@ -64,6 +64,8 @@ import {
   resolveDocumentOutlineRuntime
 } from "./outline-runtime-loader.mjs";
 import { buildKnowledgeDocxExport } from "./knowledge-docx-export.mjs";
+import { buildKnowledgeMarkdownExport } from "./knowledge-markdown-export.mjs";
+import { buildKnowledgeHtmlExport } from "./knowledge-html-export.mjs";
 
 export const KNOWLEDGE_PROTOCOL_VERSION = "splitall.knowledge.v1";
 export const VECTOR_PROTOCOL_VERSION = "splitall.vector.v1";
@@ -2290,6 +2292,9 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
     const documents = [];
     for (const source of asArray(result.sourceFiles)) {
       const document = buildSourceDocument(source, batchId, generatedAt);
+      const visualElements = asArray(source.visualElements)
+        .filter((entry) => ["image", "table"].includes(String(entry?.kind || "")))
+        .sort((a, b) => Number(a?.sequence || 0) - Number(b?.sequence || 0));
       if (source.imageDataUrl) {
         const storedAsset = await assetFromDataUrl(source.imageDataUrl, source.mediaType || "");
         if (storedAsset) {
@@ -2341,6 +2346,127 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
             metadata: {
               originalRelativePath: source.originalRelativePath || "",
               rawObjectSha256: source.rawObjectSha256 || ""
+            }
+          });
+        }
+      }
+      for (const element of visualElements) {
+        const sequence = Number(element.sequence || 0);
+        const page = Number(element.page || 0);
+        const index = Number(element.index || 0);
+        const position = 100 + sequence;
+        if (element.kind === "table") {
+          const rows = asArray(element.rows).map((row) => asArray(row).map((cell) => String(cell ?? "")));
+          const tableText = normalizeText(
+            [
+              `表格：${element.title || `Table ${sequence || index}`}`,
+              page ? `页码：${page}` : "",
+              element.markdown || element.text || rows.map((row) => row.join(" | ")).join("\n")
+            ].filter(Boolean).join("\n")
+          );
+          if (!tableText) {
+            continue;
+          }
+          document.blocks.push({
+            blockId: stableId("block", document.documentId, "visual-table", sequence || index),
+            documentId: document.documentId,
+            sectionId: document.sections[0].sectionId,
+            blockType: "table",
+            title: element.title || `表格 ${sequence || index}`,
+            text: tableText,
+            snippet: truncateText(tableText),
+            position,
+            sourceLocator: {
+              batchId,
+              sourceId: source.id || "",
+              sourcePath: source.path || "",
+              page,
+              tableIndex: index,
+              visualSequence: sequence
+            },
+            metadata: {
+              page,
+              tableIndex: index,
+              visualSequence: sequence,
+              rowCount: Number(element.rowCount || rows.length || 0),
+              columnCount: Number(element.columnCount || rows.reduce((max, row) => Math.max(max, row.length), 0)),
+              rows,
+              bbox: element.bbox || [],
+              extractionMethod: element.extractionMethod || ""
+            }
+          });
+          continue;
+        }
+
+        if (element.kind === "image") {
+          const storedAsset = await assetFromDataUrl(element.imageDataUrl || element.dataUrl || "", element.mediaType || "");
+          if (!storedAsset) {
+            continue;
+          }
+          const assetBlockId = stableId("block", document.documentId, "visual-image", sequence || index);
+          const imageText = [
+            `图片：${element.title || `Image ${sequence || index}`}`,
+            page ? `页码：${page}` : "",
+            element.width || element.height ? `尺寸：${element.width || 0}x${element.height || 0}` : "",
+            "说明：PDF 内嵌图片，已按页面顺序提取为知识资产。"
+          ].filter(Boolean).join("\n");
+          document.blocks.push({
+            blockId: assetBlockId,
+            documentId: document.documentId,
+            sectionId: document.sections[0].sectionId,
+            blockType: "image",
+            title: element.title || `图片 ${sequence || index}`,
+            text: imageText,
+            snippet: truncateText(imageText),
+            position,
+            sourceLocator: {
+              batchId,
+              sourceId: source.id || "",
+              sourcePath: source.path || "",
+              page,
+              imageIndex: index,
+              visualSequence: sequence
+            },
+            metadata: {
+              mediaType: storedAsset.mediaType,
+              page,
+              imageIndex: index,
+              visualSequence: sequence,
+              width: Number(element.width || 0),
+              height: Number(element.height || 0),
+              bbox: element.bbox || [],
+              extractionMethod: element.extractionMethod || ""
+            }
+          });
+          document.assets.push({
+            assetId: stableId("asset", document.documentId, "visual-image", sequence || index, storedAsset.sha256),
+            documentId: document.documentId,
+            sectionId: document.sections[0].sectionId,
+            blockId: assetBlockId,
+            assetType: "image",
+            mediaType: storedAsset.mediaType,
+            title: element.title || `图片 ${sequence || index}`,
+            text: imageText,
+            ocrText: "",
+            caption: `PDF 第 ${page || "未知"} 页图片 ${index || sequence || ""}`.trim(),
+            relativePath: storedAsset.relativePath,
+            sha256: storedAsset.sha256,
+            byteSize: storedAsset.byteSize,
+            width: Number(element.width || 0),
+            height: Number(element.height || 0),
+            sourceLocator: {
+              batchId,
+              sourceId: source.id || "",
+              sourcePath: source.path || "",
+              page,
+              imageIndex: index,
+              visualSequence: sequence
+            },
+            metadata: {
+              originalRelativePath: source.originalRelativePath || "",
+              rawObjectSha256: source.rawObjectSha256 || "",
+              bbox: element.bbox || [],
+              extractionMethod: element.extractionMethod || ""
             }
           });
         }
@@ -2919,7 +3045,7 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
     batchId = "",
     sourceId = "",
     limit = 500,
-    includeMachineReadable = true
+    includeMachineReadable = false
   } = {}) {
     const filters = {
       documentId: normalizeText(documentId),
@@ -2934,6 +3060,38 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
       filters,
       includeMachineReadable
     });
+  }
+
+  function exportMarkdown({
+    documentId = "",
+    batchId = "",
+    sourceId = "",
+    limit = 500
+  } = {}) {
+    const filters = {
+      documentId: normalizeText(documentId),
+      batchId: normalizeText(batchId),
+      sourceId: normalizeText(sourceId),
+      limit: Math.max(1, Math.min(Number(limit || 500), 2000))
+    };
+    const documents = loadDocumentsForDocxExport(filters);
+    return buildKnowledgeMarkdownExport({ documents, generatedAt: nowIso(), filters });
+  }
+
+  function exportHtml({
+    documentId = "",
+    batchId = "",
+    sourceId = "",
+    limit = 500
+  } = {}) {
+    const filters = {
+      documentId: normalizeText(documentId),
+      batchId: normalizeText(batchId),
+      sourceId: normalizeText(sourceId),
+      limit: Math.max(1, Math.min(Number(limit || 500), 2000))
+    };
+    const documents = loadDocumentsForDocxExport(filters);
+    return buildKnowledgeHtmlExport({ documents, generatedAt: nowIso(), filters });
   }
 
   function loadAssetsForBatch({ batchId = "", limit = 8 }) {
@@ -7067,6 +7225,8 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
     aggregate,
     getAssetContent,
     exportDocx,
+    exportMarkdown,
+    exportHtml,
     renderMarkdown,
     getItem,
     getDocumentStructure,
@@ -7132,6 +7292,8 @@ export async function createKnowledgeCoreMount({ userDataPath, outlineEnabled = 
     aggregate: store.aggregate,
     getAssetContent: store.getAssetContent,
     exportDocx: store.exportDocx,
+    exportMarkdown: store.exportMarkdown,
+    exportHtml: store.exportHtml,
     renderMarkdown: store.renderMarkdown,
     getItem: store.getItem,
     getDocumentStructure: store.getDocumentStructure,

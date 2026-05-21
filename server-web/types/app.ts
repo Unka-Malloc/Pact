@@ -38,8 +38,7 @@ export type AdminView =
   | "clients"
   | "storage"
   | "modules";
-export type KnowledgeTab = "management" | "chunking" | "wordCloud" | "conflicts" | "maintenance";
-export type KnowledgeManagementPanel = "knowledge" | "rules";
+export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance";
 export type OptionBarValue = string | number | boolean;
 export type OptionBarOption = {
   value: OptionBarValue;
@@ -95,6 +94,10 @@ export type HistorySessionPanelItem = {
   preview?: string;
   active?: boolean;
   disabled?: boolean;
+  actionLabel?: string;
+  actionAriaLabel?: string;
+  actionDisabled?: boolean;
+  deleteText?: string;
   deleteLabel?: string;
 };
 export type ModelEntryBinding = {

@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DATA_DIR="$PROJECT_ROOT/build/server-data"
+DATA_DIR="$PROJECT_ROOT/.splitall-server-data"
 PORTS=()
 LAUNCH_LABELS=()
 LAUNCH_PLISTS=()

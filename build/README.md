@@ -7,9 +7,11 @@
 - `build/artifacts`: generated reports, screenshots, verification artifacts,
   and document outputs.
 - `build/output`: ad hoc browser and inspection output.
-- `build/server-data`: default local server data directory.
 - `build/local-data`: default local browser-service data directory.
 - `build/tmp`: temporary workspace output.
+
+The default local server data directory is `.splitall-server-data/` at the
+repository root so uploaded knowledge persists outside disposable build output.
 
 Everything here is disposable unless a run explicitly produced an artifact that
 should be promoted into docs or tests.

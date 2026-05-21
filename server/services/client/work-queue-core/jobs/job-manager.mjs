@@ -28,7 +28,11 @@ import {
 } from "../queue-monitor.mjs";
 import { unifiedRegistrationForTask } from "../../../../platform/interactive/product-api.mjs";
 import { deleteUploadSession } from "../../../../protocols/checkpoint/upload-session-store.mjs";
-import { isServerToken, serverToken } from "../../../../platform/interactive/product-api.mjs";
+import {
+  isServerToken,
+  resolveStoredObjectPath,
+  serverToken
+} from "../../../../platform/interactive/product-api.mjs";
 
 const workerEntryPath = fileURLToPath(new URL("./job-worker.mjs", import.meta.url));
 const CLOSE_ABORT_MESSAGE = "服务已关闭，任务已中止。";
@@ -174,6 +178,70 @@ function normalizeArchiveBatchId(payloadOrJob) {
       ""
   });
   return identity.archiveBatchId;
+}
+
+function isTruthyFlag(value) {
+  return value === true || value === 1 || value === "1" || String(value || "").toLowerCase() === "true";
+}
+
+function shouldForceNewJobVersion(payload) {
+  return Boolean(
+    isTruthyFlag(payload?.forceNewVersion) ||
+      isTruthyFlag(payload?.reparse) ||
+      isTruthyFlag(payload?.createNewVersion) ||
+      payload?.reparseFromJobId ||
+      payload?.parentJobId
+  );
+}
+
+function normalizeVersionGroupId(payloadOrJob, { checkpointId = "", manifestKey = "", archiveBatchId = "" } = {}) {
+  const value =
+    payloadOrJob && typeof payloadOrJob === "object"
+      ? payloadOrJob?.versionGroupId ||
+        payloadOrJob?.parseVersionGroupId ||
+        payloadOrJob?.checkpointReceipt?.versionGroupId ||
+        ""
+      : payloadOrJob;
+  const explicit = String(value || "").trim();
+  if (explicit) {
+    return isServerToken(explicit, "parse_version_group")
+      ? explicit
+      : serverToken("parse_version_group", explicit);
+  }
+  const stableKey = checkpointId || manifestKey || archiveBatchId || "";
+  return stableKey ? serverToken("parse_version_group", stableKey) : serverToken("parse_version_group", randomUUID());
+}
+
+function normalizeParentJobId(payloadOrJob) {
+  return String(payloadOrJob?.reparseFromJobId || payloadOrJob?.parentJobId || "").trim();
+}
+
+function jobMatchesVersionFamily(job, { versionGroupId = "", checkpointId = "", manifestKey = "" } = {}) {
+  if (!job) {
+    return false;
+  }
+  if (versionGroupId && String(job.versionGroupId || "") === versionGroupId) {
+    return true;
+  }
+  if (!job.versionGroupId && checkpointId && normalizeCheckpointId(job) === checkpointId) {
+    return true;
+  }
+  if (!job.versionGroupId && manifestKey && normalizeManifestKey(job) === manifestKey) {
+    return true;
+  }
+  return false;
+}
+
+function nextVersionNumberForJobs(jobs, family) {
+  let maxVersion = 0;
+  for (const job of jobs.values()) {
+    if (!jobMatchesVersionFamily(job, family)) {
+      continue;
+    }
+    const version = Number(job.versionNumber || 1);
+    maxVersion = Math.max(maxVersion, Number.isFinite(version) && version > 0 ? version : 1);
+  }
+  return maxVersion + 1;
 }
 
 async function persistJobMeta(userDataPath, job) {
@@ -1527,8 +1595,20 @@ export function createJobManager({
       const checkpointId = normalizeCheckpointId(payload);
       const manifestKey = normalizeManifestKey(payload);
       const archiveBatchId = normalizeArchiveBatchId(payload) || serverToken("archive_batch", checkpointId || manifestKey || randomUUID());
+      const forceNewVersion = shouldForceNewJobVersion(payload);
+      const versionGroupId = normalizeVersionGroupId(payload, {
+        checkpointId,
+        manifestKey,
+        archiveBatchId
+      });
+      const versionNumber = nextVersionNumberForJobs(jobs, {
+        versionGroupId,
+        checkpointId,
+        manifestKey
+      });
+      const parentJobId = normalizeParentJobId(payload);
       const existingJobId = checkpointId ? checkpointJobs.get(checkpointId) : "";
-      if (existingJobId) {
+      if (!forceNewVersion && existingJobId) {
         const existingJob = jobs.get(existingJobId) || null;
         if (existingJob) {
           await publishJobEvent(existingJob, "jobs.job.reused");
@@ -1541,7 +1621,7 @@ export function createJobManager({
         return cloneJobForApi(existingJob);
       }
       const existingManifestJob = getActiveManifestJob(manifestKey, archiveBatchId);
-      if (existingManifestJob) {
+      if (!forceNewVersion && existingManifestJob) {
         if (checkpointId) {
           checkpointJobs.set(checkpointId, existingManifestJob.id);
         }
@@ -1569,7 +1649,11 @@ export function createJobManager({
         queueId: "",
         checkpointReceipt: payload?.checkpointReceipt || null,
         uploadSessionId: String(payload?.uploadSessionId || ""),
-        archiveBatchId
+        archiveBatchId,
+        versionGroupId,
+        versionNumber,
+        parentJobId,
+        reparseFromJobId: String(payload?.reparseFromJobId || "")
       };
       job.queueId = queueIdForJob(job);
       job.checkpointTreeId = checkpointTreeIdForJob(job);
@@ -1618,6 +1702,147 @@ export function createJobManager({
         processingEnabled
       });
       return cloneJobForApi(job);
+    },
+
+    async reparseJob(jobId, options = {}) {
+      logJob("info", "jobs.job.reparse.requested", {
+        jobId,
+        options: summarizeForLog(options)
+      });
+      await ready;
+      if (!processingEnabled) {
+        await refreshPersistedJobs();
+      }
+      const sourceJob = jobs.get(jobId);
+      if (!sourceJob) {
+        throw new Error("历史任务不存在，不能重新解析。");
+      }
+
+      const sourcePayload = await loadJobPayload(userDataPath, sourceJob.id);
+      const sourceResult = sourceJob.status === "completed"
+        ? await this.getJobResult(sourceJob.id).catch(() => null)
+        : null;
+      const sourceFiles = Array.isArray(sourceResult?.sourceFiles) ? sourceResult.sourceFiles : [];
+      const replayUploadedFiles = [];
+      const replayTextSections = [];
+
+      for (const [index, source] of sourceFiles.entries()) {
+        const record = source && typeof source === "object" ? source : {};
+        const storageRelativePath = String(record.storageRelativePath || "").trim();
+        if (storageRelativePath) {
+          const stagedPath = resolveStoredObjectPath(userDataPath, storageRelativePath);
+          try {
+            const stats = await fs.stat(stagedPath);
+            if (stats.isFile()) {
+              const originalName = String(
+                record.originalFileName ||
+                  record.originalRelativePath ||
+                  record.name ||
+                  `source-${index + 1}`
+              );
+              replayUploadedFiles.push({
+                name: String(record.rawObjectId || record.id || originalName),
+                relativePath: String(record.originalRelativePath || originalName),
+                originalFileName: originalName,
+                mediaType: String(record.mediaType || "application/octet-stream"),
+                stagedPath,
+                sha256: String(record.rawObjectSha256 || record.contentHash || ""),
+                byteSize: Number(record.rawObjectByteSize || stats.size || 0),
+                clientUid: String(record.clientUid || sourcePayload?.clientUid || ""),
+                sourceType: String(record.sourceType || sourcePayload?.sourceType || "upload"),
+                providerId: String(record.providerId || ""),
+                externalId: String(record.externalId || ""),
+                syncBatchId: String(record.syncBatchId || ""),
+                contentHash: String(record.contentHash || record.rawObjectSha256 || ""),
+                capturedAt: String(record.capturedAt || ""),
+                sourceMetadata:
+                  record.sourceMetadata && typeof record.sourceMetadata === "object" && !Array.isArray(record.sourceMetadata)
+                    ? record.sourceMetadata
+                    : {}
+              });
+              continue;
+            }
+          } catch {
+            // Fall back to the parsed text snapshot below when the raw object is no longer available.
+          }
+        }
+
+        const text = String(record.text || "").trim();
+        if (text) {
+          const name = String(record.originalFileName || record.name || `source-${index + 1}`);
+          replayTextSections.push(`# ${name}\n\n${text}`);
+        }
+      }
+
+      const legacyUploadedFiles = Array.isArray(sourcePayload?.uploadedFiles)
+        ? sourcePayload.uploadedFiles.filter((file) => file?.dataBase64 || file?.stagedPath)
+        : [];
+      const legacyFilePaths = Array.isArray(sourcePayload?.filePaths)
+        ? sourcePayload.filePaths.filter((filePath) => String(filePath || "").trim())
+        : [];
+      const replayInputText =
+        replayTextSections.length > 0
+          ? replayTextSections.join("\n\n---\n\n")
+          : String(sourcePayload?.inputText || "").trim();
+      const hasReplayInput =
+        replayUploadedFiles.length > 0 ||
+          legacyUploadedFiles.length > 0 ||
+          legacyFilePaths.length > 0 ||
+          replayInputText.length > 0;
+
+      if (!hasReplayInput) {
+        throw new Error("历史任务没有保留可重新解析的原始文件或正文。请重新上传原文件后再解析。");
+      }
+
+      const checkpointId = normalizeCheckpointId(sourcePayload || sourceJob);
+      const manifestKey = normalizeManifestKey(sourcePayload || sourceJob);
+      const versionGroupId = normalizeVersionGroupId(sourceJob.versionGroupId ? sourceJob : sourcePayload || sourceJob, {
+        checkpointId,
+        manifestKey,
+        archiveBatchId: sourceJob.archiveBatchId || ""
+      });
+      const archiveBatchId = serverToken("archive_batch", versionGroupId, randomUUID());
+      const checkpointReceipt = {
+        ...(sourcePayload?.checkpointReceipt || sourceJob.checkpointReceipt || {}),
+        checkpointId,
+        archiveBatchId,
+        versionGroupId,
+        reparseFromJobId: sourceJob.id
+      };
+      const checkpoint = {
+        ...(sourcePayload?.checkpoint || {}),
+        checkpointId,
+        archiveBatchId
+      };
+      const reparsePayload = {
+        ...(sourcePayload || {}),
+        inputText: replayUploadedFiles.length > 0 || legacyUploadedFiles.length > 0 || legacyFilePaths.length > 0
+          ? ""
+          : replayInputText,
+        filePaths: replayUploadedFiles.length > 0 || legacyUploadedFiles.length > 0
+          ? []
+          : legacyFilePaths,
+        uploadedFiles: replayUploadedFiles.length > 0 ? replayUploadedFiles : legacyUploadedFiles,
+        uploadSessionId: "",
+        checkpoint,
+        checkpointId,
+        archiveBatchId,
+        checkpointReceipt,
+        settings: options?.settings || sourcePayload?.settings || {},
+        documentParsing: options?.documentParsing || sourcePayload?.documentParsing || {},
+        forceNewVersion: true,
+        reparseFromJobId: sourceJob.id,
+        parentJobId: sourceJob.id,
+        versionGroupId
+      };
+      const job = await this.createJob(reparsePayload);
+      logJob("info", "jobs.job.reparse.created", {
+        parentJobId: sourceJob.id,
+        jobId: job?.id || "",
+        versionGroupId,
+        archiveBatchId
+      });
+      return job;
     },
 
     async getJob(jobId) {

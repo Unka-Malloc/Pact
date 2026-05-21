@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { assertServerToken, resolveWithin, serverToken } from "../platform-core/security/client-strings.mjs";
+import { assertServerToken, resolveWithin, serverToken } from "../security/client-strings.mjs";
 
 const CHECKPOINT_TREE_SCHEMA_VERSION = 1;
 const MAX_EVENTS = 500;

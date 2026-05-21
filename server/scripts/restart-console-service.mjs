@@ -161,7 +161,7 @@ async function main() {
   const supervisorLabel = String(args["supervisor-label"] || "dev.splitall.background-supervisor").trim();
   const inspectionLabel = String(args["inspection-label"] || "dev.splitall.system-inspection").trim();
   const dataDir = path.resolve(
-    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, "build", "server-data"))
+    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, ".splitall-server-data"))
   );
   const logsDir = path.join(projectRoot, "build", "logs");
   const logPath = path.join(logsDir, `server-${port}.log`);

@@ -648,12 +648,13 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     rpc: { method: "agent_gateway.call", body: "params" },
     cli: {
       command: ["agent-gateway", "call"],
-      usage: "agent-gateway call --question QUESTION [--workspace-id WORKSPACE_ID] [--tool-grant-id GRANT_ID] [--agent-name NAME] [--plugin-list a,b]",
+      usage: "agent-gateway call --question QUESTION [--workspace-id WORKSPACE_ID] [--agent-session-id SESSION_ID] [--tool-grant-id GRANT_ID] [--agent-name NAME] [--plugin-list a,b]",
       bodyParams: [
         { name: "agentName", aliases: ["agent-name", "agentName"] },
         { name: "pluginList", aliases: ["plugin-list", "pluginList"] },
         { name: "question", aliases: ["question", "q"], required: true },
         { name: "sessionId", aliases: ["session-id", "sessionId"] },
+        { name: "agentSessionId", aliases: ["agent-session-id", "agentSessionId", "session-thread-id", "sessionThreadId"] },
         { name: "clientUid", aliases: ["client-uid", "clientUid"] },
         { name: "modelAlias", aliases: ["model-alias", "modelAlias", "alias", "model"] },
         { name: "contextProfileId", aliases: ["context-profile", "context-profile-id", "contextProfileId"] },
@@ -1127,6 +1128,38 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["console:read"]
   },
   {
+    id: "knowledge.document_parse",
+    feature: "knowledge",
+    label: "统一文档解析",
+    target: { controller: "system", method: "handleKnowledgeDocumentParse" },
+    http: { method: "POST", path: "/api/knowledge/document-parser/parse", localInForwardMode: true },
+    rpc: { method: "knowledge.document_parse", body: "params" },
+    cli: {
+      command: ["knowledge", "document-parse"],
+      usage: "knowledge document-parse --body parse.json"
+    },
+    readOnly: true,
+    concurrencySafe: true,
+    requiredScopes: ["jobs:write"],
+    inputSchema: {
+      type: "object",
+      properties: {
+        pipelineId: { type: "string" },
+        expectedOutput: { type: "string" },
+        expectedOutputs: { type: "array" },
+        inputText: { type: "string" },
+        sources: { type: "array" },
+        filePaths: { type: "array" },
+        chunking: { type: "object" },
+        contextBudget: { type: "object" },
+        payloadBudget: { type: "object" },
+        granularity: { type: "object" },
+        dynamicParsing: { type: "object" },
+        documentParsing: { type: "object" }
+      }
+    }
+  },
+  {
     id: "knowledge.word_clouds.get",
     feature: "knowledge",
     label: "读取语料词云",
@@ -1570,6 +1603,66 @@ const SERVER_API_OPERATION_DEFINITIONS = [
         { name: "sourceId", aliases: ["source-id", "sourceId"] },
         { name: "limit", aliases: ["limit"], type: "number" },
         { name: "includeMachineReadable", aliases: ["include-machine-readable", "includeMachineReadable"], type: "boolean" }
+      ]
+    },
+    requiredScopes: ["knowledge:read"],
+    binary: true
+  },
+  {
+    id: "knowledge.export_markdown",
+    feature: "knowledge",
+    label: "导出知识库 Markdown",
+    target: { controller: "system", method: "handleKnowledgeMarkdownExport" },
+    http: {
+      method: "GET",
+      path: "/api/knowledge/export/markdown",
+      query: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" }
+      ],
+      coerce: { limit: "number" }
+    },
+    rpc: { method: "knowledge.export.markdown" },
+    cli: {
+      command: ["knowledge", "export-markdown"],
+      usage: "knowledge export-markdown --output knowledge.md [--document-id DOCUMENT_ID] [--batch-id BATCH_ID] [--source-id SOURCE_ID]",
+      bodyParams: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" }
+      ]
+    },
+    requiredScopes: ["knowledge:read"],
+    binary: true
+  },
+  {
+    id: "knowledge.export_html",
+    feature: "knowledge",
+    label: "导出知识库 HTML",
+    target: { controller: "system", method: "handleKnowledgeHtmlExport" },
+    http: {
+      method: "GET",
+      path: "/api/knowledge/export/html",
+      query: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" }
+      ],
+      coerce: { limit: "number" }
+    },
+    rpc: { method: "knowledge.export.html" },
+    cli: {
+      command: ["knowledge", "export-html"],
+      usage: "knowledge export-html --output knowledge.html [--document-id DOCUMENT_ID] [--batch-id BATCH_ID] [--source-id SOURCE_ID]",
+      bodyParams: [
+        { name: "documentId", aliases: ["document-id", "documentId"] },
+        { name: "batchId", aliases: ["batch-id", "batchId"] },
+        { name: "sourceId", aliases: ["source-id", "sourceId"] },
+        { name: "limit", aliases: ["limit"], type: "number" }
       ]
     },
     requiredScopes: ["knowledge:read"],
@@ -2136,6 +2229,205 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["knowledge:read"]
   },
   {
+    id: "knowledge.distillation.workbench.runs.list",
+    feature: "knowledge",
+    label: "列出知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunsList" },
+    http: { method: "GET", path: "/api/knowledge/distillation/workbench/runs" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.list",
+      params: [{ name: "limit", aliases: ["limit"], type: "number" }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "list"],
+      usage: "knowledge distillation workbench list [--limit 50]"
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.create",
+    feature: "knowledge",
+    label: "创建知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunsCreate" },
+    http: { method: "POST", path: "/api/knowledge/distillation/workbench/runs" },
+    rpc: { method: "knowledge.distillation.workbench.runs.create", body: "params" },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "run"],
+      usage: "knowledge distillation workbench run --job-id JOB_ID [--query QUERY]",
+      bodyParams: [
+        { name: "jobId", aliases: ["job-id", "job"], required: true },
+        { name: "query", aliases: ["query", "q"] },
+        { name: "title", aliases: ["title"] },
+        { name: "modelAlias", aliases: ["model", "model-alias"] }
+      ]
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.get",
+    feature: "knowledge",
+    label: "读取知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunGet" },
+    http: { method: "GET", path: "/api/knowledge/distillation/workbench/runs/:runId" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.get",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "get"],
+      usage: "knowledge distillation workbench get --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.resume",
+    feature: "knowledge",
+    label: "恢复知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunResume" },
+    http: { method: "POST", path: "/api/knowledge/distillation/workbench/runs/:runId/resume" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.resume",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "resume"],
+      usage: "knowledge distillation workbench resume --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.cancel",
+    feature: "knowledge",
+    label: "取消知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunCancel" },
+    http: { method: "POST", path: "/api/knowledge/distillation/workbench/runs/:runId/cancel" },
+    rpc: { method: "knowledge.distillation.workbench.runs.cancel", body: "params" },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "cancel"],
+      usage: "knowledge distillation workbench cancel --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.archive",
+    feature: "knowledge",
+    label: "归档知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunArchive" },
+    http: { method: "POST", path: "/api/knowledge/distillation/workbench/runs/:runId/archive" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.archive",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "archive"],
+      usage: "knowledge distillation workbench archive --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.delete",
+    feature: "knowledge",
+    label: "删除知识蒸馏工作台任务",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunDelete" },
+    http: { method: "DELETE", path: "/api/knowledge/distillation/workbench/runs/:runId" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.delete",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "delete"],
+      usage: "knowledge distillation workbench delete --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "knowledge.distillation.workbench.stage.rerun",
+    feature: "knowledge",
+    label: "重跑知识蒸馏工作台阶段",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchStageRerun" },
+    http: { method: "POST", path: "/api/knowledge/distillation/workbench/runs/:runId/stages/:stageId/rerun" },
+    rpc: {
+      method: "knowledge.distillation.workbench.stage.rerun",
+      params: [
+        { name: "runId", aliases: ["run-id", "id"], required: true },
+        { name: "stageId", aliases: ["stage-id", "stage"], required: true }
+      ]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "rerun-stage"],
+      usage: "knowledge distillation workbench rerun-stage --id RUN_ID --stage-id STAGE_ID",
+      pathParams: { runId: ["run-id", "id"], stageId: ["stage-id", "stage"] }
+    },
+    requiredScopes: ["knowledge:maintain"]
+  },
+  {
+    id: "knowledge.distillation.workbench.stage.export",
+    feature: "knowledge",
+    label: "导出知识蒸馏工作台阶段结果",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchStageExport" },
+    http: { method: "GET", path: "/api/knowledge/distillation/workbench/runs/:runId/exports/:stageId" },
+    rpc: {
+      method: "knowledge.distillation.workbench.stage.export",
+      params: [
+        { name: "runId", aliases: ["run-id", "id"], required: true },
+        { name: "stageId", aliases: ["stage-id", "stage"], required: true },
+        { name: "format", aliases: ["format", "to"] }
+      ]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "export"],
+      usage: "knowledge distillation workbench export --id RUN_ID --stage-id STAGE_ID --format markdown",
+      pathParams: { runId: ["run-id", "id"], stageId: ["stage-id", "stage"] },
+      queryParams: [
+        { name: "format", aliases: ["format", "to"] }
+      ]
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.package",
+    feature: "knowledge",
+    label: "导出知识蒸馏工作台整包",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunPackageExport" },
+    http: { method: "GET", path: "/api/knowledge/distillation/workbench/runs/:runId/package" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.package",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "package"],
+      usage: "knowledge distillation workbench package --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.compare",
+    feature: "knowledge",
+    label: "比较知识蒸馏工作台版本",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunCompare" },
+    http: { method: "GET", path: "/api/knowledge/distillation/workbench/runs/:runId/compare" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.compare",
+      params: [
+        { name: "runId", aliases: ["run-id", "id"], required: true },
+        { name: "rightRunId", aliases: ["right-run-id", "right"], required: true }
+      ]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "compare"],
+      usage: "knowledge distillation workbench compare --id LEFT_RUN_ID --right-run-id RIGHT_RUN_ID",
+      pathParams: { runId: ["run-id", "id"] },
+      queryParams: [{ name: "rightRunId", aliases: ["right-run-id", "right"] }]
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
     id: "knowledge.skills.evaluation.runs.create",
     feature: "knowledge",
     label: "创建知识 SkillSet 离线评估",
@@ -2545,6 +2837,127 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       pathParams: { workspaceId: ["workspace-id", "id"] }
     },
     requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_sessions.list",
+    feature: "agent_workspace",
+    label: "列出团队共享会话线程",
+    target: { controller: "system", method: "handleAgentSessions" },
+    http: {
+      method: "GET",
+      path: "/api/agent-sessions",
+      query: [
+        { name: "status", aliases: ["status"] },
+        { name: "workspaceId", aliases: ["workspace-id", "workspaceId"] },
+        { name: "limit", aliases: ["limit"] },
+        { name: "includeLastEvent", aliases: ["include-last-event", "includeLastEvent"] }
+      ],
+      coerce: { limit: "number", includeLastEvent: "boolean" }
+    },
+    rpc: {
+      method: "agent_sessions.list",
+      query: [
+        { name: "status", aliases: ["status"] },
+        { name: "workspaceId", aliases: ["workspace-id", "workspaceId"] },
+        { name: "limit", aliases: ["limit"] }
+      ]
+    },
+    cli: {
+      command: ["agent-sessions"],
+      usage: "agent-sessions [--workspace-id WORKSPACE_ID] [--status active] [--limit 100]"
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_sessions.get",
+    feature: "agent_workspace",
+    label: "读取团队共享会话线程",
+    target: { controller: "system", method: "handleAgentSession" },
+    http: {
+      method: "GET",
+      path: "/api/agent-sessions/:sessionId",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }],
+      query: [
+        { name: "includeEvents", aliases: ["include-events", "includeEvents"] },
+        { name: "eventLimit", aliases: ["event-limit", "eventLimit", "limit"] }
+      ],
+      coerce: { includeEvents: "boolean", eventLimit: "number" }
+    },
+    rpc: {
+      method: "agent_sessions.get",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "get"],
+      usage: "agent-sessions get --id SESSION_ID",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_sessions.context.get",
+    feature: "agent_workspace",
+    label: "读取会话线程运行上下文",
+    target: { controller: "system", method: "handleGetAgentSessionContext" },
+    http: {
+      method: "GET",
+      path: "/api/agent-sessions/:sessionId/context",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_sessions.context.get",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "context"],
+      usage: "agent-sessions context --id SESSION_ID",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_sessions.events.append",
+    feature: "agent_workspace",
+    label: "追加会话线程事件",
+    target: { controller: "system", method: "handleAppendAgentSessionEvent" },
+    http: {
+      method: "POST",
+      path: "/api/agent-sessions/:sessionId/events",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_sessions.events.append",
+      body: "params",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "events", "append"],
+      usage: "agent-sessions events append --id SESSION_ID --body event.json",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:write"]
+  },
+  {
+    id: "agent_sessions.fork",
+    feature: "agent_workspace",
+    label: "从会话线程分叉新线程",
+    target: { controller: "system", method: "handleForkAgentSession" },
+    http: {
+      method: "POST",
+      path: "/api/agent-sessions/:sessionId/fork",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_sessions.fork",
+      body: "params",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "fork"],
+      usage: "agent-sessions fork --id SESSION_ID --body fork.json",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:write"]
   },
   {
     id: "agent_workspaces.submissions.resolve",
@@ -3339,6 +3752,24 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       pathParams: { jobId: ["job-id", "id"] }
     },
     requiredScopes: ["jobs:read"]
+  },
+  {
+    id: "jobs.reparse",
+    feature: "jobs",
+    label: "重新解析历史任务",
+    target: { controller: "jobs", method: "handleReparseJob" },
+    http: { method: "POST", path: "/api/jobs/:jobId/reparse", localInForwardMode: true },
+    rpc: {
+      method: "jobs.reparse",
+      params: [{ name: "jobId", aliases: ["job-id", "id"], required: true }],
+      body: "params"
+    },
+    cli: {
+      command: ["jobs", "reparse"],
+      usage: "jobs reparse --id JOB_ID --body options.json",
+      pathParams: { jobId: ["job-id", "id"] }
+    },
+    requiredScopes: ["jobs:write"]
   },
   {
     id: "jobs.delete",

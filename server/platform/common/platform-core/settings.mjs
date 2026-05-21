@@ -217,6 +217,7 @@ export const DEFAULT_SETTINGS = {
       : process.env.SPLITALL_OCR_ENABLED !== "0",
   ocrPythonPath: process.env.SPLITALL_OCR_PYTHON_PATH || "",
   ocrLanguage: process.env.SPLITALL_PADDLEOCR_LANG || "ch",
+  pdfVisualPythonPath: process.env.SPLITALL_PDF_VISUAL_PYTHON_PATH || "",
   retrievalHalfLifeDays: Number(process.env.SPLITALL_RETRIEVAL_HALF_LIFE_DAYS || 45),
   staleAfterDays: Number(process.env.SPLITALL_STALE_AFTER_DAYS || 180),
   transactionWindowDays: Number(process.env.SPLITALL_TRANSACTION_WINDOW_DAYS || 30)

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { hashClientString, resolveWithin } from "../platform-core/security/client-strings.mjs";
+import { hashClientString, resolveWithin } from "../security/client-strings.mjs";
 
 function normalizeRelativePath(value) {
   return String(value || "")

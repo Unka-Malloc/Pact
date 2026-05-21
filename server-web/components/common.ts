@@ -18,6 +18,12 @@ export type CommonComponentRegistration = {
   usageRule: string;
 };
 
+export const commonComponentReusePolicy = [
+  "能用通用组件就用通用组件，业务页面不得重新手写已有语义覆盖的控件。",
+  "能继承就继承，页面级样式只负责布局、间距和局部状态组合。",
+  "新场景优先扩展通用组件的 props、slot 或 token 化样式；语义无法覆盖时才新增组件并登记到本注册表。",
+] as const;
+
 export const commonComponentRegistry: CommonComponentRegistration[] = [
   {
     name: "BinaryCheckbox",
@@ -37,8 +43,8 @@ export const commonComponentRegistry: CommonComponentRegistration[] = [
     name: "AgentModelOptionBar",
     file: "server-web/components/AgentModelOptionBar.vue",
     category: "picker",
-    description: "智能体选择的标准选项框，统一候选项、空值和禁用原因展示。",
-    usageRule: "页面需要选择已有智能体时使用；业务页面只提供候选源，不重复实现智能体选项渲染。",
+    description: "智能体选择的标准选项框，统一候选项、空模型库入口、空值和禁用原因展示。",
+    usageRule: "页面需要选择已有智能体时使用；业务页面只提供候选源，不重复实现智能体选项渲染或空库跳转。",
   },
   {
     name: "FeatureToggle",

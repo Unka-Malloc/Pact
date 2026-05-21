@@ -32,9 +32,14 @@ export const FEATURE_MANIFEST = Object.freeze({
   label: "SplitAll FeatureManifest",
   groups: Object.freeze([
     "core",
+    "security",
+    "module-management",
+    "data-structure",
+    "storage",
+    "devops",
+    "capabilities",
     "agent",
     "client",
-    "storage",
     "modules",
     "knowledge",
     "connectors",
@@ -122,7 +127,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       required: true,
       defaultEnabled: true,
       server: {
-        operationFeatures: ["auth", "discovery", "events", "runtime", "settings", "storage", "system"],
+        operationFeatures: ["discovery", "events", "runtime", "settings", "system"],
         operations: ["raw_objects.get"],
         webPanels: ["console-shell", "settings-core", "storage", "clients"],
         eventTopics: [
@@ -145,6 +150,22 @@ export const FEATURE_MANIFEST = Object.freeze({
         excludePaths: []
       },
       tests: { suites: ["server:verify:core"] }
+    },
+    {
+      featureId: "security-permissions",
+      label: "Security and permissions foundation",
+      group: "security",
+      required: true,
+      defaultEnabled: true,
+      server: {
+        operationFeatures: ["auth"],
+        eventTopics: ["auth.audit"]
+      },
+      package: {
+        includePaths: ["server/platform/common/security"],
+        excludePaths: []
+      },
+      tests: { suites: ["server:verify:console-auth", "server:verify:operation-policy"] }
     },
     {
       featureId: "operation-dispatcher",
@@ -187,9 +208,9 @@ export const FEATURE_MANIFEST = Object.freeze({
       tests: { suites: ["server:verify:storage"] }
     },
     {
-      featureId: "mount-manager-core",
+      featureId: "module-management-core",
       label: "External module mount manager core",
-      group: "modules",
+      group: "module-management",
       required: true,
       defaultEnabled: true,
       package: {
@@ -199,9 +220,33 @@ export const FEATURE_MANIFEST = Object.freeze({
       tests: { suites: ["server:verify:mount-manager"] }
     },
     {
+      featureId: "data-structure-core",
+      label: "Shared data structure foundation",
+      group: "data-structure",
+      required: true,
+      defaultEnabled: true,
+      package: {
+        includePaths: ["server/platform/common/data-structure"],
+        excludePaths: []
+      },
+      tests: { suites: ["server:verify:state-coordination"] }
+    },
+    {
+      featureId: "devops-core",
+      label: "Devops foundation",
+      group: "devops",
+      required: true,
+      defaultEnabled: true,
+      package: {
+        includePaths: ["server/platform/common/devops"],
+        excludePaths: []
+      },
+      tests: { suites: ["server:verify:ops", "server:verify:monitor-alerts", "server:verify:unified-registration"] }
+    },
+    {
       featureId: "tool-management-core",
       label: "Tool Management policy, grants, audit, and catalog core",
-      group: "agent",
+      group: "capabilities",
       required: true,
       defaultEnabled: true,
       server: {
@@ -214,7 +259,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         panels: ["ToolManagementPanel", "AgentPermissionPanel"]
       },
       package: {
-        includePaths: ["server/platform/specialized/agent/agent-tools/tool-management-core", "server/config/entity-config/tools"],
+        includePaths: ["server/platform/specialized/capabilities/tools/tool-management-core", "server/config/entity-config/tools"],
         excludePaths: []
       },
       tests: { suites: ["server:verify:tool-management"] }
@@ -481,12 +526,16 @@ export const FEATURE_MANIFEST = Object.freeze({
         ],
         operations: ["knowledge.evidence_gate.evaluate"],
         modules: ["KnowledgeDistillationRuntime", "KnowledgeSkillRuntime", "SummarizationRuntime"],
-        webPanels: ["knowledge-distillation"]
+        webPanels: ["knowledge-distillation", "knowledge-distillation-workbench"]
+      },
+      web: {
+        navItems: ["knowledge.distillation"],
+        panels: ["KnowledgeDistillationWorkbench"]
       },
       package: {
         includePaths: ["server/platform/specialized/knowledge/storage/knowledge-core"],
         removePaths: [
-          "server/platform/specialized/agent/agent-tools/agent-evaluation-runtime",
+          "server/platform/specialized/capabilities/tools/agent-evaluation-runtime",
           "server/platform/specialized/knowledge/retrieval/evidence-sufficiency-gate",
           "server/platform/specialized/knowledge/invocation/golden-rule-runtime",
           "server/platform/specialized/knowledge/invocation/knowledge-agent-skill-runtime",
@@ -496,7 +545,9 @@ export const FEATURE_MANIFEST = Object.freeze({
           "server/platform/specialized/agent/agent-gateway/multi-agent-coordinator",
           "server/platform/specialized/knowledge/invocation/knowledge-summarization-runtime",
           "server/scripts/distill-existing-knowledge-skills.mjs",
+          "server/scripts/knowledge-distillation-industrial-benchmark.mjs",
           "server/scripts/verify-knowledge-golden-distillation.mjs",
+          "server/scripts/verify-knowledge-industrial-distillation.mjs",
           "server/scripts/verify-knowledge-rule-authoring.mjs",
           "server/scripts/verify-knowledge-skillization.mjs",
           "server/scripts/verify-multi-agent-summarization.mjs",
@@ -608,9 +659,9 @@ export const FEATURE_MANIFEST = Object.freeze({
         panels: ["AgentExplorePanel", "AgentRetrievalDebugPanel"]
       },
       package: {
-        includePaths: ["server/platform/specialized/agent/agent-tools/agent-exploration-runtime"],
+        includePaths: ["server/platform/specialized/capabilities/tools/agent-exploration-runtime"],
         removePaths: [
-          "server/platform/specialized/agent/agent-tools/agent-exploration-runtime",
+          "server/platform/specialized/capabilities/tools/agent-exploration-runtime",
           "server/scripts/verify-agent-exploration.mjs",
           "server/scripts/verify-agent-knowledge-tools.mjs"
         ]
@@ -1040,14 +1091,14 @@ export function operationFeatureId(operation = {}) {
   }
 
   const featureByRegistryFeature = {
-    auth: "core-platform",
+    auth: "security-permissions",
     discovery: "core-platform",
     events: "core-platform",
     runtime: "core-platform",
     settings: "core-platform",
-    storage: "core-platform",
+    storage: "storage-core",
     system: "core-platform",
-    raw_objects: "core-platform",
+    raw_objects: "storage-core",
     jobs: "work-queue-core",
     uploads: "work-queue-core",
     tool_management: "tool-management-core",

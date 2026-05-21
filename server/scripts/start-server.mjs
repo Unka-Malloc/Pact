@@ -55,7 +55,7 @@ Options:
   --host                    监听地址，默认读取 SPLITALL_SERVER_HOST，否则使用 127.0.0.1
   --allow-public-console    允许监听非回环地址；等价于 SPLITALL_ALLOW_PUBLIC_CONSOLE=1
   --port                    监听端口，默认读取 SPLITALL_SERVER_PORT，否则使用 8787
-  --data-dir                数据目录，默认 build/server-data/
+  --data-dir                数据目录，默认 .splitall-server-data/
   --with-ui                 同时提供 build/dist 前端页面；build/dist 不存在时会报错
   --profile                 运行档位：default|minimal，默认 default
   --edition                 功能版本：community|pro|enterprise|custom
@@ -96,7 +96,7 @@ const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
       process.env.SPLITALL_SERVER_DATA_DIR ||
-      path.join(projectRoot, "build", "server-data")
+      path.join(projectRoot, ".splitall-server-data")
   )
 );
 const withUi =

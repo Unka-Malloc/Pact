@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const routerFile = path.join(repoRoot, "server-web", "router", "index.ts");
 const registryFile = path.join(repoRoot, "server", "config", "frontend-feature-registry.yaml");
+const architectureFile = path.join(repoRoot, "docs", "Architecture.md");
+const commonComponentsFile = path.join(repoRoot, "server-web", "components", "common.ts");
 const drawerHostDefaultFile = "server-web/ServerConsoleApp.vue";
 
 function normalizePosix(input) {
@@ -162,6 +164,79 @@ function parseSystemConfigDrawerTabs(text) {
   return tabIds;
 }
 
+async function listFiles(rootDir, predicate) {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const absolutePath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFiles(absolutePath, predicate));
+      continue;
+    }
+    if (entry.isFile() && predicate(absolutePath)) {
+      files.push(absolutePath);
+    }
+  }
+  return files;
+}
+
+function assertCommonComponentGovernance(commonText, architectureText) {
+  for (const snippet of [
+    "commonComponentReusePolicy",
+    "能用通用组件就用通用组件",
+    "能继承就继承",
+    "commonComponentRegistry"
+  ]) {
+    assert.ok(commonText.includes(snippet), `server-web/components/common.ts must document common component reuse policy: ${snippet}`);
+  }
+
+  for (const snippet of [
+    "server-web/components/common.ts",
+    "能用通用组件就用通用组件",
+    "能继承就继承",
+    "先扩展通用组件"
+  ]) {
+    assert.ok(architectureText.includes(snippet), `docs/Architecture.md must document frontend reuse/inheritance rule: ${snippet}`);
+  }
+
+  for (const componentName of [
+    "BinaryCheckbox",
+    "OptionBar",
+    "AgentModelOptionBar",
+    "FeatureToggle",
+    "StatusPill",
+    "BrowseSelectButton",
+    "ConfigFoldCard",
+    "HistorySessionPanel",
+    "InfoFeedResultRow"
+  ]) {
+    assert.ok(
+      new RegExp(`name:\\s*"${componentName}"[\\s\\S]*?usageRule:\\s*"`).test(commonText),
+      `common component registry must keep a usageRule for ${componentName}`
+    );
+  }
+}
+
+async function assertNoNativeCheckboxControls() {
+  const vueFiles = await listFiles(
+    path.join(repoRoot, "server-web"),
+    (absolutePath) => absolutePath.endsWith(".vue")
+  );
+  const nativeCheckboxPattern = /<input\b(?=[^>]*\btype\s*=\s*["']checkbox["'])[^>]*>/i;
+  const violations = [];
+  for (const file of vueFiles) {
+    const text = await fs.readFile(file, "utf8");
+    if (nativeCheckboxPattern.test(text)) {
+      violations.push(normalizePosix(path.relative(repoRoot, file)));
+    }
+  }
+  assert.deepEqual(
+    violations,
+    [],
+    "server-web pages must use BinaryCheckbox instead of native checkbox inputs"
+  );
+}
+
 function validateFeatureTree(entry, {
   entryLabel,
   seenFeatureIds,
@@ -237,10 +312,15 @@ function parseRouterMap(text) {
 }
 
 async function main() {
-  const [routerText, registryText] = await Promise.all([
+  const [routerText, registryText, architectureText, commonText] = await Promise.all([
     fs.readFile(routerFile, "utf8"),
-    fs.readFile(registryFile, "utf8")
+    fs.readFile(registryFile, "utf8"),
+    fs.readFile(architectureFile, "utf8"),
+    fs.readFile(commonComponentsFile, "utf8")
   ]);
+
+  assertCommonComponentGovernance(commonText, architectureText);
+  await assertNoNativeCheckboxControls();
 
   const routerMap = parseRouterMap(routerText);
   const registry = parseRegistryYaml(registryText);

@@ -25,7 +25,7 @@ import {
   createServerCompositionRoot,
   ensureConsoleOwner
 } from "../../platform/interactive/composition-root.mjs";
-import { createToolManagementPlatform } from "../../platform/specialized/agent/agent-tools/tool-management-core/index.mjs";
+import { createToolManagementPlatform } from "../../platform/specialized/capabilities/tools/tool-management-core/index.mjs";
 import { createServerRuntimeProviders } from "../../platform/interactive/server-runtime-providers.mjs";
 import { createContextRuntime } from "../../platform/specialized/agent/agent-context/interface/index.mjs";
 import { createAgentMemory } from "../../platform/specialized/agent/agent-memory/index.mjs";
@@ -569,34 +569,6 @@ export async function startHttpServer({
   });
   toolManagementPlatformRef = toolManagementPlatform;
 
-  // ── H-3: IP-level rate limiting ─────────────────────────────────────────
-  const ipRateLimiter = (() => {
-    const buckets = new Map();
-    const WINDOW_MS = 60_000;
-    const MAX_REQ = 120;          // general: 120 req/min per IP
-    const AUTH_MAX_REQ = 15;      // auth endpoints: 15 req/min per IP
-    const AUTH_PATHS = new Set(["/api/auth/login", "/api/rpc"]);
-    const pruner = setInterval(() => {
-      const now = Date.now();
-      for (const [k, b] of buckets) if (now >= b.resetAt) buckets.delete(k);
-    }, WINDOW_MS).unref();
-    return {
-      check(ip, pathname) {
-        const isAuth = AUTH_PATHS.has(pathname);
-        const key = `${isAuth ? "a" : "r"}:${ip}`;
-        const limit = isAuth ? AUTH_MAX_REQ : MAX_REQ;
-        const now = Date.now();
-        let b = buckets.get(key);
-        if (!b || now >= b.resetAt) { b = { count: 0, resetAt: now + WINDOW_MS }; buckets.set(key, b); }
-        b.count++;
-        return b.count > limit
-          ? { allowed: false, retryAfterMs: b.resetAt - now }
-          : { allowed: true };
-      },
-      destroy() { clearInterval(pruner); }
-    };
-  })();
-
   // ── H-4: in-flight request tracker for graceful drain ───────────────────
   let inFlightCount = 0;
   const drainCallbacks = [];
@@ -621,21 +593,6 @@ export async function startHttpServer({
     const requestId = randomUUID();
     const startedAt = Date.now();
 
-    // H-3: rate limit check (before any work)
-    const remoteIp = request.socket?.remoteAddress || "";
-    try {
-      const urlForRate = new URL(request.url || "/", "http://x");
-      const rl = ipRateLimiter.check(remoteIp, urlForRate.pathname);
-      if (!rl.allowed) {
-        response.writeHead(429, {
-          "Content-Type": "application/json; charset=utf-8",
-          "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)),
-          "Cache-Control": "no-store"
-        });
-        response.end(JSON.stringify({ error: "请求过于频繁，请稍后重试。" }));
-        return;
-      }
-    } catch { /* ignore malformed URL — let main handler deal with it */ }
     const traceContext = createTraceContext({
       requestId,
       transport: "http",
@@ -950,7 +907,6 @@ export async function startHttpServer({
 
       // Wait for all in-flight request handlers to complete
       await waitForDrain(30_000);
-      ipRateLimiter.destroy();
 
       try {
         if (ownsJobManager) {

@@ -36,6 +36,10 @@ function normalizeText(value) {
   return String(value || "").replace(/\r\n/g, "\n").trim();
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function createThrottledImportProgressReporter(onProgress) {
   let lastReportedAt = 0;
   let lastKey = "";
@@ -280,6 +284,8 @@ function normalizeDocumentParseResult(result, parserId = "") {
       text: normalizeText(result),
       metadata: {},
       embeddedDocuments: [],
+      visualElements: [],
+      warnings: [],
       mediaType: ""
     };
   }
@@ -304,6 +310,8 @@ function normalizeDocumentParseResult(result, parserId = "") {
     text: normalizeText(result?.text || result?.content || ""),
     metadata,
     embeddedDocuments,
+    visualElements: asArray(result?.visualElements),
+    warnings: asArray(result?.warnings).map((entry) => String(entry || "").trim()).filter(Boolean),
     mediaType: String(result?.mediaType || metadata["Content-Type"] || "")
   };
 }
@@ -632,12 +640,18 @@ async function parseImageInput({
   settings,
   userDataPath,
   runtime,
+  archiveBatchId = "",
+  clientUid = "",
+  sourceType = "",
   providerId = "",
   externalId = "",
   syncBatchId = "",
   contentHash = "",
   capturedAt = "",
   sourceMetadata = {},
+  originalRelativePath = "",
+  ingestOrigin = "filesystem",
+  sourceContainerPath = "",
   checkpointMaterialPath = ""
 }) {
   const ocrResult = await tryExtractWithOcr({
@@ -649,6 +663,30 @@ async function parseImageInput({
     userDataPath,
     runtime
   });
+  let rawObject = null;
+  if (archiveBatchId && ingestOrigin === "upload") {
+    rawObject = await persistRawMailObject({
+      userDataPath,
+      batchId: archiveBatchId,
+      buffer,
+      originalRelativePath: originalRelativePath || name || path.basename(filePath || ""),
+      originalSourcePath: filePath || "",
+      sourceContainerPath,
+      mediaType,
+      ingestOrigin,
+      clientUid,
+      sourceType: sourceType || "image",
+      providerId,
+      externalId,
+      syncBatchId,
+      contentHash,
+      capturedAt,
+      sourceMetadata,
+      sourceCreatedAt: sourceTimes.sourceCreatedAt,
+      sourceUpdatedAt: sourceTimes.sourceUpdatedAt,
+      sourceCollectedAt: sourceTimes.sourceCollectedAt
+    });
+  }
 
   return {
     id,
@@ -676,7 +714,8 @@ async function parseImageInput({
       extension: path.extname(name || filePath).toLowerCase(),
       checkpointMaterialPath
     }),
-    ...buildImagePayload(buffer, mediaType)
+    ...buildImagePayload(buffer, mediaType),
+    rawObject
   };
 }
 
@@ -728,6 +767,7 @@ async function parseStructuredInput({
     userDataPath,
     runtime
   });
+  warnings.push(...asArray(document.warnings).map((entry) => String(entry || "").trim()).filter(Boolean));
   let text = document.text;
 
   if (!text && kind === "pdf") {
@@ -751,7 +791,7 @@ async function parseStructuredInput({
   }
 
   let rawObject = null;
-  if (isEmailDocument && archiveBatchId) {
+  if (archiveBatchId && (isEmailDocument || ingestOrigin === "upload")) {
     rawObject = await persistRawMailObject({
       userDataPath,
       batchId: archiveBatchId,
@@ -789,6 +829,7 @@ async function parseStructuredInput({
     documentParserId: document.parserId || "",
     documentMetadata: document.metadata || {},
     embeddedDocuments: document.embeddedDocuments || [],
+    visualElements: document.visualElements || [],
     warnings,
     ocrAttempted,
     ...normalizeConnectorSourceMetadata({
@@ -884,6 +925,12 @@ async function parseBufferInput({
       contentHash,
       capturedAt,
       sourceMetadata,
+      archiveBatchId,
+      clientUid,
+      sourceType,
+      originalRelativePath,
+      ingestOrigin,
+      sourceContainerPath,
       checkpointMaterialPath
     })];
   }

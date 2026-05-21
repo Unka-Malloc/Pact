@@ -11,7 +11,7 @@ cd "$PROJECT_ROOT"
 
 PORT=8787
 VITE_PORT=5173
-DATA_DIR="$PROJECT_ROOT/build/server-data"
+DATA_DIR="$PROJECT_ROOT/.splitall-server-data"
 PROFILE="default"
 OPEN_BROWSER=true
 MODE="console"
@@ -24,7 +24,7 @@ usage() {
 
 选项:
   --port <n>        服务端端口（默认: 8787）
-  --data-dir <path> 数据目录（默认: build/server-data）
+  --data-dir <path> 数据目录（默认: .splitall-server-data）
   --profile <name>  运行档位（默认: default）
   --dev             使用 Vite 开发模式启动前端（默认启动内置控制台）
   --no-open         不自动打开浏览器

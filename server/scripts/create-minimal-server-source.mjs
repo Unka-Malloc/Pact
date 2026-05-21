@@ -306,7 +306,7 @@ async function instantiateMinimalSource(args = {}) {
   await writeReadme({ targetPath, featureRuntime });
   await fs.writeFile(
     path.join(targetPath, ".gitignore"),
-    ["node_modules/", "data/", "build/server-data/", "*.log", ""].join("\n"),
+    ["node_modules/", "data/", ".splitall-server-data/", "*.log", ""].join("\n"),
     "utf8"
   );
 

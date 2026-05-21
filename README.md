@@ -1,5 +1,9 @@
 # SplitAll
 
+可控的智能体协作空间。
+
+License: GPL-3.0-only.
+
 当前仓库主路径按职责收敛：
 
 - `server`：`Node + SQLite` 服务端

@@ -56,6 +56,7 @@ routes:
           - knowledge.tab.management
           - knowledge.tab.chunking
           - knowledge.tab.word-cloud
+          - knowledge.tab.distillation
           - knowledge.tab.conflicts
           - knowledge.tab.maintenance
       - featureId: knowledge.governance-console
@@ -71,6 +72,18 @@ routes:
           - knowledge.chunking.preview
           - knowledge.chunking.inspect-boundary
           - knowledge.normalized-docx.download
+      - featureId: knowledge.distillation-workbench
+        actions:
+          - knowledge.distillation-workbench.start
+          - knowledge.distillation-workbench.resume
+          - knowledge.distillation-workbench.cancel
+          - knowledge.distillation-workbench.archive
+          - knowledge.distillation-workbench.delete
+          - knowledge.distillation-workbench.rerun-stage
+          - knowledge.distillation-workbench.export-stage
+          - knowledge.distillation-workbench.export-package
+          - knowledge.distillation-workbench.compare
+          - knowledge.distillation-workbench.inspect-checkpoint
 
   - routePath: /debug/:tab
     viewFile: server-web/views/DebugView.vue

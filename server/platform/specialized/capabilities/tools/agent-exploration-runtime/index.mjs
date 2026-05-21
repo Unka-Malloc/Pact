@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadSettings } from "../../../../common/platform-core/settings.mjs";
-import { createToolManagementStore } from "../../../../../platform/specialized/agent/agent-tools/tool-management-core/store.mjs";
+import { createToolManagementStore } from "../tool-management-core/store.mjs";
 
 export const AGENT_EXPLORATION_PROTOCOL_VERSION = "splitall.agent-exploration.v1";
 

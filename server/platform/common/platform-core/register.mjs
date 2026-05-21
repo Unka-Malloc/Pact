@@ -1,30 +1,12 @@
 import { registerPlatformService } from "../../interactive/platform-registry.mjs";
 
 export function registerCorePlatformServices(registry, {
-  consoleAuth = null,
-  operationAuditStore = null,
   protocolEventBus = null,
   runtimeLogger = null,
   featureRuntime = null,
   operationConcurrencyScope = ""
 } = {}) {
   return [
-    registerPlatformService(registry, {
-      id: "core.auth.console",
-      platform: "core",
-      label: "Console authentication",
-      kind: "auth",
-      ownerFeatureId: "core-platform",
-      value: consoleAuth
-    }),
-    registerPlatformService(registry, {
-      id: "core.audit.operations",
-      platform: "core",
-      label: "Operation audit store",
-      kind: "audit",
-      ownerFeatureId: "core-platform",
-      value: operationAuditStore
-    }),
     registerPlatformService(registry, {
       id: "core.events.protocol",
       platform: "core",
@@ -54,7 +36,7 @@ export function registerCorePlatformServices(registry, {
       platform: "core",
       label: "Operation concurrency scope",
       kind: "dispatcher",
-      ownerFeatureId: "operation-dispatcher",
+      ownerFeatureId: "core-platform",
       value: operationConcurrencyScope
     })
   ];

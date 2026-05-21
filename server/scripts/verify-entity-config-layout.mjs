@@ -10,7 +10,7 @@ import {
   TOOL_MANAGEMENT_SCOPES,
   TOOL_MANAGEMENT_TOOLSETS,
   createToolCatalog
-} from "../platform/specialized/agent/agent-tools/tool-management-core/catalog.mjs";
+} from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 
 const REPO_ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const ENTITY_ROOT = path.join(REPO_ROOT, "server/config/entity-config");

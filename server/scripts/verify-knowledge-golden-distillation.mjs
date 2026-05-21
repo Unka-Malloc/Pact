@@ -44,6 +44,43 @@ async function createKnowledgeJob(baseUrl, title, body) {
   return job;
 }
 
+const PORTABLE_DOCUMENT_FORBIDDEN_KEYS = new Set([
+  "evidenceRefs",
+  "evidenceId",
+  "documentId",
+  "assetId",
+  "sourceId",
+  "batchId",
+  "syncBatchId",
+  "sourceKey"
+]);
+
+function forbiddenPortablePaths(value, pathParts = []) {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => forbiddenPortablePaths(entry, [...pathParts, String(index)]));
+  }
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, entry]) => {
+    const nextPath = [...pathParts, key];
+    return [
+      ...(PORTABLE_DOCUMENT_FORBIDDEN_KEYS.has(key) ? [nextPath.join(".")] : []),
+      ...forbiddenPortablePaths(entry, nextPath)
+    ];
+  });
+}
+
+function assertPortableDocument(document) {
+  assert.equal(document?.protocolVersion, "portable.knowledge-distillation.v1");
+  assert.equal(document?.selfContained, true);
+  assert.deepEqual(document?.runtimeDependencies, []);
+  assert.ok(document?.contentBlocks?.length >= 2);
+  assert.ok(document.contentBlocks.every((block, index) => block.order === index + 1));
+  assert.ok(String(document.markdown || "").includes(document.title));
+  assert.deepEqual(forbiddenPortablePaths(document), []);
+}
+
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-golden-distillation-"));
 const server = await startHttpServer({
   userDataPath,
@@ -54,20 +91,23 @@ const server = await startHttpServer({
 await installAuthenticatedFetch(server);
 
 try {
+  const billingBody = "本月账单需要在 2026-05-10 前完成付款。发票抬头为 SplitAll Test Ltd，付款金额为 1200 元。";
+  const securityBody = "账号登录验证码为 123456。如果不是本人操作，需要立即检查账号安全。";
+  const adBody = "限时电子书和会员优惠活动，本邮件不包含账单付款、发票或安全风险。";
   await createKnowledgeJob(
     server.url,
     "账单付款提醒",
-    "本月账单需要在 2026-05-10 前完成付款。发票抬头为 SplitAll Test Ltd，付款金额为 1200 元。"
+    billingBody
   );
   await createKnowledgeJob(
     server.url,
     "安全验证码提醒",
-    "账号登录验证码为 123456。如果不是本人操作，需要立即检查账号安全。"
+    securityBody
   );
   await createKnowledgeJob(
     server.url,
     "会员优惠广告",
-    "限时电子书和会员优惠活动，本邮件不包含账单付款、发票或安全风险。"
+    adBody
   );
 
   const rules = await fetchJson(`${server.url}/api/knowledge/golden-rules`);
@@ -134,13 +174,41 @@ try {
     body: JSON.stringify({
       query: "账单 发票 付款",
       limit: 10,
+      rawDocuments: [
+        {
+          title: "账单付款提醒",
+          text: billingBody,
+          capturedAt: "2026-05-01T09:00:00.000Z",
+          sourceType: "mail"
+        },
+        {
+          title: "安全验证码提醒",
+          text: securityBody,
+          capturedAt: "2026-05-02T09:00:00.000Z",
+          sourceType: "mail"
+        },
+        {
+          title: "会员优惠广告",
+          text: adBody,
+          capturedAt: "2026-05-03T09:00:00.000Z",
+          sourceType: "mail"
+        }
+      ],
       semanticSupportRequired: false
     })
   });
   assert.equal(distillation.protocolVersion, "splitall.knowledge-distillation.v1");
   assert.equal(distillation.status, "completed");
+  assert.equal(distillation.rawCorpus.primary, true);
+  assert.ok(distillation.rawCorpus.documentCount >= 1);
+  assert.ok(distillation.rawCorpus.batches.length >= 1);
   assert.ok(distillation.candidates.length >= 1);
+  assert.equal(distillation.portableDocuments.length, distillation.candidates.length);
   assert.ok(distillation.candidates.every((item) => item.goldenRule && item.evidenceGate && item.qualityReportV2));
+  for (const candidate of distillation.candidates) {
+    assertPortableDocument(candidate.portableDocument);
+    assertPortableDocument(candidate.distilledOutputs?.portableDocument);
+  }
 
   const fetchedRun = await fetchJson(
     `${server.url}/api/knowledge/distillation/runs/${encodeURIComponent(distillation.runId)}`

@@ -32,6 +32,9 @@ const props = withDefaults(defineProps<{
   popperClass?: string;
   clearable?: boolean;
   size?: string;
+  emptyLibraryLabel?: string;
+  emptyLibraryRoute?: string;
+  emptyLibraryActionIcon?: string;
 }>(), {
   modelValue: "",
   label: "",
@@ -46,12 +49,17 @@ const props = withDefaults(defineProps<{
   popperClass: "",
   clearable: false,
   size: "default",
+  emptyLibraryLabel: "当前模型库为空，请点击前往配置模型/智能体。",
+  emptyLibraryRoute: "/admin/agent-config",
+  emptyLibraryActionIcon: "+",
 });
 
 const emit = defineEmits<{
   "update:modelValue": [value: AgentOptionValue];
   change: [value: AgentOptionValue];
 }>();
+
+const EMPTY_MODEL_LIBRARY_ACTION = "__splitall_empty_model_library_action__";
 
 function normalizedValue(option: AgentOption) {
   return option.agentUid ?? option.value ?? "";
@@ -72,7 +80,7 @@ function normalizedLabel(option: AgentOption) {
 
 const selectOptions = computed(() => {
   const seen = new Set<string>();
-  return props.options
+  return (props.options || [])
     .map((option) => ({
       value: normalizedValue(option),
       label: normalizedLabel(option),
@@ -88,13 +96,52 @@ const selectOptions = computed(() => {
     });
 });
 
+const hasConfiguredOptions = computed(() => selectOptions.value.length > 0);
+const selectValue = computed(() =>
+  hasConfiguredOptions.value ? String(props.modelValue ?? "") : EMPTY_MODEL_LIBRARY_ACTION,
+);
+const emptyLibraryActionLabel = computed(() =>
+  [props.emptyLibraryActionIcon, props.emptyLibraryLabel]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .join(" "),
+);
+
 function emitValue(value: AgentOptionValue) {
   emit("update:modelValue", value);
   emit("change", value);
 }
 
+function navigateToModelLibrary() {
+  const route = String(props.emptyLibraryRoute || "/admin/agent-config").trim();
+  if (!route) return;
+  if (route.startsWith("#")) {
+    window.location.hash = route.slice(1);
+    return;
+  }
+  window.location.hash = route.startsWith("/") ? route : `/${route}`;
+}
+
 function handleChange(event: Event) {
-  emitValue((event.target as HTMLSelectElement | null)?.value || "");
+  const value = (event.target as HTMLSelectElement | null)?.value || "";
+  if (value === EMPTY_MODEL_LIBRARY_ACTION) {
+    navigateToModelLibrary();
+    return;
+  }
+  emitValue(value);
+}
+
+function handleSelectClick() {
+  if (!hasConfiguredOptions.value) {
+    navigateToModelLibrary();
+  }
+}
+
+function handleSelectKeydown(event: KeyboardEvent) {
+  if (!hasConfiguredOptions.value && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    navigateToModelLibrary();
+  }
 }
 </script>
 
@@ -106,23 +153,34 @@ function handleChange(event: Event) {
     :data-disabled="disabled"
   >
     <span v-if="label" class="agent-option-label">{{ label }}</span>
-    <span class="agent-option-shell">
+    <span class="agent-option-shell" :data-empty-library="!hasConfiguredOptions">
+      <span v-if="!hasConfiguredOptions" class="agent-option-empty-action" aria-hidden="true">
+        <span class="agent-option-add-icon">{{ emptyLibraryActionIcon || "+" }}</span>
+        <span class="agent-option-empty-text">{{ emptyLibraryLabel }}</span>
+      </span>
       <select
         class="agent-option-select"
-        :value="String(modelValue ?? '')"
+        :value="selectValue"
         :disabled="disabled"
+        @click="handleSelectClick"
+        @keydown="handleSelectKeydown"
         @change="handleChange"
       >
-        <option v-if="includeEmpty" value="">{{ emptyLabel }}</option>
-        <option v-else-if="!modelValue" value="" disabled>{{ placeholder }}</option>
-        <option
-          v-for="option in selectOptions"
-          :key="String(option.value)"
-          :value="String(option.value)"
-          :disabled="option.disabled"
-        >
-          {{ option.label }}
+        <option v-if="!hasConfiguredOptions" :value="EMPTY_MODEL_LIBRARY_ACTION">
+          {{ emptyLibraryActionLabel }}
         </option>
+        <template v-else>
+          <option v-if="includeEmpty" value="">{{ emptyLabel }}</option>
+          <option v-else-if="!modelValue" value="" disabled>{{ placeholder }}</option>
+          <option
+            v-for="option in selectOptions"
+            :key="String(option.value)"
+            :value="String(option.value)"
+            :disabled="option.disabled"
+          >
+            {{ option.label }}
+          </option>
+        </template>
       </select>
       <span class="agent-option-chevron" aria-hidden="true"></span>
     </span>
@@ -182,6 +240,43 @@ function handleChange(event: Event) {
 .agent-option-select:disabled {
   color: var(--text-muted, #6b7280);
   cursor: not-allowed;
+}
+
+.agent-option-shell[data-empty-library="true"] .agent-option-select {
+  color: transparent;
+}
+
+.agent-option-empty-action {
+  pointer-events: none;
+  position: absolute;
+  inset: 0 38px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--brand, #2563eb);
+  font: inherit;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.agent-option-add-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: var(--font-semibold, 600);
+  line-height: 1;
+}
+
+.agent-option-empty-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-option-chevron {

@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadSettings } from "../../../common/platform-core/settings.mjs";
 import { isSupportedImportFilePath } from "../preprocessing/file-processor/index.mjs";
-import { serverToken } from "../../../common/platform-core/security/client-strings.mjs";
+import { serverToken } from "../../../common/security/client-strings.mjs";
 import { createSourceFileRegistryStore } from "../../../common/storage/source-file-registry-store.mjs";
 import {
   deleteKnowledgeSourceFileIndex,

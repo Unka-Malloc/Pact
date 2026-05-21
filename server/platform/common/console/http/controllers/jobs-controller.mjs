@@ -9,7 +9,7 @@ import {
   createOrResumeUploadSession,
   getUploadSession
 } from "../../../../../protocols/checkpoint/upload-session-store.mjs";
-import { hashClientString, serverToken } from "../../../platform-core/security/client-strings.mjs";
+import { hashClientString, serverToken } from "../../../security/client-strings.mjs";
 import { contentDispositionFileName, sendJson } from "../http-utils.mjs";
 
 async function loadNormalizedDocumentStore() {
@@ -539,6 +539,12 @@ export function createJobsController({
     },
     async handleCreateJob({ request, requestBody, response }) {
       const payload = requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
+      const forceNewVersion = Boolean(
+        payload?.forceNewVersion ||
+          payload?.reparse ||
+          payload?.createNewVersion ||
+          payload?.reparseFromJobId
+      );
       const uploadTrace = payload?.uploadSessionId
         ? createUploadTracePublisher(protocolEventBus, randomUUID(), {
             http: {
@@ -621,7 +627,7 @@ export function createJobsController({
       }
       const checkpointReceipt = verifiedUpload.receipt;
       const existingCheckpointJob = await jobManager.getJobByCheckpointId(checkpointReceipt.checkpointId);
-      if (existingCheckpointJob) {
+      if (!forceNewVersion && existingCheckpointJob) {
         await publishProtocolEvent(
           protocolEventBus,
           "jobs.job",
@@ -714,6 +720,36 @@ export function createJobsController({
       sendJson(response, 404, {
         error: "任务不存在。"
       });
+    },
+    async handleReparseJob({ request, requestBody, jobId, response }) {
+      const payload = requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
+      const discoveryState = getDiscoveryState();
+      if (
+        discoveryState.mode === "forward" &&
+        discoveryState.forwardBaseUrl &&
+        discoveryState.forwardBaseUrl !== discoveryState.advertisedBaseUrl
+      ) {
+        await proxyApiRequest({
+          request,
+          response,
+          requestBody,
+          targetBaseUrl: discoveryState.forwardBaseUrl || discoveryState.activeServiceUrl,
+          discoveryState
+        });
+        return;
+      }
+
+      const job = await jobManager.reparseJob(jobId, {
+        documentParsing: payload?.documentParsing,
+        settings: payload?.settings
+      });
+      await publishProtocolEvent(
+        protocolEventBus,
+        "jobs.job",
+        { job, parentJobId: jobId },
+        { type: "jobs.job.reparse.created" }
+      );
+      sendJson(response, 202, job);
     },
     async handleDeleteJob({ request, requestBody, jobId, response }) {
       const deletionResult = await deletionCoordinator.deleteBatch(jobId);

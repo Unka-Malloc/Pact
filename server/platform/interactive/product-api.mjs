@@ -21,9 +21,13 @@ export {
   isServerToken,
   resolveWithin,
   serverToken
-} from "../common/platform-core/security/client-strings.mjs";
+} from "../common/security/client-strings.mjs";
 export { sendJson } from "../common/console/http/http-utils.mjs";
 export { createKnowledgePipeline } from "../specialized/knowledge/preprocessing/chunking/pipeline.mjs";
+export {
+  createDocumentParsingRuntime,
+  toPublicDocumentParsingResult
+} from "../specialized/knowledge/preprocessing/document-parsing-runtime.mjs";
 export { summarizePreprocessResult } from "../specialized/knowledge/preprocessing/preprocess-result.mjs";
 export {
   listAvailableAnalysisModules,
@@ -80,6 +84,7 @@ export {
   saveImportCheckpointEntry,
   validateImportCheckpointEntry
 } from "../common/storage/import-resume-store.mjs";
+export { resolveStoredObjectPath } from "../common/storage/raw-object-store.mjs";
 export { dispatchOperation } from "../common/operation-dispatcher/operation-dispatcher.mjs";
 export { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-registry.mjs";
 export {

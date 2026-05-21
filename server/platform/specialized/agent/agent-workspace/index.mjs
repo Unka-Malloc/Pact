@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 
 export const AGENT_WORKSPACE_PROTOCOL_VERSION = "splitall.agent-workspace.v1";
 export const AGENT_WORKSPACE_CONTEXT_BUNDLE_VERSION = "splitall.workspace-context-bundle.v1";
+export const AGENT_SESSION_THREAD_VERSION = "splitall.agent-session-thread.v1";
 
 const ACCEPTED_SUBMISSION_TYPES = new Set([
   "evidenceCard",
@@ -242,6 +243,18 @@ function compactPrivateState(privateState = {}) {
   };
 }
 
+function compactSessionEvent(event = {}) {
+  return {
+    eventId: event.eventId,
+    sequence: Number(event.sequence || 0),
+    type: event.type,
+    title: event.title,
+    summary: truncateText(event.summary, 600),
+    createdBy: event.createdBy || "",
+    createdAt: event.createdAt || ""
+  };
+}
+
 function buildWorkspaceHandoffMarkdown(bundle = {}) {
   const context = bundle.context || {};
   const summary = bundle.summary || {};
@@ -457,6 +470,50 @@ function hydrateLock(row) {
   };
 }
 
+function hydrateSession(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    sessionId: row.session_id,
+    workspaceId: row.workspace_id,
+    title: row.title,
+    objective: row.objective || "",
+    status: row.status || "active",
+    parentSessionId: row.parent_session_id || "",
+    forkedFromEventId: row.forked_from_event_id || "",
+    branchIndex: Number(row.branch_index || 0),
+    lineage: parseJson(row.lineage_json, []),
+    context: parseJson(row.context_json, {}),
+    metadata: parseJson(row.metadata_json, {}),
+    createdBy: row.created_by || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastEventId: row.last_event_id || "",
+    eventCount: Number(row.event_count || 0),
+    appendOnly: row.append_only !== 0
+  };
+}
+
+function hydrateSessionEvent(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    eventId: row.event_id,
+    sessionId: row.session_id,
+    workspaceId: row.workspace_id,
+    parentEventId: row.parent_event_id || "",
+    type: row.event_type,
+    title: row.title || "",
+    summary: row.summary || "",
+    payload: parseJson(row.payload_json, {}),
+    createdBy: row.created_by || "",
+    createdAt: row.created_at,
+    sequence: Number(row.sequence || 0)
+  };
+}
+
 function gateSubmission({ existingDuplicate = null, submission, writePolicy = {} }) {
   const reasons = [];
   const type = String(submission.type || "").trim();
@@ -627,6 +684,43 @@ export function createAgentWorkspace({ userDataPath }) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_aw_locks_target ON aw_locks(workspace_id, target_type, target_id);
     CREATE INDEX IF NOT EXISTS idx_aw_locks_expiry ON aw_locks(expires_at);
+    CREATE TABLE IF NOT EXISTS aw_sessions (
+      session_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      objective TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      parent_session_id TEXT NOT NULL DEFAULT '',
+      forked_from_event_id TEXT NOT NULL DEFAULT '',
+      branch_index INTEGER NOT NULL DEFAULT 0,
+      lineage_json TEXT NOT NULL DEFAULT '[]',
+      context_json TEXT NOT NULL DEFAULT '{}',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_event_id TEXT NOT NULL DEFAULT '',
+      event_count INTEGER NOT NULL DEFAULT 0,
+      append_only INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_aw_sessions_workspace ON aw_sessions(workspace_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_aw_sessions_parent ON aw_sessions(parent_session_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_aw_sessions_status ON aw_sessions(status, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS aw_session_events (
+      event_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      parent_event_id TEXT NOT NULL DEFAULT '',
+      event_type TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      sequence INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_aw_session_events_sequence ON aw_session_events(session_id, sequence);
+    CREATE INDEX IF NOT EXISTS idx_aw_session_events_workspace ON aw_session_events(workspace_id, created_at DESC);
   `);
 
   // ── Schema evolution: add inheritance + profile + sharing columns ──────────
@@ -717,6 +811,48 @@ export function createAgentWorkspace({ userDataPath }) {
       decision_id, workspace_id, run_id, status, title, payload_json, created_by, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  const insertSessionStmt = db.prepare(`
+    INSERT OR REPLACE INTO aw_sessions (
+      session_id, workspace_id, title, objective, status, parent_session_id, forked_from_event_id,
+      branch_index, lineage_json, context_json, metadata_json, created_by, created_at, updated_at,
+      last_event_id, event_count, append_only
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const selectSessionStmt = db.prepare("SELECT * FROM aw_sessions WHERE session_id = ?");
+  const listSessionsStmt = db.prepare("SELECT * FROM aw_sessions ORDER BY updated_at DESC LIMIT ?");
+  const listSessionsByStatusStmt = db.prepare("SELECT * FROM aw_sessions WHERE status = ? ORDER BY updated_at DESC LIMIT ?");
+  const listSessionsByWorkspaceStmt = db.prepare("SELECT * FROM aw_sessions WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT ?");
+  const listSessionsByWorkspaceStatusStmt = db.prepare(
+    "SELECT * FROM aw_sessions WHERE workspace_id = ? AND status = ? ORDER BY updated_at DESC LIMIT ?"
+  );
+  const selectWorkspaceRootSessionStmt = db.prepare(
+    "SELECT * FROM aw_sessions WHERE workspace_id = ? AND parent_session_id = '' ORDER BY created_at ASC LIMIT 1"
+  );
+  const countChildSessionsStmt = db.prepare(
+    "SELECT COUNT(*) AS count FROM aw_sessions WHERE parent_session_id = ?"
+  );
+  const insertSessionEventStmt = db.prepare(`
+    INSERT INTO aw_session_events (
+      event_id, session_id, workspace_id, parent_event_id, event_type, title, summary,
+      payload_json, created_by, created_at, sequence
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const selectSessionEventStmt = db.prepare("SELECT * FROM aw_session_events WHERE event_id = ?");
+  const selectSessionEventsStmt = db.prepare(
+    "SELECT * FROM aw_session_events WHERE session_id = ? ORDER BY sequence ASC LIMIT ?"
+  );
+  const selectSessionEventsUntilStmt = db.prepare(
+    "SELECT * FROM aw_session_events WHERE session_id = ? AND sequence <= ? ORDER BY sequence ASC"
+  );
+  const selectLastSessionEventStmt = db.prepare(
+    "SELECT * FROM aw_session_events WHERE session_id = ? ORDER BY sequence DESC LIMIT 1"
+  );
+  const selectMaxSessionSequenceStmt = db.prepare(
+    "SELECT COALESCE(MAX(sequence), 0) AS sequence FROM aw_session_events WHERE session_id = ?"
+  );
+  const updateSessionStatsStmt = db.prepare(
+    "UPDATE aw_sessions SET last_event_id = ?, event_count = ?, updated_at = ? WHERE session_id = ?"
+  );
 
   function workspaceSummary(workspaceId) {
     const runCount = db.prepare("SELECT COUNT(*) AS count FROM aw_runs WHERE workspace_id = ?").get(workspaceId)?.count || 0;
@@ -724,6 +860,7 @@ export function createAgentWorkspace({ userDataPath }) {
     const artifactCount = db.prepare("SELECT COUNT(*) AS count FROM aw_artifacts WHERE workspace_id = ?").get(workspaceId)?.count || 0;
     const openIssueCount = db.prepare("SELECT COUNT(*) AS count FROM aw_issues WHERE workspace_id = ? AND status != 'resolved'").get(workspaceId)?.count || 0;
     const activeLockCount = db.prepare("SELECT COUNT(*) AS count FROM aw_locks WHERE workspace_id = ? AND expires_at > ?").get(workspaceId, nowIso())?.count || 0;
+    const sessionCount = db.prepare("SELECT COUNT(*) AS count FROM aw_sessions WHERE workspace_id = ?").get(workspaceId)?.count || 0;
     const submissionCounts = Object.fromEntries(submissionRows.map((row) => [row.status, Number(row.count || 0)]));
     return {
       runCount: Number(runCount),
@@ -732,14 +869,16 @@ export function createAgentWorkspace({ userDataPath }) {
       reviewSubmissionCount: submissionCounts.needs_review || 0,
       artifactCount: Number(artifactCount),
       openIssueCount: Number(openIssueCount),
-      activeLockCount: Number(activeLockCount)
+      activeLockCount: Number(activeLockCount),
+      sessionCount: Number(sessionCount)
     };
   }
 
   function workspaceAccess(input = {}) {
     return {
       actorUserId: String(input.actorUserId || input.userId || "").trim(),
-      canAccessAll: input.canAccessAll === true || input.includeAllOwners === true
+      canAccessAll: true,
+      sharingMode: "team-shared"
     };
   }
 
@@ -747,9 +886,8 @@ export function createAgentWorkspace({ userDataPath }) {
     if (!workspace) {
       return false;
     }
-    const { actorUserId, canAccessAll } = workspaceAccess(input);
-    const ownerUserId = String(workspace.ownerUserId || workspace.owner_user_id || "").trim();
-    return canAccessAll || !actorUserId || !ownerUserId || ownerUserId === actorUserId;
+    workspaceAccess(input);
+    return true;
   }
 
   function canAccessWorkspaceId(workspaceId, input = {}) {
@@ -757,34 +895,365 @@ export function createAgentWorkspace({ userDataPath }) {
     return canAccessWorkspace(workspace, input);
   }
 
+  function sessionWorkspaceSummary(workspaceId) {
+    const workspace = hydrateWorkspace(selectWorkspaceRawStmt.get(String(workspaceId || "")));
+    return workspace
+      ? {
+          workspaceId: workspace.workspaceId,
+          title: workspace.title,
+          currentGeneration: workspace.currentGeneration
+        }
+      : null;
+  }
+
+  function sessionListItem(session, options = {}) {
+    const lastEvent = options.includeLastEvent === false || !session.lastEventId
+      ? null
+      : hydrateSessionEvent(selectSessionEventStmt.get(session.lastEventId));
+    return {
+      ...session,
+      workspace: sessionWorkspaceSummary(session.workspaceId),
+      lastEvent: lastEvent ? compactSessionEvent(lastEvent) : null
+    };
+  }
+
+  function appendSessionEvent(input = {}) {
+    const sessionId = String(input.sessionId || input.session_id || "").trim();
+    const current = hydrateSession(selectSessionStmt.get(sessionId));
+    if (!current) {
+      return null;
+    }
+    if (!canAccessWorkspaceId(current.workspaceId, input)) {
+      return null;
+    }
+    const timestamp = input.createdAt || nowIso();
+    const sequence = Number(selectMaxSessionSequenceStmt.get(sessionId)?.sequence || 0) + 1;
+    const type = normalizeText(input.type || input.eventType || input.event_type || "session_event") || "session_event";
+    const title = normalizeText(input.title || type).slice(0, 300);
+    const summary = truncateText(input.summary || input.description || title, 2000);
+    const parentEventId = String(input.parentEventId || input.parent_event_id || current.lastEventId || "").trim();
+    const payload = {
+      ...asObject(input.payload),
+      appendOnly: true
+    };
+    const eventId =
+      String(input.eventId || input.event_id || "").trim() ||
+      stableId("session_event", sessionId, type, title, summary, sequence, timestamp);
+    insertSessionEventStmt.run(
+      eventId,
+      sessionId,
+      current.workspaceId,
+      parentEventId,
+      type,
+      title,
+      summary,
+      stringifyJson(payload),
+      String(input.createdBy || input.actorUserId || input.agentId || "").trim(),
+      timestamp,
+      sequence
+    );
+    updateSessionStatsStmt.run(eventId, sequence, timestamp, sessionId);
+    updateWorkspaceTimeStmt.run(timestamp, current.workspaceId);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      session: hydrateSession(selectSessionStmt.get(sessionId)),
+      event: hydrateSessionEvent(selectSessionEventStmt.get(eventId))
+    };
+  }
+
+  function insertSessionRecord(input = {}) {
+    const timestamp = input.createdAt || nowIso();
+    const workspaceId = String(input.workspaceId || input.workspace_id || "").trim();
+    const sessionId =
+      String(input.sessionId || input.session_id || "").trim() ||
+      stableId("session", workspaceId, input.title || "", input.parentSessionId || "", timestamp);
+    insertSessionStmt.run(
+      sessionId,
+      workspaceId,
+      normalizeText(input.title || "工作会话") || "工作会话",
+      normalizeText(input.objective || "").slice(0, 2000),
+      String(input.status || "active").trim() || "active",
+      String(input.parentSessionId || input.parent_session_id || "").trim(),
+      String(input.forkedFromEventId || input.forked_from_event_id || "").trim(),
+      Number(input.branchIndex || input.branch_index || 0),
+      stringifyJson(asArray(input.lineage), []),
+      stringifyJson(asObject(input.context), {}),
+      stringifyJson(asObject(input.metadata), {}),
+      String(input.createdBy || input.actorUserId || input.agentId || "").trim(),
+      timestamp,
+      input.updatedAt || timestamp,
+      String(input.lastEventId || "").trim(),
+      Number(input.eventCount || 0),
+      1
+    );
+    return hydrateSession(selectSessionStmt.get(sessionId));
+  }
+
+  function createSession(input = {}) {
+    const workspaceId = String(input.workspaceId || input.workspace_id || "").trim();
+    const workspace = hydrateWorkspace(selectWorkspaceRawStmt.get(workspaceId));
+    if (!workspace) {
+      return { ok: false, error: "工作空间不存在" };
+    }
+    if (!canAccessWorkspace(workspace, input)) {
+      return { ok: false, error: "工作空间不可访问" };
+    }
+    const session = insertSessionRecord({
+      ...input,
+      workspaceId,
+      context: {
+        workspaceId,
+        ...asObject(input.context)
+      },
+      metadata: {
+        ...asObject(input.metadata),
+        appendOnly: true
+      }
+    });
+    let event = null;
+    if (input.initialEvent !== false) {
+      const result = appendSessionEvent({
+        ...input,
+        sessionId: session.sessionId,
+        type: input.initialEventType || "session_created",
+        title: "会话创建",
+        summary: input.objective || session.objective || session.title,
+        payload: {
+          workspaceId,
+          parentSessionId: session.parentSessionId,
+          forkedFromEventId: session.forkedFromEventId
+        }
+      });
+      event = result?.event || null;
+    }
+    return {
+      ok: true,
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      session: hydrateSession(selectSessionStmt.get(session.sessionId)),
+      event
+    };
+  }
+
+  function ensureRootSessionForWorkspace(workspace) {
+    if (!workspace?.workspaceId) {
+      return null;
+    }
+    const existing = hydrateSession(selectWorkspaceRootSessionStmt.get(workspace.workspaceId));
+    if (existing) {
+      return existing;
+    }
+    const timestamp = workspace.createdAt || nowIso();
+    const result = createSession({
+      sessionId: stableId("session", workspace.workspaceId, "root"),
+      workspaceId: workspace.workspaceId,
+      title: `${workspace.title || workspace.workspaceId} / 主会话`,
+      objective: workspace.objective || "",
+      createdBy: workspace.ownerUserId || "",
+      createdAt: timestamp,
+      metadata: {
+        rootSession: true,
+        generatedFromWorkspace: true
+      }
+    });
+    return result.session || null;
+  }
+
+  function ensureRootSessionsForVisibleWorkspaces(input = {}) {
+    if (input.ensureRoots === false || input.seedRoots === false) {
+      return;
+    }
+    const workspaceRows = db.prepare("SELECT * FROM aw_workspaces ORDER BY updated_at DESC LIMIT 500").all();
+    for (const workspace of workspaceRows.map(hydrateWorkspace)) {
+      if (canAccessWorkspace(workspace, input)) {
+        ensureRootSessionForWorkspace(workspace);
+      }
+    }
+  }
+
+  function listSessions(input = {}) {
+    ensureRootSessionsForVisibleWorkspaces(input);
+    const limit = Math.max(1, Math.min(Number(input.limit || 100), 500));
+    const status = String(input.status || "").trim();
+    const workspaceId = String(input.workspaceId || input.workspace_id || "").trim();
+    let rows;
+    if (workspaceId && status) {
+      rows = listSessionsByWorkspaceStatusStmt.all(workspaceId, status, limit);
+    } else if (workspaceId) {
+      rows = listSessionsByWorkspaceStmt.all(workspaceId, limit);
+    } else if (status) {
+      rows = listSessionsByStatusStmt.all(status, limit);
+    } else {
+      rows = listSessionsStmt.all(limit);
+    }
+    const sessions = rows
+      .map(hydrateSession)
+      .filter((session) => canAccessWorkspaceId(session.workspaceId, input))
+      .map((session) => sessionListItem(session, { includeLastEvent: input.includeLastEvent !== false }));
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      sharingMode: "team-shared",
+      appendOnly: true,
+      sessions,
+      count: sessions.length
+    };
+  }
+
+  function getSession(input = {}) {
+    const sessionId = typeof input === "string" ? input : String(input.sessionId || input.session_id || "").trim();
+    const options = typeof input === "string" ? {} : input;
+    const session = hydrateSession(selectSessionStmt.get(sessionId));
+    if (!session || !canAccessWorkspaceId(session.workspaceId, options)) {
+      return null;
+    }
+    const limit = Math.max(1, Math.min(Number(options.eventLimit || options.limit || 200), 1000));
+    const includeEvents = options.includeEvents !== false;
+    const workspace = hydrateWorkspace(selectWorkspaceRawStmt.get(session.workspaceId));
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      appendOnly: true,
+      session: sessionListItem(session),
+      workspace: workspace ? compactWorkspaceLayer(workspace) : null,
+      events: includeEvents
+        ? selectSessionEventsStmt.all(session.sessionId, limit).map(hydrateSessionEvent)
+        : []
+    };
+  }
+
+  function cloneSessionEvents({ sourceSessionId, targetSessionId, cutoffSequence }) {
+    const sourceRows = selectSessionEventsUntilStmt.all(sourceSessionId, cutoffSequence);
+    const idMap = new Map();
+    for (const row of sourceRows) {
+      idMap.set(row.event_id, stableId("session_event", targetSessionId, row.event_id, row.sequence));
+    }
+    for (const row of sourceRows) {
+      const payload = parseJson(row.payload_json, {});
+      insertSessionEventStmt.run(
+        idMap.get(row.event_id),
+        targetSessionId,
+        row.workspace_id,
+        idMap.get(row.parent_event_id) || "",
+        row.event_type,
+        row.title,
+        row.summary,
+        stringifyJson({
+          ...payload,
+          clonedFromEventId: row.event_id,
+          clonedFromSessionId: sourceSessionId
+        }),
+        row.created_by,
+        row.created_at,
+        row.sequence
+      );
+    }
+    return {
+      rows: sourceRows.length,
+      lastEventId: sourceRows.length ? idMap.get(sourceRows[sourceRows.length - 1].event_id) : ""
+    };
+  }
+
+  const forkSessionTx = db.transaction((input = {}) => {
+    const sourceId = String(input.sessionId || input.sourceSessionId || input.session_id || "").trim();
+    const source = hydrateSession(selectSessionStmt.get(sourceId));
+    if (!source) {
+      return { ok: false, error: "会话不存在" };
+    }
+    if (!canAccessWorkspaceId(source.workspaceId, input)) {
+      return { ok: false, error: "工作空间不可访问" };
+    }
+    const forkSourceEventId = String(input.fromEventId || input.forkedFromEventId || source.lastEventId || "").trim();
+    const sourceEvent = forkSourceEventId
+      ? hydrateSessionEvent(selectSessionEventStmt.get(forkSourceEventId))
+      : hydrateSessionEvent(selectLastSessionEventStmt.get(source.sessionId));
+    if (forkSourceEventId && (!sourceEvent || sourceEvent.sessionId !== source.sessionId)) {
+      return { ok: false, error: "分叉事件不属于该会话" };
+    }
+    const cutoffSequence = sourceEvent?.sequence || Number(selectMaxSessionSequenceStmt.get(source.sessionId)?.sequence || 0);
+    const branchIndex = Number(countChildSessionsStmt.get(source.sessionId)?.count || 0) + 1;
+    const timestamp = nowIso();
+    const nextSession = insertSessionRecord({
+      sessionId: input.newSessionId || input.targetSessionId || stableId("session", source.sessionId, cutoffSequence, branchIndex, timestamp),
+      workspaceId: source.workspaceId,
+      title: input.title || `${source.title} / 分叉 ${branchIndex}`,
+      objective: input.objective || source.objective,
+      status: "active",
+      parentSessionId: source.sessionId,
+      forkedFromEventId: sourceEvent?.eventId || "",
+      branchIndex,
+      lineage: [...asArray(source.lineage), source.sessionId],
+      context: {
+        ...asObject(source.context),
+        ...asObject(input.context)
+      },
+      metadata: {
+        ...asObject(source.metadata),
+        ...asObject(input.metadata),
+        appendOnly: true,
+        forkedFromSessionId: source.sessionId,
+        forkedFromEventId: sourceEvent?.eventId || "",
+        forkedAt: timestamp
+      },
+      createdBy: input.createdBy || input.actorUserId || "",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      eventCount: 0,
+      lastEventId: ""
+    });
+    const clone = cloneSessionEvents({
+      sourceSessionId: source.sessionId,
+      targetSessionId: nextSession.sessionId,
+      cutoffSequence
+    });
+    updateSessionStatsStmt.run(clone.lastEventId, clone.rows, timestamp, nextSession.sessionId);
+    const forkEvent = appendSessionEvent({
+      ...input,
+      sessionId: nextSession.sessionId,
+      type: "session_forked",
+      title: "会话分叉",
+      summary: `从 ${source.title || source.sessionId} 分叉`,
+      parentEventId: clone.lastEventId,
+      payload: {
+        sourceSessionId: source.sessionId,
+        sourceEventId: sourceEvent?.eventId || "",
+        copiedEventCount: clone.rows,
+        branchIndex
+      }
+    })?.event;
+    return {
+      ok: true,
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      appendOnly: true,
+      sourceSession: source,
+      session: hydrateSession(selectSessionStmt.get(nextSession.sessionId)),
+      event: forkEvent,
+      fork: {
+        parentSessionId: source.sessionId,
+        forkedFromEventId: sourceEvent?.eventId || "",
+        copiedEventCount: clone.rows,
+        branchIndex
+      }
+    };
+  });
+
+  function forkSession(input = {}) {
+    return forkSessionTx(input);
+  }
+
   function listWorkspaces(input = {}) {
     const limit = Math.max(1, Math.min(Number(input.limit || 50), 500));
     const status = String(input.status || "").trim();
     const includeSummary = input.includeSummary !== false;
-    const access = workspaceAccess(input);
-    let rows;
-    if (access.actorUserId && !access.canAccessAll) {
-      rows = status
-        ? db.prepare(`
-            SELECT * FROM aw_workspaces
-            WHERE status = ? AND (owner_user_id = '' OR owner_user_id = ?)
-            ORDER BY updated_at DESC
-            LIMIT ?
-          `).all(status, access.actorUserId, limit)
-        : db.prepare(`
-            SELECT * FROM aw_workspaces
-            WHERE owner_user_id = '' OR owner_user_id = ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-          `).all(access.actorUserId, limit);
-    } else {
-      rows = status
-        ? listWorkspacesByStatusStmt.all(status, limit)
-        : listWorkspacesStmt.all(limit);
-    }
+    const rows = status
+      ? listWorkspacesByStatusStmt.all(status, limit)
+      : listWorkspacesStmt.all(limit);
     const workspaces = rows.map(hydrateWorkspace);
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sharingMode: "team-shared",
       workspaces: workspaces.map((workspace) => ({
         ...workspace,
         summary: includeSummary ? workspaceSummary(workspace.workspaceId) : undefined
@@ -820,6 +1289,7 @@ export function createAgentWorkspace({ userDataPath }) {
     );
     // Re-read from DB to capture new columns (profile, ownedSourceIds, etc.)
     const persisted = hydrateWorkspace(selectWorkspaceStmt.get(workspace.workspaceId)) || workspace;
+    ensureRootSessionForWorkspace(persisted);
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       workspace: persisted
@@ -1503,6 +1973,7 @@ export function createAgentWorkspace({ userDataPath }) {
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       workspaceId,
+      sharingMode: "team-shared",
       currentGeneration: target.currentGeneration,
       chainGenerations: chain.map((ws) => ({
         workspaceId: ws.workspaceId,
@@ -1522,6 +1993,55 @@ export function createAgentWorkspace({ userDataPath }) {
       contextProfileId: profile.contextProfileId,
       toolGrantId: profile.toolGrantId,
       modelAlias: profile.modelAlias,
+    };
+  }
+
+  function getSessionContext(sessionId, options = {}) {
+    const session = hydrateSession(selectSessionStmt.get(String(sessionId || "")));
+    if (!session || !canAccessWorkspaceId(session.workspaceId, options)) {
+      return null;
+    }
+    const workspaceContext = getWorkspaceContext(session.workspaceId, options);
+    if (!workspaceContext) {
+      return null;
+    }
+    const sessionContext = asObject(session.context);
+    const explicitSourceIds = asArray(sessionContext.knowledgeSourceIds || sessionContext.sourceIds);
+    const contextProfileId = String(sessionContext.contextProfileId || workspaceContext.contextProfileId || "");
+    const modelAlias = String(sessionContext.modelAlias || sessionContext.alias || workspaceContext.modelAlias || "");
+    const toolGrantId = String(sessionContext.toolGrantId || sessionContext.grantId || workspaceContext.toolGrantId || "");
+    const knowledgeSourceIds = explicitSourceIds.length ? explicitSourceIds : workspaceContext.knowledgeSourceIds;
+    return {
+      ...workspaceContext,
+      workspaceContext,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      agentSessionId: session.sessionId,
+      sessionId: session.sessionId,
+      sessionTitle: session.title,
+      sessionStatus: session.status,
+      parentSessionId: session.parentSessionId,
+      forkedFromEventId: session.forkedFromEventId,
+      sessionEventCount: session.eventCount,
+      sessionLastEventId: session.lastEventId,
+      sessionLineage: session.lineage,
+      sessionAppendOnly: true,
+      sessionContext,
+      knowledgeSourceIds,
+      contextProfileId,
+      toolGrantId,
+      modelAlias,
+      contextFingerprint: stableHash(
+        "agent-session-context",
+        workspaceContext.contextFingerprint,
+        session.sessionId,
+        session.lastEventId,
+        session.eventCount,
+        stableJson(sessionContext),
+        knowledgeSourceIds.join("|"),
+        contextProfileId,
+        toolGrantId,
+        modelAlias
+      )
     };
   }
 
@@ -1909,6 +2429,12 @@ export function createAgentWorkspace({ userDataPath }) {
     createWorkspace,
     listWorkspaces,
     getWorkspace,
+    createSession,
+    listSessions,
+    getSession,
+    getSessionContext,
+    appendSessionEvent,
+    forkSession,
     createRun,
     updateRun,
     getRun,

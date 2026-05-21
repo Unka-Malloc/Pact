@@ -1,5 +1,5 @@
 import { loadSettings } from "../common/platform-core/settings.mjs";
-import { createToolManagementStore } from "../specialized/agent/agent-tools/tool-management-core/store.mjs";
+import { createToolManagementStore } from "../specialized/capabilities/tools/tool-management-core/store.mjs";
 
 async function createProvider(enabled, specifier, exportName, args = []) {
   if (!enabled) {
@@ -130,7 +130,7 @@ export async function createServerRuntimeProviders({
   );
   const agentEvaluationRuntime = await createProvider(
     isFeatureActive("knowledge-distillation"),
-    "../specialized/agent/agent-tools/agent-evaluation-runtime/index.mjs",
+    "../specialized/capabilities/tools/agent-evaluation-runtime/index.mjs",
     "createAgentEvaluationRuntime",
     [{
       userDataPath,
@@ -144,6 +144,7 @@ export async function createServerRuntimeProviders({
     [{
       userDataPath,
       runtime,
+      metadataStore,
       knowledgeSkillRuntime,
       goldenRuleRuntime,
       evidenceGate: evidenceSufficiencyGate,
@@ -179,7 +180,7 @@ export async function createServerRuntimeProviders({
   );
   const agentExplorationRuntime = await createProvider(
     isFeatureActive("agent-exploration"),
-    "../specialized/agent/agent-tools/agent-exploration-runtime/index.mjs",
+    "../specialized/capabilities/tools/agent-exploration-runtime/index.mjs",
     "createAgentExplorationRuntime",
     [{
       userDataPath,

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONSOLE_ROLES } from "../platform/common/platform-core/auth/console-auth.mjs";
+import { CONSOLE_ROLES } from "../platform/common/security/auth/console-auth.mjs";
 import { normalizeMaintenancePlan } from "../services/agent/maintenance-agent/planner.mjs";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { evaluateOperationSafety } from "../platform/common/operation-dispatcher/operation-decorators.mjs";

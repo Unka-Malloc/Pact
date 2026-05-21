@@ -50,7 +50,7 @@ async function assertStaticSingletonBoundaries() {
     "HTTP/RPC dispatcher lock scope must be per userDataPath"
   );
 
-  const toolRuntime = await readText("server/platform/specialized/agent/agent-tools/tool-management-core/runtime.mjs");
+  const toolRuntime = await readText("server/platform/specialized/capabilities/tools/tool-management-core/runtime.mjs");
   assert.ok(toolRuntime.includes("concurrencyScope: operationConcurrencyScope"));
   const maintenanceTools = await readText("server/services/agent/maintenance-agent/tool-registry.mjs");
   assert.ok(maintenanceTools.includes("concurrencyScope: operationConcurrencyScope"));

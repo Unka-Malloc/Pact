@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveWithin } from "../../platform-core/security/client-strings.mjs";
+import { resolveWithin } from "../../security/client-strings.mjs";
 
 const CONTENT_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],

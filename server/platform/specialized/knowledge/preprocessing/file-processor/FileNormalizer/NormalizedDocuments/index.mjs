@@ -17,6 +17,10 @@ import {
   getNormalizedManifestPath
 } from "./store.mjs";
 import { importFileDescriptorForPath } from "../../import-file-types.mjs";
+import {
+  buildMachineYamlDocument,
+  renderHumanDocxBodyBlocks
+} from "../../../../document-export/docx-human-renderer.mjs";
 
 const MAX_CHILD_DOCUMENTS_PER_SOURCE = 80;
 const MAX_BODY_CHARS = 24000;
@@ -47,6 +51,31 @@ function scalar(value) {
 
 function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
+}
+
+function parseDataUrl(dataUrl) {
+  const match = /^data:([^;,]+)?;base64,(.+)$/is.exec(String(dataUrl || "").trim());
+  if (!match) {
+    return null;
+  }
+  try {
+    return {
+      mediaType: match[1] || "application/octet-stream",
+      buffer: Buffer.from(match[2], "base64")
+    };
+  } catch {
+    return null;
+  }
+}
+
+function extensionForMediaType(mediaType = "") {
+  const normalized = String(mediaType || "").toLowerCase();
+  if (normalized === "image/jpeg" || normalized === "image/jpg") return ".jpg";
+  if (normalized === "image/png") return ".png";
+  if (normalized === "image/webp") return ".webp";
+  if (normalized === "image/gif") return ".gif";
+  if (normalized === "image/tiff") return ".tiff";
+  return ".bin";
 }
 
 function stableHash(value, length = 10) {
@@ -121,12 +150,9 @@ function heading(text, level = HeadingLevel.HEADING_1) {
 function bodyParagraphs(text, maxChars = MAX_BODY_CHARS) {
   const normalized = truncateText(text, maxChars);
   if (!normalized) {
-    return [paragraph("未提取到正文。")];
+    return renderHumanDocxBodyBlocks("", { emptyText: "未提取到正文。" });
   }
-  return normalized
-    .split(/\n{2,}/)
-    .map((block) => paragraph(block.trim(), 140))
-    .filter((item) => item);
+  return renderHumanDocxBodyBlocks(normalized, { emptyText: "未提取到正文。" });
 }
 
 function metadataTable(metadata = {}) {
@@ -185,17 +211,11 @@ function evidenceParagraphs(evidence = {}) {
 
 async function buildDocxBuffer({
   title,
-  metadata,
   sections,
-  evidence,
   warnings
 }) {
   const children = [
-    heading(title),
-    heading("归一化元数据", HeadingLevel.HEADING_2),
-    metadataTable(metadata),
-    ...evidenceParagraphs(evidence),
-    heading("正文", HeadingLevel.HEADING_2)
+    heading(title)
   ];
 
   for (const section of asArray(sections)) {
@@ -206,7 +226,13 @@ async function buildDocxBuffer({
     children.push(...bodyParagraphs(section.body || section.text || ""));
   }
 
-  children.push(...warningParagraphs(warnings));
+  const humanWarnings = asArray(warnings).map(scalar).filter(Boolean);
+  if (humanWarnings.length > 0) {
+    children.push(
+      heading("解析备注", HeadingLevel.HEADING_2),
+      ...humanWarnings.map((item) => paragraph(item, 100))
+    );
+  }
 
   const document = new Document({
     sections: [{ children }]
@@ -243,8 +269,35 @@ async function writeDocxSpec({
   const buffer = await buildDocxBuffer(normalized);
   await fs.writeFile(absolutePath, buffer);
   const stats = await fs.stat(absolutePath);
+  const yamlFileName = fileName.replace(/\.docx$/i, ".yaml");
+  const machineReadableRelativePath = path.posix.join("machine", sourceFolder, yamlFileName);
+  const machineReadablePath = path.join(rootPath, ...machineReadableRelativePath.split("/"));
+  await fs.mkdir(path.dirname(machineReadablePath), { recursive: true });
+  const documentId = docId(adapterId.replace(/[^a-z0-9]+/gi, "-"), source, `${granularity}:${fileName}`);
+  const machineYaml = buildMachineYamlDocument({
+    schemaVersion: 1,
+    artifactType: "splitall.normalized-document.machine.v1",
+    role: "machine-readable-normalization",
+    humanDocumentId: documentId,
+    humanDocumentRelativePath: relativePath,
+    sourceId: source.id || "",
+    sourceTitle: sourceTitle(source),
+    adapterId,
+    granularity,
+    metadata: normalized.metadata || {},
+    evidence: normalized.evidence || {},
+    sections: asArray(normalized.sections).map((section, index) => ({
+      index: index + 1,
+      title: scalar(section.title) || `section-${index + 1}`,
+      text: section.body || section.text || "",
+      evidence: section.evidence || section.sourceRange || section.metadata || {}
+    })),
+    warnings: normalized.warnings
+  });
+  await fs.writeFile(machineReadablePath, machineYaml, "utf8");
+  const machineReadableStats = await fs.stat(machineReadablePath);
   return {
-    documentId: docId(adapterId.replace(/[^a-z0-9]+/gi, "-"), source, `${granularity}:${fileName}`),
+    documentId,
     artifactType: "docx",
     adapterId,
     sourceId: source.id || "",
@@ -253,6 +306,10 @@ async function writeDocxSpec({
     relativePath,
     sha256: sha256(buffer),
     byteSize: stats.size,
+    machineReadableFormat: "yaml",
+    machineReadableRelativePath,
+    machineReadableSha256: sha256(Buffer.from(machineYaml, "utf8")),
+    machineReadableByteSize: machineReadableStats.size,
     sourceMaterialRelativePath,
     warnings: normalized.warnings
   };
@@ -284,6 +341,101 @@ async function copySourceMaterial({ rootPath, sourceFolder, source, adapterId })
     sourceMaterialRelativePath: relativePath,
     warnings: []
   };
+}
+
+function visualElementsForSource(source, kind = "") {
+  return asArray(source?.visualElements)
+    .filter((entry) => !kind || entry?.kind === kind)
+    .sort((a, b) => Number(a?.sequence || 0) - Number(b?.sequence || 0));
+}
+
+async function writeVisualImageAsset({
+  rootPath,
+  sourceFolder,
+  source,
+  adapterId,
+  image
+}) {
+  const parsed = parseDataUrl(image.imageDataUrl);
+  if (!parsed?.buffer?.length) {
+    return null;
+  }
+  const page = Number(image.page || 0);
+  const index = Number(image.index || 0);
+  const sequence = Number(image.sequence || 0);
+  const extension = path.extname(image.fileName || "") || extensionForMediaType(parsed.mediaType);
+  const fileName = image.fileName ||
+    `visual-${String(sequence || index || 1).padStart(3, "0")}${extension}`;
+  const relativePath = path.posix.join("assets", sourceFolder, fileName);
+  const absolutePath = path.join(rootPath, ...relativePath.split("/"));
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.writeFile(absolutePath, parsed.buffer);
+  const stats = await fs.stat(absolutePath);
+  return {
+    assetId: docId(`${adapterId}-visual-image`, source, `${sequence}:${relativePath}`),
+    artifactType: "image",
+    adapterId,
+    sourceId: source.id || "",
+    granularity: "visual-image",
+    title: image.title || `${sourceTitle(source)} - Image ${sequence || index || ""}`.trim(),
+    relativePath,
+    sha256: sha256(parsed.buffer),
+    byteSize: stats.size,
+    mediaType: image.mediaType || parsed.mediaType,
+    page,
+    index,
+    sequence,
+    width: Number(image.width || 0),
+    height: Number(image.height || 0),
+    bbox: image.bbox || [],
+    warnings: []
+  };
+}
+
+async function writeVisualImageAssets({ rootPath, sourceFolder, source, adapterId }) {
+  const assets = [];
+  for (const image of visualElementsForSource(source, "image")) {
+    const asset = await writeVisualImageAsset({ rootPath, sourceFolder, source, adapterId, image });
+    if (asset) {
+      assets.push(asset);
+    }
+  }
+  return assets;
+}
+
+async function writeVisualTableDocs({ rootPath, sourceFolder, source, adapterId, sourceMaterialRelativePath }) {
+  const docs = [];
+  for (const table of visualElementsForSource(source, "table")) {
+    const sequence = Number(table.sequence || docs.length + 1);
+    const page = Number(table.page || 0);
+    docs.push(
+      await writeDocxSpec({
+        rootPath,
+        sourceFolder,
+        source,
+        adapterId,
+        granularity: "visual-table",
+        fileName: `table-${String(sequence).padStart(3, "0")}.docx`,
+        sourceMaterialRelativePath,
+        spec: {
+          title: `${sourceTitle(source)} - Table ${sequence}`,
+          metadata: {
+            ...baseMetadata({ source, adapterId, granularity: "visual-table" }),
+            page,
+            tableIndex: Number(table.index || 0),
+            visualSequence: sequence,
+            rowCount: Number(table.rowCount || 0),
+            columnCount: Number(table.columnCount || 0),
+            extractionMethod: table.extractionMethod || ""
+          },
+          evidence: { page, tableIndex: Number(table.index || 0), sourceMaterial: sourceMaterialRelativePath },
+          sections: [{ title: table.title || `Table ${sequence}`, body: table.markdown || table.text || "" }],
+          warnings: []
+        }
+      })
+    );
+  }
+  return docs;
 }
 
 function chunksForSource(chunks, sourceId) {
@@ -321,12 +473,8 @@ function chunkEvidenceMetadata(chunk, index) {
   };
 }
 
-function chunkBodyWithEvidence(chunk, index) {
-  const evidence = Object.entries(chunkEvidenceMetadata(chunk, index))
-    .filter(([, value]) => value !== undefined && value !== null && stableMetadata(value) !== "")
-    .map(([key, value]) => `${key}: ${stableMetadata(value)}`)
-    .join("\n");
-  return normalizeText([evidence, chunk?.content || chunk?.text || ""].filter(Boolean).join("\n\n"));
+function chunkBodyText(chunk) {
+  return normalizeText(chunk?.content || chunk?.text || "");
 }
 
 function chunkSections(chunks, fallbackText) {
@@ -336,7 +484,8 @@ function chunkSections(chunks, fallbackText) {
   }
   return sourceChunks.map((chunk, index) => ({
     title: chunkTitle(chunk, `片段 ${index + 1}`),
-    body: chunkBodyWithEvidence(chunk, index)
+    body: chunkBodyText(chunk),
+    evidence: chunkEvidenceMetadata(chunk, index)
   }));
 }
 
@@ -356,7 +505,8 @@ function groupChunksByTopTitle(chunks, fallbackText) {
 
   return [...groups.entries()].map(([title, items]) => ({
     title,
-    body: items.map((item, index) => chunkBodyWithEvidence(item, index)).filter(Boolean).join("\n\n")
+    body: items.map((item) => chunkBodyText(item)).filter(Boolean).join("\n\n"),
+    evidence: items.map((item, index) => chunkEvidenceMetadata(item, index))
   }));
 }
 
@@ -495,8 +645,14 @@ async function pdfAdapter({ rootPath, sourceFolder, source, chunks }) {
   const sourceMaterial = await copySourceMaterial({ rootPath, sourceFolder, source, adapterId });
   const sourceMaterialRelativePath = sourceMaterial?.relativePath || "";
   const docs = [];
+  const assets = [];
+  const imageCount = visualElementsForSource(source, "image").length;
+  const tableCount = visualElementsForSource(source, "table").length;
   const warnings = [
-    "PDF 归一化以解析文本和页窗启发式生成；扫描页或图表如果没有 OCR 文本，召回可能依赖原始 PDF 覆盖。"
+    imageCount || tableCount
+      ? `PDF 已提取视觉元素：图片 ${imageCount} 个，表格 ${tableCount} 个；元素顺序按页码和页面位置保留。`
+      : "PDF 归一化以解析文本和页窗启发式生成；扫描页或图表如果没有 OCR 文本，召回可能依赖原始 PDF 覆盖。",
+    ...asArray(source.warnings).map(scalar).filter(Boolean)
   ];
 
   docs.push(
@@ -569,9 +725,21 @@ async function pdfAdapter({ rootPath, sourceFolder, source, chunks }) {
     );
   }
 
+  assets.push(...(await writeVisualImageAssets({ rootPath, sourceFolder, source, adapterId })));
+  docs.push(
+    ...(await writeVisualTableDocs({
+      rootPath,
+      sourceFolder,
+      source,
+      adapterId,
+      sourceMaterialRelativePath
+    }))
+  );
+
   return {
     documents: docs,
-    sourceMaterials: sourceMaterial ? [sourceMaterial] : []
+    sourceMaterials: sourceMaterial ? [sourceMaterial] : [],
+    assets
   };
 }
 
@@ -653,6 +821,38 @@ async function htmlAdapter({ rootPath, sourceFolder, source, chunks }) {
 
   return {
     documents: docs,
+    sourceMaterials: sourceMaterial ? [sourceMaterial] : []
+  };
+}
+
+async function markdownAdapter({ rootPath, sourceFolder, source, chunks }) {
+  const adapterId = "builtin/markdown-adapter";
+  const sourceChunks = chunksForSource(chunks, source.id);
+  const sourceMaterial = await copySourceMaterial({ rootPath, sourceFolder, source, adapterId });
+  const sourceMaterialRelativePath = sourceMaterial?.relativePath || "";
+  const sourceText = normalizeText(source.text) ||
+    sourceChunks.map((chunk) => chunkBodyText(chunk)).filter(Boolean).join("\n\n");
+  const doc = await writeDocxSpec({
+    rootPath,
+    sourceFolder,
+    source,
+    adapterId,
+    granularity: "document",
+    fileName: "document.docx",
+    sourceMaterialRelativePath,
+    spec: {
+      title: sourceTitle(source),
+      metadata: baseMetadata({ source, adapterId, granularity: "document" }),
+      evidence: {
+        sourceMaterial: sourceMaterialRelativePath,
+        chunks: sourceChunks.map((chunk, index) => chunkEvidenceMetadata(chunk, index))
+      },
+      sections: [{ title: "", body: sourceText }],
+      warnings: asArray(source.warnings).map(scalar).filter(Boolean)
+    }
+  });
+  return {
+    documents: [doc],
     sourceMaterials: sourceMaterial ? [sourceMaterial] : []
   };
 }
@@ -865,6 +1065,9 @@ async function mailAdapter({ rootPath, analysis }) {
 
 function pickAdapter(source) {
   const descriptor = sourceDescriptor(source);
+  if ([".md", ".markdown", ".mdown", ".mkd"].includes(sourceExtension(source))) {
+    return markdownAdapter;
+  }
   if (descriptor?.normalizedAdapter === "presentation") {
     return presentationAdapter;
   }
@@ -880,7 +1083,7 @@ function pickAdapter(source) {
   return fallbackAdapter;
 }
 
-function summarizeManifest(documents, sourceMaterials) {
+function summarizeManifest(documents, sourceMaterials, assets = []) {
   const byGranularity = {};
   for (const entry of documents) {
     byGranularity[entry.granularity] = (byGranularity[entry.granularity] || 0) + 1;
@@ -888,6 +1091,7 @@ function summarizeManifest(documents, sourceMaterials) {
   return {
     documentCount: documents.length,
     sourceMaterialCount: sourceMaterials.length,
+    assetCount: assets.length,
     byGranularity
   };
 }
@@ -906,6 +1110,7 @@ export async function generateNormalizedDocuments({
 
   const documents = [];
   const sourceMaterials = [];
+  const assets = [];
   const warnings = [];
 
   const mailResult = await mailAdapter({ rootPath, analysis });
@@ -927,6 +1132,7 @@ export async function generateNormalizedDocuments({
       });
       documents.push(...asArray(result.documents));
       sourceMaterials.push(...asArray(result.sourceMaterials));
+      assets.push(...asArray(result.assets));
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
       warnings.push(`${sourceTitle(source)} 归一化失败：${message}`);
@@ -940,6 +1146,17 @@ export async function generateNormalizedDocuments({
     batchId: jobId,
     generatedAt,
     rootRelativePath: "normalized-documents",
+    humanReadable: {
+      format: "docx",
+      purpose: "human-readable-normalized-knowledge-document",
+      policy: "render source order, headings, paragraphs, lists and simple tables; keep machine evidence outside DOCX"
+    },
+    machineReadable: {
+      format: "yaml",
+      purpose: "machine-readable-parser-intermediate",
+      manifestRelativePath: "manifest.yaml",
+      sidecarPattern: "machine/**/*.yaml"
+    },
     architecture: {
       corpusExport: {
         role: "raw-materials-to-normalized-docx",
@@ -954,13 +1171,19 @@ export async function generateNormalizedDocuments({
     },
     documents,
     sourceMaterials,
-    summary: summarizeManifest(documents, sourceMaterials),
+    assets,
+    summary: summarizeManifest(documents, sourceMaterials, assets),
     warnings
   };
 
   await fs.writeFile(
     getNormalizedManifestPath(userDataPath, jobId),
     JSON.stringify(manifest, null, 2),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(rootPath, "manifest.yaml"),
+    buildMachineYamlDocument(manifest),
     "utf8"
   );
 

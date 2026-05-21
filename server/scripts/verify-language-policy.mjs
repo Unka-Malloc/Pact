@@ -5,14 +5,17 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const serverRoot = path.join(projectRoot, "server");
 const allowedExtensions = new Set([".mjs", ".json", ".md"]);
-const ignoredDirectories = new Set(["node_modules", ".git"]);
+const ignoredDirectories = new Set(["node_modules", ".git", "__pycache__"]);
+const ignoredFileNames = new Set([".DS_Store"]);
 const runtimeAssetPrefixes = [
   "server/platform/modules/knowledge/runtime/jre/",
   "server/platform/modules/knowledge/tika/",
-  "server/platform/modules/knowledge/ocr/runtime/"
+  "server/platform/modules/knowledge/ocr/runtime/",
+  "server/platform/modules/knowledge/pdf/runtime/"
 ];
 const runtimeAssetFiles = new Set([
-  "server/platform/modules/knowledge/ocr/paddle_ocr_extract.py"
+  "server/platform/modules/knowledge/ocr/paddle_ocr_extract.py",
+  "server/platform/modules/knowledge/pdf/pdf_visual_extract.py"
 ]);
 const declarativeConfigFiles = new Set([
   "server/config/frontend-feature-registry.yaml"
@@ -44,6 +47,9 @@ async function walk(directory) {
       continue;
     }
     if (entry.isFile()) {
+      if (ignoredFileNames.has(entry.name)) {
+        continue;
+      }
       files.push(absolutePath);
     }
   }
@@ -61,7 +67,7 @@ const violations = files.filter((filePath) => {
 if (violations.length > 0) {
   console.error("Server language policy violation: server/ implementation files must be JavaScript.");
   console.error("Allowed server implementation file extensions: .mjs, .json, .md");
-  console.error("Runtime assets are allowed only under server/platform/modules/knowledge/runtime/jre, server/platform/modules/knowledge/tika, and server/platform/modules/knowledge/ocr.");
+  console.error("Runtime assets are allowed only under server/platform/modules/knowledge/runtime/jre, server/platform/modules/knowledge/tika, server/platform/modules/knowledge/ocr, and server/platform/modules/knowledge/pdf.");
   for (const filePath of violations) {
     console.error(`- ${path.relative(projectRoot, filePath)}`);
   }

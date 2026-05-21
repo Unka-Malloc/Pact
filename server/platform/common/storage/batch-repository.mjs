@@ -21,10 +21,21 @@ const WORD_CLOUD_JSONL_SCHEMA_VERSION = 1;
 const WORD_CLOUD_EXPORT_TYPE = "splitall.knowledge.word_bags.export";
 const WORD_CLOUD_SOURCE_QUERY_MAX_TERMS = 100000;
 const WORD_CLOUD_STORAGE_MAX_TERMS = Number.MAX_SAFE_INTEGER;
+const WORD_CLOUD_DEFAULT_WORD_BAG_ID = "default";
+const WORD_CLOUD_OTHER_WORD_BAG_ID = "other";
+const WORD_CLOUD_LOW_WEIGHT_THRESHOLD = 0.15;
 const wordCloudJsonlWriteQueues = new Map();
 
 function asObjectJson(value) {
   return JSON.stringify(value && typeof value === "object" && !Array.isArray(value) ? value : {});
+}
+
+function parseJsonValue(value, fallback = {}) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function parseTermCountsJson(rawValue) {
@@ -235,11 +246,13 @@ async function writeWordCloudJsonlFileAsync(filePath, records = []) {
 function enqueueWordCloudJsonlWrite(queueKey, writeFn) {
   const previous = wordCloudJsonlWriteQueues.get(queueKey) || Promise.resolve();
   const queued = previous.catch(() => {}).then(writeFn);
-  const cleanup = queued.finally(() => {
-    if (wordCloudJsonlWriteQueues.get(queueKey) === cleanup) {
-      wordCloudJsonlWriteQueues.delete(queueKey);
-    }
-  });
+  const cleanup = queued
+    .finally(() => {
+      if (wordCloudJsonlWriteQueues.get(queueKey) === cleanup) {
+        wordCloudJsonlWriteQueues.delete(queueKey);
+      }
+    })
+    .catch(() => {});
   wordCloudJsonlWriteQueues.set(queueKey, cleanup);
   return queued;
 }
@@ -769,6 +782,9 @@ function normalizeWordCloudTerm(input, fallbackFrequency = 0) {
     weight: typeof input === "object" && input
       ? clampFiniteNumber(input.weight, 0, 0, 1000000)
       : 0,
+    quality: typeof input === "object" && input
+      ? String(input.quality || "").trim()
+      : "",
     removed: Boolean(input && typeof input === "object" && input.removed)
   };
 }
@@ -858,6 +874,88 @@ function collectWordCloudTermIdentities(wordBags = [], target = new Set()) {
   return target;
 }
 
+function wordCloudIsOtherWordBag(wordBag = {}) {
+  const wordBagId = String(wordBag?.wordBagId || "").trim().toLowerCase();
+  const label = String(wordBag?.label || "").trim().toLowerCase();
+  return wordBagId === WORD_CLOUD_OTHER_WORD_BAG_ID || wordBagId === "others" || label === "other" || label === "others" || label === "其它" || label === "其他";
+}
+
+function wordCloudIsPresetWordBag(wordBag = {}) {
+  return wordCloudIsDefaultWordBag(wordBag) || wordCloudIsOtherWordBag(wordBag);
+}
+
+function collectWordCloudAssignedTermIdentities(wordBags = [], target = new Set()) {
+  for (const wordBag of Array.isArray(wordBags) ? wordBags : []) {
+    if (wordCloudIsPresetWordBag(wordBag)) {
+      continue;
+    }
+    for (const term of wordBag.terms || []) {
+      const identity = wordCloudTermIdentity(term);
+      if (identity) {
+        target.add(identity);
+      }
+    }
+    collectWordCloudAssignedTermIdentities(wordBag.children || [], target);
+  }
+  return target;
+}
+
+function wordCloudTermIsLowWeight(term = {}) {
+  if (String(term?.quality || "").trim().toLowerCase() === "low") {
+    return true;
+  }
+  const weight = Number(term?.weight);
+  return Number.isFinite(weight) && weight > 0 && weight <= WORD_CLOUD_LOW_WEIGHT_THRESHOLD;
+}
+
+function createPresetWordCloudWordBag(kind, terms = [], existing = null) {
+  const isDefault = kind === "default";
+  return {
+    ...(existing || {}),
+    wordBagId: isDefault ? WORD_CLOUD_DEFAULT_WORD_BAG_ID : WORD_CLOUD_OTHER_WORD_BAG_ID,
+    label: isDefault ? "默认" : "其它",
+    summary: isDefault ? "所有尚未进入明确分组的词汇。" : "低权重、低置信或噪声词汇。",
+    relation: "separate",
+    absorbThreshold: 1,
+    terms: normalizeWordCloudTerms(terms, new Map(), WORD_CLOUD_STORAGE_MAX_TERMS),
+    removedTerms: normalizeWordCloudTerms(existing?.removedTerms || [], new Map(), WORD_CLOUD_STORAGE_MAX_TERMS),
+    children: []
+  };
+}
+
+function reconcilePresetWordCloudWordBags(wordBags = [], termsSnapshot = []) {
+  const regularWordBags = (Array.isArray(wordBags) ? wordBags : []).filter((wordBag) => !wordCloudIsPresetWordBag(wordBag));
+  const defaultWordBag = (Array.isArray(wordBags) ? wordBags : []).find(wordCloudIsDefaultWordBag) || null;
+  const otherWordBag = (Array.isArray(wordBags) ? wordBags : []).find(wordCloudIsOtherWordBag) || null;
+  const assigned = collectWordCloudAssignedTermIdentities(regularWordBags);
+  const seen = new Set();
+  const defaultTerms = [];
+  const otherTerms = [];
+
+  for (const term of normalizeWordCloudTerms(termsSnapshot, new Map(), WORD_CLOUD_STORAGE_MAX_TERMS)) {
+    const identity = wordCloudTermIdentity(term);
+    if (!identity || seen.has(identity) || assigned.has(identity)) {
+      continue;
+    }
+    seen.add(identity);
+    if (wordCloudTermIsLowWeight(term)) {
+      otherTerms.push(term);
+    } else {
+      defaultTerms.push(term);
+    }
+  }
+
+  return {
+    wordBags: [
+      ...regularWordBags,
+      createPresetWordCloudWordBag("default", defaultTerms, defaultWordBag),
+      createPresetWordCloudWordBag("other", otherTerms, otherWordBag)
+    ],
+    defaultTerms,
+    otherTerms
+  };
+}
+
 function normalizeWordCloudCorpusPaths(input = []) {
   const items = Array.isArray(input)
     ? input
@@ -908,19 +1006,15 @@ function normalizeWordCloudSetInput(input = {}, fallbackTerms = []) {
     frequencyByTerm.set(term.term.toLowerCase(), term.frequency);
   }
   const wordBags = normalizeWordCloudWordBags(wordBagSet.wordBags || [], frequencyByTerm);
-  const assignedTerms = collectWordCloudTermIdentities(wordBags);
-  const providedUnassigned = normalizeWordCloudTerms(wordBagSet.unassignedTerms || [], frequencyByTerm, WORD_CLOUD_STORAGE_MAX_TERMS, { restrictToKnown: true });
-  const unassignedTerms = providedUnassigned.length > 0
-    ? providedUnassigned
-    : termsSnapshot.filter((term) => !assignedTerms.has(String(term.term || "").trim().toLowerCase()));
+  const reconciled = reconcilePresetWordCloudWordBags(wordBags, termsSnapshot);
   return {
     wordBagSetId: String(wordBagSet.wordBagSetId || wordBagSet.id || `word_bag_${randomUUID()}`).trim(),
     title: String(wordBagSet.title || "语料词云").trim() || "语料词云",
     status: String(wordBagSet.status || "draft").trim() || "draft",
-    wordBagCount: clampInteger(wordBagSet.wordBagCount || wordBags.length, wordBags.length, 0, WORD_CLOUD_STORAGE_MAX_TERMS),
+    wordBagCount: clampInteger(wordBagSet.wordBagCount || reconciled.wordBags.length, reconciled.wordBags.length, 0, WORD_CLOUD_STORAGE_MAX_TERMS),
     termsSnapshot,
-    wordBags,
-    unassignedTerms,
+    wordBags: reconciled.wordBags,
+    unassignedTerms: reconciled.defaultTerms,
     corpusPaths: normalizeWordCloudCorpusPaths(
       wordBagSet.corpusPaths || input.corpusPaths || input.corpusPath || []
     ),
@@ -1061,7 +1155,7 @@ function findWordCloudWordBagInTree(wordBags = [], wordBagId = "", parent = null
 function wordCloudIsDefaultWordBag(wordBag = {}) {
   const wordBagId = String(wordBag?.wordBagId || "").trim().toLowerCase();
   const label = String(wordBag?.label || "").trim().toLowerCase();
-  return wordBagId === "default" || label === "default" || label === "默认";
+  return wordBagId === WORD_CLOUD_DEFAULT_WORD_BAG_ID || label === "default" || label === "默认";
 }
 
 function findDefaultWordCloudWordBag(wordBags = []) {
@@ -1177,8 +1271,8 @@ function ensureDefaultWordCloudWordBag(wordBags = [], frequencyByTerm = new Map(
   const [created] = normalizeWordCloudWordBags([
     {
       wordBagId: "default",
-      label: "Default",
-      summary: "未归类词语。",
+      label: "默认",
+      summary: "所有尚未进入明确分组的词汇。",
       relation: "separate",
       terms: [],
       children: [],
@@ -1922,6 +2016,74 @@ export function createBatchRepository({ db, userDataPath }) {
     ORDER BY lexical_rank ASC, p.updated_at DESC
     LIMIT ?
   `);
+  const listRawCorpusDocumentsByBatchStmt = db.prepare(`
+    SELECT
+      p.document_id,
+      p.batch_id,
+      p.source_ref,
+      COALESCE(NULLIF(p.original_file_name, ''), s.name) AS original_file_name,
+      COALESCE(NULLIF(p.source_path, ''), s.source_path) AS source_path,
+      COALESCE(NULLIF(p.source_type, ''), s.kind) AS source_type,
+      COALESCE(NULLIF(p.provider_id, ''), s.provider_id) AS provider_id,
+      COALESCE(NULLIF(p.external_id, ''), s.external_id) AS external_id,
+      COALESCE(NULLIF(p.sync_batch_id, ''), s.sync_batch_id) AS sync_batch_id,
+      COALESCE(NULLIF(p.media_type, ''), s.media_type) AS media_type,
+      p.byte_size,
+      COALESCE(NULLIF(p.content_hash, ''), s.content_hash, r.content_hash, r.sha256) AS content_hash,
+      COALESCE(NULLIF(p.captured_at, ''), s.captured_at, r.captured_at) AS captured_at,
+      COALESCE(NULLIF(p.source_created_at, ''), s.source_created_at, r.source_created_at) AS source_created_at,
+      COALESCE(NULLIF(p.source_updated_at, ''), s.source_updated_at, r.source_updated_at) AS source_updated_at,
+      COALESCE(NULLIF(p.source_collected_at, ''), s.source_collected_at, r.source_collected_at) AS source_collected_at,
+      s.extracted_text,
+      s.source_metadata_json,
+      r.object_id AS raw_object_id,
+      r.storage_rel_path AS raw_storage_rel_path,
+      r.sha256 AS raw_sha256,
+      r.original_relative_path AS raw_original_relative_path
+    FROM source_document_profiles p
+    JOIN source_files s ON s.batch_id = p.batch_id AND s.source_ref = p.source_ref
+    LEFT JOIN raw_mail_objects r ON r.object_id = p.raw_object_id
+    WHERE (? = '' OR p.batch_id = ?)
+    ORDER BY
+      COALESCE(NULLIF(p.captured_at, ''), NULLIF(p.source_created_at, ''), NULLIF(p.source_updated_at, ''), p.created_at) ASC,
+      p.batch_id ASC,
+      p.source_ref ASC
+    LIMIT ?
+  `);
+  const searchRawCorpusDocumentsStmt = db.prepare(`
+    SELECT
+      p.document_id,
+      p.batch_id,
+      p.source_ref,
+      COALESCE(NULLIF(p.original_file_name, ''), s.name) AS original_file_name,
+      COALESCE(NULLIF(p.source_path, ''), s.source_path) AS source_path,
+      COALESCE(NULLIF(p.source_type, ''), s.kind) AS source_type,
+      COALESCE(NULLIF(p.provider_id, ''), s.provider_id) AS provider_id,
+      COALESCE(NULLIF(p.external_id, ''), s.external_id) AS external_id,
+      COALESCE(NULLIF(p.sync_batch_id, ''), s.sync_batch_id) AS sync_batch_id,
+      COALESCE(NULLIF(p.media_type, ''), s.media_type) AS media_type,
+      p.byte_size,
+      COALESCE(NULLIF(p.content_hash, ''), s.content_hash, r.content_hash, r.sha256) AS content_hash,
+      COALESCE(NULLIF(p.captured_at, ''), s.captured_at, r.captured_at) AS captured_at,
+      COALESCE(NULLIF(p.source_created_at, ''), s.source_created_at, r.source_created_at) AS source_created_at,
+      COALESCE(NULLIF(p.source_updated_at, ''), s.source_updated_at, r.source_updated_at) AS source_updated_at,
+      COALESCE(NULLIF(p.source_collected_at, ''), s.source_collected_at, r.source_collected_at) AS source_collected_at,
+      s.extracted_text,
+      s.source_metadata_json,
+      r.object_id AS raw_object_id,
+      r.storage_rel_path AS raw_storage_rel_path,
+      r.sha256 AS raw_sha256,
+      r.original_relative_path AS raw_original_relative_path,
+      bm25(source_document_fts, 0.0, 6.0, 1.0, 0.5, 0.5, 0.2) AS lexical_rank
+    FROM source_document_fts
+    JOIN source_document_profiles p ON p.document_id = source_document_fts.document_id
+    JOIN source_files s ON s.batch_id = p.batch_id AND s.source_ref = p.source_ref
+    LEFT JOIN raw_mail_objects r ON r.object_id = p.raw_object_id
+    WHERE source_document_fts MATCH ?
+      AND (? = '' OR p.batch_id = ?)
+    ORDER BY lexical_rank ASC, p.updated_at DESC
+    LIMIT ?
+  `);
   const selectSourceVocabularyDocumentCountStmt = db.prepare(`
     SELECT COUNT(DISTINCT COALESCE(NULLIF(content_hash, ''), NULLIF(file_hash, ''), document_id)) AS count
     FROM source_document_profiles
@@ -2212,6 +2374,38 @@ export function createBatchRepository({ db, userDataPath }) {
       .slice(0, limit);
   }
 
+  function rowToRawCorpusDocument(row) {
+    return {
+      documentId: row.document_id,
+      batchId: row.batch_id,
+      sourceRef: row.source_ref,
+      title: row.original_file_name || row.source_path || row.source_ref,
+      sourcePath: row.source_path || "",
+      sourceType: row.source_type || "",
+      providerId: row.provider_id || "",
+      externalId: row.external_id || "",
+      syncBatchId: row.sync_batch_id || "",
+      mediaType: row.media_type || "",
+      byteSize: Number(row.byte_size || 0),
+      contentHash: row.content_hash || "",
+      capturedAt: row.captured_at || "",
+      sourceCreatedAt: row.source_created_at || "",
+      sourceUpdatedAt: row.source_updated_at || "",
+      sourceCollectedAt: row.source_collected_at || "",
+      text: row.extracted_text || "",
+      sourceMetadata: parseJsonValue(row.source_metadata_json, {}),
+      rawObject: row.raw_object_id
+        ? {
+            objectId: row.raw_object_id,
+            storageRelativePath: row.raw_storage_rel_path || "",
+            sha256: row.raw_sha256 || "",
+            originalRelativePath: row.raw_original_relative_path || ""
+          }
+        : null,
+      lexicalRank: row.lexical_rank
+    };
+  }
+
   function listSourceCorpusRawTermsByPaths(input = {}) {
     const corpusPaths = normalizeWordCloudCorpusPaths(input.corpusPaths || input.corpusPath || []);
     if (corpusPaths.length === 0) {
@@ -2451,15 +2645,23 @@ export function createBatchRepository({ db, userDataPath }) {
       wordBagSetId: row.cloud_set_id,
       targetWordBagId: options.targetWordBagId
     }) ?? normalizeWordCloudWordBags(parseArrayJson(row.clouds_json));
+    const termsSnapshot = normalizeWordCloudTerms(
+      parseArrayJson(row.terms_snapshot_json),
+      new Map(),
+      WORD_CLOUD_STORAGE_MAX_TERMS
+    );
+    const reconciled = options.targetWordBagId
+      ? { wordBags: storedWordBags, defaultTerms: parseArrayJson(row.unassigned_terms_json) }
+      : reconcilePresetWordCloudWordBags(storedWordBags, termsSnapshot);
     return {
       schemaVersion: WORD_CLOUD_SCHEMA_VERSION,
       wordBagSetId: row.cloud_set_id,
       title: row.title,
       status: row.status,
-      wordBagCount: countWordCloudWordBags(storedWordBags),
-      termsSnapshot: parseArrayJson(row.terms_snapshot_json),
-      wordBags: storedWordBags,
-      unassignedTerms: parseArrayJson(row.unassigned_terms_json),
+      wordBagCount: countWordCloudWordBags(reconciled.wordBags),
+      termsSnapshot,
+      wordBags: reconciled.wordBags,
+      unassignedTerms: reconciled.defaultTerms,
       corpusPaths: normalizeWordCloudCorpusPaths(parseArrayJson(row.corpus_paths_json)),
       modelAlias: row.model_alias || "",
       agentResponse: parseObjectJson(row.agent_response_json),
@@ -2677,6 +2879,9 @@ export function createBatchRepository({ db, userDataPath }) {
         wordBagId,
         updatedAt,
         mutate(currentWordBag) {
+          if (wordCloudIsPresetWordBag(currentWordBag) && wordCloudPatchHasAny(patch, ["label", "title"])) {
+            throw wordCloudError("预设词袋标题不能更改。", 409, "preset_word_bag_title_update_forbidden");
+          }
           return applyWordCloudWordBagPatch(currentWordBag, patch, frequencyByTerm);
         }
       });
@@ -2699,6 +2904,9 @@ export function createBatchRepository({ db, userDataPath }) {
       const match = findWordCloudWordBagInTree(wordBags, wordBagId);
       if (!match) {
         throw wordCloudError("词袋不存在。", 404, "word_bag_not_found");
+      }
+      if (wordCloudIsPresetWordBag(match.wordBag) && wordCloudPatchHasAny(patch, ["label", "title"])) {
+        throw wordCloudError("预设词袋标题不能更改。", 409, "preset_word_bag_title_update_forbidden");
       }
       const frequencyByTerm = wordCloudFrequencyMapFromTerms(current.termsSnapshot || []);
       const updatedWordBag = applyWordCloudWordBagPatch(match.wordBag, patch, frequencyByTerm, {
@@ -2776,8 +2984,8 @@ export function createBatchRepository({ db, userDataPath }) {
       if (!match) {
         throw wordCloudError("词袋不存在。", 404, "word_bag_not_found");
       }
-      if (findDefaultWordCloudWordBag([match.wordBag])) {
-        throw wordCloudError("Default 词袋不能删除。", 409, "default_word_bag_delete_forbidden");
+      if (wordCloudIsPresetWordBag(match.wordBag)) {
+        throw wordCloudError("预设词袋不能删除。", 409, "preset_word_bag_delete_forbidden");
       }
       const removed = removeWordCloudWordBagFromTree(wordBags, wordBagId);
       if (!removed) {
@@ -3445,6 +3653,24 @@ export function createBatchRepository({ db, userDataPath }) {
         capturedAt: row.captured_at,
         lexicalRank: row.lexical_rank
       }));
+    },
+    listRawCorpusDocuments({ batchId = "", query = "", limit = 50 } = {}) {
+      const safeLimit = Math.max(1, Math.min(Number(limit || 50), 500));
+      const scopedBatchId = String(batchId || "").trim();
+      const matchQuery = sourceDocumentFtsQuery(query);
+      if (matchQuery) {
+        const matched = searchRawCorpusDocumentsStmt
+          .all(matchQuery, scopedBatchId, scopedBatchId, safeLimit)
+          .map(rowToRawCorpusDocument)
+          .filter((item) => String(item.text || "").trim());
+        if (matched.length > 0) {
+          return matched;
+        }
+      }
+      return listRawCorpusDocumentsByBatchStmt
+        .all(scopedBatchId, scopedBatchId, safeLimit)
+        .map(rowToRawCorpusDocument)
+        .filter((item) => String(item.text || "").trim());
     },
     listSourceVocabularyTermStatsByTerms(input = {}) {
       return listSourceVocabularyTermStatsByTerms(input);

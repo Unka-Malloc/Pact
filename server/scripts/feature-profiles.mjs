@@ -15,7 +15,7 @@ import {
   writeFeaturePlanArtifacts
 } from "../platform/interactive/features/feature-manifest.mjs";
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
-import { createToolCatalog } from "../platform/specialized/agent/agent-tools/tool-management-core/catalog.mjs";
+import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 import { applyFeatureSourcePlan } from "./pack-offline-server.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));

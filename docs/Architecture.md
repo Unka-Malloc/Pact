@@ -1,845 +1,1081 @@
-# Architecture
-
-本文件是项目当前整体架构的基线说明。后续只要运行时职责、挂载方式、存储结构、任务链路或接口分层发生变化，都必须同步更新本文件。
-
-## 1. 总体结构
-
-- `server`
-  - `Node.js` 服务端
-  - 内部按 `platform / services / application / protocols` 划分
-  - `server/platform/common`：通用底座，包括核心、控制台、调度、存储、模块管理和 devops
-  - `server/platform/interactive`：底座注册与服务调用的交互层
-  - `server/platform/specialized`：知识库、智能体等专属底座
-  - `server/platform/modules`：外置模块和本地运行时资源
-  - `server/services`：客户端、智能体等服务条线
-  - `server/protocols/client-cli`：服务端对客户端执行层暴露的上游协议
-  - `server/protocols/checkpoint`：服务端侧 checkpoint / 断点续传对接协议
-  - `server/protocols/server-web`：服务端对控制台暴露的上游 HTTP / JSON 协议
-  - `server/protocols/storage`：服务端与持久化层之间的协议
-  - `server/protocols/pubsub`：服务端向下游发布内容的统一发布-订阅协议
-  - 负责 HTTP API、任务编排、上传会话、checkpoint、对象存储、SQLite 元数据、运维工具、挂载管理与格式路由
-- `server-web`
-  - `Vue` 服务端控制台
-  - 只消费 `/api/*`，不依赖后端内部实现
-  - `server-web/protocols/server`：控制台消费服务端接口时的下游协议
-- `client-cli`
-  - `Rust` 客户端命令行工具与本地 daemon
-  - 是客户端侧实际执行层
-  - 可独立于 Flutter 前端运行
-  - 支持 macOS / Windows / Linux 等全平台编译目标
-  - `client-cli/protocols/server`：客户端执行层消费服务端接口时的下游协议
-  - `client-cli/protocols/checkpoint`：客户端侧 checkpoint / 断点续传对接协议
-- `client-gui`
-  - `Flutter` 跨端前端
-  - 负责跨平台展示、交互、配置页面和拉起客户端命令行工具
-  - 不直接执行系统特有任务，不直接实现上传、索引、Mail 导入、图片导入、导出或服务端业务调用
-- `server/platform/modules/knowledge/`
-  - 服务端本地运行时资产，包括 JRE、`tika-app.jar` 和可选 OCR runtime
-  - 项目运行时依赖的 Java 环境只放在项目目录中，不依赖系统安装
+# SplitAll Architecture / Software Design Specification
 
-## 2. 客户端架构
+审计日期：2026-05-21。本文是 SplitAll 的总架构基线和软件设计说明书。
 
-客户端由两层组成：
+SplitAll 的核心定位是：
 
-- `Flutter` 前端
-- `Rust` 命令行工具 / 本地 daemon
+> 面向多人、多终端、多本地智能体的 Team Workspace Asset Governance System。
 
-两者不是同级执行体。客户端侧所有真实工作都落在 `Rust` 命令行工具中，`Flutter` 前端只负责展示和拉起。
+核心卖点是专攻中间狭窄地带：
 
-### 2.1 Flutter 前端
+> 上游知识库太粗，SplitAll 做权限精加工；下游本地智能体太细，SplitAll 做共享工作空间。
 
-`client-gui` 的定位是：**跨平台展示层 / 交互层 / 后端拉起层**。
+产品框架可以压缩为一句话：
 
-它负责：
+> 两个问题，一个能力，三个兼容。
 
-- 桌面窗口、导航、表单、状态展示和结果预览
-- 用户选择文件、目录、配置和操作入口
-- 展示任务、checkpoint、日志、索引状态、知识图谱和导出状态
-- 展示服务端 `/api/interfaces` 注册表、能力切面、风险和权限信息
-- 拉起或连接本机 `splitall-client` / `splitall-clientd`
-- 通过客户端后端 API 调用 Rust 命令行工具
+两个问题：
 
-Flutter 前端不允许成为业务执行层：
-
-- 不直接调用系统 Mail.app、Finder、Shell、注册表或平台 API
-- 不直接实现上传 session、分块上传、任务提交、服务端 API 编排
-- 不直接维护知识库索引写入逻辑
-- 不直接执行 OCR、图片导入、文档解析或导出转换
+1. 知识库缺少面向智能体的权限管控。传统知识库通常解决“存了什么、怎么检索”，但没有在 source / asset / evidence / export / context / memory 这些出口上治理“哪个智能体能看、能引用、能带走、能写回”。
+2. 本地智能体相对独立，难以协同。OpenClaw、Codex、Claude Code、Cursor Agent、脚本和人工终端都可以很强，但它们各自拥有本地上下文和本地文件，缺少一个统一、可编辑、可审计、可恢复的公共工作空间。
 
-Flutter 前端可以没有自己的业务能力，但不能脱离 Rust 命令行工具正常使用。没有 `splitall-client` / `splitall-clientd` 时，Flutter 只能显示离线、错误或恢复入口。
-
-### 2.2 Rust 命令行工具
-
-`client-cli` 的定位是：**客户端侧执行层 / 本地后端 / CLI sidecar**。
-
-它负责：
-
-- 命令行入口：`splitall-client`
-- 本地 daemon：`splitall-clientd`
-- 本地 workspace、配置、日志、recent runs、checkpoint、导出目录管理
-- 文件收集、路径规范化、MIME / 扩展名识别、文件打开或定位
-- 上传 session、manifest、分块上传、任务提交、任务轮询、结果拉取
-- 服务端 HTTP / JSON-RPC 的统一代理和编排
-- 服务端接口注册表同步和通用 `server.api` 调用
-- 结果导出、知识词表拉取、知识索引热更新
-- macOS Mail 导入、授权、暂停、恢复、取消、索引重建、搜索和证据打开
-- 对 Flutter 暴露 command-file / RPC 风格的客户端后端 API
-
-Rust 命令行工具必须可以独立运行。也就是说，同一个能力必须能通过 CLI 直接调用，而不是只能从 Flutter 界面触发。
-
-客户端侧目录边界：
-
-- `client-cli/protocols/*`
-  - 记录客户端消费上游服务或对外暴露本地能力时使用的报文格式、字段语义、版本、兼容规则和协议状态机
-- `client-cli/protocols/checkpoint`
-  - 与 `server/protocols/checkpoint` 互相呼应，定义 checkpoint / 断点续传协议报文、offset 对齐和恢复状态机
-- `client-cli/protocols/server`
-  - 记录客户端消费服务端 API 和订阅上游 topic 时依赖的字段、错误语义、重试语义和降级策略
-
-### 2.3 系统适配层
-
-命令行工具与操作系统之间保留一层很薄的系统适配层。
-
-这层只做平台差异封装：
-
-- macOS：Mail.app Automation、Finder 打开 / 定位、本机权限探测
-- Windows：路径、打开方式、系统 shell、后续 Windows 特有数据源
-- Linux：xdg-open、路径、桌面集成、后续 Linux 特有数据源
-
-系统适配层不承载业务状态，也不绕过 Rust CLI 的执行入口。系统特有任务必须从 Rust CLI 进入，再由适配层完成平台调用。
-
-### 2.4 客户端本地数据与知识索引
-
-客户端可以保存知识库的部分本地索引，但它不是服务端全量知识库。
-
-客户端本地数据包括：
-
-- portable workspace 标识
-- settings、recent runs、checkpoint、client logs
-- Mail.app 导入下载区与本地邮件索引
-- 专家词汇缓存和本地热更新状态
-- 部分知识图谱 / 检索展示所需的轻量索引
-- 导出缓存和用户选择的本地工作目录
-
-原则：
-
-- 客户端索引用于本机证据打开、离线预览、快速搜索、恢复和展示
-- 服务端 SQLite / 对象存储仍是服务端任务和跨客户端数据的权威来源
-- 客户端索引必须可重建，不能成为唯一不可恢复真相源
-
-## 3. 服务端架构
-
-服务端由 `Node.js` 服务端、`Vue` 控制台、`modules / application / skills` 三层、对象存储和 SQLite 元数据组成。
-
-### 3.1 Node.js
-
-`Node.js` 的正式定位是：**核心服务 / 分发层 / 编排层 / 存储协调层**。
-
-它负责：
-
-- HTTP 服务与前端 API
-- 上传会话、checkpoint、断点续传、任务恢复
-- worker 队列与任务生命周期
-- 下游 skill 管理
-- `server/platform/specialized/knowledge/preprocessing/file-processor` 文件处理模块加载、文档格式路由和归一化交付
-- SQLite 元数据与检索索引
-- 原始文件对象存储
-- 事务、线程、人物、关联、lineage 等业务编排
-- 服务发现、客户端迁移状态登记
-- 运维工具：`doctor / locate / reconcile / rebuild`
-
-作为核心服务，Node.js 同时对接多个横切切面：
-
-- 接口切面：HTTP、JSON-RPC、CLI 注册表、参数映射、响应映射、错误映射
-- 配置切面：settings、rules、mount modules、mount routing、discovery config
-- 身份与客户端切面：bootstrap、client check-in、客户端注册、迁移状态、active / forward 模式
-- 上传与恢复切面：upload session、checkpoint、分块上传、断点续传、任务恢复
-- 任务生命周期切面：job 创建、队列、worker 调度、取消、删除、结果回放
-- 存储切面：SQLite 元数据、raw object、job snapshot、normalized documents、FTS / retrieval index
-- module / skill 切面：FileProcessor、documentParser、pdfProcessor、ocr、multimodalParser、analysis、knowledgeBase、vectorStore、graphStore
-- 业务分析切面：邮件、线程、事务、人物、时间线、lineage、关联和知识召回
-- 观测与事件切面：日志、runtime state、storage summary、client migration state、events
-- 运维切面：doctor、locate、reconcile、metadata rebuild、runtime reload
-- 导出切面：result export、normalized DOCX manifest、知识包交付
-
-这些切面不能只靠约定散落在代码里。Node.js 核心服务与外部切面的稳定契约统一记录在协议体系中：
-
-- `server/protocols/checkpoint`
-  - 记录服务端侧 checkpoint / 断点续传协议
-  - 与 `client-cli/protocols/checkpoint` 互相镜像
-- `server/protocols/client-cli`
-  - 记录服务端对客户端执行层暴露的上游协议
-- `client-cli/protocols/server`
-  - 记录客户端执行层消费服务端协议时的下游约束
-- `client-cli/protocols/checkpoint`
-  - 记录客户端侧 checkpoint / 断点续传协议
-  - 与 `server/protocols/checkpoint` 互相镜像
-- `server/protocols/server-web`
-  - 记录 Node.js 服务端与 `server-web` 控制台之间的 HTTP / JSON 响应协议
-  - 覆盖 console state、settings、mounts、jobs、storage summary、runtime state、discovery 等契约
-- `server-web/protocols/server`
-  - 记录 `server-web` 消费服务端接口时的下游约束
-- `server/protocols/storage`
-  - 记录 Node.js 服务端与 SQLite、raw object、job snapshot、normalized documents 之间的持久化协议
-  - 覆盖 schema、对象路径、manifest、rebuild、reconcile 和兼容迁移规则
-- `server/protocols/pubsub`
-  - 记录服务端向下游发布内容的统一发布-订阅协议
-  - 覆盖 topic、event envelope、cursor、retained snapshot 和长轮询订阅语义
-- `server/protocols/knowledge`
-  - 记录服务端应用层与可替换知识库模块之间的 `splitall.knowledge.v1` 协议
-  - 覆盖 KnowledgeCore、EmbeddingRuntime、VectorStore、assetStore、retrieval 的内部方法边界、资产 URL policy、license policy 和可替换实现约束
-
-原则：
-
-- 协议文档放在所属层级，仓库根目录不保留顶层 `protocols`
-- 上游用的协议放在服务提供方，例如 `server/protocols/*`
-- 下游用的协议放在调用方，例如 `client-cli/protocols/*` 或 `server-web/protocols/*`
-- 知识库是独立协议边界；application、HTTP、JSON-RPC、CLI 和控制台只能调用 `knowledgeBase` mount 方法，不能直接读取 KnowledgeCore SQLite、资产目录、embedding runtime 或 vector index
-- 上游向下游发布的内容统一进入 pub-sub topic；下游通过 cursor 和 retained snapshot 订阅
-- `protocols` 记录稳定契约、协议状态机和协议边界内执行适配
-- 新增跨切面能力时，先明确协议归属，再落到 protocols / modules / application / skills
-- 任何破坏兼容的协议变化都必须写明版本、迁移和回滚策略
-
-服务端侧目录边界：
-
-- `server/protocols/*`
-  - 记录服务端与客户端、控制台、存储、外部切面对接的协议格式、协议状态机和协议边界内执行适配
-- `server/protocols/checkpoint`
-  - 管理服务端侧 checkpoint 接收、`.part` 落盘、offset 校验、sha256 校验和 session reconcile
-- `server/protocols/pubsub`
-  - 管理服务端向下游发布的事件日志、retained snapshot 和订阅 cursor
-- `server/protocols/knowledge`
-  - 管理知识库方法、内部 vector / embedding / assetStore / retrieval 协议、资产 URL 和 license gate 约束
-- `server/platform/modules/knowledge/*`
-  - 存放高耦合服务端模块，例如 `FileProcessor`、`VectorStore`
-  - 模块内部可以再划分路由表、组件、运行时、适配器和打包清单
-  - 模块使用时加载，不使用时卸载；打包时按模块和子组件选择
-
-Node.js **不再承担本地文档解析实现**。它只做转发、调度、落盘和结果回收。
-
-### 3.2 Vue 服务端控制台
-
-`server-web` 的定位是：**服务端运维控制台**。
-
-它负责：
-
-- 展示服务端运行状态、挂载状态、任务状态、存储摘要和客户端迁移状态
-- 修改服务端设置、发现配置、规则库和挂载配置
-- 只消费 `/api/*`
-- 不依赖服务端内部模块路径或实现细节
-
-### 3.3 Java + Tika
-
-`Java` 只承担一个角色：**文档解析引擎宿主**。
-
-- 通过 `server/platform/modules/knowledge/runtime/jre` 内的 JRE 运行 `server/platform/modules/knowledge/tika/tika-app.jar`
-- 由 Node.js 调起
-- 负责常规文件型文档的文本、元数据与嵌入文档提取
-
-默认情况下，以下格式走 `Java + Tika`：
-
-- `.doc / .docx`
-- `.ppt / .pptx`
-- `.xls / .xlsx`
-- `.eml / .msg`
-- `.txt / .md / .csv / .json / .yaml / .xml / .html`
-- 其他被路由到 `documentParser` 的结构化文件
-
-PDF 不再直接归入通用 `documentParser`，默认先进入 `server/platform/modules/knowledge/file-processor/FileNormalizer/PDFProcessor`。`PDFProcessor` 内部可以调用 Tika，也可以在后续演进为先转 DOCX 再进入归一化流程。
-
-### 3.4 能力挂载
-
-后端通过 `mount manager` 管理下游能力。能力是服务端可替换的 mount 单元，挂载分两类：
-
-- 核心挂载
-  - `documentParser`
-  - `ocr`
-  - `multimodalParser`
-  - `pdfProcessor`
-  - `analysis`
-  - `knowledgeBase`
-  - `vectorStore`
-  - `graphStore`
-- 任意命名自定义挂载
-  - 例如 `sourceCodeAgent`
-  - 例如 `pdfAgent`
-  - 例如 `mailAgent`
-  - 例如未来新增的任意智能体、专用解析器或外部能力
-
-skill 挂载支持：
-
-- 热插拔
-- 热切换
-- 热重载
-- 任务执行快照
-
-规则是：
-
-- 新任务读取最新 skill / mount 配置
-- 运行中的任务保留创建任务时的挂载快照
-- 热切换不会半路污染正在执行的任务
-
-## 4. 文档接口分离与格式路由
-
-### 4.1 路由原则
-
-文档归一化与文件处理统一收敛到 `server/platform/specialized/knowledge/preprocessing/file-processor`。Node.js 主服务不直接解析文件，而是引入 FileProcessor 模块；FileProcessor 先按模块内路由表选择处理流程，再调用对应组件。
-
-路由维度：
-
-1. `extensionRoutes`
-2. `mediaTypeRoutes`
-3. `kindRoutes`
-4. 默认路由
-
-这意味着：
-
-- `.png` 和 `.jpg` 可以分别走不同模块
-- `.pdf` 可以走专用 PDF 模块，不必和 `.docx` 共用
-- `.py`、`.foo` 这类格式可以通过配置直接接入新智能体模块
-- 无需为新增扩展名再重写后端代码
-
-FileProcessor 模块目录边界：
-
-- `server/platform/specialized/knowledge/preprocessing/file-processor/file-routing-table`
-  - 文件类型到处理流程的注册表
-  - 例如 `.docx -> documentParser.extractDocument`
-  - 例如 `.png -> ocr.extractText` 或 `.png -> ImageAgent.extractDocument`
-  - 例如 `.pdf -> pdfProcessor.extractDocument`
-- `server/platform/modules/knowledge/file-processor/FileNormalizer/Tika`
-  - Tika 服务入口
-  - 只读使用 Tika 运行时和 jar，不向 Tika 目录写运行文件
-- `server/platform/modules/knowledge/file-processor/FileNormalizer/OCR`
-  - OCR 服务入口
-- `server/platform/modules/knowledge/file-processor/FileNormalizer/PDFProcessor`
-  - PDF 专用流程入口，内部可调用 Tika
-- `server/platform/specialized/knowledge/preprocessing/file-processor/FileNormalizer/NormalizedDocuments`
-  - normalized DOCX 与 manifest 交付物生成
-
-### 4.2 默认扩展名路由
-
-默认扩展名路由已经按细粒度拆开：
-
-- 图片：`.png .jpg .jpeg .webp .gif .bmp .tif .tiff`
-- 邮件：`.eml .msg`
-- 文档：`.pdf .doc .docx .ppt .pptx .xls .xlsx`
-- 文本 / 标记 / 源码：`.txt .md .markdown .csv .json .yaml .yml .xml .html .htm .js .ts .tsx .jsx .py .java .c .cpp .h .hpp .ini .log`
-
-默认行为：
-
-- 图片 -> `ocr.extractText`
-- PDF -> `pdfProcessor.extractDocument`
-- 常规文档 -> `documentParser.extractDocument`
-
-但这只是默认值，所有格式都可以被覆盖。
-如果 `.png` 改走 `ImageAgent`，并且没有任何路由或模块引用 OCR，打包配置可以移除 OCR 子组件。
-
-### 4.3 配置文件
-
-挂载配置已拆成两份：
-
-- `mount-modules.json`
-  - 管理挂载名到模块路径的映射
-- `mount-routing.json`
-  - 管理扩展名、媒体类型、kind 到挂载动作的映射
-- `server/platform/specialized/knowledge/preprocessing/file-processor/module.json`
-  - 管理 FileProcessor 自身组件清单、默认加载策略、可选打包组件和只读运行时约束
-
-配置策略：
-
-- 启动时只读取这两份文件
-- 旧 `mounts.json` 布局已移除；历史配置需要外部转换为 `mount-modules.json` 和 `mount-routing.json`
-
-### 4.4 一个典型配置
-
-```json
-{
-  "mountModules": {
-    "documentParser": "/abs/path/to/tika-parser.mjs",
-    "multimodalParser": "/abs/path/to/mm-agent.mjs",
-    "sourceCodeAgent": "/abs/path/to/code-agent.mjs"
-  },
-  "mountRouting": {
-    "extensionRoutes": {
-      ".png": { "mountName": "multimodalParser", "action": "extractDocument" },
-      ".jpg": { "mountName": "multimodalParser", "action": "extractDocument" },
-      ".py": { "mountName": "sourceCodeAgent", "action": "extractDocument" }
-    }
-  }
+一个能力：
+
+- 工作空间管理。SplitAll 管理公共工作空间的资产、权限、快照、Checkpoint Tree、Operation Ledger、审计和恢复。核心不是让智能体互相聊天，而是让所有智能体通过同一个受控工作空间读写资产，并且任何修改都可追踪、可回溯、可撤销。
+- 资产贡献统计报表是工作空间管理的管理者视角输出。公共空间的价值必须能被管理者看见：谁贡献了资产、贡献了什么、被谁使用、复用了多少次、带来了多少跨 workspace 采用、产生过哪些授权请求、失败、回滚和维护动作。
+
+三个兼容：
+
+1. 智能体兼容：不关心底层是哪个大模型、哪个 agent framework、哪个机器人体系；只要通过 SplitAll MCP service / Workspace API 接入，就按同一套权限、审计和工作空间协议操作。
+2. 信息源兼容：不关心信息来自上游知识库、网站订阅、文件库、业务系统、人工整理，还是智能体上传的文档；进入 SplitAll 后全部收纳为 workspace asset，统一切分、标注、授权、索引、审计和恢复。
+3. 工作空间环境兼容：不关心工作空间运行在容器、虚拟机、本机还是云端，也不关心底层是 Linux、macOS 还是 Windows；只要安装 SplitAll 管理软件，智能体访问工作空间就必须经过这层软件，由 SplitAll 负责权限管控、路径适配、环境差异和审计。
+
+这不是横向再造知识库，也不是横向再造智能体平台。SplitAll 只猛攻两端之间最缺的中间层：
+
+- 对上游：接入外部知识库、文件库、向量库、图谱库和业务资产源，把粗粒度资源重新切分、重新标注、重新授权、重新登记。
+- 对下游：接入各类本地智能体、脚本和人工终端，让它们在公共工作空间里共享一部分资产、Skills、工具、脚本、专家意见和任务状态。
+- 对中间：用 AgentLibrary、Workspace Asset Governance、Operation Ledger、Contribution Registry 和 Context Compiler 把“可看、可借、可贡献、可复用、可撤销”做成同一套治理机制。
+
+SplitAll 不做另一个智能体平台，不做完整 A2A Gateway，也不把自己包装成自治 Agent。系统只治理公共工作空间里的资产、知识、任务、产物、决策和审计状态。本地智能体可以接入、读取、提交和请求操作，但永远不能绕过工作空间协议直接改写 canonical state。
+
+## 设计文档边界
+
+核心设计文档只保留五份：
+
+- `docs/Architecture.md`：总定位、系统分层、运行时边界。
+- `docs/PROTOCOLS.md`：Workspace API、Operation、Tool Management、Knowledge、协议适配边界。
+- `docs/WORKSPACE-ASSET-GOVERNANCE.md`：公共工作空间资产治理、快照、溯源、恢复、复制和安全原则。
+- `docs/KNOWLEDGE-GOVERNANCE.md`：知识证据、三层知识模型、智能体可引用上下文和知识维护闭环。
+- `docs/PRODUCTION-CAPABILITY-GAP.md`：生产能力差距、验收门禁和当前阻塞项。
+
+其它文档只能作为运行说明、配置说明或测试说明存在，不能再承载新的长期架构决策。
+
+## 软件设计说明书
+
+### 文档目标
+
+本文面向产品设计、工程实现、控制台开发、MCP adapter 开发、运行维护和后续验收。它回答六个问题：
+
+1. SplitAll 要解决什么问题。
+2. 系统边界在哪里，哪些能力明确不做。
+3. 核心模块如何分层，模块之间如何协作。
+4. 公共工作空间、AgentLibrary、权限、贡献、审计和 Checkpoint Tree 的权威数据如何建模。
+5. 智能体、控制台、CLI、外部知识库和本机管理软件通过什么接口进入系统。
+6. 第一阶段到生产级演进分别用什么验收标准证明闭环。
+
+本文不是实现任务清单。具体待拍板事项仍在 `docs/IMPLEMENTATION-DECISION-REGISTER.md` 中追踪；拍板后的长期结论必须回写本文、`docs/PROTOCOLS.md`、`docs/WORKSPACE-ASSET-GOVERNANCE.md`、`docs/KNOWLEDGE-GOVERNANCE.md` 和 `docs/PRODUCTION-CAPABILITY-GAP.md`。
+
+### 设计范围
+
+第一版设计范围：
+
+- 面向本机、容器、虚拟机和云端工作空间的统一资产治理。
+- 面向 OpenClaw、Hermes Agent、Codex、Claude Code、Cursor Agent、脚本和人工终端的 MCP / Workspace API 接入。
+- 面向外部知识库、本地文件、智能体上传、人工整理和网站订阅的统一信息源收纳。
+- 面向知识、文件、Skills、工具、脚本、黄金规则、专家意见和任务产物的 workspace asset model。
+- 面向读、写、下载、导出、上下文注入、借阅、安装、执行和恢复的权限裁决。
+- 面向访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露和恢复动作的统一 Checkpoint Tree。
+- 面向管理者的资产贡献统计报表和贡献排行榜。
+
+第一版非目标：
+
+- 不做完整 A2A Gateway。
+- 不做自治 Agent 平台。
+- 不把 SplitAll 暴露成一个需要其它 Agent 调度的 Agent。
+- 不做外部知识库同型复制或裸代理。
+- 不把 git 仓库本身暴露为产品恢复接口。
+- 不承诺所有 SDK、CLI、OpenAPI 与 MCP 同级长期稳定；长期事实源是 Workspace API，智能体首选接入面是 MCP service。
+
+### 用户和执行者
+
+系统中的用户和执行者统一进入 `subject / operator / agentProfile / libraryCard` 四层模型：
+
+| 名称 | 含义 | 典型来源 |
+| --- | --- | --- |
+| `subject` | 权限主体，可以是人、服务账号、团队身份或受控智能体身份。 | 管控台登录、MCP header、stdio proxy 参数、服务账号 token |
+| `operatorId` | 实际执行入口，描述谁在操作系统或协议层发起请求。 | `orbstack:kate:openclaw`、`orbstack:serena:hermes-agent`、CLI、console |
+| `agentProfile` | 风险、能力和上下文 profile，用于区分同一 subject 使用不同智能体时的权限。 | OpenClaw、本地编码 agent、通用任务 agent、脚本 runner |
+| `libraryCard` | 进入 AgentLibrary 的可审计访问凭据。 | workspace 门禁卡、任务会话凭据、短期只读凭据 |
+
+设计要求：
+
+- 权限主体和执行入口必须分开。同一个人用高风险 agent 和低风险 agent 时，可以得到不同权限。
+- 智能体不能因为拥有本地文件能力而绕过 Workspace API。
+- 读请求也要带身份上下文，因为读请求会产生 receipt、loan record、usage event、上下文暴露记录和拒绝审计。
+
+### 功能需求
+
+#### FR-1 Workspace Asset Governance
+
+系统必须提供受管公共工作空间。所有公共资产必须具备：
+
+- 资产 ID、类型、来源、所属 workspace、版本和状态。
+- 权限策略、敏感度、数据分类和保留策略。
+- 快照引用、Operation Ledger 引用和审计引用。
+- 可发现、可读取、可引用、可下载、可导出、可复制、可撤销和可恢复的状态。
+
+文件树只是 workspace asset 的一种 projection，不是唯一权威状态。权威状态由 Ledger、permission、receipt、loan record、checkpoint metadata 和 storage metadata 共同构成。
+
+#### FR-2 AgentLibrary / 图书馆
+
+系统必须把传统知识库能力提升为 AgentLibrary：
+
+- 支持上游知识库、文件库、人工整理和智能体上传进入 `derivedKnowledgeSpace`。
+- 支持 source、document、section、block、field、table cell、image、attachment、evidence pack 和 asset rendition 级别授权。
+- 支持 `deny`、`discoverOnly`、`metadataOnly`、`readInPlace`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
+- 支持知识访问 receipt、loan record、denied request audit 和撤销策略。
+- 支持知识搜索、证据回读、上下文编译、导出、蒸馏、memory write 和 tool call 出口共用同一权限裁决。
+
+系统必须保证没有权限的知识不会进入 retrieval candidate、hidden context、rerank hint、distillation input、memory summary、artifact、trace 或 evaluation sample。
+
+#### FR-3 上游知识库再授权
+
+外部知识库进入 SplitAll 后必须被重新切分和重新授权：
+
+```text
+upstream knowledge base
+  -> connector / adapter
+  -> upstreamKnowledgeRef
+  -> information slicing
+  -> derivedKnowledgeSpace
+  -> authorizationOverlay
+  -> downstream workspace / agent access
+```
+
+下游智能体不能持有上游 token、上游私有对象路径、collection id 或裸 source id。它们只能访问 SplitAll 授权后的派生视图、脱敏内容、只读阅览会话或 evidence pack。
+
+#### FR-4 终端贡献和贡献统计
+
+系统必须允许本地智能体、脚本、人工终端向公共工作空间提交贡献资产：
+
+- 贡献类型：`knowledge`、`skill`、`tool`、`script`、`file`、`goldenRule`、`expertOpinion`。
+- 固定位置：`workspace/skills/`、`workspace/tools/`、`workspace/scripts/`、`workspace/files/`、`workspace/knowledge/`、`workspace/rules/`、`workspace/expert-opinions/`。
+- 状态机：`submitted -> scanned -> reviewed -> published | rejected | needs_changes -> adopted -> deprecated | revoked`。
+- 下载、安装、执行、复制到上下文、跨 workspace 使用都必须写 usage event、loan record 和 audit。
+
+资产贡献统计报表是 P0 能力。第一版报表按 workspace、贡献者、资产类型、时间窗口、使用动作、授权流、风险和维护状态统计。排行榜从报表中派生，第一版主分数为：
+
+```text
+rankScoreV0 =
+  usageCount * successRate
+  + uniqueWorkspaceAdoptions
+  - rollbackCount
+```
+
+#### FR-5 MCP Service 和 Workspace API
+
+智能体首选通过 SplitAll MCP service 接入。MCP service 是 adapter，Workspace API 是协议事实源。
+
+第一版 MCP service 必须支持：
+
+- HTTP 权威入口，默认 `127.0.0.1:8791/mcp`，OrbStack 内使用 `host.orb.internal:8791/mcp`。
+- stdio proxy 兼容入口，只代理 HTTP MCP，不维护独立状态。
+- 最小 MCP JSON-RPC：`initialize`、`tools/list`、`tools/call`、标准错误、工具 schema。
+- 工具面覆盖 workspace、file、knowledge、skill、permission、audit、operation history 和 checkpoint restore。
+
+MCP handler 不能直接改文件夹或数据库，必须落到 Workspace API、Policy Engine、Operation Ledger、Checkpoint Tree 和 storage metadata。
+
+#### FR-6 统一 Checkpoint Tree
+
+系统必须把所有进入公共空间边界的行为纳入统一 Checkpoint Tree：
+
+- 访问请求：workspace info/list、catalog discover、metadata read、permission check、search、evidence read、asset list/read/download、skill list/download、receipt list、audit query、operation history、checkpoint tree list、restore preview、context bundle、export、checkout、memory write。
+- 文件变动：create、update、move、delete、archive、restore。
+- 知识贡献：submit、scan、review、publish、adopt、revoke。
+- 技能调用：list、download、install、execute、usage report、revoke。
+- 权限裁决：grant、deny、permission request、authorizationOverlay change。
+- 恢复动作：restore preview、restore、revert operation scope、branch、merge。
+
+恢复必须是 append-only restore operation。可以复用 git tree、diff、commit graph、临时 worktree 和 checkout-like restore 能力，但不能把裸 `git reset` 作为产品语义。
+
+#### FR-7 管控台
+
+管控台第一版必须覆盖完整闭环：
+
+- Workspace asset browser。
+- AgentLibrary 权限和上游再授权配置。
+- 贡献资产、Skills、排行榜和资产贡献统计报表。
+- 访问 receipt、loan record、denied request audit。
+- Operation history 和 Checkpoint Tree。
+- Restore preview 和恢复到此节点。
+- 权限错误、不可见过滤、授权请求和撤销记录。
+
+管控台只消费公开 API，不引用后端内部模块。
+
+### 非功能需求
+
+| 类型 | 要求 |
+| --- | --- |
+| 安全 | 权限从 source / asset 入库开始治理；所有出口共用裁决；secret value 不进入 trace、export、checkpoint node 或 context bundle。 |
+| 可恢复 | 所有公共空间行为形成 Operation Ledger 和 Checkpoint Tree；恢复动作保留原历史。 |
+| 可审计 | 所有访问、拒绝、借阅、导出、执行、授权和恢复都有 `auditId`。 |
+| 可解释 | 检索、证据、权限过滤、上下文编译和恢复 preview 必须能解释原因和影响范围。 |
+| 可移植 | 本机、容器、虚拟机、云端、Linux、macOS、Windows 通过管理软件和 adapter 适配。 |
+| 可替换 | 外部知识库、向量库、图谱库、解析器、OCR、模型和 tool runtime 通过 mount / adapter 替换。 |
+| 可验证 | 每个 P0 能力必须有本地 verify 脚本和可复现 demo。 |
+| 可降级 | 外部知识库、模型、OCR 或 tool runtime 不可用时，系统必须返回可解释错误，并保留失败审计。 |
+
+### 运行上下文
+
+SplitAll 运行在服务端进程、本地管理软件、CLI、GUI 和 Web 控制台之间：
+
+```text
+Local agents / humans / scripts
+  -> MCP service / CLI / Console / Workspace API
+  -> Policy Engine
+  -> Operation Ledger
+  -> Workspace Runtime
+  -> Asset / Knowledge / Skill / Tool runtimes
+  -> Storage, indexes, object files, external adapters
+```
+
+部署形态：
+
+- 单机开发：Node.js 服务端、Vue 控制台、Rust CLI、Flutter GUI、本地 SQLite 和本地对象目录。
+- OrbStack / VM demo：服务端在 Mac 或 VM 内运行，智能体通过 `host.orb.internal` 或 stdio proxy 访问 MCP。
+- 容器和云端：服务端、控制台、管理软件和外部知识库 adapter 分离部署，权限和 checkpoint metadata 仍由 SplitAll 持有。
+- 企业生产：外部存储、外部向量库、审计归档、密钥服务、OTLP exporter 和备份恢复流程接入。
+
+### 模块设计
+
+#### Presentation Layer
+
+`server-web` 是 Vue 管控台。职责：
+
+- 展示 workspace、AgentLibrary、贡献、权限、审计、任务、checkpoint 和生产门禁。
+- 调用公开 HTTP API。
+- 不直接读取后端文件、SQLite、raw object 或内部模块。
+
+前端组件复用规则必须从 `server-web/components/common.ts` 开始。新增界面控件时，能用通用组件就用通用组件；通用组件不能直接覆盖需求时，能继承就继承；确实需要新组件时，先扩展通用组件和 `commonComponentRegistry`，再在业务页面中使用。也就是说，页面级实现必须先扩展通用组件，而不是在每个 view 内复制 checkbox、option bar、status pill、browse button、fold card 或 history/session panel 的私有实现。
+
+`client-gui` 是 Flutter 跨平台交互层。职责：
+
+- 展示本机客户端状态、上传、导出、配置和用户操作。
+- 不承载业务权威状态。
+
+#### Protocol Adapter Layer
+
+`server/platform/common/operation-dispatcher` 维护公开 operation registry，负责把 HTTP、RPC、CLI 等入口统一到 operation 定义。
+
+新增或调整 MCP service 时必须遵守：
+
+- MCP tool name 稳定。
+- MCP 输入先归一化为 Workspace API request。
+- MCP 输出必须包含 operation、audit、policy 和 checkpoint 相关引用。
+- stdio proxy 不持有状态。
+
+#### Application Layer
+
+`server/platform/specialized` 承载应用能力：
+
+- `knowledge`：三层知识模型、KnowledgeCore、外部知识库 adapter、document export、retrieval、preprocessing。
+- `agent`：agent workspace、agent context、agent memory、agent gateway。
+- `capabilities/tools`：Tool Management、catalog、grant、policy、execute 和 audit。
+- `capabilities/skills`：SkillLibrary、skill registry、skill bundle 和 skill 使用事件。
+
+这些模块可以拥有各自 runtime，但不能绕过 Workspace API 改写公共状态。
+
+#### Governance Layer
+
+治理层是 SplitAll 的核心，逻辑上包含：
+
+- `WorkspaceGateway`
+- `PolicyEngine`
+- `OperationLedger`
+- `SnapshotManager`
+- `CheckpointTree`
+- `ArtifactRegistry`
+- `ContributionRegistry`
+- `AgentLibrary`
+- `SkillLibrary`
+- `LeaderboardRuntime`
+- `ContextCompiler`
+- `AuditStore`
+
+其中 Ledger、permission、receipt、loan record、checkpoint metadata 是权威；文件树、索引和报表都是 projection。
+
+#### Infrastructure Layer
+
+`server/platform/common` 承载基建：
+
+- `security`：认证、权限、CSRF、grant、secret ref、策略裁决。
+- `storage`：SQLite、对象存储、batch repository、metadata。
+- `observability`：trace、日志、metrics 和后续 OTLP 映射。
+- `module-manager`：外部 mount、parser、knowledgeBase、vectorStore、graphStore 和 custom adapter。
+- `devops`：进程状态、统一注册、监控告警和生产运行辅助。
+
+`server/platform/modules` 存放外置模块和本地运行时资源，例如 Tika、OCR、document parser 和 runtime assets。
+
+### 核心数据模型
+
+#### Workspace
+
+```text
+Workspace {
+  workspaceId
+  name
+  ownerSubjectId
+  environmentRef
+  policyRefs
+  rootAssetRefs
+  checkpointTreeRef
+  createdAt
+  updatedAt
 }
 ```
 
-## 5. 分析模块
-
-分析执行与文档解析分离。
-
-- 文档解析负责“把文件变成可分析文本和元数据”
-- 分析模块负责“把源文件、chunk、邮件关系、时间线和事务网络加工成业务结果”
-
-分析模块切换通过 `analysisModuleId` 实现，支持：
-
-- 内置模块：`builtin:heuristic-hybrid-v1`
-- 外挂模块：通过 `analysis` mount 提供
-- 热切换
-- 配置生效后新任务立即走新模块
-
-分析输出主结构：
-
-- `emails`
-- `threads`
-- `transactions`
-- `people`
-- `timeline`
-- `network`
-- `associations`
-- `retrieval`
-- `lifecycle`
-- `analysisRuntime`
-
-## 6. 任务与数据流
-
-### 6.1 任务链
-
-一次标准任务链路是：
-
-1. Flutter 前端把用户操作提交给 Rust CLI / daemon
-2. Rust CLI 创建 upload session
-3. Rust CLI 按文件分块上传
-4. 服务端校验 `sha256 / byteSize`
-5. Rust CLI 提交作业
-6. Node.js 创建 job 并调度 worker
-7. worker 读取任务创建时的 runtime snapshot
-8. 按格式路由调用下游解析模块
-9. 生成 sources / chunks
-10. 运行云端文档智能与分析模块
-11. 持久化结果、索引与对象
-12. Rust CLI 拉取 job/result 并更新客户端本地状态
-13. Flutter 前端展示最终状态与结果
-
-### 6.2 文件归一化解析与处理工作流
-
-当前文件归一化链路的目标是：把用户输入的文件、目录、压缩包或粘贴文本，转换为可分析的 `sources / chunks`，再生成面向外部知识库摄取的多颗粒度 DOCX 包。知识管理交付分三层：
-
-- 第一层 `raw-corpus-construction`：原始语料建构，把文件、邮件、聊天、本地镜像等材料解析、切分、保留结构并形成可导出的规范语料。邮件等时序材料必须尽可能保留 message、thread、transaction、timeline、sourceRange 和 lineage。
-- 第二层 `knowledge-index-construction`：知识索引建构，把第一层产物收纳为内置 `KnowledgeCore` 或外部知识库适配器的 document / section / block / asset / evidence / embedding / relationship。第二层必须继续承担规范语料到索引对象的解析和映射，并通过 `knowledge.search`、evidence pack、asset protocol 和 `knowledge.export.docx` 提供权威 RAG 查询面。
-- 第三层 `knowledge-distillation`：知识蒸馏，从第二层 evidence 中提取摘要、规则候选、主题背景和工作空间上下文。该层是有损压缩，只能作为 ContextRuntime、AgentWorkspace 和长任务运行时背景，不能替代第二层全量查询。
-
-完整流程：
-
-1. 客户端准备输入
-   - `client-cli` 收集文件、目录或粘贴文本。
-   - 文件和目录走 upload session、manifest、checkpoint 和分块上传。
-   - 服务端校验每个文件的 `sha256 / byteSize`。
-
-2. 服务端创建 job
-   - Node.js 接收 `/api/jobs` 请求。
-   - job worker 读取任务创建时的 runtime snapshot。
-   - 运行时快照固定本次任务使用的 settings、rules、mount modules、mount routing 和 skills。
-
-3. 输入读取与展开
-   - `readInputSources` 读取 `inputText`、本地 file paths、upload session staged files。
-   - 目录会递归展开为支持的文件集合。
-   - `.zip` 会展开一层，内部条目继续按普通文件解析。
-   - 每个 source 附加 `sourceCreatedAt / sourceUpdatedAt / sourceCollectedAt`。
-
-4. 格式识别与路由
-   - `server/platform/specialized/knowledge/preprocessing/file-processor` 读取模块内 `file-routing-table`。
-   - 文本、邮件、图片、PDF、DOCX、普通文档按扩展名、media type、kind 和默认规则分类。
-   - 默认路由：
-     - 图片 -> `ocr.extractText`
-     - PDF -> `pdfProcessor.extractDocument`
-     - 常规文档 -> `documentParser.extractDocument`
-   - 配置路由可以把 `.png`、`.pdf`、`.eml`、`.py` 或未知扩展名切到任意 skill。
-
-5. skill 解析
-   - `documentParser` 默认由 `Java + Tika` 承担，返回 `text / metadata / embeddedDocuments / parserId`。
-   - `pdfProcessor` 是 PDF 专用流程入口，当前内部调用 Tika，后续可演进为先转 DOCX 再进入处理。
-   - 图片默认走 OCR skill，保留原图 data URL 和原始 buffer。
-   - PDF 如果 Tika 没有提取到正文，会尝试 OCR 兜底。
-   - EML / MSG 会额外写入 raw object 审计存储，保留原文件名和原始内容。
-   - 解析失败不会静默吞掉，会进入 warnings；无可用内容的文件会被跳过或导致任务失败。
-
-6. source 标准化
-   - 每个成功解析的输入都会形成 source。
-   - source 至少包含：`id`、`name`、`path`、`kind`、`text`、`mediaType`、时间元数据、parser 信息、embedded documents、原始 hash 和 byte size。
-   - 邮件 source 还带 raw object 引用，供后续证据打开和审计。
-
-7. chunk 生成
-   - `createKnowledgePipeline` 对非图片 source 运行规则解析器和规则 chunker。
-   - parser 生成 blocks。
-   - chunker 生成 chunks，并保留 sourceId、标题路径和正文片段。
-   - 图片 source 当前主要保留为原始证据和可选 OCR 文本，不进入普通文本 chunk 主线。
-
-8. 分析处理
-   - application 调用当前配置的 analysis skill。
-   - analysis 接收 `sources / chunks / settings / rules`。
-   - 输出 emails、threads、transactions、people、timeline、network、associations、retrieval 等结构。
-   - metadata store 会解析事务生命周期，回写 transaction 和 timeline 的 lineage / 恢复状态。
-
-9. 归一化 DOCX 生成
-   - `generateNormalizedDocuments` 在 `jobs/<jobId>/normalized-documents/` 下重建归一化包。
-   - Mail adapter 先基于分析结果生成：
-     - `message` DOCX
-     - `thread` DOCX
-     - `transaction` DOCX
-   - 非邮件 source 再按适配器生成：
-     - PPT / PPTX -> `deck`、`section`、`slide`
-     - PDF -> `document`、`section`、`page-window`
-     - HTML -> `page`、`section`、`block`
-     - 其他格式 -> `source`
-   - 每个 DOCX 都写入归一化元数据、证据定位、正文和解析风险，并保留 chunk id、`sectionId` 与 `sourceRange`。
-
-10. 原始材料处理
-    - PPT / PPTX / PDF / HTML 会复制允许入库的原始材料到 `normalized-documents/source-materials/`。
-    - EML / MSG 不复制到知识库目录，原始邮件只保留在 raw object 审计存储中。
-    - 普通 fallback 文档只生成 source-level DOCX，不复制额外 source material。
-
-11. manifest 与结果回写
-    - 服务端写入 `normalized-documents/manifest.json`。
-    - manifest 包含 `schemaVersion`、`packageType`、`batchId`、`generatedAt`、`documents`、`sourceMaterials`、summary 和 warnings。
-    - job result 中同时包含 `normalizedDocuments` 和 `sourceFiles`。
-    - metadata store 持久化 sources、analysis、retrieval index 和 warnings。
-
-12. 下载与外部摄取
-    - 归一化清单通过 `GET /api/jobs/:jobId/normalized-documents` 读取。
-    - 单个 DOCX 或允许输出的原始材料通过 `GET /api/jobs/:jobId/normalized-documents/:documentId` 下载。
-    - 已收纳到 KnowledgeCore 的 canonical knowledge 通过 `GET /api/knowledge/export/docx`、RPC `knowledge.export.docx` 或 CLI `knowledge export-docx --output knowledge.docx` 导出标准 DOCX。
-    - 外部知识库适配器从同一 normalized document package、manifest、source metadata 和 asset locator 建立自己的索引，但必须把查询、证据读取和资产读取适配回 `splitall.knowledge.v1`。
-    - CLI、server-web 和 client-gui 都必须使用同一套服务端协议，不各自解析 job 目录。
-
-13. 索引与蒸馏消费
-    - RAG、智能体问答、证据打开和 Markdown 渲染必须通过第二层 `knowledge.search` / evidence pack / asset protocol。
-    - `SummarizationRuntime`、`knowledge-distillation` runtime、`ContextRuntime` 和 `AgentWorkspace` 只能消费第二层 evidence 生成有损背景。
-    - 蒸馏结果必须保留 `evidenceRefs / citations / sourceTrace / coverage`，缺引用链路的内容只能进入补证或审核，不能写回 canonical evidence。
-
-14. 外部知识库适配器一致性
-    - 适配器最小方法集是 `knowledge.capabilities`、`knowledge.health`、`knowledge.ingest.batch`、`knowledge.upsert.documents`、`knowledge.search`、`knowledge.get.evidence`、`knowledge.asset`、`knowledge.export.docx`、`knowledge.delete.batch`、`knowledge.reindex` 和 `knowledge.sync`。
-    - conformance fixture 必须用同一份 normalized corpus 验证 ingest -> search -> evidence read -> asset read -> DOCX export -> delete/tombstone -> search/sync 隐藏已删除对象。
-    - 远端后端必须在检索前应用 tenant、workspace、source-scope 和权限过滤，不能先 topK 再做权限后过滤。
-    - 首批检测只纳入成熟开源后端：`PostgreSQL + pgvector`、`Qdrant`、`OpenSearch`，以及可选的 `Weaviate`。RAG 应用、编排框架、私有服务和实验性 graph/RAG 后端不作为首批必测对象。
-    - 实现入口是 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`，当前实现 `qdrant`、`opensearch` 和 `pgvector`。该 mount 以 `KnowledgeCore` 保存 canonical evidence / asset / DOCX export，并把第二层检索记录镜像到外部数据库。
-
-关键边界：
-
-- Node.js 负责路由、编排、落盘和结果回收，不在业务代码里硬编码每种格式的解析实现。
-- 第一层文件解析由 FileProcessor 内的路由表分派到 mount 能力或子组件，归一化 DOCX 由 `FileNormalizer/NormalizedDocuments` 承担。
-- 第二层索引解析由内置 `KnowledgeCore` 或外部知识库适配器承担，负责把 normalized package、manifest、source metadata、asset locator 和 chunk/section 边界转成可检索的 evidence。第二层不能假设第一层只给纯文本。
-- 第二层适配器必须保留 SplitAll id 到外部 id 的映射；映射丢失会破坏 evidence 回读、资产读取、删除、sync 和 DOCX export，必须作为 health failure 暴露。
-- 服务端 SQLite / raw object / job snapshot 是权威记录；客户端本地索引只做展示、恢复和证据打开加速。
-- Markdown 和旧 knowledge-package 导出不再作为主线；知识管理交付主线是 normalized DOCX + manifest、`knowledge.export.docx` 的 canonical knowledge DOCX，以及只供上下文/工作空间运行时使用的有损蒸馏背景。
-
-### 6.3 checkpoint
-
-客户端 checkpoint 生命周期：
-
-- 确认文件
-- 上传服务器
-- 服务器处理
-- 反馈客户端
-- 客户端确认 checkpoint
-
-支持：
-
-- 断网续传
-- 客户端重启后自动续传
-- 分块上传恢复
-- 服务端不可达时本地任务入队、`waiting_server` 状态和指数退避自动重试
-- 服务端重启后 queued/running job 恢复
-- 分支、手动停止、旧链路回收
-
-分块上传是 checkpoint 中“上传服务器”阶段的断点续传实现，但不是 checkpoint 的全部。
-
-管理边界：
-
-- `client-cli/protocols/checkpoint` 与 `server/protocols/checkpoint` 管理断点续传对接协议
-  - 只记录 HTTP / JSON / binary chunk 报文
-  - 记录字段语义、版本、兼容策略、错误语义和恢复状态机
-  - chunk size
-  - 按服务端返回的 `receivedBytes` 继续上传
-  - offset mismatch 后按服务端 `expectedOffset` 重新对齐
-- Rust 源码负责本地文件枚举、文件 sha256 与 manifest digest、checkpointId 生成或复用
-- Rust 上传队列用事件溯源保存任务状态；网络型错误只进入可恢复 `waiting_server`，不丢弃本地任务，也不要求用户重新选择文件。
-- `server/protocols/checkpoint` 管理服务端接收协议适配与权威状态
-  - `meta.json`
-  - `.part` 分块落盘文件
-  - `receivedBytes`
-  - `status`
-  - 文件大小与 sha256 校验
-  - 服务端重启后的 session reconcile
-- `server/protocols/pubsub` 管理上游向下游发布 upload session、job、settings、runtime 等 topic
-  - 下游用 `GET /api/events` 订阅
-  - 新订阅者可用 retained snapshot 获取当前状态
-  - 客户端后台保存 `nextCursor`，服务端恢复后从上次游标继续同步并写入本地事件日志
-- `server/services/client/work-queue-core` 在创建 job 时把 `uploadSessionId` 转成 checkpoint receipt
-  - 同一个 checkpointId 已经创建过 job 时，返回已有 job
-  - upload session 未完成时，不进入后续解析处理
-- `client-gui` 只展示和拉起
-  - 不直接读取本地文件分块
-  - 不直接维护 upload session 状态
-  - 不直接决定 offset、hash、checkpoint receipt
-
-### 6.4 事务生命周期
-
-邮件事务支持：
-
-- 线程归并
-- 事务归并
-- lineage 匹配
-- 历史事务恢复
-- 时间线拉回
-
-场景包括：
-
-- 周报 / 月报延续
-- 长事务续接
-- 多来源同事务归并
-- 持续中事务识别
-
-## 7. 服务端分层
-
-### `server/platform`
-
-`server/platform` 是服务端底座层，分为通用底座、专属底座、交互层和外置模块层。
-
-它负责：
-
-- HTTP / JSON-RPC / CLI 接口注册与分发
-- 路由、控制器、响应映射和错误映射
-- 上传会话、checkpoint、文件对象、SQLite repository 等基础模块
-- FileProcessor、VectorStore 等可选高耦合服务模块
-- 服务发现、设置、规则库、运行时配置、运维工具
-- mount manager、mount routing、任务执行快照
-- 日志、事件、状态摘要、导出和观测接口
-- 前后端分离边界
-
-原则：
-
-- `common` 提供稳定 API 和基础设施能力
-- `interactive` 是底座对外注册和服务侧调用的唯一跨层入口
-- 上层功能（`services`、HTTP 接口、worker、agent 功能）调用底座接口时，必须统一通过 `platform/interactive` 切面；禁止直接依赖 `platform/common`、`platform/specialized`、`platform/modules`
-- 开发新功能前必须先查 `server/platform/interactive/interface-manifest.mjs`，优先复用已登记的 interactive 接口，再评估是否新增接口
-- `specialized` 放知识库、智能体等专属底座，不能反向依赖服务条线
-- `modules` 放外置模块和本地运行时资源
-- 平台层不把具体业务流程写死在接口层
-
-### `server/services`
-
-`services` 是产品线服务层，当前分为 `agent` 和 `client`。
+Workspace 是公共空间边界。所有资产、知识、贡献、任务、上下文和恢复动作都必须归属 workspace 或明确跨 workspace 授权。
+
+#### Asset
+
+```text
+Asset {
+  assetId
+  workspaceId
+  assetType
+  sourceRef
+  storageRef
+  metadata
+  dataClass
+  sensitivity
+  policyRef
+  currentVersionRef
+  lifecycleState
+  createdBy
+  createdAt
+}
+```
+
+`assetType` 至少覆盖 `rawAsset`、`derivedAsset`、`knowledge`、`file`、`skill`、`tool`、`script`、`goldenRule`、`expertOpinion`、`artifact`。
+
+#### Knowledge Evidence
+
+```text
+EvidencePack {
+  evidenceId
+  assetId
+  derivedViewRef
+  sourceTrace
+  citations
+  contentRefs
+  scoreReasons
+  policyDecision
+  allowedRefs
+  withheldCounts
+}
+```
+
+Evidence Pack 是权限裁决后的证据包，不是裸 chunk。
+
+#### Permission Decision
+
+```text
+PermissionDecision {
+  decisionId
+  subject
+  operatorId
+  agentProfile
+  workspaceId
+  targetRefs
+  requestedAction
+  requestedEgress
+  accessMode
+  allowed
+  reason
+  redactionPolicy
+  auditId
+}
+```
+
+同一请求的 search、evidence、context、export、artifact、distillation、memory 和 tool call 必须复用同一类裁决结果。
+
+#### Receipt and Loan Record
+
+```text
+KnowledgeAccessReceipt {
+  receiptId
+  subject
+  agentProfile
+  workspaceId
+  taskId
+  evidenceRefs
+  accessMode
+  egress
+  auditId
+  createdAt
+}
+
+LoanRecord {
+  loanRecordId
+  receiptId
+  retainedRefs
+  canRetain
+  canShare
+  expiresAt
+  revocationPolicy
+  downstreamWorkspaceRefs
+}
+```
+
+Receipt 记录智能体知道了什么；LoanRecord 记录智能体能不能带走、保留、再分享和跨 workspace 使用。
+
+#### Operation and Checkpoint Node
+
+```text
+Operation {
+  operationId
+  workspaceId
+  subject
+  operatorId
+  agentProfile
+  idempotencyKey
+  operationKind
+  targetRefs
+  policyDecisionRef
+  preSnapshotRef
+  diffRef
+  postStateRef
+  auditId
+  createdAt
+}
+
+CheckpointNode {
+  checkpointNodeId
+  parentNodeIds
+  workspaceId
+  subject
+  operatorId
+  agentProfile
+  eventKind
+  effectKind
+  targetRefs
+  policyDecision
+  stateDelta
+  receiptRefs
+  auditId
+  createdAt
+}
+```
+
+读请求和拒绝请求也必须产生 node，因为它们改变治理状态。第一版不做“高价值读请求才入树”的例外：每个外部可见读请求都要生成 checkpoint node，包括 list、discover、metadata、permission check、receipt list、audit query、operation history 和 checkpoint tree list。为了避免递归膨胀，同一次外部请求内部读取 Ledger、AuditStore 或 CheckpointTree 所需的系统内部读，不再生成新的读节点。
+
+#### Contribution
+
+```text
+Contribution {
+  contributionId
+  assetId
+  contributorSubject
+  contributorAgentProfile
+  workspaceId
+  contributionType
+  lifecycleState
+  scanResultRef
+  reviewResultRef
+  permissionPolicyRef
+  usageStatsRef
+  createdAt
+}
+```
+
+Contribution lifecycle 不能被 Skill、file 或 knowledge 各自私有化；它是 workspace asset governance 的统一状态机。
+
+### 接口设计
+
+#### Workspace API
+
+Workspace API 是协议事实源。第一版必须覆盖：
+
+- workspace info、list、context、context bundle。
+- asset upload、list、read、download、policy set、permission check。
+- file read、write、patch、delete、restore。
+- contribution submit、review、publish、adopt、revoke。
+- checkpoint tree list、restore preview、restore。
+- operation history 和 audit query。
+
+#### Knowledge API
+
+Knowledge API 公开能力：
+
+- `knowledge.search`
+- `knowledge.get.evidence`
+- `knowledge.asset`
+- `knowledge.document.structure`
+- `knowledge.export.docx`
+- `raw-corpus.format.convert`
+- `knowledge.dossier.export`
+- `knowledge.distillation.export`
+
+所有入口必须接入 `splitall.knowledge-access.v1`，不能出现绕过权限的直读接口。
+
+#### MCP Tool Surface
+
+第一版 MCP tool surface 固定为：
+
+```text
+workspace.info
+workspace.file.upload
+workspace.file.list
+workspace.file.download
+workspace.file.read
+workspace.file.write
+workspace.file.patch
+knowledge.contribution.submit
+knowledge.search
+knowledge.evidence.get
+knowledge.access.receipt.list
+workspace.skill.upload
+workspace.skill.list
+workspace.skill.download
+workspace.skill.usage.report
+workspace.asset.policy.set
+workspace.asset.permission.check
+workspace.audit.query
+workspace.operation.history
+workspace.checkpoint.tree.list
+workspace.checkpoint.restore.preview
+workspace.checkpoint.restore
+```
+
+公开 checkpoint tool 名称必须使用 `workspace.checkpoint.tree.list`、`workspace.checkpoint.restore.preview` 和 `workspace.checkpoint.restore`。
+
+#### Tool Management API
+
+Tool Management 负责外部工具和 Skill 执行授权：
+
+- catalog 定义工具。
+- toolset 聚合权限。
+- grant 表达主体可用范围。
+- policy evaluate / preview 表达执行前裁决。
+- execute 只在授权通过后运行，并写 audit、usage event 和 checkpoint node。
+
+Skill 可以被贡献和安装，但执行必须通过 Tool Management grant。
+
+### 关键流程设计
+
+#### 文件互通流程
+
+```text
+Agent A upload file
+  -> MCP workspace.file.upload
+  -> identity resolution
+  -> policy evaluation
+  -> Operation Ledger append
+  -> asset object write
+  -> checkpoint node
+  -> audit event
+  -> Agent B list/download through same policy path
+```
+
+验收要求：A 不需要知道 B，B 不直接访问 A 的本地文件系统；双方只通过公共 workspace asset 互通。
+
+#### 知识再授权流程
+
+```text
+external KB sync
+  -> upstreamKnowledgeRef
+  -> slicing
+  -> derivedKnowledgeSpace
+  -> authorizationOverlay
+  -> A allowed evidence/export
+  -> B deny or invisible
+```
+
+验收要求：A 能获取授权内容并产生 receipt / loan record；B 不能通过 search、context bundle、export、distillation 或 memory write 旁路拿到。
+
+#### Skill 贡献流程
+
+```text
+Agent A upload Skill
+  -> contribution.submitted
+  -> scan
+  -> review / policy
+  -> published
+  -> Agent B list/download/use
+  -> usage event
+  -> leaderboard and report refresh
+```
+
+验收要求：贡献值随真实使用增长，失败、回滚和风险会降低质量分。
+
+#### 共享文件修改流程
+
+```text
+Agent A patch shared file
+  -> preSnapshot
+  -> diff
+  -> write
+  -> checkpoint C1
+Agent B patch same file
+  -> preSnapshot
+  -> diff
+  -> write
+  -> checkpoint C2
+```
+
+验收要求：最终文件包含两次授权修改；Operation history 能解释每次修改由谁发起、改了什么、属于哪个 checkpoint。
+
+#### 安全恢复流程
+
+```text
+C0 -> C1(A change) -> C2(B change) -> R1(restore to C1) -> R2(restore to C0)
+```
+
+恢复不删除原历史。`R1` 和 `R2` 都是新的 restore operation，必须有 restore preview、diff、policy decision、audit event 和 checkpoint node。
+
+### 存储设计
+
+第一版本地默认存储：
+
+- metadata SQLite：workspace、asset、operation、audit、policy、contribution、checkpoint metadata。
+- knowledge SQLite：KnowledgeCore、evidence、document structure、retrieval metadata。
+- raw object / asset directory：原始文件、派生文档、DOCX/YAML sidecar、导出物。
+- git-backed workspace tree：文件树 projection、diff、commit graph、restore preview 的底层能力。
+- config files：settings、mount config、feature profile、entity config。
+
+存储原则：
+
+- SQLite 和对象目录是本地默认实现，不是协议边界。
+- 外部知识库、向量库、图谱库只能通过 adapter / mount 进入，不能成为智能体直连面。
+- checkpoint metadata 和 Operation Ledger 是产品恢复事实源；git commit 是文件树 projection。
+- 备份恢复必须覆盖 metadata DB、knowledge DB、raw objects、assets、jobs、settings、mount configs、model configs 和 auth DB。
+
+### 权限与安全设计
+
+权限模型按入口、对象、动作、出口四层裁决：
+
+1. 入口：subject、operator、agentProfile、libraryCard、workspace。
+2. 对象：source、asset、evidence、field、tool、skill、file、context、memory。
+3. 动作：discover、read、cite、copyToContext、download、export、checkout、write、execute、share、restore。
+4. 出口：searchResult、evidenceRead、contextBundle、artifactWrite、exportFile、distillationInput、distillationOutput、memoryWrite、toolCall、evaluationSample。
+
+安全要求：
+
+- 默认拒绝，显式授权。
+- 高敏资产可以隐藏存在性。
+- `readInPlace` 不等于可以下载或写 memory。
+- 任何导出、下载、checkout、context injection 都必须产生 receipt / loan record。
+- 权限拒绝必须进入 denied request audit。
+- secret 只以 secret ref 存储和传递。
+- 日志、trace、评估样本和导出必须执行 redaction policy。
+- 直连受管工作空间文件系统视为未受管操作，不能进入 canonical workspace state。
+
+### 可观测性设计
+
+内部 Trace 是事实源，OpenTelemetry 是可选导出映射。第一版 trace schema 必须能关联：
+
+- request、operation、checkpoint、audit、policy decision。
+- upload、parse、normalize、ingest、search、evidence、distill。
+- model route、token、cost、latency、error。
+- tool grant、tool execution、skill usage。
+- asset、evidence、context bundle、memory write 和 export。
+
+管控台需要能从一个回答或一次操作展开看到证据、权限、模型、工具、成本、失败点和对应 checkpoint。
+
+### 错误处理和幂等设计
+
+所有写操作必须支持：
+
+- `idempotencyKey`
+- 输入 hash
+- precondition
+- dry-run / preview
+- diff
+- policy decision
+- rollback or restore plan
+- audit event
+
+错误类型至少区分：
+
+- `permission_denied`
+- `not_found`
+- `conflict`
+- `quota_exceeded`
+- `payload_too_large`
+- `external_dependency_unavailable`
+- `policy_required`
+- `checkpoint_restore_blocked`
+- `invalid_identity`
+- `unsafe_tool_execution`
+
+权限拒绝不是系统错误；它是受控治理结果，必须可审计、可解释、可统计。
+
+### 部署和配置设计
+
+本地开发默认：
+
+- Node.js 服务端。
+- Vue 控制台。
+- Rust CLI。
+- Flutter GUI。
+- 本地 SQLite、对象目录和 runtime assets。
+
+关键配置：
+
+- 服务端 settings。
+- feature profile。
+- mount config。
+- model routing。
+- MCP endpoint。
+- workspace root。
+- external knowledge-base provider。
+- secret ref provider。
+
+配置原则：
+
+- 人工可维护实体配置放在 `server/config/entity-config/`。
+- runtime 二进制资源放在 `server/platform/modules/knowledge/`。
+- 生产环境 secret value 不进入 settings JSON。
+- adapter 配置可以追加，但不能破坏已有 agent 配置。
+
+### 验收设计
+
+基础架构变更必须运行：
+
+```bash
+npm run server:verify:architecture-patterns
+npm run server:verify:knowledge-architecture-governance
+npm run server:verify:platform-layout
+npm run server:verify:tool-management
+npm run server:verify:agent-workspace
+```
+
+五阶段 MCP demo 必须提供：
+
+```bash
+npm run server:verify:mcp-workspace-demo
+npm run server:verify:mcp-knowledge-demo
+npm run server:verify:mcp-permission-demo
+npm run server:verify:checkpoint-restore-demo
+npm run server:verify:mcp-demo
+```
+
+每个 demo 输出必须包含：
+
+- agent identity
+- workspace path
+- asset ids
+- operation ids
+- checkpoint node ids
+- audit ids
+- 成功样例
+- 拒绝样例
+
+生产级验收最终必须收敛为 `npm run server:verify:production-readiness`，并输出可汇报的 Markdown / JSON 报告。
+
+## 核心原则
 
-它负责：
-
-- 客户端工作队列、checkpoint 闭环、任务创建、恢复、轮询和结果生成
-- 客户端运行时分配、上下文与工作空间绑定
-- 智能体巡检、runbook、审批和审计
-- 按产品线调用 `platform/interactive` 暴露的底座能力
+### 资产是主体
+
+系统不关心智能体之间如何互相扮演、协商或聊天。系统关心的是公共工作空间资产本身：
+
+- 可快照
+- 可溯源
+- 可恢复
+- 可操作
+- 可复制
+- 可分支
+- 可审计
+- 可按权限暴露给外部执行者
 
-原则：
-
-- `services/agent` 只放智能体服务线代码
-- `services/client` 只放客户端服务线代码
-- 跨底座能力必须通过 `platform/interactive` 或已注册接口调用
-- 知识库专属规则、检索、入库和文件处理能力放入 `platform/specialized/knowledge`
+智能体、CLI、控制台、脚本和人工操作者都是外部 operator。operator 只提交 intent、observation、artifact、proposal 或 trace；公共状态由 SplitAll 的 Operation Ledger、Policy Engine 和 Snapshot Boundary 决定是否变化。
 
-### 可替换能力契约
+### 不信任智能体
 
-核心 skill 类型包括：
+智能体可以很强，但不能被当作可信状态源。SplitAll 只信任可验证的资产状态、可回放的操作记录、可追溯的证据和经过确认的 decision。
 
-- `documentParser`
-- `ocr`
-- `multimodalParser`
-- `pdfProcessor`
-- `analysis`
-- `knowledgeBase`
-- `vectorStore`
-- `graphStore`
+错误智能体最多只能制造错误 proposal、错误 artifact 或失败 operation，不能直接污染 canonical workspace。
 
-这些能力不再保留独立的 `server/skills` 顶层目录。能力契约由 `server/platform/common/module-manager` 管理，具体实现由 `server/platform/modules/knowledge` 或外部 mount 模块提供。
+### 权限从源头治理
 
-能力实现可以是：
+面向智能体开放的知识能力命名为 `AgentLibrary / 图书馆`。`knowledgeBase` / `splitall.knowledge.v1` 是当前兼容协议和内部 mount 名称，不能反过来限制产品定位。
 
-- 内置实现
-- 本地外部模块
-- 云端服务适配器
-- 未来新增的任意专用智能体或解析器
+图书馆权限必须在 source / asset 进入公共空间时就被治理，而不是等检索结果返回后再靠 prompt 约束智能体。每一份资产都必须携带 data class、sensitivity、workspace scope、source scope、可读范围、可引用范围、可导出范围和可写回范围。
 
-原则：
+未来智能体会越来越强，上下文窗口会越来越长，注意力和推理能力也会继续提升。在这个前提下，知识库不应该主要扮演“把有限信息挑出来喂给智能体”的角色，而应该更像一栋公共图书馆：
 
-- 能力只暴露 mount 契约，不关心 HTTP / CLI / Flutter 如何触发
-- 能力不拥有服务端全局状态；需要持久化时回到 `platform/common/storage` 或模块自己的协议存储
-- 新能力应通过 mount 配置接入，不应要求改写 application 主流程
-- 运行中的任务使用创建时的 mount 快照，新任务读取最新配置
+- 门禁卡决定能不能进入知识空间。
+- 楼层权限决定能访问哪些 workspace / source group。
+- 书架权限决定能浏览哪些目录和元数据。
+- 图书权限决定能读取哪些 document / section / block / field / asset。
+- 借阅权限决定能不能把内容带走、导出、写入 artifact 或放进长期 memory。
 
-## 8. 存储结构
+有些资料允许智能体读，但不允许取走。这里的“取走”包括下载原文、导出、复制进 artifact、写入长期 memory、进入非授权模型上下文或被带到其它 workspace。读权限、引用权限、上下文注入权限和导出权限必须分开。
 
-默认数据目录：`build/server-data/`
+从 AgentLibrary 带走的每一条信息都必须登记。登记范围不是只记录“调用了 search”，而是记录具体哪些 evidence、section、field、table cell、image、summary、derived view 或 redacted snippet 被交给了哪个 subject / agent / workspace / task。系统没有批准带走的内容，无论通过 search、evidence、context bundle、export、artifact、distillation、memory write 还是外部知识库 adapter 发请求，都必须拿不到。
 
-### 8.1 元数据
-
-- `metadata/splitall.sqlite`
-
-这是当前唯一元数据真相源，负责：
-
-- batch / source / raw object / message / thread / transaction / people
-- lineage
-- discovery clients
-- retrieval index / FTS
-- 删除协调状态
-
-通用知识库不再继续扩展这组应用层表。新的多模态知识库由 `server/platform/specialized/knowledge/storage/knowledge-core` 独立维护，应用层通过 `splitall.knowledge.v1` 调用：
-
-- `knowledge-core/knowledge.sqlite`：collection / document / section / block / asset / evidence / embedding / relationship。
-- `knowledge-core/assets/`：按 SHA-256 存放图片等二进制资产。
-- `knowledgeBase` mount：对应用层暴露 search、evidence、Markdown render、maintenance、health、reindex 等协议方法。
-
-知识库内部继续分成独立协议组件：
-
-- `KnowledgeCore`：`splitall.knowledge.v1` 方法入口和对象模型归一。
-- `EmbeddingRuntime`：`splitall.embedding.v1`，当前内置 deterministic text/image fallback，不下载模型。
-- `VectorStore`：`splitall.vector.v1`，当前内置 `sqlite-vec` 本地向量索引，并保留 SQLite JSON vector fallback；外部 LanceDB 或 Qdrant 只能通过协议适配。
-- `assetStore`：`splitall.assetStore.v1`，负责资产落盘、hash 校验、URL/path policy。
-- `retrieval`：`splitall.retrieval.v1`，负责混合召回、parent expansion、rerank 和 evidence shaping。
-- `DocumentOutlineRuntime`：`splitall.document-outline.v1`，把 PageIndex-style 自然章节树作为长文档局部增强写入 `kc_hierarchy_nodes`，仅保存 outline metadata、sourceRange 和 quality，不复制 PageIndex 代码、不修改源文件、不替代 FTS/vector/graph/localQuery 主检索路径。
-
-在三层知识管理模型中，`metadata/splitall.sqlite`、raw object、job snapshot 和 normalized DOCX 属于第一层语料建构记录；`knowledge-core/knowledge.sqlite`、`knowledge-core/assets/`、外部知识库索引映射、evidence pack 和 hierarchy index 属于第二层权威索引；`SummarizationRuntime`、`knowledge-distillation` runtime、ContextRuntime 和 AgentWorkspace 产物属于第三层有损背景。第二层是外部知识库对接点，必须承担规范语料到索引/evidence 的解析和协议适配；第三层可以引用第二层 evidence，但不能覆盖第二层事实，也不能作为全量查询入口。
-
-`ClientRuntimeAllocator` 位于应用层，不属于具体模型 provider 或知识库实现。它用 Strategy + Policy Resolver 模式把 `clientUid + taskType` 路由到一个运行时 profile，再把模型 alias、ContextProfile、RetrievalProfile、workspace/session 和工具 grant 作为切面注入 AgentGateway、AgentMemory、ContextRuntime、KnowledgeSearch、SummarizationRuntime 和 AgentExplorationRuntime。它同时维护 `lru-lfu-v1` 冷却策略：每次标准调用记录到 usage store，热度由最近时间桶、总调用量和最近访问时间计算；低频且最旧的客户端可以降到冷上下文 profile 与冷 workspace 策略，高频客户端继续获得热路径资源。这个抽象保留 HTTP/RPC/CLI 标准调用面，同时允许同一服务端按客户端热切换上下文和工作空间；显式调用参数优先，避免分配器覆盖人工指定的模型或 workspace。`GET /api/client-runtime/status`、`client_runtime.status` 和 `client-runtime status` 输出同一份热力图数据，控制台系统状态直接消费该协议状态。`clientId` 不参与用户空间识别，避免与 KnowledgeCore canary 路由和服务发现客户端 ID 混用。
-
-多源连接器属于客户端侧架构：`DataConnector` 负责 OAuth、同步、本地 mirror、`localQuery` 和卸载；服务端只接收 `clientUid/sourceType/providerId/externalId/syncBatchId/contentHash/capturedAt/sourceMetadata` 等标准来源字段，并把它们归一成第二层 evidence。外部连接器以配置包安装到 `portable-data/connectors/modules/<providerId>`，进程型运行时通过 `splitall.data-connector.process.v1` 标准输入/输出协议动态调用 `sync/localQuery/health/auth/uninstall` capability，卸载策略控制本地 mirror cache 和模块目录清理。聊天记录在客户端 `chat-index/chat.sqlite` 保留 workspace、conversation、participant、message、attachment 和 FTS 关系；服务端搜索结果只消费统一 evidence，不反向依赖具体连接器。`knowledge.search` 可以接收客户端附带的 `localQuery.items` 或 `localHits`，按统一 `SourceHit` 结构与第二层 evidence 做去重、加权融合和最终排序；本地-only 结果只作为 `localMirror` 补充项返回，不能被当作服务端 evidence 读取。知识蒸馏也只基于统一 evidence 运行，输出摘要、规则候选和实体关系候选时必须随对象保留 `evidenceRefs/citations/sourceTrace`，不能把连接器字段混入源文件或蒸馏结论正文；这些蒸馏输出只供上下文和工作空间运行时使用，不能替代 `knowledge.search`。
-
-资产对外只通过 `GET /api/knowledge/assets/:assetId` 或离线导出包内相对路径暴露。`assetId` 是不透明标识，不是文件路径；控制器、客户端和 Markdown 渲染器不能绕过协议读取 `knowledge-core/assets/`。
-
-现有 `knowledge_items / knowledge_chunks / knowledge_evidence` 继续作为邮件分析兼容投影，不作为通用级知识库的算法或存储绑定点。
-
-### 8.2 原始对象
-
-- `objects/<ClientUID>/<SourceType>/<OriginalFileName>__<ArchiveBatchId>.<ext>`
-
-特点：
-
-- 保留原标题
-- 保留原始内容
-- 不篡改文件名
-- 不篡改文件内容
-- 不写入服务端分析、检索或审计补充字段
-
-### 8.3 任务快照
-
-- `jobs/<jobId>/meta.json`
-- `jobs/<jobId>/payload.json`
-- `jobs/<jobId>/result.json`
-
-这些文件用于：
-
-- 任务状态恢复
-- 结果回放
-- 元数据库重建
-- 运维排障
-
-### 8.4 Upload Session Manifest
-
-- `upload-sessions/<sessionId>/meta.json`
-
-这些文件只用于上传会话恢复、分块 offset 对齐和 sha256/byteSize 校验。它们不是在线检索索引。
-
-### 8.5 检索权威关系
-
-检索入口只能是 `metadata/splitall.sqlite` 或 `splitall.knowledge.v1` 暴露的知识库索引。命中 raw object 后，才按 SQLite 中的 `storage_rel_path` 读取对象存储。`job result.json`、upload session manifest 和 `objects/` 目录都不能作为直接检索入口。
-
-### 8.6 运行时临时文件
-
-- `tmp/`
-  - Tika 临时文件
-  - OCR 临时文件
-  - 其他运行时中间文件
-
-## 9. 服务发现与迁移
-
-服务发现是当前主链的一部分。
-
-能力包括：
-
-- `bootstrap` 引导地址
-- discovery config
-- client check-in
-- client registry
-- active / forward 模式
-- 迁移状态观测
-- 旧服务转发到新服务
-
-原则：
-
-- 客户端优先通过 bootstrap 获取当前正式服务
-- 新任务走新服务
-- 已创建任务保持作业级粘滞
-
-## 10. 运维能力
-
-后端内置以下运维工具：
-
-- `server:doctor`
-  - 检查数据库缺失、对象缺失、孤儿对象、FTS 不一致、删除残留
-- `server:locate`
-  - 按 `jobId / batchId / objectId` 反查实际落盘和数据库记录
-- `server:reconcile`
-  - 修复 FTS、同步计数、清理失效删除操作，支持 dry-run / apply
-- `server:rebuild-metadata`
-  - 从 jobs 与对象存储重建 SQLite 元数据库
-
-## 11. 当前关键约束
-
-- 服务端控制台与服务端内部实现严格分离
-- Flutter 前端与客户端执行层严格分离
-- Flutter 前端只能拉起或调用 Rust CLI / daemon，不能绕过 CLI 直接执行系统特有任务
-- Rust CLI 必须能独立于 Flutter 前端运行，并覆盖所有客户端执行能力
-- Rust CLI 与系统之间只能通过薄系统适配层访问平台特有能力
-- 客户端可以保存部分本地知识索引，但这些索引必须可重建，不能取代服务端权威存储
-- `SQLite` 是唯一元数据真相源
-- Node.js 只做编排、模块加载、调度、持久化与 API，不再把本地文档解析 fallback 散落在主服务代码中
-- 文件型文档默认经 `server/platform/specialized/knowledge/preprocessing/file-processor` 路由到 Tika、OCR、PDFProcessor 或自定义智能体
-- 任意命名挂载和未知扩展名都必须支持通过配置接入
-- 默认打包不应强制加载所有模块；FileProcessor、OCR、VectorStore 等应作为可选模块或可选子组件进入包
-- 离线 Ubuntu 包必须在构建机阶段完成 Node/JRE/Tika/native node_modules 准备，目标机运行期不能依赖 `apt`、宿主 Node/npm/Java 或隐式模型下载
-- 知识库离线包必须携带 `license-manifest.json`；包内生产依赖、KnowledgeCore、EmbeddingRuntime、VectorStore、sqlite-vec 状态和 ONNX 模型状态都必须经过 license gate
-- 任意生产依赖 license 被判定为 `blocked` 或 `unknown` 时，打包必须失败；`sqlite-vec` 在通过 npm 包和平台 optional dependency 许可校验后可打包，ONNX 模型在未审查前只能保持 `not-bundled-license-gated`
-- 架构变化后，必须同步更新本文件
-
-## 12. 知识库管控台切面
-
-服务端新增知识库管控台切面，但它不改变应用层与知识库模块之间的边界。
-
-后端分层：
-
-- `server/platform/common/platform-core/auth/console-auth.mjs`：本地用户、角色、会话、CSRF、OIDC 配置占位和审计日志。
-- `server/platform/common/operation-dispatcher/operation-registry.mjs`：所有 HTTP/RPC/CLI 接口声明 `requiredScopes`。
-- `server/platform/common/console/http/controllers/system-controller.mjs`：只做请求解析、权限后处理和协议调用。
-- `server/platform/specialized/knowledge/storage/knowledge-core`：继续作为 `knowledgeBase` mount，对外暴露 `splitall.knowledge.v1`。
-
-前端分层：
-
-- `server-web/lib/types.ts`：控制台协议类型。
-- `server-web/lib/bridge.ts`：唯一数据访问层，负责 CSRF、二进制资产 URL、DOCX 下载 URL 和认证接口。
-- `ServerConsoleApp.vue`：只渲染状态、表单、检索、证据、入库和维护任务，不读取 SQLite、对象目录或模块路径。
-
-前端功能登记与门禁：
-
-- 所有 `server-web` 前端功能必须先登记到 `server/config/frontend-feature-registry.yaml`，再允许开发和合并。
-- 登记模型必须为三级：`routePath/tabId -> featureId -> actionId`。
-- 未登记的前端路由页面或系统配置 Tab 功能视为违规，不允许通过门禁。
-- 门禁脚本为 `server/scripts/verify-frontend-feature-registry.mjs`，要求路由、系统配置 Tab 和登记表双向一致。
-
-控制台知识库页面：
-
-- 概览：KnowledgeCore、协议模块、计数、最近任务。
-- 检索：query、topK、batchId、模态过滤。
-- 证据/资产：evidence pack、图片资产、OCR/caption、Markdown 渲染。
-- 入库/归一化：浏览器文件/目录上传，经 upload-session/checkpoint/chunk 创建 job。
-- 蒸馏/上下文背景：展示摘要、coverage、evidenceRefs、未引用结论、审核状态和工作空间引用关系。
-- 同步目录：位于系统配置抽屉的“同步目录”Tab。
-- 维护/配置：由服务端 `config-schema` 渲染表单，可执行 reindex、validate、repair 等维护任务。
-
-安全边界：
-
-- 本地账号离线可用，OIDC 不作为启动依赖。
-- 受保护写操作必须通过 CSRF。
-- 控制台用户 RBAC 与智能体工具 token 分离。
-- 前端只处理 opaque id，不暴露真实资产路径、数据库路径或密钥。
+外部知识库是上游资产源，不是下游智能体的直接暴露面。SplitAll 的 workspace asset 不与外部知识库撞型：外部知识库可以提供原始文档、索引、向量、图谱或检索结果，但进入 SplitAll 后必须被重新切分、重新标注、重新授权，形成 `derivedKnowledgeSpace`。下游某些人或智能体能看哪些内容，完全由 SplitAll 的 `authorizationOverlay` 决定。
+
+上游知识库的信息和资源权限再分配是 AgentLibrary 的核心功能。SplitAll 必须能把同一份上游知识资源拆成多个下游视图：A workspace 能看全文，B workspace 只能看元数据，C agent 只能 readInPlace，D agent 可以 checkout，E agent 完全不可见。这个再分配结果必须独立于上游知识库原始权限模型，并由 SplitAll 自己登记、审计和恢复。
+
+因此，某些智能体即使能操作 SplitAll，也永远访问不到最上游知识库。它们只能访问被 SplitAll 授权后的派生视图、evidence pack、脱敏内容或只读阅览会话。上游知识库凭据、原始 API、原始对象路径和未授权 source id 不能泄漏给下游智能体。
+
+上游知识库 A/B 权限再授权演示用于证明这条边界：SplitAll 从上游知识库获取某个文件后，在本地生成 `derivedKnowledgeSpace` 和 `authorizationOverlay`。管理员在管控台配置 A 可以访问该文件，B 不可以访问该文件。随后进入对话页面，分别让 A 和 B 请求获取同一文件：A 应拿到授权范围内的文件或派生视图，并产生 `knowledgeAccessReceipt` / `loanRecord`；B 应收到权限错误，系统写入 denied request audit，且不能通过检索、上下文包、导出或其它接口旁路拿到内容。
+
+### 公共工作空间优先
+
+本地智能体有自己的本地上下文和本地能力是合理的，例如 OpenClaw、Codex、Claude Code、Cursor Agent、本地脚本型 agent 或人工客户端。它们可以各自擅长编码、浏览器、文件、桌面或通用任务。
+
+SplitAll 提供的是公共可编辑工作空间：
+
+- 统一任务状态
+- 统一资产状态
+- 统一知识证据
+- 统一上下文包
+- 统一 artifact 与 proposal
+- 统一 decision 与 audit
+
+本地智能体想复用其它智能体之前留下的记忆，可以请求 SplitAll 编译 context bundle。上下文短的智能体由 SplitAll 做 context compression / Context Compiler，而不是要求所有智能体共享同一个运行时。
+
+### 终端贡献是第二信息源
+
+信息源不必然是上游知识库。很多高价值信息来自终端贡献：本地智能体、脚本、人工操作者或团队成员把已经过滤、验证、精加工的信息上传到公共工作空间。这些贡献可能是知识，也可能是 Skills、工具、脚本、文件、规则、专家意见或黄金规则。
+
+终端贡献型资产治理是 Workspace Asset Governance 的核心功能。下游智能体在自己可访问的一个或多个 workspace 中提交资产；每个 workspace 都有固定位置存放 `skills`、`tools`、`scripts`、`files`、`knowledge`、`rules` 和 `expert-opinions`。贡献默认进入 review / permission / publish 流程，而不是直接成为公共事实或公共工具。
+
+SplitAll 必须提供贡献排行榜和统计面板：
+
+- 贡献次数。
+- 被审核通过次数。
+- 被使用次数。
+- 被其它 workspace 采用次数。
+- 贡献的 Skills / 工具 / 脚本被调用次数。
+- 被请求授权次数和授权通过次数。
+- 贡献质量、回滚率、风险等级和维护状态。
+
+资产贡献统计报表是管理者视角的核心输出，不只是排行榜。它必须按 workspace、贡献者、资产类型、时间窗口、使用路径、授权状态和风险状态汇总，回答“公共空间到底沉淀了多少可复用资产、谁在贡献、谁在使用、哪些资产产生了团队价值、哪些资产需要治理”。
+
+贡献越多、贡献资产越常被使用、复用质量越高，贡献者在排行榜上越高。其它人或智能体可以请求贡献者或 workspace owner 授予权限，把贡献资产下载、复制或接入给其它智能体使用；所有授权、下载、使用和撤销都必须登记。
+
+### OpenClaw 演示闭环
+
+OpenClaw 文档互通演示用于证明 SplitAll 的生态位：两个本地 OpenClaw 都安装 SplitAll MCP service，但它们不是互相通信，也不是暴露成 Agent 互相调度，而是共同操作同一个公共工作空间。
+
+流程：
+
+1. OpenClaw A 通过 MCP 工具把本地文档提交到目标 workspace。
+2. SplitAll 把文档登记为 `knowledge` 或 `file` 类型贡献资产，落到 `workspace/knowledge/` 或 `workspace/files/`，生成 `contribution.submitted`、上传记录、资产快照和审计记录。
+3. 经过权限、风险、许可和重复性检查后，资产进入 `contribution.published`，并按 workspace 权限决定谁能看、能引用、能复制到上下文、能导出或能 checkout。
+4. OpenClaw B 通过同一个 SplitAll MCP service 查询该 workspace 的资产。
+5. 如果 B 的 subject / agent profile 有授权，SplitAll 返回可下载或可借走的派生视图，并生成 `knowledgeAccessReceipt`、`loanRecord`、`asset.downloaded` 和 `auditId`。
+
+这个场景实现的是文档通过公共工作空间互通，而不是 A 把文件直接发给 B。资产状态、权限状态、快照、借阅和撤销都由 SplitAll 统一治理。
+
+Skill 贡献排行榜演示用于证明终端贡献闭环：
+
+1. OpenClaw A 上传一个 Skill 到 `workspace/skills/`，并设置默认公开权限，例如允许同 workspace 内主体 `read`、`install` 和 `use`。
+2. SplitAll 登记 `skill` 类型贡献，完成扫描和审核后发布到面板和 MCP skill list。
+3. OpenClaw B 在面板上看到该 Skill，或通过 MCP 工具列出可用 Skills。
+4. B 下载、安装或调用该 Skill 时，SplitAll 记录使用事件、借阅记录和审计记录。
+5. 初始贡献算法采用使用为主的质量加权口径：每次确认下载、安装或使用都会写 `usageEvent`，但排行榜主分数是 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount`。`acceptedCount` 保留为报表维度，不作为排行榜主导项。
+
+后续可以加入去重、风险降权、失败降权、维护新鲜度和跨 workspace 采用权重；但第一版只要求“被用多少次，贡献值就加多少”，让演示链路先闭环。
+
+### 协议适配不是核心抽象
+
+A2A、MCP、OpenAPI、OpenAI-compatible model endpoint、CLI SDK 都是协议适配层。SplitAll 可以提供这些 adapter，但核心模型不依赖任何一种 agent 协议。
+
+当前优先级：
+
+1. SplitAll MCP service，作为智能体的正式接入面。
+2. Agent-neutral Workspace API，作为协议事实源。
+3. Tool Management / Operation API
+4. Knowledge Evidence API
+5. Context Compiler API
+6. 可选 A2A adapter / OpenAI-compatible model gateway
+
+如果 OpenClaw 作为本地操作手接入，它只是 workspace operator。SplitAll 可以作为它的服务端上游和后端控制面，但不复制 OpenClaw 的消息网关，也不复制外部实现代码。
+
+## 逻辑架构
+
+```text
+Local Operators
+  - OpenClaw / Codex / Claude Code / Cursor Agent / scripts / humans
+  - browser, files, shell, desktop and coding execution
+
+Protocol Adapters
+  - MCP server
+  - Workspace API
+  - Tool Management API
+  - Knowledge Evidence API
+  - Context Compiler API
+  - optional A2A / OpenAI-compatible adapters
+
+SplitAll Core
+  - WorkspaceGateway
+  - OperationLedger
+  - PolicyEngine
+  - SnapshotManager
+  - ArtifactRegistry
+  - ContributionRegistry
+  - SkillLibrary
+  - LeaderboardRuntime
+  - ProposalLedger
+  - EvidenceRuntime
+  - ContextCompiler
+  - AuditStore
+
+Storage and Indexes
+  - metadata/splitall.sqlite
+  - knowledge-core/knowledge.sqlite
+  - raw objects and assets
+  - job snapshots
+  - external knowledge-base adapters
+```
+
+## 代码分层
+
+- `server/platform/common`
+  - 基建层：security、operation-dispatcher、storage、module management、data structure、devops、console API 基础设施。
+- `server/platform/interactive`
+  - 服务层装配：composition root、provider registry、feature profile、runtime providers、public call surface。
+- `server/platform/specialized`
+  - 应用能力层：knowledge、agent workspace/context/memory、capabilities/tools、capabilities/skills。
+- `server/platform/modules`
+  - 外置模块和本地运行时资源，例如 Tika、OCR、document parser、可替换 mount runtime。
+- `server/services`
+  - 产品入口：HTTP server、client service、agent-facing service wiring。
+- `server-web`
+  - Vue 控制台，只消费公开 API，不引用后端内部实现。
+- `client-cli`
+  - Rust 本地执行层与 CLI sidecar，负责本机文件、上传、mirror、connector、checkpoint、导出和系统适配。
+- `client-gui`
+  - Flutter 展示层和跨平台交互层，不能成为业务执行层。
+
+## 公共状态模型
+
+Workspace state 由以下对象构成：
+
+- `tasks`：任务、接力、状态机。
+- `assets`：原始资产、派生产物、外部引用、版本。
+- `evidence`：可引用证据包、来源、定位、置信度、权限范围。
+- `artifacts`：智能体或人工操作产生的文件、报告、patch、导出物。
+- `observations`：operator 声称观察到的事实，不自动成为 canonical fact。
+- `proposals`：对公共状态的修改建议。
+- `decisions`：经策略、人审或授权流程确认的团队事实。
+- `memory`：运行时辅助记忆，可被加载和压缩，但不等于 evidence。
+- `audit events`：接口调用、策略裁决、状态变更、模型调用和工具执行记录。
+
+## 写入路径
+
+公共状态变更必须走受控流程：
+
+```text
+operator intent
+  -> policy check
+  -> idempotency check
+  -> dry-run / diff
+  -> proposal or operation
+  -> snapshot boundary
+  -> apply
+  -> audit event
+  -> recoverable state
+```
+
+默认写操作是 append-only。任何会改变 canonical workspace 的操作都必须具备：
+
+- `workspaceId`
+- `subject`
+- `agentId` 或 operator id
+- `taskId` 或 operation scope
+- `idempotencyKey`
+- `policyDecision`
+- `preSnapshot`
+- `operationDiff`
+- `postStateRef`
+- `auditId`
+
+Checkpoint Tree 必须升级为统一 Checkpoint Tree，而不是只服务任务、队列或文件删除。所有进入公共空间边界的行为都要成为 checkpoint node：
+
+- 所有访问请求：workspace info/list、catalog discover、metadata read、permission check、search、evidence read、asset list/read/download、skill list/download、receipt list、audit query、operation history、checkpoint tree list、restore preview、context bundle、export、checkout、memory write。
+- 所有文件变动：create、update、move、delete、archive、restore。
+- 所有知识贡献：submit、scan、review、publish、adopt、revoke。
+- 所有技能调用：list、download、install、execute、usage report、revoke。
+- 所有权限裁决：grant、deny、permission request、authorizationOverlay change。
+- 所有恢复动作：restore preview、restore、revert operation scope、branch、merge。
+
+读请求看似不改变文件，但会改变公共空间的治理状态：它会产生 access receipt、loan record、usage event、denied request audit、贡献统计和模型上下文暴露记录。因此读请求也必须全量进入统一 Checkpoint Tree。第一版不允许把普通 list / discover / metadata / permission check 只放进接口日志；它们也要形成轻量 checkpoint node。否则系统只能恢复文件，不能回答“智能体到底看过什么目录、知道过什么、借走过什么、调用过什么、被拒绝过什么”。
+
+全量入树只针对外部可见请求边界。同一次请求内部为了构造响应而读取 Ledger、AuditStore、CheckpointTree 或 projection 的系统内部读，不递归生成新的 checkpoint node。
+
+统一 Checkpoint Tree 的节点必须至少携带：
+
+- `checkpointNodeId`
+- `parentNodeIds`
+- `workspaceId`
+- `subject`
+- `operatorId`
+- `agentProfile`
+- `eventKind`
+- `effectKind`：read、write、execute、permission、restore、deny、report。
+- `targetRefs`
+- `policyDecision`
+- `stateDelta`
+- `receiptRefs`
+- `auditId`
+- `createdAt`
+
+只有这样，智能体即使在公共空间里乱删、乱读、乱试权限、乱调用技能，系统也能按树回放、定位、解释、回撤和恢复。
+
+安全恢复演示必须证明：即使 A 把工作空间里的很多文件逐个删除，团队也不需要慌。A 的每次删除都只是一个带 `preSnapshot` / `postSnapshot` 的 workspace commit，所有 commit 形成 Checkpoint Tree。管理员在管控台打开 Checkpoint Tree 历史，下滑找到 A 操作之前的节点，点击“恢复到此节点”，系统创建一次新的 restore operation，把 workspace 回到该节点对应的状态，同时保留 A 的删除历史、恢复记录和审计链。
+
+这个模型可以复用 git worktree 的思想和部分系统能力：tree object、diff、commit graph、checkout-like restore、临时 worktree 预览和 merge / branch 语义都很适合。但 SplitAll 的权威状态不只是文件树，还包含权限、知识 evidence、贡献记录、借阅记录、operation ledger 和审计，因此恢复入口必须是 SplitAll 的 Checkpoint Tree / Operation Ledger，而不是让智能体直接操作裸 git 仓库。
+
+## 知识位置
+
+知识不是独立资产仓库，而是公共工作空间可用状态的一部分。SplitAll 的知识能力负责把资产型资料转成智能体可安全引用的 evidence runtime。
+
+知识分三层：
+
+1. `raw-corpus-construction`：原始语料建构和格式转换。
+2. `knowledge-index-construction`：canonical evidence/index，权威检索和证据回读。
+3. `knowledge-distillation`：有损蒸馏背景，只供上下文和交付使用，不能替代 evidence。
+
+详见 `docs/KNOWLEDGE-GOVERNANCE.md`。
+
+## 智能体接入边界
+
+本地智能体可以：
+
+- 读取 workspace context
+- 领取或创建 task
+- 搜索 evidence
+- 读取受控 memory
+- 上传 artifact
+- 提交 observation
+- 创建 proposal
+- 请求 permission
+- 回传 trace
+- 请求 context compression
+
+本地智能体不能：
+
+- 直接覆盖 canonical evidence
+- 直接改写 decision
+- 绕过 policy 读取敏感 source
+- 绕过 operation ledger 修改资产
+- 把私有 memory 当作公共事实
+- 用裸数据库路径替代公开 API
+
+## 上游和后端定位
+
+如果和 OpenClaw 配合，SplitAll 是服务端上游：
+
+- SplitAll 下发任务、上下文、证据、权限和输出契约。
+- OpenClaw 在本地执行浏览器、文件、桌面、shell 和通用任务。
+- OpenClaw 回传 observation、artifact、trace 和 proposal。
+- SplitAll 验收结果、生成快照、维护 evidence 和 audit。
+
+这个形态也适用于其它本地智能体。SplitAll 不关心对方是什么 agent，只关心它是否遵守 Workspace API 和资产治理协议。
+
+## 验证入口
+
+架构相关变更至少运行：
+
+```bash
+npm run server:verify:architecture-patterns
+npm run server:verify:knowledge-architecture-governance
+npm run server:verify:platform-layout
+npm run server:verify:tool-management
+npm run server:verify:agent-workspace
+```

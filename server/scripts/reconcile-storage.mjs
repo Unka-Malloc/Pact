@@ -4,7 +4,7 @@ import { reconcileStorage } from "../platform/common/storage/ops-tools.mjs";
 
 function parseArgs(argv) {
   const args = {
-    userDataPath: path.resolve(process.cwd(), "build/server-data"),
+    userDataPath: path.resolve(process.cwd(), ".splitall-server-data"),
     apply: false,
     pruneOrphanObjects: false
   };

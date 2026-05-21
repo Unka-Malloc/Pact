@@ -2,7 +2,7 @@ import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { createConsoleAuth } from "../platform/common/platform-core/auth/console-auth.mjs";
+import { createConsoleAuth } from "../platform/common/security/auth/console-auth.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,7 +40,7 @@ Usage:
   npm run server:auth -- disable --username USER
 
 Options:
-  --data-dir PATH        Defaults to build/server-data
+  --data-dir PATH        Defaults to .splitall-server-data
   --username USER
   --user-id USER_ID
   --display-name NAME
@@ -71,7 +71,7 @@ async function main() {
   }
 
   const userDataPath = path.resolve(
-    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, "build", "server-data"))
+    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, ".splitall-server-data"))
   );
   const auth = createConsoleAuth({ userDataPath });
 

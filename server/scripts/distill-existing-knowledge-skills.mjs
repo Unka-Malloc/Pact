@@ -250,7 +250,7 @@ function rankCategories({ rows, taxonomy, minDocuments }) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const userDataPath = path.resolve(
-    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, "build", "server-data"))
+    String(args["data-dir"] || process.env.SPLITALL_SERVER_DATA_DIR || path.join(projectRoot, ".splitall-server-data"))
   );
   const maxDocuments = Math.floor(clampNumber(args["max-documents"], 20000, 1, 200000));
   const topicLimit = Math.floor(clampNumber(args.limit, 16, 1, 100));

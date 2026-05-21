@@ -14,6 +14,7 @@ __pycache__/
 .env.local
 .env.*.local
 .venv/
+.venv-pdf/
 .venv-paddleocr/
 
 # Logs / crash dumps
@@ -23,6 +24,7 @@ replay_pid*
 crash-*
 
 # App local data and generated workspace outputs
+.splitall-server-data/
 /build/*
 !/build/
 !/build/README.md

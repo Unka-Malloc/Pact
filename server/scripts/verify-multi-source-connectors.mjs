@@ -14,6 +14,76 @@ import {
 } from "../platform/common/storage/raw-object-store.mjs";
 
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-multi-source-"));
+const PORTABLE_DOCUMENT_FORBIDDEN_KEYS = new Set([
+  "evidenceRefs",
+  "evidenceId",
+  "documentId",
+  "assetId",
+  "sourceId",
+  "batchId",
+  "syncBatchId",
+  "sourceKey"
+]);
+
+function forbiddenPortablePaths(value, pathParts = []) {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => forbiddenPortablePaths(entry, [...pathParts, String(index)]));
+  }
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, entry]) => {
+    const nextPath = [...pathParts, key];
+    return [
+      ...(PORTABLE_DOCUMENT_FORBIDDEN_KEYS.has(key) ? [nextPath.join(".")] : []),
+      ...forbiddenPortablePaths(entry, nextPath)
+    ];
+  });
+}
+
+function assertPortableDocument(document) {
+  assert.equal(document?.protocolVersion, "portable.knowledge-distillation.v1");
+  assert.equal(document?.selfContained, true);
+  assert.deepEqual(document?.runtimeDependencies, []);
+  assert.ok(document?.contentBlocks?.length >= 2);
+  assert.ok(document.contentBlocks.every((block, index) => block.order === index + 1));
+  assert.ok(String(document.markdown || "").includes(document.title));
+  assert.deepEqual(forbiddenPortablePaths(document), []);
+}
+
+const modelDecisionRuntime = {
+  async decide(input = {}) {
+    const payload = input.input || {};
+    if (input.roleId === "topic_cluster_namer") {
+      return {
+        roleId: input.roleId,
+        usedModel: true,
+        decision: { title: "3 月账单" },
+        audit: { modelAlias: input.modelAlias || "", testDouble: true }
+      };
+    }
+    if (input.roleId === "knowledge_skill_distiller") {
+      return {
+        roleId: input.roleId,
+        usedModel: true,
+        decision: {
+          skill: {
+            ...(payload.fallbackSkill || {}),
+            title: "3 月账单蒸馏知识",
+            summary: "模型闭环把多来源 3 月账单材料蒸馏为可复用知识。"
+          }
+        },
+        audit: { modelAlias: input.modelAlias || "", testDouble: true }
+      };
+    }
+    return {
+      roleId: input.roleId || "unknown",
+      usedModel: true,
+      decision: { verdict: "needs_human_review" },
+      audit: { modelAlias: input.modelAlias || "", testDouble: true }
+    };
+  }
+};
 
 try {
   const originalBytes = Buffer.from("3 月账单原始文件，不允许服务端追加检索字段。\n", "utf8");
@@ -201,7 +271,8 @@ try {
         runtime,
         knowledgeSkillRuntime,
         goldenRuleRuntime,
-        evidenceGate: createEvidenceSufficiencyGate()
+        evidenceGate: createEvidenceSufficiencyGate(),
+        modelDecisionRuntime
       });
       const distillation = await distillationRuntime.runDistillation({
         query: "3 月账单",
@@ -209,7 +280,8 @@ try {
         minEvidence: 1,
         minSources: 1,
         requireHierarchy: false,
-        semanticSupportRequired: false
+        semanticSupportRequired: false,
+        modelEnabled: true
       });
       assert.equal(distillation.status, "completed");
       assert.ok(distillation.candidates.length >= 1);
@@ -235,6 +307,8 @@ try {
             relation.citations?.length >= 1 &&
             relation.sourceTrace?.sourceCount >= 1
         ));
+        assertPortableDocument(candidate.portableDocument);
+        assertPortableDocument(candidate.distilledOutputs?.portableDocument);
         assert.equal(candidate.qualityReportV2.distilledOutputs.passed, true);
         assert.ok(candidate.skill?.skill?.sourceTrace?.sourceCount >= 1);
       }

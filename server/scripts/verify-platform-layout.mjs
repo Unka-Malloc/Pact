@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 import { FEATURE_MANIFEST } from "../platform/interactive/features/feature-manifest.mjs";
 import { createPlatformRegistry } from "../platform/interactive/platform-registry.mjs";
 import { registerCorePlatformServices } from "../platform/common/platform-core/register.mjs";
-import { registerModulePlatformServices } from "../platform/common/module-manager/register.mjs";
+import { registerSecurityPlatformServices } from "../platform/common/security/register.mjs";
+import { registerDataStructurePlatformServices } from "../platform/common/data-structure/register.mjs";
+import { registerModuleManagementPlatformServices } from "../platform/common/module-manager/register.mjs";
 import { registerStoragePlatformServices } from "../platform/common/storage/register.mjs";
-import { registerOpsPlatformServices } from "../platform/common/devops/register.mjs";
+import { registerDevopsPlatformServices } from "../platform/common/devops/register.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -22,9 +24,12 @@ const allowedServerDirectories = new Set([
 const requiredPaths = [
   "server/platform/common/platform-core",
   "server/platform/common/platform-core/settings.mjs",
+  "server/platform/common/security",
+  "server/platform/common/security/register.mjs",
   "server/platform/common/operation-dispatcher",
   "server/platform/common/console",
   "server/platform/common/data-structure",
+  "server/platform/common/data-structure/register.mjs",
   "server/services/server-runtime/http-server.mjs",
   "server/platform/common/observability",
   "server/platform/common/storage",
@@ -35,10 +40,11 @@ const requiredPaths = [
   "server/platform/modules/agent",
   "server/platform/specialized/agent/agent-configs",
   "server/platform/specialized/agent/agent-memory",
-  "server/platform/specialized/agent/agent-tools",
   "server/platform/specialized/agent/agent-gateway",
   "server/platform/specialized/agent/agent-context",
   "server/platform/specialized/agent/agent-workspace",
+  "server/platform/specialized/capabilities/tools",
+  "server/platform/specialized/capabilities/skills",
   "server/platform/specialized/knowledge",
   "server/platform/specialized/knowledge/preprocessing",
   "server/platform/specialized/knowledge/storage",
@@ -51,10 +57,12 @@ const requiredPaths = [
   "server/platform/interactive/platform-registry.mjs",
   "server/platform/interactive/product-api.mjs",
   "server/platform/common/platform-core/register.mjs",
+  "server/platform/common/security/register.mjs",
+  "server/platform/common/data-structure/register.mjs",
   "server/platform/common/storage/register.mjs",
   "server/platform/common/module-manager/register.mjs",
   "server/platform/common/devops/register.mjs",
-  "server/platform/specialized/agent/agent-tools/tool-management-core",
+  "server/platform/specialized/capabilities/tools/tool-management-core",
   "server/services/client/client-runtime-core",
   "server/services/client/work-queue-core"
 ];
@@ -77,11 +85,15 @@ const retiredPlatformRoots = [
   "server/platform/storage",
   "server/platform/ops",
   "server/platform/common/core-platform",
+  "server/platform/common/platform-core/auth",
+  "server/platform/common/platform-core/security",
   "server/platform/common/console-shell",
   "server/platform/common/ops",
   "server/platform/common/chunking",
   "server/platform/common/storage-core",
   "server/platform/common/mount-manager-core",
+  "server/platform/specialized/agent/agent-tools",
+  "server/platform/specialized/agent/agent-skills",
   "server/products",
   "server/application",
   "server/features",
@@ -179,8 +191,6 @@ function isNonInteractivePlatformPath(absolutePath) {
 async function assertInteractiveRegistrations() {
   const registry = createPlatformRegistry({ scope: "verify-platform-layout" });
   registerCorePlatformServices(registry, {
-    consoleAuth: {},
-    operationAuditStore: {},
     protocolEventBus: {},
     runtimeLogger: {},
     featureRuntime: {},
@@ -193,7 +203,7 @@ async function assertInteractiveRegistrations() {
     },
     userDataPath: "verify-data"
   });
-  registerModulePlatformServices(registry, {
+  registerModuleManagementPlatformServices(registry, {
     runtime: {
       mounts: {
         documentParser: {},
@@ -204,22 +214,28 @@ async function assertInteractiveRegistrations() {
       profile: "verify"
     }
   });
-  registerOpsPlatformServices(registry, { userDataPath: "verify-data" });
+  registerSecurityPlatformServices(registry, {
+    consoleAuth: {},
+    operationAuditStore: {}
+  });
+  registerDataStructurePlatformServices(registry);
+  registerDevopsPlatformServices(registry, { userDataPath: "verify-data" });
 
   const registeredIds = new Set(registry.list().map((entry) => entry.id));
   for (const id of [
-    "core.auth.console",
-    "core.audit.operations",
+    "security.auth.console",
+    "security.audit.operations",
     "core.events.protocol",
     "core.logging.runtime",
     "core.features.runtime",
     "core.operations.concurrencyScope",
+    "data-structure.checkpointTree",
     "storage.metadataStore",
-    "modules.serverRuntime",
-    "modules.mounts",
-    "ops.processStatus.get",
-    "ops.monitorAlerts.state",
-    "ops.unifiedRegistration.normalize"
+    "module-management.serverRuntime",
+    "module-management.mounts",
+    "devops.processStatus.get",
+    "devops.monitorAlerts.state",
+    "devops.unifiedRegistration.normalize"
   ]) {
     assert.equal(registeredIds.has(id), true, `bottom platform interface must be registered: ${id}`);
   }
@@ -230,9 +246,9 @@ async function assertInteractiveRegistrations() {
     "common registrations must be listable by common layer"
   );
   assert.equal(
-    registry.requireInterface("ops.processStatus.get").layer,
+    registry.requireInterface("devops.processStatus.get").layer,
     "common",
-    "ops registrations must live in the common platform layer"
+    "devops registrations must live in the common platform layer"
   );
   assert.throws(
     () => registry.register({ id: "agent.toolManagement", platform: "agent", value: {} }),
@@ -329,18 +345,21 @@ async function main() {
   }
 
   const groups = new Set(FEATURE_MANIFEST.groups);
-  for (const requiredGroup of ["core", "agent", "client", "storage", "modules"]) {
+  for (const requiredGroup of ["core", "security", "module-management", "data-structure", "storage", "devops", "capabilities", "agent", "client"]) {
     assert.equal(groups.has(requiredGroup), true, `feature group ${requiredGroup} must exist`);
   }
-  assert.equal(groups.has("ops"), false, "ops remains a common platform area, not a top-level feature group");
+  assert.equal(groups.has("ops"), false, "ops was renamed to devops");
 
   const featureById = new Map(FEATURE_MANIFEST.features.map((feature) => [feature.featureId, feature]));
   assert.equal(featureById.get("maintenance-agent-runbooks")?.group, "core");
+  assert.equal(featureById.get("security-permissions")?.group, "security");
+  assert.equal(featureById.get("data-structure-core")?.group, "data-structure");
+  assert.equal(featureById.get("devops-core")?.group, "devops");
   assert.equal(featureById.get("agent-memory")?.group, "agent");
-  assert.equal(featureById.get("tool-management-core")?.group, "agent");
+  assert.equal(featureById.get("tool-management-core")?.group, "capabilities");
   assert.equal(featureById.get("work-queue-core")?.group, "client");
   assert.equal(featureById.get("storage-core")?.group, "storage");
-  assert.equal(featureById.get("mount-manager-core")?.group, "modules");
+  assert.equal(featureById.get("module-management-core")?.group, "module-management");
 
   await assertInteractiveRegistrations();
   await assertServerTopLevelDirectories();

@@ -23,11 +23,11 @@ export const INTERACTIVE_INTERFACE_MANIFEST = Object.freeze({
       Object.freeze({ name: "waitForStateIdle", source: "../common/platform-core/state-coordinator.mjs" }),
 
       // Security and path guards
-      Object.freeze({ name: "assertServerToken", source: "../common/platform-core/security/client-strings.mjs" }),
-      Object.freeze({ name: "hashClientString", source: "../common/platform-core/security/client-strings.mjs" }),
-      Object.freeze({ name: "isServerToken", source: "../common/platform-core/security/client-strings.mjs" }),
-      Object.freeze({ name: "resolveWithin", source: "../common/platform-core/security/client-strings.mjs" }),
-      Object.freeze({ name: "serverToken", source: "../common/platform-core/security/client-strings.mjs" }),
+      Object.freeze({ name: "assertServerToken", source: "../common/security/client-strings.mjs" }),
+      Object.freeze({ name: "hashClientString", source: "../common/security/client-strings.mjs" }),
+      Object.freeze({ name: "isServerToken", source: "../common/security/client-strings.mjs" }),
+      Object.freeze({ name: "resolveWithin", source: "../common/security/client-strings.mjs" }),
+      Object.freeze({ name: "serverToken", source: "../common/security/client-strings.mjs" }),
 
       // Console and protocol helpers
       Object.freeze({ name: "sendJson", source: "../common/console/http/http-utils.mjs" }),
@@ -74,6 +74,7 @@ export const INTERACTIVE_INTERFACE_MANIFEST = Object.freeze({
       Object.freeze({ name: "removeImportCheckpoint", source: "../common/storage/import-resume-store.mjs" }),
       Object.freeze({ name: "saveImportCheckpointEntry", source: "../common/storage/import-resume-store.mjs" }),
       Object.freeze({ name: "validateImportCheckpointEntry", source: "../common/storage/import-resume-store.mjs" }),
+      Object.freeze({ name: "resolveStoredObjectPath", source: "../common/storage/raw-object-store.mjs" }),
 
       // Operations and status
       Object.freeze({ name: "dispatchOperation", source: "../common/operation-dispatcher/operation-dispatcher.mjs" }),
@@ -97,21 +98,22 @@ export const INTERACTIVE_INTERFACE_MANIFEST = Object.freeze({
   platformRegistry: Object.freeze({
     module: "server/platform/interactive/platform-registry.mjs",
     interfaces: Object.freeze([
-      Object.freeze({ id: "core.auth.console", platform: "core", source: "../common/platform-core/register.mjs" }),
-      Object.freeze({ id: "core.audit.operations", platform: "core", source: "../common/platform-core/register.mjs" }),
+      Object.freeze({ id: "security.auth.console", platform: "security", source: "../common/security/register.mjs" }),
+      Object.freeze({ id: "security.audit.operations", platform: "security", source: "../common/security/register.mjs" }),
       Object.freeze({ id: "core.events.protocol", platform: "core", source: "../common/platform-core/register.mjs" }),
       Object.freeze({ id: "core.logging.runtime", platform: "core", source: "../common/platform-core/register.mjs" }),
       Object.freeze({ id: "core.features.runtime", platform: "core", source: "../common/platform-core/register.mjs" }),
       Object.freeze({ id: "core.operations.concurrencyScope", platform: "core", source: "../common/platform-core/register.mjs" }),
+      Object.freeze({ id: "data-structure.checkpointTree", platform: "data-structure", source: "../common/data-structure/register.mjs" }),
       Object.freeze({ id: "storage.metadataStore", platform: "storage", source: "../common/storage/register.mjs" }),
-      Object.freeze({ id: "modules.serverRuntime", platform: "modules", source: "../common/module-manager/register.mjs" }),
-      Object.freeze({ id: "modules.mounts", platform: "modules", source: "../common/module-manager/register.mjs" }),
-      Object.freeze({ id: "ops.processStatus.get", platform: "ops", source: "../common/devops/register.mjs" }),
-      Object.freeze({ id: "ops.monitorAlerts.state", platform: "ops", source: "../common/devops/register.mjs" }),
-      Object.freeze({ id: "ops.monitorAlerts.runCycle", platform: "ops", source: "../common/devops/register.mjs" }),
-      Object.freeze({ id: "ops.monitorAlerts.acknowledge", platform: "ops", source: "../common/devops/register.mjs" }),
-      Object.freeze({ id: "ops.unifiedRegistration.normalize", platform: "ops", source: "../common/devops/register.mjs" }),
-      Object.freeze({ id: "ops.unifiedRegistration.composeStatus", platform: "ops", source: "../common/devops/register.mjs" })
+      Object.freeze({ id: "module-management.serverRuntime", platform: "module-management", source: "../common/module-manager/register.mjs" }),
+      Object.freeze({ id: "module-management.mounts", platform: "module-management", source: "../common/module-manager/register.mjs" }),
+      Object.freeze({ id: "devops.processStatus.get", platform: "devops", source: "../common/devops/register.mjs" }),
+      Object.freeze({ id: "devops.monitorAlerts.state", platform: "devops", source: "../common/devops/register.mjs" }),
+      Object.freeze({ id: "devops.monitorAlerts.runCycle", platform: "devops", source: "../common/devops/register.mjs" }),
+      Object.freeze({ id: "devops.monitorAlerts.acknowledge", platform: "devops", source: "../common/devops/register.mjs" }),
+      Object.freeze({ id: "devops.unifiedRegistration.normalize", platform: "devops", source: "../common/devops/register.mjs" }),
+      Object.freeze({ id: "devops.unifiedRegistration.composeStatus", platform: "devops", source: "../common/devops/register.mjs" })
     ])
   })
 });

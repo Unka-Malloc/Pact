@@ -2,6 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useConsole } from '../composables/useConsole';
 import { ConfigFoldCard, OptionBar, StatusPill } from '../components/common';
+import HistorySessionPanel from '../components/HistorySessionPanel.vue';
+import type { HistorySessionPanelItem } from '../types/app';
 
 const { busyKey: globalBusyKey, formatCompactDate, isAuthenticated } = useConsole();
 const localBusyKey = ref('');
@@ -30,6 +32,7 @@ interface WsWorkspace {
     runCount: number;
     artifactCount: number;
     openIssueCount: number;
+    sessionCount?: number;
   };
 }
 
@@ -45,12 +48,56 @@ interface WsContext {
   modelAlias: string;
 }
 
+interface WsSessionEvent {
+  eventId: string;
+  sequence: number;
+  type: string;
+  title: string;
+  summary: string;
+  createdAt: string;
+}
+
+interface WsSession {
+  sessionId: string;
+  workspaceId: string;
+  title: string;
+  objective: string;
+  status: string;
+  parentSessionId: string;
+  forkedFromEventId: string;
+  branchIndex: number;
+  eventCount: number;
+  lastEventId: string;
+  appendOnly: boolean;
+  updatedAt: string;
+  workspace?: { workspaceId: string; title: string; currentGeneration: number };
+  lastEvent?: WsSessionEvent | null;
+}
+
+interface WsSessionDetail {
+  session: WsSession;
+  events: WsSessionEvent[];
+}
+
+interface WsSessionContext extends WsContext {
+  agentSessionId: string;
+  sessionTitle: string;
+  parentSessionId: string;
+  forkedFromEventId: string;
+  sessionEventCount: number;
+  sessionAppendOnly: boolean;
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const workspaces        = ref<WsWorkspace[]>([]);
+const sessions          = ref<WsSession[]>([]);
 const selectedId        = ref('');
+const selectedSessionId = ref('');
+const selectedSession   = ref<WsSessionDetail | null>(null);
 const chainData         = ref<{ chain: WsChainItem[]; resolvedSourceIds: string[]; resolvedProfile: object } | null>(null);
 const contextData       = ref<WsContext | null>(null);
+const sessionContextData = ref<WsSessionContext | null>(null);
 const localError        = ref('');
 const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share'>('list');
 
@@ -65,6 +112,24 @@ const selected = computed(() => workspaces.value.find(w => w.workspaceId === sel
 
 const workspaceOptions = computed(() =>
   workspaces.value.map(w => ({ value: w.workspaceId, label: w.title || w.workspaceId.slice(0, 12) }))
+);
+
+const sessionItems = computed<HistorySessionPanelItem[]>(() =>
+  sessions.value.map(session => ({
+    id: session.sessionId,
+    title: session.title || session.sessionId.slice(0, 12),
+    meta: [
+      session.workspace?.title || session.workspaceId.slice(0, 12),
+      `${session.eventCount || 0} 事件`,
+      session.parentSessionId ? `分支 ${session.branchIndex || 1}` : '主线',
+      formatCompactDate(session.updatedAt)
+    ].filter(Boolean).join(' · '),
+    preview: session.lastEvent?.summary || session.objective || '暂无会话事件',
+    active: selectedSessionId.value === session.sessionId,
+    disabled: !!busyKey.value,
+    actionLabel: '分叉',
+    actionAriaLabel: `从 ${session.title || session.sessionId} 分叉`
+  }))
 );
 
 function statusTone(status: string) {
@@ -88,8 +153,12 @@ async function load() {
   setBusy('ws:load');
   localError.value = '';
   try {
-    const data = await apiFetch('/api/agent-workspaces?includeSummary=true');
-    workspaces.value = data.workspaces ?? [];
+    const [workspaceData, sessionData] = await Promise.all([
+      apiFetch('/api/agent-workspaces?includeSummary=true'),
+      apiFetch('/api/agent-sessions?limit=100&includeLastEvent=true'),
+    ]);
+    workspaces.value = workspaceData.workspaces ?? [];
+    sessions.value = sessionData.sessions ?? [];
   } catch (e: any) { localError.value = e.message; }
   finally { clearBusy(); }
 }
@@ -107,6 +176,42 @@ async function loadChain(id: string) {
 }
 
 watch(selectedId, (id) => { if (id) loadChain(id); });
+
+async function selectSession(id: string) {
+  if (!id) return;
+  setBusy('ws:session');
+  localError.value = '';
+  try {
+    const [sessionData, context] = await Promise.all([
+      apiFetch(`/api/agent-sessions/${encodeURIComponent(id)}?includeEvents=true&eventLimit=200`),
+      apiFetch(`/api/agent-sessions/${encodeURIComponent(id)}/context`),
+    ]);
+    selectedSessionId.value = id;
+    selectedSession.value = sessionData;
+    sessionContextData.value = context;
+    if (context.workspaceId && selectedId.value !== context.workspaceId) {
+      selectedId.value = context.workspaceId;
+    }
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function forkSession(id: string) {
+  if (!id) return;
+  setBusy('ws:fork');
+  localError.value = '';
+  try {
+    const result = await apiFetch(`/api/agent-sessions/${encodeURIComponent(id)}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    await load();
+    if (result.session?.sessionId) {
+      await selectSession(result.session.sessionId);
+    }
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
 
 async function createWorkspace() {
   setBusy('ws:create');
@@ -222,6 +327,16 @@ load();
       </div>
     </div>
 
+    <HistorySessionPanel
+      :items="sessionItems"
+      title="会话线程"
+      :subtitle="sessions.length ? `${sessions.length} 个可继续会话` : '暂无会话'"
+      max-height="260px"
+      open
+      @select="selectSession"
+      @action="forkSession"
+    />
+
     <!-- ─── Two-column layout ────────────────────────────────────────── -->
     <div class="ws-layout">
 
@@ -249,6 +364,7 @@ load();
           <div class="ws-card-meta">
             <span>Gen {{ ws.currentGeneration }}</span>
             <span>{{ ws.ownedSourceIds.length }} 个知识源</span>
+            <span>{{ ws.summary?.sessionCount ?? 0 }} 个会话</span>
             <span v-if="ws.accessibleWorkspaceIds.length">+ {{ ws.accessibleWorkspaceIds.length }} 共享</span>
             <span>{{ formatCompactDate(ws.updatedAt) }}</span>
           </div>
@@ -427,6 +543,26 @@ load();
             </section>
 
             <!-- 解析后的运行上下文（给智能体用的） -->
+            <ConfigFoldCard v-if="sessionContextData && selectedSession" title="当前会话线程（切换工作状态）">
+              <dl class="meta-list">
+                <div><dt>会话 ID</dt><dd><code>{{ sessionContextData.agentSessionId }}</code></dd></div>
+                <div><dt>事件数量</dt><dd>{{ sessionContextData.sessionEventCount }} 个</dd></div>
+                <div><dt>父会话</dt><dd>{{ sessionContextData.parentSessionId || '（主线会话）' }}</dd></div>
+                <div><dt>分叉事件</dt><dd>{{ sessionContextData.forkedFromEventId || '（无）' }}</dd></div>
+              </dl>
+              <div v-if="selectedSession.events.length" class="ws-session-events">
+                <div
+                  v-for="event in selectedSession.events.slice(-6)"
+                  :key="event.eventId"
+                  class="ws-session-event"
+                >
+                  <span>#{{ event.sequence }}</span>
+                  <strong>{{ event.title || event.type }}</strong>
+                  <small>{{ formatCompactDate(event.createdAt) }}</small>
+                </div>
+              </div>
+            </ConfigFoldCard>
+
             <ConfigFoldCard v-if="contextData" title="解析后的运行上下文（智能体可直接使用）">
               <dl class="meta-list">
                 <div><dt>知识源数量</dt><dd>{{ contextData.knowledgeSourceIds.length }} 个</dd></div>
@@ -502,6 +638,39 @@ load();
 .ws-chain-item { display: flex; align-items: center; gap: 4px; }
 .ws-chain-item.is-current { font-weight: 600; color: var(--accent); }
 .ws-chain-arrow { color: var(--text-secondary); }
+
+.ws-session-events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.ws-session-event {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--bg-subtle);
+  font-size: var(--text-sm);
+}
+
+.ws-session-event strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-session-event span,
+.ws-session-event small {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
 
 .ws-id-list { list-style: none; padding: 0; margin: var(--space-1) 0; font-size: 0.8rem; display: flex; flex-direction: column; gap: var(--space-1); }
 .ws-id-list li { display: flex; align-items: center; gap: var(--space-2); }

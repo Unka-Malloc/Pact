@@ -5,7 +5,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { createAgentWorkspace } from "../platform/specialized/agent/agent-workspace/index.mjs";
 import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
-import { createAgentExplorationRuntime } from "../platform/specialized/agent/agent-tools/agent-exploration-runtime/index.mjs";
+import { createAgentExplorationRuntime } from "../platform/specialized/capabilities/tools/agent-exploration-runtime/index.mjs";
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-agent-explore-"));
 const toolServer = await new Promise((resolve, reject) => {

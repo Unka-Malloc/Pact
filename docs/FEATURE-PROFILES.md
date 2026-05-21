@@ -6,18 +6,20 @@ Feature profiles are defined in `server/platform/interactive/features/feature-ma
 
 | Boundary | Server directory |
 | --- | --- |
-| common/core | `server/platform/common/platform-core` |
-| common/dispatcher | `server/platform/common/operation-dispatcher` |
-| common/console | `server/platform/common/console` |
-| common/data-structure | `server/platform/common/data-structure` |
-| common/observability | `server/platform/common/observability` |
-| common/storage | `server/platform/common/storage` |
-| common/modules | `server/platform/common/module-manager` |
-| common/devops | `server/platform/common/devops` |
-| interactive | `server/platform/interactive` |
+| foundation/core | `server/platform/common/platform-core` |
+| foundation/security | `server/platform/common/security` |
+| foundation/module-management | `server/platform/common/module-manager` |
+| foundation/data-structure | `server/platform/common/data-structure` |
+| foundation/storage | `server/platform/common/storage` |
+| foundation/devops | `server/platform/common/devops` |
+| service/interface-wrapper | `server/platform/common/operation-dispatcher` |
+| service/console-api | `server/platform/common/console` |
+| service/runtime-assembly | `server/platform/interactive` |
 | service/agent | `server/services/agent` |
 | service/client | `server/services/client` |
 | specialized/agent | `server/platform/specialized/agent` |
+| specialized/capabilities/tools | `server/platform/specialized/capabilities/tools` |
+| specialized/capabilities/skills | `server/platform/specialized/capabilities/skills` |
 | specialized/knowledge | `server/platform/specialized/knowledge` |
 | specialized/knowledge/preprocessing/chunking | `server/platform/specialized/knowledge/preprocessing/chunking` |
 | specialized/knowledge/preprocessing/domain | `server/platform/specialized/knowledge/preprocessing/domain` |

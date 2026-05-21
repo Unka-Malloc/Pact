@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
-import { createOperationAuditStore } from "../platform/common/platform-core/security/operation-audit.mjs";
+import { createOperationAuditStore } from "../platform/common/security/operation-audit.mjs";
 import { authHeaders, installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -63,7 +63,7 @@ async function assertStaticDispatcherGuard() {
   );
 
   const toolRuntime = await readText(
-    path.join(repoRoot, "server", "platform", "specialized", "agent", "agent-tools", "tool-management-core", "runtime.mjs")
+    path.join(repoRoot, "server", "platform", "specialized", "capabilities", "tools", "tool-management-core", "runtime.mjs")
   );
   assert.equal(toolRuntime.includes("dispatchOperation({"), true);
   assert.equal(toolRuntime.includes("invokeRegisteredOperation"), false);

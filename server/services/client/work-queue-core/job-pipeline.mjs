@@ -1,5 +1,5 @@
 import {
-  createKnowledgePipeline,
+  createDocumentParsingRuntime,
   listAvailableAnalysisModules,
   loadEmailRules,
   loadKnowledgeFileProcessorRuntime,
@@ -60,7 +60,8 @@ function serializeSourceFilesForClient(sources) {
     rawObjectByteSize: source.rawObject?.byteSize || source.originalByteSize || 0,
     documentParserId: source.documentParserId || "",
     documentMetadata: source.documentMetadata || {},
-    embeddedDocuments: source.embeddedDocuments || []
+    embeddedDocuments: source.embeddedDocuments || [],
+    visualElements: source.visualElements || []
   }));
 }
 
@@ -111,7 +112,7 @@ function createInitialContext({
 }
 
 export function createJobPipeline({ userDataPath, payload, runtime, reportProgress, jobId, generatedAt }) {
-  const pipeline = createKnowledgePipeline();
+  const documentParsingRuntime = createDocumentParsingRuntime();
   const archiveBatchIdentity = resolveArchiveBatchIdentity({
     archiveBatchId:
       payload?.checkpointReceipt?.archiveBatchId ||
@@ -206,13 +207,13 @@ export function createJobPipeline({ userDataPath, payload, runtime, reportProgre
 
       context.reportProgress({
         progressPercent: 26,
-        stage: "读取输入邮件"
+        stage: "解析输入文档"
       });
       if (payload.uploadSessionId) {
         context.uploadSessionFiles = await resolveUploadSessionFiles(userDataPath, payload.uploadSessionId);
       }
-      const { readInputSources } = await loadFileProcessorRuntime(context.runtime);
-      const sourceReadResult = await readInputSources({
+      await loadFileProcessorRuntime(context.runtime);
+      const documentParseResult = await documentParsingRuntime.parseDocuments({
         inputText: payload.inputText || "",
         filePaths: Array.isArray(payload.filePaths) ? payload.filePaths : [],
         fileManifestPath: payload.fileManifestPath || payload.knowledgeSource?.fileManifestPath || "",
@@ -231,10 +232,18 @@ export function createJobPipeline({ userDataPath, payload, runtime, reportProgre
         sourceType,
         ...connectorSource,
         runtime: context.runtime,
-        reportProgress: context.reportProgress
+        reportProgress: context.reportProgress,
+        expectedOutput: payload.documentParsing?.expectedOutput || "chunks",
+        pipelineId: payload.documentParsing?.pipelineId || payload.parserPipelineId || "",
+        chunking: payload.documentParsing?.chunking || payload.chunking || {},
+        contextBudget: payload.documentParsing?.contextBudget || payload.contextBudget || {},
+        payloadBudget: payload.documentParsing?.payloadBudget || payload.payloadBudget || {},
+        granularity: payload.documentParsing?.granularity || payload.granularity || {},
+        dynamicParsing: payload.documentParsing?.dynamicParsing || payload.dynamicParsing || {},
+        documentParsing: payload.documentParsing || {}
       });
-      context.sources = sourceReadResult.sources;
-      context.warnings.push(...(sourceReadResult.warnings || []));
+      context.sources = documentParseResult.sources;
+      context.warnings.push(...(documentParseResult.warnings || []));
       context.metadataStore.persistSources({
         batchId: context.archiveBatchId,
         sources: context.sources,
@@ -244,12 +253,9 @@ export function createJobPipeline({ userDataPath, payload, runtime, reportProgre
 
       context.reportProgress({
         progressPercent: 54,
-        stage: "提取正文结构"
+        stage: "正文结构已提取"
       });
-      context.preprocessResult = await pipeline.run(context.sources, {
-        generatedAt,
-        warnings: context.warnings
-      });
+      context.preprocessResult = documentParseResult.preprocessResult;
       context.prepared = context.preprocessResult;
       context.metadataStore.persistPreprocessResult({
         batchId: context.archiveBatchId,

@@ -1,4 +1,11 @@
-const COMMON_PLATFORMS = new Set(["core", "storage", "modules", "ops"]);
+const COMMON_PLATFORMS = new Set([
+  "core",
+  "security",
+  "module-management",
+  "data-structure",
+  "storage",
+  "devops"
+]);
 const PLATFORM_LAYERS = Object.freeze({
   COMMON: "common"
 });

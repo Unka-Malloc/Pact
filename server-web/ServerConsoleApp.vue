@@ -388,9 +388,9 @@ const {
             <span class="url-badge">{{
               consoleState?.server.url || "正在连接服务端…"
             }}</span>
-              <span class="identity-chip">{{
-	              consoleState?.discovery?.value?.mode || "active"
-	            }}</span>
+            <span class="identity-chip">{{
+              consoleState?.discovery?.value?.mode || "active"
+            }}</span>
           </div>
         </div>
 

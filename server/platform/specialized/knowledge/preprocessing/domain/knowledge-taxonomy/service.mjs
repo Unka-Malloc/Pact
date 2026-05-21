@@ -1,4 +1,4 @@
-import { callCodexChatGptJson, getCodexOAuthStatus } from "../../../../../common/platform-core/auth/codex-oauth-service.mjs";
+import { callCodexChatGptJson, getCodexOAuthStatus } from "../../../../../common/security/auth/codex-oauth-service.mjs";
 import { resolveModelForModule } from "../../../../../common/platform-core/settings.mjs";
 import { loadKnowledgeGuidance } from "./index.mjs";
 import {

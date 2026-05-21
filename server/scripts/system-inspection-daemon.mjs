@@ -41,7 +41,7 @@ const projectRoot =
 const dataDir =
   args.dataDir ||
   process.env.SPLITALL_SERVER_DATA_DIR ||
-  path.join(projectRoot, "build", "server-data");
+  path.join(projectRoot, ".splitall-server-data");
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));

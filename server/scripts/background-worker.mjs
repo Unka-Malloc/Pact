@@ -66,7 +66,7 @@ const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
       process.env.SPLITALL_SERVER_DATA_DIR ||
-      path.join(projectRoot, "build", "server-data")
+      path.join(projectRoot, ".splitall-server-data")
   )
 );
 const intervalMs = normalizePositiveInteger(args["interval-ms"], 2500, 500, 60000);

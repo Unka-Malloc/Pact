@@ -2,13 +2,15 @@ import path from "node:path";
 import { resolveFeatureRuntimeFromEnv, filterOperationsForFeatures, publicFeatureRuntime } from "./features/feature-manifest.mjs";
 import { createProtocolEventBus } from "../../protocols/pubsub/event-bus.mjs";
 import { registerCorePlatformServices } from "../common/platform-core/register.mjs";
-import { createConsoleAuth } from "../common/platform-core/auth/console-auth.mjs";
-import { createOperationAuditStore } from "../common/platform-core/security/operation-audit.mjs";
+import { registerDataStructurePlatformServices } from "../common/data-structure/register.mjs";
+import { createConsoleAuth } from "../common/security/auth/console-auth.mjs";
+import { createOperationAuditStore } from "../common/security/operation-audit.mjs";
+import { registerSecurityPlatformServices } from "../common/security/register.mjs";
 import { createServerRuntime } from "../common/module-manager/server-runtime.mjs";
-import { registerModulePlatformServices } from "../common/module-manager/register.mjs";
+import { registerModuleManagementPlatformServices } from "../common/module-manager/register.mjs";
 import { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-registry.mjs";
 import { registerStoragePlatformServices } from "../common/storage/register.mjs";
-import { registerOpsPlatformServices } from "../common/devops/register.mjs";
+import { registerDevopsPlatformServices } from "../common/devops/register.mjs";
 import { createPlatformRegistry } from "./platform-registry.mjs";
 
 export async function createServerCompositionRoot({
@@ -46,18 +48,21 @@ export async function createServerCompositionRoot({
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
 
   registerCorePlatformServices(platformRegistry, {
-    consoleAuth,
-    operationAuditStore,
     protocolEventBus,
     runtimeLogger,
     featureRuntime,
     operationConcurrencyScope
   });
-  registerModulePlatformServices(platformRegistry, {
+  registerSecurityPlatformServices(platformRegistry, {
+    consoleAuth,
+    operationAuditStore
+  });
+  registerModuleManagementPlatformServices(platformRegistry, {
     runtime,
     runtimeOptions: runtimeOptionsWithFeatures
   });
-  registerOpsPlatformServices(platformRegistry, { userDataPath });
+  registerDataStructurePlatformServices(platformRegistry);
+  registerDevopsPlatformServices(platformRegistry, { userDataPath });
   registerStoragePlatformServices(platformRegistry, {
     metadataStore: runtime.metadataStore,
     userDataPath

@@ -11,7 +11,7 @@
  *   node server/scripts/migrate-embeddings.mjs [options]
  *
  * Options:
- *   --data-dir <path>   Path to server data directory  (default: ./build/server-data)
+ *   --data-dir <path>   Path to server data directory  (default: ./.splitall-server-data)
  *   --batch-size <n>    Documents to process per batch (default: 50)
  *   --dry-run           Print what would happen without touching the database
  *   --help              Show this help text
@@ -48,7 +48,7 @@ Usage:
   node server/scripts/migrate-embeddings.mjs [options]
 
 Options:
-  --data-dir <path>   Server data directory (default: ./build/server-data)
+  --data-dir <path>   Server data directory (default: ./.splitall-server-data)
   --batch-size <n>    Rows per reindex batch (default: 50)
   --dry-run           Show what would be done without modifying the database
   --help              Show this help text
@@ -73,7 +73,7 @@ async function main() {
   const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
   const userDataPath = args.dataDir
     ? path.resolve(args.dataDir)
-    : path.join(projectRoot, "build", "server-data");
+    : path.join(projectRoot, ".splitall-server-data");
 
   console.log("migrate-embeddings");
   console.log("  data dir  :", userDataPath);

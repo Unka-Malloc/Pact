@@ -75,7 +75,7 @@ const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
       process.env.SPLITALL_SERVER_DATA_DIR ||
-      path.join(projectRoot, "build", "server-data")
+      path.join(projectRoot, ".splitall-server-data")
   )
 );
 const roles = normalizeBackgroundRoleList(args.roles || args.role);

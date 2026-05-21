@@ -1,29 +1,26 @@
 # SplitAll Server Platform Layout
 
-`server/platform` is the bottom-platform boundary. Product lines live one layer above in `server/services`.
+`server/platform` follows `docs/Architecture.md` as the target boundary. SplitAll is workspace-state-first rather than agent-first: local agents, external knowledge bases, model gateways, tools, and skills are replaceable operators or adapters around the governed workspace asset state.
 
-| Layer | Directory | Responsibility |
-| --- | --- | --- |
-| Common platform | `common/platform-core` | Authentication, settings, security helpers, state mutation coordination. |
-| Common platform | `common/operation-dispatcher` | Public operation registry, decorators, HTTP/RPC/CLI dispatch. |
-| Common platform | `common/console` | Console HTTP facade, utilities, and controllers. |
-| Common platform | `common/data-structure` | Shared durable data structures such as checkpoint trees. |
-| Common platform | `common/observability` | Runtime logger, trace context, and shared log summarization helpers. |
-| Common platform | `common/storage` | Metadata SQLite, raw object store, repositories, storage maintenance tools. |
-| Common platform | `common/module-manager` | Mount configuration, routing, and lazy module loading. |
-| Common platform | `common/devops` | Monitor alerts, process status, and unified registration. |
-| Specialized platform | `specialized/knowledge/preprocessing` | File parsing, normalization, chunking, taxonomy, and stable rule semantics. |
-| Specialized platform | `specialized/knowledge/storage` | KnowledgeCore persistence, source management, and source file indexing. |
-| Specialized platform | `specialized/knowledge/retrieval` | Search services, evidence checks, embedding runtime, vector stores, and learning runtime. |
-| Specialized platform | `specialized/knowledge/invocation` | Knowledge skills, distillation, rule authoring, evolution, and golden-rule runtime. |
-| Interactive layer | `interactive` | Bottom-platform registration API, feature profile resolution, and product-facing call surface. |
+| Target layer | 中文名 | Module id | Current directory | Responsibility |
+| --- | --- | --- | --- | --- |
+| 基建层 | 核心能力 | `core` | `common/platform-core` | Discovery, settings, state coordination, common scheduling. |
+| 基建层 | 安全权限 | `security` | `common/security` | Authentication, authorization, access control helpers, operation audit policy. |
+| 基建层 | 模块管理 | `module-management` | `common/module-manager` | Mount configuration, routing, runtime snapshots, lazy module loading. |
+| 基建层 | 数据结构 | `data-structure` | `common/data-structure` | Shared durable data structures such as checkpoint trees. |
+| 基建层 | 存储 | `storage` | `common/storage` | Metadata SQLite, raw object store, repositories, storage maintenance tools. |
+| 基建层 | 运维基础 | `devops` | `common/devops` | Process status, monitor alerts, unified registration, diagnostics. |
+| 服务层 | 接口封装层 | `interface-wrapper` | `common/operation-dispatcher` | HTTP / RPC / CLI operation registry and dispatch implementation. |
+| 服务层 | 控制台 API | `console-api` | `common/console` | Console API controllers, response helpers, state facade. |
+| 服务层 | 运行时装配 | `runtime-assembly` | `interactive` | Composition root, provider registry, feature profile resolution, product-facing call surface. |
+| 应用层 / Knowledge | Knowledge | `knowledge` | `specialized/knowledge` | Raw corpus, knowledge index, knowledge distillation, and knowledge base mount. |
+| 应用层 / Capabilities | Tools / Skills | `capabilities` | `specialized/capabilities` | Shared tool management, skill management, grants, profiles, audit, and policy. |
+| 应用层 / Agent | Agent | `agent` | `specialized/agent` | Temporary context, team-shared workspace switching, memory, model gateway, config. |
 
 ## Access Rules
 
-Bottom platforms register capabilities through `interactive/platform-registry.mjs`.
-Products call bottom capabilities through `interactive/product-api.mjs` or a runtime registry handle passed by the composition root.
-Developers should check `interactive/interface-manifest.mjs` first and reuse those interfaces before adding new bottom-layer implementations.
+Management UI code calls the service layer only. Service code calls application and foundation capabilities through the runtime assembly / product API surfaces.
 
-`server/services/agent` and `server/services/client` are service lines. They must not import `platform/common` directly; cross-layer calls go through `platform/interactive`.
+Foundation modules do not contain Knowledge or Agent business semantics. Application modules must not register themselves as foundation modules.
 
-The old top-level migration wrapper directories are removed. New code must import the final path.
+Security implementation files live under `common/security`; `common/platform-core` must not contain auth or security submodules.

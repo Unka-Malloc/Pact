@@ -1,7 +1,7 @@
 import {
   callCodexChatGptJson,
   getCodexOAuthStatus
-} from "../../../../common/platform-core/auth/codex-oauth-service.mjs";
+} from "../../../../common/security/auth/codex-oauth-service.mjs";
 import { callAgentGateway } from "../index.mjs";
 
 const DEFAULT_TIMEOUT_MS = 30_000;

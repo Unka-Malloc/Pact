@@ -1,8 +1,20 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_INDUSTRIAL_DISTILLATION_MODEL } from "./industrial-benchmark.mjs";
 
 export const KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION = "splitall.knowledge-distillation.v1";
+export const PORTABLE_DISTILLATION_DOCUMENT_PROTOCOL_VERSION = "portable.knowledge-distillation.v1";
+const PORTABLE_DOCUMENT_FORBIDDEN_KEYS = new Set([
+  "evidenceRefs",
+  "evidenceId",
+  "documentId",
+  "assetId",
+  "sourceId",
+  "batchId",
+  "syncBatchId",
+  "sourceKey"
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -19,6 +31,14 @@ function asObject(value) {
 function normalizeText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeDocumentText(value) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n")
     .trim();
 }
 
@@ -237,12 +257,39 @@ function sourceTraceForItems(items = []) {
 }
 
 function compactEvidenceItem(item = {}, index = 0) {
+  const payload = asObject(item.payload);
   const hierarchy = asObject(item.hierarchy);
   const sourceLocator = normalizeUnifiedSourceLocator(item.sourceLocator || item.source || item.locator || {}, item);
   const evidenceId = normalizeText(item.evidenceId || item.id || "");
   const documentId = normalizeText(item.documentId || item.itemId || hierarchy.documentId || sourceLocator.documentId || "");
   const snippet = normalizeText(item.snippet || item.summary || item.text || "").slice(0, 1400);
   const title = normalizeText(item.title || "");
+  const blocks = asArray(payload.blocks).map((block) => {
+    const blockType = normalizeText(block.blockType || block.type || "");
+    const text = normalizeDocumentText(block.text || block.snippet || "");
+    return {
+      blockType,
+      title: normalizeText(block.title || ""),
+      text: blockType === "raw-corpus-document" ? text : text.slice(0, 4000),
+      position: Number(block.position || 0),
+      metadata: asObject(block.metadata)
+    };
+  });
+  const assets = asArray(item.assets || payload.assets).map((asset) => ({
+    assetType: normalizeText(asset.assetType || asset.type || ""),
+    mediaType: normalizeText(asset.mediaType || asset.mimeType || ""),
+    title: normalizeText(asset.title || ""),
+    caption: normalizeText(asset.caption || ""),
+    ocrText: normalizeText(asset.ocrText || asset.text || ""),
+    altText: normalizeText(asset.altText || asset.title || asset.caption || ""),
+    sha256: normalizeText(asset.sha256 || asset.contentHash || ""),
+    byteSize: Number(asset.byteSize || 0),
+    width: Number(asset.width || 0),
+    height: Number(asset.height || 0),
+    relativePath: normalizeText(asset.relativePath || ""),
+    dataUrl: normalizeText(asset.dataUrl || asset.embeddedDataUrl || ""),
+    sourceLocator: asObject(asset.sourceLocator)
+  }));
   return {
     rank: Number(item.rank || index + 1),
     evidenceId,
@@ -251,12 +298,127 @@ function compactEvidenceItem(item = {}, index = 0) {
     snippet,
     score: Number(item.score || item.finalScore || item.relevanceScore || 0),
     hierarchy: item.hierarchy || null,
+    blocks,
+    assets,
+    markdown: normalizeDocumentText(item.markdown || payload.markdown || "").slice(0, 12000),
     sourceLocator,
     sourceKey: sourceFingerprintForLocator(sourceLocator),
     modalities: asArray(item.modalities),
     reasons: asArray(item.reasons).slice(0, 8),
-    tokens: tokenize([title, snippet, item.summary, item.text].filter(Boolean).join(" "))
+    tokens: tokenize([
+      title,
+      snippet,
+      item.summary,
+      item.text,
+      blocks.map((block) => block.text || block.title).join(" ")
+    ].filter(Boolean).join(" "))
   };
+}
+
+function normalizeRawCorpusDocument(raw = {}, index = 0) {
+  const title = firstText(raw.title, raw.name, raw.originalFileName, raw.sourcePath, `原始语料 ${index + 1}`);
+  const text = normalizeDocumentText(raw.text || raw.extractedText || raw.body || raw.content || raw.markdown || "");
+  const contentHash = firstText(raw.contentHash, raw.sha256, raw.rawObject?.sha256, stableHash(title, text));
+  const sourceLocator = normalizeUnifiedSourceLocator({
+    documentId: raw.documentId || raw.id || raw.sourceRef || "",
+    sourcePath: raw.sourcePath || raw.path || raw.rawObject?.originalRelativePath || "",
+    sourceId: raw.sourceRef || raw.sourceId || raw.id || "",
+    batchId: raw.batchId || "",
+    sourceType: raw.sourceType || raw.kind || "",
+    providerId: raw.providerId || raw.rawObject?.providerId || "",
+    externalId: raw.externalId || raw.rawObject?.externalId || "",
+    syncBatchId: raw.syncBatchId || raw.rawObject?.syncBatchId || "",
+    contentHash,
+    capturedAt: raw.capturedAt || raw.sourceCreatedAt || raw.sourceUpdatedAt || raw.sourceCollectedAt || "",
+    originalFileName: raw.originalFileName || raw.rawObject?.originalFileName || title,
+    fileRef: compactObject({
+      providerId: raw.providerId || raw.rawObject?.providerId || "",
+      externalId: raw.externalId || raw.rawObject?.externalId || "",
+      originalFileName: raw.originalFileName || raw.rawObject?.originalFileName || title,
+      contentHash
+    })
+  }, raw);
+  return compactEvidenceItem({
+    rank: index + 1,
+    evidenceId: raw.evidenceId || stableId("raw_corpus_evidence", raw.batchId || "", raw.sourceRef || raw.id || index, contentHash),
+    documentId: raw.documentId || stableId("raw_corpus_document", raw.batchId || "", raw.sourceRef || raw.id || index, contentHash),
+    title,
+    snippet: text.slice(0, 1400),
+    score: Number(raw.score || 1),
+    payload: {
+      blocks: [
+        {
+          blockType: "raw-corpus-document",
+          title,
+          text,
+          position: Number(raw.order || raw.position || index + 1),
+          metadata: {
+            rawCorpus: true,
+            sourceCreatedAt: raw.sourceCreatedAt || "",
+            sourceUpdatedAt: raw.sourceUpdatedAt || "",
+            sourceCollectedAt: raw.sourceCollectedAt || ""
+          }
+        }
+      ],
+      assets: asArray(raw.assets)
+    },
+    sourceLocator,
+    modalities: [
+      "raw-corpus",
+      text ? "text" : "",
+      asArray(raw.assets).length ? "image" : ""
+    ].filter(Boolean),
+    reasons: [{ kind: "raw-corpus-fulltext", stage: "knowledge-distillation" }],
+    text
+  }, index);
+}
+
+function rawCorpusDocumentsFromInput(input = {}) {
+  const explicit = [
+    ...asArray(input.rawDocuments),
+    ...asArray(input.rawCorpus?.documents),
+    ...asArray(input.rawCorpusDocuments),
+    ...asArray(input.sources)
+  ];
+  return explicit
+    .map(normalizeRawCorpusDocument)
+    .filter((item) => item.title || item.snippet || asArray(item.blocks).some((block) => block.text));
+}
+
+function buildRawCorpusBatches(items = [], maxCharacters = 24000) {
+  const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 24000), 200000));
+  const batches = [];
+  let current = {
+    batchNumber: 1,
+    documentCount: 0,
+    characterCount: 0,
+    sources: []
+  };
+  for (const item of asArray(items)) {
+    const characterCount = asArray(item.blocks).reduce((sum, block) => sum + String(block.text || "").length, 0);
+    if (current.documentCount > 0 && current.characterCount + characterCount > safeMax) {
+      batches.push(current);
+      current = {
+        batchNumber: batches.length + 1,
+        documentCount: 0,
+        characterCount: 0,
+        sources: []
+      };
+    }
+    current.documentCount += 1;
+    current.characterCount += characterCount;
+    current.sources.push(compactObject({
+      title: item.title,
+      sourceType: item.sourceLocator?.sourceType || "",
+      sourcePath: item.sourceLocator?.sourcePath || "",
+      capturedAt: item.sourceLocator?.capturedAt || "",
+      contentHash: item.sourceLocator?.contentHash || ""
+    }));
+  }
+  if (current.documentCount > 0) {
+    batches.push(current);
+  }
+  return batches;
 }
 
 function representativeTerms(items = [], limit = 6) {
@@ -325,6 +487,24 @@ function clusterEvidenceItems(items = [], options = {}) {
     .sort((left, right) => right.items.length - left.items.length || right.score - left.score);
 }
 
+function clusterRawCorpusItems(items = [], query = "") {
+  const corpusItems = asArray(items);
+  const terms = representativeTerms(corpusItems, 12);
+  return [
+    {
+      clusterId: stableId("raw_corpus_cluster", query, corpusItems.map((item) => item.evidenceId || item.title).join("\n")),
+      score: 1,
+      tokens: [...new Set(corpusItems.flatMap((item) => asArray(item.tokens)))].slice(0, 256),
+      documentIds: [...new Set(corpusItems.map((item) => item.documentId).filter(Boolean))],
+      items: corpusItems,
+      label: normalizeText(query || terms.slice(0, 4).map((item) => item.term).join(" ") || "原始语料蒸馏"),
+      terms,
+      evidenceRefs: [...new Set(corpusItems.map((item) => item.evidenceId).filter(Boolean))],
+      sourceTrace: sourceTraceForItems(corpusItems)
+    }
+  ];
+}
+
 async function readJson(filePath, fallback) {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8"));
@@ -352,6 +532,374 @@ function citationsForItems(items = [], limit = 12) {
   return asArray(items).map(citationForItem).filter((item) => item.evidenceId).slice(0, limit);
 }
 
+function sourceOrderForItem(item = {}, index = 0) {
+  const blockPositions = asArray(item.blocks)
+    .map((block) => Number(block.position || 0))
+    .filter((position) => Number.isFinite(position) && position > 0);
+  const range = asObject(item.hierarchy?.sourceRange || item.sourceLocator?.sourceRange);
+  const sourceRangeStart = Number(range.blockStart || range.startLine || range.page || 0);
+  const position = blockPositions.length
+    ? Math.min(...blockPositions)
+    : Number.isFinite(sourceRangeStart) && sourceRangeStart > 0
+      ? sourceRangeStart
+      : Number(item.rank || index + 1);
+  return {
+    capturedAt: normalizeText(item.sourceLocator?.capturedAt || ""),
+    document: normalizeText(item.sourceLocator?.sourcePath || item.title || item.sourceKey || ""),
+    position: Number.isFinite(position) ? position : index + 1,
+    rank: Number(item.rank || index + 1)
+  };
+}
+
+function portableCitationForItem(item = {}, index = 0) {
+  const citation = citationForItem(item);
+  const source = asObject(citation.source);
+  const hierarchy = asObject(item.hierarchy);
+  const hierarchyPath = asArray(hierarchy.path || hierarchy.headingPath)
+    .map((entry) => normalizeText(entry))
+    .filter(Boolean)
+    .join(" > ");
+  return compactObject({
+    citationKey: `C${index + 1}`,
+    title: normalizeText(citation.title || item.title || ""),
+    excerpt: normalizeText(citation.snippet || item.snippet || item.summary || item.text || "").slice(0, 900),
+    source: compactObject({
+      sourceType: source.sourceType || "",
+      provider: source.providerId || "",
+      originalFileName: source.originalFileName || "",
+      sourcePath: source.sourcePath || "",
+      capturedAt: source.capturedAt || "",
+      contentHash: source.contentHash || ""
+    }),
+    positionHint: compactObject({
+      titlePath: hierarchyPath,
+      sectionTitle: normalizeText(hierarchy.title || hierarchy.sectionTitle || item.sectionTitle || "")
+    })
+  });
+}
+
+function dedupePortableSources(citations = []) {
+  const byKey = new Map();
+  for (const citation of asArray(citations)) {
+    const source = asObject(citation.source);
+    const key = JSON.stringify(source);
+    if (!key || key === "{}") {
+      continue;
+    }
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        sourceLabel: `S${byKey.size + 1}`,
+        ...source
+      });
+    }
+  }
+  return [...byKey.values()];
+}
+
+function escapeMarkdown(text = "") {
+  return String(text || "").replace(/([\\`*_{}\[\]()#+\-.!|>])/g, "\\$1");
+}
+
+function markdownForPortableBlock(block = {}) {
+  const type = normalizeText(block.type);
+  if (type === "heading") {
+    const level = Math.max(1, Math.min(Number(block.level || 2), 6));
+    return `${"#".repeat(level)} ${block.text || "未命名段落"}`;
+  }
+  if (type === "image") {
+    const altText = block.altText || block.title || "image";
+    const lines = [];
+    if (block.dataUrl) {
+      lines.push(`![${escapeMarkdown(altText)}](${block.dataUrl})`);
+    } else {
+      lines.push(`**图片：${block.title || altText}**`);
+      lines.push("");
+      lines.push("图片二进制未嵌入；本块保留标题、说明、OCR 和哈希，导出器有原始资产时应在同一位置嵌入图片。");
+    }
+    if (block.caption) {
+      lines.push("");
+      lines.push(block.caption);
+    }
+    if (block.ocrText) {
+      lines.push("");
+      lines.push(`OCR：${block.ocrText}`);
+    }
+    return lines.join("\n");
+  }
+  if (type === "quote") {
+    return normalizeText(block.text)
+      .split(/\n+/)
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+  if (type === "list") {
+    return asArray(block.items).map((item) => `- ${item}`).join("\n");
+  }
+  return block.text || "";
+}
+
+function renderPortableMarkdown(blocks = []) {
+  return asArray(blocks)
+    .slice()
+    .sort((left, right) => Number(left.order || 0) - Number(right.order || 0))
+    .map(markdownForPortableBlock)
+    .filter((entry) => normalizeText(entry))
+    .join("\n\n");
+}
+
+function portableAssetBlock(asset = {}, citationKey = "", order = 1) {
+  return compactObject({
+    order,
+    type: "image",
+    title: normalizeText(asset.title || asset.caption || "图片"),
+    altText: normalizeText(asset.altText || asset.title || asset.caption || "图片"),
+    caption: normalizeText(asset.caption || ""),
+    ocrText: normalizeText(asset.ocrText || ""),
+    mediaType: normalizeText(asset.mediaType || ""),
+    dataUrl: normalizeText(asset.dataUrl || ""),
+    embedded: Boolean(asset.dataUrl),
+    contentHash: normalizeText(asset.sha256 || ""),
+    byteSize: Number(asset.byteSize || 0),
+    width: Number(asset.width || 0),
+    height: Number(asset.height || 0),
+    citations: citationKey ? [citationKey] : []
+  });
+}
+
+function buildOrderedDocumentBlocks({ title, summaryText, orderedItems, citations, portableRules, portableRelations } = {}) {
+  const blocks = [];
+  const push = (block) => {
+    blocks.push(compactObject({
+      order: blocks.length + 1,
+      ...block
+    }));
+  };
+  push({ type: "heading", level: 1, text: title });
+  if (summaryText) {
+    push({
+      type: "paragraph",
+      text: summaryText,
+      citations: asArray(citations).map((citation) => citation.citationKey)
+    });
+  }
+  for (const [index, item] of asArray(orderedItems).entries()) {
+    const citationKey = citations[index]?.citationKey || "";
+    const hierarchy = asObject(item.hierarchy);
+    const titlePath = asArray(hierarchy.path || hierarchy.headingPath)
+      .map((entry) => normalizeText(entry))
+      .filter(Boolean);
+    const blockText = normalizeDocumentText(
+      asArray(item.blocks).map((block) => block.text || block.title).filter(Boolean).join("\n\n") ||
+        item.snippet ||
+        item.markdown
+    );
+    if (item.title) {
+      push({
+        type: "heading",
+        level: 2,
+        text: item.title,
+        citations: citationKey ? [citationKey] : []
+      });
+    }
+    if (blockText) {
+      push({
+        type: "paragraph",
+        text: blockText,
+        citations: citationKey ? [citationKey] : [],
+        positionHint: compactObject({
+          titlePath,
+          sectionTitle: normalizeText(hierarchy.title || hierarchy.sectionTitle || item.sectionTitle || "")
+        })
+      });
+    }
+    for (const asset of asArray(item.assets)) {
+      push(portableAssetBlock(asset, citationKey));
+    }
+  }
+  if (asArray(portableRules).length) {
+    push({ type: "heading", level: 2, text: "规则候选" });
+    push({
+      type: "list",
+      items: asArray(portableRules).map((rule) =>
+        [rule.title, rule.condition ? `条件：${rule.condition}` : "", rule.action ? `动作：${rule.action}` : ""]
+          .filter(Boolean)
+          .join("；")
+      )
+    });
+  }
+  if (asArray(portableRelations).length) {
+    push({ type: "heading", level: 2, text: "实体关系候选" });
+    push({
+      type: "list",
+      items: asArray(portableRelations).map((relation) =>
+        `${relation.sourceTerm} ${relation.relationType} ${relation.targetTerm}（confidence=${relation.confidence}）`
+      )
+    });
+  }
+  if (asArray(citations).length) {
+    push({ type: "heading", level: 2, text: "引用与证据摘录" });
+    for (const citation of citations) {
+      push({
+        type: "quote",
+        text: `[${citation.citationKey}] ${[citation.title, citation.excerpt].filter(Boolean).join("：")}`,
+        citations: [citation.citationKey]
+      });
+    }
+  }
+  return blocks;
+}
+
+function findPortableDocumentFrameworkDependencies(value, pathParts = []) {
+  const findings = [];
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      findings.push(...findPortableDocumentFrameworkDependencies(entry, [...pathParts, String(index)]));
+    });
+    return findings;
+  }
+  if (!value || typeof value !== "object") {
+    return findings;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    const nextPath = [...pathParts, key];
+    if (PORTABLE_DOCUMENT_FORBIDDEN_KEYS.has(key)) {
+      findings.push(nextPath.join("."));
+    }
+    findings.push(...findPortableDocumentFrameworkDependencies(entry, nextPath));
+  }
+  return findings;
+}
+
+function buildPortableDistillationDocument({ query, title, cluster, summaryText, ruleCandidates, entityRelationCandidates } = {}) {
+  const safeTitle = normalizeText(title || cluster?.label || query || "Distilled Knowledge");
+  const orderedItems = asArray(cluster?.items)
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = sourceOrderForItem(left);
+      const rightOrder = sourceOrderForItem(right);
+      return (
+        leftOrder.capturedAt.localeCompare(rightOrder.capturedAt) ||
+        leftOrder.document.localeCompare(rightOrder.document) ||
+        leftOrder.position - rightOrder.position ||
+        leftOrder.rank - rightOrder.rank
+      );
+    });
+  const citations = orderedItems
+    .map(portableCitationForItem)
+    .filter((citation) => citation.excerpt || citation.title);
+  const citationKeys = citations.map((citation) => citation.citationKey);
+  const portableRules = asArray(ruleCandidates).map((rule, index) => ({
+    ruleKey: `R${index + 1}`,
+    title: normalizeText(rule.title || ""),
+    condition: normalizeText(rule.condition || ""),
+    action: normalizeText(rule.action || ""),
+    citations: citationKeys
+  }));
+  const portableRelations = asArray(entityRelationCandidates).map((relation, index) => ({
+    relationKey: `ER${index + 1}`,
+    sourceTerm: normalizeText(relation.sourceTerm || ""),
+    targetTerm: normalizeText(relation.targetTerm || ""),
+    relationType: normalizeText(relation.relationType || ""),
+    confidence: Number(relation.confidence || 0),
+    citations: citationKeys
+  }));
+  const contentBlocks = buildOrderedDocumentBlocks({
+    title: safeTitle,
+    summaryText,
+    orderedItems,
+    citations,
+    portableRules,
+    portableRelations
+  });
+  const markdown = renderPortableMarkdown(contentBlocks);
+  return {
+    protocolVersion: PORTABLE_DISTILLATION_DOCUMENT_PROTOCOL_VERSION,
+    artifactType: "portable-distilled-knowledge-document",
+    selfContained: true,
+    runtimeDependencies: [],
+    outputFormats: ["markdown", "docx"],
+    title: safeTitle,
+    sourceQuery: normalizeText(query || ""),
+    contentBlocks,
+    markdown,
+    summary: {
+      text: normalizeText(summaryText || ""),
+      citations: citationKeys
+    },
+    ruleCandidates: portableRules,
+    entityRelationCandidates: portableRelations,
+    citations,
+    evidenceAppendix: citations.map((citation) => ({
+      citationKey: citation.citationKey,
+      title: citation.title,
+      excerpt: citation.excerpt,
+      source: citation.source,
+      positionHint: citation.positionHint
+    })),
+    sourceBibliography: dedupePortableSources(citations),
+    portability: {
+      independentUse: true,
+      requiresRuntime: false,
+      requiresEvidenceLookup: false,
+      note: "This document is ordered and readable outside the source system. Citations and evidence excerpts are embedded in the artifact."
+    },
+    integrity: {
+      citationCount: citations.length,
+      contentBlockCount: contentBlocks.length,
+      evidenceDigest: stableHash(...citations.map((citation) => `${citation.title}\n${citation.excerpt}`))
+    }
+  };
+}
+
+function validatePortableDocument(document = {}) {
+  const doc = asObject(document);
+  const citations = asArray(doc.citations);
+  const appendix = asArray(doc.evidenceAppendix);
+  const contentBlocks = asArray(doc.contentBlocks);
+  const forbiddenPaths = findPortableDocumentFrameworkDependencies(doc);
+  const sequentialOrders = contentBlocks.every((block, index) => Number(block.order || 0) === index + 1);
+  const checks = [
+    {
+      id: "portable_document_self_contained",
+      passed: doc.selfContained === true && asArray(doc.runtimeDependencies).length === 0,
+      actual: {
+        selfContained: doc.selfContained === true,
+        runtimeDependencyCount: asArray(doc.runtimeDependencies).length
+      },
+      expected: "selfContained=true and runtimeDependencies=[]"
+    },
+    {
+      id: "portable_document_has_readable_evidence",
+      passed:
+        citations.length > 0 &&
+        appendix.length > 0 &&
+        citations.every((citation) => normalizeText(citation.excerpt || "").length > 0),
+      actual: { citationCount: citations.length, appendixCount: appendix.length },
+      expected: "readable citations and evidence appendix"
+    },
+    {
+      id: "portable_document_has_ordered_blocks",
+      passed: contentBlocks.length > 0 && sequentialOrders && normalizeText(doc.markdown || "").length > 0,
+      actual: {
+        contentBlockCount: contentBlocks.length,
+        sequentialOrders,
+        markdownLength: normalizeText(doc.markdown || "").length
+      },
+      expected: "ordered contentBlocks and markdown rendering"
+    },
+    {
+      id: "portable_document_has_no_framework_lookup_keys",
+      passed: forbiddenPaths.length === 0,
+      actual: forbiddenPaths,
+      expected: "no evidenceRefs/evidenceId/documentId/assetId/sourceId/batchId/syncBatchId/sourceKey"
+    }
+  ];
+  return {
+    passed: checks.every((check) => check.passed),
+    checks
+  };
+}
+
 function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
   const safeTitle = normalizeText(title || cluster?.label || query || "Knowledge");
   const items = asArray(cluster?.items);
@@ -363,12 +911,37 @@ function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
     ? sourceTrace.providerIds.join("、")
     : sourceTrace.sourceTypes.join("、") || "已入库来源";
   const summaryText = [
-    `“${safeTitle}”由 ${evidenceRefs.length} 条统一 evidence 支撑。`,
+    `“${safeTitle}”由 ${evidenceRefs.length} 条原始语料/证据支撑。`,
     leadSources ? `来源覆盖：${leadSources}。` : "",
     evidenceRefs.slice(0, 4).map((id) => `[${id}]`).join(" ")
   ].filter(Boolean).join(" ");
   const ruleId = stableId("distilled_rule", query, cluster?.clusterId, evidenceRefs.join(","));
   const relationId = stableId("distilled_relation", query, cluster?.clusterId, terms.join(","));
+  const ruleCandidates = [
+    {
+      ruleId,
+      title: `使用“${safeTitle}”时保留原文顺序和来源链路`,
+      condition: terms.length
+        ? `问题命中这些主题词之一：${terms.slice(0, 6).join("、")}`
+        : `问题命中“${safeTitle}”相关原始语料或 evidence`,
+      action: "read_raw_corpus_first_then_validate_with_evidence_before_answer",
+      evidenceRefs,
+      citations,
+      sourceTrace
+    }
+  ];
+  const entityRelationCandidates = [
+    {
+      relationId,
+      sourceTerm: terms[0] || safeTitle,
+      targetTerm: terms[1] || query || safeTitle,
+      relationType: "co_occurs_in_unified_evidence",
+      confidence: Number(Math.min(1, Math.max(0.1, evidenceRefs.length / 10)).toFixed(4)),
+      evidenceRefs,
+      citations,
+      sourceTrace
+    }
+  ];
   return {
     summary: {
       text: summaryText,
@@ -376,31 +949,16 @@ function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
       citations,
       sourceTrace
     },
-    ruleCandidates: [
-      {
-        ruleId,
-        title: `检索“${safeTitle}”时保留来源链路`,
-        condition: terms.length
-          ? `问题命中这些主题词之一：${terms.slice(0, 6).join("、")}`
-          : `问题命中“${safeTitle}”相关 evidence`,
-        action: "retrieve_and_validate_unified_evidence_before_answer",
-        evidenceRefs,
-        citations,
-        sourceTrace
-      }
-    ],
-    entityRelationCandidates: [
-      {
-        relationId,
-        sourceTerm: terms[0] || safeTitle,
-        targetTerm: terms[1] || query || safeTitle,
-        relationType: "co_occurs_in_unified_evidence",
-        confidence: Number(Math.min(1, Math.max(0.1, evidenceRefs.length / 10)).toFixed(4)),
-        evidenceRefs,
-        citations,
-        sourceTrace
-      }
-    ]
+    ruleCandidates,
+    entityRelationCandidates,
+    portableDocument: buildPortableDistillationDocument({
+      query,
+      title: safeTitle,
+      cluster,
+      summaryText,
+      ruleCandidates,
+      entityRelationCandidates
+    })
   };
 }
 
@@ -439,9 +997,48 @@ function validateDistilledOutputs(outputs = {}) {
       expected: "each entity relation has evidenceRefs, citations, sourceTrace"
     }
   ];
+  const portableDocument = validatePortableDocument(outputs.portableDocument);
   return {
-    passed: checks.every((check) => check.passed),
-    checks
+    passed: checks.every((check) => check.passed) && portableDocument.passed,
+    checks,
+    portableDocument
+  };
+}
+
+function mergeModelBackedSkill(fallback = {}, modelSkill = {}) {
+  const skill = asObject(modelSkill);
+  if (!Object.keys(skill).length) {
+    return fallback;
+  }
+  const merged = { ...fallback };
+  const textFields = new Set(["title", "summary"]);
+  const objectFields = new Set(["applicability"]);
+  const arrayFields = new Set([
+    "coreConcepts",
+    "decisionHeuristics",
+    "antiPatterns",
+    "honestBoundaries",
+    "verificationQuestions"
+  ]);
+  for (const key of [...textFields, ...objectFields, ...arrayFields]) {
+    const value = skill[key];
+    if (textFields.has(key)) {
+      const normalized = normalizeText(value);
+      if (normalized && normalized !== "[object Object]") {
+        merged[key] = normalized;
+      }
+    } else if (objectFields.has(key) && value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0) {
+      merged[key] = value;
+    } else if (arrayFields.has(key) && Array.isArray(value) && value.length > 0) {
+      merged[key] = value;
+    }
+  }
+  return {
+    ...merged,
+    evidenceRefs: fallback.evidenceRefs,
+    rawCorpusProvenance: fallback.rawCorpusProvenance,
+    sourceTrace: fallback.sourceTrace,
+    distilledOutputs: fallback.distilledOutputs
   };
 }
 
@@ -457,7 +1054,7 @@ function makeCandidateSkill({ query, cluster, title = "" } = {}) {
   return {
     title: `${safeTitle} Skill`,
     sourceQuery: query,
-    summary: `从 ${cluster.evidenceRefs.length} 条统一 evidence、${sourceTrace.sourceCount} 个来源中蒸馏出的可复用知识操作单元。`,
+    summary: `从 ${cluster.evidenceRefs.length} 条原始语料/证据、${sourceTrace.sourceCount} 个来源中蒸馏出的可复用知识操作单元。`,
     applicability: {
       useWhen: [`用户问题命中“${safeTitle}”相关主题，且需要复用已有证据判断流程。`],
       avoidWhen: ["问题涉及 canonical fact/entity/relation/taxonomy 改写，或证据不足。"]
@@ -552,6 +1149,7 @@ function qualityReportV2({ proposalResult, evidenceGate, goldenRuleDecision, clu
 export function createKnowledgeDistillationRuntime({
   userDataPath,
   runtime,
+  metadataStore = null,
   knowledgeSkillRuntime,
   goldenRuleRuntime,
   evidenceGate,
@@ -649,22 +1247,38 @@ export function createKnowledgeDistillationRuntime({
     return hydrated;
   }
 
+  async function loadRawCorpusItems(input = {}, query = "", limit = 30) {
+    const explicitItems = rawCorpusDocumentsFromInput(input);
+    if (explicitItems.length) {
+      return {
+        source: "request",
+        items: explicitItems
+      };
+    }
+    if (!metadataStore || typeof metadataStore.listRawCorpusDocuments !== "function") {
+      return {
+        source: "unavailable",
+        items: []
+      };
+    }
+    const rawDocuments = metadataStore.listRawCorpusDocuments({
+      batchId: input.batchId || input.rawCorpus?.batchId || "",
+      query: input.rawCorpusQuery || query,
+      limit: input.rawCorpusLimit || input.limit || limit
+    });
+    return {
+      source: "metadata.source_files",
+      items: asArray(rawDocuments)
+        .map(normalizeRawCorpusDocument)
+        .filter((item) => item.evidenceId || item.title || item.snippet)
+    };
+  }
+
   async function runDistillation(input = {}) {
     const knowledgeCore = getKnowledgeCore(runtime);
     const query = normalizeText(input.query || input.q || input.topic || "");
     const runId = normalizeText(input.runId || "") || stableId("knowledge_distillation_run", query, Date.now());
     const startedAt = nowIso();
-    if (!knowledgeCore || typeof knowledgeCore.search !== "function") {
-      return persistRun({
-        protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
-        ok: false,
-        runId,
-        status: "unavailable",
-        error: "KnowledgeCore search unavailable.",
-        startedAt,
-        finishedAt: nowIso()
-      });
-    }
     if (!query) {
       return persistRun({
         protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
@@ -677,41 +1291,138 @@ export function createKnowledgeDistillationRuntime({
       });
     }
     const limit = Math.max(1, Math.min(Number(input.limit || 30), 200));
-    const searchResult = await knowledgeCore.search({
+    const modelAlias = normalizeText(input.modelAlias || input.model || input.modelId || DEFAULT_INDUSTRIAL_DISTILLATION_MODEL);
+    const modelRequiredFailure = (roleId, decision = null, fallbackReason = "") =>
+      persistRun({
+        protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
+        ok: false,
+        runId,
+        status: "model_unavailable",
+        error: `知识蒸馏必须调用模型闭环，${roleId} 未获得模型输出${fallbackReason ? `：${fallbackReason}` : "。"}`,
+        startedAt,
+        finishedAt: nowIso(),
+        model: {
+          required: true,
+          roleId,
+          modelAlias,
+          decisionAudit: decision?.audit || null
+        }
+      });
+    if (input.modelEnabled !== true) {
+      return persistRun({
+        protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
+        ok: false,
+        runId,
+        status: "invalid_input",
+        error: "知识蒸馏必须启用模型闭环，不能以 modelEnabled=false 运行。",
+        startedAt,
+        finishedAt: nowIso()
+      });
+    }
+    if (!modelDecisionRuntime || typeof modelDecisionRuntime.decide !== "function") {
+      return modelRequiredFailure("model_decision_runtime", null, "模型决策运行时不可用。");
+    }
+    const rawCorpusLoad = await loadRawCorpusItems(input, query, limit);
+    let searchResult = {
       query,
-      limit,
-      batchId: input.batchId || "",
-      retrievalProfileId: input.retrievalProfileId || input.profileId || "",
-      profileKey: input.profileKey || input.retrievalProfileKey || "",
-      learningEnabled: input.learningEnabled !== false,
-      explain: true,
-      modalityPolicy: "multimodal"
-    });
-    const compactedEvidenceItems = asArray(searchResult.items || searchResult.results)
-      .map(compactEvidenceItem)
-      .filter((item) => item.evidenceId || item.title || item.snippet);
-    const evidenceItems = await hydrateEvidenceItemsFromPacks(
-      knowledgeCore,
-      compactedEvidenceItems,
-      input.maxOpenedEvidence || limit
-    );
-    const clusters = clusterEvidenceItems(evidenceItems, {
-      threshold: input.clusterThreshold,
-      maxClusters: input.maxClusters || 8
-    });
+      items: [],
+      results: [],
+      explain: null,
+      hierarchy: null
+    };
+    let evidenceItems = [];
+    if (knowledgeCore && typeof knowledgeCore.search === "function") {
+      searchResult = await knowledgeCore.search({
+        query,
+        limit,
+        batchId: input.batchId || "",
+        retrievalProfileId: input.retrievalProfileId || input.profileId || "",
+        profileKey: input.profileKey || input.retrievalProfileKey || "",
+        learningEnabled: input.learningEnabled !== false,
+        explain: true,
+        modalityPolicy: "multimodal"
+      });
+      const compactedEvidenceItems = asArray(searchResult.items || searchResult.results)
+        .map(compactEvidenceItem)
+        .filter((item) => item.evidenceId || item.title || item.snippet);
+      evidenceItems = await hydrateEvidenceItemsFromPacks(
+        knowledgeCore,
+        compactedEvidenceItems,
+        input.maxOpenedEvidence || limit
+      );
+    }
+    const primaryItems = rawCorpusLoad.items.length ? rawCorpusLoad.items : evidenceItems;
+    if (primaryItems.length === 0) {
+      return persistRun({
+        protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
+        ok: false,
+        runId,
+        status: "unavailable",
+        error: "Raw corpus is unavailable and KnowledgeCore search returned no evidence.",
+        startedAt,
+        finishedAt: nowIso()
+      });
+    }
+    const rawCorpusBatches = buildRawCorpusBatches(primaryItems, input.rawCorpusBatchMaxCharacters);
+    const validationEvidenceRefs = [...new Set(evidenceItems.map((item) => item.evidenceId).filter(Boolean))];
+    const clusters = rawCorpusLoad.items.length && input.rawCorpusSemanticClusters !== true
+      ? clusterRawCorpusItems(primaryItems, query)
+      : clusterEvidenceItems(primaryItems, {
+          threshold: input.clusterThreshold,
+          maxClusters: input.maxClusters || 8
+        });
     const candidates = [];
     for (const [index, cluster] of clusters.entries()) {
       const clusterName = await maybeNameCluster({
         query,
         cluster,
-        modelEnabled: input.modelEnabled === true,
-        modelAlias: input.topicClusterModelAlias || input.modelAlias || ""
+        modelEnabled: true,
+        modelAlias: input.topicClusterModelAlias || modelAlias
       });
-      const proposal = makeCandidateSkill({
+      if (clusterName.modelDecision?.usedModel !== true) {
+        return modelRequiredFailure(
+          "topic_cluster_namer",
+          clusterName.modelDecision,
+          clusterName.modelDecision?.audit?.fallbackReason || "主题命名未获得模型输出。"
+        );
+      }
+      const baseProposal = makeCandidateSkill({
         query,
         cluster,
         title: clusterName.title
       });
+      const skillEvidenceRefs = validationEvidenceRefs.length ? validationEvidenceRefs : cluster.evidenceRefs;
+      const modelDistiller = await modelDecisionRuntime.decide({
+        roleId: "knowledge_skill_distiller",
+        modelEnabled: true,
+        modelAlias: input.skillDistillerModelAlias || modelAlias,
+        input: {
+          query,
+          fallbackSkill: baseProposal,
+          evidenceItems: cluster.items,
+          rawCorpusBatches: rawCorpusBatches.slice(0, 2),
+          modelEnabled: true
+        }
+      });
+      if (modelDistiller?.usedModel !== true) {
+        return modelRequiredFailure(
+          "knowledge_skill_distiller",
+          modelDistiller,
+          modelDistiller?.audit?.fallbackReason || "核心蒸馏未获得模型输出。"
+        );
+      }
+      const modelSkill = asObject(modelDistiller.decision?.skill || modelDistiller.decision?.proposal || {});
+      const proposal = mergeModelBackedSkill(baseProposal, modelSkill);
+      const proposalForSkill = {
+        ...proposal,
+        evidenceRefs: skillEvidenceRefs,
+        rawCorpusProvenance: {
+          primaryInput: rawCorpusLoad.items.length ? "raw-corpus-fulltext" : "knowledge-evidence-fallback",
+          source: rawCorpusLoad.source,
+          clusterEvidenceRefs: cluster.evidenceRefs,
+          validationEvidenceRefs
+        }
+      };
       const proposed = knowledgeSkillRuntime
         ? await knowledgeSkillRuntime.proposeSkill({
             sourceType: "knowledge_distillation",
@@ -719,7 +1430,7 @@ export function createKnowledgeDistillationRuntime({
             runId,
             status: "pending_review",
             proposal: {
-              ...proposal,
+              ...proposalForSkill,
               clusterProvenance: {
                 clusterId: cluster.clusterId,
                 rank: index + 1,
@@ -727,9 +1438,9 @@ export function createKnowledgeDistillationRuntime({
                 documentIds: cluster.documentIds
               }
             },
-            evidenceRefs: cluster.evidenceRefs,
+            evidenceRefs: skillEvidenceRefs,
             hierarchy: searchResult.hierarchy || null,
-            confidence: Math.min(1, Math.max(0.1, cluster.evidenceRefs.length / Math.max(1, limit)))
+            confidence: Math.min(1, Math.max(0.1, skillEvidenceRefs.length / Math.max(1, limit)))
           })
         : null;
       const answer = [
@@ -759,7 +1470,7 @@ export function createKnowledgeDistillationRuntime({
             targetType: "knowledgeSkill",
             candidate: {
               skill: proposed?.skill || proposal,
-              evidenceRefs: cluster.evidenceRefs,
+              evidenceRefs: skillEvidenceRefs,
               qualityReport: proposed?.qualityReport || {},
               evidenceGate: gate,
               cluster
@@ -774,19 +1485,24 @@ export function createKnowledgeDistillationRuntime({
         distilledOutputs: proposal.distilledOutputs
       });
       let reviewer = null;
-      if (modelDecisionRuntime && typeof modelDecisionRuntime.decide === "function") {
-        reviewer = await modelDecisionRuntime.decide({
-          roleId: "skill_reviewer",
-          modelEnabled: input.modelEnabled === true,
-          modelAlias: input.skillReviewerModelAlias || input.modelAlias || "",
-          input: {
-            proposal,
-            qualityReportV2: qualityV2,
-            goldenRule,
-            evidenceGate: gate,
-            modelEnabled: input.modelEnabled === true
-          }
-        });
+      reviewer = await modelDecisionRuntime.decide({
+        roleId: "skill_reviewer",
+        modelEnabled: true,
+        modelAlias: input.skillReviewerModelAlias || modelAlias,
+        input: {
+          proposal,
+          qualityReportV2: qualityV2,
+          goldenRule,
+          evidenceGate: gate,
+          modelEnabled: true
+        }
+      });
+      if (reviewer?.usedModel !== true) {
+        return modelRequiredFailure(
+          "skill_reviewer",
+          reviewer,
+          reviewer?.audit?.fallbackReason || "蒸馏复核未获得模型输出。"
+        );
       }
       const candidateStatus =
         goldenRule?.decision === "auto_reject"
@@ -808,12 +1524,18 @@ export function createKnowledgeDistillationRuntime({
           sourceTrace: cluster.sourceTrace
         },
         skill: proposed?.skill || null,
-        proposal,
+        proposal: proposalForSkill,
         unifiedEvidence: {
           evidenceRefs: cluster.evidenceRefs,
           citations: citationsForItems(cluster.items, 20),
           sourceTrace: cluster.sourceTrace
         },
+        validationEvidence: {
+          evidenceRefs: validationEvidenceRefs,
+          citations: citationsForItems(evidenceItems, 20),
+          sourceTrace: sourceTraceForItems(evidenceItems)
+        },
+        portableDocument: proposal.distilledOutputs.portableDocument,
         distilledOutputs: proposal.distilledOutputs,
         evidencePack: cluster.items.map((item) => ({
           evidenceId: item.evidenceId,
@@ -831,7 +1553,7 @@ export function createKnowledgeDistillationRuntime({
         modelDecisions: {
           topicClusterNamer: clusterName.modelDecision,
           skillReviewer: reviewer,
-          skillDistiller: proposed?.modelDecision || null
+          skillDistiller: modelDistiller
         }
       });
     }
@@ -844,8 +1566,19 @@ export function createKnowledgeDistillationRuntime({
       inputWindow: {
         limit,
         clusterCount: clusters.length,
-        evidenceCount: evidenceItems.length,
-        modelEnabled: input.modelEnabled === true
+        evidenceCount: primaryItems.length,
+        modelEnabled: input.modelEnabled === true,
+        modelAlias
+      },
+      rawCorpus: {
+        primary: rawCorpusLoad.items.length > 0,
+        source: rawCorpusLoad.items.length ? rawCorpusLoad.source : "knowledge-evidence-fallback",
+        documentCount: rawCorpusLoad.items.length,
+        totalCharacters: rawCorpusLoad.items.reduce(
+          (sum, item) => sum + asArray(item.blocks).reduce((inner, block) => inner + String(block.text || "").length, 0),
+          0
+        ),
+        batches: rawCorpusBatches
       },
       searchResult: {
         query: searchResult.query,
@@ -862,6 +1595,11 @@ export function createKnowledgeDistillationRuntime({
         sourceTrace: cluster.sourceTrace
       })),
       candidates,
+      portableDocuments: candidates.map((candidate) => ({
+        candidateId: candidate.candidateId,
+        title: candidate.portableDocument?.title || candidate.proposal?.title || "",
+        document: candidate.portableDocument
+      })),
       startedAt,
       finishedAt: nowIso()
     });
@@ -916,7 +1654,8 @@ export function createKnowledgeDistillationRuntime({
       policies: {
         canonicalWritesAllowed: false,
         modelOutputIsCandidateOnly: true,
-        goldenRuleRequired: true
+        goldenRuleRequired: true,
+        industrialBaselineModelAlias: DEFAULT_INDUSTRIAL_DISTILLATION_MODEL
       }
     };
   }

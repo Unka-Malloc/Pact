@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
-import { createToolCatalog } from "../platform/specialized/agent/agent-tools/tool-management-core/catalog.mjs";
+import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -22,82 +22,207 @@ function assertAllIncludes(text, needles, file) {
 }
 
 async function assertGovernanceDoc() {
-  const file = "docs/KNOWLEDGE-ARCHITECTURE-GOVERNANCE.md";
+  const file = "docs/KNOWLEDGE-GOVERNANCE.md";
   const text = await read(file);
 
   assertAllIncludes(text, [
-    "七大设计原则",
-    "Single Responsibility",
-    "Open-Closed",
-    "Dependency Inversion",
-    "Interface Segregation",
-    "Explicit State",
-    "Evidence-First",
-    "UX-Observable Governance",
+    "Evidence Pack",
+    "AgentLibrary",
+    "中间层治理",
+    "上游知识库太粗",
+    "下游本地智能体太细",
+    "权限精加工",
+    "共享的知识",
+    "图书馆",
+    "借阅登记",
+    "终端贡献与专家知识",
+    "goldenRule",
+    "expertOpinion",
+    "贡献排行榜",
+    "knowledgeAccessReceipt",
+    "loanRecord",
+    "智能体知识权限第一原则",
+    "知识权限",
+    "动态解析与预算",
+    "知识维护闭环",
+    "source-level governance",
+    "门禁卡",
+    "楼层",
+    "书架",
+    "readInPlace",
+    "checkoutAllowed",
+    "不能合并成一个“可访问”布尔值",
+    "外部知识库再授权",
+    "演示场景：上游知识库 A/B 权限再授权",
+    "管控台",
+    "对话页面",
+    "权限错误",
+    "上游知识库的信息和资源权限再分配",
+    "upstream knowledge base",
+    "authorizationOverlay",
+    "derivedKnowledgeSpace",
     "knowledgeBase",
     "splitall.knowledge.v1",
-    "SERVER_API_OPERATIONS",
-    "Tool Management v1",
-    "server/config/frontend-feature-registry.yaml",
     "npm run server:verify:knowledge-architecture-governance",
     "npm run server:verify:knowledge-markdown-chunking",
     "npm run server:verify:knowledge-docx-export",
-    "/knowledge/:tab",
-    "/workspaces",
-    "/debug/:tab",
-    "/admin/tools",
-    "/admin/modules",
     "raw-corpus-construction",
     "knowledge-index-construction",
     "knowledge-distillation",
     "knowledge.export.docx",
     "GET /api/knowledge/export/docx",
-    "external-knowledge-corpus",
-    "knowledge.docx-export.download",
-    "knowledge.normalized-docx.download",
-    "词云属于知识管理辅助视图",
-    "Markdown 文档切分基线",
+    "format-conversion-only",
+    "unified dossier",
+    "raw-corpus.format.convert",
+    "knowledge.dossier.export",
+    "knowledge.distillation.export",
+    "outputFormat",
+    "targetFormat",
+    "所有受支持原始输入格式都必须能导出为 DOCX",
+    "从新到旧",
     "markdown-section-v1",
     "sectionId",
-    "sourceRange"
-  ], file);
-
-  assertAllIncludes(text, [
-    "Composition Root",
-    "Provider Registry",
-    "Facade",
-    "Adapter",
-    "Strategy",
-    "Policy",
-    "Observer",
-    "State Machine"
+    "sourceRange",
+    "contextBudget.knowledgeTokens",
+    "payloadBudget.maxResponseBytes",
+    "payload.nextContinuationToken",
+    "structureArtifacts",
+    "granularityFragments",
+    "dispatchDynamicDocumentParsingAlgorithm",
+    "bindDynamicDocumentParsingInvocation",
+    "工业级蒸馏验收",
+    "splitall.knowledge-distillation-industrial.v1",
+    "markdown-project-digest",
+    "email-thread-digest",
+    "Repomix",
+    "Gitingest",
+    "DeepEval",
+    "G-Eval",
+    "RFC 5322",
+    "RFC 5256",
+    "Message-ID",
+    "In-Reply-To",
+    "References",
+    "deepseek-v4-flash",
+    "same-matter merge",
+    "timeline order",
+    "source trace",
+    "unsupported claims",
+    "npm run server:verify:knowledge-industrial-distillation"
   ], file);
 }
 
 async function assertProtocolDocs() {
   const protocols = await read("docs/PROTOCOLS.md");
   const server = await read("docs/SERVER.md");
-  const patterns = await read("docs/ARCHITECTURE-PATTERNS.md");
+  const architecture = await read("docs/Architecture.md");
+  const workspace = await read("docs/WORKSPACE-ASSET-GOVERNANCE.md");
+  const knowledgeProtocol = await read("server/protocols/knowledge/README.md");
 
   assertAllIncludes(protocols, [
-    "server/protocols/knowledge/",
     "splitall.knowledge.v1",
+    "splitall.workspace.v1",
+    "splitall.operation.v1",
+    "splitall.context-bundle.v1",
+    "splitall.knowledge-access.v1",
+    "splitall.agent-library.v1",
+    "splitall.workspace-contribution.v1",
+    "Middle Layer Strategy",
+    "上游资源经过 SplitAll 后变细",
+    "下游本地智能体经过 SplitAll 后能共享部分资产和能力",
     "knowledgeBase",
-    "KnowledgeCore",
-    "EmbeddingRuntime",
-    "VectorStore",
-    "assetStore",
-    "retrieval",
-    "metadata/splitall.sqlite",
     "knowledge.search",
     "knowledge.export.docx",
     "knowledge.document.structure",
     "GET /api/knowledge/export/docx",
     "Tool Management v1",
-    "knowledge:read",
-    "knowledge:write",
-    "knowledge:maintain",
-    "knowledge:admin"
+    "dynamic-parameter-document-parsing-policy",
+    "contextBudget.knowledgeTokens",
+    "granularity.secondaryParse.enabled",
+    "structureArtifacts",
+    "granularityFragments",
+    "dispatchDynamicDocumentParsingAlgorithm",
+    "bindDynamicDocumentParsingInvocation",
+    "payloadBudget.maxResponseBytes",
+    "payload.nextContinuationToken",
+    "portable.knowledge-distillation.v1",
+    "contentBlocks",
+    "format-conversion-only",
+    "unified dossier",
+    "所有受支持原始输入格式都必须能以 DOCX 作为目标格式导出",
+    "raw-corpus.format.convert",
+    "knowledge.dossier.export",
+    "knowledge.distillation.export",
+    "outputFormat",
+    "targetFormat",
+    "Workspace API",
+    "Operation Protocol",
+    "Context Bundle Protocol",
+    "Workspace Contribution Protocol",
+    "Compatibility Strategy",
+    "两个问题，一个能力，三个兼容",
+    "智能体兼容",
+    "信息源兼容",
+    "工作空间环境兼容",
+    "SplitAll 管理软件",
+    "assetContributionReportV0",
+    "workspaceId/contributions/report",
+    "contributionGrant",
+    "rankScore",
+    "splitall.checkpoint-tree.v1",
+    "Unified Checkpoint Tree Protocol",
+    "checkpointNodeId",
+    "effectKind",
+    "access.requested",
+    "access.denied",
+    "file.changed",
+    "skill.invoked",
+    "workspace.checkpoint.restore.preview",
+    "workspace.operation.revert.scope",
+    "checkpoint.restored",
+    "git worktree",
+    "MCP Demo Flows",
+    "SplitAll MCP service",
+    "OpenClaw 文档互通演示",
+    "Skill 贡献排行榜演示",
+    "workspace.skill.usage.report",
+    "rankScoreV0",
+    "usageCount * successRate",
+    "skillExecutionCount",
+    "Knowledge Access Protocol",
+    "libraryCardId",
+    "knowledgeAccessReceipt",
+    "loanRecord",
+    "requestedEgress",
+    "denied request audit",
+    "checkoutPolicy",
+    "readInPlace",
+    "checkoutAllowed",
+    "canCopyToContext",
+    "不能作为 hidden context",
+    "upstreamKnowledgeRef",
+    "derivedViewRef",
+    "authorizationOverlay",
+    "upstreamAccessDenied",
+    "Upstream Permission Demo Flow",
+    "上游知识库 A/B 权限再授权演示",
+    "requestedEgress=exportFile",
+    "权限错误",
+    "denied request audit",
+    "下游智能体",
+    "toolGrantId",
+    "原始语料全文",
+    "校验、引用、补证",
+    "splitall.knowledge-distillation-industrial.v1",
+    "markdown-project-digest",
+    "email-thread-digest",
+    "Repomix",
+    "Gitingest",
+    "deepseek-v4-flash",
+    "Message-ID",
+    "In-Reply-To",
+    "References",
+    "evaluateIndustrialDistillationGap"
   ], "docs/PROTOCOLS.md");
 
   assertAllIncludes(protocols, [
@@ -122,7 +247,21 @@ async function assertProtocolDocs() {
     "GET /api/knowledge/export/docx",
     "knowledge export-docx --output knowledge.docx",
     "evidence pack",
-    "DocumentOutlineRuntime"
+    "DocumentOutlineRuntime",
+    "POST /api/knowledge/document-parser/parse",
+    "动态参数文档解析策略",
+    "结构吸附切分原则",
+    "文档切分无关粗细",
+    "contextBudget.knowledgeTokens",
+    "dispatchDynamicDocumentParsingAlgorithm",
+    "bindDynamicDocumentParsingInvocation",
+    "payloadBudget.maxResponseBytes",
+    "payload.nextContinuationToken",
+    "splitall.knowledge-distillation-industrial.v1",
+    "buildMarkdownProjectDigest",
+    "buildEmailThreadDigest",
+    "deepseek-v4-flash",
+    "server:verify:knowledge-industrial-distillation"
   ], "docs/SERVER.md");
 
   assertAllIncludes(server, [
@@ -132,18 +271,275 @@ async function assertProtocolDocs() {
     "SPLITALL_EXTERNAL_KB_CONNECTION_STRING"
   ], "docs/SERVER.md");
 
-  assertAllIncludes(patterns, [
-    "docs/KNOWLEDGE-ARCHITECTURE-GOVERNANCE.md",
-    "npm run server:verify:knowledge-architecture-governance",
-    "Adapter",
-    "Facade",
-    "Strategy",
-    "Provider Registry",
-    "Observer",
-    "State Machine",
-    "Policy",
-    "组合根"
-  ], "docs/ARCHITECTURE-PATTERNS.md");
+  assertAllIncludes(architecture, [
+    "Team Workspace Asset Governance System",
+    "中间狭窄地带",
+    "两个问题，一个能力，三个兼容",
+    "知识库缺少面向智能体的权限管控",
+    "本地智能体相对独立，难以协同",
+    "工作空间管理",
+    "智能体兼容",
+    "信息源兼容",
+    "工作空间环境兼容",
+    "资产贡献统计报表",
+    "上游知识库太粗",
+    "下游本地智能体太细",
+    "公共工作空间",
+    "权限从源头治理",
+    "derivedKnowledgeSpace",
+    "上游知识库的信息和资源权限再分配",
+    "authorizationOverlay",
+    "上游知识库 A/B 权限再授权演示",
+    "对话页面",
+    "权限错误",
+    "Knowledge Evidence API",
+    "Context Compiler",
+    "终端贡献是第二信息源",
+    "OpenClaw 文档互通演示",
+    "Skill 贡献排行榜演示",
+    "SplitAll MCP service",
+    "rankScoreV0",
+    "ContributionRegistry",
+    "LeaderboardRuntime",
+    "Operation Ledger",
+    "Checkpoint Tree",
+    "统一 Checkpoint Tree",
+    "所有访问请求",
+    "所有文件变动",
+    "所有知识贡献",
+    "所有技能调用",
+    "checkpointNodeId",
+    "effectKind",
+    "恢复到此节点",
+    "git worktree",
+    "raw-corpus-construction",
+    "knowledge-index-construction",
+    "knowledge-distillation",
+    "Tool Management"
+  ], "docs/Architecture.md");
+
+  assertAllIncludes(workspace, [
+    "Workspace Asset Governance System",
+    "两个问题，一个能力，三个兼容",
+    "知识库缺少面向智能体的权限管控",
+    "本地智能体相对独立，难以协同",
+    "智能体兼容",
+    "信息源兼容",
+    "工作空间环境兼容",
+    "终端贡献型资产",
+    "排行榜与统计面板",
+    "资产贡献统计报表",
+    "assetContributionReportV0",
+    "贡献授权",
+    "演示场景：OpenClaw 文档互通",
+    "演示场景：Skill 贡献排行榜",
+    "workspace.contribution.submit",
+    "workspace.skill.list",
+    "rankScoreV0",
+    "Operation Ledger",
+    "统一 Checkpoint Tree",
+    "所有的一切都必须进入同一棵树",
+    "访问请求",
+    "文件变动",
+    "知识贡献",
+    "技能调用",
+    "checkpointNode",
+    "effectKind",
+    "Snapshot Boundary",
+    "演示场景：Checkpoint Tree 安全恢复",
+    "workspace.checkpoint.restore",
+    "恢复到此节点",
+    "git worktree",
+    "Proposal To Decision",
+    "资产门禁模型",
+    "knowledgeAccessReceipt",
+    "loanRecord",
+    "上游知识库隔离",
+    "上游知识库的信息和资源权限再分配",
+    "upstreamKnowledgeRef",
+    "authorizationOverlay",
+    "演示场景：上游知识库 A/B 权限再授权",
+    "管控台",
+    "权限错误",
+    "readInPlace",
+    "checkoutAllowed",
+    "Context Compiler",
+    "evidence",
+    "decision",
+    "智能体不能直接覆盖 canonical state"
+  ], "docs/WORKSPACE-ASSET-GOVERNANCE.md");
+
+  assertAllIncludes(knowledgeProtocol, [
+    "动态参数文档解析策略",
+    "structure-adhesive",
+    "default size",
+    "dynamic-parameter-document-parsing-policy",
+    "contextBudget.knowledgeTokens",
+    "granularity.secondaryParse.enabled",
+    "structureArtifacts",
+    "granularityFragments",
+    "parentArtifactId",
+    "fragmentationTrace",
+    "completeOriginalAvailable",
+    "dispatchDynamicDocumentParsingAlgorithm",
+    "bindDynamicDocumentParsingInvocation",
+    "payloadBudget.maxResponseBytes",
+    "payload.nextContinuationToken",
+    "continuationToken",
+    "format-conversion-only",
+    "every supported raw input format must be exportable to DOCX",
+    "newest-to-oldest unified dossiers",
+    "raw corpus full text first",
+    "raw-corpus.format.convert",
+    "knowledge.dossier.export",
+    "knowledge.distillation.export",
+    "targetFormat",
+    "outputFormat",
+    "Export support does not replace the local knowledge-base runtime shape",
+    "local agent retrieval",
+    "self-contained Markdown/DOCX/HTML/PDF-style portable documents",
+    "Industrial Distillation Benchmark Protocol",
+    "splitall.knowledge-distillation-industrial.v1",
+    "buildMarkdownProjectDigest",
+    "buildEmailThreadDigest",
+    "evaluateIndustrialDistillationGap",
+    "deepseek-v4-flash"
+  ], "server/protocols/knowledge/README.md");
+
+}
+
+async function assertDynamicParsingImplementation() {
+  const module = await read("server/platform/specialized/knowledge/preprocessing/dynamic-parameter-document-parsing.mjs");
+  const runtime = await read("server/platform/specialized/knowledge/preprocessing/document-parsing-runtime.mjs");
+  const preprocessResult = await read("server/platform/specialized/knowledge/preprocessing/preprocess-result.mjs");
+  const knowledgeView = await read("server-web/views/KnowledgeView.vue");
+  const types = await read("server-web/lib/types.ts");
+  const packageJson = await read("package.json");
+
+  assertAllIncludes(module, [
+    "dynamic-parameter-document-parsing-policy",
+    "dispatchDynamicDocumentParsingAlgorithm",
+    "bindDynamicDocumentParsingInvocation",
+    "parseParagraphSentenceV1",
+    "parseTableRowWindowV1",
+    "parseTableCellWindowV1",
+    "parseCodeLineWindowV1",
+    "parseTokenWindowFallbackV1",
+    "structureArtifacts",
+    "granularityFragments",
+    "fragmentationTrace",
+    "completeOriginalAvailable"
+  ], "server/platform/specialized/knowledge/preprocessing/dynamic-parameter-document-parsing.mjs");
+
+  assertAllIncludes(runtime, [
+    "DYNAMIC_PARAMETER_DOCUMENT_PARSING_PIPELINE_ID",
+    "unified-knowledge-ingest-v1",
+    "bindDynamicDocumentParsingInvocation",
+    "structureArtifacts",
+    "granularityFragments",
+    "backendTrace",
+    "payload"
+  ], "server/platform/specialized/knowledge/preprocessing/document-parsing-runtime.mjs");
+
+  assertAllIncludes(preprocessResult, [
+    "sanitizeStructureArtifact",
+    "sanitizeGranularityFragment",
+    "structureArtifacts",
+    "granularityFragments"
+  ], "server/platform/specialized/knowledge/preprocessing/preprocess-result.mjs");
+
+  assertAllIncludes(knowledgeView, [
+    "dynamic-parameter-v1",
+    "unified-knowledge-ingest-v1",
+    "contextBudget",
+    "payloadBudget",
+    "secondaryParse",
+    "structureArtifacts",
+    "granularityFragments",
+    "parentArtifactId"
+  ], "server-web/views/KnowledgeView.vue");
+
+  assertAllIncludes(types, [
+    "contextBudget",
+    "payloadBudget",
+    "granularity",
+    "dynamicParsing",
+    "structureArtifacts",
+    "granularityFragments"
+  ], "server-web/lib/types.ts");
+
+  assertIncludes(packageJson, "server:verify:dynamic-document-parsing", "package.json must expose dynamic parsing verifier");
+  assertIncludes(packageJson, "server:knowledge:industrial-distill-plan", "package.json must expose industrial distillation benchmark CLI");
+  assertIncludes(packageJson, "server:verify:knowledge-industrial-distillation", "package.json must expose industrial distillation verifier");
+}
+
+async function assertIndustrialDistillationBenchmark() {
+  const module = await read("server/platform/specialized/knowledge/invocation/knowledge-distillation-runtime/industrial-benchmark.mjs");
+  const runtime = await read("server/platform/specialized/knowledge/invocation/knowledge-distillation-runtime/index.mjs");
+  const cli = await read("server/scripts/knowledge-distillation-industrial-benchmark.mjs");
+  const verify = await read("server/scripts/verify-knowledge-industrial-distillation.mjs");
+  const docs = await read("docs/KNOWLEDGE-GOVERNANCE.md");
+
+  assertAllIncludes(module, [
+    "splitall.knowledge-distillation-industrial.v1",
+    "DEFAULT_INDUSTRIAL_DISTILLATION_MODEL",
+    "deepseek-v4-flash",
+    "buildMarkdownProjectDigest",
+    "buildEmailThreadDigest",
+    "evaluateIndustrialDistillationGap",
+    "repomix",
+    "gitingest",
+    "deepeval",
+    "Message-ID",
+    "In-Reply-To",
+    "References",
+    "same_matter_email_merge",
+    "timeline_order"
+  ], "server/platform/specialized/knowledge/invocation/knowledge-distillation-runtime/industrial-benchmark.mjs");
+
+  assertAllIncludes(runtime, [
+    "DEFAULT_INDUSTRIAL_DISTILLATION_MODEL",
+    "industrialBaselineModelAlias",
+    "modelAlias"
+  ], "server/platform/specialized/knowledge/invocation/knowledge-distillation-runtime/index.mjs");
+
+  assertAllIncludes(cli, [
+    "--project-dir",
+    "--email-dir",
+    "--model-alias",
+    "--baseline-document",
+    "--framework-document",
+    "buildIndustrialDistillationBenchmark",
+    "evaluateIndustrialDistillationGap"
+  ], "server/scripts/knowledge-distillation-industrial-benchmark.mjs");
+
+  assertAllIncludes(verify, [
+    "buildMarkdownProjectDigest",
+    "buildEmailThreadDigest",
+    "buildIndustrialDistillationBenchmark",
+    "evaluateIndustrialDistillationGap",
+    "deepseek-v4-flash",
+    "same_matter_email_merge"
+  ], "server/scripts/verify-knowledge-industrial-distillation.mjs");
+
+  assertAllIncludes(docs, [
+    "工业级蒸馏验收流程",
+    "Repomix",
+    "Gitingest",
+    "DeepEval",
+    "G-Eval",
+    "RFC 5322",
+    "RFC 5256",
+    "Message-ID",
+    "In-Reply-To",
+    "References",
+    "deepseek-v4-flash",
+    "coverage",
+    "same-matter merge",
+    "timeline order",
+    "source trace",
+    "unsupported claims"
+  ], "docs/KNOWLEDGE-GOVERNANCE.md");
 }
 
 function assertOperationRegistry() {
@@ -154,6 +550,7 @@ function assertOperationRegistry() {
     "knowledge.health",
     "knowledge.search",
     "knowledge.search.get",
+    "knowledge.document_parse",
     "knowledge.export_docx",
     "knowledge.document_structure",
     "knowledge.evidence",
@@ -168,6 +565,11 @@ function assertOperationRegistry() {
     "knowledge.evidence_gate.evaluate",
     "knowledge.summarization.runs.create",
     "knowledge.agent_explore.runs.create",
+    "agent_sessions.list",
+    "agent_sessions.get",
+    "agent_sessions.context.get",
+    "agent_sessions.events.append",
+    "agent_sessions.fork",
     "runtime.mounts",
     "runtime.set_mounts",
     "runtime.reload_mounts",
@@ -202,6 +604,9 @@ function assertOperationRegistry() {
   assert.equal(byId.get("knowledge.export_docx")?.binary, true, "knowledge.export_docx must keep DOCX binary semantics");
   assert.equal(byId.get("knowledge.export_docx")?.http?.path, "/api/knowledge/export/docx");
   assert.equal(byId.get("knowledge.export_docx")?.rpc?.method, "knowledge.export.docx");
+  assert.equal(byId.get("agent_sessions.list")?.http?.path, "/api/agent-sessions");
+  assert.equal(byId.get("agent_sessions.context.get")?.http?.path, "/api/agent-sessions/:sessionId/context");
+  assert.deepEqual(byId.get("agent_sessions.fork")?.requiredScopes, ["knowledge:write"]);
   assert.equal(byId.get("tool_management.execute")?.http?.path, "/api/tool-management/v1/execute");
   assert.equal(byId.get("tool_management.execute")?.safety?.risk, "safe_write");
 }
@@ -214,6 +619,10 @@ function assertToolManagementCatalog() {
   assert.deepEqual(tool.requiredScopes, ["knowledge:read"]);
   assert.equal(tool.outputSchema?.type, "binary");
   assert.equal(tool.transport?.http?.path, "/api/knowledge/export/docx");
+  const sessionForkTool = catalog.tools.find((item) => item.id === "splitall.agentSession.fork");
+  assert.ok(sessionForkTool, "Tool Management catalog must include splitall.agentSession.fork");
+  assert.equal(sessionForkTool.operationId, "agent_sessions.fork");
+  assert.deepEqual(sessionForkTool.requiredScopes, ["knowledge:write"]);
 }
 
 async function assertFrontendCoverage() {
@@ -221,6 +630,7 @@ async function assertFrontendCoverage() {
   const router = await read("server-web/router/index.ts");
   const bridge = await read("server-web/lib/bridge.ts");
   const knowledgeView = await read("server-web/views/KnowledgeView.vue");
+  const knowledgeImportCard = await read("server-web/components/KnowledgeImportCard.vue");
   const workspacesView = await read("server-web/views/WorkspacesView.vue");
   const debugView = await read("server-web/views/DebugView.vue");
   const toolsView = await read("server-web/views/admin/ToolsView.vue");
@@ -264,21 +674,37 @@ async function assertFrontendCoverage() {
   ], "server-web/lib/bridge.ts");
 
   assertAllIncludes(knowledgeView, [
-    "knowledgeTab === 'management'",
     "knowledgeTab === 'chunking'",
     "knowledgeTab === 'wordCloud'",
-    "knowledgeTab === 'conflicts'",
+    "knowledgeTab.value === \"parsing\"",
+    "knowledgeTab.value === \"retrieval\"",
+    "knowledgeTab === 'review'",
+    "knowledgeTab.value === \"rules\"",
     "knowledgeTab === 'maintenance'",
-    "导出 DOCX",
-    "knowledgeDocxExportUrl",
-    "normalizedDocumentUrl"
+    "uploadFilesToKnowledge({",
+    "onIngestFilesSelected(nextFiles,",
+    "documentParsing: chunkingDocumentParsingConfig()",
+    "bridge.parseDocument"
   ], "server-web/views/KnowledgeView.vue");
+
+  assertAllIncludes(knowledgeImportCard, [
+    "knowledgeDocxExportUrl",
+    "normalizedDocumentUrl",
+    "开始解析",
+    "DOCX",
+    "生成文档",
+    "Number(ingestJob.progressPercent || 0)"
+  ], "server-web/components/KnowledgeImportCard.vue");
 
   assertAllIncludes(workspacesView, [
     "knowledgeScope",
     "knowledgeSourceIds",
     "/api/agent-workspaces",
-    "/context"
+    "/context",
+    "HistorySessionPanel",
+    "/api/agent-sessions",
+    "agentSessionId",
+    "分叉"
   ], "server-web/views/WorkspacesView.vue");
 
   assertAllIncludes(debugView, [
@@ -310,16 +736,38 @@ async function assertFrontendCoverage() {
     "saveRuntimeMounts",
     "reloadRuntimeMounts",
     "enableMountModule",
-    "disableMountModule"
+    "disableMountModule",
+    "void uploadFilesToKnowledge({ ...options, trigger: \"auto\" })",
+    "documentParsing?: DocumentParsingConfig",
+    "const filesToUpload = [...ingestFiles.value]"
   ], "server-web/composables/useConsole.ts");
+}
+
+async function assertStandardDataDirectory() {
+  const files = [
+    ".gitignore",
+    "scripts/start-all.sh",
+    "scripts/clean-existing-service.sh",
+    "server/scripts/start-server.mjs",
+    "server/scripts/doctor.mjs",
+    "docs/SERVER.md"
+  ];
+  for (const file of files) {
+    const text = await read(file);
+    assertIncludes(text, ".splitall-server-data", `${file} must use the standard server data directory`);
+    assert.equal(text.includes("build/server-data"), false, `${file} must not default to build/server-data`);
+  }
 }
 
 async function main() {
   await assertGovernanceDoc();
   await assertProtocolDocs();
+  await assertDynamicParsingImplementation();
+  await assertIndustrialDistillationBenchmark();
   assertOperationRegistry();
   assertToolManagementCatalog();
   await assertFrontendCoverage();
+  await assertStandardDataDirectory();
 }
 
 await main();

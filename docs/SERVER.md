@@ -102,7 +102,7 @@ node server/scripts/start-server.mjs
 
 ## 4. 配置文件
 
-默认数据目录：`build/server-data/`
+默认数据目录：`.splitall-server-data/`
 
 当前主要配置文件：
 
@@ -215,7 +215,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 服务端内置海量文档总结增强链路：
 
-- `AgentWorkspace`：每个智能体有私有自治空间；共享空间只接收结构化 submission、issue、artifact 和 decision proposal。
+- `AgentWorkspace`：团队共享工作空间，保存可切换、可继承、可复制的运行上下文；共享空间只接收结构化 submission、issue、artifact 和 decision proposal。
 - `ContextRuntime`：按模型窗口生成 `ContextPack`，可保存 `ContextProfile` 调整证据、历史和压缩预算。
 - `AgentMemory`：独立保存智能体会话压缩记忆，默认写入 `<userDataPath>/agent-memory/session-memory.jsonl`，并兼容读取旧 `<userDataPath>/context-core/context-session-memory.jsonl`。
 - `MultiAgentCoordinator`：使用 LangGraph.js 固定状态图执行 `Plan -> Retrieve -> ExtractEvidence -> OrganizeTopics -> ParallelAnalysts -> Writer -> Reviewer -> Merger -> PublishArtifact`。
@@ -240,7 +240,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 同等受限能力通过 Tool Management v1 的 `splitall.knowledge.*` 工具暴露给授权智能体。任何事实、实体、关系和分类法变更只允许生成审核项或建议，不允许由总结链路直接覆盖 canonical knowledge。
 
-工作空间上下文热切换接口直接面向运行时：`GET /api/agent-workspaces/:workspaceId/context` 返回解析继承链后的 profile、模型别名、工具授权、知识源和 fingerprint；`GET /api/agent-workspaces/:workspaceId/context-bundle?format=compressed` 导出带 `bundleHash` 的 `gzip+base64` 上下文包；`POST /api/agent-workspaces/:workspaceId/context-bundle/restore` 把该包恢复到调用方有权访问的目标工作空间。恢复会校验可选 `bundleHash`，失败时不改变目标上下文；成功时热切换目标 workspace 的 profile、`modelAlias`、`toolGrantId` 和知识源集合，并写入 `context_bundle_restore` run 与 handoff artifact。
+工作空间上下文热切换接口直接面向运行时：`GET /api/agent-workspaces/:workspaceId/context` 返回解析继承链后的 profile、模型别名、工具授权、知识源、fingerprint 和 `sharingMode=team-shared`；`GET /api/agent-workspaces/:workspaceId/context-bundle?format=compressed` 导出带 `bundleHash` 的 `gzip+base64` 上下文包；`POST /api/agent-workspaces/:workspaceId/context-bundle/restore` 把该包恢复到目标工作空间。恢复会校验可选 `bundleHash`，失败时不改变目标上下文；成功时热切换目标 workspace 的 profile、`modelAlias`、`toolGrantId` 和知识源集合，并写入 `context_bundle_restore` run 与 handoff artifact。
 
 授权智能体使用 Tool Management v1 的同名能力：`splitall.agentWorkspace.context`、`splitall.agentWorkspace.contextBundle.export`、`splitall.agentWorkspace.contextBundle.restore`、`splitall.agentWorkspace.profile.hotswap`、`splitall.agentWorkspace.sources.set`、`splitall.agentWorkspace.share/unshare`。只读 grant 只能读取上下文和导出包；恢复、profile 热切换、继承和共享变更需要 `knowledge:maintain`。
 
@@ -610,9 +610,14 @@ Tool Management v1 也暴露同一热插拔面：`splitall.runtime.info`、`spli
 - `GET /api/jobs/:id/result`
 - `GET /api/jobs/:id/normalized-documents`
 - `GET /api/jobs/:id/normalized-documents/:documentId`
+- `POST /api/knowledge/document-parser/parse`
 
-任务完成后还会生成适配拆分 DOCX 包，落盘在 `<userDataPath>/jobs/<jobId>/normalized-documents/`。PPT/PDF/HTML 会同时输出允许入库的原始材料副本；EML/MSG 只输出 message/thread/transaction DOCX，原始邮件继续走 raw object 审计存储。
-归一化 DOCX 是第一层 `raw-corpus-construction` 语料包，manifest 标记 `external-knowledge-corpus`，每个 chunk 都必须保留 `sectionId`、`sourceRange` 和 chunk 定位。已收纳到第二层 `knowledge-index-construction` 的 canonical knowledge 还可以通过 `GET /api/knowledge/export/docx` 或 CLI `knowledge export-docx --output knowledge.docx` 导出为标准 DOCX，供外部知识库使用；第三层 `knowledge-distillation` 和智能体在线上下文仍通过 `knowledge.search`、evidence pack 和 context runtime 获取。
+任务完成后还会生成归一化知识文档包，落盘在 `<userDataPath>/jobs/<jobId>/normalized-documents/`。PPT/PDF/HTML 会同时输出允许入库的原始材料副本；EML/MSG 只输出 message/thread/transaction DOCX，原始邮件继续走 raw object 审计存储。
+归一化 DOCX 是面向人类阅读和外部知识库导入的第一层 `raw-corpus-construction` 语料包：默认只保持标题、章节顺序、段落、列表和简单表格，不把 chunk id、sourceRange、evidence locator 等机器字段放进正文。机器解析中间态使用 YAML：`manifest.yaml` 和每个 DOCX 的 `machineReadableRelativePath` sidecar 保存 `sectionId`、`sourceRange`、chunk 定位和解析证据。已收纳到第二层 `knowledge-index-construction` 的 canonical knowledge 还可以通过 `GET /api/knowledge/export/docx` 或 CLI `knowledge export-docx --output knowledge.docx` 导出为标准 DOCX；如需机器附录，显式传入 `includeMachineReadable=true`，附录格式为 YAML。第三层 `knowledge-distillation` 优先从第一层原始语料全文蒸馏，必要时分批、多轮覆盖全文，并用 `knowledge.search` / evidence pack 做校验、引用和补证；知识蒸馏必须调用模型闭环，模型不可用时任务失败，不降级成规则整理。智能体在线上下文可以消费蒸馏出的独立文档或背景摘要。
+
+工业级知识蒸馏基准使用 `splitall.knowledge-distillation-industrial.v1`：项目目录先用 `buildMarkdownProjectDigest()` 扫描所有 Markdown 文件并保留目录树、路径、标题树和全文；邮件目录先用 `buildEmailThreadDigest()` 按 RFC 5322 `Message-ID / In-Reply-To / References` 与 RFC 5256 `REFERENCES` 线程语义合并同一事项并按时间从旧到新排列；框架默认模型别名为 `deepseek-v4-flash`，模型闭环为强制路径。真实目录入口是 `npm run server:knowledge:industrial-distill-plan -- --project-dir <project> --email-dir <emails> --output <report.json>`，回归门禁是 `npm run server:verify:knowledge-industrial-distillation`，差距评估指标为 coverage、same-matter merge、timeline order、source trace 和 unsupported claims。
+
+统一文档解析入口遵守结构吸附切分原则和动态参数文档解析策略（`dynamic-parameter-document-parsing-policy`）。文档切分无关粗细，只关乎保留文档的结构和信息；服务端默认先吸附标题树、页/幻灯片顺序、段落、列表、表格、图片、附件、邮件线程和事务时间线等原文档边界，不能把固定 token/字符大小作为第一切分边界。面对超长段落、表格、列表或代码块时，服务端先保留完整 `structureArtifacts`，再派生 `granularityFragments` 用于检索；`knowledge.search` / `knowledge.get.evidence` 调用方必须显式传入 `contextBudget.knowledgeTokens`，第二层按该动态预算决定返回完整结构还是局部颗粒度片段。策略实现拆成 `dispatchDynamicDocumentParsingAlgorithm(input)` 和 `bindDynamicDocumentParsingInvocation(request, runtimeState)`：调度器负责把参数选择映射成独立算法函数，绑定器负责单次接口调用级参数、热重载注册表和策略默认值绑定。调用方显式传入 `granularity.secondaryParse.enabled=true` 时，可以触发较慢的二次解析，backendTrace 必须记录算法、目标颗粒度、父结构和耗时。长段落、长表格或多图片 evidence 回传还必须检查 `payloadBudget.maxResponseBytes` / `payloadBudget.maxEvidenceBytes`；空间不足时返回 `payload.truncated=true` 与 `payload.nextContinuationToken`，由后续 search/evidence continuation 断点续传。
 
 ## 14. 注册式接口层
 
@@ -680,6 +685,7 @@ build/release/splitall-server-linux-x64.tar.gz.sha256
 
 打包阶段会生成并校验 `license-manifest.json`。该 gate 覆盖包内生产依赖闭包、KnowledgeCore、EmbeddingRuntime、VectorStore、内置 embedding/vector fallback，以及可选 sqlite-vec / ONNX 模型状态：
 
+- 项目自身开源许可证为 `GPL-3.0-only`；本段 license gate 指生产离线包内第三方依赖和模型资产的准入策略。
 - allowed licenses 明确写入 manifest，目前包括 `MIT`、`Apache-2.0`、`BSD-2-Clause`、`BSD-3-Clause`、`ISC`、`Zlib`、`BlueOak-1.0.0`、`0BSD`、`CC0-1.0`、`Unlicense`、`project-internal`，并允许已列明的兼容表达式，例如 `MIT OR Apache-2.0`。
 - blocked classes 明确写入 manifest，包括 GPL/AGPL/LGPL/SSPL、MPL/EPL/CDDL、source-available/restricted、UNKNOWN/NOASSERTION、未知模型权重、受限模型、cloud-only runtime、启动期隐式下载等类别。
 - 任意生产依赖被判定为 `blocked` 或 `unknown` 时，离线打包失败。
@@ -996,7 +1002,7 @@ OpenRouter、Gemini 等 API Key 模型会发起最小化连通性请求；ChatGP
 - RPC：`agent_gateway.config.get`、`agent_gateway.config.set`、`agent_gateway.call`、`agents.list`、`agents.create`、`agents.update`、`agents.delete`
 - CLI：`agent-gateway config`、`agent-gateway config set --body config.json`、`agent-gateway call --question "..." [--workspace-id WORKSPACE_ID] [--tool-grant-id GRANT_ID]`、`agents list`、`agents create/update/delete`.
 
-`POST /api/agent-gateway/call` 传入 `workspaceId` 时，服务端会先解析该工作空间运行上下文。调用方未显式指定模型、上下文 profile、工具授权或检索源时，会自动使用工作空间的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds`；响应包含 `workspaceContext`，custom-http 出站请求也会携带精简后的同名字段，外部智能体可以据此确认本次热切换状态。权限不满足时返回 404，不会退回到其他用户的 workspace。
+`POST /api/agent-gateway/call` 传入 `workspaceId` 时，服务端会先解析该工作空间运行上下文。调用方未显式指定模型、上下文 profile、工具授权或检索源时，会自动使用工作空间的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds`；响应包含 `workspaceContext`，custom-http 出站请求也会携带精简后的同名字段，外部智能体可以据此确认本次热切换状态。工作空间默认 `team-shared`，`ownerUserId` 只作为创建者和审计归属，不作为团队内读取或切换边界。
 
 模型分配示例：
 

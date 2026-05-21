@@ -61,7 +61,7 @@ const {
               <div class="section-header compact-section-header">
                 <div>
                   <h4>队列状态</h4>
-                  <p>这里收拢 queue-monitor、导入解析任务和智能巡检任务队列。</p>
+                  <p>这里收拢 queue-monitor、导入解析、知识蒸馏和智能巡检任务队列。</p>
                 </div>
                 <div class="section-tags">
                   <span>监控项 {{ queueMonitorState?.summary.totalCount || 0 }}</span>
@@ -102,7 +102,7 @@ const {
               </div>
               <div v-if="workQueueRows.length === 0" class="empty-state">
                 <strong>暂无队列记录</strong>
-                <span>当前没有导入解析、智能巡检或队列监控记录。</span>
+                <span>当前没有导入解析、知识蒸馏、智能巡检或队列监控记录。</span>
               </div>
               <p v-if="queueMonitorState?.statePath" class="module-note">
                 队列状态文件：{{ queueMonitorState.statePath }}；事件日志：{{ queueMonitorState.eventLogPath }}

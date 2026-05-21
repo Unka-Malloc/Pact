@@ -19,6 +19,8 @@ import type {
   DiscoveryConfig,
   DiscoveryConfigResponse,
   DiscoveryClientsResponse,
+  DocumentParseResponse,
+  DocumentParsingConfig,
   EmailRuleSetResponse,
   EventSubscriptionResponse,
   ExpertVocabularyHistoryResponse,
@@ -187,6 +189,29 @@ type Bridge = {
   pickFiles: () => Promise<string[]>;
   pickFolders: () => Promise<string[]>;
   createJob: (payload: SplitPayload) => Promise<SplitJob>;
+  reparseJob: (jobId: string, payload?: {
+    documentParsing?: DocumentParsingConfig;
+    settings?: AgentSettings;
+  }) => Promise<SplitJob>;
+  parseDocument: (payload: {
+    pipelineId?: string;
+    expectedOutput?: string;
+    expectedOutputs?: string[];
+    inputText?: string;
+    sources?: Array<Record<string, unknown>>;
+    filePaths?: string[];
+    uploadedFiles?: Array<Record<string, unknown>>;
+    uploadSessionId?: string;
+    cleanupUploadSession?: boolean;
+    dryRun?: boolean;
+    chunking?: DocumentParsingConfig["chunking"];
+    contextBudget?: DocumentParsingConfig["contextBudget"];
+    payloadBudget?: DocumentParsingConfig["payloadBudget"];
+    granularity?: DocumentParsingConfig["granularity"];
+    dynamicParsing?: DocumentParsingConfig["dynamicParsing"];
+    documentParsing?: DocumentParsingConfig;
+    settings?: AgentSettings;
+  }) => Promise<DocumentParseResponse>;
   listJobs: (limit?: number) => Promise<SplitJobListResponse>;
   deleteJob: (jobId: string) => Promise<{ ok: boolean; deletedJob: SplitJob }>;
   getJob: (jobId: string) => Promise<SplitJob | null>;
@@ -296,6 +321,18 @@ type Bridge = {
     limit?: number;
     includeMachineReadable?: boolean;
   }) => string;
+  knowledgeMarkdownExportUrl: (params?: {
+    documentId?: string;
+    batchId?: string;
+    sourceId?: string;
+    limit?: number;
+  }) => string;
+  knowledgeHtmlExportUrl: (params?: {
+    documentId?: string;
+    batchId?: string;
+    sourceId?: string;
+    limit?: number;
+  }) => string;
   createUploadSession: (payload: Record<string, unknown>) => Promise<UploadSessionResponse>;
   uploadSessionChunk: (
     sessionId: string,
@@ -306,6 +343,17 @@ type Bridge = {
   getUploadSession: (sessionId: string) => Promise<UploadSessionResponse>;
   getNormalizedDocuments: (jobId: string) => Promise<SplitResult["normalizedDocuments"]>;
   normalizedDocumentUrl: (jobId: string, documentId: string) => string;
+  listKnowledgeDistillationWorkbenchRuns: (limit?: number) => Promise<Record<string, unknown>>;
+  createKnowledgeDistillationWorkbenchRun: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  getKnowledgeDistillationWorkbenchRun: (runId: string) => Promise<Record<string, unknown>>;
+  resumeKnowledgeDistillationWorkbenchRun: (runId: string) => Promise<Record<string, unknown>>;
+  cancelKnowledgeDistillationWorkbenchRun: (runId: string, reason?: string) => Promise<Record<string, unknown>>;
+  archiveKnowledgeDistillationWorkbenchRun: (runId: string) => Promise<Record<string, unknown>>;
+  deleteKnowledgeDistillationWorkbenchRun: (runId: string) => Promise<Record<string, unknown>>;
+  rerunKnowledgeDistillationWorkbenchStage: (runId: string, stageId: string) => Promise<Record<string, unknown>>;
+  compareKnowledgeDistillationWorkbenchRuns: (leftRunId: string, rightRunId: string) => Promise<Record<string, unknown>>;
+  knowledgeDistillationWorkbenchExportUrl: (runId: string, stageId: string, format?: string) => string;
+  knowledgeDistillationWorkbenchPackageUrl: (runId: string) => string;
 };
 
 let csrfToken = "";
@@ -694,6 +742,10 @@ const browserBridge: Bridge = {
   pickFiles: async () => [],
   pickFolders: async () => [],
   createJob: (payload) => postJson<SplitJob>("/api/jobs", payload),
+  reparseJob: (jobId, payload = {}) =>
+    postJson<SplitJob>(`/api/jobs/${encodeURIComponent(jobId)}/reparse`, payload),
+  parseDocument: (payload) =>
+    postJson<DocumentParseResponse>("/api/knowledge/document-parser/parse", payload),
   listJobs: (limit = 50) =>
     getJson<SplitJobListResponse>(`/api/jobs?limit=${encodeURIComponent(String(limit))}`),
   deleteJob: (jobId) =>
@@ -861,6 +913,24 @@ const browserBridge: Bridge = {
     const suffix = query.toString();
     return `/api/knowledge/export/docx${suffix ? `?${suffix}` : ""}`;
   },
+  knowledgeMarkdownExportUrl: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.documentId) { query.set("documentId", params.documentId); }
+    if (params.batchId) { query.set("batchId", params.batchId); }
+    if (params.sourceId) { query.set("sourceId", params.sourceId); }
+    if (params.limit) { query.set("limit", String(params.limit)); }
+    const suffix = query.toString();
+    return `/api/knowledge/export/markdown${suffix ? `?${suffix}` : ""}`;
+  },
+  knowledgeHtmlExportUrl: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.documentId) { query.set("documentId", params.documentId); }
+    if (params.batchId) { query.set("batchId", params.batchId); }
+    if (params.sourceId) { query.set("sourceId", params.sourceId); }
+    if (params.limit) { query.set("limit", String(params.limit)); }
+    const suffix = query.toString();
+    return `/api/knowledge/export/html${suffix ? `?${suffix}` : ""}`;
+  },
   createUploadSession: (payload) => postJson<UploadSessionResponse>("/api/upload-sessions", payload),
   uploadSessionChunk: (sessionId, fileIndex, offset, chunk) =>
     putBinaryJson<UploadSessionResponse>(
@@ -876,7 +946,64 @@ const browserBridge: Bridge = {
       `/api/jobs/${encodeURIComponent(jobId)}/normalized-documents`,
     ),
   normalizedDocumentUrl: (jobId, documentId) =>
-    `/api/jobs/${encodeURIComponent(jobId)}/normalized-documents/${encodeURIComponent(documentId)}`
+    `/api/jobs/${encodeURIComponent(jobId)}/normalized-documents/${encodeURIComponent(documentId)}`,
+  listKnowledgeDistillationWorkbenchRuns: (limit = 50) =>
+    getJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs?limit=${encodeURIComponent(String(limit))}`,
+    ),
+  createKnowledgeDistillationWorkbenchRun: (payload) =>
+    postJson<Record<string, unknown>>(
+      "/api/knowledge/distillation/workbench/runs",
+      payload,
+      { safetyConfirm: true },
+    ),
+  getKnowledgeDistillationWorkbenchRun: (runId) =>
+    getJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}`,
+    ),
+  resumeKnowledgeDistillationWorkbenchRun: (runId) =>
+    postJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/resume`,
+      {},
+      { safetyConfirm: true },
+    ),
+  cancelKnowledgeDistillationWorkbenchRun: (runId, reason = "") =>
+    postJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/cancel`,
+      { reason },
+      { safetyConfirm: true },
+    ),
+  archiveKnowledgeDistillationWorkbenchRun: (runId) =>
+    postJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/archive`,
+      {},
+      { safetyConfirm: true },
+    ),
+  deleteKnowledgeDistillationWorkbenchRun: (runId) =>
+    deleteJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}`,
+      { safetyConfirm: true },
+    ),
+  rerunKnowledgeDistillationWorkbenchStage: (runId, stageId) =>
+    postJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(stageId)}/rerun`,
+      {},
+      { safetyConfirm: true },
+    ),
+  compareKnowledgeDistillationWorkbenchRuns: (leftRunId, rightRunId) => {
+    const query = new URLSearchParams();
+    query.set("rightRunId", rightRunId);
+    return getJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(leftRunId)}/compare?${query.toString()}`,
+    );
+  },
+  knowledgeDistillationWorkbenchExportUrl: (runId, stageId, format = "markdown") => {
+    const query = new URLSearchParams();
+    query.set("format", format);
+    return `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/exports/${encodeURIComponent(stageId)}?${query.toString()}`;
+  },
+  knowledgeDistillationWorkbenchPackageUrl: (runId) =>
+    `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/package`,
 };
 
 export const bridge = browserBridge;

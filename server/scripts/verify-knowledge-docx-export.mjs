@@ -18,7 +18,12 @@ function assertDocxIncludes(buffer, needle, message) {
   assert.equal(xml.includes(needle), true, message || `DOCX must include ${needle}`);
 }
 
-async function assertNormalizedDocumentChunkEvidence() {
+function assertDocxNotIncludes(buffer, needle, message) {
+  const xml = docxXml(buffer);
+  assert.equal(xml.includes(needle), false, message || `DOCX must not include ${needle}`);
+}
+
+async function assertNormalizedHumanDocxAndYamlMachineState() {
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "splitall-normalized-docx-"));
   const jobId = "normalized-docx-export";
   const manifest = await generateNormalizedDocuments({
@@ -63,15 +68,31 @@ async function assertNormalizedDocumentChunkEvidence() {
   assert.equal(manifest.packageType, "splitall.normalized-documents");
   assert.equal(manifest.packageRole, "external-knowledge-corpus");
   assert.equal(manifest.architecture.corpusExport.format, "docx");
+  assert.equal(manifest.humanReadable.format, "docx");
+  assert.equal(manifest.machineReadable.format, "yaml");
   assert.equal(manifest.architecture.agentContext.interface.includes("knowledge.search"), true);
   assert.ok(manifest.documents.length > 0);
 
   const firstDocx = manifest.documents.find((document) => document.artifactType === "docx");
   assert.ok(firstDocx, "normalized package must contain DOCX documents");
   const buffer = await fs.readFile(path.join(userDataPath, "jobs", jobId, "normalized-documents", firstDocx.relativePath));
-  assertDocxIncludes(buffer, "chunk-background", "normalized DOCX must carry chunk id");
-  assertDocxIncludes(buffer, "section-background", "normalized DOCX must carry section id");
-  assertDocxIncludes(buffer, "startLine", "normalized DOCX must carry source range");
+  assertDocxIncludes(buffer, "客户续费", "human DOCX must keep Markdown title text");
+  assertDocxIncludes(buffer, "背景", "human DOCX must keep Markdown section text");
+  assertDocxIncludes(buffer, "背景证据正文", "human DOCX must keep body text");
+  assertDocxIncludes(buffer, "Heading1", "human DOCX must render Markdown heading as Word heading");
+  assertDocxNotIncludes(buffer, "chunk-background", "human DOCX must not expose chunk ids");
+  assertDocxNotIncludes(buffer, "startLine", "human DOCX must not expose source range internals");
+
+  assert.equal(firstDocx.machineReadableFormat, "yaml");
+  assert.ok(firstDocx.machineReadableRelativePath.endsWith(".yaml"));
+  const machineYaml = await fs.readFile(
+    path.join(userDataPath, "jobs", jobId, "normalized-documents", firstDocx.machineReadableRelativePath),
+    "utf8"
+  );
+  assert.ok(machineYaml.includes("splitall.normalized-document.machine.v1"));
+  assert.ok(machineYaml.includes("chunk-background"));
+  assert.ok(machineYaml.includes("section-background"));
+  await fs.access(path.join(userDataPath, "jobs", jobId, "normalized-documents", "manifest.yaml"));
 }
 
 function buildKnowledgeDocument() {
@@ -158,20 +179,31 @@ async function assertKnowledgeCoreDocxExport() {
     assert.equal(result.contentType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     assert.equal(result.fileName.endsWith(".docx"), true);
     assert.equal(result.manifest.packageRole, "external-knowledge-corpus");
+    assert.equal(result.manifest.documentRole, "human-readable-normalized-knowledge-document");
     assert.equal(result.manifest.documentCount, 1);
     assert.ok(result.buffer.length > 0);
-    assertDocxIncludes(result.buffer, "SplitAll Knowledge Export");
+    assertDocxIncludes(result.buffer, "SplitAll 知识文档导出");
     assertDocxIncludes(result.buffer, "客户续费资料");
     assertDocxIncludes(result.buffer, "背景证据正文");
-    assertDocxIncludes(result.buffer, "external-knowledge-corpus");
-    assertDocxIncludes(result.buffer, "chunk-background");
+    assertDocxNotIncludes(result.buffer, "external-knowledge-corpus");
+    assertDocxNotIncludes(result.buffer, "chunk-background");
+
+    const machineResult = await knowledgeCore.exportDocx({
+      batchId: "batch-docx",
+      limit: 50,
+      includeMachineReadable: true
+    });
+    assert.equal(machineResult.manifest.machineReadableAppendixFormat, "yaml");
+    assertDocxIncludes(machineResult.buffer, "机器可读 YAML 附录");
+    assertDocxIncludes(machineResult.buffer, "machine-readable-export-appendix");
+    assertDocxIncludes(machineResult.buffer, "chunk-background");
   } finally {
     await knowledgeCore.close();
   }
 }
 
 async function main() {
-  await assertNormalizedDocumentChunkEvidence();
+  await assertNormalizedHumanDocxAndYamlMachineState();
   await assertKnowledgeCoreDocxExport();
   console.log("knowledge docx export verification passed");
 }

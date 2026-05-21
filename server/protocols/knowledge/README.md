@@ -47,11 +47,55 @@ SplitAll separates knowledge management into three layers:
 
 | Layer | Responsibility |
 | --- | --- |
-| `raw-corpus-construction` | Parse raw files, mail, attachments, chats, local mirrors, and directories into structure-preserving `sources`, `chunks`, normalized DOCX packages, source ranges, timelines, transaction chains, and raw object references. |
-| `knowledge-index-construction` | Parse and map the normalized corpus into the built-in `KnowledgeCore` or an external knowledge-base adapter. This layer owns document/section/block/asset/evidence/embedding/relationship indexing and exposes RAG-safe evidence through `splitall.knowledge.v1`. |
-| `knowledge-distillation` | Consume second-layer evidence only, then generate lossy summaries, governance candidates, and workspace/context background. It must not replace `knowledge.search` as the full-query surface. |
+| `raw-corpus-construction` | Provide format-conversion-only tools first: every supported raw input format must be exportable to DOCX without chunking, filing, or indexing. Supported inputs include Markdown, HTML, PDF, PPT/PPTX, DOC/DOCX, XLS/XLSX, mail, image-based documents, and plain text; Markdown is only one supported input type. Then parse raw files, mail, attachments, chats, local mirrors, and directories into structure-preserving `sources`, normalized DOCX packages, source ranges, timelines, transaction chains, and raw object references. User-facing export is `raw-corpus.format.convert`, selected by `targetFormat`. |
+| `knowledge-index-construction` | Continue the same corpus-filing business line by filing normalized corpus into callable documents, roughly concatenating multiple sources about the same matter into newest-to-oldest unified dossiers, then parsing and mapping them into the built-in `KnowledgeCore` or an external knowledge-base adapter. This layer owns document/section/block/asset/evidence/embedding/relationship indexing, exposes RAG-safe evidence through `splitall.knowledge.v1`, and exports same-matter timeline dossiers through `knowledge.dossier.export`. |
+| `knowledge-distillation` | Read first-layer raw corpus full text first, cover long sources through batches/steps, then generate self-contained Markdown/DOCX/HTML/PDF-style portable documents. Second-layer evidence is used for validation, citations, remediation, and audit; distillation must not replace `knowledge.search` as the full-query surface. User-facing export is `knowledge.distillation.export`, selected by `outputFormat`. |
 
-The second layer is the external knowledge-base integration point. For that reason raw document parsing is shared across the first two layers: the first layer preserves and normalizes original structure; the second layer parses normalized packages, manifests, source metadata, and asset locators into whichever index backend is active. External knowledge-base adapters may call remote ingestion/search APIs internally, but public search, evidence, asset, export, and render behavior must adapt back to this protocol.
+The first and second layers are one business workflow: format conversion, corpus filing, same-matter dossier aggregation, then indexing. The second layer is the external knowledge-base integration point. For that reason raw document parsing is shared across the first two layers: the first layer preserves and normalizes original structure; the second layer parses normalized packages, manifests, source metadata, and asset locators into whichever index backend is active. Same-matter dossier aggregation must work before advanced simplification: emails, back-and-forth messages, document revisions, or related files are first sorted by `capturedAt`, `sourceUpdatedAt`, `sourceCreatedAt`, or `sourceCollectedAt` from newest to oldest and concatenated into an auditable unified document. The protocol has three user-facing export semantics: `raw-corpus.format.convert` for raw format conversion without persistence side effects, `knowledge.dossier.export` for timeline-concatenated documents, and `knowledge.distillation.export` for refined portable knowledge documents. Export support does not replace the local knowledge-base runtime shape: the local `KnowledgeCore` or external-backend mapping must still retain documents, sections, blocks, structure artifacts, fragments, evidence, assets, hierarchy, embeddings, dossiers, and distillation runs for local agent retrieval. External knowledge-base adapters may call remote ingestion/search APIs internally, but public search, evidence, asset, export, and render behavior must adapt back to this protocol.
+
+## Industrial Distillation Benchmark Protocol
+
+Industrial knowledge distillation is tracked by `splitall.knowledge-distillation-industrial.v1`. It is a benchmark and gate protocol, not a new persistence backend.
+
+| Stage | Contract |
+| --- | --- |
+| Markdown project digest | `buildMarkdownProjectDigest()` scans all Markdown files under a project, excludes dependency/build/cache folders, and preserves directory tree, relative path, heading outline, file order, and full source text. External baseline tools include Repomix and Gitingest. |
+| Email thread digest | `buildEmailThreadDigest()` scans `.eml` files, groups same-matter messages through RFC 5322 `Message-ID`, `In-Reply-To`, and `References`, follows the RFC 5256 `REFERENCES` threading semantics where applicable, and sorts each thread from oldest to newest. |
+| Framework run | SplitAll passes the generated digest documents as first-layer `rawDocuments`; the default industrial model alias is `deepseek-v4-flash`, while actual model calls still require `modelEnabled=true`. |
+| Gap evaluation | `evaluateIndustrialDistillationGap()` compares external mature skill output and SplitAll framework output by `coverage`, `same-matter merge`, `timeline order`, `source trace`, and `unsupported claims`. |
+
+CLI entry:
+
+```bash
+npm run server:knowledge:industrial-distill-plan -- --project-dir <project> --email-dir <emails> --output <report.json>
+```
+
+Regression gate:
+
+```bash
+npm run server:verify:knowledge-industrial-distillation
+```
+
+## 动态参数文档解析策略
+
+Policy id: `dynamic-parameter-document-parsing-policy`.
+
+Document chunking is structure-adhesive by default. Its first responsibility is preserving document structure and information, not producing chunks of a default size. The parser must anchor to headings, page/slide order, paragraphs, lists, tables, images, attachments, mail threads, and transaction timelines before it derives retrieval fragments. Token or character size limits only constrain derived fragments, response budgets, payload continuation, or explicitly requested secondary parsing.
+
+Long paragraphs, tables, lists, and code blocks use a two-track materialization model:
+
+1. The first layer records the original structural unit as a `structureArtifact`. It preserves source order, heading path, page/line coordinates, table headers, row/column ranges, sourceRange, textDigest, asset references, and parent-child links.
+2. The parsing/chunking pipeline may derive smaller `granularityFragments` from that artifact. Examples include sentence-level paragraph fragments, row-window tables, cell-window tables, line-preserving code windows, and token-window fallback fragments.
+3. Every fragment must keep `parentArtifactId`, `granularity`, `fragmentRange`, `order`, and `fragmentationTrace`. A fragment is retrieval material, not the canonical replacement for the original artifact.
+
+The strategy has two required function boundaries:
+
+- `dispatchDynamicDocumentParsingAlgorithm(input)` is the algorithm dispatcher. It maps `algorithmId`, `artifactType`, `granularity`, `contextBudget`, and `payloadBudget` to a concrete function. Concrete algorithms such as `parseParagraphSentenceV1`, `parseTableRowWindowV1`, `parseTableCellWindowV1`, `parseCodeLineWindowV1`, and `parseTokenWindowFallbackV1` must stay in separate functions; the dispatcher must not contain splitting logic.
+- `bindDynamicDocumentParsingInvocation(request, runtimeState)` is the per-call binding function. It normalizes request parameters, reads the current hot-reloaded algorithm registry and policy defaults, binds them to one invocation, then calls the dispatcher. Bound parameters apply only to the current interface call.
+
+Search and evidence reads must be budget-aware. Callers pass `contextBudget.knowledgeTokens` as the dynamic budget reserved for this knowledge load. This is not the model's full context window and must not be inferred only from the model alias. If the budget can fit the complete original structure, `knowledge.search` should return the `structureArtifact`; if not, it may return selected `granularityFragments` and expose `completeOriginalAvailable=true` plus the parent locator. A caller may explicitly set `granularity.secondaryParse.enabled=true` to request slower on-demand splitting with a named algorithm and target size. Adapters that cannot do live secondary parsing may use precomputed fragments, but they must report that limitation in capabilities or backendTrace.
+
+Payload size is a separate budget from knowledge tokens. Requests may pass `payloadBudget.maxResponseBytes`, `payloadBudget.maxEvidenceBytes`, and `continuationToken`. If a long paragraph, table, or multimodal evidence pack cannot fit the response payload, the adapter must return `payload.truncated=true`, `payload.nextContinuationToken`, returned ranges, and parent locators instead of overfilling the response. Continuation tokens must be bound to tenant, workspace/source scope, query hash, artifact id, range cursor, and expiration time.
 
 ## External Knowledge-Base Adapter Protocol
 
@@ -114,6 +158,10 @@ Minimum conformance set:
     "lexicalSearch": true,
     "hybridSearch": true,
     "metadataFilters": true,
+    "structureArtifacts": true,
+    "granularityFragments": true,
+    "dynamicContextBudget": true,
+    "secondaryParse": false,
     "rerank": false,
     "syncMirror": true,
     "deleteBatch": true,
@@ -124,7 +172,9 @@ Minimum conformance set:
     "storesSourceTrace": true,
     "storesCitations": true,
     "storesAssetLocators": true,
-    "opaqueAssetIds": true
+    "opaqueAssetIds": true,
+    "storesStructureArtifacts": true,
+    "storesFragmentParentLinks": true
   },
   "limits": {
     "maxBatchDocuments": 10000,
@@ -184,6 +234,27 @@ Adapters ingest first-layer corpus packages through `knowledge.ingest.batch` or 
           "blockType": "paragraph",
           "sourceRange": {"startLine": 8, "endLine": 12},
           "metadata": {"threadId": "thread-1", "transactionId": "tx-1"}
+        }
+      ],
+      "structureArtifacts": [
+        {
+          "artifactId": "artifact::block::1",
+          "artifactType": "paragraph",
+          "blockId": "block::1",
+          "textDigest": "sha256:...",
+          "sourceRange": {"startLine": 8, "endLine": 12},
+          "order": 1
+        }
+      ],
+      "granularityFragments": [
+        {
+          "fragmentId": "fragment::block::1::1",
+          "parentArtifactId": "artifact::block::1",
+          "granularity": "paragraph-sentence",
+          "fragmentRange": {"sentenceStart": 1, "sentenceEnd": 3},
+          "text": "Normalized content...",
+          "order": 1,
+          "fragmentationTrace": {"policy": "dynamic-parameter-document-parsing-policy", "algorithm": "paragraph-sentence-v1"}
         }
       ],
       "assets": [
@@ -257,6 +328,24 @@ Adapters must persist or reconstruct mappings from SplitAll ids to backend ids. 
     "includeRelationships": true,
     "includeAssets": true
   },
+  "contextBudget": {
+    "knowledgeTokens": 4096,
+    "budgetScope": "knowledge-recall-only"
+  },
+  "payloadBudget": {
+    "maxResponseBytes": 262144,
+    "maxEvidenceBytes": 65536
+  },
+  "granularity": {
+    "preferOriginalStructure": true,
+    "allowPartialEvidence": true,
+    "secondaryParse": {
+      "enabled": true,
+      "algorithm": "table-row-window-v1",
+      "targetTokens": 512
+    }
+  },
+  "continuationToken": "",
   "policy": {
     "tenantId": "local",
     "requiredScopes": ["knowledge:read"]
@@ -281,6 +370,13 @@ Search response must be evidence-first:
       "blocks": [
         {
           "blockId": "block::1",
+          "artifactId": "artifact::block::1",
+          "materialization": {
+            "mode": "fragment",
+            "parentArtifactId": "artifact::block::1",
+            "granularity": "paragraph-sentence",
+            "completeOriginalAvailable": true
+          },
           "text": "Normalized content...",
           "sourceRange": {"startLine": 8, "endLine": 12}
         }
@@ -310,15 +406,22 @@ Search response must be evidence-first:
     "enforced": true,
     "selected": {"documentIds": ["document::job-123::message-1"], "sectionIds": ["section::1"]}
   },
+  "payload": {
+    "truncated": false,
+    "returnedBytes": 4096,
+    "maxResponseBytes": 262144,
+    "nextContinuationToken": ""
+  },
   "warnings": []
 }
 ```
 
-Adapters may return backend-specific diagnostics under `backendTrace`, but callers must not depend on those fields for correctness.
+Adapters may return backend-specific diagnostics under `backendTrace`, but callers must not depend on those fields for correctness. When `granularity.secondaryParse.enabled=true` is honored, `backendTrace.secondaryParse` must record the algorithm, target size, source artifact id, generated fragment count, elapsed time, and whether precomputed or on-demand fragments were used.
 
 ### Evidence, Asset, Export, And Delete Semantics
 
-- `knowledge.get.evidence` accepts `evidenceId` plus optional `includeBlocks`, `includeAssets`, and `renderMarkdown` flags. It returns the same evidence shape as search and must work after the original query response has been cached.
+- `knowledge.get.evidence` accepts `evidenceId` plus optional `includeBlocks`, `includeAssets`, `renderMarkdown`, `contextBudget`, `payloadBudget`, and `continuationToken` fields. It returns the same evidence shape as search and must work after the original query response has been cached.
+- When evidence payload is too large, search and evidence reads must support resumable reads with `payload.nextContinuationToken`. The token is opaque to callers and must be rechecked against tenant, workspace/source scope, query hash, artifact id, range cursor, and expiration before returning the next range.
 - `knowledge.asset` accepts only opaque `assetId`. It returns `{ found, mediaType, byteLength, sha256, stream|bytes|url, missingReason }`. If the external backend owns the asset, the adapter must proxy or sign access without exposing private backend paths.
 - `knowledge.export.docx` exports from the active mount. External adapters may regenerate DOCX from their backend objects, but exports must preserve SplitAll ids, evidence locators, citations, sourceTrace, and asset references.
 - `knowledge.delete.batch` must remove or tombstone every object derived from a batch. If the backend only supports soft delete, search and sync must hide tombstoned objects.
@@ -390,17 +493,44 @@ Allowed mirror `kind` values are `document`, `section`, `block`, `asset`, `relat
 `asset` records are metadata only; binary content is still read through `GET /api/knowledge/assets/:assetId`.
 `tombstone` records use `record.targetKind` plus the target id, letting downstream caches remove stale local projections while keeping server authority.
 
-## DOCX Corpus Export Boundary
+## Knowledge Export Boundary
 
-SplitAll keeps two separate knowledge delivery paths:
+SplitAll keeps three user-facing export semantics plus one canonical corpus export for external knowledge bases. They may share renderers, but they must not share input scope or persistence side effects:
 
-| Path | Interface | Use |
+| Export | Interface | Use |
 | --- | --- | --- |
-| Raw materials to normalized documents | `generateNormalizedDocuments`, `GET /api/jobs/:jobId/normalized-documents`, `GET /api/jobs/:jobId/normalized-documents/:documentId` | Produce `splitall.normalized-documents` DOCX packages from every accepted input format for external KB ingestion. |
-| Accepted knowledge to agent context | `knowledge.search`, `knowledge.get.evidence`, `knowledge.render.markdown`, context runtime | Serve grounded evidence packs to agents at runtime. |
-| Accepted knowledge to external corpus | `knowledge.export.docx`, `GET /api/knowledge/export/docx`, `knowledge export-docx --output knowledge.docx` | Export canonical knowledge objects from the active `knowledgeBase` mount as standard DOCX without bypassing the protocol boundary. |
+| Raw corpus format conversion | `raw-corpus.format.convert`, `POST /api/knowledge/format-convert`, `knowledge convert --to <format>` | Convert original materials to a requested `targetFormat` such as DOCX, Markdown, HTML, or PDF without filing, chunking, indexing, or creating canonical evidence. |
+| Timeline dossier export | `knowledge.dossier.export`, `POST /api/knowledge/dossiers/export`, `knowledge dossier-export --to <format>` | Export emails, message exchanges, document revisions, or related sources about the same matter as a timestamped newest-to-oldest document before deduplication or summarization. |
+| Distillation result export | `knowledge.distillation.export`, `POST /api/knowledge/distillations/export`, `knowledge distill-export --to <format>` | Export refined self-contained distillation results as Markdown, DOCX, HTML, PDF, or another supported `outputFormat`; the document must be understandable outside SplitAll. |
+| Canonical knowledge corpus export | `knowledge.export.docx`, `GET /api/knowledge/export/docx`, `knowledge export-docx --output knowledge.docx` | Export accepted knowledge objects from the active `knowledgeBase` mount as standard DOCX for external KB ingestion and audit without bypassing the protocol boundary. |
 
-DOCX exports are offline corpus artifacts. Agents must still use `knowledge.search` and evidence packs for live context assembly.
+Offline exports are portable artifacts. Agents must still use `knowledge.search`, evidence packs, asset protocol, and configured workspace source scopes for live context assembly. Exported files are not a runtime index, and `knowledge.export.docx` must not be treated as a replacement for raw format conversion, timeline dossier export, or distillation result export.
+
+## Knowledge Distillation Workbench
+
+The console-facing distillation workflow is a durable workbench, not a loose button. It runs the full project-document path as ordered stages:
+
+1. Raw corpus format conversion.
+2. Raw corpus filing / normalized corpus package.
+3. Project dossier rough concatenation.
+4. Knowledge index evidence summary.
+5. Self-contained knowledge distillation document.
+
+Each stage has a human-readable explanation, a persisted preview, export formats, metrics, warnings, checkpoint metadata, and an activity write-verification record. The run state is stored under `knowledge-distillation-workbench/runs/<runId>/run.json`, and every run is also registered in `queue-monitor`, so the console can leave the page and the Admin Jobs page still shows the task. Interrupted or failed runs are resumed through the same workbench API instead of silently re-running unrelated stages.
+
+| Operation | HTTP | Purpose |
+| --- | --- | --- |
+| `knowledge.distillation.workbench.runs.list` | `GET /api/knowledge/distillation/workbench/runs` | List persisted workbench runs. |
+| `knowledge.distillation.workbench.runs.create` | `POST /api/knowledge/distillation/workbench/runs` | Create a background workbench run from a completed project parse job. |
+| `knowledge.distillation.workbench.runs.get` | `GET /api/knowledge/distillation/workbench/runs/:runId` | Read current run state and stage previews. |
+| `knowledge.distillation.workbench.runs.resume` | `POST /api/knowledge/distillation/workbench/runs/:runId/resume` | Resume a waiting or failed run from persisted stage state. |
+| `knowledge.distillation.workbench.runs.cancel` | `POST /api/knowledge/distillation/workbench/runs/:runId/cancel` | Cancel a queued/running/waiting run and close its queue-monitor item. |
+| `knowledge.distillation.workbench.runs.archive` | `POST /api/knowledge/distillation/workbench/runs/:runId/archive` | Hide an obsolete run from the default task list without deleting its package. |
+| `knowledge.distillation.workbench.runs.delete` | `DELETE /api/knowledge/distillation/workbench/runs/:runId` | Remove an obsolete workbench run directory. |
+| `knowledge.distillation.workbench.stage.rerun` | `POST /api/knowledge/distillation/workbench/runs/:runId/stages/:stageId/rerun` | Preserve the current stage output as a version and rerun that stage plus downstream stages. |
+| `knowledge.distillation.workbench.stage.export` | `GET /api/knowledge/distillation/workbench/runs/:runId/exports/:stageId?format=markdown\|docx\|html\|json\|package` | Export any completed stage result or a ZIP package with the stage artifact and normalized corpus assets. |
+| `knowledge.distillation.workbench.runs.package` | `GET /api/knowledge/distillation/workbench/runs/:runId/package` | Download the whole workbench package, including stage outputs, run metadata, normalized DOCX, YAML sidecars, source materials, and assets. |
+| `knowledge.distillation.workbench.runs.compare` | `GET /api/knowledge/distillation/workbench/runs/:runId/compare?rightRunId=<id>` | Compare two workbench versions by stage status, metrics, warnings, and output size. |
 
 ## Asset URL Policy
 

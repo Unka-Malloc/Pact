@@ -69,5 +69,8 @@ export function normalizedContentType(filePath) {
   if (extension === ".html" || extension === ".htm") {
     return "text/html; charset=utf-8";
   }
+  if (extension === ".yaml" || extension === ".yml") {
+    return "application/yaml; charset=utf-8";
+  }
   return "application/octet-stream";
 }
