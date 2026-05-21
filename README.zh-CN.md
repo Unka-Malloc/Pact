@@ -4,7 +4,7 @@
 
 > 可控的智能体协作空间。
 
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL_3.0--only-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL_3.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Rust](https://img.shields.io/badge/Rust-CLI-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
