@@ -97,6 +97,56 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     aspects: ["module-ecosystem", "sdk"]
   },
   {
+    id: "workspace_governance.describe",
+    feature: "agent_workspace",
+    label: "工作空间组织治理总览",
+    target: { controller: "system", method: "handleWorkspaceGovernance" },
+    http: { method: "GET", path: "/api/workspace-governance", localInForwardMode: true },
+    rpc: { method: "workspace_governance.describe" },
+    cli: { command: ["workspace-governance"], usage: "workspace-governance" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["workspace-governance", "organization-policy"]
+  },
+  {
+    id: "workspace_governance.policy.set",
+    feature: "agent_workspace",
+    label: "设置工作空间组织治理策略",
+    target: { controller: "system", method: "handleWorkspaceGovernancePolicy" },
+    http: { method: "POST", path: "/api/workspace-governance/policies", localInForwardMode: true },
+    rpc: { method: "workspace_governance.policy.set", body: "params" },
+    cli: { command: ["workspace-governance", "policy", "set"], usage: "workspace-governance policy set --body policy.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["workspace-governance", "organization-policy"],
+    safety: { risk: "repair_write", requiresConfirmation: true, approvalScope: "runtime:admin" }
+  },
+  {
+    id: "workspace_governance.evaluate",
+    feature: "agent_workspace",
+    label: "评估工作空间组织治理策略",
+    target: { controller: "system", method: "handleWorkspaceGovernanceEvaluate" },
+    http: { method: "POST", path: "/api/workspace-governance/evaluate", localInForwardMode: true },
+    rpc: { method: "workspace_governance.evaluate", body: "params" },
+    cli: { command: ["workspace-governance", "evaluate"], usage: "workspace-governance evaluate --body request.json" },
+    requiredScopes: ["console:read"],
+    readOnly: false,
+    safety: { risk: "safe_write" },
+    aspects: ["workspace-governance", "organization-policy"]
+  },
+  {
+    id: "workspace_governance.share_grant",
+    feature: "agent_workspace",
+    label: "创建工作空间共享授权",
+    target: { controller: "system", method: "handleWorkspaceGovernanceShareGrant" },
+    http: { method: "POST", path: "/api/workspace-governance/share-grants", localInForwardMode: true },
+    rpc: { method: "workspace_governance.share_grant", body: "params" },
+    cli: { command: ["workspace-governance", "share-grant"], usage: "workspace-governance share-grant --body grant.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["workspace-governance", "organization-policy"],
+    safety: { risk: "safe_write", requiresConfirmation: true, approvalScope: "runtime:admin" }
+  },
+  {
     id: "data_connectors.governance.describe",
     feature: "knowledge",
     label: "数据连接器治理总览",

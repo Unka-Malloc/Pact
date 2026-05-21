@@ -77,6 +77,7 @@ import {
   scaffoldModule,
   validateCapabilityPackageScaffoldManifest
 } from "../../../module-manager/module-ecosystem/index.mjs";
+import { createWorkspaceGovernanceRegistry } from "../../../../specialized/agent/workspace-governance/index.mjs";
 import { createCapabilityPackageRegistry } from "../../../../specialized/capabilities/package-lifecycle/index.mjs";
 import { createDataConnectorGovernance } from "../../../../specialized/knowledge/connectors/data-connector-governance/index.mjs";
 import {
@@ -6004,6 +6005,46 @@ export function createSystemController({
         sendJson(response, 400, {
           ok: false,
           error: error instanceof Error ? error.message : "Module contract test failed."
+        });
+      }
+    },
+    async handleWorkspaceGovernance({ response }) {
+      const governance = createWorkspaceGovernanceRegistry({ userDataPath });
+      sendJson(response, 200, await governance.describe());
+    },
+    async handleWorkspaceGovernancePolicy({ requestBody, response }) {
+      try {
+        const governance = createWorkspaceGovernanceRegistry({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await governance.upsertPolicy(payload.policy || payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Workspace governance policy update failed."
+        });
+      }
+    },
+    async handleWorkspaceGovernanceEvaluate({ requestBody, response }) {
+      try {
+        const governance = createWorkspaceGovernanceRegistry({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await governance.evaluate(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Workspace governance evaluation failed."
+        });
+      }
+    },
+    async handleWorkspaceGovernanceShareGrant({ requestBody, response }) {
+      try {
+        const governance = createWorkspaceGovernanceRegistry({ userDataPath });
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await governance.createShareGrant(payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Workspace governance share grant failed."
         });
       }
     },

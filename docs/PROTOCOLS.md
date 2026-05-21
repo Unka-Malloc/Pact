@@ -14,6 +14,7 @@
   - [Unified Checkpoint Tree Protocol](#unified-checkpoint-tree-protocol)
 - [Workspace Contribution Protocol](#workspace-contribution-protocol)
   - [MCP Demo Flows](#mcp-demo-flows)
+- [Workspace Governance Protocol](#workspace-governance-protocol)
 - [Knowledge Protocol](#knowledge-protocol)
 - [Knowledge Access Protocol](#knowledge-access-protocol)
   - [Upstream Permission Demo Flow](#upstream-permission-demo-flow)
@@ -51,6 +52,7 @@
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
 | `agentstudio.agent-library.v1` | AgentLibrary / 图书馆的 library card、loanRecord、knowledgeAccessReceipt、share、checkout 和 revoke 语义。 |
 | `agentstudio.workspace-contribution.v1` | 终端贡献资产、Skills、工具、脚本、专家意见、黄金规则、排行榜、资产贡献统计报表和贡献授权。 |
+| `agentstudio.workspace-governance.v1` | organization/project/dataClass/retention/legalHold、外部协作者、跨空间复制、共享授权和审计。 |
 | `agentstudio.checkpoint-tree.v1` | 统一 Checkpoint Tree：访问请求、文件变动、知识贡献、技能调用、权限裁决、diff、restore preview、restore commit 和按 operation scope 回撤。 |
 
 ## Middle Layer Strategy
@@ -444,6 +446,28 @@ Skill 贡献排行榜演示：
 3. OpenClaw B 通过面板或 `workspace.skill.list` 看到该 Skill。
 4. B 调用 `workspace.skill.download` 或安装后上报 `workspace.skill.usage.report`。
 5. AgentStudio 记录 `skill.downloaded`、`skill.installed` 或 `skill.used`，并执行 `usageCount += 1`；成功使用会提高 `successRate`，跨 workspace 采用会提高 `uniqueWorkspaceAdoptions`，随后刷新 `rankScoreV0`。
+
+## Workspace Governance Protocol
+
+`agentstudio.workspace-governance.v1` 是组织级工作空间共享治理协议。它不替代 contribution lifecycle，而是在 contribution、workspace share、asset copy/export/checkout、retention dispose 之前提供统一裁决。
+
+工作空间策略必须至少包含：
+
+- `organizationId`、`projectId`、`departmentId`
+- `dataClass` 与主体 `clearance`
+- `ownerSubjectIds`、`allowedSubjectIds`、`externalCollaboratorIds`
+- `allowedActions`、`copyPolicy`、`exportAllowed`、`checkoutAllowed`
+- `retention.policyId`、`retention.ttlDays`、`retention.retainUntil`、`retention.disposalAction`
+- `legalHold.enabled`、`legalHold.holdIds`、`legalHold.reason`
+
+公开操作：
+
+- `workspace_governance.describe`：读取策略、共享授权和审计事件。
+- `workspace_governance.policy.set`：写入或更新 workspace governance policy。
+- `workspace_governance.evaluate`：对 subject/action/targetWorkspace 做组织、项目、密级、外部协作者、retention 和 legal hold 裁决。
+- `workspace_governance.share_grant`：在评估通过后创建带 dataClass、retention 和 legalHold 继承信息的 share grant。
+
+Legal hold 必须阻断 delete/purge/expire/retention.dispose 等破坏性动作。跨 workspace copy/share 必须遵守 `copyPolicy`：`deny` 全拒绝，`sameProject` 只允许同项目，`withApproval` 必须带审批号，`allow` 仍要满足主体、组织和 dataClass 裁决。
 
 ## Knowledge Protocol
 

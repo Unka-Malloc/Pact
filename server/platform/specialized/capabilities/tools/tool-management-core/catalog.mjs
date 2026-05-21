@@ -398,6 +398,10 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.sources.set": "agentstudio.agentWorkspace.sources.set",
   "agent_workspaces.share": "agentstudio.agentWorkspace.share",
   "agent_workspaces.unshare": "agentstudio.agentWorkspace.unshare",
+  "workspace_governance.describe": "agentstudio.workspaceGovernance.describe",
+  "workspace_governance.policy.set": "agentstudio.workspaceGovernance.policy.set",
+  "workspace_governance.evaluate": "agentstudio.workspaceGovernance.evaluate",
+  "workspace_governance.share_grant": "agentstudio.workspaceGovernance.shareGrant",
   "agent_sessions.list": "agentstudio.agentSession.list",
   "agent_sessions.get": "agentstudio.agentSession.get",
   "agent_sessions.context.get": "agentstudio.agentSession.context",
@@ -483,6 +487,10 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.sources.set": "knowledge:maintain",
   "agent_workspaces.share": "knowledge:maintain",
   "agent_workspaces.unshare": "knowledge:maintain",
+  "workspace_governance.describe": "knowledge:read",
+  "workspace_governance.policy.set": "knowledge:admin",
+  "workspace_governance.evaluate": "knowledge:read",
+  "workspace_governance.share_grant": "knowledge:maintain",
   "agent_workspaces.locks.write": "knowledge:write",
   "agent_sessions.events.append": "knowledge:write",
   "agent_sessions.fork": "knowledge:write",
@@ -586,7 +594,11 @@ function inferToolsets(operation, scopes = [], toolId = "") {
   if (toolId.startsWith("agentstudio.modules.")) {
     toolsets.add(operation.id === "module_ecosystem.templates" ? "agentstudio.runtime.read" : "agentstudio.mount.dev");
   }
-  if (toolId.startsWith("agentstudio.agentWorkspace.") || toolId.startsWith("agentstudio.agentSession.")) {
+  if (
+    toolId.startsWith("agentstudio.agentWorkspace.") ||
+    toolId.startsWith("agentstudio.agentSession.") ||
+    toolId.startsWith("agentstudio.workspaceGovernance.")
+  ) {
     toolsets.add("agentstudio.agent.workspace");
   }
   if (toolId.includes(".renderMarkdown")) {

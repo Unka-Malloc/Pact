@@ -484,6 +484,15 @@
 
 补全方式：在共享模型中加入 organization/project/dataClass/retention/legalHold。
 
+当前实现入口：
+
+- `server/platform/specialized/agent/workspace-governance/index.mjs` 定义 `agentstudio.workspace-governance.v1`，持久化 workspace policy、share grant 和 audit events。
+- 工作空间策略包含 `organizationId`、`projectId`、`departmentId`、`dataClass`、`ownerSubjectIds`、`allowedSubjectIds`、`externalCollaboratorIds`、`allowedActions`、`copyPolicy`、`retention` 和 `legalHold`。
+- 策略评估覆盖组织不匹配、外部协作者未列名、主体不在授权范围、dataClass clearance 不足、export/checkout 禁止、legalHold 阻断删除/清理、跨 workspace copy/share 的项目和审批约束。
+- `GET /api/workspace-governance`、`POST /api/workspace-governance/policies`、`POST /api/workspace-governance/evaluate`、`POST /api/workspace-governance/share-grants` 提供服务端调用面；Tool Management 暴露 `agentstudio.workspaceGovernance.*`。
+- `workspace-contribution` 贡献模型也补齐 organization/project/dataClass/retention/legalHold/externalCollaboratorIds/copyPolicy 字段，使贡献资产可被组织治理策略约束。
+- `npm run server:verify:workspace-governance` 验证策略持久化、跨组织拒绝、外部协作者拒绝、密级 clearance、legalHold、retention obligation、跨项目复制审批、共享授权、操作注册和 Tool Management 暴露。
+
 效果：既保持共享协作，又能满足企业数据治理。
 
 ### P2-04 多模态资产治理不足

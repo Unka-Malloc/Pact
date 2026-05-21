@@ -179,6 +179,15 @@ const GATES = [
     nextStep: "补齐 agentstudio.module-ecosystem.v1、create-module、contract test、示例模块、CI 模板和 schema docs。"
   },
   {
+    id: "workspace-governance",
+    title: "组织级工作空间治理",
+    blockerLevel: "P2",
+    owner: "workspace-governance",
+    coverage: [],
+    commands: [["npm", "run", "server:verify:workspace-governance"]],
+    nextStep: "补齐 organization/project/dataClass/retention/legalHold、外部协作者、跨空间复制和共享授权治理。"
+  },
+  {
     id: "trace-observability",
     title: "内部 Trace 与日志脱敏",
     blockerLevel: "P0",
