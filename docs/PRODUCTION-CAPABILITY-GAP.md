@@ -468,6 +468,14 @@
 
 补全方式：提供 `agentstudio create-module`、contract test、示例模块、CI 模板、schema docs。
 
+当前实现入口：
+
+- `server/platform/common/module-manager/module-ecosystem/index.mjs` 定义 `agentstudio.module-ecosystem.v1`，提供 `documentParser`、`analysis`、`knowledgeBase`、`vectorStore`、`graphStore`、`customMount`、`toolPackage`、`skillPackage` 模板。
+- `node server/scripts/agentstudio-create-module.mjs --template ...` 生成服务端模块脚手架，包含 manifest、示例 `index.mjs`、sample、contract test 脚本和 GitHub Actions CI 模板。
+- `node server/scripts/agentstudio-module-contract-test.mjs` 验证 mount factory、`reload/close`、sample extraction、postcommit hook 或 capability package manifest。
+- `GET /api/modules/templates`、`POST /api/modules/plan`、`POST /api/modules/scaffold`、`POST /api/modules/contract-test` 提供服务端调用面；Tool Management 暴露 `agentstudio.modules.*`。
+- `npm run server:verify:module-ecosystem` 验证模板清单、脚手架生成、合同测试 CLI、能力包 manifest、操作注册和 Tool Management 暴露。
+
 效果：外部知识库、工具、技能团队能按合同接入，减少核心团队重复造轮子。
 
 ### P2-03 工作空间共享还缺组织级治理

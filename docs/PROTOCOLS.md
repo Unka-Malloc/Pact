@@ -20,6 +20,7 @@
 - [Context Bundle Protocol](#context-bundle-protocol)
 - [Tool Management Protocol](#tool-management-protocol)
 - [Agent Session Compatibility](#agent-session-compatibility)
+- [Module Ecosystem Protocol](#module-ecosystem-protocol)
 - [Protocol Adapters](#protocol-adapters)
 - [版本与兼容](#版本与兼容)
 
@@ -46,6 +47,7 @@
 | `agentstudio.data-connector-governance.v1` | 服务端数据连接器合同、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载验收。 |
 | `agentstudio.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
 | `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
+| `agentstudio.module-ecosystem.v1` | 服务端模块模板、脚手架计划、生成、合同测试、CI 模板和 Tool/Skill 包 manifest 验收。 |
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
 | `agentstudio.agent-library.v1` | AgentLibrary / 图书馆的 library card、loanRecord、knowledgeAccessReceipt、share、checkout 和 revoke 语义。 |
 | `agentstudio.workspace-contribution.v1` | 终端贡献资产、Skills、工具、脚本、专家意见、黄金规则、排行榜、资产贡献统计报表和贡献授权。 |
@@ -666,6 +668,17 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 - `decision`：已确认事实
 
 会话 memory 可以被其它智能体加载，但不能直接成为公共事实。
+
+## Module Ecosystem Protocol
+
+`agentstudio.module-ecosystem.v1` 是服务端模块生态协议，不要求实现客户端。它把外部团队接入 parser、analysis、knowledgeBase、vectorStore、graphStore、Tool Package 和 Skill Package 的动作收敛为四类服务端能力：
+
+- `module_ecosystem.templates`：列出官方模板、mountName、capability、默认示例和 CI 要求。
+- `module_ecosystem.plan`：生成脚手架写入计划，明确将创建或覆盖的文件。
+- `module_ecosystem.scaffold`：写入 module manifest、示例实现、sample、contract test 脚本和 GitHub Actions 模板；写入操作必须经过 `runtime:admin` 或等价授权。
+- `module_ecosystem.contract_test`：导入外部 mount factory，验证 `createMount`、`supports`、`extractDocument/extractText`、`onBatchCompleted`、`reload`、`close` 等合同；对 Tool/Skill 包则验证 capability package manifest。
+
+生成的 mount module manifest 使用 `agentstudio.mount-module.v1`，必须声明 `moduleId`、`templateId`、`mountName`、`entrypoint`、`capabilities`、`contract.factoryExports` 和 `contract.contractTest`。生成的 Tool/Skill 包必须继续服从 `agentstudio.tool-package.v1` / `agentstudio.skill-registry.v1` 生命周期治理。
 
 ## Protocol Adapters
 

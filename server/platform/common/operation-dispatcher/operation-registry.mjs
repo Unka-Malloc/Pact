@@ -46,6 +46,57 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     aspects: ["observability", "production-readiness"]
   },
   {
+    id: "module_ecosystem.templates",
+    feature: "module_management",
+    label: "模块生态模板",
+    target: { controller: "system", method: "handleModuleTemplates" },
+    http: { method: "GET", path: "/api/modules/templates", localInForwardMode: true },
+    rpc: { method: "module_ecosystem.templates" },
+    cli: { command: ["modules", "templates"], usage: "modules templates" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["module-ecosystem", "sdk"]
+  },
+  {
+    id: "module_ecosystem.plan",
+    feature: "module_management",
+    label: "模块脚手架预案",
+    target: { controller: "system", method: "handleModuleScaffoldPlan" },
+    http: { method: "POST", path: "/api/modules/plan", localInForwardMode: true },
+    rpc: { method: "module_ecosystem.plan", body: "params" },
+    cli: { command: ["modules", "plan"], usage: "modules plan --body module.json" },
+    requiredScopes: ["runtime:admin"],
+    readOnly: true,
+    concurrencySafe: false,
+    aspects: ["module-ecosystem", "sdk"]
+  },
+  {
+    id: "module_ecosystem.scaffold",
+    feature: "module_management",
+    label: "创建模块脚手架",
+    target: { controller: "system", method: "handleModuleScaffold" },
+    http: { method: "POST", path: "/api/modules/scaffold", localInForwardMode: true },
+    rpc: { method: "module_ecosystem.scaffold", body: "params" },
+    cli: { command: ["modules", "scaffold"], usage: "modules scaffold --body module.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["module-ecosystem", "sdk"],
+    safety: { risk: "safe_write", requiresConfirmation: true, approvalScope: "runtime:admin" }
+  },
+  {
+    id: "module_ecosystem.contract_test",
+    feature: "module_management",
+    label: "模块合同测试",
+    target: { controller: "system", method: "handleModuleContractTest" },
+    http: { method: "POST", path: "/api/modules/contract-test", localInForwardMode: true },
+    rpc: { method: "module_ecosystem.contract_test", body: "params" },
+    cli: { command: ["modules", "contract-test"], usage: "modules contract-test --body contract.json" },
+    requiredScopes: ["runtime:admin"],
+    readOnly: true,
+    concurrencySafe: false,
+    aspects: ["module-ecosystem", "sdk"]
+  },
+  {
     id: "data_connectors.governance.describe",
     feature: "knowledge",
     label: "数据连接器治理总览",

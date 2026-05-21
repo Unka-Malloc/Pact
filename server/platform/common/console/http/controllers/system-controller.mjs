@@ -70,6 +70,13 @@ import { hashClientString, serverToken } from "../../../security/client-strings.
 import { reconcileStorage, runStorageDoctor } from "../../../storage/ops-tools.mjs";
 import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
 import { buildProductionHealthReport } from "../../../production-readiness/report-reader.mjs";
+import {
+  listModuleTemplates,
+  planModuleScaffold,
+  runModuleContractTest,
+  scaffoldModule,
+  validateCapabilityPackageScaffoldManifest
+} from "../../../module-manager/module-ecosystem/index.mjs";
 import { createCapabilityPackageRegistry } from "../../../../specialized/capabilities/package-lifecycle/index.mjs";
 import { createDataConnectorGovernance } from "../../../../specialized/knowledge/connectors/data-connector-governance/index.mjs";
 import {
@@ -5958,6 +5965,47 @@ export function createSystemController({
     },
     async handleProductionHealth({ response }) {
       sendJson(response, 200, await buildProductionHealthReport());
+    },
+    async handleModuleTemplates({ response }) {
+      sendJson(response, 200, listModuleTemplates());
+    },
+    async handleModuleScaffoldPlan({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await planModuleScaffold(payload, { userDataPath }));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Module scaffold plan failed.",
+          details: error?.details || []
+        });
+      }
+    },
+    async handleModuleScaffold({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await scaffoldModule(payload, { userDataPath }));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Module scaffold failed.",
+          details: error?.details || []
+        });
+      }
+    },
+    async handleModuleContractTest({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        const result = payload.manifest
+          ? validateCapabilityPackageScaffoldManifest(payload)
+          : await runModuleContractTest(payload, { userDataPath });
+        sendJson(response, result.ok === false ? 422 : 200, result);
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Module contract test failed."
+        });
+      }
     },
     async handleDataConnectorGovernance({ response }) {
       const governance = createDataConnectorGovernance({ userDataPath });

@@ -315,6 +315,10 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "runtime.mounts": "agentstudio.runtime.mounts",
   "runtime.set_mounts": "agentstudio.runtime.mounts.set",
   "runtime.reload_mounts": "agentstudio.runtime.mounts.reload",
+  "module_ecosystem.templates": "agentstudio.modules.templates",
+  "module_ecosystem.plan": "agentstudio.modules.plan",
+  "module_ecosystem.scaffold": "agentstudio.modules.scaffold",
+  "module_ecosystem.contract_test": "agentstudio.modules.contractTest",
   "storage.summary": "agentstudio.storageSummary",
   "jobs.list": "agentstudio.jobs.list",
   "jobs.get": "agentstudio.jobs.get",
@@ -433,6 +437,10 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "runtime.mounts": "storage:read",
   "runtime.set_mounts": "knowledge:maintain",
   "runtime.reload_mounts": "knowledge:maintain",
+  "module_ecosystem.templates": "storage:read",
+  "module_ecosystem.plan": "knowledge:admin",
+  "module_ecosystem.scaffold": "knowledge:admin",
+  "module_ecosystem.contract_test": "knowledge:admin",
   "storage.summary": "storage:read",
   "jobs.list": "jobs:read",
   "jobs.get": "jobs:read",
@@ -574,6 +582,9 @@ function inferToolsets(operation, scopes = [], toolId = "") {
     } else {
       toolsets.add("agentstudio.runtime.maintain");
     }
+  }
+  if (toolId.startsWith("agentstudio.modules.")) {
+    toolsets.add(operation.id === "module_ecosystem.templates" ? "agentstudio.runtime.read" : "agentstudio.mount.dev");
   }
   if (toolId.startsWith("agentstudio.agentWorkspace.") || toolId.startsWith("agentstudio.agentSession.")) {
     toolsets.add("agentstudio.agent.workspace");

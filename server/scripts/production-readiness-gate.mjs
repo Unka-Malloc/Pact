@@ -170,6 +170,15 @@ const GATES = [
     nextStep: "补齐 agentstudio.performance-capacity.v1、容量目标、benchmark runner、失败注入和报告阈值。"
   },
   {
+    id: "module-ecosystem",
+    title: "模块 SDK 与模板",
+    blockerLevel: "P2",
+    owner: "module-management",
+    coverage: [],
+    commands: [["npm", "run", "server:verify:module-ecosystem"]],
+    nextStep: "补齐 agentstudio.module-ecosystem.v1、create-module、contract test、示例模块、CI 模板和 schema docs。"
+  },
+  {
     id: "trace-observability",
     title: "内部 Trace 与日志脱敏",
     blockerLevel: "P0",
