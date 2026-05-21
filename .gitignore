@@ -29,6 +29,7 @@ crash-*
 /build/*
 !/build/
 !/build/README.md
+/reports/production-readiness/
 
 # Java / Rust / Node build outputs
 node_modules/

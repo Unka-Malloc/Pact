@@ -399,6 +399,9 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "agent_sessions.context.get": "agentstudio.agentSession.context",
   "agent_sessions.events.append": "agentstudio.agentSession.events.append",
   "agent_sessions.fork": "agentstudio.agentSession.fork",
+  "agent_sessions.compare": "agentstudio.agentSession.compare",
+  "agent_sessions.merge_proposal": "agentstudio.agentSession.mergeProposal",
+  "agent_sessions.archive": "agentstudio.agentSession.archive",
   "agent_workspaces.submissions.resolve": "agentstudio.agentWorkspace.submissionResolve",
   "agent_workspaces.issues.resolve": "agentstudio.agentWorkspace.issueResolve",
   "agent_workspaces.locks.list": "agentstudio.agentWorkspace.locks",
@@ -413,7 +416,16 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "knowledge.asset": "agentstudio.knowledge.asset",
   "knowledge.render_markdown": "agentstudio.knowledge.renderMarkdown",
   "knowledge.graph": "agentstudio.knowledge.graph",
-  "agent_sync.publish": "agentstudio.agentSync.publish"
+  "agent_sync.publish": "agentstudio.agentSync.publish",
+  "data_connectors.governance.describe": "agentstudio.dataConnectors.governance",
+  "data_connectors.governance.plan": "agentstudio.dataConnectors.governance.plan",
+  "data_connectors.governance.conformance": "agentstudio.dataConnectors.governance.conformance",
+  "performance.capacity.targets": "agentstudio.performance.capacity.targets",
+  "performance.capacity.benchmark": "agentstudio.performance.capacity.benchmark",
+  "capability_packages.list": "agentstudio.capabilityPackages.list",
+  "capability_packages.plan": "agentstudio.capabilityPackages.plan",
+  "capability_packages.submit": "agentstudio.capabilityPackages.submit",
+  "capability_packages.lifecycle": "agentstudio.capabilityPackages.lifecycle"
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
@@ -466,9 +478,20 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.locks.write": "knowledge:write",
   "agent_sessions.events.append": "knowledge:write",
   "agent_sessions.fork": "knowledge:write",
+  "agent_sessions.merge_proposal": "knowledge:write",
+  "agent_sessions.archive": "knowledge:write",
   "knowledge.summarization.runs.create": "knowledge:write",
   "knowledge.summarization.runs.approve": "knowledge:maintain",
-  "agent_sync.publish": "agent_sync:publish"
+  "agent_sync.publish": "agent_sync:publish",
+  "data_connectors.governance.describe": "knowledge:read",
+  "data_connectors.governance.plan": "knowledge:maintain",
+  "data_connectors.governance.conformance": "knowledge:maintain",
+  "performance.capacity.targets": "knowledge:read",
+  "performance.capacity.benchmark": "knowledge:maintain",
+  "capability_packages.list": "knowledge:read",
+  "capability_packages.plan": "knowledge:maintain",
+  "capability_packages.submit": "knowledge:maintain",
+  "capability_packages.lifecycle": "knowledge:maintain"
 });
 
 const TOOLSET_BY_SCOPE = Object.freeze({

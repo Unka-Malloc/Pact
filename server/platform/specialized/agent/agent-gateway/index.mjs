@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  inspectModelRouting,
+  runModelRouting,
+  shouldUseModelRouting
+} from "./model-routing/index.mjs";
 
 function asPlainObject(value, fallback = {}) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
@@ -1864,48 +1869,29 @@ async function callOpenAiCompatibleGateway({
   return result;
 }
 
-export async function callAgentGateway({
+async function executeAgentGatewayCandidate({
   settings = {},
   input = {},
   fetchImpl = fetch,
   userDataPath = "",
-  contextRuntime = null,
-  contextCompactionSource = "agent-gateway",
-  clientRuntimeAllocator = null
+  dryRun = false
 } = {}) {
-  const allocationResult = typeof clientRuntimeAllocator?.apply === "function"
-    ? await clientRuntimeAllocator.apply(input, {
-        taskType: input.taskType || input.operationId || input.moduleId || "agent_gateway.call",
-        surface: contextCompactionSource || "agent-gateway"
-      })
-    : null;
-  const allocatedInput = allocationResult?.input || input;
-  const prepared = await prepareAgentGatewayInputWithCompaction({
-    input: allocatedInput,
-    contextRuntime,
-    source: contextCompactionSource
-  });
-  let effectiveInput = prepared.input;
-  const contextCompaction = publicGatewayCompactionResult(prepared.compaction);
-  const withRuntimeMetadata = (result = {}) => {
-    const withAllocation = allocationResult?.allocation
-      ? { ...result, clientRuntimeAllocation: allocationResult.allocation }
-      : result;
-    return contextCompaction ? { ...withAllocation, contextCompaction } : withAllocation;
-  };
-  const config = resolveAgentGatewayConfig(settings, effectiveInput);
-  const moduleProfileLayer = withModuleAgentProfileInput(settings, effectiveInput, config);
-  effectiveInput = moduleProfileLayer.input;
+  const config = resolveAgentGatewayConfig(settings, input);
+  const moduleProfileLayer = withModuleAgentProfileInput(settings, input, config);
+  const effectiveInput = moduleProfileLayer.input;
   if (!config.url) {
     throw new Error(`智能体 URL 未配置：${config.alias || "default"}`);
   }
+  if (dryRun) {
+    return { config, input: effectiveInput, result: null };
+  }
   if (config.provider === "deepseek") {
     const result = await callDeepSeekGateway({ config, input: effectiveInput, fetchImpl, userDataPath });
-    return withRuntimeMetadata(result);
+    return { config, input: effectiveInput, result };
   }
   if (["openrouter", "copilot", "local-model"].includes(config.provider)) {
     const result = await callOpenAiCompatibleGateway({ config, input: effectiveInput, fetchImpl, userDataPath });
-    return withRuntimeMetadata(result);
+    return { config, input: effectiveInput, result };
   }
   const payload = buildAgentGatewayPayload(effectiveInput, settings);
   if (!payload.question) {
@@ -1993,12 +1979,6 @@ export async function callAgentGateway({
     },
     ...parsed
   };
-  if (contextCompaction) {
-    result.contextCompaction = contextCompaction;
-  }
-  if (allocationResult?.allocation) {
-    result.clientRuntimeAllocation = allocationResult.allocation;
-  }
   await appendAgentGatewayAudit({
     userDataPath,
     event: {
@@ -2013,5 +1993,67 @@ export async function callAgentGateway({
       response: summarizeGatewayResult(result)
     }
   });
-  return result;
+  return { config, input: effectiveInput, result };
+}
+
+export async function callAgentGateway({
+  settings = {},
+  input = {},
+  fetchImpl = fetch,
+  userDataPath = "",
+  contextRuntime = null,
+  contextCompactionSource = "agent-gateway",
+  clientRuntimeAllocator = null
+} = {}) {
+  const allocationResult = typeof clientRuntimeAllocator?.apply === "function"
+    ? await clientRuntimeAllocator.apply(input, {
+        taskType: input.taskType || input.operationId || input.moduleId || "agent_gateway.call",
+        surface: contextCompactionSource || "agent-gateway"
+      })
+    : null;
+  const allocatedInput = allocationResult?.input || input;
+  const prepared = await prepareAgentGatewayInputWithCompaction({
+    input: allocatedInput,
+    contextRuntime,
+    source: contextCompactionSource
+  });
+  let effectiveInput = prepared.input;
+  const contextCompaction = publicGatewayCompactionResult(prepared.compaction);
+  const withRuntimeMetadata = (result = {}) => {
+    const withAllocation = allocationResult?.allocation
+      ? { ...result, clientRuntimeAllocation: allocationResult.allocation }
+      : result;
+    return contextCompaction ? { ...withAllocation, contextCompaction } : withAllocation;
+  };
+  if (shouldUseModelRouting(effectiveInput, settings)) {
+    const routed = await runModelRouting({
+      settings,
+      input: effectiveInput,
+      userDataPath,
+      registry: resolveAgentGatewayRegistry(settings),
+      executeCandidate: ({ input: candidateInput, dryRun }) =>
+        executeAgentGatewayCandidate({
+          settings,
+          input: candidateInput,
+          fetchImpl,
+          userDataPath,
+          dryRun
+        })
+    });
+    return withRuntimeMetadata({
+      ...routed.result,
+      modelRouting: routed.routing
+    });
+  }
+  const executed = await executeAgentGatewayCandidate({
+    settings,
+    input: effectiveInput,
+    fetchImpl,
+    userDataPath
+  });
+  return withRuntimeMetadata(executed.result);
+}
+
+export async function inspectAgentModelRouting({ userDataPath = "", limit = 50 } = {}) {
+  return inspectModelRouting({ userDataPath, limit });
 }

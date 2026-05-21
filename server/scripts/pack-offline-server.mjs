@@ -845,7 +845,7 @@ async function writeRuntimePackageJson(stagingPath, packagingPlan) {
 async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
   const binDir = path.join(stagingPath, "bin");
   await ensureDirectory(binDir);
-  const javaPath = `$ROOT/server/platform/modules/knowledge/runtime/jre/${targetKey}/bin/java`;
+  const javaPath = `$ROOT/modules/jre/${targetKey}/bin/java`;
   const commonHeader = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
@@ -862,7 +862,7 @@ async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
   if (packagingPlan.includeTika) {
     commonHeader.push(
       `export AGENTSTUDIO_JAVA_BIN_PATH="\${AGENTSTUDIO_JAVA_BIN_PATH:-${javaPath}}"`,
-      `export AGENTSTUDIO_TIKA_JAR_PATH="\${AGENTSTUDIO_TIKA_JAR_PATH:-$ROOT/server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar}"`
+      `export AGENTSTUDIO_TIKA_JAR_PATH="\${AGENTSTUDIO_TIKA_JAR_PATH:-$ROOT/modules/tika/tika-app-${TIKA_VERSION}.jar}"`
     );
   }
   await fs.writeFile(
@@ -895,8 +895,8 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
   ];
   if (packagingPlan.includeTika) {
     includedRuntime.push(
-      `- JRE: \`server/platform/modules/knowledge/runtime/jre/${targetKey}/\``,
-      `- Tika: \`server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar\``
+      `- JRE: \`modules/jre/${targetKey}/\``,
+      `- Tika: \`modules/tika/tika-app-${TIKA_VERSION}.jar\``
     );
   }
   includedRuntime.push(
@@ -949,7 +949,7 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       "",
       "```bash",
       "./runtime/node/bin/node -v",
-      packagingPlan.includeTika ? `./server/platform/modules/knowledge/runtime/jre/${targetKey}/bin/java -version` : "# Java/Tika omitted by this package plan.",
+      packagingPlan.includeTika ? `./modules/jre/${targetKey}/bin/java -version` : "# Java/Tika omitted by this package plan.",
       "./bin/agentstudio health --server-url http://127.0.0.1:8787",
       "```",
       "",
@@ -1060,8 +1060,8 @@ async function writeOfflineManifest(stagingPath, targetKey, nodeVersion, packagi
     tikaVersion: TIKA_VERSION,
     bundled: {
       node: "runtime/node",
-      jre: packagingPlan.includeTika ? `server/platform/modules/knowledge/runtime/jre/${targetKey}` : "",
-      tika: packagingPlan.includeTika ? `server/platform/modules/knowledge/tika/tika-app-${TIKA_VERSION}.jar` : "",
+      jre: packagingPlan.includeTika ? `modules/jre/${targetKey}` : "",
+      tika: packagingPlan.includeTika ? `modules/tika/tika-app-${TIKA_VERSION}.jar` : "",
       nodeModules: "node_modules",
       consoleDist: "build/dist"
     },
@@ -1328,10 +1328,10 @@ async function verifyUbuntuPackage(stagingPath, target, packagingPlan) {
     "test -x /pkg/runtime/node/bin/node",
     "/pkg/runtime/node/bin/node -e \"const Database=require('better-sqlite3'); const db=new Database(':memory:'); const row=db.prepare('select 1 as ok').get(); if(row.ok!==1) process.exit(1); db.close();\"",
     packagingPlan.includeTika
-      ? "test -x /pkg/server/platform/modules/knowledge/runtime/jre/linux-x64/bin/java || test -x /pkg/server/platform/modules/knowledge/runtime/jre/linux-arm64/bin/java"
-      : "test ! -d /pkg/server/platform/modules/knowledge/runtime/jre",
+      ? "test -x /pkg/modules/jre/linux-x64/bin/java || test -x /pkg/modules/jre/linux-arm64/bin/java"
+      : "test ! -d /pkg/modules/jre",
     packagingPlan.includeTika
-      ? "/pkg/server/platform/modules/knowledge/runtime/jre/linux-x64/bin/java -version >/tmp/java-version.log 2>&1 || /pkg/server/platform/modules/knowledge/runtime/jre/linux-arm64/bin/java -version >/tmp/java-version.log 2>&1"
+      ? "/pkg/modules/jre/linux-x64/bin/java -version >/tmp/java-version.log 2>&1 || /pkg/modules/jre/linux-arm64/bin/java -version >/tmp/java-version.log 2>&1"
       : "true",
     "/pkg/bin/start-server --help >/tmp/start-help.log",
     "AGENTSTUDIO_SERVER_DATA_DIR=/tmp/agentstudio-data AGENTSTUDIO_SERVER_HOST=127.0.0.1 AGENTSTUDIO_SERVER_PORT=18787 /pkg/bin/start-server >/tmp/agentstudio-server.log 2>&1 &",

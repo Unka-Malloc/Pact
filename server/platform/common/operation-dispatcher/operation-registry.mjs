@@ -33,6 +33,78 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["console:read"]
   },
   {
+    id: "production.health",
+    feature: "production",
+    label: "生产健康总览",
+    target: { controller: "system", method: "handleProductionHealth" },
+    http: { method: "GET", path: "/api/production/health", localInForwardMode: true },
+    rpc: { method: "production.health" },
+    cli: { command: ["production", "health"], usage: "production health" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["observability", "production-readiness"]
+  },
+  {
+    id: "data_connectors.governance.describe",
+    feature: "knowledge",
+    label: "数据连接器治理总览",
+    target: { controller: "system", method: "handleDataConnectorGovernance" },
+    http: { method: "GET", path: "/api/data-connectors/governance", localInForwardMode: true },
+    rpc: { method: "data_connectors.governance.describe" },
+    cli: { command: ["data-connectors", "governance"], usage: "data-connectors governance" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["knowledge", "connector-governance"]
+  },
+  {
+    id: "data_connectors.governance.plan",
+    feature: "knowledge",
+    label: "数据连接器治理预检",
+    target: { controller: "system", method: "handleDataConnectorGovernancePlan" },
+    http: { method: "POST", path: "/api/data-connectors/governance/plan", localInForwardMode: true },
+    rpc: { method: "data_connectors.governance.plan", body: "params" },
+    cli: { command: ["data-connectors", "governance", "plan"], usage: "data-connectors governance plan --body manifest.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["knowledge", "connector-governance"]
+  },
+  {
+    id: "data_connectors.governance.conformance",
+    feature: "knowledge",
+    label: "数据连接器一致性验收",
+    target: { controller: "system", method: "handleDataConnectorGovernanceConformance" },
+    http: { method: "POST", path: "/api/data-connectors/governance/conformance", localInForwardMode: true },
+    rpc: { method: "data_connectors.governance.conformance", body: "params" },
+    cli: { command: ["data-connectors", "governance", "conformance"], usage: "data-connectors governance conformance --body manifest.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["knowledge", "connector-governance"]
+  },
+  {
+    id: "performance.capacity.targets",
+    feature: "production",
+    label: "性能容量目标",
+    target: { controller: "system", method: "handlePerformanceCapacityTargets" },
+    http: { method: "GET", path: "/api/performance/capacity/targets", localInForwardMode: true },
+    rpc: { method: "performance.capacity.targets" },
+    cli: { command: ["performance", "capacity", "targets"], usage: "performance capacity targets" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["production-readiness", "capacity"]
+  },
+  {
+    id: "performance.capacity.benchmark",
+    feature: "production",
+    label: "性能容量基准",
+    target: { controller: "system", method: "handlePerformanceCapacityBenchmark" },
+    http: { method: "POST", path: "/api/performance/capacity/benchmark", localInForwardMode: true },
+    rpc: { method: "performance.capacity.benchmark", body: "params" },
+    cli: { command: ["performance", "capacity", "benchmark"], usage: "performance capacity benchmark --body profile.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["production-readiness", "capacity"]
+  },
+  {
     id: "events.subscribe",
     feature: "events",
     label: "订阅上游发布事件",
@@ -666,6 +738,83 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       ]
     },
     requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "model_routing.health",
+    feature: "agent_gateway",
+    label: "读取模型路由健康和成本台账",
+    target: { controller: "system", method: "handleModelRoutingHealth" },
+    http: {
+      method: "GET",
+      path: "/api/model-routing/health",
+      query: [{ name: "limit", aliases: ["limit"] }],
+      coerce: { limit: "number" }
+    },
+    rpc: { method: "model_routing.health" },
+    cli: {
+      command: ["model-routing", "health"],
+      usage: "model-routing health [--limit 50]"
+    },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["model-routing", "cost-ledger", "circuit-breaker"]
+  },
+  {
+    id: "capability_packages.list",
+    feature: "tool_management",
+    label: "列出外部工具与技能能力包",
+    target: { controller: "system", method: "handleCapabilityPackages" },
+    http: { method: "GET", path: "/api/capability-packages" },
+    rpc: { method: "capability_packages.list" },
+    cli: { command: ["capability-packages", "list"], usage: "capability-packages list" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["tool-package", "skill-registry", "lifecycle-governance"]
+  },
+  {
+    id: "capability_packages.plan",
+    feature: "tool_management",
+    label: "预检外部工具与技能能力包",
+    target: { controller: "system", method: "handleCapabilityPackagePlan" },
+    http: { method: "POST", path: "/api/capability-packages/plan" },
+    rpc: { method: "capability_packages.plan", body: "params" },
+    cli: { command: ["capability-packages", "plan"], usage: "capability-packages plan --body manifest.json" },
+    requiredScopes: ["runtime:admin"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["tool-package", "skill-registry", "signature", "compatibility"]
+  },
+  {
+    id: "capability_packages.submit",
+    feature: "tool_management",
+    label: "提交外部工具与技能能力包",
+    target: { controller: "system", method: "handleCapabilityPackages" },
+    http: { method: "POST", path: "/api/capability-packages" },
+    rpc: { method: "capability_packages.submit", body: "params" },
+    cli: { command: ["capability-packages", "submit"], usage: "capability-packages submit --body manifest.json" },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["tool-package", "skill-registry", "signature", "approval"]
+  },
+  {
+    id: "capability_packages.lifecycle",
+    feature: "tool_management",
+    label: "推进外部工具与技能能力包生命周期",
+    target: { controller: "system", method: "handleCapabilityPackageLifecycle" },
+    http: { method: "POST", path: "/api/capability-packages/:packageId/lifecycle" },
+    rpc: {
+      method: "capability_packages.lifecycle",
+      body: "params",
+      params: [{ name: "packageId", aliases: ["package-id", "packageId", "id"], required: true }]
+    },
+    cli: {
+      command: ["capability-packages", "lifecycle"],
+      usage: "capability-packages lifecycle --id PACKAGE_ID --action approve|install|activate|deprecate|rollback",
+      pathParams: { packageId: ["package-id", "packageId", "id"] }
+    },
+    requiredScopes: ["runtime:admin"],
+    aspects: ["tool-package", "skill-registry", "approval", "rollback", "deprecation"]
   },
   {
     id: "agents.list",
@@ -2955,6 +3104,74 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     cli: {
       command: ["agent-sessions", "fork"],
       usage: "agent-sessions fork --id SESSION_ID --body fork.json",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:write"]
+  },
+  {
+    id: "agent_sessions.compare",
+    feature: "agent_workspace",
+    label: "比较会话线程分叉",
+    target: { controller: "system", method: "handleCompareAgentSessions" },
+    http: {
+      method: "POST",
+      path: "/api/agent-sessions/:sessionId/compare",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_sessions.compare",
+      body: "params",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "compare"],
+      usage: "agent-sessions compare --id SESSION_ID --body compare.json",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true
+  },
+  {
+    id: "agent_sessions.merge_proposal",
+    feature: "agent_workspace",
+    label: "创建会话线程合并提案",
+    target: { controller: "system", method: "handleAgentSessionMergeProposal" },
+    http: {
+      method: "POST",
+      path: "/api/agent-sessions/:sessionId/merge-proposal",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_sessions.merge_proposal",
+      body: "params",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "merge-proposal"],
+      usage: "agent-sessions merge-proposal --id SESSION_ID --body proposal.json",
+      pathParams: { sessionId: ["session-id", "sessionId", "id"] }
+    },
+    requiredScopes: ["knowledge:write"]
+  },
+  {
+    id: "agent_sessions.archive",
+    feature: "agent_workspace",
+    label: "归档会话线程",
+    target: { controller: "system", method: "handleArchiveAgentSession" },
+    http: {
+      method: "POST",
+      path: "/api/agent-sessions/:sessionId/archive",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_sessions.archive",
+      body: "params",
+      params: [{ name: "sessionId", aliases: ["session-id", "sessionId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-sessions", "archive"],
+      usage: "agent-sessions archive --id SESSION_ID --body archive.json",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
     requiredScopes: ["knowledge:write"]

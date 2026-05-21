@@ -853,6 +853,9 @@ export function createAgentWorkspace({ userDataPath }) {
   const updateSessionStatsStmt = db.prepare(
     "UPDATE aw_sessions SET last_event_id = ?, event_count = ?, updated_at = ? WHERE session_id = ?"
   );
+  const updateSessionStatusStmt = db.prepare(
+    "UPDATE aw_sessions SET status = ?, updated_at = ? WHERE session_id = ?"
+  );
 
   function workspaceSummary(workspaceId) {
     const runCount = db.prepare("SELECT COUNT(*) AS count FROM aw_runs WHERE workspace_id = ?").get(workspaceId)?.count || 0;
@@ -1241,6 +1244,220 @@ export function createAgentWorkspace({ userDataPath }) {
 
   function forkSession(input = {}) {
     return forkSessionTx(input);
+  }
+
+  function sessionEventCompareKey(event = {}) {
+    const payload = asObject(event.payload);
+    const clonedFromEventId = String(payload.clonedFromEventId || "").trim();
+    if (clonedFromEventId) {
+      return `event:${clonedFromEventId}`;
+    }
+    if (event.eventId) {
+      return `event:${event.eventId}`;
+    }
+    return stableId(
+      "session_event_key",
+      event.type,
+      event.title,
+      event.summary,
+      stableJson(payload)
+    );
+  }
+
+  function sessionEventConflictTarget(event = {}) {
+    const payload = asObject(event.payload);
+    return String(
+      payload.targetId ||
+        payload.artifactId ||
+        payload.assetId ||
+        payload.documentId ||
+        payload.submissionId ||
+        payload.decisionId ||
+        payload.path ||
+        ""
+    ).trim();
+  }
+
+  function sessionEventPublicDiff(event = {}) {
+    return {
+      eventId: event.eventId,
+      sequence: event.sequence,
+      type: event.type,
+      title: event.title,
+      summary: truncateText(event.summary, 600),
+      targetId: sessionEventConflictTarget(event),
+      createdBy: event.createdBy || "",
+      createdAt: event.createdAt || ""
+    };
+  }
+
+  function compareSessions(input = {}) {
+    const leftSessionId = String(input.leftSessionId || input.sessionId || input.sourceSessionId || "").trim();
+    const rightSessionId = String(input.rightSessionId || input.targetSessionId || input.compareWithSessionId || "").trim();
+    const left = hydrateSession(selectSessionStmt.get(leftSessionId));
+    const right = hydrateSession(selectSessionStmt.get(rightSessionId));
+    if (!left || !right) {
+      return { ok: false, error: "会话不存在" };
+    }
+    if (!canAccessWorkspaceId(left.workspaceId, input) || !canAccessWorkspaceId(right.workspaceId, input)) {
+      return { ok: false, error: "工作空间不可访问" };
+    }
+    const leftEvents = selectSessionEventsStmt.all(left.sessionId, 5000).map(hydrateSessionEvent);
+    const rightEvents = selectSessionEventsStmt.all(right.sessionId, 5000).map(hydrateSessionEvent);
+    const leftByKey = new Map(leftEvents.map((event) => [sessionEventCompareKey(event), event]));
+    const rightByKey = new Map(rightEvents.map((event) => [sessionEventCompareKey(event), event]));
+    const commonKeys = [...leftByKey.keys()].filter((key) => rightByKey.has(key));
+    const leftOnly = leftEvents.filter((event) => !rightByKey.has(sessionEventCompareKey(event)));
+    const rightOnly = rightEvents.filter((event) => !leftByKey.has(sessionEventCompareKey(event)));
+    const rightOnlyByTarget = new Map();
+    for (const event of rightOnly) {
+      const target = sessionEventConflictTarget(event);
+      if (target) {
+        rightOnlyByTarget.set(target, event);
+      }
+    }
+    const conflicts = [];
+    for (const event of leftOnly) {
+      const target = sessionEventConflictTarget(event);
+      if (!target || !rightOnlyByTarget.has(target)) {
+        continue;
+      }
+      const other = rightOnlyByTarget.get(target);
+      if (stableJson(event.payload) !== stableJson(other.payload) || event.summary !== other.summary || event.type !== other.type) {
+        conflicts.push({
+          targetId: target,
+          left: sessionEventPublicDiff(event),
+          right: sessionEventPublicDiff(other),
+          resolution: "merge_proposal_required"
+        });
+      }
+    }
+    const maxLen = Math.max(leftEvents.length, rightEvents.length);
+    let divergence = null;
+    for (let index = 0; index < maxLen; index += 1) {
+      const leftKey = leftEvents[index] ? sessionEventCompareKey(leftEvents[index]) : "";
+      const rightKey = rightEvents[index] ? sessionEventCompareKey(rightEvents[index]) : "";
+      if (leftKey !== rightKey) {
+        divergence = {
+          leftSequence: leftEvents[index]?.sequence || 0,
+          rightSequence: rightEvents[index]?.sequence || 0,
+          leftEventId: leftEvents[index]?.eventId || "",
+          rightEventId: rightEvents[index]?.eventId || ""
+        };
+        break;
+      }
+    }
+    return {
+      ok: true,
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      comparisonId: stableId("session_compare", left.sessionId, left.lastEventId, right.sessionId, right.lastEventId),
+      appendOnly: true,
+      leftSession: sessionListItem(left),
+      rightSession: sessionListItem(right),
+      summary: {
+        commonEventCount: commonKeys.length,
+        leftOnlyCount: leftOnly.length,
+        rightOnlyCount: rightOnly.length,
+        conflictCount: conflicts.length,
+        divergence
+      },
+      leftOnly: leftOnly.map(sessionEventPublicDiff),
+      rightOnly: rightOnly.map(sessionEventPublicDiff),
+      conflicts
+    };
+  }
+
+  function createSessionMergeProposal(input = {}) {
+    const targetSessionId = String(input.targetSessionId || input.sessionId || input.leftSessionId || "").trim();
+    const sourceSessionId = String(input.sourceSessionId || input.rightSessionId || input.mergeFromSessionId || "").trim();
+    const comparison = compareSessions({
+      ...input,
+      leftSessionId: targetSessionId,
+      rightSessionId: sourceSessionId
+    });
+    if (!comparison.ok) {
+      return comparison;
+    }
+    const proposalId = stableId(
+      "session_merge_proposal",
+      targetSessionId,
+      sourceSessionId,
+      comparison.comparisonId,
+      stableJson(input.resolutionHints || {})
+    );
+    const eventResult = appendSessionEvent({
+      ...input,
+      sessionId: targetSessionId,
+      type: "session_merge_proposal",
+      title: input.title || "会话合并提案",
+      summary: input.summary || `提议将 ${sourceSessionId} 合并到 ${targetSessionId}`,
+      payload: {
+        proposalId,
+        targetSessionId,
+        sourceSessionId,
+        comparisonId: comparison.comparisonId,
+        conflictCount: comparison.summary.conflictCount,
+        leftOnlyCount: comparison.summary.leftOnlyCount,
+        rightOnlyCount: comparison.summary.rightOnlyCount,
+        conflicts: comparison.conflicts,
+        resolutionHints: asObject(input.resolutionHints),
+        autoMergeApplied: false,
+        requiresDecision: true
+      }
+    });
+    return {
+      ok: true,
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      appendOnly: true,
+      proposal: {
+        proposalId,
+        targetSessionId,
+        sourceSessionId,
+        status: "proposed",
+        autoMergeApplied: false,
+        requiresDecision: true,
+        conflictCount: comparison.summary.conflictCount
+      },
+      comparison,
+      event: eventResult?.event || null,
+      session: eventResult?.session || null
+    };
+  }
+
+  function archiveSession(input = {}) {
+    const sessionId = String(input.sessionId || input.session_id || "").trim();
+    const session = hydrateSession(selectSessionStmt.get(sessionId));
+    if (!session) {
+      return { ok: false, error: "会话不存在" };
+    }
+    if (!canAccessWorkspaceId(session.workspaceId, input)) {
+      return { ok: false, error: "工作空间不可访问" };
+    }
+    const eventResult = appendSessionEvent({
+      ...input,
+      sessionId,
+      type: "session_archived",
+      title: input.title || "会话归档",
+      summary: input.summary || input.reason || "会话已归档。",
+      payload: {
+        reason: String(input.reason || "").trim(),
+        archivedPreviousStatus: session.status,
+        appendOnly: true
+      }
+    });
+    const timestamp = nowIso();
+    updateSessionStatusStmt.run("archived", timestamp, sessionId);
+    updateWorkspaceTimeStmt.run(timestamp, session.workspaceId);
+    return {
+      ok: true,
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      sessionProtocolVersion: AGENT_SESSION_THREAD_VERSION,
+      appendOnly: true,
+      session: hydrateSession(selectSessionStmt.get(sessionId)),
+      event: eventResult?.event || null
+    };
   }
 
   function listWorkspaces(input = {}) {
@@ -2435,6 +2652,9 @@ export function createAgentWorkspace({ userDataPath }) {
     getSessionContext,
     appendSessionEvent,
     forkSession,
+    compareSessions,
+    createSessionMergeProposal,
+    archiveSession,
     createRun,
     updateRun,
     getRun,

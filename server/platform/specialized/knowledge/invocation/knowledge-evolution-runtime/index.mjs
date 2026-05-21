@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export const KNOWLEDGE_EVOLUTION_PROTOCOL_VERSION = "agentstudio.knowledge-evolution.v1";
+export const KNOWLEDGE_DISTILLATION_OPTIMIZATION_PROTOCOL_VERSION = "agentstudio.knowledge-distillation-optimization.v1";
 
 function nowIso() {
   return new Date().toISOString();
@@ -130,6 +131,109 @@ function firstRetrievalProfileSuggestion(suggestions = []) {
   return asArray(suggestions).find((item) => item.type === "retrievalProfile");
 }
 
+function compactMetrics(metrics = {}) {
+  return Object.fromEntries(
+    Object.entries(asObject(metrics))
+      .filter(([, value]) => typeof value === "number" || typeof value === "boolean" || typeof value === "string")
+      .map(([key, value]) => [key, typeof value === "number" ? Number(value.toFixed(6)) : value])
+  );
+}
+
+function buildMetricTrend(previousRuns = [], evaluationRun = null) {
+  const previous = asArray(previousRuns)
+    .filter((run) => run.target === "knowledgeSkillSet")
+    .slice(-5)
+    .map((run) => ({
+      runId: run.runId,
+      status: run.status,
+      passed: run.evaluationRun?.passed === true,
+      metrics: compactMetrics(run.evaluationRun?.metrics || {})
+    }));
+  const latestMetrics = compactMetrics(evaluationRun?.metrics || {});
+  const prior = previous[previous.length - 1]?.metrics || {};
+  const delta = {};
+  for (const key of [...new Set([...Object.keys(prior), ...Object.keys(latestMetrics)])]) {
+    const left = Number(prior[key]);
+    const right = Number(latestMetrics[key]);
+    if (Number.isFinite(left) && Number.isFinite(right)) {
+      delta[key] = Number((right - left).toFixed(6));
+    }
+  }
+  return {
+    previousRunCount: previous.length,
+    previous,
+    latest: {
+      passed: evaluationRun?.passed === true,
+      metrics: latestMetrics
+    },
+    deltaFromPrevious: delta
+  };
+}
+
+function buildDistillationOptimizationReport({
+  input = {},
+  runId = "",
+  feedback = [],
+  distillationRun = null,
+  evaluationRun = null,
+  deployment = null,
+  failureAttribution = null,
+  goldCases = { items: [] },
+  previousRuns = []
+} = {}) {
+  const cases = asArray(input.cases).length ? asArray(input.cases) : asArray(goldCases.items);
+  const candidateSkillIds = [
+    ...new Set(
+      asArray(distillationRun?.candidates)
+        .map((candidate) => candidate.skill?.skillId || candidate.skill?.skill?.skillId || candidate.skillId)
+        .filter(Boolean)
+    )
+  ];
+  const reviewReasons = [];
+  if (!evaluationRun) reviewReasons.push("missing_evaluation_run");
+  if (evaluationRun && evaluationRun.passed !== true) reviewReasons.push("evaluation_failed");
+  if (!deployment) reviewReasons.push("not_published_to_canary");
+  const promptVersion = normalizeText(
+    input.promptVersion ||
+      input.distillation?.promptVersion ||
+      input.skillPromptVersion ||
+      `knowledge-skill-distillation:${input.modelAlias || "default"}`
+  );
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_OPTIMIZATION_PROTOCOL_VERSION,
+    optimizationId: `${runId}-distillation-optimization`,
+    promptVersion,
+    baseline: {
+      skillIds: asArray(input.baselineSkillIds),
+      modelAlias: input.modelAlias || "",
+      frameworkVersion: input.frameworkVersion || input.distillation?.frameworkVersion || ""
+    },
+    candidate: {
+      skillIds: candidateSkillIds,
+      distillationRunId: distillationRun?.runId || input.distillationRunId || "",
+      deploymentId: deployment?.deploymentId || ""
+    },
+    evaluationDataset: {
+      source: asArray(input.cases).length ? "provided" : "gold_cases",
+      version: input.evaluationDatasetVersion || input.datasetVersion || "",
+      caseCount: cases.length,
+      caseIds: cases.map((item) => item.caseId).filter(Boolean).slice(0, 100)
+    },
+    errorAttribution: {
+      available: Boolean(failureAttribution),
+      decision: failureAttribution?.decision || null,
+      feedbackCount: asArray(feedback).length
+    },
+    regressionTrend: buildMetricTrend(previousRuns, evaluationRun),
+    humanReview: {
+      required: reviewReasons.length > 0,
+      status: reviewReasons.length > 0 ? "queued" : "not_required",
+      reviewItemId: reviewReasons.length > 0 ? `${runId}-distillation-review` : "",
+      reasons: reviewReasons
+    }
+  };
+}
+
 export function createKnowledgeEvolutionRuntime({
   userDataPath,
   knowledgeCore,
@@ -185,6 +289,7 @@ export function createKnowledgeEvolutionRuntime({
         "attribute_failures",
         "propose_candidate_profile",
         "generate_knowledge_system_candidates",
+        "distillation_optimization_report",
         "golden_rule_gate",
         "offline_replay_evaluation",
         "canary_publish",
@@ -221,6 +326,7 @@ export function createKnowledgeEvolutionRuntime({
     const startedAt = nowIso();
     const runId = String(input.runId || "").trim() || stableRunId();
     const target = normalizeText(input.target || input.evolutionTarget || "retrievalProfile") || "retrievalProfile";
+    const storeBeforeRun = await readStore();
     const feedback = typeof knowledgeCore.feedbackSince === "function"
       ? knowledgeCore.feedbackSince({
           windowHours: input.feedbackWindowHours || 168,
@@ -276,6 +382,17 @@ export function createKnowledgeEvolutionRuntime({
             force: input.force === true
           })
         : null;
+      const distillationOptimization = buildDistillationOptimizationReport({
+        input,
+        runId,
+        feedback,
+        distillationRun,
+        evaluationRun,
+        deployment,
+        failureAttribution,
+        goldCases,
+        previousRuns: storeBeforeRun.runs
+      });
       return persistRun({
         protocolVersion: KNOWLEDGE_EVOLUTION_PROTOCOL_VERSION,
         runId,
@@ -299,6 +416,7 @@ export function createKnowledgeEvolutionRuntime({
         distillationRun,
         evaluationRun,
         deployment,
+        distillationOptimization,
         modelDecisions: {
           failureAttribution
         },

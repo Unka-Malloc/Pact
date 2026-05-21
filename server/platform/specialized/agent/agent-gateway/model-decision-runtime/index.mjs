@@ -174,6 +174,20 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function uniqueStrings(values = []) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -778,6 +792,35 @@ export function createModelDecisionRuntime({
           taskId: input.taskId || payload.taskId || "",
           sessionId: input.sessionId || payload.sessionId || "",
           question: buildPrompt(role, payload),
+          modelRouting: {
+            ...(payload.modelRouting || input.modelRouting || {}),
+            enabled: true,
+            routeId: String(
+              payload.modelRouting?.routeId ||
+                input.modelRouting?.routeId ||
+                input.routeId ||
+                payload.routeId ||
+                `model-decision.${role.roleId}`
+            ),
+            promptVersion: String(
+              payload.promptVersion ||
+                input.promptVersion ||
+                payload.modelRouting?.promptVersion ||
+                input.modelRouting?.promptVersion ||
+                `role:${role.roleId}`
+            ),
+            fallbackChain: uniqueStrings([
+              modelAlias,
+              ...asArray(payload.fallbackChain || input.fallbackChain),
+              ...asArray(payload.modelRouting?.fallbackChain || input.modelRouting?.fallbackChain)
+            ]),
+            budget: {
+              ...(payload.modelRouting?.budget || input.modelRouting?.budget || {}),
+              maxInputTokens: Number(budget.maxInputTokens || 0),
+              maxOutputTokens: Number(budget.maxOutputTokens || 0),
+              maxEstimatedTotalTokens: Number(budget.maxInputTokens || 0) + Number(budget.maxOutputTokens || 0)
+            }
+          },
           parameters: {
             response_format: { type: "json_object" },
             max_tokens: Number(budget.maxOutputTokens || 800)

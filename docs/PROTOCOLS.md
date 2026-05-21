@@ -43,6 +43,9 @@
 | `agentstudio.tool-management.v1` | Tool Management v1 catalog、grant、policy preview、execute、audit、metrics。 |
 | `agentstudio.security.v1` | subject、workspace、scope、grant、data class、secret ref、redaction、audit policy。 |
 | `agentstudio.workflow.v1` | 长任务、activity、checkpoint、retry、signal、timer、恢复和补偿语义。 |
+| `agentstudio.data-connector-governance.v1` | 服务端数据连接器合同、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载验收。 |
+| `agentstudio.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
+| `agentstudio.knowledge-distillation-optimization.v1` | 知识蒸馏持续优化报告，覆盖 prompt/baseline/dataset 版本、错误归因、趋势、人工审核和 canary/promote/rollback。 |
 | `agentstudio.knowledge-access.v1` | source-level knowledge permissions、accessMode、checkoutPolicy、readInPlace、export 和 context injection 裁决。 |
 | `agentstudio.agent-library.v1` | AgentLibrary / 图书馆的 library card、loanRecord、knowledgeAccessReceipt、share、checkout 和 revoke 语义。 |
 | `agentstudio.workspace-contribution.v1` | 终端贡献资产、Skills、工具、脚本、专家意见、黄金规则、排行榜、资产贡献统计报表和贡献授权。 |
@@ -463,6 +466,8 @@ Skill 贡献排行榜演示：
 
 工业级蒸馏验收使用 `agentstudio.knowledge-distillation-industrial.v1`。项目资料先形成 `markdown-project-digest`，邮件资料先形成 `email-thread-digest`；外部 baseline 可参考 Repomix、Gitingest、DeepEval、G-Eval 的组织和评价方式。默认模型别名为 `deepseek-v4-flash`，差距评估函数为 `evaluateIndustrialDistillationGap`，并检查 `Message-ID`、`In-Reply-To`、`References` 等邮件线程字段。
 
+蒸馏持续优化使用 `agentstudio.knowledge-distillation-optimization.v1`。每次 `knowledgeSkillSet` evolution run 必须记录 `promptVersion`、baseline skill/model/framework、candidate skill IDs、evaluation dataset version/case IDs、error attribution、metric trend、human review 状态和 canary deployment；失败评估进入人工审核队列，通过评估后才能发布 canary，后续仍必须保留 promote/rollback 审计链。
+
 蒸馏 portable 输出使用 `portable.knowledge-distillation.v1`，正文由稳定有序的 `contentBlocks` 组成。
 
 搜索和证据读取必须支持预算：
@@ -483,6 +488,10 @@ Skill 贡献排行榜演示：
 - `completeOriginalAvailable`
 
 外部知识库适配器必须仍返回 AgentStudio 形状的 evidence pack，包含 `sourceTrace`、`citations`、`assetId`、`scoreReasons`、`backendTrace` 和权限过滤结果。当前实现入口是 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`，首批后端为 `pgvector`、`qdrant`、`opensearch`，通过 `AGENTSTUDIO_EXTERNAL_KB_PROVIDER` 等配置启用。
+
+数据连接器治理保留在服务端协议层，不要求本轮实现客户端连接器。`agentstudio.data-connector-governance.v1` 校验 `agentstudio.data-connector.v1` manifest，并用 `agentstudio.local-mirror.v1` 验收 OAuth refresh 策略、增量 cursor、冲突处理、hash collision quarantine、rate limit、mirror cleanup、localQuery 禁远程和 uninstall policy。当前实现入口是 `server/platform/specialized/knowledge/connectors/data-connector-governance/index.mjs`。
+
+性能容量基准使用 `agentstudio.performance-capacity.v1`。该协议定义 `smoke`、`pilot`、`production` 容量目标，并用合成 corpus 实际经过 `KnowledgeCore` ingest/search，同时记录外部 mirror sync、蒸馏吞吐、估算成本和失败注入结果。当前实现入口是 `server/platform/specialized/knowledge/performance/capacity-benchmark/index.mjs`。
 
 ## Knowledge Access Protocol
 
@@ -645,6 +654,8 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 ## Agent Session Compatibility
 
 现有 `agent_sessions.list/get/context/events.append/fork` 保留为兼容面，用于加载历史会话和构造 context bundle。
+
+会话线程治理补齐 `agent_sessions.compare`、`agent_sessions.merge_proposal` 和 `agent_sessions.archive`。compare 是只读 diff；merge proposal 只追加 `session_merge_proposal` 事件且 `autoMergeApplied=false`；archive 追加 `session_archived` 事件并标记状态，不删除历史。
 
 长期方向是把会话视为 workspace state 的一种 event stream：
 

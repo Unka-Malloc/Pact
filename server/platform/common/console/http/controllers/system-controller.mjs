@@ -69,6 +69,13 @@ import {
 import { hashClientString, serverToken } from "../../../security/client-strings.mjs";
 import { reconcileStorage, runStorageDoctor } from "../../../storage/ops-tools.mjs";
 import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
+import { buildProductionHealthReport } from "../../../production-readiness/report-reader.mjs";
+import { createCapabilityPackageRegistry } from "../../../../specialized/capabilities/package-lifecycle/index.mjs";
+import { createDataConnectorGovernance } from "../../../../specialized/knowledge/connectors/data-connector-governance/index.mjs";
+import {
+  listCapacityBenchmarkTargets,
+  runPerformanceCapacityBenchmark
+} from "../../../../specialized/knowledge/performance/capacity-benchmark/index.mjs";
 
 function parseJsonBody(requestBody) {
   return requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
@@ -3004,6 +3011,60 @@ export function createSystemController({
       const settings = await loadAgentRuntimeSettings();
       sendJson(response, 200, publicAgentGatewayRegistry(settings));
     },
+    async handleModelRoutingHealth({ url, response }) {
+      const { inspectAgentModelRouting } = await loadAgentGatewayModule();
+      sendJson(response, 200, await inspectAgentModelRouting({
+        userDataPath,
+        limit: Number(url.searchParams.get("limit") || 50)
+      }));
+    },
+    async handleCapabilityPackagePlan({ requestBody, response }) {
+      const registry = createCapabilityPackageRegistry({ userDataPath });
+      const payload = parseJsonBody(requestBody);
+      sendJson(response, 200, await registry.plan(payload.manifest || payload));
+    },
+    async handleCapabilityPackages({ requestBody, response, authSession }) {
+      const registry = createCapabilityPackageRegistry({ userDataPath });
+      if (requestBody.length === 0) {
+        sendJson(response, 200, await registry.describe());
+        return;
+      }
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await registry.submit(payload.manifest || payload, {
+          submittedBy: authSession?.user?.username || authSession?.userId || "console"
+        }));
+      } catch (error) {
+        sendJson(response, 400, {
+          error: error instanceof Error ? error.message : "能力包提交失败。",
+          details: error?.details || []
+        });
+      }
+    },
+    async handleCapabilityPackageLifecycle({ packageId, requestBody, response, authSession }) {
+      const registry = createCapabilityPackageRegistry({ userDataPath });
+      try {
+        const payload = parseJsonBody(requestBody);
+        const action = String(payload.action || "").trim();
+        if (action === "rollback") {
+          sendJson(response, 200, await registry.rollback({
+            kind: payload.kind,
+            name: payload.name,
+            actor: authSession?.user?.username || authSession?.userId || payload.actor || "console",
+            reason: payload.reason || ""
+          }));
+          return;
+        }
+        sendJson(response, 200, await registry.lifecycle(packageId, {
+          ...payload,
+          actor: authSession?.user?.username || authSession?.userId || payload.actor || "console"
+        }));
+      } catch (error) {
+        sendJson(response, 409, {
+          error: error instanceof Error ? error.message : "能力包生命周期操作失败。"
+        });
+      }
+    },
     async handleCreateAgent({ requestBody, authSession, response }) {
       const startedAt = Date.now();
       const patch = normalizeAgentModelPayload(parseJsonBody(requestBody));
@@ -5321,6 +5382,50 @@ export function createSystemController({
       }
       sendJson(response, 201, result);
     },
+    async handleCompareAgentSessions({ sessionId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.compareSessions !== "function") {
+        return sendJson(response, 503, { error: "会话线程不可用。" });
+      }
+      const payload = parseJsonBody(requestBody);
+      const result = agentWorkspace.compareSessions({
+        ...payload,
+        leftSessionId: sessionId || payload.leftSessionId || payload.sessionId,
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result?.ok) {
+        return sendJson(response, result?.error === "会话不存在" ? 404 : 400, result || { ok: false, error: "会话比较失败。" });
+      }
+      sendJson(response, 200, result);
+    },
+    async handleAgentSessionMergeProposal({ sessionId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.createSessionMergeProposal !== "function") {
+        return sendJson(response, 503, { error: "会话线程不可用。" });
+      }
+      const payload = parseJsonBody(requestBody);
+      const result = agentWorkspace.createSessionMergeProposal({
+        ...payload,
+        targetSessionId: sessionId || payload.targetSessionId || payload.sessionId,
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result?.ok) {
+        return sendJson(response, result?.error === "会话不存在" ? 404 : 400, result || { ok: false, error: "会话合并提案失败。" });
+      }
+      sendJson(response, 201, result);
+    },
+    async handleArchiveAgentSession({ sessionId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.archiveSession !== "function") {
+        return sendJson(response, 503, { error: "会话线程不可用。" });
+      }
+      const result = agentWorkspace.archiveSession({
+        sessionId,
+        ...parseJsonBody(requestBody),
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result?.ok) {
+        return sendJson(response, result?.error === "会话不存在" ? 404 : 400, result || { ok: false, error: "会话归档失败。" });
+      }
+      sendJson(response, 200, result);
+    },
     async handleResolveAgentWorkspaceSubmission({ workspaceId, submissionId, requestBody, response, authSession }) {
       if (!agentWorkspace) {
         sendJson(response, 503, {
@@ -5848,6 +5953,50 @@ export function createSystemController({
       if (!handled) {
         sendJson(response, 404, {
           error: "Tool Management API route not found."
+        });
+      }
+    },
+    async handleProductionHealth({ response }) {
+      sendJson(response, 200, await buildProductionHealthReport());
+    },
+    async handleDataConnectorGovernance({ response }) {
+      const governance = createDataConnectorGovernance({ userDataPath });
+      sendJson(response, 200, await governance.describe());
+    },
+    async handleDataConnectorGovernancePlan({ requestBody, response }) {
+      const governance = createDataConnectorGovernance({ userDataPath });
+      const payload = parseJsonBody(requestBody);
+      sendJson(response, 200, await governance.plan(payload.manifest || payload));
+    },
+    async handleDataConnectorGovernanceConformance({ requestBody, response }) {
+      const governance = createDataConnectorGovernance({ userDataPath });
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await governance.runConformance(payload.manifest || payload));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Data connector conformance failed.",
+          details: error?.details || []
+        });
+      }
+    },
+    async handlePerformanceCapacityTargets({ response }) {
+      sendJson(response, 200, listCapacityBenchmarkTargets());
+    },
+    async handlePerformanceCapacityBenchmark({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        sendJson(response, 200, await runPerformanceCapacityBenchmark({
+          userDataPath,
+          profileId: payload.profileId || payload.profile || "smoke",
+          targets: payload.targets || {},
+          failureInjection: payload.failureInjection || {}
+        }));
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Performance capacity benchmark failed."
         });
       }
     },

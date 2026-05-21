@@ -347,6 +347,14 @@
 
 补全方式：增加 `agent_sessions.compare`、`agent_sessions.merge_proposal`、`agent_sessions.archive`。注意 archive 也应只增不删，以事件形式标记。
 
+当前实现入口：
+
+- `server/platform/specialized/agent/agent-workspace/index.mjs` 在 `agentstudio.agent-session-thread.v1` 内补齐 `compareSessions()`、`createSessionMergeProposal()` 和 `archiveSession()`。
+- `compareSessions()` 只读比较两条线程，按 cloned source event 识别共同历史，输出 left-only / right-only / divergence 和同一 artifact/asset/document/path 的冲突。
+- `createSessionMergeProposal()` 只向目标 session 追加 `session_merge_proposal` 事件，`autoMergeApplied=false`，所有冲突进入人工或上层 decision，不自动写最终决策。
+- `archiveSession()` 追加 `session_archived` 事件并把 session 状态标记为 `archived`，不删除历史事件。
+- 新增 `agent_sessions.compare`、`agent_sessions.merge_proposal`、`agent_sessions.archive` 操作和 Tool Management 工具暴露；`npm run server:verify:agent-session-governance` 验证 fork 后比较、冲突提案、归档事件、操作注册和工具目录。
+
 效果：团队可以并行探索，再把有效路径合并为工作空间遗产。
 
 ### P1-02 前端治理界面还不够“生产操作台”
@@ -410,6 +418,13 @@
 
 补全方式：为连接器增加 conformance fixture：OAuth、sync、localQuery、uninstall、mirror cleanup、hash collision、rate limit。
 
+当前实现入口：
+
+- `server/platform/specialized/knowledge/connectors/data-connector-governance/index.mjs` 定义 `agentstudio.data-connector-governance.v1`、`agentstudio.data-connector.v1` 和 `agentstudio.local-mirror.v1`，只治理服务端连接器合同，不实现客户端连接器。
+- 连接器 manifest 预检覆盖 provider/source 命名、capability、OAuth refresh、增量 cursor、冲突策略、hash collision 策略、rate limit、localQuery 禁远程、mirror dedupe 和卸载保留策略。
+- `GET /api/data-connectors/governance`、`POST /api/data-connectors/governance/plan`、`POST /api/data-connectors/governance/conformance` 提供服务端治理调用面；Tool Management catalog 暴露 `agentstudio.dataConnectors.governance*`。
+- `npm run server:verify:data-connector-governance` 验证 manifest、OAuth refresh 策略、增量 cursor、未变更跳过、冲突更新、hash collision quarantine、rate limit、localQuery 禁远程、mirror cleanup、uninstall policy、操作注册和 Tool Management 暴露。
+
 效果：邮件、文档库、网盘、聊天记录进入系统后可持续更新，而不是一次性导入。
 
 ### P1-06 性能和容量基准不足
@@ -420,6 +435,14 @@
 
 补全方式：定义容量目标，增加 benchmark runner：小/中/大 corpus、冷/热 cache、单机/外部库、多并发、失败注入。
 
+当前实现入口：
+
+- `server/platform/specialized/knowledge/performance/capacity-benchmark/index.mjs` 定义 `agentstudio.performance-capacity.v1`，内置 `smoke`、`pilot`、`production` 容量目标档位。
+- benchmark runner 使用合成 corpus 实际走 `KnowledgeCore.ingestSources()` 和 `knowledgeCore.search()`，记录 ingest latency、search p50/p95/QPS、命中数和缺失查询恢复。
+- runner 复用 `data-connector-governance` 模拟外部 mirror sync，覆盖外部同步延迟、cursor 和 rate limit 失败注入；蒸馏吞吐以确定性摘要模拟记录，不触发模型成本。
+- `GET /api/performance/capacity/targets` 和 `POST /api/performance/capacity/benchmark` 提供服务端调用面；Tool Management catalog 暴露 `agentstudio.performance.capacity.*`。
+- `npm run server:verify:performance-capacity` 验证容量目标、benchmark 输出、阈值门禁、失败注入、操作注册和 Tool Management 暴露。
+
 效果：能回答“这个版本能支撑多少业务量”，而不是只回答“能跑”。
 
 ## P2 规模化缺口
@@ -429,6 +452,13 @@
 当前差距：已有工业蒸馏基准方向，但还需要版本化 prompt、技能 baseline、评估数据集、错误归因、回归趋势和人工审核闭环。
 
 补全方式：把 `evaluateIndustrialDistillationGap()` 输出接入 `knowledge.evolution`，形成候选改进、人工批准、canary、promote/rollback。
+
+当前实现入口：
+
+- `server/platform/specialized/knowledge/invocation/knowledge-evolution-runtime/index.mjs` 在 `knowledgeSkillSet` 目标中输出 `agentstudio.knowledge-distillation-optimization.v1` 优化报告。
+- 优化报告记录 `promptVersion`、baseline skill/model/framework、候选 skill IDs、评估数据集版本和 case IDs、错误归因、历史指标趋势、canary deployment，以及是否需要人工审核。
+- 失败评估会生成 `humanReview.status=queued` 和 review reasons；通过评估并发布 canary 时记录 `humanReview.required=false`，仍保留 promote/rollback 路径。
+- `npm run server:verify:knowledge-distillation-optimization` 验证失败->人工审核、第二轮通过->canary、趋势对比、prompt/dataset 版本和持久化运行记录。
 
 效果：蒸馏质量可以持续变好，而不是靠一次性调参。
 
