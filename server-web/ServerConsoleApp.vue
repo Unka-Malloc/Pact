@@ -345,6 +345,14 @@ const {
           </button>
           <button
             class="side-link side-link-subtle"
+            :class="{ active: currentView === 'admin' && adminView === 'productionHealth' }"
+            type="button"
+            @click="openAdmin('productionHealth')"
+          >
+            生产健康
+          </button>
+          <button
+            class="side-link side-link-subtle"
             :class="{ active: currentView === 'admin' && adminView === 'logs' }"
             type="button"
             @click="openAdmin('logs')"

@@ -130,6 +130,16 @@ routes:
           - admin.ops-monitor.health
           - admin.ops-monitor.alerts
 
+  - routePath: /admin/production-health
+    viewFile: server-web/views/admin/ProductionHealthView.vue
+    features:
+      - featureId: admin.production-health
+        actions:
+          - admin.production-health.summary
+          - admin.production-health.coverage
+          - admin.production-health.gates
+          - admin.production-health.history
+
   - routePath: /admin/clients
     viewFile: server-web/views/admin/ClientsView.vue
     features:

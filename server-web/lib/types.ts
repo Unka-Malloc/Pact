@@ -2459,6 +2459,101 @@ export type MonitorAlertState = {
   history: MonitorAlertItem[];
 };
 
+export type ProductionHealthGateStatus = "pass" | "fail" | "timeout" | "blocked" | "missing" | "partial" | "warning" | "unknown" | string;
+
+export type ProductionHealthGate = {
+  id: string;
+  title: string;
+  status: ProductionHealthGateStatus;
+  tone: string;
+  blockerLevel: string;
+  owner: string;
+  coverage: string[];
+  evidencePath: string;
+  nextStep: string;
+  commandSummary: {
+    total: number;
+    failed: number;
+    timedOut: number;
+    elapsedMs: number;
+  };
+  commands: Array<{
+    command: string;
+    exitCode: number;
+    timedOut: boolean;
+    elapsedMs: number;
+  }>;
+};
+
+export type ProductionHealthSection = {
+  id: string;
+  label: string;
+  description: string;
+  gateIds: string[];
+  status: ProductionHealthGateStatus;
+  tone: string;
+  passed: number;
+  total: number;
+  missingGateIds: string[];
+  gates: Array<{
+    id: string;
+    title: string;
+    status: ProductionHealthGateStatus;
+    tone: string;
+    blockerLevel: string;
+    nextStep: string;
+    evidencePath: string;
+  }>;
+  nextSteps: string[];
+};
+
+export type ProductionHealthResponse = {
+  schemaVersion: number;
+  reportType: "agentstudio.production-health.v1" | string;
+  generatedAt: string;
+  status: ProductionHealthGateStatus;
+  tone: string;
+  reportRoot: string;
+  latestReport: null | {
+    reportType: string;
+    runId: string;
+    generatedAt: string;
+    mode: string;
+    reportPath: string;
+    markdownPath: string;
+    readError?: string;
+    git: {
+      branch: string;
+      commit: string;
+      dirtyFileCount: number;
+    };
+  };
+  summary: {
+    pass: number;
+    fail: number;
+    timeout: number;
+    blockedP0: number;
+  };
+  coverage: {
+    required: string[];
+    missing: string[];
+  };
+  sections: ProductionHealthSection[];
+  gates: ProductionHealthGate[];
+  history?: Array<{
+    runId: string;
+    generatedAt: string;
+    status: ProductionHealthGateStatus;
+    mode: string;
+    reportPath: string;
+  }>;
+  actions: Array<{
+    id: string;
+    label: string;
+    command: string;
+  }>;
+};
+
 export type ServerConsoleState = {
   server: RuntimeInfoResponse["server"];
   runtime: RuntimeInfoResponse["runtime"];

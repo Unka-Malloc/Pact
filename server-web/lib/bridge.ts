@@ -49,6 +49,7 @@ import type {
   MonitorAlertConfig,
   MonitorAlertState,
   ModelProbeResponse,
+  ProductionHealthResponse,
   RenderMarkdownResponse,
   ServerPathBrowseResponse,
   RuntimeMountReloadResponse,
@@ -148,6 +149,7 @@ type Bridge = {
   getBackgroundProcesses: () => Promise<BackgroundProcessStatus>;
   getClientRuntimeStatus: () => Promise<ClientRuntimeStatus>;
   getMonitorAlerts: () => Promise<MonitorAlertState>;
+  getProductionHealth: () => Promise<ProductionHealthResponse>;
   saveMonitorAlertConfig: (config: MonitorAlertConfig) => Promise<MonitorAlertState>;
   acknowledgeMonitorAlert: (alertId: string) => Promise<MonitorAlertState>;
   subscribeEvents: (params?: {
@@ -648,6 +650,7 @@ const browserBridge: Bridge = {
   getClientRuntimeStatus: () => getJson<ClientRuntimeStatus>("/api/client-runtime/status"),
   getMonitorAlerts: () =>
     getJson<MonitorAlertState>("/api/system/monitor-alerts"),
+  getProductionHealth: () => getJson<ProductionHealthResponse>("/api/production/health"),
   saveMonitorAlertConfig: (config) =>
     postJson<MonitorAlertState>(
       "/api/system/monitor-alerts/config",

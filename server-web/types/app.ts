@@ -35,6 +35,7 @@ export type AdminView =
   | "agentConfig"
   | "maintenanceAgent"
   | "opsMonitor"
+  | "productionHealth"
   | "clients"
   | "storage"
   | "modules";

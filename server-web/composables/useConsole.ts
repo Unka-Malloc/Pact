@@ -475,6 +475,7 @@ const adminViewTitleMap: Partial<Record<AdminView, string>> = {
   agentConfig: "智能体配置",
   maintenanceAgent: "智能巡检",
   opsMonitor: "运维监控",
+  productionHealth: "生产健康",
   clients: "设备管理",
   storage: "系统概览",
   modules: "接入模块",

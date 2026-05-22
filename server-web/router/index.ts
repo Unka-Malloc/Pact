@@ -17,6 +17,7 @@ import LogsView from "../views/admin/LogsView.vue";
 import MaintenanceAgentView from "../views/admin/MaintenanceAgentView.vue";
 import ModulesView from "../views/admin/ModulesView.vue";
 import OpsMonitorView from "../views/admin/OpsMonitorView.vue";
+import ProductionHealthView from "../views/admin/ProductionHealthView.vue";
 import StorageView from "../views/admin/StorageView.vue";
 import ToolsView from "../views/admin/ToolsView.vue";
 
@@ -31,6 +32,7 @@ export type AdminSection =
   | "clients"
   | "tools"
   | "modules"
+  | "productionHealth"
   | "agent-management"
   | "agent-permissions"
   | "agent-config"
@@ -71,6 +73,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/admin/jobs", component: JobsView, meta: { viewId: "admin", adminView: "jobs" } },
   { path: "/admin/logs", component: LogsView, meta: { viewId: "admin", adminView: "logs" } },
   { path: "/admin/ops-monitor", component: OpsMonitorView, meta: { viewId: "admin", adminView: "opsMonitor" } },
+  { path: "/admin/production-health", component: ProductionHealthView, meta: { viewId: "admin", adminView: "productionHealth" } },
   { path: "/admin/clients", component: ClientsView, meta: { viewId: "admin", adminView: "clients" } },
   { path: "/admin/tools", component: ToolsView, meta: { viewId: "admin", adminView: "tools" } },
   { path: "/admin/modules", component: ModulesView, meta: { viewId: "admin", adminView: "modules" } },
@@ -122,6 +125,7 @@ export function adminSectionToSlug(section: string): string {
     clients: "clients",
     tools: "tools",
     modules: "modules",
+    productionHealth: "production-health",
     agentManagement: "agent-management",
     agentPermissions: "agent-permissions",
     agentConfig: "agent-config",
@@ -140,6 +144,7 @@ export function slugToAdminView(slug: string): string {
     clients: "clients",
     tools: "tools",
     modules: "modules",
+    "production-health": "productionHealth",
     "agent-management": "agentManagement",
     "agent-permissions": "agentPermissions",
     "agent-config": "agentConfig",
