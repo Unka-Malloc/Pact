@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "bundleType": "pact.agent-skill.bundle",
+  "skillId": "pact.project.release",
+  "protocolVersion": "pact.project-release-skill.v1",
+  "permissions": {
+    "allowDownstream": false
+  },
+  "files": {
+    "instructions": "README.md",
+    "dependencies": "dependencies.json"
+  },
+  "lightweightBundle": true
+}
