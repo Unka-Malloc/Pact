@@ -474,7 +474,7 @@ AgentStudio 必须写入设备级发现清单：
       "vmHttpUrl": "<signed-discovered-vm-url>/mcp",
       "connector": {
         "packageName": "agentstudio-mcp-connector",
-        "packageVersion": "0.2.1",
+        "packageVersion": "0.2.2",
         "discoverCommand": "npx agentstudio-mcp-connector@latest discover-local",
         "installCommand": "npx agentstudio-mcp-connector@latest install --target <client> --token-stdin"
       },
@@ -546,7 +546,7 @@ release 产物写入 `build/release/mcp/`，包含：
 - `agentstudio-mcp-release.json`
 - `latest.json`
 
-发布通道使用 npm / GitHub Release 上传上述产物；`agentstudio-mcp-release.json` 记录 npm tarball sha256、portable zip sha256、portable tarball sha256、GitHub 一行安装命令、版本、支持的 target、Hub 注册命令、本机发现命令、多选交互式安装命令、单客户端脚本化连接命令和 `npm publish` 命令。终端用户首选 GitHub 一行命令或 zip 包入口，不需要完整服务端 checkout。
+发布通道使用 npm / GitHub Release 上传上述产物；`agentstudio-mcp-release.json` 记录 npm tarball sha256、portable zip sha256、portable tarball sha256、GitHub 一行安装命令、版本、支持的 target、Hub 注册命令、本机发现命令、多选交互式安装命令、单客户端脚本化连接命令和 `npm publish` 命令。终端用户首选 GitHub 一行命令或 zip 包入口，不需要完整服务端 checkout。一行安装脚本必须优先检测本机 Node.js 20+，命中时只下载小体积 source tarball；只有本机没有可用 Node.js 时才下载内置 runtime 的 portable zip。
 
 具备 npm registry 权限时可以直接发布：
 
@@ -568,7 +568,7 @@ npx agentstudio-mcp-connector@latest install
 
 无 `--target` 且运行在 TTY 中时，`install` 必须启动多选交互式菜单，扫描 Codex、Gemini CLI、Kilo Code、Copilot、Antigravity、OpenClaw、Hermes Agent 和 OrbStack 中的 claw-compatible 衍生体，允许用户用上下键移动、Space 多选、`a` 切换所有已检测客户端。菜单只在用户确认选择后写入对应客户端配置。
 
-GitHub Release 必须额外提供一条命令入口；它下载 portable zip、校验 SHA256、安装到 `~/.agentstudio/mcp/connector`，注册本机 Hub，并立即启动同一个多选 TUI：
+GitHub Release 必须额外提供一条命令入口；它校验 SHA256、安装到 `~/.agentstudio/mcp/connector`，并立即启动同一个多选 TUI。脚本默认优先下载 npm/source tarball，只有没有可用 Node.js 时才 fallback 到 portable zip：
 
 ```bash
 /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/AgentStudio/releases/latest/download/agentstudio-mcp-install.sh)"
@@ -587,7 +587,6 @@ printf '%s\n' '<issued-token>' | npx agentstudio-mcp-connector@latest install \
 ```bash
 unzip agentstudio-mcp-connector-<version>-<platform>.zip
 cd agentstudio-mcp-connector-<version>-<platform>
-./agentstudio-mcp register
 ./agentstudio-mcp install
 ```
 

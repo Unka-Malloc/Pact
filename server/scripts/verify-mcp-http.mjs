@@ -59,7 +59,7 @@ try {
   assert.equal(discovery.payload.mcpServers.agentstudio.httpUrl, `${server.url}/mcp`);
   assert.equal(discovery.payload.stableToolName, "agentstudio.call");
   assert.equal(discovery.payload.interfaceVersion, "agentstudio.mcp.v1");
-  assert.equal(discovery.payload.serverVersion, "0.2.1");
+  assert.equal(discovery.payload.serverVersion, "0.2.2");
   assert.equal(discovery.payload.identity.algorithm, "Ed25519");
   assert.ok(discovery.payload.identity.keyId);
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
@@ -92,7 +92,7 @@ try {
   assert.equal(handshake.payload.ok, true);
   assert.equal(handshake.payload.payload.nonce, nonce);
   assert.equal(handshake.payload.payload.server.name, "AgentStudio");
-  assert.equal(handshake.payload.payload.server.serverVersion, "0.2.1");
+  assert.equal(handshake.payload.payload.server.serverVersion, "0.2.2");
   assert.equal(handshake.payload.payload.identity.keyId, discovery.payload.identity.keyId);
   assert.equal(handshake.payload.payload.endpoints.mcpUrl, `${server.url}/mcp`);
   assert.equal(handshake.payload.signature.algorithm, "Ed25519");

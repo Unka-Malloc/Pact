@@ -1,7 +1,9 @@
 # AgentStudio MCP Release Install
 
 AgentStudio MCP is distributed as a GitHub Release connector package. A normal
-user does not need to clone the AgentStudio repository or install Node.js.
+user does not need to clone the AgentStudio repository. If Node.js 20+ is already
+installed, the one-command installer uses the small source package; if Node.js is
+missing, it falls back to the portable package with its own runtime.
 
 ## One Command
 
@@ -9,9 +11,11 @@ user does not need to clone the AgentStudio repository or install Node.js.
 /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/AgentStudio/releases/latest/download/agentstudio-mcp-install.sh)"
 ```
 
-The command downloads the latest portable zip from GitHub Releases, verifies its
+The command downloads the latest connector from GitHub Releases, verifies its
 SHA256 checksum, installs the connector under `~/.agentstudio/mcp/connector`,
-registers the local AgentStudio MCP hub, and opens a multi-select TUI.
+and opens a multi-select TUI. On machines with Node.js 20+, this is the small
+source tarball. On machines without Node.js, the script downloads the larger
+portable zip that bundles Node.
 
 The installer does not assume an IP address. Before it writes any agent config,
 it scans local AgentStudio candidates, fetches MCP discovery, and verifies the

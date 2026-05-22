@@ -12,9 +12,11 @@ One command from GitHub Release:
 /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/AgentStudio/releases/latest/download/agentstudio-mcp-install.sh)"
 ```
 
-This downloads the portable connector zip, verifies its checksum, installs it under
-`~/.agentstudio/mcp/connector`, registers the local AgentStudio MCP hub, then opens
-the multi-select TUI.
+This downloads the connector from GitHub Releases, verifies its checksum,
+installs it under `~/.agentstudio/mcp/connector`, then opens the multi-select TUI.
+If Node.js 20+ is available, the installer uses the small source package. If
+Node.js is missing, it falls back to the larger portable zip with an embedded
+runtime.
 
 The connector does not assume a default IP address. It scans local AgentStudio
 candidates, fetches MCP discovery, then verifies the `/api/mcp/handshake`
@@ -67,7 +69,6 @@ Use the portable zip release artifact instead of the npm package:
 ```bash
 unzip agentstudio-mcp-connector-<version>-<platform>.zip
 cd agentstudio-mcp-connector-<version>-<platform>
-./agentstudio-mcp register
 ./agentstudio-mcp install
 ```
 

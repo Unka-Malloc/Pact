@@ -41,7 +41,7 @@ try {
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "agentstudio-mcp-connector");
-  assert.equal(result.packageVersion, "0.2.1");
+  assert.equal(result.packageVersion, "0.2.2");
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   assert.equal(manifest.packageType, "agentstudio.mcp-connector-release.v1");
@@ -66,6 +66,11 @@ try {
   assert.equal(manifest.bootstrap.scriptName, "agentstudio-mcp-install.sh");
   assert.equal(manifest.bootstrap.startsInteractiveInstaller, true);
   assert.equal(manifest.bootstrap.supportsMultiSelect, true);
+  assert.equal(manifest.bootstrap.strategy, "installed-node-source-tarball-with-portable-runtime-fallback");
+  assert.equal(manifest.bootstrap.preferredDownload, path.basename(result.tarballPath));
+  assert.equal(manifest.bootstrap.fallbackDownload, path.basename(result.portableZipPath));
+  assert.equal(manifest.bootstrap.sourceSizeBytes, manifest.connector.sizeBytes);
+  assert.equal(manifest.bootstrap.fallbackSizeBytes, manifest.portable.zipSizeBytes);
   assert.equal(manifest.bootstrap.sha256, await sha256(result.bootstrapInstallerPath));
   assert.ok(manifest.publish.npmCommand.includes("npm publish"));
   assert.ok(manifest.publish.releaseFiles.includes("agentstudio-mcp-install.sh"));
@@ -74,11 +79,17 @@ try {
   await run("sh", ["-n", result.bootstrapInstallerPath]);
   const bootstrapScript = await fs.readFile(result.bootstrapInstallerPath, "utf8");
   assert.match(bootstrapScript, /curl -fL --retry 3/);
+  assert.match(bootstrapScript, /node_is_usable/);
+  assert.match(bootstrapScript, /install_from_source_tarball/);
+  assert.match(bootstrapScript, /install_from_portable_zip/);
+  assert.match(bootstrapScript, /SOURCE_TARBALL=/);
   assert.match(bootstrapScript, /archive_sha256=/);
   assert.doesNotMatch(bootstrapScript, /127\.0\.0\.1:8787/);
   assert.doesNotMatch(bootstrapScript, /register --url/);
   assert.doesNotMatch(bootstrapScript, /install --url/);
+  assert.doesNotMatch(bootstrapScript, /register >\/dev\/null/);
   assert.match(bootstrapScript, /agentstudio-mcp" install/);
+  assert.match(bootstrapScript, /node "\$target_dir\/bin\/agentstudio-mcp\.mjs" install/);
 
   const list = await run("tar", ["-tzf", result.tarballPath]);
   assert.match(list.stdout, /package\/bin\/agentstudio-mcp\.mjs/);
@@ -105,7 +116,7 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.2.1");
+  assert.equal(versionPayload.packageVersion, "0.2.2");
   assert.equal(versionPayload.stableToolName, "agentstudio.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "help"]);
   assert.match(help.stdout, /agentstudio-mcp register/);
@@ -139,7 +150,7 @@ try {
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.2.1");
+  assert.equal(portablePayload.packageVersion, "0.2.2");
   const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), [
     "server-config",
     "--reset",
@@ -160,7 +171,7 @@ try {
   const portableZipVersion = await run(path.join(zipRoot, "agentstudio-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.2.1");
+  assert.equal(portableZipPayload.packageVersion, "0.2.2");
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
 
   console.log("mcp-release verification passed");
