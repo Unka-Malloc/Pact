@@ -1892,15 +1892,6 @@ export function createSystemController({
       }
       sendJson(response, 200, consoleAuth.getSummary(request));
     },
-    async handleAuthBootstrap({ request, requestBody, response }) {
-      if (!consoleAuth) {
-        sendJson(response, 503, { error: "控制台认证模块不可用。" });
-        return;
-      }
-      sendJson(response, 410, {
-        error: "旧初始化接口已停用；首次 owner 由服务端启动时自动创建。"
-      });
-    },
     async handleAuthLogin({ request, requestBody, response }) {
       if (!consoleAuth) {
         sendJson(response, 503, { error: "控制台认证模块不可用。" });

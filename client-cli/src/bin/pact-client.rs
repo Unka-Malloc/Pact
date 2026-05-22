@@ -585,6 +585,7 @@ fn print_usage() {
 
 fn agent_invocation_params(args: &[String]) -> Value {
     let mut params = json!({});
+    params["customHttpAdapter"] = json!({});
     let mut question = Vec::new();
     let mut plugins = Vec::<Value>::new();
     let mut parameters = serde_json::Map::new();
@@ -594,28 +595,28 @@ fn agent_invocation_params(args: &[String]) -> Value {
         match arg.as_str() {
             "--url" | "--endpoint" => {
                 if let Some(value) = args.get(index + 1) {
-                    params["agentEndpointUrl"] = json!(value);
+                    params["customHttpAdapter"]["url"] = json!(value);
                     index += 2;
                     continue;
                 }
             }
             "--token" => {
                 if let Some(value) = args.get(index + 1) {
-                    params["agentToken"] = json!(value);
+                    params["customHttpAdapter"]["token"] = json!(value);
                     index += 2;
                     continue;
                 }
             }
             "--token-header" => {
                 if let Some(value) = args.get(index + 1) {
-                    params["agentTokenHeader"] = json!(value);
+                    params["customHttpAdapter"]["tokenHeader"] = json!(value);
                     index += 2;
                     continue;
                 }
             }
             "--agent" | "--agent-name" => {
                 if let Some(value) = args.get(index + 1) {
-                    params["agentName"] = json!(value);
+                    params["customHttpAdapter"]["agentName"] = json!(value);
                     index += 2;
                     continue;
                 }
@@ -630,7 +631,7 @@ fn agent_invocation_params(args: &[String]) -> Value {
             }
             "--engine" => {
                 if let Some(value) = args.get(index + 1) {
-                    params["engine"] = json!(value);
+                    params["customHttpAdapter"]["engine"] = json!(value);
                     index += 2;
                     continue;
                 }

@@ -503,10 +503,7 @@ class ClientBackendApi {
   }
 
   Future<Map<String, dynamic>> listDataConnectors() {
-    return _rpcCommand(
-      'connectors.list',
-      timeout: const Duration(seconds: 20),
-    );
+    return _rpcCommand('connectors.list', timeout: const Duration(seconds: 20));
   }
 
   Future<Map<String, dynamic>> controlDataConnector({
@@ -681,8 +678,8 @@ class ClientBackendApi {
   Future<Map<String, dynamic>> knowledgeAgentAnswer({
     required String query,
     int limit = 8,
-    String? agentEndpointUrl,
-    String? agentToken,
+    String? customHttpAdapterUrl,
+    String? customHttpAdapterToken,
     String? agentAlias,
     String? agentName,
     List<dynamic> pluginList = const [],
@@ -693,11 +690,14 @@ class ClientBackendApi {
     Map<String, dynamic> parameters = const {},
   }) {
     final params = <String, dynamic>{'query': query, 'limit': limit};
-    if (agentEndpointUrl != null && agentEndpointUrl.trim().isNotEmpty) {
-      params['agentEndpointUrl'] = agentEndpointUrl.trim();
+    final customHttpAdapter = <String, dynamic>{};
+    if (customHttpAdapterUrl != null &&
+        customHttpAdapterUrl.trim().isNotEmpty) {
+      customHttpAdapter['url'] = customHttpAdapterUrl.trim();
     }
-    if (agentToken != null && agentToken.trim().isNotEmpty) {
-      params['agentToken'] = agentToken.trim();
+    if (customHttpAdapterToken != null &&
+        customHttpAdapterToken.trim().isNotEmpty) {
+      customHttpAdapter['token'] = customHttpAdapterToken.trim();
     }
     if (agentAlias != null && agentAlias.trim().isNotEmpty) {
       params['agentAlias'] = agentAlias.trim();
@@ -723,6 +723,9 @@ class ClientBackendApi {
     }
     if (parameters.isNotEmpty) {
       params['parameters'] = parameters;
+    }
+    if (customHttpAdapter.isNotEmpty) {
+      params['customHttpAdapter'] = customHttpAdapter;
     }
     return submitCommand(
       'knowledge.agent.answer',
@@ -733,8 +736,8 @@ class ClientBackendApi {
 
   Future<Map<String, dynamic>> invokeAgent({
     required String question,
-    String? agentEndpointUrl,
-    String? agentToken,
+    String? customHttpAdapterUrl,
+    String? customHttpAdapterToken,
     String? agentAlias,
     String? agentName,
     List<dynamic> pluginList = const [],
@@ -745,11 +748,14 @@ class ClientBackendApi {
     Map<String, dynamic> parameters = const {},
   }) {
     final params = <String, dynamic>{'question': question};
-    if (agentEndpointUrl != null && agentEndpointUrl.trim().isNotEmpty) {
-      params['agentEndpointUrl'] = agentEndpointUrl.trim();
+    final customHttpAdapter = <String, dynamic>{};
+    if (customHttpAdapterUrl != null &&
+        customHttpAdapterUrl.trim().isNotEmpty) {
+      customHttpAdapter['url'] = customHttpAdapterUrl.trim();
     }
-    if (agentToken != null && agentToken.trim().isNotEmpty) {
-      params['agentToken'] = agentToken.trim();
+    if (customHttpAdapterToken != null &&
+        customHttpAdapterToken.trim().isNotEmpty) {
+      customHttpAdapter['token'] = customHttpAdapterToken.trim();
     }
     if (agentAlias != null && agentAlias.trim().isNotEmpty) {
       params['agentAlias'] = agentAlias.trim();
@@ -775,6 +781,9 @@ class ClientBackendApi {
     }
     if (parameters.isNotEmpty) {
       params['parameters'] = parameters;
+    }
+    if (customHttpAdapter.isNotEmpty) {
+      params['customHttpAdapter'] = customHttpAdapter;
     }
     return submitCommand(
       'agent.invoke',
@@ -842,7 +851,7 @@ class ClientBackendApi {
       body: {
         'clientId': clientId,
         'clientLabel': 'Flutter 桌面客户端',
-        'appVersion': '0.1.0-flutter',
+        'appVersion': '0.0.1-flutter',
         'platform': Platform.operatingSystem,
         'hostname': Platform.localHostname,
         'bootstrapUrl': PactServiceUrls.normalizeBaseUrl(bootstrapBaseUrl),

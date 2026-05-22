@@ -392,12 +392,8 @@ async function cleanupUnprotectedRawObjects({
     .replace(/^\.+/, "")
     .replace(/\s+/g, "_")
     .slice(0, 96) || "batch";
-  const legacyBatchPrefix = normalizeRelativePath(`objects/mail/${batchId}/`);
   const belongsToBatch = (relativePath) => {
     const normalized = normalizeRelativePath(relativePath);
-    if (normalized.startsWith(legacyBatchPrefix)) {
-      return true;
-    }
     const fileName = path.posix.basename(normalized);
     const extension = path.posix.extname(fileName);
     const stem = extension ? fileName.slice(0, -extension.length) : fileName;

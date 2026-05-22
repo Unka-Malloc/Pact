@@ -1113,9 +1113,9 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 
 危险操作必须由策略层裁决，不能依赖提示词自律。工具执行必须带 `toolGrantId`、`risk`、`confirm`、`requiredScopes` 和 `auditId`。
 
-## Agent Session Compatibility
+## Agent Session Protocol
 
-现有 `agent_sessions.list/get/context/events.append/fork` 保留为兼容面，用于加载历史会话和构造 context bundle。
+`agent_sessions.list/get/context/events.append/fork` 是当前会话工作状态入口，用于加载历史会话和构造 context bundle。
 
 会话线程治理补齐 `agent_sessions.compare`、`agent_sessions.merge_proposal` 和 `agent_sessions.archive`。compare 是只读 diff；merge proposal 只追加 `session_merge_proposal` 事件且 `autoMergeApplied=false`；archive 追加 `session_archived` 事件并标记状态，不删除历史。
 

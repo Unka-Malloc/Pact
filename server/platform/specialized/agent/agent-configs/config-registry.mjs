@@ -127,11 +127,11 @@ function sameModelEndpoint(left = {}, right = {}) {
   return !leftUrl || !rightUrl || leftUrl === rightUrl;
 }
 
-function mergeModelSecretFallback(model = {}, legacyAgents = []) {
+function mergeModelSecretFromSettings(model = {}, settingsAgents = []) {
   const provider = text(model.provider);
   const modelName = text(model.model || model.engine);
   const modelAgentIdentity = text(model.agentUid || model.agentId || model.ownerAgentId);
-  const match = legacyAgents.find((agent = {}) => {
+  const match = settingsAgents.find((agent = {}) => {
     if (modelAgentIdentity) {
       return agentIdentity(agent) === modelAgentIdentity;
     }
@@ -156,7 +156,7 @@ function mergeModelSecretFallback(model = {}, legacyAgents = []) {
   };
 }
 
-function agentFromLegacy(agent = {}, modelId = "") {
+function agentFromLibraryEntry(agent = {}, modelId = "") {
   const id = agentIdentity(agent) || `agent_${stableDigest([agent.provider, agent.model, agent.label, agent.agentName])}`;
   return {
     schemaVersion: 1,
@@ -289,10 +289,10 @@ export class AgentConfigRegistry {
       models = await this.loadList(this.modelListPath, "model-list");
       agents = await this.loadList(this.agentListPath, "agent-list");
     }
-    const legacyAgents = Array.isArray(settingsFallback?.modelLibraryAgents)
+    const settingsAgents = Array.isArray(settingsFallback?.modelLibraryAgents)
       ? settingsFallback.modelLibraryAgents
       : [];
-    this.models = models.entries.map((model) => mergeModelSecretFallback(model, legacyAgents));
+    this.models = models.entries.map((model) => mergeModelSecretFromSettings(model, settingsAgents));
     this.agents = agents.entries;
     this.modelManifest = models.manifest;
     this.agentManifest = agents.manifest;
@@ -301,16 +301,16 @@ export class AgentConfigRegistry {
   }
 
   async importFromSettings(settings = {}) {
-    const legacyAgents = Array.isArray(settings?.modelLibraryAgents) ? settings.modelLibraryAgents : [];
-    if (legacyAgents.length === 0) {
+    const settingsAgents = Array.isArray(settings?.modelLibraryAgents) ? settings.modelLibraryAgents : [];
+    if (settingsAgents.length === 0) {
       return;
     }
     const modelManifest = defaultManifest("model-list");
     const agentManifest = defaultManifest("agent-list");
-    for (let index = 0; index < legacyAgents.length; index += 1) {
-      const legacy = legacyAgents[index] || {};
-      const model = modelFromAgent(legacy, index);
-      const agent = agentFromLegacy(legacy, model.id);
+    for (let index = 0; index < settingsAgents.length; index += 1) {
+      const entry = settingsAgents[index] || {};
+      const model = modelFromAgent(entry, index);
+      const agent = agentFromLibraryEntry(entry, model.id);
       const modelFile = `${safeFileId(model.id, "model")}.json`;
       const agentFile = `${safeFileId(agent.id, "agent")}.json`;
       await writeJson(path.join(this.modelListPath, modelFile), model);
@@ -379,7 +379,7 @@ export class AgentConfigRegistry {
   async upsertFromModelLibraryEntry(entry = {}) {
     await this.refresh();
     const model = modelFromAgent(entry);
-    const agent = agentFromLegacy(entry, model.id);
+    const agent = agentFromLibraryEntry(entry, model.id);
     await this.upsertModel(model);
     await this.upsertAgent(agent);
     await this.refresh();

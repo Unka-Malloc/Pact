@@ -53,7 +53,6 @@ export function createBatchDeletionCoordinator({ userDataPath, jobManager, metad
       jobId,
       jobDirectory: getJobDirectory(userDataPath, jobId),
       objectRootPath: artifactPaths.objectRootPath,
-      legacyObjectBatchPath: artifactPaths.legacyObjectBatchPath,
       rawObjectPaths: metadataStore.listRawObjectStoragePathsByBatch(current.batchId),
       ...(current.state || {})
     };
@@ -94,7 +93,7 @@ export function createBatchDeletionCoordinator({ userDataPath, jobManager, metad
         objectRootPath: state.objectRootPath,
         rawObjectPaths: state.rawObjectPaths
       });
-      await removePath(state.legacyObjectBatchPath || state.objectBatchPath);
+      await removePath(state.objectBatchPath);
       await removePath(state.jobDirectory);
       state.artifactsDeleted = true;
       current = metadataStore.updateDeletionOperation(current.operationId, {
@@ -132,7 +131,6 @@ export function createBatchDeletionCoordinator({ userDataPath, jobManager, metad
             jobId: effectiveJobId,
             jobDirectory: getJobDirectory(userDataPath, effectiveJobId),
             objectRootPath: metadataStore.getBatchArtifactPaths(effectiveBatchId).objectRootPath,
-            legacyObjectBatchPath: metadataStore.getBatchArtifactPaths(effectiveBatchId).legacyObjectBatchPath,
             rawObjectPaths: metadataStore.listRawObjectStoragePathsByBatch(effectiveBatchId),
             runtimeDeleted: false,
             metadataDeleted: false,

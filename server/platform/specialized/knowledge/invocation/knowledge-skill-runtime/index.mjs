@@ -7,15 +7,10 @@ import Database from "better-sqlite3";
 
 export const KNOWLEDGE_SKILL_PROTOCOL_VERSION = "pact.knowledge-skill.v1";
 
-const LEGACY_DEFAULT_FRAMEWORK_PATH = fileURLToPath(
-  new URL("../../../../../config/knowledge-skill-framework.json", import.meta.url)
-);
 const ENTITY_DEFAULT_FRAMEWORK_PATH = fileURLToPath(
   new URL("../../../../../config/entity-config/skills/knowledge-skill-framework/framework.json", import.meta.url)
 );
-const DEFAULT_FRAMEWORK_PATH = fs.existsSync(ENTITY_DEFAULT_FRAMEWORK_PATH)
-  ? ENTITY_DEFAULT_FRAMEWORK_PATH
-  : LEGACY_DEFAULT_FRAMEWORK_PATH;
+const DEFAULT_FRAMEWORK_PATH = ENTITY_DEFAULT_FRAMEWORK_PATH;
 const DEFAULT_STATUS = "pending_review";
 
 function nowIso() {

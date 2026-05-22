@@ -169,9 +169,6 @@ try {
   const consoleBeforeLogin = await getJson(server.url, "/api/knowledge/console");
   assert.equal(consoleBeforeLogin.status, 401);
 
-  const bootstrap = await postJson(server.url, "/api/auth/bootstrap", {});
-  assert.equal(bootstrap.status, 410);
-
   const ownerCredentials = await readInitialOwnerCredentials(server);
   const ownerPassword = ownerCredentials.password;
   assert.ok(ownerPassword);

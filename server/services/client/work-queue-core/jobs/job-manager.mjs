@@ -1774,20 +1774,12 @@ export function createJobManager({
         }
       }
 
-      const legacyUploadedFiles = Array.isArray(sourcePayload?.uploadedFiles)
-        ? sourcePayload.uploadedFiles.filter((file) => file?.dataBase64 || file?.stagedPath)
-        : [];
-      const legacyFilePaths = Array.isArray(sourcePayload?.filePaths)
-        ? sourcePayload.filePaths.filter((filePath) => String(filePath || "").trim())
-        : [];
       const replayInputText =
         replayTextSections.length > 0
           ? replayTextSections.join("\n\n---\n\n")
           : String(sourcePayload?.inputText || "").trim();
       const hasReplayInput =
         replayUploadedFiles.length > 0 ||
-          legacyUploadedFiles.length > 0 ||
-          legacyFilePaths.length > 0 ||
           replayInputText.length > 0;
 
       if (!hasReplayInput) {
@@ -1816,13 +1808,11 @@ export function createJobManager({
       };
       const reparsePayload = {
         ...(sourcePayload || {}),
-        inputText: replayUploadedFiles.length > 0 || legacyUploadedFiles.length > 0 || legacyFilePaths.length > 0
+        inputText: replayUploadedFiles.length > 0
           ? ""
           : replayInputText,
-        filePaths: replayUploadedFiles.length > 0 || legacyUploadedFiles.length > 0
-          ? []
-          : legacyFilePaths,
-        uploadedFiles: replayUploadedFiles.length > 0 ? replayUploadedFiles : legacyUploadedFiles,
+        filePaths: [],
+        uploadedFiles: replayUploadedFiles,
         uploadSessionId: "",
         checkpoint,
         checkpointId,

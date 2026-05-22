@@ -211,7 +211,7 @@ try {
   assert.equal(capabilities.status, 200);
   assert.ok(capabilities.payload.result.structuredContent.operations.some((tool) => tool.name === "system.health"));
 
-  const legacyDirectCall = await fetchJson(`${server.url}/mcp`, {
+  const unsupportedDirectCall = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
     headers: apiKeyHeaders(grant.payload.token),
     body: JSON.stringify(mcpRequest("tools/call", {
@@ -219,8 +219,8 @@ try {
       arguments: {}
     }, 6))
   });
-  assert.equal(legacyDirectCall.status, 200);
-  assert.equal(legacyDirectCall.payload.error.data.stableToolName, "pact.call");
+  assert.equal(unsupportedDirectCall.status, 200);
+  assert.equal(unsupportedDirectCall.payload.error.data.stableToolName, "pact.call");
 
   console.log("mcp-http verification passed");
 } finally {

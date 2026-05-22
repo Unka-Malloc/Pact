@@ -47,11 +47,11 @@ function parseInitialCredentials(content) {
 }
 
 export async function readInitialOwnerCredentials(server) {
-  const legacyPassword = server.initialOwner?.password || "";
-  if (legacyPassword) {
+  const inlinePassword = server.initialOwner?.password || "";
+  if (inlinePassword) {
     return {
       username: server.initialOwner?.username || "owner",
-      password: legacyPassword,
+      password: inlinePassword,
       credentialsPath: ""
     };
   }

@@ -39,13 +39,8 @@ impl AgentClientConfig {
             params,
             config,
             &[
-                "agentEndpointUrl",
-                "agent.endpointUrl",
-                "endpoint",
                 "url",
-                "agent.url",
                 "customHttpAdapter.url",
-                "customHttpAdapter.endpoint",
             ],
         )
         .unwrap_or_default();
@@ -53,61 +48,34 @@ impl AgentClientConfig {
             return Ok(None);
         }
 
-        let authorization = first_string(
-            params,
-            config,
-            &[
-                "agentAuthorization",
-                "authorization",
-                "agent.authorization",
-                "customHttpAdapter.authorization",
-            ],
-        );
         let token = first_string(
             params,
             config,
             &[
-                "agentToken",
                 "token",
-                "agent.token",
                 "customHttpAdapter.token",
                 "customHttpAdapter.apiKey",
-                "customModelApiKey",
             ],
-        )
-        .or_else(|| authorization.clone());
+        );
         let token_header = first_string(
             params,
             config,
             &[
-                "agentTokenHeader",
                 "tokenHeader",
-                "agent.tokenHeader",
                 "customHttpAdapter.tokenHeader",
             ],
         )
-        .unwrap_or_else(|| {
-            if authorization.is_some() {
-                "authorization".to_string()
-            } else {
-                "token".to_string()
-            }
-        });
+        .unwrap_or_else(|| "token".to_string());
 
         let mut parameters = first_object(
             config,
-            &["agentParameters", "parameters", "agent.parameters"],
+            &["parameters", "customHttpAdapter.parameters"],
         )
         .unwrap_or_default();
-        if let Some(custom_parameters) = first_object(config, &["customHttpAdapter.parameters"]) {
-            merge_object(&mut parameters, custom_parameters);
-        }
         if let Some(params_parameters) = first_object(
             params,
             &[
-                "agentParameters",
                 "parameters",
-                "agent.parameters",
                 "customHttpAdapter.parameters",
             ],
         ) {
@@ -123,7 +91,6 @@ impl AgentClientConfig {
                     "alias",
                     "customModelAlias",
                     "customHttpAdapter.alias",
-                    "agent.alias",
                 ],
             )
             .unwrap_or_else(|| "external-agent".to_string()),
@@ -135,7 +102,6 @@ impl AgentClientConfig {
                     "label",
                     "customModelLabel",
                     "customHttpAdapter.label",
-                    "agent.label",
                 ],
             )
             .unwrap_or_else(|| "自定义 HTTP Adapter".to_string()),
@@ -145,7 +111,7 @@ impl AgentClientConfig {
             agent_name: first_string(
                 params,
                 config,
-                &["agentName", "agent.name", "customHttpAdapter.agentName"],
+                &["agentName", "customHttpAdapter.agentName"],
             )
             .unwrap_or_default(),
             plugin_list: first_array(
@@ -153,8 +119,6 @@ impl AgentClientConfig {
                 config,
                 &[
                     "pluginList",
-                    "agentPluginList",
-                    "agent.pluginList",
                     "customHttpAdapter.pluginList",
                 ],
             ),
@@ -163,7 +127,6 @@ impl AgentClientConfig {
                 config,
                 &[
                     "sessionId",
-                    "agent.sessionId",
                     "customHttpAdapter.sessionId",
                 ],
             )
@@ -171,7 +134,7 @@ impl AgentClientConfig {
             user_id: first_string(
                 params,
                 config,
-                &["userId", "agent.userId", "customHttpAdapter.userId"],
+                &["userId", "customHttpAdapter.userId"],
             )
             .unwrap_or_default(),
             project_id: first_string(
@@ -179,7 +142,6 @@ impl AgentClientConfig {
                 config,
                 &[
                     "projectId",
-                    "agent.projectId",
                     "customHttpAdapter.projectId",
                 ],
             )
@@ -189,8 +151,6 @@ impl AgentClientConfig {
                 config,
                 &[
                     "engine",
-                    "agentEngine",
-                    "agent.engine",
                     "customHttpAdapter.engine",
                 ],
             )

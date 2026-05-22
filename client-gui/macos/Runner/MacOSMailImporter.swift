@@ -421,8 +421,6 @@ return accountCount as text
       isDirectory: true)
     let dedupeManifestFile = baseDirectory.appendingPathComponent(
       "dedupe-manifest.tsv")
-    let legacyDedupeManifestFile = exportDirectory.appendingPathComponent(
-      "dedupe-manifest.tsv")
     let pauseFile = tempDirectory.appendingPathComponent("control.pause")
     let cancelFile = tempDirectory.appendingPathComponent("control.cancel")
     try Data().write(to: progressFile, options: [.atomic])
@@ -437,17 +435,9 @@ return accountCount as text
     try fileManager.createDirectory(
       at: sourceTempDirectory,
       withIntermediateDirectories: true)
-    if !fileManager.fileExists(atPath: dedupeManifestFile.path),
-      fileManager.fileExists(atPath: legacyDedupeManifestFile.path)
-    {
-      try? fileManager.copyItem(
-        at: legacyDedupeManifestFile,
-        to: dedupeManifestFile)
-    }
     if !fileManager.fileExists(atPath: dedupeManifestFile.path) {
       fileManager.createFile(atPath: dedupeManifestFile.path, contents: nil)
     }
-    Self.cleanupLegacyWorkspaceFiles(in: exportDirectory)
     try? FileManager.default.removeItem(at: pauseFile)
     try? FileManager.default.removeItem(at: cancelFile)
     try? Self.writeDiagnostics(
@@ -1453,40 +1443,6 @@ end sanitizeDiagnostic
     }
 
     return stdout
-  }
-
-  private static func cleanupLegacyWorkspaceFiles(in downloadsDirectory: URL) {
-    let fileManager = FileManager.default
-    let legacyNames = [
-      "progress.tsv",
-      "manifest.tsv",
-      "index-events.tsv",
-      "dedupe-requests.tsv",
-      "dedupe-manifest.tsv",
-      "control.pause",
-      "control.cancel",
-      "diagnostics.json",
-    ]
-    for name in legacyNames {
-      try? fileManager.removeItem(
-        at: downloadsDirectory.appendingPathComponent(name))
-    }
-    try? fileManager.removeItem(
-      at: downloadsDirectory.appendingPathComponent(
-        "dedupe-results",
-        isDirectory: true))
-    guard
-      let files = try? fileManager.contentsOfDirectory(
-        at: downloadsDirectory,
-        includingPropertiesForKeys: nil)
-    else {
-      return
-    }
-    for file in files where file.lastPathComponent.hasPrefix(".source-") &&
-      file.lastPathComponent.hasSuffix(".eml.tmp")
-    {
-      try? fileManager.removeItem(at: file)
-    }
   }
 
   private static func writeDiagnostics(
@@ -2709,8 +2665,6 @@ private final class MailIndexStore {
     self.stateFile = baseDirectory.appendingPathComponent("state.json")
     self.manifestFile = manifestFile ?? downloadsDirectory.appendingPathComponent(
       "dedupe-manifest.tsv")
-    self.legacyManifestFile = downloadsDirectory.appendingPathComponent(
-      "dedupe-manifest.tsv")
     self.vocabularyFile = baseDirectory
       .deletingLastPathComponent()
       .appendingPathComponent("expert-vocabulary.json")
@@ -2732,7 +2686,6 @@ private final class MailIndexStore {
   private let docsFile: URL
   private let stateFile: URL
   private let manifestFile: URL
-  private let legacyManifestFile: URL
   private let vocabularyFile: URL
   private let taxonomyRules: [MailIndexTaxonomyRule]
   private let taxonomySignature: String
@@ -3109,30 +3062,28 @@ private final class MailIndexStore {
 
   private func ingestManifestFallbackEvents() {
     var sequence = docsById.count
-    for manifestFile in manifestFilesForFallback() {
-      guard
-        FileManager.default.fileExists(atPath: manifestFile.path),
-        let text = try? String(contentsOf: manifestFile, encoding: .utf8)
-      else {
+    guard
+      FileManager.default.fileExists(atPath: manifestFile.path),
+      let text = try? String(contentsOf: manifestFile, encoding: .utf8)
+    else {
+      return
+    }
+    for line in text.components(separatedBy: .newlines) where !line.isEmpty {
+      guard let record = MailIndexManifestRecord(tsvLine: line) else {
         continue
       }
-      for line in text.components(separatedBy: .newlines) where !line.isEmpty {
-        guard let record = MailIndexManifestRecord(tsvLine: line) else {
-          continue
-        }
-        let key = record.stableKey
-        guard !key.isEmpty, docsByKey[key] == nil else {
-          continue
-        }
-        let fileURL = downloadsDirectory.appendingPathComponent(record.fileName)
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-          continue
-        }
-        sequence += 1
-        ingest(
-          MailIndexEvent(sequence: sequence, manifestRecord: record),
-          appendToEventLog: false)
+      let key = record.stableKey
+      guard !key.isEmpty, docsByKey[key] == nil else {
+        continue
       }
+      let fileURL = downloadsDirectory.appendingPathComponent(record.fileName)
+      guard FileManager.default.fileExists(atPath: fileURL.path) else {
+        continue
+      }
+      sequence += 1
+      ingest(
+        MailIndexEvent(sequence: sequence, manifestRecord: record),
+        appendToEventLog: false)
     }
   }
 
@@ -3445,20 +3396,6 @@ private final class MailIndexStore {
   private func fileSize(at url: URL) -> UInt64 {
     let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
     return (attributes?[.size] as? NSNumber)?.uint64Value ?? 0
-  }
-
-  private func manifestFilesForFallback() -> [URL] {
-    var result: [URL] = []
-    var seen: Set<String> = []
-    for url in [manifestFile, legacyManifestFile] {
-      let path = url.standardizedFileURL.path
-      guard !seen.contains(path) else {
-        continue
-      }
-      seen.insert(path)
-      result.append(url)
-    }
-    return result
   }
 
   private func derivedNextSegmentId() -> Int {

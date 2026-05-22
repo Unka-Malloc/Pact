@@ -264,7 +264,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 - `AgentWorkspace`：团队共享工作空间，保存可切换、可继承、可复制的运行上下文；共享空间只接收结构化 submission、issue、artifact 和 decision proposal。
 - `ContextRuntime`：按模型窗口生成 `ContextPack`，可保存 `ContextProfile` 调整证据、历史和压缩预算。
-- `AgentMemory`：独立保存智能体会话压缩记忆，默认写入 `<userDataPath>/agent-memory/session-memory.jsonl`，并兼容读取旧 `<userDataPath>/context-core/context-session-memory.jsonl`。
+- `AgentMemory`：独立保存智能体会话压缩记忆，默认写入 `<userDataPath>/agent-memory/session-memory.jsonl`。
 - `MultiAgentCoordinator`：使用 LangGraph.js 固定状态图执行 `Plan -> Retrieve -> ExtractEvidence -> OrganizeTopics -> ParallelAnalysts -> Writer -> Reviewer -> Merger -> PublishArtifact`。
 - `SummarizationRuntime`：输出 `EvidenceUnitSummary`、`TopicSummary`、`ExecutiveSummary`、`ReviewReport`，并计算 evidence coverage。
 
@@ -903,7 +903,6 @@ npm run server:verify:agent-knowledge-tools
 
 新增控制台认证接口：
 
-- `POST /api/auth/bootstrap`（兼容旧接口，始终返回 410）
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/session`
@@ -923,13 +922,11 @@ npm run server:auth -- create-user --username alice --role operator --generate-p
 npm run server:auth -- set-password --username owner --generate-password
 npm run auth:rotate
 npm run auth:rotate -- --username alice
-npm run server:auth:rotate-password
-npm run server:auth:rotate-password -- --username alice
 npm run server:auth -- set-role --username alice --role admin
 npm run server:auth -- disable --username alice
 ```
 
-`auth:rotate` 是常用密码轮换短命令；不传参数时轮换 `owner`，通过 `-- --username USER` 可以轮换指定本地控制台账号。`server:auth:rotate-password` 保留为兼容的长命令。
+`auth:rotate` 是密码轮换命令；不传参数时轮换 `owner`，通过 `-- --username USER` 可以轮换指定本地控制台账号。
 密码不会明文落入控制台配置；服务端只保存加盐 `scrypt` 哈希。
 
 知识库控制台新增接口：

@@ -620,16 +620,6 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     cli: { command: ["auth", "session"], usage: "auth session" }
   },
   {
-    id: "auth.bootstrap",
-    feature: "auth",
-    label: "初始化控制台 owner",
-    target: { controller: "system", method: "handleAuthBootstrap" },
-    http: { method: "POST", path: "/api/auth/bootstrap", localInForwardMode: true },
-    rpc: { method: "auth.bootstrap", body: "params" },
-    cli: { command: ["auth", "bootstrap"], usage: "auth bootstrap --body bootstrap.json" },
-    skipCsrf: true
-  },
-  {
     id: "auth.login",
     feature: "auth",
     label: "控制台登录",

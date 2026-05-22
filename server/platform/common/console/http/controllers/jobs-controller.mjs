@@ -235,12 +235,12 @@ function verifyUploadedFiles(payload = {}, { resolveArchiveBatchIdentity = defau
     const sourceName = String(file?.name || "");
     const sourceRelativePath = String(file?.relativePath || sourceName || `upload-${index + 1}`);
     const originalFileName = path.posix.basename(sourceRelativePath || sourceName || `upload-${index + 1}`);
-    const sourceNameHash = hashClientString(sourceName, "legacy_upload.name");
-    const sourceRelativePathHash = hashClientString(sourceRelativePath, "legacy_upload.relative_path");
+    const sourceNameHash = hashClientString(sourceName, "pact_upload.name");
+    const sourceRelativePathHash = hashClientString(sourceRelativePath, "pact_upload.relative_path");
     const extension = inferUploadedExtension(buffer);
     const fileToken = serverToken(
       "upload_file",
-      "legacy",
+      "pact",
       index,
       sourceRelativePathHash,
       sha256,
@@ -263,7 +263,7 @@ function verifyUploadedFiles(payload = {}, { resolveArchiveBatchIdentity = defau
           ? file.sourceMetadata
           : {},
       mediaType: "application/octet-stream",
-      clientMediaTypeHash: hashClientString(file?.mediaType || "", "legacy_upload.media_type"),
+      clientMediaTypeHash: hashClientString(file?.mediaType || "", "pact_upload.media_type"),
       sourceNameHash,
       sourceRelativePathHash,
       sha256,

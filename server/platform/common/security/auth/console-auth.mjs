@@ -388,15 +388,7 @@ export function createConsoleAuth({ userDataPath }) {
     return Number(countUsersStmt.get()?.count || 0) > 0;
   }
 
-  async function removeLegacyAuthFiles() {
-    await Promise.all([
-      fsp.rm(path.join(rootPath, "initial-owner-password.txt"), { force: true }).catch(() => {}),
-      fsp.rm(path.join(rootPath, "bootstrap-owner-token.txt"), { force: true }).catch(() => {})
-    ]);
-  }
-
   async function ensureInitialOwner() {
-    await removeLegacyAuthFiles();
     if (hasUsers()) {
       return { created: false };
     }

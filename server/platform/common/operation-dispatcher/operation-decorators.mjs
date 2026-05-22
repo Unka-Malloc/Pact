@@ -65,7 +65,6 @@ const PUBLIC_OPERATION_IDS = new Set([
   "system.health",
   "system.bootstrap",
   "auth.session",
-  "auth.bootstrap",
   "auth.login",
   "oauth.codex_return",
   "discovery.check_in"

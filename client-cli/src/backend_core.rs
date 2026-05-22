@@ -1517,7 +1517,7 @@ impl Backend {
             "preservedTailCount": kept_messages.len(),
             "summaryChecksum": sha256_hex(summary.as_bytes()),
             "tokenReport": token_report.clone(),
-            "strategy": "deterministic",
+            "strategy": "deterministic-extractive",
             "createdAt": timestamp()
         });
         let result = json!({
@@ -1527,7 +1527,7 @@ impl Backend {
             "source": params.get("inputSource").and_then(Value::as_str).unwrap_or("client-backend"),
             "sessionId": &session_id,
             "compacted": true,
-            "strategy": "deterministic",
+            "strategy": "deterministic-extractive",
             "boundary": boundary.clone(),
             "summary": &summary,
             "messagesToKeep": kept_messages,
@@ -1543,7 +1543,7 @@ impl Backend {
                     "boundaryId": &boundary_id,
                     "sessionId": &session_id,
                     "status": "completed",
-                    "strategy": "deterministic",
+                    "strategy": "deterministic-extractive",
                     "tokenReport": token_report.clone(),
                     "createdAt": timestamp()
                 }),
@@ -1740,12 +1740,12 @@ impl Backend {
             Err(error)
                 if error
                     .to_string()
-                    .contains("agentEndpointUrl is not configured") =>
+                    .contains("customHttpAdapter.url is not configured") =>
             {
                 Ok(json!({
                     "ok": true,
                     "answered": false,
-                    "reason": "agentEndpointUrl is not configured",
+                    "reason": "customHttpAdapter.url is not configured",
                     "context": context
                 }))
             }
@@ -1768,9 +1768,7 @@ impl Backend {
         let requested_alias = requested_agent_alias(params);
         let local_alias = local_agent_alias(&config_value);
         let has_direct_endpoint = params
-            .get("agentEndpointUrl")
-            .or_else(|| params.get("endpoint"))
-            .or_else(|| params.pointer("/customHttpAdapter/url"))
+            .pointer("/customHttpAdapter/url")
             .and_then(Value::as_str)
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false);
@@ -1796,7 +1794,7 @@ impl Backend {
             return invoke_agent(&agent_config, question, runtime_parameters);
         }
 
-        Err(anyhow!("agentEndpointUrl is not configured"))
+        Err(anyhow!("customHttpAdapter.url is not configured"))
     }
 
     fn resolve_server_agent(&self, alias: Option<&str>) -> Option<Value> {
@@ -4327,8 +4325,7 @@ fn service_path_requires_console_auth(path: &str) -> bool {
         || path.starts_with("/api/healthz")
         || path.starts_with("/api/discovery/check-in")
         || path.starts_with("/api/auth/login")
-        || path.starts_with("/api/auth/session")
-        || path.starts_with("/api/auth/bootstrap"))
+        || path.starts_with("/api/auth/session"))
 }
 
 fn fetch_expert_vocabulary(
@@ -4434,7 +4431,6 @@ fn local_agent_alias(config: &Value) -> Option<String> {
             "customModelAlias",
             "customHttpAdapter.alias",
             "agentAlias",
-            "agent.alias",
         ],
     )
 }
@@ -4447,7 +4443,6 @@ fn local_agent_registry(config: &Value) -> Value {
             "customModelLabel",
             "customHttpAdapter.label",
             "agentLabel",
-            "agent.label",
         ],
     )
     .unwrap_or_else(|| "本地自定义 HTTP Adapter".to_string());
@@ -4455,10 +4450,6 @@ fn local_agent_registry(config: &Value) -> Value {
         config,
         &[
             "customHttpAdapter.url",
-            "customHttpAdapter.endpoint",
-            "agentEndpointUrl",
-            "endpoint",
-            "agent.url",
         ],
     )
     .unwrap_or_default();
@@ -4474,9 +4465,6 @@ fn local_agent_registry(config: &Value) -> Value {
         &[
             "customHttpAdapter.token",
             "customHttpAdapter.apiKey",
-            "agentToken",
-            "agent.token",
-            "customModelApiKey",
         ],
     )
     .is_some()
@@ -4487,10 +4475,8 @@ fn local_agent_registry(config: &Value) -> Value {
         .and_then(Value::as_object)
         .map(|items| items.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    let has_local_adapter = json_path(config, "customHttpAdapter").is_some()
-        || json_path(config, "agent").is_some()
-        || json_path(config, "agentEndpointUrl").is_some()
-        || json_path(config, "endpoint").is_some();
+    let has_local_adapter =
+        json_path(config, "customHttpAdapter").is_some() || !url.trim().is_empty() || token_configured;
     let agents = if alias.trim().is_empty()
         || (!has_local_adapter && url.trim().is_empty() && !token_configured)
     {
@@ -4506,16 +4492,16 @@ fn local_agent_registry(config: &Value) -> Value {
             "tokenConfigured": token_configured,
             "agentName": first_json_string(
                 config,
-                &["customHttpAdapter.agentName", "agentName", "agent.name"]
+                &["customHttpAdapter.agentName"]
             )
             .unwrap_or_default(),
             "pluginList": first_json_array(
                 config,
-                &["customHttpAdapter.pluginList", "pluginList", "agent.pluginList"]
+                &["customHttpAdapter.pluginList"]
             ),
             "engine": first_json_string(
                 config,
-                &["customHttpAdapter.engine", "engine", "agent.engine"]
+                &["customHttpAdapter.engine"]
             )
             .unwrap_or_default(),
             "timeoutMs": json_path(config, "customHttpAdapter.timeoutMs")
@@ -7918,7 +7904,7 @@ fn search_knowledge_cache(conn: &Connection, query: &str, limit: usize) -> Resul
         "limit": safe_limit,
         "items": items,
         "total": items.len(),
-        "source": "legacy-summary"
+        "source": "knowledge-summary"
     }))
 }
 

@@ -3764,8 +3764,7 @@ export function createBatchRepository({ db, userDataPath }) {
     getBatchArtifactPaths(batchId) {
       return {
         batchId,
-        objectRootPath: getRawMailObjectRoot(userDataPath),
-        legacyObjectBatchPath: path.join(getRawMailObjectRoot(userDataPath), "mail", batchId)
+        objectRootPath: getRawMailObjectRoot(userDataPath)
       };
     }
   };
