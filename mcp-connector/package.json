@@ -1,7 +1,7 @@
 {
   "name": "pact-mcp-connector",
-  "version": "0.0.1",
-  "description": "Release-packaged Pact MCP connector installer for local AI agents.",
+  "version": "0.0.2",
+  "description": "Installer for connecting local AI agents to an Pact MCP HTTP endpoint.",
   "type": "module",
   "license": "GPL-3.0-or-later",
   "author": "Unka Y.Y.",
