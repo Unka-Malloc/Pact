@@ -465,6 +465,7 @@ const viewTitleMap: Record<AppView, string> = {
   sources: "数据源",
   knowledge: "知识库",
   intelligence: "智能分析",
+  workspaces: "协作空间",
   debug: "调试面板",
   admin: "管理",
 };
@@ -874,7 +875,7 @@ function normalizeModelLibraryEntries(value: unknown): CloudProvider[] {
   const seen = new Set<string>();
   return entries
     .map((item) => String(item || "").trim() as CloudProvider)
-    .filter((item) => {
+    .filter((item: any) => {
       if (!allowed.has(item) || seen.has(item)) {
         return false;
       }
@@ -950,7 +951,7 @@ function normalizeAgentPermissionGroupsDraft(value: unknown): AgentPermissionGro
   const seen = new Set<string>();
   return (Array.isArray(value) ? value : [])
     .map((item, index) => normalizeAgentPermissionGroupDraft(item as Partial<AgentPermissionGroup>, index))
-    .filter((item) => {
+    .filter((item: any) => {
       if (!item.id || seen.has(item.id)) {
         return false;
       }
@@ -1748,7 +1749,7 @@ function upsertJobFromEvent(job: SplitJob) {
   const existingItems = consoleState.value.jobs.items || [];
   const nextItems = [
     job,
-    ...existingItems.filter((item) => item.id !== job.id),
+    ...existingItems.filter((item: any) => item.id !== job.id),
   ].sort((left, right) =>
     String(right.createdAt || "").localeCompare(String(left.createdAt || "")),
   );
@@ -2382,15 +2383,15 @@ async function removeModelProvider(provider: CloudProvider | AgentModelConfig) {
   const previousModels = [...visibleModelEntries.value];
   const previousEntries = [...visibleModelProviders.value];
   settingsDraft.value.modelLibraryAgents = entry
-    ? visibleModelEntries.value.filter((item) => modelEntryStatusKey(item) !== removeKey)
-    : visibleModelEntries.value.filter((item) => item.provider !== provider);
+    ? visibleModelEntries.value.filter((item: any) => modelEntryStatusKey(item) !== removeKey)
+    : visibleModelEntries.value.filter((item: any) => item.provider !== provider);
   const remainingExpandedCards = { ...modelLibraryExpandedCards.value };
   delete remainingExpandedCards[removeKey];
   modelLibraryExpandedCards.value = remainingExpandedCards;
   settingsDraft.value.modelLibraryEntries = [
     ...new Set(settingsDraft.value.modelLibraryAgents.map((item) => item.provider)),
   ] as CloudProvider[];
-  busyKey.value = `model-remove:${removeKey}`;
+  setBusy(`model-remove:${removeKey}`);
   error.value = "";
   try {
     const saved = await bridge.saveSettings(settingsPayloadForSave());
@@ -2498,7 +2499,7 @@ async function runModelEntryProbe(entry: AgentModelConfig): Promise<ModelProbeRe
 
 async function probeModelEntry(entry: AgentModelConfig) {
   const key = modelEntryStatusKey(entry);
-  busyKey.value = `model-probe:${key}`;
+  setBusy(`model-probe:${key}`);
   error.value = "";
   try {
     const result = await runModelEntryProbe(entry);
@@ -2719,8 +2720,8 @@ function addModuleAgentProfileFromDraft(moduleId: string) {
 }
 
 const moduleModelAssignmentStats = computed(() => {
-  const enabled = intelligentModuleDefinitions.filter((item) => moduleNeedsIntelligence(item.id)).length;
-  const assigned = intelligentModuleDefinitions.filter((item) => moduleNeedsIntelligence(item.id) && moduleModelRef(item.id)).length;
+  const enabled = intelligentModuleDefinitions.filter((item: any) => moduleNeedsIntelligence(item.id)).length;
+  const assigned = intelligentModuleDefinitions.filter((item: any) => moduleNeedsIntelligence(item.id) && moduleModelRef(item.id)).length;
   return {
     assigned,
     enabled,
@@ -2889,7 +2890,7 @@ const currentMaintenanceTask = computed(() =>
 );
 const currentMaintenanceTaskSupportsDryRun = computed(() => currentMaintenanceTask.value?.supportsDryRun === true);
 const pendingKnowledgeReviewCount = computed(() => {
-  const loadedPending = knowledgeReviewItems.value.filter((item) => item.status === "pending").length;
+  const loadedPending = knowledgeReviewItems.value.filter((item: any) => item.status === "pending").length;
   const healthCounts = asRecord(knowledgeConsole.value?.health?.counts) || {};
   return loadedPending || Number(healthCounts.pendingReviewItems || 0);
 });
@@ -3378,14 +3379,14 @@ function collectWordCloudAbsorptionCandidates(
   depth = 0,
   target: WordCloudAbsorptionCandidate[] = [],
 ) {
-  for (const cloud of clouds) {
+  for (const cloud of wordBags) {
     target.push({
       cloud,
       depth,
       threshold: normalizeWordCloudThreshold(cloud.absorbThreshold),
       labelText: normalizeWordCloudText(cloud.label),
       summaryText: normalizeWordCloudText(cloud.summary || ""),
-      termTexts: (cloud.terms || []).map((term) => normalizeWordCloudText(term.term)).filter(Boolean),
+      termTexts: (cloud.terms || []).map((term: any) => normalizeWordCloudText(term.term)).filter(Boolean),
     });
     collectWordCloudAbsorptionCandidates(cloud.children || [], depth + 1, target);
   }
@@ -3459,13 +3460,13 @@ function autoAbsorbWordCloudTerms(draft: KnowledgeWordCloudSet) {
     return 0;
   }
   const absorbIntoClouds = (wordBags: KnowledgeWordCloud[]) => {
-    for (const cloud of clouds) {
+    for (const cloud of wordBags) {
       const nextTerms = absorbedByCloud.get(cloud.wordBagId);
       if (nextTerms?.length) {
         const existingIds = new Set((cloud.terms || []).map((item) => wordCloudTermIdentity(item)));
         cloud.terms = [
           ...(cloud.terms || []),
-          ...nextTerms.filter((item) => !existingIds.has(wordCloudTermIdentity(item))),
+          ...nextTerms.filter((item: any) => !existingIds.has(wordCloudTermIdentity(item))),
         ];
       }
       absorbIntoClouds(cloud.children || []);
@@ -3483,9 +3484,9 @@ function normalizeWordCloudCloudForUi(cloud: KnowledgeWordCloud, parentWordBagId
     wordBagId,
     label: String(cloud.label || "词云").trim() || "词云",
     parentWordBagId,
-    terms: (cloud.terms || []).map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
+    terms: (cloud.terms || []).map((term: any) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
     removedTerms: (cloud.removedTerms || [])
-      .map((term) => ({ ...normalizeWordCloudTermForUi(term), removed: true }))
+      .map((term: any) => ({ ...normalizeWordCloudTermForUi(term), removed: true }))
       .filter((term) => term.term),
     children: (cloud.children || []).map((child) => normalizeWordCloudCloudForUi(child, wordBagId)),
   };
@@ -3494,8 +3495,8 @@ function normalizeWordCloudCloudForUi(cloud: KnowledgeWordCloud, parentWordBagId
 function normalizeWordCloudSetForUi(value: KnowledgeWordCloudSet): KnowledgeWordCloudSet {
   return {
     ...value,
-    termsSnapshot: (value.termsSnapshot || []).map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
-    unassignedTerms: (value.unassignedTerms || []).map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
+    termsSnapshot: (value.termsSnapshot || []).map((term: any) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
+    unassignedTerms: (value.unassignedTerms || []).map((term: any) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
     corpusPaths: normalizeWordCloudCorpusPathsForUi(value.corpusPaths || []),
     wordBags: (value.wordBags || []).map((cloud) => normalizeWordCloudCloudForUi(cloud)),
   };
@@ -3728,7 +3729,7 @@ function removeSelectedWordCloud() {
   mutateWordCloudDraft((draft) => {
     const removeFrom = (items: KnowledgeWordCloud[]): KnowledgeWordCloud[] =>
       items
-        .filter((item) => item.wordBagId !== cloud.wordBagId)
+        .filter((item: any) => item.wordBagId !== cloud.wordBagId)
         .map((item) => ({ ...item, children: removeFrom(item.children || []) }));
     draft.wordBags = removeFrom(draft.wordBags || []);
     draft.wordBagCount = draft.wordBags.length;
@@ -3760,8 +3761,8 @@ function updateWordCloudField(wordBagId: string, field: "label" | "summary" | "r
 
 function wordCloudVisibleTerms(cloud: KnowledgeWordCloud) {
   return [
-    ...(cloud.terms || []).map((term) => ({ ...term, removed: false })),
-    ...(cloud.removedTerms || []).map((term) => ({ ...term, removed: true })),
+    ...(cloud.terms || []).map((term: any) => ({ ...term, removed: false })),
+    ...(cloud.removedTerms || []).map((term: any) => ({ ...term, removed: true })),
   ];
 }
 
@@ -3815,14 +3816,14 @@ function addTermToCloud(wordBagId: string, term: KnowledgeWordCloudTerm | string
       return;
     }
     for (const ancestor of match.path.slice(0, -1)) {
-      ancestor.terms = (ancestor.terms || []).filter((item) => wordCloudTermIdentity(item) !== identity);
-      ancestor.removedTerms = (ancestor.removedTerms || []).filter((item) => wordCloudTermIdentity(item) !== identity);
+      ancestor.terms = (ancestor.terms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
+      ancestor.removedTerms = (ancestor.removedTerms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
     }
-    match.cloud.removedTerms = (match.cloud.removedTerms || []).filter((item) => wordCloudTermIdentity(item) !== identity);
+    match.cloud.removedTerms = (match.cloud.removedTerms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
     if (!(match.cloud.terms || []).some((item) => wordCloudTermIdentity(item) === identity)) {
       match.cloud.terms = [...(match.cloud.terms || []), normalized];
     }
-    draft.unassignedTerms = (draft.unassignedTerms || []).filter((item) => wordCloudTermIdentity(item) !== identity);
+    draft.unassignedTerms = (draft.unassignedTerms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
   });
 }
 
@@ -3919,7 +3920,7 @@ function applySavedWordCloudSet(
       wordBagSet: normalized,
       wordBagSets: [
         normalized,
-        ...(wordCloudState.value.wordBagSets || []).filter((item) => item.wordBagSetId !== normalized.wordBagSetId),
+        ...(wordCloudState.value.wordBagSets || []).filter((item: any) => item.wordBagSetId !== normalized.wordBagSetId),
       ],
     };
   }
@@ -4506,7 +4507,7 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
   return alerts;
 });
 const agentConfigurationAlertSummary = computed(() => {
-  const dangerCount = agentConfigurationAlerts.value.filter((item) => item.tone === "danger").length;
+  const dangerCount = agentConfigurationAlerts.value.filter((item: any) => item.tone === "danger").length;
   const warningCount = agentConfigurationAlerts.value.length - dangerCount;
   if (agentConfigurationAlerts.value.length === 0) {
     return "所有需要智能体的功能都已显式绑定可用智能体。";
@@ -4615,9 +4616,9 @@ const dashboardAlerts = computed<DashboardAlert[]>(() => {
     });
 });
 const dashboardAlertSummary = computed(() => {
-  const dangerCount = dashboardAlerts.value.filter((item) => item.tone === "danger").length;
-  const warningCount = dashboardAlerts.value.filter((item) => item.tone === "warning").length;
-  const recoveredCount = dashboardAlerts.value.filter((item) => item.tone === "success").length;
+  const dangerCount = dashboardAlerts.value.filter((item: any) => item.tone === "danger").length;
+  const warningCount = dashboardAlerts.value.filter((item: any) => item.tone === "warning").length;
+  const recoveredCount = dashboardAlerts.value.filter((item: any) => item.tone === "success").length;
   if (dashboardAlerts.value.length === 0) {
     return "当前没有需要处理的报警。";
   }
@@ -5014,7 +5015,7 @@ function infoFeedExpertFeedbackFor(anchor: InfoFeedExpertFeedbackAnchor) {
   return infoFeedExpertFeedbackForRun(infoFeedCurrentRun.value, anchor);
 }
 function infoFeedExpertFeedbackForRun(run: InfoFeedRunState | null | undefined, anchor: InfoFeedExpertFeedbackAnchor) {
-  return (run?.expertFeedback || []).filter((item) => item.anchor === anchor);
+  return (run?.expertFeedback || []).filter((item: any) => item.anchor === anchor);
 }
 const infoFeedParentRunForCurrent = computed(() => {
   const current = infoFeedCurrentRun.value;
@@ -6245,7 +6246,7 @@ function upsertInfoFeedHistory(run: InfoFeedRunState | null) {
   }
   infoFeedHistory.value = normalizeInfoFeedHistory([
     compactInfoFeedRunForStorage(run),
-    ...infoFeedHistory.value.filter((item) => item.runId !== run.runId),
+    ...infoFeedHistory.value.filter((item: any) => item.runId !== run.runId),
   ]);
   persistInfoFeedHistory();
 }
@@ -6451,7 +6452,7 @@ function infoFeedSourceContextBudgetChars(run: InfoFeedRunState | null | undefin
 function buildInfoFeedSourceContext(run: InfoFeedRunState | null | undefined) {
   const response = run?.keyword.response;
   const allItems = ((response?.items || response?.results || []) as KnowledgeSearchResult[]);
-  const highItems = allItems.filter((item) => !isLowRelevanceSourceResult(item));
+  const highItems = allItems.filter((item: any) => !isLowRelevanceSourceResult(item));
   const lowItems = allItems.filter(isLowRelevanceSourceResult);
   const budget = infoFeedSourceContextBudgetChars(run);
   const hasLowItems = lowItems.length > 0;
@@ -6831,7 +6832,7 @@ function archiveInfoFeedExpertFeedback(
     syncError: "",
   };
   run.expertFeedback = [
-    ...(run.expertFeedback || []).filter((item) => item.feedbackId !== feedbackId),
+    ...(run.expertFeedback || []).filter((item: any) => item.feedbackId !== feedbackId),
     archived,
   ];
   return archived;
@@ -8888,7 +8889,7 @@ function evidenceSourceDetails() {
     { label: "章节", value: String(section.title || section.sectionId || "未记录") },
     { label: "来源", value: String(locator?.sourcePath || "未记录") },
     { label: "批次", value: String(locator?.batchId || selectedEvidence.value?.batchId || "未记录") },
-  ].filter((item) => item.value && item.value !== "未记录");
+  ].filter((item: any) => item.value && item.value !== "未记录");
 }
 
 function evidenceReasonText() {
@@ -8983,7 +8984,7 @@ async function refreshAuthAdmin() {
 }
 
 async function updateConsoleUser(user: ConsoleUser, patch: Partial<ConsoleUser> & { password?: string }) {
-  busyKey.value = `auth:user:${user.userId}`;
+  setBusy(`auth:user:${user.userId}`);
   error.value = "";
   try {
     const result = await bridge.updateAuthUser(user.userId, patch);
@@ -9028,7 +9029,7 @@ async function saveOidcConfig() {
 }
 
 async function revokeConsoleSession(sessionId: string) {
-  busyKey.value = `auth:session:${sessionId}`;
+  setBusy(`auth:session:${sessionId}`);
   error.value = "";
   try {
     await bridge.revokeAuthSession(sessionId);
@@ -9280,7 +9281,7 @@ async function resolveKnowledgeReview(
   if (!reviewId) {
     return;
   }
-  busyKey.value = `knowledge:review:${reviewId}:${resolution}`;
+  setBusy(`knowledge:review:${reviewId}:${resolution}`);
   error.value = "";
   try {
     await bridge.resolveKnowledgeReviewItem(reviewId, { resolution, patch });
@@ -9300,7 +9301,7 @@ async function fuseKnowledgeReview(item: KnowledgeReviewItem) {
     return;
   }
   const reviewId = String(item.reviewId || "");
-  busyKey.value = `knowledge:review:${reviewId}:merge`;
+  setBusy(`knowledge:review:${reviewId}:merge`);
   error.value = "";
   try {
     const response = await bridge.callAgentGateway({
@@ -9381,7 +9382,7 @@ function parseKnowledgeRecallTopKValues(value: unknown) {
   const values = String(value || "")
     .split(/[,\s，、]+/)
     .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > 0)
+    .filter((item: any) => Number.isFinite(item) && item > 0)
     .map((item) => Math.max(1, Math.min(Math.floor(item), 100)));
   return [...new Set(values)].slice(0, 6);
 }
@@ -9664,7 +9665,7 @@ function upsertAgentExploreHistory(session: AgentExploreSession | null) {
   if (isAgentExploreDraftSession(session)) {
     agentExploreDraftTabs.value = normalizeAgentExploreHistoryList([
       session,
-      ...agentExploreDraftTabs.value.filter((item) => item.runId !== session.runId),
+      ...agentExploreDraftTabs.value.filter((item: any) => item.runId !== session.runId),
     ]);
     return;
   }
@@ -9683,13 +9684,13 @@ function deleteAgentExploreHistorySession(session: AgentExploreSession) {
   }
   agentExploreHiddenRunIds.value = new Set([...agentExploreHiddenRunIds.value, runId]);
   agentExploreClosedTabIds.value = new Set(
-    [...agentExploreClosedTabIds.value].filter((item) => item !== runId),
+    [...agentExploreClosedTabIds.value].filter((item: any) => item !== runId),
   );
   agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-    agentExploreDraftTabs.value.filter((item) => item.runId !== runId),
+    agentExploreDraftTabs.value.filter((item: any) => item.runId !== runId),
   );
   agentExploreHistory.value = normalizeAgentExploreHistoryList(
-    agentExploreHistory.value.filter((item) => item.runId !== runId),
+    agentExploreHistory.value.filter((item: any) => item.runId !== runId),
   );
   const activeRunId = String(asRecord(agentExploreResult.value?.run)?.runId || "");
   if (activeRunId === runId || agentExploreActiveTabId.value === runId) {
@@ -9748,7 +9749,7 @@ function closeAgentExploreTab(session: AgentExploreSession) {
     String(asRecord(agentExploreResult.value?.run)?.runId || "") === runId;
   if (isAgentExploreDraftSession(session)) {
     agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-      agentExploreDraftTabs.value.filter((item) => item.runId !== runId),
+      agentExploreDraftTabs.value.filter((item: any) => item.runId !== runId),
     );
   } else {
     agentExploreClosedTabIds.value = new Set([...agentExploreClosedTabIds.value, runId]);
@@ -9877,7 +9878,7 @@ function applyAgentExploreDraftTab(session: AgentExploreSession) {
 async function switchAgentExploreTab(session: AgentExploreSession) {
   if (agentExploreClosedTabIds.value.has(session.runId)) {
     agentExploreClosedTabIds.value = new Set(
-      [...agentExploreClosedTabIds.value].filter((item) => item !== session.runId),
+      [...agentExploreClosedTabIds.value].filter((item: any) => item !== session.runId),
     );
   }
   if (isAgentExploreDraftSession(session)) {
@@ -9891,7 +9892,7 @@ async function switchAgentExploreTab(session: AgentExploreSession) {
 async function loadAgentExploreSession(session: AgentExploreSession) {
   stopAgentExplorePolling();
   agentExploreTraceOpen.value = true;
-  busyKey.value = `knowledge:agent-explore:load:${session.runId}`;
+  setBusy(`knowledge:agent-explore:load:${session.runId}`);
   error.value = "";
   agentExploreActiveTabId.value = session.runId;
   try {
@@ -9930,10 +9931,10 @@ async function loadAgentExploreSession(session: AgentExploreSession) {
 async function restoreAgentExploreState() {
   const persisted = readAgentExplorePersistence();
   const history = Array.isArray(persisted.history)
-    ? (persisted.history as AgentExploreSession[]).filter((item) => item?.runId && item?.workspaceId)
+    ? (persisted.history as AgentExploreSession[]).filter((item: any) => item?.runId && item?.workspaceId)
     : [];
   const draftTabs = Array.isArray(persisted.draftTabs)
-    ? (persisted.draftTabs as AgentExploreSession[]).filter((item) => isAgentExploreDraftSession(item))
+    ? (persisted.draftTabs as AgentExploreSession[]).filter((item: any) => isAgentExploreDraftSession(item))
     : [];
   agentExploreHiddenRunIds.value = new Set(
     Array.isArray(persisted.hiddenRunIds)
@@ -10113,7 +10114,7 @@ async function runRuleAuthoringChat() {
     ruleAuthoringResult.value = result;
     ruleAuthoringHistory.value = [
       result,
-      ...ruleAuthoringHistory.value.filter((item) => item.runId !== result.runId),
+      ...ruleAuthoringHistory.value.filter((item: any) => item.runId !== result.runId),
     ].slice(0, 8);
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "规则生成失败。";
@@ -10236,7 +10237,7 @@ async function runKnowledgeAgentExplore() {
       agentExploreActiveTabId.value = runId;
       if (draftRunId) {
         agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-          agentExploreDraftTabs.value.filter((item) => item.runId !== draftRunId),
+          agentExploreDraftTabs.value.filter((item: any) => item.runId !== draftRunId),
         );
       }
     }
@@ -10313,7 +10314,7 @@ async function loadEvidence(evidenceId: string, options: LoadEvidenceOptions = {
   const sequence = evidenceLoadSequence + 1;
   evidenceLoadSequence = sequence;
   const requestBusyKey = `knowledge:evidence:${normalized}`;
-  busyKey.value = requestBusyKey;
+  setBusy(requestBusyKey);
   selectedEvidenceId.value = normalized;
   selectedEvidence.value = null;
   evidenceLoadError.value = "";
@@ -10527,7 +10528,7 @@ async function refreshIngestJob(options: { silent?: boolean } = {}) {
     return;
   }
   if (!options.silent) {
-    busyKey.value = `knowledge:ingest:${ingestJob.value.id}`;
+    setBusy(`knowledge:ingest:${ingestJob.value.id}`);
   }
   error.value = "";
   try {
@@ -10609,7 +10610,7 @@ async function addKnowledgeSource() {
 }
 
 async function updateKnowledgeSource(source: KnowledgeSource, patch: Record<string, unknown>) {
-  busyKey.value = `knowledge:source:${source.sourceId}`;
+  setBusy(`knowledge:source:${source.sourceId}`);
   error.value = "";
   try {
     const result = await bridge.updateKnowledgeSource(source.sourceId, patch);
@@ -10622,7 +10623,7 @@ async function updateKnowledgeSource(source: KnowledgeSource, patch: Record<stri
 }
 
 async function refreshKnowledgeSource(source: KnowledgeSource, force = false) {
-  busyKey.value = `knowledge:source:refresh:${source.sourceId}`;
+  setBusy(`knowledge:source:refresh:${source.sourceId}`);
   error.value = "";
   try {
     const result = await bridge.refreshKnowledgeSource(source.sourceId, { force });
@@ -10638,7 +10639,7 @@ async function refreshKnowledgeSource(source: KnowledgeSource, force = false) {
 }
 
 async function deleteKnowledgeSource(source: KnowledgeSource) {
-  busyKey.value = `knowledge:source:delete:${source.sourceId}`;
+  setBusy(`knowledge:source:delete:${source.sourceId}`);
   error.value = "";
   try {
     const result = await bridge.deleteKnowledgeSource(source.sourceId);
@@ -10893,7 +10894,7 @@ async function acknowledgeMonitorAlert(alertId: string) {
     error.value = "当前账号没有维护配置权限。";
     return;
   }
-  busyKey.value = `monitor-alert:ack:${alertId}`;
+  setBusy(`monitor-alert:ack:${alertId}`);
   error.value = "";
   try {
     const state = await bridge.acknowledgeMonitorAlert(alertId);
@@ -11002,7 +11003,7 @@ function removeAgentPermissionGroup(group: AgentPermissionGroup) {
   if (!window.confirm(`删除权限组“${group.label || group.id}”？`)) {
     return;
   }
-  settingsDraft.value.agentPermissionGroups = agentPermissionGroups.value.filter((item) => item.id !== group.id);
+  settingsDraft.value.agentPermissionGroups = agentPermissionGroups.value.filter((item: any) => item.id !== group.id);
   for (const entry of visibleModelEntries.value) {
     if (entry.permissionGroupId === group.id) {
       entry.permissionGroupId = "";
@@ -11139,7 +11140,7 @@ async function requestClientMigration(client: NonNullable<ServerConsoleState["cl
     return;
   }
 
-  busyKey.value = `client:migration:${clientId}`;
+  setBusy(`client:migration:${clientId}`);
   error.value = "";
   try {
     const result = await bridge.requestClientMigration(clientId, {
@@ -11712,7 +11713,7 @@ async function toggleGoldenRuleEnabled(pkg: Record<string, unknown>, ruleIndex: 
   if (!packageId) {
     return;
   }
-  busyKey.value = `golden-rule:${packageId}:${ruleIndex}`;
+  setBusy(`golden-rule:${packageId}:${ruleIndex}`);
   error.value = "";
 
   try {
@@ -11802,7 +11803,7 @@ async function performRefreshState(options: RefreshStateOptions = {}) {
   const showBusy = !options.silent;
   const forceDrafts = options.forceDrafts === true;
   if (showBusy) {
-    busyKey.value = busyKey.value || "refresh";
+    setBusy(busyKey.value || "refresh");
   }
   error.value = "";
 
@@ -12165,7 +12166,7 @@ async function saveModuleSettings() {
 }
 
 async function saveMountModules(busy = "mounts") {
-  busyKey.value = busy;
+  setBusy(busy);
   error.value = "";
 
   try {
@@ -12275,7 +12276,7 @@ async function saveAgentPermissionSettings() {
 
 async function probeModel(provider: CloudProvider) {
   const busy = `model-probe:${provider}`;
-  busyKey.value = busy;
+  setBusy(busy);
   error.value = "";
 
   try {
@@ -12648,7 +12649,7 @@ async function runMaintenanceAgentRunbook() {
 }
 
 async function approveMaintenanceAgentRun(run: MaintenanceAgentRun) {
-  busyKey.value = `maintenance-agent:approve:${run.runId}`;
+  setBusy(`maintenance-agent:approve:${run.runId}`);
   error.value = "";
   try {
     const result = await bridge.approveMaintenanceAgentRun(run.runId, {
@@ -12667,7 +12668,7 @@ async function approveMaintenanceAgentRun(run: MaintenanceAgentRun) {
 }
 
 async function cancelMaintenanceAgentRun(run: MaintenanceAgentRun) {
-  busyKey.value = `maintenance-agent:cancel:${run.runId}`;
+  setBusy(`maintenance-agent:cancel:${run.runId}`);
   error.value = "";
   try {
     const result = await bridge.cancelMaintenanceAgentRun(run.runId, {
@@ -12711,7 +12712,7 @@ async function createGrant() {
 }
 
 async function updateGrant(grant: ToolManagementGrant, patch: Partial<ToolManagementGrant>) {
-  busyKey.value = `grant:${grant.id}`;
+  setBusy(`grant:${grant.id}`);
   error.value = "";
 
   try {
@@ -12757,7 +12758,7 @@ async function toggleGrantToolset(grant: ToolManagementGrant, toolsetId: string)
 }
 
 async function rotateGrant(grant: ToolManagementGrant) {
-  busyKey.value = `grant:${grant.id}`;
+  setBusy(`grant:${grant.id}`);
   error.value = "";
   issuedToolToken.value = "";
 
@@ -12778,7 +12779,7 @@ async function deleteGrant(grant: ToolManagementGrant) {
     return;
   }
 
-  busyKey.value = `grant:${grant.id}`;
+  setBusy(`grant:${grant.id}`);
   error.value = "";
 
   try {
@@ -12804,7 +12805,7 @@ async function deleteJob(jobId: string) {
     return;
   }
 
-  busyKey.value = `job:${jobId}`;
+  setBusy(`job:${jobId}`);
   error.value = "";
 
   try {
@@ -12833,7 +12834,7 @@ const filteredClientList = computed(() => {
   const query = clientSearchQuery.value.trim().toLowerCase();
   const stateFilter = clientStateFilter.value;
 
-  return filteredClients.value.filter((item) => {
+  return filteredClients.value.filter((item: any) => {
     // State filter
     if (stateFilter !== "all" && item.migrationState !== stateFilter) {
       return false;
@@ -12847,7 +12848,7 @@ const filteredClientList = computed(() => {
       (item.hostname || "").toLowerCase().includes(query) ||
       (item.platform || "").toLowerCase().includes(query) ||
       (item.currentServiceUrl || "").toLowerCase().includes(query) ||
-      migrationStateLabels[item.migrationState].includes(query)
+      (migrationStateLabels[item.migrationState as ClientMigrationState] || "").includes(query)
     );
   });
 });
@@ -13024,7 +13025,7 @@ const backgroundSupervisorLabel = computed(() => {
   return status.ok ? "正常" : "降级";
 });
 const backgroundRunningCount = computed(
-  () => backgroundProcesses.value.filter((item) => item.alive && !item.stale).length,
+  () => backgroundProcesses.value.filter((item: any) => item.alive && !item.stale).length,
 );
 const clientRuntimeStatus = computed(() => consoleState.value?.clientRuntime || null);
 const clientRuntimeHeatRows = computed(() => clientRuntimeStatus.value?.heatmap?.clients || []);

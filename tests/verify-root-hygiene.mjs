@@ -23,7 +23,8 @@ const forbiddenNames = new Set([
   ".playwright-cli",
   ".pact-local-data",
   ".pact-server-data",
-  ".pact-skill-data"
+  ".pact-skill-data",
+  ".agentstudio-server-data"
 ]);
 
 const forbiddenPatterns = [
@@ -47,6 +48,7 @@ const allowedRootNames = new Set([
   ".gitignore",
   ".github",
   ".kilo",
+  ".pact-agent-history",
   ".vscode",
   "AGENT.md",
   "CHANGELOG.md",
@@ -61,6 +63,7 @@ const allowedRootNames = new Set([
   "client-gui",
   "docker-compose.yml",
   "docs",
+  "mcp-connector",
   "modules",
   "node_modules",
   "reports",

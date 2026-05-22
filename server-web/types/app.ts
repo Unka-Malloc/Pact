@@ -39,7 +39,8 @@ export type AdminView =
   | "clients"
   | "storage"
   | "modules";
-export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance";
+export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance" | "management" | "conflicts";
+export type KnowledgeManagementPanel = "knowledge" | "rules" | "expert";
 export type OptionBarValue = string | number | boolean;
 export type OptionBarOption = {
   value: OptionBarValue;
