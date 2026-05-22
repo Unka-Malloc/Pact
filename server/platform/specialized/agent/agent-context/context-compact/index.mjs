@@ -18,7 +18,6 @@ const ABSOLUTE_PATH_PATTERN =
 
 const DEFAULT_COMPACTION_POLICY = Object.freeze({
   enabled: true,
-  legacyStrategy: "session_memory_first",
   strategy: Object.freeze({
     id: "session-memory-first",
     params: Object.freeze({})
@@ -48,34 +47,21 @@ const DEFAULT_COMPACTION_POLICY = Object.freeze({
 const BUILTIN_COMPACTION_STRATEGIES = Object.freeze([
   Object.freeze({
     id: "session-memory-first",
-    label: "Session memory first, then model-assisted, then deterministic fallback",
-    legacyStrategies: Object.freeze(["session_memory_first"])
+    label: "Session memory first, then model-assisted, then deterministic fallback"
   }),
   Object.freeze({
     id: "workbench-reconstruction",
-    label: "Model-assisted compaction with payload dehydration and workbench state reinjection",
-    legacyStrategies: Object.freeze(["workbench_reconstruction", "hybrid-extractive-abstractive"])
+    label: "Model-assisted compaction with payload dehydration and workbench state reinjection"
   }),
   Object.freeze({
     id: "model-assisted",
-    label: "Model-assisted summary with deterministic fallback",
-    legacyStrategies: Object.freeze(["model_assisted", "hybrid"])
+    label: "Model-assisted summary with deterministic fallback"
   }),
   Object.freeze({
     id: "deterministic-extractive",
-    label: "Deterministic extractive context summary",
-    legacyStrategies: Object.freeze(["deterministic"])
+    label: "Deterministic extractive context summary"
   })
 ]);
-
-const LEGACY_STRATEGY_ALIASES = Object.freeze({
-  session_memory_first: "session-memory-first",
-  workbench_reconstruction: "workbench-reconstruction",
-  "hybrid-extractive-abstractive": "workbench-reconstruction",
-  model_assisted: "model-assisted",
-  hybrid: "model-assisted",
-  deterministic: "deterministic-extractive"
-});
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -97,22 +83,12 @@ function clampNumber(value, fallback, min, max) {
   return Math.max(min, Math.min(max, number));
 }
 
-function normalizeStrategy(value) {
-  const strategy = String(value || "").trim();
-  return Object.hasOwn(LEGACY_STRATEGY_ALIASES, strategy)
-    ? strategy
-    : DEFAULT_COMPACTION_POLICY.legacyStrategy;
-}
-
-function normalizeStrategyId(value, fallbackStrategy = DEFAULT_COMPACTION_POLICY.legacyStrategy) {
+function normalizeStrategyId(value, fallbackStrategy = DEFAULT_COMPACTION_POLICY.strategy.id) {
   const requested = String(value || "").trim();
-  if (requested) {
-    return LEGACY_STRATEGY_ALIASES[requested] || requested.replace(/_/g, "-");
-  }
-  return LEGACY_STRATEGY_ALIASES[normalizeStrategy(fallbackStrategy)] || DEFAULT_COMPACTION_POLICY.strategy.id;
+  return requested || String(fallbackStrategy || DEFAULT_COMPACTION_POLICY.strategy.id).trim();
 }
 
-function normalizeStrategyConfig(value, fallbackStrategy = DEFAULT_COMPACTION_POLICY.legacyStrategy) {
+function normalizeStrategyConfig(value, fallbackStrategy = DEFAULT_COMPACTION_POLICY.strategy.id) {
   const source = typeof value === "string"
     ? { id: value }
     : asObject(value);
@@ -211,11 +187,9 @@ export function normalizeCompactionPolicy(profile = {}, patch = {}) {
     ...patchPolicy
   };
   const compression = asObject(profile.compression);
-  const legacyStrategy = normalizeStrategy(
-    typeof source.strategy === "string"
-      ? source.strategy
-      : source.legacyStrategy
-  );
+  const fallbackStrategy = typeof source.strategy === "string"
+    ? source.strategy
+    : source.strategyId;
   const explicitStrategy =
     patchPolicy.strategy ||
     patchPolicy.strategyId ||
@@ -225,11 +199,10 @@ export function normalizeCompactionPolicy(profile = {}, patch = {}) {
     profilePolicy.strategyId ||
     profilePolicy.compactionStrategy ||
     null;
-  const strategy = normalizeStrategyConfig(explicitStrategy, legacyStrategy);
+  const strategy = normalizeStrategyConfig(explicitStrategy, fallbackStrategy);
   return {
     ...source,
     enabled: source.enabled !== false,
-    legacyStrategy,
     strategy,
     strategyId: strategy.id,
     summaryReserveTokens: clampNumber(
@@ -1240,8 +1213,7 @@ export function listContextCompactionStrategies(extraStrategies = []) {
     .map((id) => Object.freeze({
       id: normalizeStrategyId(id),
       label: String(id),
-      custom: true,
-      legacyStrategies: Object.freeze([])
+      custom: true
     }));
   const byId = new Map();
   for (const strategy of [...BUILTIN_COMPACTION_STRATEGIES, ...custom]) {
@@ -1455,7 +1427,7 @@ export function createContextCompactionRuntime({
   async function runDeterministicStrategy(context) {
     return normalizeStrategyOutput(
       {
-        executionMode: "deterministic",
+        executionMode: "deterministic-extractive",
         summaryResult: buildDeterministicSummary({
           messages: context.compactedMessages,
           runtimeState: context.runtimeState,
@@ -1464,7 +1436,7 @@ export function createContextCompactionRuntime({
         })
       },
       context,
-      "deterministic"
+      "deterministic-extractive"
     );
   }
 
@@ -1504,12 +1476,12 @@ export function createContextCompactionRuntime({
       await resetFailureState();
       return normalizeStrategyOutput(
         {
-          executionMode: "model_assisted",
+          executionMode: "model-assisted",
           summaryResult: modelSummary,
           modelEvents
         },
         context,
-        "model_assisted"
+        "model-assisted"
       );
     } catch (error) {
       const nextState = await registerModelFailure(context.policy);
@@ -1549,7 +1521,7 @@ export function createContextCompactionRuntime({
       return {
         ...(await normalizeStrategyOutput(
           {
-            executionMode: "workbench_deterministic",
+            executionMode: "workbench-deterministic",
             summaryResult: buildDeterministicSummary({
               messages: prepared.messages,
               runtimeState: context.runtimeState,
@@ -1559,7 +1531,7 @@ export function createContextCompactionRuntime({
             preprocessingEvents
           },
           preparedContext,
-          "workbench_deterministic"
+          "workbench-deterministic"
         )),
         degradedReasons,
         modelEvents,
@@ -1573,7 +1545,7 @@ export function createContextCompactionRuntime({
     if (!modelAllowed) {
       return normalizeStrategyOutput(
         {
-          executionMode: "workbench_deterministic",
+          executionMode: "workbench-deterministic",
           summaryResult: buildDeterministicSummary({
             messages: prepared.messages,
             runtimeState: context.runtimeState,
@@ -1584,7 +1556,7 @@ export function createContextCompactionRuntime({
           preprocessingEvents
         },
         preparedContext,
-        "workbench_deterministic"
+        "workbench-deterministic"
       );
     }
 
@@ -1608,13 +1580,13 @@ export function createContextCompactionRuntime({
       await resetFailureState();
       return normalizeStrategyOutput(
         {
-          executionMode: "workbench_reconstruction",
+          executionMode: "workbench-reconstruction",
           summaryResult: modelSummary,
           modelEvents,
           preprocessingEvents
         },
         preparedContext,
-        "workbench_reconstruction"
+        "workbench-reconstruction"
       );
     } catch (error) {
       const nextState = await registerModelFailure(context.policy);
@@ -1627,7 +1599,7 @@ export function createContextCompactionRuntime({
       });
       return normalizeStrategyOutput(
         {
-          executionMode: "workbench_deterministic",
+          executionMode: "workbench-deterministic",
           summaryResult: buildDeterministicSummary({
             messages: prepared.messages,
             runtimeState: context.runtimeState,
@@ -1639,7 +1611,7 @@ export function createContextCompactionRuntime({
           preprocessingEvents
         },
         preparedContext,
-        "workbench_deterministic"
+        "workbench-deterministic"
       );
     }
   }
@@ -1656,7 +1628,7 @@ export function createContextCompactionRuntime({
         memoryEvents.push({ used: true, memoryId: memory.memoryId, sourceHash: context.sourceHash });
         return normalizeStrategyOutput(
           {
-            executionMode: "session_memory",
+            executionMode: "session-memory",
             summaryResult: {
               summary: memory.summary,
               structured: memory.structured || {},
@@ -1665,7 +1637,7 @@ export function createContextCompactionRuntime({
             memoryEvents
           },
           context,
-          "session_memory"
+          "session-memory"
         );
       }
 
@@ -1725,7 +1697,7 @@ export function createContextCompactionRuntime({
   }
 
   function resolveStrategyAdapter(policy = {}) {
-    const strategyId = normalizeStrategyId(policy.strategy?.id || policy.strategyId, policy.legacyStrategy);
+    const strategyId = normalizeStrategyId(policy.strategy?.id || policy.strategyId);
     const adapter = strategyAdapters.get(strategyId);
     if (!adapter) {
       throw new Error(`context_compaction_strategy_unknown:${strategyId}`);
@@ -1862,7 +1834,7 @@ export function createContextCompactionRuntime({
         targetTokens,
         sourceHash
       });
-      const executionMode = strategyResult.executionMode || "deterministic";
+      const executionMode = strategyResult.executionMode || "deterministic-extractive";
       const summaryResult = strategyResult.summaryResult;
       const degradedReasons = [...asArray(strategyResult.degradedReasons)];
       const modelEvents = [...asArray(strategyResult.modelEvents)];

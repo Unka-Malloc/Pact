@@ -18,10 +18,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
 function stableJson(value) {
   if (value === null || value === undefined) {
     return "null";
@@ -124,33 +120,23 @@ function normalizeSessionRecord(entry = {}) {
 export function createAgentMemory({
   userDataPath,
   rootPath = "",
-  sessionMemoryPath = "",
-  legacySessionMemoryPaths = null
+  sessionMemoryPath = ""
 } = {}) {
   if (!userDataPath && !rootPath && !sessionMemoryPath) {
     throw new Error("agent_memory_user_data_path_required");
   }
   const resolvedRootPath = rootPath || path.join(userDataPath, "agent-memory");
   const resolvedSessionMemoryPath = sessionMemoryPath || path.join(resolvedRootPath, "session-memory.jsonl");
-  const legacyPaths = legacySessionMemoryPaths === null
-    ? (userDataPath ? [path.join(userDataPath, "context-core", "context-session-memory.jsonl")] : [])
-    : asArray(legacySessionMemoryPaths);
-  const sessionMemoryPaths = [
-    resolvedSessionMemoryPath,
-    ...legacyPaths.filter((item) => item && item !== resolvedSessionMemoryPath)
-  ];
 
   async function readSessionRecords(limit = 50) {
     const safeLimit = Math.max(1, Math.min(Number(limit || 50), 1000));
     const records = [];
-    for (const filePath of sessionMemoryPaths) {
-      const pathRecords = await readJsonlTail(filePath, safeLimit);
-      for (const record of pathRecords) {
-        records.push({
-          ...record,
-          storagePath: filePath
-        });
-      }
+    const pathRecords = await readJsonlTail(resolvedSessionMemoryPath, safeLimit);
+    for (const record of pathRecords) {
+      records.push({
+        ...record,
+        storagePath: resolvedSessionMemoryPath
+      });
     }
     return records
       .sort((left, right) => recordTimestamp(right) - recordTimestamp(left))
@@ -189,7 +175,6 @@ export function createAgentMemory({
       protocolVersion: AGENT_MEMORY_PROTOCOL_VERSION,
       rootPath: resolvedRootPath,
       path: resolvedSessionMemoryPath,
-      legacyPaths,
       records: records.filter((record) =>
         (!input.sessionId || record.sessionId === input.sessionId) &&
         (!input.profileId || record.profileId === input.profileId)
@@ -221,7 +206,6 @@ export function createAgentMemory({
     protocolVersion: AGENT_MEMORY_PROTOCOL_VERSION,
     rootPath: resolvedRootPath,
     sessionMemoryPath: resolvedSessionMemoryPath,
-    legacySessionMemoryPaths: legacyPaths,
     latestSessionMemory,
     appendSessionMemory,
     listSessionMemory,

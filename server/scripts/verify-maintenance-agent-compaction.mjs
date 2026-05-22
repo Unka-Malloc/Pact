@@ -69,11 +69,11 @@ try {
         contextWindowTokens: 4096,
         outputReserveTokens: 256,
         compression: {
-          mode: "deterministic",
+          mode: "deterministic-extractive",
           summaryMaxTokens: 600
         },
         compactionPolicy: {
-          strategy: "deterministic",
+          strategy: "deterministic-extractive",
           summaryReserveTokens: 512,
           reservedBufferTokens: 512,
           recentMessageProtectionCount: 2,

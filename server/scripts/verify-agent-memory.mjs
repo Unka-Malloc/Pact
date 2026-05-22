@@ -58,17 +58,17 @@ const missingHash = await agentMemory.latestSessionMemory({
 });
 assert.equal(missingHash, null);
 
-const legacyPath = path.join(userDataPath, "context-core", "context-session-memory.jsonl");
-await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+const oldContextPath = path.join(userDataPath, "context-core", "context-session-memory.jsonl");
+await fs.mkdir(path.dirname(oldContextPath), { recursive: true });
 await fs.appendFile(
-  legacyPath,
+  oldContextPath,
   `${JSON.stringify({
     protocolVersion: "pact.context.compaction.v1",
-    memoryId: "legacy-memory",
-    sessionId: "legacy-session",
+    memoryId: "old-context-memory",
+    sessionId: "old-context-session",
     profileId: "balanced",
-    sourceHash: "legacy-hash",
-    summary: "Legacy context memory still loads.",
+    sourceHash: "old-context-hash",
+    summary: "Old context memory must not load.",
     structured: {},
     sourceRange: {},
     createdAt: new Date(Date.now() - 1000).toISOString(),
@@ -76,13 +76,12 @@ await fs.appendFile(
   })}\n`,
   "utf8"
 );
-const legacy = await agentMemory.latestSessionMemory({
-  sessionId: "legacy-session",
+const oldContextRecord = await agentMemory.latestSessionMemory({
+  sessionId: "old-context-session",
   profileId: "balanced",
-  sourceHash: "legacy-hash"
+  sourceHash: "old-context-hash"
 });
-assert.equal(legacy.memoryId, "legacy-memory");
-assert.equal(legacy.storagePath, legacyPath);
+assert.equal(oldContextRecord, null);
 
 const cleared = await agentMemory.clearSessionMemory({
   sessionId: "direct-session",
@@ -110,7 +109,7 @@ const firstRun = await contextRuntime.runCompaction({
   useSessionMemory: false
 });
 assert.equal(firstRun.status, "completed");
-assert.notEqual(firstRun.executionMode, "session_memory");
+assert.notEqual(firstRun.executionMode, "session-memory");
 
 const runtimeRecords = await agentMemory.listSessionMemory({ sessionId: "runtime-session" });
 assert.equal(runtimeRecords.path, agentMemory.sessionMemoryPath);
@@ -124,7 +123,7 @@ const reusedRun = await contextRuntime.runCompaction({
   taskBrief: "Verify ContextRuntime persists through AgentMemory.",
   force: true
 });
-assert.equal(reusedRun.executionMode, "session_memory");
+assert.equal(reusedRun.executionMode, "session-memory");
 
 console.log("Agent memory verification passed.");
 process.exit(0);

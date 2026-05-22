@@ -81,7 +81,7 @@ try {
         contextWindowTokens: 4096,
         outputReserveTokens: 256,
         compression: {
-          mode: "hybrid",
+          mode: "model-assisted",
           summaryMaxTokens: 600
         },
         modelCompression: {
@@ -90,7 +90,7 @@ try {
           maxOutputTokens: 400
         },
         compactionPolicy: {
-          strategy: "model_assisted",
+          strategy: "model-assisted",
           summaryReserveTokens: 512,
           reservedBufferTokens: 512,
           recentMessageProtectionCount: 2,
@@ -122,10 +122,10 @@ try {
         profileId: "gateway-fallback",
         contextWindowTokens: 4096,
         outputReserveTokens: 256,
-        compression: { mode: "hybrid", summaryMaxTokens: 600 },
+        compression: { mode: "model-assisted", summaryMaxTokens: 600 },
         modelCompression: { enabled: true, alias: "gateway-mock" },
         compactionPolicy: {
-          strategy: "model_assisted",
+          strategy: "model-assisted",
           summaryReserveTokens: 512,
           reservedBufferTokens: 512,
           recentMessageProtectionCount: 2
@@ -141,7 +141,7 @@ try {
     useSessionMemory: false
   });
   assert.equal(fallback.strategy.id, "model-assisted");
-  assert.equal(fallback.executionMode, "deterministic");
+  assert.equal(fallback.executionMode, "deterministic-extractive");
   assert.equal(fallback.degraded, true);
   assert.ok(fallback.degradedReasons.length > 0);
 

@@ -51,7 +51,7 @@ const DEFAULT_PROFILES = [
       targetRatio: 0.25,
       protectLastNTurns: 12,
       summaryMaxTokens: 12000,
-      strategy: "hybrid-extractive-abstractive"
+      strategy: "workbench-reconstruction"
     }
   },
   {
@@ -71,7 +71,7 @@ const DEFAULT_PROFILES = [
       targetRatio: 0.42,
       protectLastNTurns: 24,
       summaryMaxTokens: 64000,
-      strategy: "hybrid-extractive-abstractive"
+      strategy: "workbench-reconstruction"
     }
   },
   {
@@ -131,7 +131,7 @@ const DEFAULT_PROFILES = [
       targetRatio: 0.25,
       protectLastNTurns: 12,
       summaryMaxTokens: 12000,
-      strategy: "hybrid-extractive-abstractive"
+      strategy: "workbench-reconstruction"
     }
   }
 ];
@@ -178,12 +178,12 @@ const DEFAULT_MODEL_COMPRESSION = {
   alias: "",
   maxInputTokens: 24000,
   maxOutputTokens: 4000,
-  fallback: "deterministic"
+  fallback: "deterministic-extractive"
 };
 
 const DEFAULT_COMPACTION_POLICY = {
   enabled: true,
-  strategy: "session_memory_first",
+  strategy: "session-memory-first",
   summaryReserveTokens: 4000,
   reservedBufferTokens: 13000,
   warningBufferTokens: 20000,
@@ -326,9 +326,9 @@ function normalizeProfile(profile = {}) {
     compression: {
       ...compression,
       enabled: compression.enabled !== false,
-      mode: ["deterministic", "model_assisted", "hybrid"].includes(String(compression.mode || ""))
+      mode: ["deterministic-extractive", "model-assisted", "workbench-reconstruction", "session-memory-first"].includes(String(compression.mode || ""))
         ? String(compression.mode)
-        : "deterministic",
+        : "deterministic-extractive",
       threshold: clampNumber(compression.threshold, fallback.compression.threshold, 0.1, 0.95),
       targetRatio: clampNumber(compression.targetRatio, fallback.compression.targetRatio, 0.05, 0.9),
       protectLastNTurns: clampNumber(compression.protectLastNTurns, fallback.compression.protectLastNTurns, 0, 200),
@@ -940,7 +940,7 @@ export function createContextRuntime({
     if (
       !sourceText ||
       profile.modelCompression.enabled !== true ||
-      !["model_assisted", "hybrid"].includes(profile.compression.mode)
+      !["model-assisted", "workbench-reconstruction", "session-memory-first"].includes(profile.compression.mode)
     ) {
       return {
         used: false,

@@ -137,7 +137,7 @@ try {
         recentTurnBudget: 600,
         compression: {
           enabled: true,
-          mode: "deterministic",
+          mode: "deterministic-extractive",
           threshold: 0.1,
           targetRatio: 0.1,
           protectLastNTurns: 2,
@@ -210,7 +210,7 @@ try {
   assert.ok(pack.criticalEvidenceIndex.length > 0);
   assert.ok(pack.evidencePack.some((item) => item.evidenceId === "ev-2"), "human-confirmed evidence should survive compression");
   assert.ok(pack.tailChecklist.evidenceIds.includes("ev-2"));
-  assert.equal(pack.budgetReport.compressionMode, "deterministic");
+  assert.equal(pack.budgetReport.compressionMode, "deterministic-extractive");
 
   const protectedEvidence = [
     ...Array.from({ length: 60 }, (_, index) => ({
@@ -306,11 +306,11 @@ try {
         historyBudget: 1200,
         compression: {
           enabled: true,
-          mode: "hybrid",
+          mode: "model-assisted",
           threshold: 0.1,
           targetRatio: 0.2,
           summaryMaxTokens: 900,
-          strategy: "hybrid-extractive-abstractive"
+          strategy: "model-assisted"
         },
         modelCompression: {
           enabled: true,

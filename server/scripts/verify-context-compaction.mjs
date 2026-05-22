@@ -152,7 +152,7 @@ try {
     outputReserveTokens: 256,
     compression: {
       enabled: true,
-      mode: "hybrid",
+      mode: "model-assisted",
       targetRatio: 0.2,
       summaryMaxTokens: 700
     },
@@ -191,18 +191,18 @@ try {
   assert.ok(availableStrategies.some((strategy) => strategy.id === "model-assisted"));
   assert.ok(availableStrategies.some((strategy) => strategy.id === "session-memory-first"));
   assert.ok(availableStrategies.some((strategy) => strategy.id === "workbench-reconstruction"));
-  const legacyPolicy = normalizeCompactionPolicy({
+  const assistedPolicy = normalizeCompactionPolicy({
     compactionPolicy: {
-      strategy: "model_assisted"
+      strategy: "model-assisted"
     }
   });
-  assert.equal(legacyPolicy.strategy.id, "model-assisted");
-  const workbenchAliasPolicy = normalizeCompactionPolicy({
+  assert.equal(assistedPolicy.strategy.id, "model-assisted");
+  const workbenchPolicy = normalizeCompactionPolicy({
     compactionPolicy: {
-      strategy: "hybrid-extractive-abstractive"
+      strategy: "workbench-reconstruction"
     }
   });
-  assert.equal(workbenchAliasPolicy.strategy.id, "workbench-reconstruction");
+  assert.equal(workbenchPolicy.strategy.id, "workbench-reconstruction");
   const explicitPolicy = normalizeCompactionPolicy({
     compactionPolicy: {
       strategy: {
@@ -250,7 +250,7 @@ try {
   assert.equal(deterministic.protocolVersion, CONTEXT_COMPACTION_PROTOCOL_VERSION);
   assert.equal(deterministic.strategy.id, "deterministic-extractive");
   assert.deepEqual(deterministic.strategy.paramKeys, ["preserveFacts"]);
-  assert.equal(deterministic.executionMode, "deterministic");
+  assert.equal(deterministic.executionMode, "deterministic-extractive");
   assert.equal(deterministic.compacted, true);
   assert.equal(deterministic.boundary.type, "compact_boundary");
   assert.ok(deterministic.tokenReport.savingsRatio > 0);
@@ -349,7 +349,7 @@ try {
   });
   assert.equal(workbenchRun.strategy.id, "workbench-reconstruction");
   assert.deepEqual(workbenchRun.strategy.paramKeys, ["preserveWorkbenchState"]);
-  assert.equal(workbenchRun.executionMode, "workbench_reconstruction");
+  assert.equal(workbenchRun.executionMode, "workbench-reconstruction");
   assert.equal(workbenchRun.compacted, true);
   assert.equal(workbenchRun.modelEvents[0].promptCacheCompatible, true);
   assert.equal(workbenchRun.modelEvents[0].attempts.length >= 2, true);
@@ -485,7 +485,7 @@ try {
     useSessionMemory: false
   });
   assert.equal(modelRun.strategy.id, "session-memory-first");
-  assert.equal(modelRun.executionMode, "model_assisted");
+  assert.equal(modelRun.executionMode, "model-assisted");
   assert.equal(modelRun.modelEvents[0].attempts.length >= 2, true);
   assert.match(modelRun.summary, /ev-critical/);
 
@@ -496,7 +496,7 @@ try {
     taskBrief: "模型辅助上下文压缩"
   });
   assert.equal(memoryRun.strategy.id, "session-memory-first");
-  assert.equal(memoryRun.executionMode, "session_memory");
+  assert.equal(memoryRun.executionMode, "session-memory");
   const memory = await modelRuntime.listSessionMemory({ sessionId: "model-session" });
   assert.ok(memory.records.length >= 1);
   const changedMemoryRun = await modelRuntime.runCompaction({
@@ -513,7 +513,7 @@ try {
     ],
     taskBrief: "模型辅助上下文压缩 - changed input"
   });
-  assert.notEqual(changedMemoryRun.executionMode, "session_memory");
+  assert.notEqual(changedMemoryRun.executionMode, "session-memory");
   assert.ok(changedMemoryRun.memoryEvents.some((event) => event.reason === "source_hash_mismatch"));
   const cleared = await modelRuntime.clearSessionMemory({ sessionId: "model-session", reason: "verify" });
   assert.equal(cleared.ok, true);
@@ -524,7 +524,7 @@ try {
     taskBrief: "模型辅助上下文压缩",
     useSessionMemory: true
   });
-  assert.notEqual(afterClear.executionMode, "session_memory");
+  assert.notEqual(afterClear.executionMode, "session-memory");
 
   let failingCalls = 0;
   const fallbackRuntime = createContextRuntime({
@@ -541,7 +541,7 @@ try {
         profileId: "fallback-small",
         compactionPolicy: {
           ...profile.compactionPolicy,
-          strategy: "model_assisted",
+          strategy: "model-assisted",
           maxConsecutiveFailures: 3
         }
       }
@@ -554,7 +554,7 @@ try {
       messages,
       useSessionMemory: false
     });
-    assert.equal(run.executionMode, "deterministic");
+    assert.equal(run.executionMode, "deterministic-extractive");
     assert.equal(run.degraded, true);
   }
   const callsBeforeCircuit = failingCalls;
@@ -564,7 +564,7 @@ try {
     messages,
     useSessionMemory: false
   });
-  assert.equal(circuit.executionMode, "deterministic");
+  assert.equal(circuit.executionMode, "deterministic-extractive");
   assert.equal(circuit.circuitBreaker.open, true);
   assert.equal(failingCalls, callsBeforeCircuit);
 
