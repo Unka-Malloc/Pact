@@ -10,11 +10,12 @@ English | [简体中文](README.zh-CN.md)
 [![Rust](https://img.shields.io/badge/Rust-CLI-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Flutter](https://img.shields.io/badge/Flutter-GUI-02569B?logo=flutter&logoColor=white)](https://flutter.dev/)
 
-While Large Language Models (LLMs) and local AI agents are becoming increasingly powerful, they often operate in isolated silos, lacking true collaboration. Traditional enterprise knowledge bases, on the other hand, store massive amounts of assets but fail to provide fine-grained, agent-centric access control.
+**Pact** is a **Trusted Agent Collaboration Space**. We bridge the gap between isolated local AI agents and static enterprise knowledge bases by providing a **secure, controllable, and 100% auditable** collaborative environment.
 
-**Pact was built to bridge this exact gap.**
-
-Pact does not build yet another LLM, nor does it aim to be a monolithic autonomous agent platform. Instead, we focus exclusively on the missing **"Governance Middleware"**: providing a **secure, controllable, editable, and 100% auditable** shared workspace for various local agents, automation scripts, and human team members.
+💡 **Why Pact?**
+- **Agent-Centric Governance:** Fine-grained access control and dynamic knowledge slicing tailored specifically for AI agents.
+- **Silo Elimination:** Unified collaboration among diverse local agents, automation scripts, and human members.
+- **100% Auditability:** Every operation and knowledge access is tracked, verifiable, and rollback-ready.
 
 ## 🏛️ Architecture Overview
 
@@ -24,6 +25,7 @@ graph TB
         CLI["CLI<br/>(Rust)"]
         GUI["GUI<br/>(Flutter)"]
         Console["Web Console<br/>(Vue 3 + Element Plus)"]
+        MCPClient["MCP Connector<br/>(Client)"]
         Agents["Local Agents<br/>OpenClaw · Codex · Claude Code"]
     end
 
@@ -50,7 +52,8 @@ graph TB
     CLI --> API
     GUI --> API
     Console --> API
-    Agents --> MCP
+    Agents --> MCPClient
+    MCPClient --> MCP
     MCP --> API
     API --> Policy
     Policy --> Ledger
@@ -82,6 +85,7 @@ This project follows the "Modular Monolith" principle, strictly separating conce
 | **`server-web`** | Management Console — asset browsers, audit views, permission configs | Vue 3 + Element Plus |
 | **`client-cli`** | Client Execution Layer — local environment adapters, high-throughput interactions | Rust |
 | **`client-gui`** | Cross-platform Desktop Application — lightweight terminal | Flutter |
+| **`mcp-connector`** | MCP Client Connector — one-line install for local AI agents | Node.js |
 | **`docs`** | Source of truth for architectural principles and design decisions | Markdown |
 
 ## 🚀 Quick Start
@@ -121,6 +125,16 @@ npm run cli -- health
 npm run cli -- --file README.md --wait
 npm run cli -- rpc-call jobs.list --params '{"limit":20}'
 ```
+
+### MCP Client Connector
+
+Connect your local AI agents (Codex, Claude Code, etc.) to the Pact MCP Server with a single command:
+
+```bash
+npx pact-mcp-connector@latest register
+```
+
+*(See [mcp-connector/README.md](mcp-connector/README.md) for more details)*
 
 ## 📖 Documentation
 

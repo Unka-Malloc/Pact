@@ -10,11 +10,12 @@
 [![Rust](https://img.shields.io/badge/Rust-CLI-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Flutter](https://img.shields.io/badge/Flutter-GUI-02569B?logo=flutter&logoColor=white)](https://flutter.dev/)
 
-当前的大模型和智能体（Agents）越来越强大，但它们往往各自为战，缺乏协同；传统的企业知识库虽然存储了大量资产，但缺少针对智能体的细粒度权限管控。
+**Pact** 是一个**可信的智能体协作空间**。我们致力于打破本地孤立的智能体与静态企业知识库之间的壁垒，为您提供一个**安全、受控且 100% 可审计**的协同环境。
 
-**Pact 为此而生。**
-
-Pact 不造新的大模型，也不做另一个自治 Agent 平台。我们专攻生态中最缺的**"中间治理层"**：为各类本地智能体、自动化脚本和人类成员，提供一个**安全、受控、可编辑且 100% 可审计**的公共工作空间。
+💡 **核心优势**
+- **智能体原生治理**：专为 Agent 设计的细粒度权限管控与动态知识切分机制。
+- **打破协同孤岛**：让各类本地智能体、自动化脚本和人类成员实现无缝协同。
+- **100% 可审计性**：所有操作与知识访问轨迹均被完整记录，支持安全溯源与回滚。
 
 ## 🏛️ 架构概览
 
@@ -24,6 +25,7 @@ graph TB
         CLI["CLI<br/>(Rust)"]
         GUI["GUI<br/>(Flutter)"]
         Console["Web 管控台<br/>(Vue 3 + Element Plus)"]
+        MCPClient["MCP Connector<br/>(Client)"]
         Agents["本地智能体<br/>OpenClaw · Codex · Claude Code"]
     end
 
@@ -50,7 +52,8 @@ graph TB
     CLI --> API
     GUI --> API
     Console --> API
-    Agents --> MCP
+    Agents --> MCPClient
+    MCPClient --> MCP
     MCP --> API
     API --> Policy
     Policy --> Ledger
@@ -82,6 +85,7 @@ graph TB
 | **`server-web`** | 管控台 — 资产浏览器、审计视图和权限配置 | Vue 3 + Element Plus |
 | **`client-cli`** | 客户端执行层 — 本地环境适配、高吞吐交互 | Rust |
 | **`client-gui`** | 跨端桌面应用 — 轻量化操作终端 | Flutter |
+| **`mcp-connector`** | MCP 客户端连接器 — 为本地智能体提供一键安装与连接能力 | Node.js |
 | **`docs`** | 核心架构原则与设计决议记录 | Markdown |
 
 ## 🚀 快速开始
@@ -121,6 +125,16 @@ npm run cli -- health
 npm run cli -- --file README.md --wait
 npm run cli -- rpc-call jobs.list --params '{"limit":20}'
 ```
+
+### MCP 客户端连接器
+
+使用一行命令即可将您的本地智能体 (Codex, Claude Code 等) 连接到 Pact MCP Server：
+
+```bash
+npx pact-mcp-connector@latest register
+```
+
+*(更多详情请参考 [mcp-connector/README.md](mcp-connector/README.md))*
 
 ## 📖 文档体系
 
