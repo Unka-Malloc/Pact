@@ -474,7 +474,7 @@ AgentStudio 必须写入设备级发现清单：
       "vmHttpUrl": "<signed-discovered-vm-url>/mcp",
       "connector": {
         "packageName": "agentstudio-mcp-connector",
-        "packageVersion": "0.2.4",
+        "packageVersion": "0.2.5",
         "discoverCommand": "npx agentstudio-mcp-connector@latest discover-local",
         "installCommand": "npx agentstudio-mcp-connector@latest install --target <client>"
       },

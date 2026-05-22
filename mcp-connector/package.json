@@ -1,6 +1,6 @@
 {
   "name": "agentstudio-mcp-connector",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Release-packaged AgentStudio MCP connector installer for local AI agents.",
   "type": "module",
   "license": "GPL-3.0-or-later",

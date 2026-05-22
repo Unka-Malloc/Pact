@@ -1566,6 +1566,55 @@ async function detectOrbCommand({ orbBin, vmName, vmUser, command }) {
   };
 }
 
+function clawCandidateIdentity(candidate) {
+  if (candidate?.target !== "openclaw") {
+    return "";
+  }
+  const overrides = candidate.optionOverrides || {};
+  const vmName = String(overrides["openclaw-vm"] || "").trim();
+  const vmUser = String(overrides["openclaw-user"] || "").trim();
+  if (!vmName || !vmUser) {
+    return "";
+  }
+  return `openclaw:${vmName}:${vmUser}`;
+}
+
+function mergeClawCandidate(candidates, candidate) {
+  const identity = clawCandidateIdentity(candidate);
+  if (!identity) {
+    candidates.push(candidate);
+    return;
+  }
+  const existingIndex = candidates.findIndex((item) => clawCandidateIdentity(item) === identity);
+  if (existingIndex < 0) {
+    candidates.push(candidate);
+    return;
+  }
+  const existing = candidates[existingIndex];
+  if (existing.status !== "detected" && candidate.status === "detected") {
+    candidates[existingIndex] = {
+      ...existing,
+      status: "detected",
+      detail: candidate.detail,
+      optionOverrides: {
+        ...(existing.optionOverrides || {}),
+        ...(candidate.optionOverrides || {})
+      }
+    };
+    return;
+  }
+  if (existing.status === candidate.status && existing.detail !== candidate.detail) {
+    candidates[existingIndex] = {
+      ...existing,
+      detail: existing.status === "detected" ? existing.detail : candidate.detail,
+      optionOverrides: {
+        ...(existing.optionOverrides || {}),
+        ...(candidate.optionOverrides || {})
+      }
+    };
+  }
+}
+
 async function detectClawCompatibleTargets(settings) {
   const vmNames = await detectOrbVms(settings.orbBin);
   const candidates = [];
@@ -1675,7 +1724,12 @@ async function scanInstallTargets(options = {}) {
     target: "openclaw",
     label: `${targetLabel("openclaw")} (${settings.openclawVm})`,
     status: openClawDetected.ok ? "detected" : "not-detected",
-    detail: openClawDetected.ok ? openClawDetected.path || settings.openclawBin : `OrbStack ${settings.openclawVm}:${settings.openclawVmUser} not detected`
+    detail: openClawDetected.ok ? openClawDetected.path || settings.openclawBin : `OrbStack ${settings.openclawVm}:${settings.openclawVmUser} not detected`,
+    optionOverrides: {
+      "openclaw-vm": settings.openclawVm,
+      "openclaw-user": settings.openclawVmUser,
+      "openclaw-bin": openClawDetected.path || settings.openclawBin
+    }
   });
 
   const hermesDetected = await detectOrbCommand({
@@ -1694,13 +1748,8 @@ async function scanInstallTargets(options = {}) {
 
   if (!options["no-scan"]) {
     const dynamicClawTargets = await detectClawCompatibleTargets(settings);
-    const existingKeys = new Set(candidates.map((candidate) => `${candidate.target}:${candidate.detail}`));
     for (const candidate of dynamicClawTargets) {
-      const key = `${candidate.target}:${candidate.detail}`;
-      if (!existingKeys.has(key)) {
-        candidates.push(candidate);
-        existingKeys.add(key);
-      }
+      mergeClawCandidate(candidates, candidate);
     }
   }
 

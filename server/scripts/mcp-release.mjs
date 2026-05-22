@@ -396,7 +396,6 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       packageVersion: packageJson.version,
       minimumNodeVersion: packageJson.engines?.node || ">=20",
       tarball: tarballName,
-      tarballPath,
       sha256: checksum,
       sizeBytes
     },
@@ -406,11 +405,9 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       preferredArchive: "zip",
       currentPlatform: portable.platform,
       tarball: portable.archiveName,
-      tarballPath: portable.archivePath,
       sha256: portable.sha256,
       sizeBytes: portable.sizeBytes,
       zipArchive: portable.zipArchiveName,
-      zipPath: portable.zipArchivePath,
       zipSha256: portable.zipSha256,
       zipSizeBytes: portable.zipSizeBytes,
       executable: portable.executable,
@@ -444,7 +441,6 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
     },
     bootstrap: {
       scriptName: bootstrap.scriptName,
-      scriptPath: bootstrap.scriptPath,
       sha256: bootstrap.sha256,
       githubLatestUrl: bootstrap.githubLatestUrl,
       command: bootstrap.oneLineCommand,
