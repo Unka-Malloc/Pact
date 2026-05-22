@@ -56,6 +56,15 @@ const TARGET_LABELS = {
   hermes: "Hermes Agent",
   antigravity: "Antigravity"
 };
+const TARGET_INSTALL_MODES = {
+  codex: "codex-release-plugin-and-mcp-cli",
+  "gemini-cli": "gemini-release-mcp-cli",
+  "kilo-code": "kilo-release-global-kilo-json",
+  copilot: "copilot-release-mcp-cli",
+  openclaw: "openclaw-release-mcp-cli",
+  hermes: "hermes-release-mcp-cli",
+  antigravity: "antigravity-release-mcp-config"
+};
 
 function usage() {
   return [
@@ -172,6 +181,10 @@ function parseTargets(rawTarget) {
 
 function targetLabel(target) {
   return TARGET_LABELS[target] || target;
+}
+
+function targetInstallMode(target) {
+  return TARGET_INSTALL_MODES[target] || "agentstudio-mcp-client-install";
 }
 
 function redactToken(value) {
@@ -1258,7 +1271,13 @@ async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot,
   const targetStatuses = Object.fromEntries(SUPPORTED_TARGETS.map((target) => [
     target,
     installed[target]
-      ? {
+      ? installed[target].ok === false
+        ? {
+            installMode: installed[target].installMode || targetInstallMode(target),
+            status: "failed",
+            error: installed[target].error || "Install failed."
+          }
+        : {
           installMode: installed[target].installMode,
           status: "installed",
           tokenPrefix: redactToken(token)
@@ -2020,65 +2039,76 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
 
   const installed = {};
   for (const target of targets) {
-    let clientResult = null;
-    if (target === "codex") {
-      clientResult = await installCodex({
-        baseUrl: settings.baseUrl,
-        token,
-        tokenEnv: settings.tokenEnv,
-        codexBin: settings.codexBin,
-        marketplaceRoot: settings.marketplaceRoot
-      });
-    } else if (target === "gemini-cli") {
-      clientResult = await installGemini({
-        baseUrl: settings.baseUrl,
-        token,
-        geminiBin: settings.geminiBin,
-        extensionRoot: settings.geminiExtensionRoot
-      });
-    } else if (target === "kilo-code") {
-      clientResult = await installKilo({
-        baseUrl: settings.baseUrl,
-        token,
-        kiloBin: settings.kiloBin,
-        kiloConfigPath: settings.kiloConfigPath
-      });
-    } else if (target === "copilot") {
-      clientResult = await installCopilot({
-        baseUrl: settings.baseUrl,
-        token,
-        copilotBin: settings.copilotBin
-      });
-    } else if (target === "openclaw") {
-      clientResult = await installOpenClaw({
-        baseUrl: settings.baseUrl,
-        token,
-        orbBin: settings.orbBin,
-        vmName: settings.openclawVm,
-        vmUser: settings.openclawVmUser,
-        openclawBin: settings.openclawBin
-      });
-    } else if (target === "hermes") {
-      clientResult = await installHermes({
-        baseUrl: settings.baseUrl,
-        token,
-        orbBin: settings.orbBin,
-        vmName: settings.hermesVm,
-        vmUser: settings.hermesVmUser,
-        hermesBin: settings.hermesBin
-      });
-    } else if (target === "antigravity") {
-      clientResult = await installAntigravity({
-        baseUrl: settings.baseUrl,
-        token,
-        configPath: settings.antigravityConfigPath
-      });
+    try {
+      let clientResult = null;
+      if (target === "codex") {
+        clientResult = await installCodex({
+          baseUrl: settings.baseUrl,
+          token,
+          tokenEnv: settings.tokenEnv,
+          codexBin: settings.codexBin,
+          marketplaceRoot: settings.marketplaceRoot
+        });
+      } else if (target === "gemini-cli") {
+        clientResult = await installGemini({
+          baseUrl: settings.baseUrl,
+          token,
+          geminiBin: settings.geminiBin,
+          extensionRoot: settings.geminiExtensionRoot
+        });
+      } else if (target === "kilo-code") {
+        clientResult = await installKilo({
+          baseUrl: settings.baseUrl,
+          token,
+          kiloBin: settings.kiloBin,
+          kiloConfigPath: settings.kiloConfigPath
+        });
+      } else if (target === "copilot") {
+        clientResult = await installCopilot({
+          baseUrl: settings.baseUrl,
+          token,
+          copilotBin: settings.copilotBin
+        });
+      } else if (target === "openclaw") {
+        clientResult = await installOpenClaw({
+          baseUrl: settings.baseUrl,
+          token,
+          orbBin: settings.orbBin,
+          vmName: settings.openclawVm,
+          vmUser: settings.openclawVmUser,
+          openclawBin: settings.openclawBin
+        });
+      } else if (target === "hermes") {
+        clientResult = await installHermes({
+          baseUrl: settings.baseUrl,
+          token,
+          orbBin: settings.orbBin,
+          vmName: settings.hermesVm,
+          vmUser: settings.hermesVmUser,
+          hermesBin: settings.hermesBin
+        });
+      } else if (target === "antigravity") {
+        clientResult = await installAntigravity({
+          baseUrl: settings.baseUrl,
+          token,
+          configPath: settings.antigravityConfigPath
+        });
+      }
+      const httpVerification = verify ? await verifyMcpTools({ baseUrl: settings.baseUrl, token }) : null;
+      installed[target] = {
+        ok: true,
+        status: "installed",
+        ...(clientResult || {}),
+        httpVerification
+      };
+    } catch (error) {
+      installed[target] = {
+        ok: false,
+        status: "failed",
+        installMode: targetInstallMode(target),
+        error: error?.message || String(error)
+      };
     }
-    const httpVerification = verify ? await verifyMcpTools({ baseUrl: settings.baseUrl, token }) : null;
-    installed[target] = {
-      ...(clientResult || {}),
-      httpVerification
-    };
   }
 
   const discoveryManifest = await writeDeviceDiscovery({
@@ -2091,7 +2121,7 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
   });
 
   return {
-    ok: true,
+    ok: Object.values(installed).every((value) => value?.ok !== false),
     packageName: packageJson.name,
     packageVersion: packageJson.version,
     targets,
@@ -2101,9 +2131,11 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
       target,
       {
         installMode: value.installMode,
+        status: value.status || (value.ok === false ? "failed" : "installed"),
+        error: value.error || "",
         tokenSource: tokenInfo?.source || "provided",
         tokenPrefix: tokenInfo?.tokenPrefix || redactToken(token),
-        httpVerification: value.httpVerification
+        httpVerification: value.httpVerification || null
       }
     ]))
   };
@@ -2470,12 +2502,176 @@ async function discoverCommand(options) {
   };
 }
 
-function emitResult(result, options) {
+function yesNo(value) {
+  return value ? "yes" : "no";
+}
+
+function formatTargetInstallLine(target, item = {}) {
+  const failed = item.status === "failed" || item.ok === false || Boolean(item.error);
+  const status = failed ? "FAIL" : "OK";
+  const lines = [`  [${status}] ${targetLabel(target)} (${target})`];
+  if (failed) {
+    lines.push(`      Reason: ${item.error || "Install failed."}`);
+    return lines;
+  }
+  if (item.tokenSource || item.tokenPrefix) {
+    lines.push(`      Auth: ${item.tokenSource || "provided"}${item.tokenPrefix ? ` (${item.tokenPrefix})` : ""}`);
+  }
+  if (item.httpVerification) {
+    lines.push(
+      `      MCP verify: tools=${item.httpVerification.toolCount}, stableTool=${item.httpVerification.stableToolName || ""}, health=${yesNo(item.httpVerification.systemHealthOk)}`
+    );
+  }
+  return lines;
+}
+
+function formatInstallResult(result) {
+  if (result.skipped) {
+    return [
+      "AgentStudio MCP install skipped.",
+      "",
+      result.reason || "No client configuration was changed.",
+      "Run later: agentstudio-mcp server-config --set --url <agentstudio-url>"
+    ].join("\n");
+  }
+  if (result.cancelled) {
+    return [
+      "AgentStudio MCP install cancelled.",
+      "",
+      result.reason || "No client configuration was changed."
+    ].join("\n");
+  }
+  const lines = [
+    result.ok ? "AgentStudio MCP install completed." : "AgentStudio MCP install completed with errors.",
+    "",
+    "Server:",
+    `  MCP URL: ${result.baseUrl ? `${result.baseUrl}/mcp` : "unknown"}`
+  ];
+  if (result.discoveryManifest) {
+    lines.push(`  Local registry: ${result.discoveryManifest}`);
+  }
+  lines.push("", "Clients:");
+  const installed = result.installed || {};
+  const targets = result.targets?.length ? result.targets : Object.keys(installed);
+  for (const target of targets) {
+    lines.push(...formatTargetInstallLine(target, installed[target] || {}));
+  }
+  lines.push("", "Next:");
+  lines.push("  Run: agentstudio-mcp doctor");
+  lines.push("  Restart any selected agent app that was already running.");
+  if (!result.ok) {
+    lines.push("  Re-run failed clients after fixing the reason above.");
+  }
+  return lines.join("\n");
+}
+
+function formatRegisterResult(result) {
+  return [
+    "AgentStudio MCP hub registered.",
+    "",
+    `MCP URL: ${result.mcpUrl || (result.baseUrl ? `${result.baseUrl}/mcp` : "unknown")}`,
+    `Verified handshake: ${result.verifiedHandshake || "yes"}`,
+    `Local registry: ${result.discoveryManifest || ""}`,
+    "",
+    "Next:",
+    "  agentstudio-mcp install"
+  ].join("\n");
+}
+
+function formatUninstallResult(result) {
+  const lines = [
+    result.ok ? "AgentStudio MCP uninstall completed." : "AgentStudio MCP uninstall completed with errors.",
+    ""
+  ];
+  for (const target of result.targets || []) {
+    const item = result.uninstalled?.[target] || {};
+    lines.push(`  [${item.removedMcp === false ? "WARN" : "OK"}] ${targetLabel(target)} (${target})`);
+  }
+  if (result.discoveryManifest) {
+    lines.push("", `Local registry: ${result.discoveryManifest}`);
+  }
+  return lines.join("\n");
+}
+
+function formatDoctorResult(result) {
+  const checks = result.checks || {};
+  const lines = [
+    result.ok ? "AgentStudio MCP doctor passed." : "AgentStudio MCP doctor found issues.",
+    "",
+    `  [${checks.signedDiscovery?.ok ? "OK" : "FAIL"}] Signed discovery${checks.signedDiscovery?.baseUrl ? `: ${checks.signedDiscovery.baseUrl}` : ""}`,
+    `  [${checks.discovery?.ok ? "OK" : "FAIL"}] Discovery${checks.discovery?.httpUrl ? `: ${checks.discovery.httpUrl}` : ""}`,
+    `  [${checks.initialize?.ok ? "OK" : "FAIL"}] MCP initialize${checks.initialize?.serverVersion ? `: ${checks.initialize.serverVersion}` : ""}`
+  ];
+  if (checks.toolsList?.skipped) {
+    lines.push("  [SKIP] Authenticated tools/list: token not provided");
+  } else {
+    lines.push(`  [${checks.toolsList?.ok ? "OK" : "FAIL"}] Authenticated tools/list`);
+  }
+  if (checks.systemHealth?.skipped) {
+    lines.push("  [SKIP] Authenticated system.health: token not provided");
+  } else {
+    lines.push(`  [${checks.systemHealth?.ok ? "OK" : "FAIL"}] Authenticated system.health`);
+  }
+  lines.push(`  [${checks.deviceManifest?.ok ? "OK" : "WARN"}] Local registry${checks.deviceManifest?.path ? `: ${checks.deviceManifest.path}` : ""}`);
+  return lines.join("\n");
+}
+
+function formatServerConfigResult(result) {
+  if (result.reset) {
+    return [
+      "AgentStudio MCP server config reset.",
+      "",
+      `Local registry: ${result.path || ""}`,
+      "Next install will scan for a signed AgentStudio server again."
+    ].join("\n");
+  }
+  if (result.profiles) {
+    const names = Object.keys(result.profiles);
+    return [
+      "AgentStudio MCP server config.",
+      "",
+      `Active profile: ${result.activeName || "(none)"}`,
+      `Profiles: ${names.length ? names.join(", ") : "(none)"}`,
+      `Local registry: ${result.path || ""}`
+    ].join("\n");
+  }
+  return [
+    "AgentStudio MCP server config updated.",
+    "",
+    `Active profile: ${result.activeName || result.profile?.name || "default"}`,
+    `MCP URL: ${result.profile?.mcpUrl || (result.profile?.baseUrl ? `${result.profile.baseUrl}/mcp` : "")}`,
+    `Local registry: ${result.path || ""}`
+  ].join("\n");
+}
+
+function formatHumanResult(command, result) {
+  if (command === "install") {
+    return formatInstallResult(result);
+  }
+  if (command === "register") {
+    return formatRegisterResult(result);
+  }
+  if (command === "uninstall") {
+    return formatUninstallResult(result);
+  }
+  if (command === "doctor") {
+    return formatDoctorResult(result);
+  }
+  if (command === "server-config") {
+    return formatServerConfigResult(result);
+  }
+  return JSON.stringify(result, null, 2);
+}
+
+function emitResult(result, options, command = "") {
   if (options.json) {
     console.log(JSON.stringify(result));
-    return;
+  } else {
+    console.log(formatHumanResult(command, result));
   }
-  console.log(JSON.stringify(result, null, 2));
+  if (result?.ok === false) {
+    process.exitCode = 1;
+  }
 }
 
 async function main() {
@@ -2486,7 +2682,7 @@ async function main() {
       packageVersion: packageJson.version,
       stableToolName: MCP_STABLE_TOOL_NAME,
       interfaceVersion: MCP_INTERFACE_VERSION
-    }, options);
+    }, options, "version");
     return;
   }
   if (options.help || command === "help" || !command) {
@@ -2494,11 +2690,11 @@ async function main() {
     return;
   }
   if (command === "install") {
-    emitResult(await installCommand(options), options);
+    emitResult(await installCommand(options), options, command);
     return;
   }
   if (command === "register") {
-    emitResult(await registerCommand(options), options);
+    emitResult(await registerCommand(options), options, command);
     return;
   }
   if (command === "scan") {
@@ -2520,31 +2716,28 @@ async function main() {
             attempts: discovered.attempts,
             reason: discovered.reason
           }
-    }, options);
+    }, options, command);
     return;
   }
   if (command === "discover-local") {
     const result = await discoverLocalCommand(options);
-    emitResult(result, options);
-    if (!result.ok) {
-      process.exitCode = 1;
-    }
+    emitResult(result, options, command);
     return;
   }
   if (command === "uninstall") {
-    emitResult(await uninstallCommand(options), options);
+    emitResult(await uninstallCommand(options), options, command);
     return;
   }
   if (command === "doctor") {
-    emitResult(await doctorCommand(options), options);
+    emitResult(await doctorCommand(options), options, command);
     return;
   }
   if (command === "discover") {
-    emitResult(await discoverCommand(options), options);
+    emitResult(await discoverCommand(options), options, command);
     return;
   }
   if (command === "server-config") {
-    emitResult(await serverConfigCommand(options), options);
+    emitResult(await serverConfigCommand(options), options, command);
     return;
   }
   throw new Error(`Unknown command: ${command}`);

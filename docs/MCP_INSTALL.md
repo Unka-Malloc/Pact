@@ -32,6 +32,11 @@ In the TUI:
 - Press Enter to install the selected clients.
 - Press `q` to cancel.
 
+After installation, the connector prints a concise install report with the
+verified MCP URL, selected clients, per-client success or failure, token source,
+and verification status. It does not dump client configuration files. Use
+`--json` only when a script needs machine-readable details.
+
 Supported targets are `codex`, `gemini-cli`, `kilo-code`, `copilot`,
 `openclaw`, `hermes`, and `antigravity`. OpenClaw-compatible OrbStack agents such
 as IronClaw or ZeroClaw are discovered through the same Claw-compatible scan.

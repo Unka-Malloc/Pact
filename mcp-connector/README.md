@@ -40,6 +40,8 @@ agentstudio-mcp install
 ```
 
 The interactive installer scans local clients and lets you choose one or more targets with the arrow keys and Space.
+The default output is a human install report with per-client success or failure,
+not a raw configuration dump. Use `--json` for scripts.
 
 For scripts:
 
