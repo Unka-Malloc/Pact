@@ -41,7 +41,7 @@ try {
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "agentstudio-mcp-connector");
-  assert.equal(result.packageVersion, "0.2.6");
+  assert.equal(result.packageVersion, "0.2.7");
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   const manifestText = JSON.stringify(manifest);
@@ -122,7 +122,7 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.2.6");
+  assert.equal(versionPayload.packageVersion, "0.2.7");
   assert.equal(versionPayload.stableToolName, "agentstudio.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "help"]);
   assert.match(help.stdout, /agentstudio-mcp register/);
@@ -132,6 +132,9 @@ try {
   assert.match(help.stdout, /agentstudio-mcp discover-local/);
   assert.match(help.stdout, /agentstudio-mcp server-config --set/);
   assert.match(help.stdout, /--no-auto-token/);
+  assert.match(help.stdout, /--docker-bin/);
+  assert.match(help.stdout, /--podman-bin/);
+  assert.match(help.stdout, /--wsl-bin/);
   assert.doesNotMatch(help.stdout, /\/home\/kate/);
   assert.doesNotMatch(help.stdout, /\/home\/serena/);
   const scan = await run("node", [
@@ -153,6 +156,47 @@ try {
   assert.equal(scanPayload.candidates.some((candidate) => candidate.target === "codex"), true);
   assert.equal(scanPayload.serverDiscovery.ok, false);
 
+  const layeredHome = path.join(tempDir, "layered-home");
+  const fakeNvmBin = path.join(layeredHome, ".nvm", "versions", "node", "v99.0.0", "bin");
+  await fs.mkdir(fakeNvmBin, { recursive: true });
+  const fakeGemini = path.join(fakeNvmBin, "gemini");
+  await fs.writeFile(fakeGemini, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+    "  printf 'Usage: gemini mcp add list remove\\n'",
+    "  exit 0",
+    "fi",
+    "exit 1",
+    ""
+  ].join("\n"), { mode: 0o755 });
+  const layeredScan = await run(process.execPath, [
+    path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"),
+    "scan",
+    "--url",
+    "http://127.0.0.1:9",
+    "--orb-bin",
+    "/nonexistent/orb",
+    "--docker-bin",
+    "/nonexistent/docker",
+    "--podman-bin",
+    "/nonexistent/podman",
+    "--wsl-bin",
+    "/nonexistent/wsl",
+    "--json"
+  ], {
+    env: {
+      HOME: layeredHome,
+      NVM_DIR: path.join(layeredHome, ".nvm"),
+      PATH: "/usr/bin:/bin"
+    }
+  });
+  const layeredScanPayload = JSON.parse(layeredScan.stdout);
+  assert.ok(["darwin", "linux", "win32"].includes(layeredScanPayload.hostOs));
+  const layeredGemini = layeredScanPayload.candidates.find((candidate) =>
+    candidate.target === "gemini-cli" && candidate.optionOverrides?.["execution-location"] === "local"
+  );
+  assert.equal(layeredGemini?.optionOverrides?.["gemini-bin"], fakeGemini);
+
   const fakeOrb = path.join(tempDir, "fake-orb");
   await fs.writeFile(fakeOrb, [
     "#!/bin/sh",
@@ -166,19 +210,19 @@ try {
     "  user=\"$4\"",
     "  shift 4",
     "  if [ \"$1\" = \"bash\" ] && [ \"$2\" = \"-lc\" ]; then",
-    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'openclaw'\"; then",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"command_name='openclaw'\"; then",
     "      printf '/usr/bin/openclaw\\n'",
     "      exit 0",
     "    fi",
-    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'ironclaw'\"; then",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"command_name='ironclaw'\"; then",
     "      printf '/usr/local/bin/ironclaw\\n'",
     "      exit 0",
     "    fi",
-    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'gemini'\"; then",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"command_name='gemini'\"; then",
     "      printf '/usr/bin/gemini\\n'",
     "      exit 0",
     "    fi",
-    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'copilot'\"; then",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"command_name='copilot'\"; then",
     "      printf '/usr/bin/copilot\\n'",
     "      exit 0",
     "    fi",
@@ -211,6 +255,12 @@ try {
     "http://127.0.0.1:9",
     "--orb-bin",
     fakeOrb,
+    "--docker-bin",
+    "/nonexistent/docker",
+    "--podman-bin",
+    "/nonexistent/podman",
+    "--wsl-bin",
+    "/nonexistent/wsl",
     "--json"
   ], {
     env: {
@@ -242,13 +292,64 @@ try {
   assert.equal(vmCopilot?.optionOverrides?.["orb-vm"], "kate");
   assert.equal(vmCopilot?.optionOverrides?.["orb-user"], "kate");
 
+  const fakeDocker = path.join(tempDir, "fake-docker");
+  await fs.writeFile(fakeDocker, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"ps\" ]; then",
+    "  printf 'box123\\tagentbox\\n'",
+    "  exit 0",
+    "fi",
+    "if [ \"$1\" = \"exec\" ]; then",
+    "  if [ \"$2\" = \"box123\" ] && [ \"$3\" = \"sh\" ] && [ \"$4\" = \"-lc\" ]; then",
+    "    if printf '%s' \"$5\" | grep -q \"command_name='copilot'\"; then",
+    "      printf '/usr/local/bin/copilot\\n'",
+    "      exit 0",
+    "    fi",
+    "    exit 0",
+    "  fi",
+    "  if [ \"$2\" = \"box123\" ] && [ \"$3\" = \"/usr/local/bin/copilot\" ] && [ \"$4\" = \"mcp\" ]; then",
+    "    printf 'Usage: copilot mcp add list remove\\n'",
+    "    exit 0",
+    "  fi",
+    "fi",
+    "exit 1",
+    ""
+  ].join("\n"), { mode: 0o755 });
+  const dockerScan = await run(process.execPath, [
+    path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"),
+    "scan",
+    "--url",
+    "http://127.0.0.1:9",
+    "--orb-bin",
+    "/nonexistent/orb",
+    "--docker-bin",
+    fakeDocker,
+    "--podman-bin",
+    "/nonexistent/podman",
+    "--wsl-bin",
+    "/nonexistent/wsl",
+    "--json"
+  ], {
+    env: {
+      HOME: path.join(tempDir, "docker-scan-home")
+    }
+  });
+  const dockerScanPayload = JSON.parse(dockerScan.stdout);
+  const dockerCopilot = dockerScanPayload.candidates.find((candidate) =>
+    candidate.target === "copilot" && candidate.optionOverrides?.["execution-location"] === "docker"
+  );
+  assert.equal(dockerCopilot?.optionOverrides?.["copilot-bin"], "/usr/local/bin/copilot");
+  assert.equal(dockerCopilot?.optionOverrides?.["remote-id"], "box123");
+  assert.equal(dockerCopilot?.optionOverrides?.["remote-name"], "agentbox");
+  assert.equal(dockerCopilot?.optionOverrides?.["remote-bin"], fakeDocker);
+
   const portableExtractDir = path.join(tempDir, "portable");
   await fs.mkdir(portableExtractDir, { recursive: true });
   await run("tar", ["-xzf", result.portableTarballPath, "-C", portableExtractDir]);
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.2.6");
+  assert.equal(portablePayload.packageVersion, "0.2.7");
   const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), [
     "server-config",
     "--reset",
@@ -269,7 +370,7 @@ try {
   const portableZipVersion = await run(path.join(zipRoot, "agentstudio-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.2.6");
+  assert.equal(portableZipPayload.packageVersion, "0.2.7");
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
 
   console.log("mcp-release verification passed");

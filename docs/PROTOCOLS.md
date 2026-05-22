@@ -474,7 +474,7 @@ AgentStudio 必须写入设备级发现清单：
       "vmHttpUrl": "<signed-discovered-vm-url>/mcp",
       "connector": {
         "packageName": "agentstudio-mcp-connector",
-        "packageVersion": "0.2.6",
+        "packageVersion": "0.2.7",
         "discoverCommand": "npx agentstudio-mcp-connector@latest discover-local",
         "installCommand": "npx agentstudio-mcp-connector@latest install --target <client>"
       },
@@ -566,7 +566,9 @@ npx agentstudio-mcp-connector@latest register
 npx agentstudio-mcp-connector@latest install
 ```
 
-无 `--target` 且运行在 TTY 中时，`install` 必须启动多选交互式菜单，扫描 Codex、Gemini CLI、Kilo Code、Copilot、Antigravity、OpenClaw、Hermes Agent 和 OrbStack 中的 claw-compatible 衍生体，允许用户用上下键移动、Space 多选、`a` 切换所有已检测客户端。菜单只在用户确认选择后写入对应客户端配置。
+无 `--target` 且运行在 TTY 中时，`install` 必须启动多选交互式菜单，扫描 Codex、Gemini CLI、Kilo Code、Copilot、Antigravity、OpenClaw、Hermes Agent 和 claw-compatible 衍生体，允许用户用上下键移动、Space 多选、`a` 切换所有已检测客户端。菜单只在用户确认选择后写入对应客户端配置。
+
+客户端扫描必须是真正分层扫描：先检测宿主 OS（`darwin` / `linux` / `win32`），再按本系统特点依次执行 PATH scanner、package-manager scanners（brew、npm/pnpm/yarn/bun global、nvm/asdf/mise shims、pipx、cargo bin、winget/scoop/choco、snap/flatpak 等）、App/desktop scanners（macOS `.app`、Linux `.desktop`、Windows Start Menu / App Paths），最后扫描 Container/VM（OrbStack、Docker、Podman、WSL）并在目标环境内重复 Linux 分层扫描。所有 CLI 候选必须统一 normalize + realpath 去重，并实际执行 `mcp --help` capability probe；只有确实暴露 MCP 子命令的 CLI 才能显示为可安装 MCP 客户端。同一个 VM / container 内同类客户端只显示一个归一化候选，本机不同 realpath 的 claw-compatible 客户端可以分别显示。
 
 GitHub Release 必须额外提供一条命令入口；它校验 SHA256、安装到 `~/.agentstudio/mcp/connector`，并立即启动同一个多选 TUI。脚本默认优先下载 npm/source tarball，只有没有可用 Node.js 时才 fallback 到 portable zip：
 

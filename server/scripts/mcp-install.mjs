@@ -18,7 +18,7 @@ const MARKETPLACE_NAME = "agentstudio-local";
 const GEMINI_EXTENSION_NAME = "AgentStudio";
 const MCP_SERVER_NAME = "agentstudio";
 const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
-const MCP_CONNECTOR_VERSION = "0.2.6";
+const MCP_CONNECTOR_VERSION = "0.2.7";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",

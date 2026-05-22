@@ -15,6 +15,9 @@ const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
 const DEFAULT_ORB_BIN = "orb";
+const DEFAULT_DOCKER_BIN = "docker";
+const DEFAULT_PODMAN_BIN = "podman";
+const DEFAULT_WSL_BIN = "wsl.exe";
 const CLAW_COMPATIBLE_COMMANDS = ["openclaw", "ironclaw", "zeroclaw"];
 const AGENT_CLI_TARGETS = [
   {
@@ -93,6 +96,8 @@ const TARGET_INSTALL_MODES = {
   hermes: "hermes-release-mcp-cli",
   antigravity: "antigravity-release-mcp-config"
 };
+const SCAN_COMMAND_TIMEOUT_MS = 3000;
+const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
 
 function usage() {
   return [
@@ -127,6 +132,9 @@ function usage() {
     "  --kilo-bin COMMAND            Kilo Code CLI command or explicit path. Default: kilo.",
     "  --copilot-bin COMMAND         Copilot CLI command or explicit path. Default: copilot.",
     "  --orb-bin COMMAND             OrbStack CLI command or explicit path. Default: orb.",
+    "  --docker-bin COMMAND          Docker CLI command or explicit path. Default: docker.",
+    "  --podman-bin COMMAND          Podman CLI command or explicit path. Default: podman.",
+    "  --wsl-bin COMMAND             WSL CLI command or explicit path. Default: wsl.exe.",
     "  --vm NAME                     Shared OrbStack VM name for OpenClaw/Hermes.",
     "  --vm-user USER                Shared OrbStack VM user for OpenClaw/Hermes.",
     "  --openclaw-vm NAME            Explicit OrbStack VM for non-interactive OpenClaw install.",
@@ -229,6 +237,17 @@ function vmBaseUrl(baseUrl) {
   return `${parsed.protocol}//host.orb.internal:${port}`;
 }
 
+function baseUrlWithHost(baseUrl, host) {
+  const parsed = new URL(baseUrl);
+  parsed.hostname = host;
+  return normalizeBaseUrl(parsed.toString());
+}
+
+function isLoopbackHost(hostname) {
+  const value = String(hostname || "").toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "::1" || value === "[::1]";
+}
+
 function uniqueValues(values) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -277,6 +296,8 @@ async function run(command, args = [], options = {}) {
         ...process.env,
         ...(options.env || {})
       },
+      timeout: options.timeoutMs || 0,
+      killSignal: options.killSignal || "SIGKILL",
       maxBuffer: 10 * 1024 * 1024
     });
     return {
@@ -956,6 +977,43 @@ async function installGeminiOrb({ baseUrl, token, orbBin, vmName, vmUser, gemini
   };
 }
 
+async function installGeminiRemote({ baseUrl, token, context, geminiBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !geminiBin) {
+    throw new Error("Gemini remote install requires a discovered remote context and gemini CLI path.");
+  }
+  const url = `${await remoteClientBaseUrl(context, baseUrl)}/mcp`;
+  await runRemoteLinuxCommand(context, [geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  await runRemoteLinuxCommand(context, [
+    geminiBin,
+    "mcp",
+    "add",
+    "--scope",
+    "user",
+    "--transport",
+    "http",
+    "--header",
+    `X-AgentStudio-Api-Key: ${token}`,
+    "--timeout",
+    String(HTTP_TIMEOUT_MS),
+    "--trust",
+    "--description",
+    "AgentStudio HTTP MCP service.",
+    MCP_SERVER_NAME,
+    url
+  ]);
+  const list = await runRemoteLinuxCommand(context, [geminiBin, "mcp", "list"]);
+  const listOutput = `${list.stdout}\n${list.stderr}`;
+  if (!listOutput.includes(MCP_SERVER_NAME)) {
+    throw new Error(`Gemini CLI MCP list inside ${remoteContextLabel(context)} does not include agentstudio after install.`);
+  }
+  return {
+    installMode: `gemini-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    url,
+    mcpListHasAgentStudio: true
+  };
+}
+
 async function installKilo({ baseUrl, token, kiloBin, kiloConfigPath }) {
   const config = await readJson(kiloConfigPath, {});
   const backupPath = await backupIfExists(kiloConfigPath);
@@ -1034,6 +1092,53 @@ async function installKiloOrb({ baseUrl, token, orbBin, vmName, vmUser, kiloBin 
   };
 }
 
+async function installKiloRemote({ baseUrl, token, context, kiloBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !kiloBin) {
+    throw new Error("Kilo remote install requires a discovered remote context and kilo CLI path.");
+  }
+  const url = `${await remoteClientBaseUrl(context, baseUrl)}/mcp`;
+  const script = [
+    "set -e",
+    "IFS= read -r token",
+    "node - \"$AGENTSTUDIO_URL\" \"$token\" <<'NODE'",
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "const path = require('path');",
+    "const url = process.argv[2];",
+    "const token = process.argv[3];",
+    "const filePath = path.join(os.homedir(), '.config', 'kilo', 'kilo.json');",
+    "fs.mkdirSync(path.dirname(filePath), { recursive: true });",
+    "let config = {};",
+    "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}",
+    "config.mcp = {",
+    "  ...(config.mcp || {}),",
+    "  agentstudio: {",
+    "    type: 'remote',",
+    "    url,",
+    "    enabled: true,",
+    "    headers: { 'X-AgentStudio-Api-Key': token },",
+    `    timeout: ${HTTP_TIMEOUT_MS}`,
+    "  }",
+    "};",
+    "fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\\n`);",
+    "NODE",
+    "\"$KILO_BIN\" mcp list >/dev/null 2>&1 || true"
+  ].join("\n");
+  const result = await remoteLinuxShellWithInput(context, script, `${token}\n`, {
+    KILO_BIN: kiloBin,
+    AGENTSTUDIO_URL: url
+  });
+  if (!result.ok) {
+    throw new Error(`Kilo remote install failed in ${remoteContextLabel(context)}: ${result.stderr || result.stdout}`);
+  }
+  return {
+    installMode: `kilo-${context.kind}-global-kilo-json`,
+    remote: remoteContextLabel(context),
+    url,
+    configPath: "~/.config/kilo/kilo.json"
+  };
+}
+
 async function installCopilot({ baseUrl, token, copilotBin }) {
   await run(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
   await run(copilotBin, [
@@ -1083,6 +1188,34 @@ async function installCopilotOrb({ baseUrl, token, orbBin, vmName, vmUser, copil
     installMode: "copilot-orbstack-mcp-cli",
     vm: vmName,
     vmUser,
+    url,
+    mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
+  };
+}
+
+async function installCopilotRemote({ baseUrl, token, context, copilotBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !copilotBin) {
+    throw new Error("Copilot remote install requires a discovered remote context and copilot CLI path.");
+  }
+  const url = `${await remoteClientBaseUrl(context, baseUrl)}/mcp`;
+  await runRemoteLinuxCommand(context, [copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runRemoteLinuxCommand(context, [
+    copilotBin,
+    "mcp",
+    "add",
+    "--transport",
+    "http",
+    "--header",
+    `X-AgentStudio-Api-Key: ${token}`,
+    "--timeout",
+    String(HTTP_TIMEOUT_MS),
+    MCP_SERVER_NAME,
+    url
+  ]);
+  const get = await runRemoteLinuxCommand(context, [copilotBin, "mcp", "get", MCP_SERVER_NAME]);
+  return {
+    installMode: `copilot-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
     url,
     mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
   };
@@ -1139,6 +1272,30 @@ async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, opencla
     installMode: isOrb ? "openclaw-orbstack-mcp-cli" : "openclaw-release-mcp-cli",
     vm: vmName,
     vmUser,
+    url,
+    mcpShowHasAgentStudio: show.stdout.includes(MCP_SERVER_NAME) || show.stdout.includes(url)
+  };
+}
+
+async function installOpenClawRemote({ baseUrl, token, context, openclawBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !openclawBin) {
+    throw new Error("OpenClaw remote install requires a discovered remote context and OpenClaw-like CLI path.");
+  }
+  const url = `${await remoteClientBaseUrl(context, baseUrl)}/mcp`;
+  const config = {
+    type: "http",
+    url,
+    headers: {
+      "X-AgentStudio-Api-Key": token
+    },
+    timeout: HTTP_TIMEOUT_MS,
+    enabled: true
+  };
+  await runRemoteLinuxCommand(context, [openclawBin, "mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
+  const show = await runRemoteLinuxCommand(context, [openclawBin, "mcp", "show", MCP_SERVER_NAME]);
+  return {
+    installMode: `openclaw-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
     url,
     mcpShowHasAgentStudio: show.stdout.includes(MCP_SERVER_NAME) || show.stdout.includes(url)
   };
@@ -1679,7 +1836,50 @@ async function pathExists(filePath) {
   }
 }
 
-async function detectLocalCommandPaths(command) {
+function detectHostOs() {
+  if (process.platform === "darwin" || process.platform === "linux" || process.platform === "win32") {
+    return process.platform;
+  }
+  return process.platform;
+}
+
+function executableNamesForPlatform(command, platform = detectHostOs()) {
+  const value = String(command || "").trim();
+  if (!value) {
+    return [];
+  }
+  if (platform !== "win32" || path.extname(value)) {
+    return [value];
+  }
+  return [value, `${value}.exe`, `${value}.cmd`, `${value}.bat`, `${value}.ps1`];
+}
+
+async function fileExists(filePath) {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile() || stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+async function collectExecutablePathsFromDirs(dirs, command, platform = detectHostOs()) {
+  const paths = [];
+  for (const dir of uniqueValues(dirs.map((item) => expandHomePath(item)))) {
+    if (!dir || !await directoryExists(dir)) {
+      continue;
+    }
+    for (const executableName of executableNamesForPlatform(command, platform)) {
+      const candidate = path.join(dir, executableName);
+      if (await fileExists(candidate)) {
+        paths.push(candidate);
+      }
+    }
+  }
+  return paths;
+}
+
+async function detectPathCommandPaths(command, platform = detectHostOs()) {
   const value = String(command || "").trim();
   if (!value) {
     return [];
@@ -1687,14 +1887,269 @@ async function detectLocalCommandPaths(command) {
   if (path.isAbsolute(value) || value.includes(path.sep)) {
     return await pathExists(value) ? [value] : [];
   }
+  if (platform === "win32") {
+    const names = executableNamesForPlatform(value, platform);
+    const paths = [];
+    for (const executableName of names) {
+      const result = await run("where.exe", [executableName], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+      if (result.ok) {
+        paths.push(...result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+      }
+    }
+    return uniqueResolvedLocalPaths(paths);
+  }
   const result = await run("bash", [
-    "-lc",
+    "-c",
     `type -a -p ${shellQuote(value)} 2>/dev/null | awk '!seen[$0]++'`
-  ], { allowFailure: true });
+  ], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
   if (!result.ok) {
     return [];
   }
   return uniqueResolvedLocalPaths(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+}
+
+async function packageManagerExecutableDirs(platform = detectHostOs()) {
+  const dirs = [];
+  const home = os.homedir();
+
+  if (platform === "darwin" || platform === "linux") {
+    const brewPrefix = await run("brew", ["--prefix"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    if (brewPrefix.ok && brewPrefix.stdout.trim()) {
+      dirs.push(path.join(brewPrefix.stdout.trim(), "bin"));
+      dirs.push(path.join(brewPrefix.stdout.trim(), "sbin"));
+    }
+
+    const npmPrefix = await run("npm", ["prefix", "-g"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    if (npmPrefix.ok && npmPrefix.stdout.trim()) {
+      dirs.push(path.join(npmPrefix.stdout.trim(), "bin"));
+    }
+    for (const command of [
+      ["pnpm", ["bin", "-g"]],
+      ["yarn", ["global", "bin"]],
+      ["bun", ["pm", "bin", "-g"]]
+    ]) {
+      const result = await run(command[0], command[1], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+      if (result.ok && result.stdout.trim()) {
+        dirs.push(result.stdout.trim().split(/\r?\n/).at(-1).trim());
+      }
+    }
+
+    const nvmDir = process.env.NVM_DIR || path.join(home, ".nvm");
+    if (await directoryExists(path.join(nvmDir, "versions", "node"))) {
+      const versions = await fs.readdir(path.join(nvmDir, "versions", "node")).catch(() => []);
+      dirs.push(...versions.map((version) => path.join(nvmDir, "versions", "node", version, "bin")));
+    }
+
+    dirs.push(
+      path.join(home, ".asdf", "shims"),
+      path.join(home, ".local", "share", "mise", "shims"),
+      path.join(home, ".mise", "shims"),
+      path.join(process.env.CARGO_HOME || path.join(home, ".cargo"), "bin")
+    );
+
+    const pipxEnv = await run("pipx", ["environment", "--value", "PIPX_BIN_DIR"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    if (pipxEnv.ok && pipxEnv.stdout.trim()) {
+      dirs.push(pipxEnv.stdout.trim());
+    }
+    dirs.push(path.join(home, ".local", "bin"));
+
+    if (platform === "linux") {
+      dirs.push("/snap/bin");
+      dirs.push("/var/lib/flatpak/exports/bin");
+      dirs.push(path.join(home, ".local", "share", "flatpak", "exports", "bin"));
+    }
+  }
+
+  if (platform === "win32") {
+    const appData = process.env.APPDATA || "";
+    const localAppData = process.env.LOCALAPPDATA || "";
+    const programData = process.env.ProgramData || "C:\\ProgramData";
+    const userProfile = process.env.USERPROFILE || home;
+    const npmPrefix = await run("npm.cmd", ["prefix", "-g"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    if (npmPrefix.ok && npmPrefix.stdout.trim()) {
+      dirs.push(npmPrefix.stdout.trim());
+    }
+    for (const command of [
+      ["pnpm.cmd", ["bin", "-g"]],
+      ["yarn.cmd", ["global", "bin"]],
+      ["bun.exe", ["pm", "bin", "-g"]]
+    ]) {
+      const result = await run(command[0], command[1], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+      if (result.ok && result.stdout.trim()) {
+        dirs.push(result.stdout.trim().split(/\r?\n/).at(-1).trim());
+      }
+    }
+    dirs.push(
+      path.join(userProfile, "scoop", "shims"),
+      path.join(programData, "scoop", "shims"),
+      path.join(process.env.SCOOP || "", "shims"),
+      path.join(process.env.ChocolateyInstall || path.join(programData, "chocolatey"), "bin"),
+      path.join(localAppData, "Microsoft", "WinGet", "Links"),
+      path.join(appData, "npm"),
+      path.join(userProfile, ".cargo", "bin"),
+      path.join(userProfile, ".local", "bin")
+    );
+  }
+
+  return uniqueValues(dirs.filter(Boolean));
+}
+
+async function packageManagerExecutablePaths(command, platform = detectHostOs()) {
+  const paths = await collectExecutablePathsFromDirs(await packageManagerExecutableDirs(platform), command, platform);
+  if (platform === "darwin" || platform === "linux") {
+    const brewPackagePrefix = await run("brew", ["--prefix", command], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    if (brewPackagePrefix.ok && brewPackagePrefix.stdout.trim()) {
+      paths.push(...await collectExecutablePathsFromDirs([
+        path.join(brewPackagePrefix.stdout.trim(), "bin"),
+        path.join(brewPackagePrefix.stdout.trim(), "sbin")
+      ], command, platform));
+    }
+  }
+  if (platform === "win32") {
+    for (const scoopBin of ["scoop.cmd", "scoop"]) {
+      const scoopWhich = await run(scoopBin, ["which", command], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+      if (scoopWhich.ok && scoopWhich.stdout.trim()) {
+        paths.push(...scoopWhich.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+      }
+    }
+  }
+  return uniqueResolvedLocalPaths(paths);
+}
+
+async function macAppExecutablePaths(command) {
+  if (process.platform !== "darwin") {
+    return [];
+  }
+  const roots = ["/Applications", path.join(os.homedir(), "Applications")];
+  const apps = [];
+  for (const root of roots) {
+    if (!await directoryExists(root)) {
+      continue;
+    }
+    const found = await run("find", [root, "-maxdepth", "3", "-name", "*.app", "-type", "d"], { allowFailure: true, timeoutMs: 5000 });
+    if (found.ok) {
+      apps.push(...found.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+    }
+  }
+  const paths = [];
+  const commandLower = String(command || "").toLowerCase();
+  for (const appPath of apps) {
+    const infoPath = path.join(appPath, "Contents", "Info.plist");
+    const executableName = await run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleExecutable", infoPath], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    if (!executableName.ok || !executableName.stdout.trim()) {
+      continue;
+    }
+    const bundleName = path.basename(appPath, ".app").toLowerCase();
+    const executablePath = path.join(appPath, "Contents", "MacOS", executableName.stdout.trim());
+    const executableLower = path.basename(executablePath).toLowerCase();
+    if ((bundleName.includes(commandLower) || executableLower.includes(commandLower)) && await fileExists(executablePath)) {
+      paths.push(executablePath);
+    }
+  }
+  return paths;
+}
+
+function parseDesktopExec(value) {
+  const text = String(value || "").replace(/%[fFuUdDnNickvm]/g, "").trim();
+  const match = text.match(/^"([^"]+)"/) || text.match(/^'([^']+)'/) || text.match(/^(\S+)/);
+  return match?.[1] || "";
+}
+
+async function linuxDesktopExecutablePaths(command) {
+  if (process.platform !== "linux") {
+    return [];
+  }
+  const roots = [
+    "/usr/share/applications",
+    "/usr/local/share/applications",
+    path.join(os.homedir(), ".local", "share", "applications"),
+    "/var/lib/flatpak/exports/share/applications",
+    path.join(os.homedir(), ".local", "share", "flatpak", "exports", "share", "applications")
+  ];
+  const paths = [];
+  for (const root of roots) {
+    if (!await directoryExists(root)) {
+      continue;
+    }
+    const found = await run("find", [root, "-maxdepth", "2", "-name", "*.desktop", "-type", "f"], { allowFailure: true, timeoutMs: 5000 });
+    for (const filePath of found.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
+      const content = await fs.readFile(filePath, "utf8").catch(() => "");
+      const execLine = content.split(/\r?\n/).find((line) => line.startsWith("Exec="));
+      const executable = parseDesktopExec(execLine?.slice("Exec=".length));
+      if (!executable) {
+        continue;
+      }
+      const basename = path.basename(executable).toLowerCase();
+      if (!basename.includes(String(command).toLowerCase())) {
+        continue;
+      }
+      if (path.isAbsolute(executable)) {
+        paths.push(executable);
+      } else {
+        paths.push(...await detectPathCommandPaths(executable, "linux"));
+      }
+    }
+  }
+  return paths;
+}
+
+async function windowsAppExecutablePaths(command) {
+  if (process.platform !== "win32") {
+    return [];
+  }
+  const script = [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    `$needle = ${JSON.stringify(String(command || "").toLowerCase())}`,
+    "$paths = @()",
+    "$appPathRoots = @('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths')",
+    "foreach ($root in $appPathRoots) {",
+    "  Get-ChildItem $root | Where-Object { $_.PSChildName.ToLower().Contains($needle) } | ForEach-Object {",
+    "    $value = (Get-Item $_.PSPath).GetValue('')",
+    "    if ($value) { $paths += $value }",
+    "  }",
+    "}",
+    "$shell = New-Object -ComObject WScript.Shell",
+    "$shortcutRoots = @([Environment]::GetFolderPath('StartMenu'), [Environment]::GetFolderPath('CommonStartMenu'))",
+    "foreach ($root in $shortcutRoots) {",
+    "  Get-ChildItem $root -Filter *.lnk -Recurse | Where-Object { $_.BaseName.ToLower().Contains($needle) } | ForEach-Object {",
+    "    $target = $shell.CreateShortcut($_.FullName).TargetPath",
+    "    if ($target) { $paths += $target }",
+    "  }",
+    "}",
+    "$paths | Select-Object -Unique"
+  ].join("\n");
+  const result = await run("powershell.exe", ["-NoProfile", "-Command", script], { allowFailure: true, timeoutMs: 5000 });
+  if (!result.ok) {
+    return [];
+  }
+  return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+async function appDesktopExecutablePaths(command, platform = detectHostOs()) {
+  if (platform === "darwin") {
+    return macAppExecutablePaths(command);
+  }
+  if (platform === "linux") {
+    return linuxDesktopExecutablePaths(command);
+  }
+  if (platform === "win32") {
+    return windowsAppExecutablePaths(command);
+  }
+  return [];
+}
+
+async function detectLocalCommandPaths(command) {
+  const value = String(command || "").trim();
+  if (!value) {
+    return [];
+  }
+  const platform = detectHostOs();
+  const paths = [
+    ...await detectPathCommandPaths(value, platform),
+    ...await packageManagerExecutablePaths(value, platform),
+    ...await appDesktopExecutablePaths(value, platform)
+  ];
+  return uniqueResolvedLocalPaths(paths);
 }
 
 async function uniqueResolvedLocalPaths(paths) {
@@ -1721,7 +2176,7 @@ async function directoryExists(dirPath) {
 }
 
 async function detectOrbVms(orbBin) {
-  const result = await run(orbBin, ["list"], { allowFailure: true });
+  const result = await run(orbBin, ["list"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
   if (!result.ok) {
     return [];
   }
@@ -1739,6 +2194,52 @@ async function detectOrbVms(orbBin) {
   return uniqueValues(names);
 }
 
+function linuxExecutableScanScript(command) {
+  return [
+    "set +e",
+    `command_name=${shellQuote(command)}`,
+    "candidate_rows() {",
+    "  type -a -p \"$command_name\" 2>/dev/null | while IFS= read -r item; do printf '%s\\n' \"$item\"; done",
+    "  for manager in brew npm pnpm yarn bun; do",
+    "    if command -v \"$manager\" >/dev/null 2>&1; then",
+    "      case \"$manager\" in",
+    "        brew) dir=$($manager --prefix 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/bin/$command_name\" \"$dir/sbin/$command_name\"; package_dir=$($manager --prefix \"$command_name\" 2>/dev/null); [ -n \"$package_dir\" ] && printf '%s\\n' \"$package_dir/bin/$command_name\" \"$package_dir/sbin/$command_name\" ;;",
+    "        npm) dir=$($manager prefix -g 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/bin/$command_name\" ;;",
+    "        pnpm) dir=$($manager bin -g 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/$command_name\" ;;",
+    "        yarn) dir=$($manager global bin 2>/dev/null | tail -n 1); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/$command_name\" ;;",
+    "        bun) dir=$($manager pm bin -g 2>/dev/null | tail -n 1); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/$command_name\" ;;",
+    "      esac",
+    "    fi",
+    "  done",
+    "  nvm_dir=${NVM_DIR:-$HOME/.nvm}",
+    "  [ -d \"$nvm_dir/versions/node\" ] && find \"$nvm_dir/versions/node\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  printf '%s\\n' \"$HOME/.asdf/shims/$command_name\" \"$HOME/.local/share/mise/shims/$command_name\" \"$HOME/.mise/shims/$command_name\"",
+    "  printf '%s\\n' \"${CARGO_HOME:-$HOME/.cargo}/bin/$command_name\" \"$HOME/.local/bin/$command_name\" \"/snap/bin/$command_name\"",
+    "  printf '%s\\n' \"/var/lib/flatpak/exports/bin/$command_name\" \"$HOME/.local/share/flatpak/exports/bin/$command_name\"",
+    "  if command -v pipx >/dev/null 2>&1; then",
+    "    pipx_dir=$(pipx environment --value PIPX_BIN_DIR 2>/dev/null)",
+    "    [ -n \"$pipx_dir\" ] && printf '%s\\n' \"$pipx_dir/$command_name\"",
+    "  fi",
+    "  for desktop_root in /usr/share/applications /usr/local/share/applications \"$HOME/.local/share/applications\" /var/lib/flatpak/exports/share/applications \"$HOME/.local/share/flatpak/exports/share/applications\"; do",
+    "    [ -d \"$desktop_root\" ] || continue",
+    "    find \"$desktop_root\" -maxdepth 2 -name '*.desktop' -type f 2>/dev/null | while IFS= read -r desktop_file; do",
+    "      exec_line=$(grep -m 1 '^Exec=' \"$desktop_file\" 2>/dev/null | sed 's/^Exec=//' | sed 's/%[fFuUdDnNickvm]//g')",
+    "      [ -n \"$exec_line\" ] || continue",
+    "      executable=$(printf '%s\\n' \"$exec_line\" | awk '{print $1}' | sed 's/^\"//;s/\"$//')",
+    "      base=$(basename \"$executable\")",
+    "      case \"$base\" in *\"$command_name\"*) if printf '%s' \"$executable\" | grep -q '^/'; then printf '%s\\n' \"$executable\"; else command -v \"$executable\" 2>/dev/null; fi ;; esac",
+    "    done",
+    "  done",
+    "}",
+    "candidate_rows | while IFS= read -r candidate; do",
+    "  [ -n \"$candidate\" ] || continue",
+    "  [ -f \"$candidate\" ] || [ -L \"$candidate\" ] || continue",
+    "  resolved=$(readlink -f \"$candidate\" 2>/dev/null || printf '%s' \"$candidate\")",
+    "  printf '%s\\t%s\\n' \"$candidate\" \"$resolved\"",
+    "done | awk -F '\\t' '!seen[$2]++ { print $1 }'"
+  ].join("\n");
+}
+
 async function detectOrbCommand({ orbBin, vmName, vmUser, command }) {
   const paths = await detectOrbCommandPaths({ orbBin, vmName, vmUser, command });
   return {
@@ -1754,12 +2255,7 @@ async function detectOrbCommandPaths({ orbBin, vmName, vmUser, command }) {
   }
   const probe = path.isAbsolute(value) || value.includes("/")
     ? `command -v ${shellQuote(value)}`
-    : [
-        `type -a -p ${shellQuote(value)} 2>/dev/null | while IFS= read -r executable_path; do`,
-        "  resolved_path=$(readlink -f \"$executable_path\" 2>/dev/null || printf '%s' \"$executable_path\")",
-        "  printf '%s\\t%s\\n' \"$executable_path\" \"$resolved_path\"",
-        "done | awk -F '\\t' '!seen[$2]++ { print $1 }'"
-      ].join("\n");
+    : linuxExecutableScanScript(value);
   const result = await run(orbBin, [
     "-m",
     vmName,
@@ -1768,15 +2264,138 @@ async function detectOrbCommandPaths({ orbBin, vmName, vmUser, command }) {
     "bash",
     "-lc",
     probe
-  ], { allowFailure: true });
+  ], { allowFailure: true, timeoutMs: REMOTE_SCAN_COMMAND_TIMEOUT_MS });
   if (!result.ok) {
     return [];
   }
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
+async function detectDockerContainers(runtimeBin, kind) {
+  const result = await run(runtimeBin, ["ps", "--format", "{{.ID}}\t{{.Names}}"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (!result.ok) {
+    return [];
+  }
+  return result.stdout.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [id, name] = line.split(/\t/);
+      return { kind, id, name: name || id, bin: runtimeBin };
+    })
+    .filter((item) => item.id);
+}
+
+async function detectWslDistros(wslBin) {
+  if (detectHostOs() !== "win32") {
+    return [];
+  }
+  const result = await run(wslBin, ["-l", "-q"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (!result.ok) {
+    return [];
+  }
+  return result.stdout.split(/\r?\n/)
+    .map((line) => line.replace(/\0/g, "").trim())
+    .filter(Boolean)
+    .map((name) => ({ kind: "wsl", id: name, name, bin: wslBin }));
+}
+
+async function remoteLinuxShell(context, script, options = {}) {
+  if (context.kind === "docker" || context.kind === "podman") {
+    return run(context.bin, ["exec", context.id, "sh", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "wsl") {
+    return run(context.bin, ["-d", context.id, "--", "bash", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  return { ok: false, stdout: "", stderr: `Unsupported remote context: ${context.kind}` };
+}
+
+async function remoteLinuxShellWithInput(context, script, input = "", env = {}) {
+  const envArgs = Object.entries(env).map(([name, value]) => `${name}=${value}`);
+  if (context.kind === "docker" || context.kind === "podman") {
+    const runtimeEnvArgs = Object.entries(env).flatMap(([name, value]) => ["-e", `${name}=${value}`]);
+    return runWithInput(context.bin, ["exec", "-i", ...runtimeEnvArgs, context.id, "sh", "-lc", script], input, { allowFailure: true });
+  }
+  if (context.kind === "wsl") {
+    return runWithInput(context.bin, ["-d", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+  }
+  return { ok: false, stdout: "", stderr: `Unsupported remote context: ${context.kind}` };
+}
+
+async function runRemoteLinuxCommand(context, args = [], options = {}) {
+  if (context.kind === "docker" || context.kind === "podman") {
+    return run(context.bin, ["exec", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "wsl") {
+    return run(context.bin, ["-d", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  const message = `Unsupported remote context: ${context.kind}`;
+  if (options.allowFailure) {
+    return { ok: false, stdout: "", stderr: message };
+  }
+  throw new Error(message);
+}
+
+async function detectRemoteLinuxCommandPaths(context, command) {
+  const value = String(command || "").trim();
+  if (!value) {
+    return [];
+  }
+  const probe = path.isAbsolute(value) || value.includes("/")
+    ? `command -v ${shellQuote(value)}`
+    : linuxExecutableScanScript(value);
+  const result = await remoteLinuxShell(context, probe, { timeoutMs: REMOTE_SCAN_COMMAND_TIMEOUT_MS });
+  if (!result.ok) {
+    return [];
+  }
+  return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+async function remoteLinuxCommandSupportsMcp(context, command) {
+  const result = await runRemoteLinuxCommand(context, [command, "mcp", "--help"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  return mcpProbeSupported(result);
+}
+
+async function remoteClientBaseUrl(context, baseUrl) {
+  if (context.kind === "orb") {
+    return vmBaseUrl(baseUrl);
+  }
+  const parsed = new URL(baseUrl);
+  if (!isLoopbackHost(parsed.hostname)) {
+    return baseUrl;
+  }
+  if (context.kind === "podman") {
+    return baseUrlWithHost(baseUrl, "host.containers.internal");
+  }
+  if (context.kind === "docker") {
+    if (detectHostOs() === "linux") {
+      const gateway = await run(context.bin, [
+        "inspect",
+        "-f",
+        "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}",
+        context.id
+      ], { allowFailure: true });
+      const host = gateway.stdout.trim().split(/\s+/).find(Boolean);
+      if (host) {
+        return baseUrlWithHost(baseUrl, host);
+      }
+    }
+    return baseUrlWithHost(baseUrl, "host.docker.internal");
+  }
+  if (context.kind === "wsl") {
+    const nameserver = await remoteLinuxShell(context, "awk '/^nameserver / { print $2; exit }' /etc/resolv.conf 2>/dev/null", { timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    const host = nameserver.stdout.trim().split(/\s+/).find(Boolean);
+    return host ? baseUrlWithHost(baseUrl, host) : baseUrl;
+  }
+  return baseUrl;
+}
+
 function candidateLocation(candidate) {
   return String(candidate?.optionOverrides?.["execution-location"] || "local");
+}
+
+function isGenericRemoteLocation(location) {
+  return ["docker", "podman", "wsl"].includes(location);
 }
 
 function candidateIdentity(candidate) {
@@ -1788,6 +2407,10 @@ function candidateIdentity(candidate) {
       const vmUser = String(overrides["orb-user"] || overrides["openclaw-user"] || "").trim();
       return vmName && vmUser ? `openclaw:orb:${vmName}:${vmUser}` : "";
     }
+    if (isGenericRemoteLocation(location)) {
+      const remoteId = String(overrides["remote-id"] || "").trim();
+      return remoteId ? `openclaw:${location}:${remoteId}` : "";
+    }
     const openclawBin = String(overrides["openclaw-bin"] || "").trim();
     return openclawBin ? `openclaw:local:${openclawBin}` : "";
   }
@@ -1795,6 +2418,10 @@ function candidateIdentity(candidate) {
     const vmName = String(overrides["orb-vm"] || "").trim();
     const vmUser = String(overrides["orb-user"] || "").trim();
     return vmName && vmUser ? `${candidate.target}:orb:${vmName}:${vmUser}` : "";
+  }
+  if (isGenericRemoteLocation(location) && ["gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
+    const remoteId = String(overrides["remote-id"] || "").trim();
+    return remoteId ? `${candidate.target}:${location}:${remoteId}` : "";
   }
   if (location === "local" && ["codex", "gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
     const descriptor = AGENT_CLI_TARGETS.find((item) => item.target === candidate.target);
@@ -1843,10 +2470,33 @@ function mergeInstallCandidate(candidates, candidate) {
   }
 }
 
+function mcpProbeSupported(result) {
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`.toLowerCase();
+  if (!output.includes("mcp")) {
+    return false;
+  }
+  if (
+    output.includes("unknown command")
+    || output.includes("unknown subcommand")
+    || output.includes("unrecognized command")
+    || output.includes("no such command")
+    || output.includes("command not found")
+    || output.includes("not a recognized command")
+  ) {
+    return false;
+  }
+  return result.ok
+    || output.includes("usage")
+    || output.includes("commands")
+    || output.includes(" add")
+    || output.includes(" remove")
+    || output.includes(" list")
+    || output.includes("server");
+}
+
 async function commandSupportsMcp(command, argsPrefix = []) {
-  const result = await run(command, [...argsPrefix, "mcp", "--help"], { allowFailure: true });
-  const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
-  return output.includes("mcp");
+  const result = await run(command, [...argsPrefix, "mcp", "--help"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  return mcpProbeSupported(result);
 }
 
 async function orbCommandSupportsMcp({ orbBin, vmName, vmUser, command }) {
@@ -1858,9 +2508,8 @@ async function orbCommandSupportsMcp({ orbBin, vmName, vmUser, command }) {
     command,
     "mcp",
     "--help"
-  ], { allowFailure: true });
-  const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
-  return output.includes("mcp");
+  ], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  return mcpProbeSupported(result);
 }
 
 async function detectLocalClawCompatibleTargets() {
@@ -1893,6 +2542,9 @@ async function detectLocalAgentCliTargets() {
     for (const commandName of descriptor.commandNames) {
       const paths = await detectLocalCommandPaths(commandName);
       for (const detectedPath of paths) {
+        if (!await commandSupportsMcp(detectedPath)) {
+          continue;
+        }
         candidates.push({
           id: `${descriptor.target}:local:${detectedPath}`,
           target: descriptor.target,
@@ -1997,16 +2649,103 @@ async function detectOrbAgentCliTargets(settings, vmNames = null) {
   return candidates;
 }
 
+async function detectContainerVmContexts(settings) {
+  const contexts = [
+    ...await detectDockerContainers(settings.dockerBin, "docker"),
+    ...await detectDockerContainers(settings.podmanBin, "podman"),
+    ...await detectWslDistros(settings.wslBin)
+  ];
+  const seen = new Set();
+  return contexts.filter((context) => {
+    const key = `${context.kind}:${context.id}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function remoteContextLabel(context) {
+  return `${context.kind}:${context.name || context.id}`;
+}
+
+function remoteContextOptionOverrides(context, extra = {}) {
+  return {
+    "execution-location": context.kind,
+    "remote-kind": context.kind,
+    "remote-id": context.id,
+    "remote-name": context.name || context.id,
+    "remote-bin": context.bin,
+    ...extra
+  };
+}
+
+async function detectRemoteLinuxClawCompatibleTargets(contexts) {
+  const candidates = [];
+  for (const context of contexts) {
+    for (const commandName of CLAW_COMPATIBLE_COMMANDS) {
+      const paths = await detectRemoteLinuxCommandPaths(context, commandName);
+      for (const detectedPath of paths) {
+        if (!await remoteLinuxCommandSupportsMcp(context, detectedPath)) {
+          continue;
+        }
+        candidates.push({
+          id: `claw-compatible:${context.kind}:${context.id}:${detectedPath}`,
+          target: "openclaw",
+          label: `${targetLabel("openclaw")} (${remoteContextLabel(context)})`,
+          status: "detected",
+          detail: `claw-compatible MCP CLI at ${detectedPath}`,
+          optionOverrides: remoteContextOptionOverrides(context, {
+            "openclaw-bin": detectedPath
+          })
+        });
+      }
+    }
+  }
+  return candidates;
+}
+
+async function detectRemoteLinuxAgentCliTargets(contexts) {
+  const candidates = [];
+  for (const context of contexts) {
+    for (const descriptor of ORB_AGENT_CLI_TARGETS) {
+      for (const commandName of descriptor.commandNames) {
+        const paths = await detectRemoteLinuxCommandPaths(context, commandName);
+        for (const detectedPath of paths) {
+          if (!await remoteLinuxCommandSupportsMcp(context, detectedPath)) {
+            continue;
+          }
+          candidates.push({
+            id: `${descriptor.target}:${context.kind}:${context.id}:${detectedPath}`,
+            target: descriptor.target,
+            label: `${descriptor.label} (${remoteContextLabel(context)})`,
+            status: "detected",
+            detail: `${descriptor.label} CLI at ${detectedPath}`,
+            optionOverrides: remoteContextOptionOverrides(context, {
+              [descriptor.binOption]: detectedPath
+            })
+          });
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
 async function scanInstallTargets(options = {}) {
   const settings = installerOptions(options);
   const candidates = [];
   if (!options["no-scan"]) {
     const vmNames = await detectOrbVms(settings.orbBin);
+    const remoteContexts = await detectContainerVmContexts(settings);
     const discoveredCandidates = [
       ...await detectLocalAgentCliTargets(settings),
       ...await detectLocalClawCompatibleTargets(settings),
       ...await detectOrbClawCompatibleTargets(settings, vmNames),
-      ...await detectOrbAgentCliTargets(settings, vmNames)
+      ...await detectOrbAgentCliTargets(settings, vmNames),
+      ...await detectRemoteLinuxClawCompatibleTargets(remoteContexts),
+      ...await detectRemoteLinuxAgentCliTargets(remoteContexts)
     ];
     for (const candidate of discoveredCandidates) {
       mergeInstallCandidate(candidates, candidate);
@@ -2036,6 +2775,7 @@ async function scanInstallTargets(options = {}) {
     ok: true,
     packageName: packageJson.name,
     packageVersion: packageJson.version,
+    hostOs: settings.hostOs,
     baseUrl: settings.baseUrl,
     mcpUrl: settings.baseUrl ? `${settings.baseUrl}/mcp` : "",
     candidates
@@ -2056,6 +2796,7 @@ function installerOptions(options) {
     option(options, "hermes-user", "")
   );
   return {
+    hostOs: detectHostOs(),
     baseUrl: normalizeBaseUrl(option(options, "resolved-url", explicitBaseUrl(options))),
     tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV)),
     codexBin: String(option(options, "codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_CODEX_BIN)),
@@ -2063,7 +2804,14 @@ function installerOptions(options) {
     kiloBin: String(option(options, "kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN)),
     copilotBin: String(option(options, "copilot-bin", process.env.COPILOT_CLI_PATH || DEFAULT_COPILOT_BIN)),
     orbBin: String(option(options, "orb-bin", process.env.ORB_CLI_PATH || DEFAULT_ORB_BIN)),
+    dockerBin: String(option(options, "docker-bin", process.env.DOCKER_CLI_PATH || DEFAULT_DOCKER_BIN)),
+    podmanBin: String(option(options, "podman-bin", process.env.PODMAN_CLI_PATH || DEFAULT_PODMAN_BIN)),
+    wslBin: String(option(options, "wsl-bin", process.env.WSL_CLI_PATH || DEFAULT_WSL_BIN)),
     executionLocation: String(option(options, "execution-location", hasVmTarget ? "orb" : "local")),
+    remoteKind: String(option(options, "remote-kind", "")),
+    remoteId: String(option(options, "remote-id", "")),
+    remoteName: String(option(options, "remote-name", "")),
+    remoteBin: String(option(options, "remote-bin", "")),
     orbVm: String(option(options, "orb-vm", sharedVmName)),
     orbUser: String(option(options, "orb-user", sharedVmUser)),
     marketplaceRoot: path.resolve(String(option(options, "marketplace-root", path.join(os.homedir(), ".agentstudio", "codex-plugin-marketplace")))),
@@ -2368,12 +3116,31 @@ async function resolveHubForInstall(options) {
   };
 }
 
+function remoteContextFromSettings(settings) {
+  const kind = settings.remoteKind || settings.executionLocation;
+  if (!isGenericRemoteLocation(kind)) {
+    return null;
+  }
+  const bin = settings.remoteBin
+    || (kind === "docker" ? settings.dockerBin : kind === "podman" ? settings.podmanBin : settings.wslBin);
+  if (!settings.remoteId || !bin) {
+    throw new Error(`${kind} install requires a discovered remote context.`);
+  }
+  return {
+    kind,
+    id: settings.remoteId,
+    name: settings.remoteName || settings.remoteId,
+    bin
+  };
+}
+
 async function installTargets({ options, targets, token, tokenInfo = null, optionOverrides = {} }) {
   const mergedOptions = {
     ...options,
     ...optionOverrides
   };
   const settings = installerOptions(mergedOptions);
+  const remoteContext = remoteContextFromSettings(settings);
   const verify = !mergedOptions["no-verify"];
 
   await ensureService(settings.baseUrl);
@@ -2391,7 +3158,14 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
           marketplaceRoot: settings.marketplaceRoot
         });
       } else if (target === "gemini-cli") {
-        clientResult = settings.executionLocation === "orb"
+        clientResult = remoteContext
+          ? await installGeminiRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext,
+              geminiBin: settings.geminiBin
+            })
+          : settings.executionLocation === "orb"
           ? await installGeminiOrb({
               baseUrl: settings.baseUrl,
               token,
@@ -2407,7 +3181,14 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
               extensionRoot: settings.geminiExtensionRoot
             });
       } else if (target === "kilo-code") {
-        clientResult = settings.executionLocation === "orb"
+        clientResult = remoteContext
+          ? await installKiloRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext,
+              kiloBin: settings.kiloBin
+            })
+          : settings.executionLocation === "orb"
           ? await installKiloOrb({
               baseUrl: settings.baseUrl,
               token,
@@ -2423,7 +3204,14 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
               kiloConfigPath: settings.kiloConfigPath
             });
       } else if (target === "copilot") {
-        clientResult = settings.executionLocation === "orb"
+        clientResult = remoteContext
+          ? await installCopilotRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext,
+              copilotBin: settings.copilotBin
+            })
+          : settings.executionLocation === "orb"
           ? await installCopilotOrb({
               baseUrl: settings.baseUrl,
               token,
@@ -2438,14 +3226,21 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
               copilotBin: settings.copilotBin
             });
       } else if (target === "openclaw") {
-        clientResult = await installOpenClaw({
-          baseUrl: settings.baseUrl,
-          token,
-          orbBin: settings.orbBin,
-          vmName: settings.openclawVm || settings.orbVm,
-          vmUser: settings.openclawVmUser || settings.orbUser,
-          openclawBin: settings.openclawBin
-        });
+        clientResult = remoteContext
+          ? await installOpenClawRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext,
+              openclawBin: settings.openclawBin
+            })
+          : await installOpenClaw({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.openclawVm || settings.orbVm,
+              vmUser: settings.openclawVmUser || settings.orbUser,
+              openclawBin: settings.openclawBin
+            });
       } else if (target === "hermes") {
         clientResult = await installHermes({
           baseUrl: settings.baseUrl,
