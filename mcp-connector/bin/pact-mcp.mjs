@@ -717,13 +717,26 @@ async function optionsWithDiscoveredBaseUrl(options = {}) {
 }
 
 async function publishLaunchctlEnv(env) {
-  if (process.platform !== "darwin") {
-    return false;
+  if (process.platform === "darwin") {
+    for (const [name, value] of Object.entries(env)) {
+      await run("launchctl", ["setenv", name, value], { allowFailure: true });
+    }
+    return true;
   }
+  
+  if (process.platform === "win32") {
+    for (const [name, value] of Object.entries(env)) {
+      await run("setx", [name, value], { allowFailure: true });
+    }
+    return true;
+  }
+
+  console.log("\n[Notice] Please add the following to your ~/.bashrc or ~/.zshrc:");
   for (const [name, value] of Object.entries(env)) {
-    await run("launchctl", ["setenv", name, value], { allowFailure: true });
+    console.log(`export ${name}="${value}"`);
   }
-  return true;
+  console.log("");
+  return false;
 }
 
 async function resolveToken(options, { required = false } = {}) {

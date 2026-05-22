@@ -178,14 +178,30 @@ if (withUi && !fs.existsSync(defaultDistPath)) {
   throw new Error("build/dist 不存在。请先执行 npm run build:renderer，或不要传 --with-ui。");
 }
 
-const serverHandle = await startHttpServer({
-  userDataPath,
-  distPath,
-  runtimeOptions,
-  discoveryOptions,
-  host,
-  port
-});
+let serverHandle;
+let currentPort = port;
+const maxPort = port + 10;
+
+while (true) {
+  try {
+    serverHandle = await startHttpServer({
+      userDataPath,
+      distPath,
+      runtimeOptions,
+      discoveryOptions,
+      host,
+      port: currentPort
+    });
+    break;
+  } catch (err) {
+    if (err.code === 'EADDRINUSE' && currentPort < maxPort) {
+      console.warn(`Port ${currentPort} is in use, trying ${currentPort + 1}...`);
+      currentPort++;
+    } else {
+      throw err;
+    }
+  }
+}
 
 console.log(`Pact server is running at ${serverHandle.url}`);
 console.log(`Listening on ${serverHandle.host}:${serverHandle.port}`);

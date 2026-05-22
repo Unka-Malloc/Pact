@@ -520,7 +520,7 @@ function pactMetaResult({ operation, toolManagementPlatform }) {
   return null;
 }
 
-function sendMcpSseVersionEvent(response) {
+function sendMcpSseVersionEvent(request, response) {
   const payload = jsonRpcNotification("notifications/tools/list_changed", {
     ...mcpVersionInfo(),
     reason: "Pact MCP tool surface or schema version changed."
@@ -530,9 +530,21 @@ function sendMcpSseVersionEvent(response) {
     "Cache-Control": "no-store, no-transform",
     Connection: "keep-alive"
   });
+  
+  response.write(`event: endpoint\n`);
+  response.write(`data: /mcp\n\n`);
+  
   response.write(`event: message\n`);
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
-  response.end();
+
+  const heartbeat = setInterval(() => {
+    response.write(`:\n\n`);
+  }, 15000);
+
+  request.on('close', () => {
+    clearInterval(heartbeat);
+    response.end();
+  });
 }
 
 async function handleMcpMessage({ message, request, toolManagementPlatform }) {
@@ -567,7 +579,7 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
       };
     }
     return jsonRpcResult(id, {
-      tools: [pactCallTool()],
+      tools: [pactCallTool(), ...activeMcpTools(toolManagementPlatform)],
       _meta: mcpVersionInfo()
     });
   }
@@ -577,16 +589,23 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
     if (!toolName) {
       return jsonRpcError(id, -32602, "tools/call requires params.name.");
     }
-    if (toolName !== MCP_STABLE_TOOL_NAME) {
-      return jsonRpcError(id, -32602, `Pact MCP exposes only ${MCP_STABLE_TOOL_NAME}.`, {
-        stableToolName: MCP_STABLE_TOOL_NAME,
-        expectedArguments: {
-          operation: toolName,
-          input: {}
-        },
-        upgrade: mcpVersionInfo()
-      });
+    
+    let parsedCall;
+    if (toolName === MCP_STABLE_TOOL_NAME) {
+      parsedCall = validatePactCallInput(params.arguments);
+      if (!parsedCall.ok) {
+        const error = parsedCall.error;
+        error.id = id;
+        return error;
+      }
+    } else {
+      parsedCall = {
+        ok: true,
+        operation: toolName,
+        input: params.arguments || {}
+      };
     }
+
     const authorization = authorizeMcpRequest({ request, toolManagementPlatform });
     if (!authorization.ok) {
       return {
@@ -595,12 +614,6 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
           code: authorization.reasonCode || "authorization_denied"
         })
       };
-    }
-    const parsedCall = validatePactCallInput(params.arguments);
-    if (!parsedCall.ok) {
-      const error = parsedCall.error;
-      error.id = id;
-      return error;
     }
     const metaResult = pactMetaResult({
       operation: parsedCall.operation,
@@ -739,7 +752,7 @@ export async function handlePactMcpHttpRequest({
   }
 
   if (method === "GET") {
-    sendMcpSseVersionEvent(response);
+    sendMcpSseVersionEvent(request, response);
     return true;
   }
 
