@@ -38,7 +38,7 @@ function usage() {
     "  --mount-name NAME      Override mount name for mount templates",
     "  --title TEXT           Human title",
     "  --owner TEXT           Owner/team",
-    "  --version VERSION      Defaults to 0.1.0",
+    "  --version VERSION      Defaults to 0.0.1",
     "  --license ID           Defaults to UNLICENSED",
     "  --force                Overwrite existing scaffold files",
     "  --json                 Emit JSON only"

@@ -1354,7 +1354,7 @@ try {
       body: JSON.stringify({
         clientId: "client-alpha",
         clientLabel: "Alpha",
-        appVersion: "0.1.0",
+        appVersion: "0.0.1",
         platform: "darwin-arm64",
         hostname: "alpha-mac",
         bootstrapUrl: migrationBootstrapServer.url,
@@ -1372,7 +1372,7 @@ try {
   );
   assert.equal(discoveryClientsAfterOutdated.summary.outdatedCount, 1);
   const outdatedClient = discoveryClientsAfterOutdated.items[0];
-  assert.equal(outdatedClient.appVersion, "0.1.0");
+  assert.equal(outdatedClient.appVersion, "0.0.1");
   assert.equal(outdatedClient.configVersion, "cutover-v2");
   const migrationCommand = await fetchJson(
     `${migrationBootstrapServer.url}/api/discovery/clients/${encodeURIComponent(outdatedClient.clientId)}/migration`,
@@ -1462,7 +1462,7 @@ try {
       body: JSON.stringify({
         clientId: "client-alpha",
         clientLabel: "Alpha",
-        appVersion: "0.1.0",
+        appVersion: "0.0.1",
         platform: "darwin-arm64",
         hostname: "alpha-mac",
         bootstrapUrl: migrationBootstrapServer.url,

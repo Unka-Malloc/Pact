@@ -47,7 +47,7 @@ function toolManifest(version = "1.0.0") {
     secretRefs: ["secret://external-search/token"],
     dependencies: [],
     compatibility: {
-      minServerVersion: "0.1.0",
+      minServerVersion: "0.0.1",
       featureIds: ["tool-management-core"]
     },
     sandbox: {

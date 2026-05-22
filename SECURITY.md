@@ -12,8 +12,8 @@ Security updates are provided for the following versions:
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | ✅ Active support |
-| < 0.1.0 | ❌ No longer supported |
+| 0.0.x   | ✅ Active support |
+| < 0.0.1 | ❌ No longer supported |
 
 > As the project matures, this table will be updated to reflect the current support policy. We recommend always running the latest stable release.
 

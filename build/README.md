@@ -10,7 +10,7 @@
 - `build/local-data`: default local browser-service data directory.
 - `build/tmp`: temporary workspace output.
 
-The default local server data directory is `.splitall-server-data/` at the
+The default local server data directory is `.pact-server-data/` at the
 repository root so uploaded knowledge persists outside disposable build output.
 
 Everything here is disposable unless a run explicitly produced an artifact that

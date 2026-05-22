@@ -11,7 +11,7 @@ _Upcoming changes will be documented here._
 
 ---
 
-## [0.1.0] — 2026-05-22
+## [0.0.1] — 2026-05-22
 
 ### 🎉 Initial Release / 首次发布
 
@@ -81,5 +81,5 @@ The inaugural release of **Pact** — a controllable agent collaboration platfor
 - **OpenSearch** integration for enterprise search and analytics
 - Pluggable adapter architecture for additional knowledge base backends
 
-[unreleased]: https://github.com/Unka-Malloc/Pact/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Unka-Malloc/Pact/releases/tag/v0.1.0
+[unreleased]: https://github.com/Unka-Malloc/Pact/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/Unka-Malloc/Pact/releases/tag/v0.0.1

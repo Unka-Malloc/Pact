@@ -174,7 +174,7 @@ function normalizeScaffoldRequest(input = {}, { userDataPath = "" } = {}) {
     title: normalizeText(source.title) || template.title,
     description: normalizeText(source.description) || template.description,
     owner: normalizeText(source.owner) || "external",
-    version: normalizeText(source.version) || "0.1.0",
+    version: normalizeText(source.version) || "0.0.1",
     license: normalizeText(source.license) || "UNLICENSED",
     mountName: normalizeText(source.mountName) || template.mountName || selectedSafeName,
     force: bool(source.force, false),

@@ -82,12 +82,12 @@ if [[ "$SKIP_CLEAN" != true ]]; then
   CLEAN_ARGS=(
     --port "$PORT"
     --data-dir "$DATA_DIR"
-    --launch-label "dev.splitall.server.${PORT}"
-    --launch-label "dev.splitall.background-supervisor"
-    --launch-label "dev.splitall.system-inspection"
-    --launch-plist "$HOME/Library/LaunchAgents/dev.splitall.server.${PORT}.plist"
-    --launch-plist "$HOME/Library/LaunchAgents/dev.splitall.background-supervisor.plist"
-    --launch-plist "$HOME/Library/LaunchAgents/dev.splitall.system-inspection.plist"
+    --launch-label "dev.pact.server.${PORT}"
+    --launch-label "dev.pact.background-supervisor"
+    --launch-label "dev.pact.system-inspection"
+    --launch-plist "$HOME/Library/LaunchAgents/dev.pact.server.${PORT}.plist"
+    --launch-plist "$HOME/Library/LaunchAgents/dev.pact.background-supervisor.plist"
+    --launch-plist "$HOME/Library/LaunchAgents/dev.pact.system-inspection.plist"
   )
   if [[ "$MODE" == "dev" ]]; then
     CLEAN_ARGS+=(--vite-port "$VITE_PORT")

@@ -25,7 +25,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>AgentStudio 需要读取 Mail.app 中的邮件并导出为本地 .eml 文件，以便提交给你配置的分析服务。</string>
+	<string>Pact 需要读取 Mail.app 中的邮件并导出为本地 .eml 文件，以便提交给你配置的分析服务。</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

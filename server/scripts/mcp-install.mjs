@@ -331,7 +331,7 @@ async function createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv }) {
   await fs.mkdir(path.join(pluginRoot, ".codex-plugin"), { recursive: true });
   await writeJson(path.join(pluginRoot, ".codex-plugin", "plugin.json"), {
     name: PLUGIN_NAME,
-    version: "0.1.0",
+    version: "0.0.1",
     description: "Pact local MCP integration for Codex.",
     author: {
       name: "Unka Y.Y.",
@@ -427,7 +427,7 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
 async function createGeminiExtension({ extensionRoot, baseUrl, token }) {
   await writeJson(path.join(extensionRoot, "gemini-extension.json"), {
     name: GEMINI_EXTENSION_NAME,
-    version: "0.1.0",
+    version: "0.0.1",
     description: "Connect Gemini CLI to the local Pact MCP service.",
     mcpServers: {
       [MCP_SERVER_NAME]: {

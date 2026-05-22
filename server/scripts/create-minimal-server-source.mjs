@@ -95,7 +95,7 @@ function normalizeBooleanDisabled(args, key) {
 function packageJsonForTarget({ rootPackage, dependencies, edition }) {
   return {
     name: "pact-v1-minimal-server",
-    version: rootPackage.version || "0.1.0",
+    version: rootPackage.version || "0.0.1",
     private: true,
     type: "module",
     bin: {

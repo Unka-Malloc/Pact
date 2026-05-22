@@ -24,6 +24,7 @@ const forbiddenNames = new Set([
   ".pact-local-data",
   ".pact-server-data",
   ".pact-skill-data",
+  ".splitall-server-data",
   ".agentstudio-server-data"
 ]);
 
