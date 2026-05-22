@@ -8,7 +8,7 @@ import "element-plus/es/components/table/style/css";
 import "element-plus/es/components/table-column/style/css";
 import { router } from "./router/index";
 import ServerConsoleApp from "./ServerConsoleApp.vue";
-import "./styles.css";
+import "./styles/index.css";
 
 document.documentElement.lang = "zh-CN";
 document.documentElement.setAttribute("translate", "no");

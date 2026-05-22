@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  color-scheme: light;
+
+  /* ── Primitive palette ──────────────────────────────────────────────── */
+  --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-800: #1e40af;
+  --green-50: #f0fdf4;
+  --green-600: #16a34a;
+  --amber-50: #fffbeb;
+  --amber-400: #fbbf24;
+  --amber-800: #92400e;
+  --red-50: #fef2f2;
+  --red-600: #dc2626;
+  --gray-0: #ffffff;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+
+  /* ── Semantic colour tokens ──────────────────────────────────────────── */
+  --bg-base: var(--gray-100);
+  --bg-surface: var(--gray-0);
+  --bg-subtle: var(--gray-50);
+  --bg-inset: var(--gray-100);
+  --border-subtle: var(--gray-200);
+  --border-strong: var(--gray-300);
+
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-600);
+  --text-muted: var(--gray-500);
+  --text-disabled: var(--gray-400);
+  --text-on-brand: #ffffff;
+
+  /* Brand = action blue */
+  --brand: #2563eb;
+  --brand-strong: #1d4ed8;
+  --brand-subtle: var(--blue-50);
+  --brand-muted: var(--blue-100);
+  --accent: var(--brand);
+
+  /* Semantic states */
+  --info: #2563eb;
+  --info-surface: var(--blue-50);
+  --info-border: var(--blue-100);
+
+  --success: #16a34a;
+  --success-surface: var(--green-50);
+  --success-border: #bbf7d0;
+
+  --warning: #d97706;
+  --warning-text: var(--amber-800);
+  --warning-surface: var(--amber-50);
+  --warning-border: #fde68a;
+
+  --danger: #dc2626;
+  --danger-surface: var(--red-50);
+  --danger-border: #fecaca;
+
+  /* ── Spacing scale (4 px grid) ──────────────────────────────────────── */
+  --space-px:  1px;
+  --space-0-5: 2px;
+  --space-1:   4px;
+  --space-1-5: 6px;
+  --space-2:   8px;
+  --space-2-5: 10px;
+  --space-3:   12px;
+  --space-3-5: 14px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-7:   28px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+
+  /* ── Border-radius scale ──────────────────────────────────────────── */
+  --radius-xs:   3px;
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   10px;
+  --radius-xl:   12px;
+  --radius-2xl:  16px;
+  --radius-full: 9999px;
+
+  /* ── Typography scale (base = 14 px) ─────────────────────────────── */
+  --text-2xs:  0.643rem;   /*  9 px */
+  --text-xs:   0.714rem;   /* 10 px */
+  --text-sm:   0.786rem;   /* 11 px */
+  --text-md:   0.857rem;   /* 12 px */
+  --text-base: 0.929rem;   /* 13 px */
+  --text-lg:   1rem;       /* 14 px  ← document default */
+  --text-xl:   1.071rem;   /* 15 px */
+  --text-2xl:  1.143rem;   /* 16 px */
+  --text-3xl:  1.285rem;   /* 18 px */
+  --text-4xl:  1.428rem;   /* 20 px */
+  --text-5xl:  1.714rem;   /* 24 px */
+
+  --font-sans: "Inter", "system-ui", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-normal:   400;
+  --font-medium:   500;
+  --font-semibold: 600;
+  --font-bold:     700;
+  --leading-tight:   1.25;
+  --leading-snug:    1.375;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.625;
+
+  /* ── Elevation / Shadow ──────────────────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.05);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.10), 0 4px 8px rgba(0,0,0,.04);
+  --shadow-xl: 0 20px 48px rgba(0,0,0,.14), 0 8px 16px rgba(0,0,0,.06);
+  /* backward compat alias */
+  --shadow-soft: var(--shadow-md);
+
+  /* ── Motion ──────────────────────────────────────────────────────── */
+  --dur-fast:   100ms;
+  --dur-base:   160ms;
+  --dur-slow:   240ms;
+  --dur-slower: 320ms;
+  --dur-page:   280ms;
+  --ease-std:   cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out:   cubic-bezier(0.0, 0, 0.2, 1);
+  --ease-in:    cubic-bezier(0.4, 0, 1,   1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-default: var(--dur-base) var(--ease-std);
+
+  /* ── Z-index scale ───────────────────────────────────────────────── */
+  --z-0:       0;
+  --z-raised:  1;
+  --z-overlay: 10;
+  --z-dropdown: 20;
+  --z-sticky:  30;
+  --z-sidebar: 40;
+  --z-backdrop: 45;
+  --z-drawer:  50;
+  --z-modal:   60;
+  --z-toast:   70;
+  --z-top:     80;
+
+  /* ── Skeleton ────────────────────────────────────────────────────── */
+  --skeleton-base:      var(--gray-200);
+  --skeleton-highlight: var(--gray-100);
+
+  /* ── Layout ─────────────────────────────────────────────────────── */
+  --sidebar-width: 220px;
+  --sidebar-width-collapsed: 56px;
+  --sidebar-transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --topbar-height: 52px;
+
+  /* Document defaults */
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: var(--leading-normal);
+  font-weight: var(--font-normal);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
