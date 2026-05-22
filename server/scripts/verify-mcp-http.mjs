@@ -59,7 +59,7 @@ try {
   assert.equal(discovery.payload.mcpServers.agentstudio.httpUrl, `${server.url}/mcp`);
   assert.equal(discovery.payload.stableToolName, "agentstudio.call");
   assert.equal(discovery.payload.interfaceVersion, "agentstudio.mcp.v1");
-  assert.equal(discovery.payload.serverVersion, "0.2.2");
+  assert.equal(discovery.payload.serverVersion, "0.2.3");
   assert.equal(discovery.payload.identity.algorithm, "Ed25519");
   assert.ok(discovery.payload.identity.keyId);
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
@@ -69,6 +69,9 @@ try {
   assert.match(discovery.payload.installer.installCommand, /npx agentstudio-mcp-connector@latest register/);
   assert.match(discovery.payload.installer.interactiveInstallCommand, /agentstudio-mcp-connector@latest install/);
   assert.match(discovery.payload.installer.clientInstallCommand, /--target <client>/);
+  assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
+  assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
+  assert.equal(discovery.payload.installer.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.match(discovery.payload.installer.scanCommand, /agentstudio-mcp-connector@latest scan --json/);
   assert.equal(discovery.payload.localDiscovery.files.length, 1);
   assert.match(discovery.payload.localDiscovery.entrypoint.command, /discover-local/);
@@ -92,7 +95,7 @@ try {
   assert.equal(handshake.payload.ok, true);
   assert.equal(handshake.payload.payload.nonce, nonce);
   assert.equal(handshake.payload.payload.server.name, "AgentStudio");
-  assert.equal(handshake.payload.payload.server.serverVersion, "0.2.2");
+  assert.equal(handshake.payload.payload.server.serverVersion, "0.2.3");
   assert.equal(handshake.payload.payload.identity.keyId, discovery.payload.identity.keyId);
   assert.equal(handshake.payload.payload.endpoints.mcpUrl, `${server.url}/mcp`);
   assert.equal(handshake.payload.signature.algorithm, "Ed25519");
@@ -132,6 +135,30 @@ try {
   });
   assert.equal(unauthenticatedList.status, 401);
   assert.equal(unauthenticatedList.payload.error.data.code, "missing_token");
+
+  const localGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      targets: ["codex"],
+      label: "verify-mcp-local-grant",
+      connectorVersion: "verify"
+    })
+  });
+  assert.equal(localGrant.status, 201);
+  assert.equal(localGrant.payload.ok, true);
+  assert.ok(localGrant.payload.token);
+  assert.ok(localGrant.payload.grant.tokenPrefix);
+  assert.deepEqual(localGrant.payload.targets, ["codex"]);
+  assert.equal(localGrant.payload.toolsets.includes("agentstudio.knowledge.read"), true);
+
+  const localGrantList = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(localGrant.payload.token),
+    body: JSON.stringify(mcpRequest("tools/list", {}, 30))
+  });
+  assert.equal(localGrantList.status, 200);
+  assert.equal(localGrantList.payload.result.tools[0].name, "agentstudio.call");
 
   const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",

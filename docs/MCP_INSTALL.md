@@ -20,6 +20,9 @@ portable zip that bundles Node.
 The installer does not assume an IP address. Before it writes any agent config,
 it scans local AgentStudio candidates, fetches MCP discovery, and verifies the
 `/api/mcp/handshake` Ed25519 signature for the discovered server identity.
+After a server is verified, the installer requests a local Tool Management grant
+from AgentStudio and writes that token into the selected client configuration.
+Users do not need to copy `AGENTSTUDIO_MCP_TOKEN` during normal install.
 
 In the TUI:
 
@@ -87,7 +90,9 @@ The zip bundles its own Node.js runtime.
 ~/.agentstudio/mcp/connector/current/agentstudio-mcp doctor
 ```
 
-If an MCP token is available:
+`doctor` can verify discovery without a token. To verify authenticated
+`tools/list` and `tools/call`, use the token that was written for a client or
+pass a pre-issued custom grant:
 
 ```bash
 AGENTSTUDIO_MCP_TOKEN='<issued-token>' \

@@ -18,7 +18,7 @@ const MARKETPLACE_NAME = "agentstudio-local";
 const GEMINI_EXTENSION_NAME = "AgentStudio";
 const MCP_SERVER_NAME = "agentstudio";
 const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
-const MCP_CONNECTOR_VERSION = "0.2.2";
+const MCP_CONNECTOR_VERSION = "0.2.3";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
@@ -661,10 +661,10 @@ async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot,
         connector: {
           packageName: MCP_CONNECTOR_PACKAGE_NAME,
           packageVersion: MCP_CONNECTOR_VERSION,
-          registerCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register --url ${baseUrl}`,
-          installCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --url ${baseUrl} --target <client> --token-stdin`,
+          registerCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`,
+          installCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>`,
           discoverCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local`,
-          doctorCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor --url ${baseUrl}`
+          doctorCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor`
         },
         codex: codexPluginRoot
           ? {
@@ -672,7 +672,7 @@ async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot,
               marketplaceRoot,
               pluginRoot: codexPluginRoot,
               tokenEnv: DEFAULT_TOKEN_ENV,
-              installCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --url ${baseUrl} --target codex --token-stdin`
+              installCommand: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target codex`
             }
           : existingServer.codex || null,
         targets: targetStatuses

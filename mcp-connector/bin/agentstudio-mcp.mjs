@@ -62,7 +62,7 @@ function usage() {
     "Usage:",
     "  agentstudio-mcp register",
     "  agentstudio-mcp install",
-    "  agentstudio-mcp install --target codex --token-stdin",
+    "  agentstudio-mcp install --target codex",
     "  agentstudio-mcp uninstall --target codex",
     "  agentstudio-mcp scan --json",
     "  agentstudio-mcp discover-local",
@@ -80,6 +80,7 @@ function usage() {
     "  --token TOKEN                 AgentStudio MCP token. Prefer --token-stdin or --token-env.",
     "  --token-stdin                 Read token from stdin.",
     "  --token-env NAME              Token environment variable. Default: AGENTSTUDIO_MCP_TOKEN.",
+    "  --no-auto-token               Require an explicit token instead of requesting a local grant.",
     "  --no-verify                   Skip post-install MCP HTTP verification.",
     "  --json                        Emit compact JSON.",
     "  --no-env                      Do not publish launchctl environment variables during register.",
@@ -122,6 +123,7 @@ function parseArgs(argv) {
       key === "json" ||
       key === "token-stdin" ||
       key === "no-verify" ||
+      key === "no-auto-token" ||
       key === "no-scan" ||
       key === "set" ||
       key === "refresh" ||
@@ -1070,13 +1072,13 @@ function buildDeviceHubManifest({
           packageVersion: packageJson.version,
           registerCommand: `npx ${packageJson.name}@${packageJson.version} register`,
           interactiveInstallCommand,
-          installCommand: `npx ${packageJson.name}@${packageJson.version} install --target <client> --token-stdin`,
+          installCommand: `npx ${packageJson.name}@${packageJson.version} install --target <client>`,
           uninstallCommand: `npx ${packageJson.name}@${packageJson.version} uninstall --target <client>`,
           discoverCommand,
           scanCommand
         },
         auth: {
-          type: "provided-token",
+          type: "auto-local-grant-or-provided-token",
           acceptedHeaders: ["Authorization: Bearer <token>", "X-AgentStudio-Api-Key"],
           tokenEnv: DEFAULT_TOKEN_ENV
         },
@@ -1086,7 +1088,7 @@ function buildDeviceHubManifest({
               marketplaceRoot,
               pluginRoot: codexPluginRoot,
               tokenEnv: DEFAULT_TOKEN_ENV,
-              installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex --token-stdin`
+              installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex`
             }
           : null),
         targets
@@ -1337,7 +1339,7 @@ function normalizeCodexDiscovery(codex) {
   }
   return {
     ...codex,
-    installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex --token-stdin`
+    installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex`
   };
 }
 
@@ -1913,6 +1915,51 @@ async function resolveInteractiveToken(options) {
   return entered;
 }
 
+async function requestLocalMcpGrant(options, { targets = [] } = {}) {
+  const settings = installerOptions(options);
+  const targetList = [...new Set(targets.map(normalizeTarget).filter(Boolean))];
+  const response = await fetchJson(`${settings.baseUrl}/api/mcp/local-grant`, {
+    method: "POST",
+    timeoutMs: 10000,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      targets: targetList,
+      label: `AgentStudio MCP ${targetList.length ? targetList.map(targetLabel).join(", ") : "local agent"}`,
+      connectorVersion: packageJson.version
+    })
+  });
+  if (!response.ok || !response.payload?.token) {
+    const reason = response.payload?.error?.message || response.payload?.error || `HTTP ${response.status}`;
+    throw new Error(`Failed to request local AgentStudio MCP token: ${reason}`);
+  }
+  return {
+    token: String(response.payload.token || "").trim(),
+    source: "local-grant",
+    grant: response.payload.grant || null,
+    tokenPrefix: response.payload.tokenPrefix || response.payload.grant?.tokenPrefix || "",
+    toolsets: response.payload.toolsets || [],
+    scopes: response.payload.scopes || []
+  };
+}
+
+async function resolveInstallToken(options, { targets = [] } = {}) {
+  const explicit = await resolveToken(options, { required: false });
+  if (explicit) {
+    return {
+      token: explicit,
+      source: "provided",
+      tokenPrefix: redactToken(explicit)
+    };
+  }
+  if (options["no-auto-token"]) {
+    const tokenEnv = String(option(options, "token-env", DEFAULT_TOKEN_ENV));
+    throw new Error(`Missing token. Provide --token-stdin, --token, or ${tokenEnv}.`);
+  }
+  return requestLocalMcpGrant(options, { targets });
+}
+
 async function resolveHubForInstall(options) {
   const discovered = await discoverAgentStudioHub(options);
   if (discovered.ok) {
@@ -1961,7 +2008,7 @@ async function resolveHubForInstall(options) {
   };
 }
 
-async function installTargets({ options, targets, token, optionOverrides = {} }) {
+async function installTargets({ options, targets, token, tokenInfo = null, optionOverrides = {} }) {
   const mergedOptions = {
     ...options,
     ...optionOverrides
@@ -2054,7 +2101,8 @@ async function installTargets({ options, targets, token, optionOverrides = {} })
       target,
       {
         installMode: value.installMode,
-        tokenPrefix: redactToken(token),
+        tokenSource: tokenInfo?.source || "provided",
+        tokenPrefix: tokenInfo?.tokenPrefix || redactToken(token),
         httpVerification: value.httpVerification
       }
     ]))
@@ -2078,17 +2126,18 @@ async function installTuiCommand(options) {
       reason: "Interactive install cancelled."
     };
   }
-  const token = await resolveInteractiveToken(options);
   const selectedTargets = [...new Set(selected.map((candidate) => candidate.target))];
+  const tokenInfo = await resolveInstallToken(options, { targets: selectedTargets });
   const hasPerCandidateOverrides = selected.some((candidate) =>
     Object.keys(candidate.optionOverrides || {}).length > 0
   );
   const result = hasPerCandidateOverrides
-    ? await installSelectedCandidates({ options, selected, token })
+    ? await installSelectedCandidates({ options, selected, tokenInfo })
     : await installTargets({
         options,
         targets: selectedTargets,
-        token
+        token: tokenInfo.token,
+        tokenInfo
       });
   return {
     ...result,
@@ -2102,7 +2151,7 @@ async function installTuiCommand(options) {
   };
 }
 
-async function installSelectedCandidates({ options, selected, token }) {
+async function installSelectedCandidates({ options, selected, tokenInfo }) {
   const partials = [];
   let discoveryManifest = "";
   let baseUrl = installerOptions(options).baseUrl;
@@ -2111,7 +2160,8 @@ async function installSelectedCandidates({ options, selected, token }) {
     const partial = await installTargets({
       options,
       targets: [candidate.target],
-      token,
+      token: tokenInfo.token,
+      tokenInfo,
       optionOverrides: candidate.optionOverrides || {}
     });
     partials.push({
@@ -2152,8 +2202,13 @@ async function installCommand(options) {
     return installTuiCommand(resolvedOptions);
   }
   const targets = parseTargets(option(resolvedOptions, "target", "codex"));
-  const token = await resolveToken(resolvedOptions, { required: true });
-  return installTargets({ options: resolvedOptions, targets, token });
+  const tokenInfo = await resolveInstallToken(resolvedOptions, { targets });
+  return installTargets({
+    options: resolvedOptions,
+    targets,
+    token: tokenInfo.token,
+    tokenInfo
+  });
 }
 
 async function uninstallCommand(options) {
@@ -2242,7 +2297,7 @@ async function registerCommand(options) {
     },
     localFiles,
     env,
-    clientInstall: `agentstudio-mcp install --target <client> --token-stdin`,
+    clientInstall: `agentstudio-mcp install --target <client>`,
     verifiedHandshake: resolvedOptions.__agentstudioDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,
     note: "Discovered and registered the signed AgentStudio MCP endpoint without installing it into any client."

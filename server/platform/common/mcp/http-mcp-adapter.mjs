@@ -10,9 +10,9 @@ export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MCP_INTERFACE_VERSION = "agentstudio.mcp.v1";
 export const MCP_TOOLSET_VERSION = "2026-05-22.1";
 export const MCP_STABLE_TOOL_NAME = "agentstudio.call";
-export const MCP_SERVER_VERSION = "0.2.2";
+export const MCP_SERVER_VERSION = "0.2.3";
 export const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
-export const MCP_CONNECTOR_VERSION = "0.2.2";
+export const MCP_CONNECTOR_VERSION = "0.2.3";
 export const MCP_CONNECTOR_GITHUB_REPO = "Unka-Malloc/AgentStudio";
 export const AGENTSTUDIO_MCP_URL_ENV = "AGENTSTUDIO_MCP_URL";
 export const AGENTSTUDIO_MCP_DISCOVERY_URL_ENV = "AGENTSTUDIO_MCP_DISCOVERY_URL";
@@ -71,6 +71,21 @@ function normalizeApiKeyHeader(request) {
   if (!headers.authorization && !headers["x-agentstudio-tool-token"] && headers["x-agentstudio-api-key"]) {
     headers["x-agentstudio-tool-token"] = String(headers["x-agentstudio-api-key"] || "").trim();
   }
+}
+
+function isLocalMcpPairingRequest(request) {
+  const address = String(request?.socket?.remoteAddress || "").toLowerCase();
+  return (
+    address === "127.0.0.1" ||
+    address === "::1" ||
+    address === "::ffff:127.0.0.1" ||
+    address === "localhost"
+  );
+}
+
+function normalizeGrantTargets(value) {
+  const items = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(items.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 16);
 }
 
 function parseRequestBody(requestBody) {
@@ -175,7 +190,7 @@ function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
 export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`;
-  const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client> --token-stdin`;
+  const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install`;
   const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/agentstudio-mcp-install.sh)"`;
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>`;
@@ -236,7 +251,8 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
       doctorCommand,
       discoverCommand,
       scanCommand,
-      tokenInput: "stdin-or-env",
+      tokenInput: "auto-local-grant-or-stdin-or-env",
+      localGrantEndpoint: `${baseUrl}/api/mcp/local-grant`,
       npmExec: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest`,
       portable: {
         requiresInstalledNode: false,
@@ -251,7 +267,7 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
         zipInstallEntry: "install.command",
         installCommand: "./agentstudio-mcp register",
         interactiveInstallCommand: "./agentstudio-mcp install",
-        clientInstallCommand: "./agentstudio-mcp install --target <client> --token-stdin",
+        clientInstallCommand: "./agentstudio-mcp install --target <client>",
         doubleClickEntry: "install.command"
       }
     },
@@ -369,6 +385,54 @@ function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
       ok: true,
       payload,
       signature: signMcpHandshake({ identity, payload })
+    }
+  };
+}
+
+function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, discoveryState = null }) {
+  if (!isLocalMcpPairingRequest(request)) {
+    return {
+      status: 403,
+      body: {
+        ok: false,
+        error: {
+          code: "local_pairing_required",
+          message: "MCP local grant issuance is only available from the local machine."
+        }
+      }
+    };
+  }
+  const body = parseRequestBody(requestBody);
+  const targets = normalizeGrantTargets(body.targets || body.target || body.clientId);
+  const resolved = toolManagementPlatform.registry.resolveToolset({});
+  const label = String(body.label || `AgentStudio MCP ${targets.join(", ") || "local agent"}`).trim();
+  const result = toolManagementPlatform.store.createGrant({
+    label,
+    type: "machine",
+    toolsets: resolved.toolsets,
+    scopes: resolved.requiredScopes,
+    toolDeny: ["agentstudio.admin"],
+    metadata: {
+      issuedBy: "agentstudio-mcp-local-pairing",
+      connectorVersion: String(body.connectorVersion || ""),
+      targets,
+      serverId: discoveryState?.serverId || "",
+      identityKeyId: discoveryState?.mcpIdentity?.keyId || ""
+    },
+    reason: "Issued by local AgentStudio MCP connector pairing."
+  });
+  return {
+    status: 201,
+    body: {
+      ok: true,
+      schemaVersion: 1,
+      grant: result.grant,
+      token: result.token,
+      tokenPrefix: result.grant.tokenPrefix,
+      toolsets: resolved.toolsets,
+      scopes: resolved.requiredScopes,
+      maxRisk: resolved.maxRisk,
+      targets
     }
   };
 }
@@ -614,6 +678,36 @@ export async function handleAgentStudioMcpHttpRequest({
       sendJson(response, 400, {
         ok: false,
         error: "MCP handshake body must be valid JSON."
+      });
+    }
+    return true;
+  }
+
+  if (url.pathname === "/api/mcp/local-grant") {
+    if (method !== "POST") {
+      response.writeHead(405, { Allow: "POST", "Cache-Control": "no-store" });
+      response.end();
+      return true;
+    }
+    try {
+      const result = createLocalMcpGrant({
+        request,
+        requestBody,
+        toolManagementPlatform,
+        discoveryState
+      });
+      sendJson(response, result.status, result.body);
+    } catch (error) {
+      logger?.warn?.("mcp.local_grant.failed", {
+        requestId: request?.__agentstudioRequestId || "",
+        error: error?.message || "local grant failed"
+      });
+      sendJson(response, 400, {
+        ok: false,
+        error: {
+          code: "local_grant_failed",
+          message: "MCP local grant request could not be processed."
+        }
       });
     }
     return true;

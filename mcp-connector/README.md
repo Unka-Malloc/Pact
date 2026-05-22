@@ -21,6 +21,9 @@ runtime.
 The connector does not assume a default IP address. It scans local AgentStudio
 candidates, fetches MCP discovery, then verifies the `/api/mcp/handshake`
 Ed25519 signature before using the endpoint.
+For normal local installs, it also requests a Tool Management grant token from
+the verified AgentStudio service. Users do not need to manually copy
+`AGENTSTUDIO_MCP_TOKEN`.
 
 For npm-based installs:
 
@@ -41,10 +44,10 @@ The interactive installer scans local clients and lets you choose one or more ta
 For scripts:
 
 ```bash
-printf '%s\n' '<issued-token>' | npx agentstudio-mcp-connector@latest install \
-  --target codex \
-  --token-stdin
+npx agentstudio-mcp-connector@latest install --target codex
 ```
+
+Use `--token-stdin` only when installing with a pre-issued custom grant token.
 
 ## Server Config
 
@@ -75,9 +78,7 @@ cd agentstudio-mcp-connector-<version>-<platform>
 For scripts:
 
 ```bash
-printf '%s\n' '<issued-token>' | ./agentstudio-mcp install \
-  --target codex \
-  --token-stdin
+./agentstudio-mcp install --target codex
 ```
 
 The portable zip package includes its own Node.js runtime. macOS users can open `install.command` and follow the prompts.
@@ -87,6 +88,9 @@ The portable zip package includes its own Node.js runtime. macOS users can open 
 ```bash
 AGENTSTUDIO_MCP_TOKEN='<issued-token>' npx agentstudio-mcp-connector@latest doctor
 ```
+
+The token is only needed for authenticated doctor checks. Normal install issues
+one automatically.
 
 ## Discover Local Hub
 

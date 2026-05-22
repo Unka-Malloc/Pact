@@ -353,7 +353,7 @@ Agent 安装策略：
 
 - 统一服务端入口：connector 扫描本机 AgentStudio 候选服务并通过 `/api/mcp/handshake` 验证签名后，使用 discovery 返回的 HTTP MCP URL；OrbStack VM 内使用 discovery 返回的 VM advertised URL。
 - 统一按 Stitch MCP 形态安装：HTTP MCP endpoint + 客户端侧认证 metadata / headers；AgentStudio 的 API key header 是 `X-AgentStudio-Api-Key`，值为 Tool Management grant token；Codex CLI 使用其标准 bearer token env var，服务端同时接受 bearer 和 header。
-- 终端用户安装不得依赖完整服务端 checkout；统一通过 `agentstudio-mcp-connector` release 包扫描本机 AgentStudio 服务并验证签名，再运行 `npx agentstudio-mcp-connector@latest install` 进入 TUI 选择要连接的客户端；脚本化场景仍可使用 `--target codex --token-stdin`，显式服务端地址必须先通过 `server-config --set --url <AgentStudio>` 验证并保存。
+- 终端用户安装不得依赖完整服务端 checkout；统一通过 `agentstudio-mcp-connector` release 包扫描本机 AgentStudio 服务并验证签名，再运行 `npx agentstudio-mcp-connector@latest install` 进入 TUI 选择要连接的客户端。安装器默认向已验证的本机 AgentStudio 申请 Tool Management grant token 并写入客户端配置；脚本化场景使用 `--target codex` 即可，`--token-stdin` 只用于预先签发的自定义 grant。显式服务端地址必须先通过 `server-config --set --url <AgentStudio>` 验证并保存。
 - 一行安装脚本优先使用已有 Node.js 20+ 下载小体积 source tarball；没有 Node.js、npm、npx 或包管理器的智能体宿主机必须 fallback 到 portable zip release 包：`agentstudio-mcp-connector-<version>-<platform>.zip` 内置 Node runtime，提供 `./agentstudio-mcp install` TUI、`./agentstudio-mcp install --target <client>` 和 macOS `install.command`。
 - stdio proxy：仅作为目标 agent 不支持 HTTP MCP 或 headers 时的未来兼容入口；当前 release 安装路径默认不启用 stdio。
 - Codex：通过 `codex plugin marketplace add`、`codex plugin add` 和 `codex mcp add --url --bearer-token-env-var` 安装。
