@@ -14,7 +14,7 @@
   - [Unified Checkpoint Tree Protocol](#unified-checkpoint-tree-protocol)
 - [Backup Restore Protocol](#backup-restore-protocol)
 - [Workspace Contribution Protocol](#workspace-contribution-protocol)
-  - [MCP Demo Flows](#mcp-demo-flows)
+  - [Device MCP Hub](#device-mcp-hub)
 - [Workspace Governance Protocol](#workspace-governance-protocol)
 - [Knowledge Protocol](#knowledge-protocol)
 - [Asset Lineage Protocol](#asset-lineage-protocol)
@@ -408,26 +408,379 @@ rankScoreV0 =
 
 `usageCount` 统计被授权主体确认下载、安装、执行、复制到上下文或跨 workspace 采用的次数，`successRate = successfulUseCount / max(usageCount, 1)`，`uniqueWorkspaceAdoptions` 是去重后的 workspace 采用数，`rollbackCount` 是该资产导致的恢复、撤销或禁用次数。`acceptedCount` 保留为资产贡献统计报表字段，不作为排行榜主导项。
 
-### MCP Demo Flows
+### Device MCP Hub
 
-AgentStudio MCP service 是 Workspace API 的协议适配器，不是 agent-to-agent gateway。它可以给 OpenClaw、Codex、Claude Code、Cursor Agent 或脚本型 agent 暴露同一组 workspace 工具：
+历史文档里的 MCP Demo Flows 现在收敛为本节的设备级 MCP Hub，并按 Stitch MCP 的 HTTP 接入方案落地。
 
-- `workspace.contribution.submit`
-- `workspace.asset.list`
-- `workspace.asset.download`
-- `workspace.skill.list`
-- `workspace.skill.download`
-- `workspace.skill.usage.report`
-- `workspace.audit.query`
+AgentStudio MCP service 是 Workspace API 的设备级协议适配器，不是 agent-to-agent gateway。它必须让同一台设备上的 Codex、Gemini CLI、Kilo Code、Copilot、OpenClaw（OrbStack Kate）、Hermes Agent（OrbStack Serena）和 Antigravity 都能通过同一套发现、授权和工具边界访问 AgentStudio，而不是为某一个 agent 单独硬编码。
 
-第一版 MCP service 同时支持 HTTP 和 stdio：
+设备级 MCP Hub 由五部分组成：
 
-- HTTP 是权威服务入口，面向 Hermes Agent 这类 `mcp_servers.<name>.url` 配置形态；本机默认监听 `127.0.0.1:8791/mcp`，OrbStack 内通过 `host.orb.internal:8791/mcp` 访问。
-- stdio 是本地智能体兼容入口，面向 OpenClaw、Codex 或 Claude Code 这类 command/args 配置形态；stdio 进程只做 HTTP MCP 代理，不维护独立状态。
-- 协议层第一版手写最小 MCP JSON-RPC，不引入官方 SDK；必须覆盖 `initialize`、`tools/list`、`tools/call`、标准错误返回和工具 schema。
-- MCP handler 不能直接读写文件夹或知识库内部实现，所有工具调用必须落到 Workspace API、Operation Ledger、permission decision、Checkpoint Tree 和 storage metadata。
+1. **HTTP MCP endpoint**：服务端权威入口，复用主服务进程。
+2. **stdio proxy**：本地 agent 兼容入口，只把 stdio MCP 消息转发到 HTTP MCP。
+3. **设备级发现清单**：让 installer、doctor 和本机 agent adapter 发现 AgentStudio MCP 服务。
+4. **每 agent 独立 grant/token**：每个 agent 有自己的权限、身份和审计轨迹。
+5. **release discovery publisher**：以独立 connector release 包发布共享 Hub 发现清单；只有用户明确选择某个客户端时才写入该客户端配置。
 
-本机五阶段演示使用的最小工具面：
+AgentStudio MCP 必须完全按 Stitch MCP 的接入方案实现：客户端配置直接指向一个 HTTP MCP endpoint，认证作为客户端侧 metadata / headers 独立声明。Stitch 的 API key 变体使用 `X-Goog-Api-Key`；AgentStudio 对应优先使用 `X-AgentStudio-Api-Key`，值为 Tool Management grant token。Codex CLI 的标准 HTTP MCP 安装命令只支持 bearer token env var，因此 Codex 使用 `--bearer-token-env-var AGENTSTUDIO_MCP_TOKEN`，服务端同时接受 `Authorization: Bearer <token>` 和 `X-AgentStudio-Api-Key`。只有目标客户端不支持 HTTP MCP 或自定义 headers 时才落到 stdio proxy，stdio 不作为默认方案。
+
+终端用户不拉取完整 AgentStudio 服务端仓库。服务端只发布 MCP HTTP endpoint、发现清单和 grant token；客户端侧统一通过 `agentstudio-mcp-connector` release 包安装或升级。
+
+#### Transport endpoints
+
+HTTP MCP 是权威服务入口：
+
+```text
+http://127.0.0.1:8787/mcp
+http://host.orb.internal:8787/mcp
+```
+
+`127.0.0.1:8787/mcp` 是本机 agent 的 canonical endpoint。`host.orb.internal:8787/mcp` 是 OrbStack VM 内访问宿主机 AgentStudio 的 advertised endpoint。`8791/mcp` 只允许作为兼容 alias 或未来隔离端口，不作为默认入口。
+
+HTTP endpoint 必须遵守 MCP Streamable HTTP 的最小要求：
+
+- `POST /mcp` 接收 MCP JSON-RPC request / notification / response。
+- `GET /mcp` 在支持事件流时返回 `text/event-stream`，否则返回 `405 Method Not Allowed` 并带 `Allow: POST`。
+- 绑定本机默认只允许 localhost；对来自浏览器或远端 HTTP 的请求校验 `Origin`，防止 DNS rebinding。
+- 未授权时返回 `401`，并提供 MCP authorization discovery 所需的 protected resource metadata 位置。
+- 不把大文件直接塞入 MCP JSON-RPC 响应；大 payload 返回 `assetId`、`downloadUrl`、`jobId` 或 evidence reference。
+
+stdio proxy 只保留为未来本地兼容入口；当前 release 安装路径默认不启用 stdio。
+
+stdio proxy 不维护独立业务状态，不直接读写 workspace、文件、SQLite、KnowledgeCore 或 Tool Management 数据。它只负责：
+
+- 从 stdin 读取 MCP JSON-RPC。
+- 给 HTTP MCP 注入对应 agent grant/token。
+- 把 HTTP MCP 响应写回 stdout。
+- 日志只写 stderr，stdout 只能出现合法 MCP message。
+
+#### Device discovery
+
+AgentStudio 必须写入设备级发现清单：
+
+```text
+~/.agentstudio/mcp/servers.json
+```
+
+清单最小结构：
+
+```json
+{
+  "version": 1,
+  "servers": {
+    "agentstudio": {
+      "name": "AgentStudio",
+      "httpUrl": "http://127.0.0.1:8787/mcp",
+      "vmHttpUrl": "http://host.orb.internal:8787/mcp",
+      "connector": {
+        "packageName": "agentstudio-mcp-connector",
+        "packageVersion": "0.2.0",
+        "discoverCommand": "npx agentstudio-mcp-connector@latest discover-local",
+        "installCommand": "npx agentstudio-mcp-connector@latest install --url http://127.0.0.1:8787 --target <client> --token-stdin"
+      },
+      "discoveryUrl": "http://127.0.0.1:8787/.well-known/agentstudio/mcp.json"
+    }
+  }
+}
+```
+
+服务端同时暴露：
+
+```text
+GET /.well-known/agentstudio/mcp.json
+GET /api/mcp/discovery
+```
+
+`.well-known/agentstudio/mcp.json` 是 AgentStudio 的设备发现约定，不声明为 MCP 官方标准。它用于让本机 installer、doctor、CLI 和 adapter 发现同一个服务端、VM endpoint 和已安装 target 状态。
+
+本机发现必须收敛到统一入口封装：`agentstudio-mcp discover-local`。它是所有 agent 可复用的本机查询命令，内部只维护一个 canonical registry 文件 `~/.agentstudio/mcp/servers.json`，并按需兜底访问服务端 HTTP discovery；不得通过写多个本机发现文件来制造兼容性。
+
+Codex 在本机定位 AgentStudio MCP 的实际路径应被产品化为所有 agent 都能复用的查找顺序：
+
+1. 调用 `agentstudio-mcp discover-local`。
+2. `discover-local` 内部先读 `AGENTSTUDIO_MCP_URL`、`AGENTSTUDIO_MCP_DISCOVERY_URL`、`AGENTSTUDIO_MCP_DISCOVERY_FILE`。
+3. 读取唯一 registry：`~/.agentstudio/mcp/servers.json`。
+4. 探测 `http://127.0.0.1:8787/.well-known/agentstudio/mcp.json` 和 `http://127.0.0.1:8787/api/mcp/discovery`。
+5. 对发现到的 `httpUrl` 执行 MCP `initialize`。
+
+`agentstudio-mcp register` 只写入这一个 registry，并可通过 launchctl 发布同一组环境变量；它不修改任何客户端配置。
+
+#### Connector release channel
+
+`agentstudio-mcp-connector` 是独立客户端发布包，只包含 MCP 客户端安装器、doctor 和各智能体配置写入逻辑，不包含服务端 runtime、SQLite、KnowledgeCore、UI 或任何服务端源代码。
+
+发布通道必须同时提供两种客户端形态：
+
+- npm 包：适合已有 Node.js / npx 的开发机。
+- portable 包：适合没有 Node.js、npm、npx 或包管理器的机器；包内自带当前平台 Node runtime，并提供 `agentstudio-mcp` 命令和 macOS 可双击的 `install.command`。
+
+服务端 release 构建命令：
+
+```bash
+npm run server:mcp:release
+npm run server:verify:mcp-release
+```
+
+release 产物写入 `build/release/mcp/`，包含：
+
+- `agentstudio-mcp-connector-<version>.tgz`
+- `agentstudio-mcp-connector-<version>-<platform>.zip`
+- `agentstudio-mcp-connector-<version>-<platform>.tar.gz`
+- `agentstudio-mcp-install.sh`
+- `agentstudio-mcp-release.json`
+- `latest.json`
+
+发布通道使用 npm / GitHub Release 上传上述产物；`agentstudio-mcp-release.json` 记录 npm tarball sha256、portable zip sha256、portable tarball sha256、GitHub 一行安装命令、版本、支持的 target、Hub 注册命令、本机发现命令、多选交互式安装命令、单客户端脚本化连接命令和 `npm publish` 命令。终端用户首选 GitHub 一行命令或 zip 包入口，不需要完整服务端 checkout。
+
+具备 npm registry 权限时可以直接发布：
+
+```bash
+npm run server:mcp:release -- --publish
+```
+
+用户安装分成两层。第一层只注册共享本机 MCP Hub，不写入任何具体智能体客户端：
+
+```bash
+npx agentstudio-mcp-connector@latest register --url http://127.0.0.1:8787
+```
+
+第二层按需连接一个或多个客户端：
+
+```bash
+npx agentstudio-mcp-connector@latest install
+```
+
+无 `--target` 且运行在 TTY 中时，`install` 必须启动多选交互式菜单，扫描 Codex、Gemini CLI、Kilo Code、Copilot、Antigravity、OpenClaw、Hermes Agent 和 OrbStack 中的 claw-compatible 衍生体，允许用户用上下键移动、Space 多选、`a` 切换所有已检测客户端。菜单只在用户确认选择后写入对应客户端配置。
+
+GitHub Release 必须额外提供一条命令入口；它下载 portable zip、校验 SHA256、安装到 `~/.agentstudio/mcp/connector`，注册本机 Hub，并立即启动同一个多选 TUI：
+
+```bash
+/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/AgentStudio/releases/latest/download/agentstudio-mcp-install.sh)"
+```
+
+脚本化安装仍使用显式 target：
+
+```bash
+printf '%s\n' '<issued-token>' | npx agentstudio-mcp-connector@latest install \
+  --url http://127.0.0.1:8787 \
+  --target codex \
+  --token-stdin
+```
+
+没有 Node.js / npx 的用户使用 portable zip 包：
+
+```bash
+unzip agentstudio-mcp-connector-<version>-<platform>.zip
+cd agentstudio-mcp-connector-<version>-<platform>
+./agentstudio-mcp register --url http://127.0.0.1:8787
+./agentstudio-mcp install
+```
+
+portable zip 包同样保留脚本化安装：
+
+```bash
+printf '%s\n' '<issued-token>' | ./agentstudio-mcp install \
+  --url http://127.0.0.1:8787 \
+  --target codex \
+  --token-stdin
+```
+
+macOS 上也可以双击 portable 包里的 `install.command`，按提示输入 AgentStudio URL，并可选择连接一个或多个客户端。
+
+用户验证命令形态固定为：
+
+```bash
+AGENTSTUDIO_MCP_TOKEN='<issued-token>' npx agentstudio-mcp-connector@latest doctor \
+  --url http://127.0.0.1:8787
+```
+
+用户卸载单个客户端命令形态固定为：
+
+```bash
+npx agentstudio-mcp-connector@latest uninstall --target codex
+```
+
+`npm run server:mcp:install` 只保留为服务端开发者和本机调试入口，不作为终端用户安装通道。默认用户路径是 `register` 和 `discover-local`；客户端接入是每个 agent 明确 opt-in 的动作。
+
+#### Agent identity and grants
+
+MCP 不复用控制台 cookie / CSRF。每个 agent 使用独立 grant/token：
+
+```text
+agentstudio.mcp.codex
+agentstudio.mcp.gemini-cli
+agentstudio.mcp.kilo-code
+agentstudio.mcp.copilot
+agentstudio.mcp.openclaw.kate
+agentstudio.mcp.hermes.serena
+agentstudio.mcp.antigravity
+```
+
+每个 grant 必须记录：
+
+| 字段 | 用途 |
+| --- | --- |
+| `operatorId` | 区分真实调用方，例如 `codex:local`、`orbstack:kate:openclaw`。 |
+| `subjectId` | 归属用户、团队或 demo subject。 |
+| `agentProfileId` | 绑定 agent 默认上下文、预算、工具授权和审计标签。 |
+| `defaultWorkspaceId` | 省略 `workspaceId` 时使用的 workspace。 |
+| `allowedToolsets` | 可用 MCP toolset 白名单。 |
+| `allowedScopes` | Tool Management / Operation Registry 的 scope 白名单。 |
+| `createdAt` / `lastUsedAt` | 安装和调用审计。 |
+
+grant 只授予 curated MCP toolset。不得把完整 Operation Registry 默认暴露给任意 agent。
+
+#### Target install matrix
+
+| Target | 推荐接入 | 默认 endpoint |
+| --- | --- | --- |
+| Codex | `codex plugin marketplace add` + `codex plugin add` + `codex mcp add --url --bearer-token-env-var` | `http://127.0.0.1:8787/mcp` |
+| Gemini CLI | `gemini mcp add --transport http --header X-AgentStudio-Api-Key`；同时生成并校验 Stitch 形态 extension manifest | `http://127.0.0.1:8787/mcp` |
+| Kilo Code | 按 Kilo CLI 标准 `~/.config/kilo/kilo.json` 的 `mcp.<name>.type=remote` 写入 HTTP server | `http://127.0.0.1:8787/mcp` |
+| Copilot | `copilot mcp add --transport http --header X-AgentStudio-Api-Key` | `http://127.0.0.1:8787/mcp` |
+| OpenClaw / OrbStack Kate | VM 内 `openclaw mcp set agentstudio <json>`，HTTP endpoint 指向宿主机 | `http://host.orb.internal:8787/mcp` |
+| Hermes Agent / OrbStack Serena | VM 内 `hermes mcp add --url --auth header`，并用 Hermes config helper 启用后 `hermes mcp test` | `http://host.orb.internal:8787/mcp` |
+| Antigravity | 按官方 `~/.gemini/antigravity/mcp_config.json` 的 `serverUrl` + `headers` 写入 HTTP server | `http://127.0.0.1:8787/mcp` |
+
+installer 只追加或替换 `agentstudio` 这一项，必须先备份会被结构化写入的目标配置。不得覆盖、清空或重排用户已有 MCP server、API key、bot token 或 agent 配置。能用客户端标准 CLI 的目标必须调用标准 CLI；没有可脚本化标准 CLI 的目标由 `server:mcp:install` 按目标官方配置格式做结构化写入和备份。
+
+Codex 标准 CLI 配置形态：
+
+```toml
+[mcp_servers.agentstudio]
+url = "http://127.0.0.1:8787/mcp"
+bearer_token_env_var = "AGENTSTUDIO_MCP_TOKEN"
+```
+
+Gemini CLI 标准 MCP 配置形态：
+
+```json
+{
+  "mcpServers": {
+    "agentstudio": {
+      "url": "http://127.0.0.1:8787/mcp",
+      "type": "http",
+      "headers": {
+        "X-AgentStudio-Api-Key": "<agent-specific grant token>"
+      },
+      "timeout": 300000,
+      "trust": true
+    }
+  }
+}
+```
+
+安装器还会生成并校验 Stitch extension 同构 manifest，供未来 extension 分发复用：
+
+```json
+{
+  "mcpServers": {
+    "agentstudio": {
+      "httpUrl": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "X-AgentStudio-Api-Key": "<agent-specific grant token>"
+      },
+      "timeout": 300000
+    }
+  }
+}
+```
+
+#### Stable MCP tool
+
+对外 MCP 工具面必须收敛为一个稳定工具：
+
+```text
+agentstudio.call
+```
+
+`agentstudio.call` 的入参固定为：
+
+```json
+{
+  "apiVersion": "agentstudio.mcp.v1",
+  "operation": "system.health",
+  "input": {}
+}
+```
+
+`operation` 是 AgentStudio 内部 Operation Registry / Tool Management 的操作 id。外部智能体不直接看到 100+ 个内部 operation；需要发现内部能力时，调用：
+
+```text
+agentstudio.call({ "operation": "agentstudio.capabilities.list" })
+agentstudio.call({ "operation": "agentstudio.mcp.version" })
+```
+
+高风险内部 operation 只能通过显式 grant 扩展，并且必须保留 Tool Management policy preview、approval 和 audit。MCP `tools/list` 不得把内部 operation 展开成多个 MCP tools。
+
+#### Version upgrade push
+
+MCP interface version 固定从 `agentstudio.mcp.v1` 开始。服务端必须在三个位置暴露版本：
+
+- `initialize.result.serverInfo.version`
+- `initialize.result._meta.interfaceVersion` / `toolsetVersion`
+- `GET /.well-known/agentstudio/mcp.json` 和 `GET /api/mcp/discovery`
+
+服务端声明 `capabilities.tools.listChanged = true`。当工具 schema、interface version 或 toolset version 变化时，支持 Streamable HTTP 的客户端可通过 `GET /mcp` 的 SSE 事件收到 JSON-RPC notification：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/tools/list_changed",
+  "params": {
+    "interfaceVersion": "agentstudio.mcp.v1",
+    "toolsetVersion": "2026-05-22.1",
+    "stableToolName": "agentstudio.call"
+  }
+}
+```
+
+不支持持续 SSE 的客户端通过下一次 `initialize`、`tools/list` 或 `agentstudio.call({ "operation": "agentstudio.mcp.version" })` 获取版本变化。只有 endpoint、auth 或客户端插件 manifest 变更时才需要重新运行 `agentstudio-mcp register` 或按单客户端重新连接。
+
+#### Installation and doctor commands
+
+设备级 Hub 注册入口：
+
+```bash
+npm run server:mcp:register -- --url http://127.0.0.1:8787
+npm run server:mcp:discover-local
+```
+
+单目标安装入口：
+
+```bash
+npm run server:mcp:install -- --target codex
+npm run server:mcp:install -- --target gemini-cli
+npm run server:mcp:install -- --target kilo-code
+npm run server:mcp:install -- --target copilot
+npm run server:mcp:install -- --target openclaw --vm kate
+npm run server:mcp:install -- --target hermes --vm serena
+npm run server:mcp:install -- --target antigravity
+```
+
+诊断入口：
+
+```bash
+npm run server:mcp:discover
+npm run server:mcp:doctor
+npm run server:verify:mcp-http
+```
+
+`server:mcp:doctor` 必须验证：
+
+1. 主服务是否在 `127.0.0.1:8787` 运行。
+2. `POST /mcp initialize` 是否成功。
+3. `tools/list` 是否只返回 `agentstudio.call`。
+4. `tools/call agentstudio.call` 调用 `operation=system.health` 是否成功。
+5. 统一 registry `~/.agentstudio/mcp/servers.json` 是否存在并指向当前服务。
+6. 每个显式 opt-in 的 target 配置是否包含 AgentStudio MCP。
+7. OrbStack VM 是否能访问 `host.orb.internal:8787/mcp`。
+
+#### Implementation boundary
+
+MCP handler 不能直接读写文件夹或知识库内部实现。所有 `tools/call agentstudio.call` 必须落到现有 Operation Registry、Tool Management、Workspace API、Policy Engine、Operation Ledger、Checkpoint Tree 和 storage metadata。MCP adapter 只做协议转换、身份注入、版本协商、错误规范化和 streaming / stdio transport 兼容。
+
+本机五阶段演示使用的扩展工具面：
 
 ```text
 workspace.info
