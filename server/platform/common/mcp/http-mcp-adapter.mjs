@@ -1,13 +1,18 @@
 import { sendJson } from "../console/http/http-utils.mjs";
+import {
+  buildMcpHandshakePayload,
+  publicMcpIdentity,
+  signMcpHandshake
+} from "./identity.mjs";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MCP_INTERFACE_VERSION = "agentstudio.mcp.v1";
 export const MCP_TOOLSET_VERSION = "2026-05-22.1";
 export const MCP_STABLE_TOOL_NAME = "agentstudio.call";
-export const MCP_SERVER_VERSION = "0.2.0";
+export const MCP_SERVER_VERSION = "0.2.1";
 export const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
-export const MCP_CONNECTOR_VERSION = "0.2.0";
+export const MCP_CONNECTOR_VERSION = "0.2.1";
 export const MCP_CONNECTOR_GITHUB_REPO = "Unka-Malloc/AgentStudio";
 export const AGENTSTUDIO_MCP_URL_ENV = "AGENTSTUDIO_MCP_URL";
 export const AGENTSTUDIO_MCP_DISCOVERY_URL_ENV = "AGENTSTUDIO_MCP_DISCOVERY_URL";
@@ -156,8 +161,8 @@ function mcpVersionInfo() {
 }
 
 function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
-  const baseUrl = String(discoveryState?.activeServiceUrl || listenUrl || "http://127.0.0.1:8787").replace(/\/+$/, "");
-  let vmBaseUrl = "http://host.orb.internal:8787";
+  const baseUrl = String(discoveryState?.activeServiceUrl || listenUrl || "").replace(/\/+$/, "");
+  let vmBaseUrl = "";
   try {
     const parsed = new URL(baseUrl);
     vmBaseUrl = `${parsed.protocol}//host.orb.internal:${parsed.port || (parsed.protocol === "https:" ? "443" : "80")}`;
@@ -169,12 +174,12 @@ function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
 
 export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
-  const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register --url ${baseUrl}`;
-  const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --url ${baseUrl} --target <client> --token-stdin`;
+  const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`;
+  const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client> --token-stdin`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install`;
   const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/agentstudio-mcp-install.sh)"`;
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>`;
-  const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor --url ${baseUrl}`;
+  const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor`;
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local`;
   const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan --json`;
   return {
@@ -183,6 +188,7 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
     interfaceVersion: MCP_INTERFACE_VERSION,
     toolsetVersion: MCP_TOOLSET_VERSION,
     serverVersion: MCP_SERVER_VERSION,
+    serverId: discoveryState?.serverId || "",
     stableToolName: MCP_STABLE_TOOL_NAME,
     sharedHub: {
       canonicalMcpUrl: `${baseUrl}/mcp`,
@@ -214,7 +220,7 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
         "AGENTSTUDIO_MCP_URL",
         "AGENTSTUDIO_MCP_DISCOVERY_URL",
         "AGENTSTUDIO_MCP_DISCOVERY_FILE",
-        "localhost HTTP discovery"
+        "signed local port scan"
       ]
     },
     installer: {
@@ -243,9 +249,9 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
         releaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.zip`,
         tarballReleaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.tar.gz`,
         zipInstallEntry: "install.command",
-        installCommand: "./agentstudio-mcp register --url <agentstudio-url>",
+        installCommand: "./agentstudio-mcp register",
         interactiveInstallCommand: "./agentstudio-mcp install",
-        clientInstallCommand: "./agentstudio-mcp install --url <agentstudio-url> --target <client> --token-stdin",
+        clientInstallCommand: "./agentstudio-mcp install --target <client> --token-stdin",
         doubleClickEntry: "install.command"
       }
     },
@@ -302,6 +308,67 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
       type: "agentstudio_tool_management_token",
       acceptedHeaders: ["Authorization: Bearer <token>", "X-AgentStudio-Api-Key"],
       tokenSource: "AgentStudio Tool Management grant token"
+    },
+    identity: discoveryState?.mcpIdentity
+      ? publicMcpIdentity(discoveryState.mcpIdentity)
+      : null,
+    handshake: {
+      schemaVersion: "agentstudio.mcp.handshake.v1",
+      method: "POST",
+      url: `${baseUrl}/api/mcp/handshake`,
+      nonceBytes: 32,
+      signatureAlgorithm: "Ed25519",
+      signaturePayloadEncoding: "agentstudio.stable-json.v1"
+    }
+  };
+}
+
+function validHandshakeNonce(value) {
+  return /^[A-Za-z0-9_-]{24,256}$/.test(String(value || ""));
+}
+
+function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
+  const identity = discoveryState?.mcpIdentity;
+  if (!identity) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        ok: false,
+        error: "AgentStudio MCP identity is not available."
+      }
+    };
+  }
+  const body = parseRequestBody(requestBody);
+  const nonce = String(body?.nonce || "").trim();
+  if (!validHandshakeNonce(nonce)) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        ok: false,
+        error: "MCP handshake requires a base64url nonce with at least 24 characters."
+      }
+    };
+  }
+  const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
+  const discovery = buildAgentStudioMcpDiscovery({ listenUrl, discoveryState });
+  const issuedAt = new Date().toISOString();
+  const payload = buildMcpHandshakePayload({
+    nonce,
+    issuedAt,
+    identity,
+    discovery,
+    baseUrl,
+    vmBaseUrl
+  });
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      ok: true,
+      payload,
+      signature: signMcpHandshake({ identity, payload })
     }
   };
 }
@@ -531,6 +598,24 @@ export async function handleAgentStudioMcpHttpRequest({
       return true;
     }
     sendJson(response, 200, buildAgentStudioMcpDiscovery({ listenUrl, discoveryState }));
+    return true;
+  }
+
+  if (url.pathname === "/api/mcp/handshake") {
+    if (method !== "POST") {
+      response.writeHead(405, { Allow: "POST", "Cache-Control": "no-store" });
+      response.end();
+      return true;
+    }
+    try {
+      const result = mcpHandshake({ requestBody, listenUrl, discoveryState });
+      sendJson(response, result.status, result.body);
+    } catch {
+      sendJson(response, 400, {
+        ok: false,
+        error: "MCP handshake body must be valid JSON."
+      });
+    }
     return true;
   }
 

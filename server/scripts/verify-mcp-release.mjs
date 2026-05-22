@@ -41,7 +41,7 @@ try {
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "agentstudio-mcp-connector");
-  assert.equal(result.packageVersion, "0.2.0");
+  assert.equal(result.packageVersion, "0.2.1");
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   assert.equal(manifest.packageType, "agentstudio.mcp-connector-release.v1");
@@ -75,8 +75,10 @@ try {
   const bootstrapScript = await fs.readFile(result.bootstrapInstallerPath, "utf8");
   assert.match(bootstrapScript, /curl -fL --retry 3/);
   assert.match(bootstrapScript, /archive_sha256=/);
-  assert.match(bootstrapScript, /register --url/);
-  assert.match(bootstrapScript, /install --url/);
+  assert.doesNotMatch(bootstrapScript, /127\.0\.0\.1:8787/);
+  assert.doesNotMatch(bootstrapScript, /register --url/);
+  assert.doesNotMatch(bootstrapScript, /install --url/);
+  assert.match(bootstrapScript, /agentstudio-mcp" install/);
 
   const list = await run("tar", ["-tzf", result.tarballPath]);
   assert.match(list.stdout, /package\/bin\/agentstudio-mcp\.mjs/);
@@ -103,7 +105,7 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.2.0");
+  assert.equal(versionPayload.packageVersion, "0.2.1");
   assert.equal(versionPayload.stableToolName, "agentstudio.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "help"]);
   assert.match(help.stdout, /agentstudio-mcp register/);
@@ -111,10 +113,25 @@ try {
   assert.match(help.stdout, /multi-select menu/);
   assert.match(help.stdout, /agentstudio-mcp scan --json/);
   assert.match(help.stdout, /agentstudio-mcp discover-local/);
-  const scan = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "scan", "--no-scan", "--json"]);
+  assert.match(help.stdout, /agentstudio-mcp server-config --set/);
+  const scan = await run("node", [
+    path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"),
+    "scan",
+    "--no-scan",
+    "--url",
+    "http://127.0.0.1:9",
+    "--orb-bin",
+    "/nonexistent/orb",
+    "--json"
+  ], {
+    env: {
+      HOME: path.join(tempDir, "scan-home")
+    }
+  });
   const scanPayload = JSON.parse(scan.stdout);
   assert.equal(scanPayload.ok, true);
   assert.equal(scanPayload.candidates.some((candidate) => candidate.target === "codex"), true);
+  assert.equal(scanPayload.serverDiscovery.ok, false);
 
   const portableExtractDir = path.join(tempDir, "portable");
   await fs.mkdir(portableExtractDir, { recursive: true });
@@ -122,23 +139,19 @@ try {
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.2.0");
-  const portableRegister = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), [
-    "register",
-    "--url",
-    "http://127.0.0.1:8787",
-    "--no-env",
+  assert.equal(portablePayload.packageVersion, "0.2.1");
+  const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), [
+    "server-config",
+    "--reset",
     "--json"
   ], {
     env: {
       HOME: path.join(tempDir, "portable-home")
     }
   });
-  const registerPayload = JSON.parse(portableRegister.stdout);
-  assert.equal(registerPayload.mode, "device-hub-registration");
-  assert.equal(registerPayload.mcpUrl, "http://127.0.0.1:8787/mcp");
-  assert.equal(registerPayload.localFiles.length, 1);
-  assert.equal(registerPayload.localEntry.registryFile, registerPayload.localFiles[0]);
+  const resetPayload = JSON.parse(portableReset.stdout);
+  assert.equal(resetPayload.ok, true);
+  assert.equal(resetPayload.reset, true);
 
   const portableZipExtractDir = path.join(tempDir, "portable-zip");
   await fs.mkdir(portableZipExtractDir, { recursive: true });
@@ -147,7 +160,7 @@ try {
   const portableZipVersion = await run(path.join(zipRoot, "agentstudio-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.2.0");
+  assert.equal(portableZipPayload.packageVersion, "0.2.1");
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
 
   console.log("mcp-release verification passed");

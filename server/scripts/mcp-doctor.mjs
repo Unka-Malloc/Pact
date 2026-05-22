@@ -102,7 +102,22 @@ async function checkOrbStackVm({ vm, user, healthUrl }) {
   };
 }
 
-const baseUrl = String(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || "http://127.0.0.1:8787")).replace(/\/+$/, "");
+async function discoverSignedBaseUrl() {
+  const explicitUrl = String(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || "")).trim();
+  const args = ["mcp-connector/bin/agentstudio-mcp.mjs", "discover-local", "--json"];
+  if (explicitUrl) {
+    args.push("--url", explicitUrl);
+  }
+  const result = await run(process.execPath, args);
+  const payload = JSON.parse(result.stdout);
+  if (!payload.ok || !payload.baseUrl) {
+    throw new Error(payload.reason || "No signed AgentStudio MCP hub discovered.");
+  }
+  return payload;
+}
+
+const signedDiscovery = await discoverSignedBaseUrl();
+const baseUrl = String(signedDiscovery.baseUrl).replace(/\/+$/, "");
 const token = String(argValue("--token", process.env.AGENTSTUDIO_MCP_TOKEN || "")).trim();
 const headers = token
   ? {
@@ -113,6 +128,7 @@ const headers = token
 
 const report = {
   baseUrl,
+  signedDiscovery,
   discovery: null,
   initialize: null,
   toolsList: null,
@@ -178,7 +194,8 @@ report.orbStack = vmHealthUrl
       serena: { ok: false, skipped: true, reason: "No VM health URL discovered." }
     };
 
-const ok = report.discovery.ok
+const ok = report.signedDiscovery.ok
+  && report.discovery.ok
   && report.initialize.ok
   && report.deviceManifest.ok
   && (!token || (
@@ -191,6 +208,12 @@ const ok = report.discovery.ok
 console.log(JSON.stringify({
   ok,
   checks: {
+    signedDiscovery: {
+      ok: report.signedDiscovery.ok,
+      baseUrl,
+      identityKeyId: report.signedDiscovery.identityKeyId || "",
+      attempts: report.signedDiscovery.attempts || []
+    },
     discovery: {
       ok: report.discovery.ok,
       status: report.discovery.status,

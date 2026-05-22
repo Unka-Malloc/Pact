@@ -1,3 +1,8 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(name);
   if (index >= 0 && process.argv[index + 1]) {
@@ -6,11 +11,20 @@ function argValue(name, fallback = "") {
   return fallback;
 }
 
-const baseUrl = String(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || "http://127.0.0.1:8787")).replace(/\/+$/, "");
-const response = await fetch(`${baseUrl}/api/mcp/discovery`);
-const text = await response.text();
-if (!response.ok) {
-  console.error(`MCP discovery failed: ${response.status} ${text}`);
+const explicitUrl = String(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || "")).trim();
+const args = ["mcp-connector/bin/agentstudio-mcp.mjs", "discover", "--json"];
+if (explicitUrl) {
+  args.push("--url", explicitUrl);
+}
+
+try {
+  const result = await execFileAsync(process.execPath, args, {
+    cwd: process.cwd(),
+    maxBuffer: 10 * 1024 * 1024
+  });
+  console.log(JSON.stringify(JSON.parse(result.stdout), null, 2));
+} catch (error) {
+  const message = error.stderr || error.stdout || error.message || "MCP discovery failed";
+  console.error(message.trim());
   process.exit(1);
 }
-console.log(JSON.stringify(JSON.parse(text), null, 2));

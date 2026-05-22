@@ -16,10 +16,14 @@ This downloads the portable connector zip, verifies its checksum, installs it un
 `~/.agentstudio/mcp/connector`, registers the local AgentStudio MCP hub, then opens
 the multi-select TUI.
 
+The connector does not assume a default IP address. It scans local AgentStudio
+candidates, fetches MCP discovery, then verifies the `/api/mcp/handshake`
+Ed25519 signature before using the endpoint.
+
 For npm-based installs:
 
 ```bash
-npx agentstudio-mcp-connector@latest register --url http://127.0.0.1:8787
+npx agentstudio-mcp-connector@latest register
 ```
 
 This writes one local registry at `~/.agentstudio/mcp/servers.json`. It does not mutate any agent client config.
@@ -36,10 +40,25 @@ For scripts:
 
 ```bash
 printf '%s\n' '<issued-token>' | npx agentstudio-mcp-connector@latest install \
-  --url http://127.0.0.1:8787 \
   --target codex \
   --token-stdin
 ```
+
+## Server Config
+
+Manage the local connector's server address profiles:
+
+```bash
+agentstudio-mcp server-config --set --url http://<host>:<port> --name local
+agentstudio-mcp server-config --switch local
+agentstudio-mcp server-config --refresh
+agentstudio-mcp server-config --reset
+agentstudio-mcp server-config --list
+```
+
+`--set`, `--switch`, and `--refresh` verify the server's signed MCP handshake.
+`--reset` clears the local server address config so future installs must discover
+or configure a server again.
 
 ## Install Without Node.js
 
@@ -48,7 +67,7 @@ Use the portable zip release artifact instead of the npm package:
 ```bash
 unzip agentstudio-mcp-connector-<version>-<platform>.zip
 cd agentstudio-mcp-connector-<version>-<platform>
-./agentstudio-mcp register --url http://127.0.0.1:8787
+./agentstudio-mcp register
 ./agentstudio-mcp install
 ```
 
@@ -56,7 +75,6 @@ For scripts:
 
 ```bash
 printf '%s\n' '<issued-token>' | ./agentstudio-mcp install \
-  --url http://127.0.0.1:8787 \
   --target codex \
   --token-stdin
 ```
@@ -66,8 +84,7 @@ The portable zip package includes its own Node.js runtime. macOS users can open 
 ## Verify
 
 ```bash
-AGENTSTUDIO_MCP_TOKEN='<issued-token>' npx agentstudio-mcp-connector@latest doctor \
-  --url http://127.0.0.1:8787
+AGENTSTUDIO_MCP_TOKEN='<issued-token>' npx agentstudio-mcp-connector@latest doctor
 ```
 
 ## Discover Local Hub

@@ -216,7 +216,7 @@ rankScoreV0 =
 
 第一版 MCP service 必须做成设备级 AgentStudio MCP Hub，而不是 OpenClaw 专用 adapter：
 
-- HTTP 权威入口复用主服务：本机默认 `127.0.0.1:8787/mcp`，OrbStack 内使用 `host.orb.internal:8787/mcp`。
+- HTTP 权威入口复用主服务：connector 不内置默认 IP；安装启动时先扫描本机 AgentStudio 候选端口和已发布的本机 registry，读取 discovery 后通过 `/api/mcp/handshake` 校验服务端 Ed25519 签名，验证通过后才使用对应 HTTP MCP URL。OrbStack 内仍使用服务端 discovery 给出的 `host.orb.internal:<port>/mcp` advertised endpoint。
 - 按 Stitch MCP 方案优先生成 HTTP MCP 客户端配置：Gemini CLI、Kilo Code、Copilot、OpenClaw、Hermes Agent 和 Antigravity 都直接指向 HTTP MCP endpoint 并带 agent-specific token header；Codex CLI 使用其标准 `--bearer-token-env-var` HTTP MCP 形态，服务端同时接受 bearer token 和 `X-AgentStudio-Api-Key`；stdio proxy 只作为不支持 HTTP MCP 或自定义 headers 的兼容入口。
 - 设备级发现统一封装为 `agentstudio-mcp discover-local`，它只维护 canonical registry `~/.agentstudio/mcp/servers.json`，并由 `/.well-known/agentstudio/mcp.json` 和 `/api/mcp/discovery` 暴露当前 HTTP endpoint、VM endpoint、connector release 包和安装状态；不得通过写多个本机发现文件来兼容不同客户端。
 - 客户端安装器必须通过 `agentstudio-mcp-connector` release 包发布；终端用户不得为了安装 MCP 拉取完整服务端仓库。release manifest 必须包含 package version、npm tarball sha256、portable zip sha256、portable tarball sha256、GitHub 一行安装命令、Hub 注册命令、本机发现命令、多选交互式安装命令、单客户端脚本化连接命令、卸载命令、doctor 命令和支持的 target 列表。没有 Node.js / npm / npx 的机器必须能通过自带 Node runtime 的 portable zip 包安装。

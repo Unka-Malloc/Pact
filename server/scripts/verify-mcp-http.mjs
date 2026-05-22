@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
+import { verifyMcpHandshakeSignature } from "../platform/common/mcp/identity.mjs";
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -57,6 +59,10 @@ try {
   assert.equal(discovery.payload.mcpServers.agentstudio.httpUrl, `${server.url}/mcp`);
   assert.equal(discovery.payload.stableToolName, "agentstudio.call");
   assert.equal(discovery.payload.interfaceVersion, "agentstudio.mcp.v1");
+  assert.equal(discovery.payload.serverVersion, "0.2.1");
+  assert.equal(discovery.payload.identity.algorithm, "Ed25519");
+  assert.ok(discovery.payload.identity.keyId);
+  assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
   assert.equal(discovery.payload.installer.packageName, "agentstudio-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /agentstudio-mcp-install\.sh/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineCommand);
@@ -72,6 +78,32 @@ try {
   assert.equal(discovery.payload.installer.portable.supportsMultiSelect, true);
   assert.match(discovery.payload.installer.portable.releaseAssetPattern, /\.zip$/);
   assert.equal(discovery.payload.mcpServers.agentstudio.headers["X-AgentStudio-Api-Key"], "${AGENTSTUDIO_MCP_TOKEN}");
+
+  const nonce = randomBytes(32).toString("base64url");
+  const handshake = await fetchJson(`${server.url}/api/mcp/handshake`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      nonce,
+      client: { name: "verify-mcp-http", version: "1" }
+    })
+  });
+  assert.equal(handshake.status, 200);
+  assert.equal(handshake.payload.ok, true);
+  assert.equal(handshake.payload.payload.nonce, nonce);
+  assert.equal(handshake.payload.payload.server.name, "AgentStudio");
+  assert.equal(handshake.payload.payload.server.serverVersion, "0.2.1");
+  assert.equal(handshake.payload.payload.identity.keyId, discovery.payload.identity.keyId);
+  assert.equal(handshake.payload.payload.endpoints.mcpUrl, `${server.url}/mcp`);
+  assert.equal(handshake.payload.signature.algorithm, "Ed25519");
+  assert.equal(
+    verifyMcpHandshakeSignature({
+      publicKeyJwk: handshake.payload.payload.identity.publicKeyJwk,
+      payload: handshake.payload.payload,
+      signature: handshake.payload.signature.value
+    }),
+    true
+  );
 
   const getMcp = await fetchText(`${server.url}/mcp`, {
     headers: { Accept: "text/event-stream" }

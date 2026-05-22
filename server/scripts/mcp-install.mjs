@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { createToolManagementStore } from "../platform/specialized/capabilities/tools/tool-management-core/store.mjs";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_BASE_URL = "http://127.0.0.1:8787";
+const DEFAULT_BASE_URL = "";
 const DEFAULT_TOKEN_ENV = "AGENTSTUDIO_MCP_TOKEN";
 const DEFAULT_CODEX_BIN = "/Applications/Codex.app/Contents/Resources/codex";
 const DEFAULT_GEMINI_BIN = "gemini";
@@ -18,7 +18,7 @@ const MARKETPLACE_NAME = "agentstudio-local";
 const GEMINI_EXTENSION_NAME = "AgentStudio";
 const MCP_SERVER_NAME = "agentstudio";
 const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
-const MCP_CONNECTOR_VERSION = "0.2.0";
+const MCP_CONNECTOR_VERSION = "0.2.1";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
@@ -683,6 +683,9 @@ async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot,
 
 const targets = parseTargets();
 const baseUrl = normalizeBaseUrl(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || DEFAULT_BASE_URL));
+if (!baseUrl) {
+  throw new Error("server:mcp:install requires --url or AGENTSTUDIO_MCP_BASE_URL. End-user installs should use agentstudio-mcp install, which discovers and verifies the server.");
+}
 const dataDir = path.resolve(argValue("--data-dir", path.join(repoRoot(), ".agentstudio-server-data")));
 const codexBin = argValue("--codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_CODEX_BIN);
 const geminiBin = argValue("--gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN);

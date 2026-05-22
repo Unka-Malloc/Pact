@@ -59,6 +59,7 @@ import {
 } from "../../platform/common/operation-dispatcher/operation-dispatcher.mjs";
 import { listInterfaceCatalog } from "../../platform/common/operation-dispatcher/operation-registry.mjs";
 import { handleAgentStudioMcpHttpRequest } from "../../platform/common/mcp/http-mcp-adapter.mjs";
+import { loadOrCreateMcpIdentity } from "../../platform/common/mcp/identity.mjs";
 import { createJobsController } from "../../platform/common/console/http/controllers/jobs-controller.mjs";
 import { createSystemController } from "../../platform/common/console/http/controllers/system-controller.mjs";
 import { buildConsoleState } from "../../platform/common/console/http/api-facade.mjs";
@@ -356,6 +357,7 @@ export async function startHttpServer({
     runtimeOptions,
     runtimeLogger
   });
+  const mcpIdentity = await loadOrCreateMcpIdentity(userDataPath);
   const {
     featureRuntime,
     allApiOperationCount,
@@ -813,6 +815,10 @@ export async function startHttpServer({
     serverLabel,
     overrides: discoveryOptions
   });
+  discoveryState = {
+    ...discoveryState,
+    mcpIdentity
+  };
   await saveDiscoveryConfig(userDataPath, discoveryState, {
     listenUrl,
     serverLabel

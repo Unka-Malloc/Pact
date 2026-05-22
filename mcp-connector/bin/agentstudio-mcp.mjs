@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFile, spawn } from "node:child_process";
+import { createPublicKey, randomBytes, verify } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +9,6 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await fs.readFile(new URL("../package.json", import.meta.url), "utf8"));
 
-const DEFAULT_BASE_URL = "http://127.0.0.1:8787";
 const DEFAULT_TOKEN_ENV = "AGENTSTUDIO_MCP_TOKEN";
 const DEFAULT_CODEX_BIN = "/Applications/Codex.app/Contents/Resources/codex";
 const DEFAULT_GEMINI_BIN = "gemini";
@@ -35,6 +35,7 @@ const AGENTSTUDIO_MCP_URL_ENV = "AGENTSTUDIO_MCP_URL";
 const AGENTSTUDIO_MCP_DISCOVERY_URL_ENV = "AGENTSTUDIO_MCP_DISCOVERY_URL";
 const AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV = "AGENTSTUDIO_MCP_DISCOVERY_FILE";
 const DEFAULT_DISCOVERY_REGISTRY = path.join(os.homedir(), ".agentstudio", "mcp", "servers.json");
+const DEFAULT_SCAN_PORTS = [8787, 8788, 8789, 8790, 8791, 8792, 8793, 8794, 8795, 8796, 8797];
 const TARGET_ALIASES = new Map([
   ["gemini", "gemini-cli"],
   ["gemini_cli", "gemini-cli"],
@@ -59,18 +60,23 @@ const TARGET_LABELS = {
 function usage() {
   return [
     "Usage:",
-    "  agentstudio-mcp register --url http://127.0.0.1:8787",
+    "  agentstudio-mcp register",
     "  agentstudio-mcp install",
-    "  agentstudio-mcp install --url http://127.0.0.1:8787 --target codex --token-stdin",
+    "  agentstudio-mcp install --target codex --token-stdin",
     "  agentstudio-mcp uninstall --target codex",
     "  agentstudio-mcp scan --json",
     "  agentstudio-mcp discover-local",
-    "  agentstudio-mcp doctor --url http://127.0.0.1:8787",
-    "  agentstudio-mcp discover --url http://127.0.0.1:8787",
+    "  agentstudio-mcp doctor",
+    "  agentstudio-mcp discover",
+    "  agentstudio-mcp server-config --set --url http://host:port --name local",
+    "  agentstudio-mcp server-config --switch local",
+    "  agentstudio-mcp server-config --refresh",
+    "  agentstudio-mcp server-config --reset",
     "",
     "Options:",
     "  --target LIST                 Comma-separated targets for non-interactive install. Default: codex.",
-    "  --url URL                     AgentStudio base URL. Default: http://127.0.0.1:8787.",
+    "  --url URL                     Explicit AgentStudio base URL. Still requires signed MCP handshake.",
+    "  --scan-ports LIST            Local ports to scan when --url is omitted. Default: 8787-8797.",
     "  --token TOKEN                 AgentStudio MCP token. Prefer --token-stdin or --token-env.",
     "  --token-stdin                 Read token from stdin.",
     "  --token-env NAME              Token environment variable. Default: AGENTSTUDIO_MCP_TOKEN.",
@@ -111,7 +117,17 @@ function parseArgs(argv) {
     const equalIndex = keyValue.indexOf("=");
     const key = equalIndex >= 0 ? keyValue.slice(0, equalIndex) : keyValue;
     const inlineValue = equalIndex >= 0 ? keyValue.slice(equalIndex + 1) : null;
-    if (key === "help" || key === "json" || key === "token-stdin" || key === "no-verify" || key === "no-scan") {
+    if (
+      key === "help" ||
+      key === "json" ||
+      key === "token-stdin" ||
+      key === "no-verify" ||
+      key === "no-scan" ||
+      key === "set" ||
+      key === "refresh" ||
+      key === "reset" ||
+      key === "list"
+    ) {
       options[key] = true;
       continue;
     }
@@ -133,7 +149,7 @@ function option(options, name, fallback = "") {
 }
 
 function normalizeBaseUrl(value) {
-  return String(value || DEFAULT_BASE_URL).trim().replace(/\/+$/, "");
+  return String(value || "").trim().replace(/\/+$/, "");
 }
 
 function normalizeTarget(value) {
@@ -278,14 +294,52 @@ async function runWithInput(command, args = [], input = "", options = {}) {
   });
 }
 
+function sortValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, sortValue(value[key])])
+    );
+  }
+  return value;
+}
+
+function stableStringify(value) {
+  return JSON.stringify(sortValue(value));
+}
+
+function verifySignedPayload({ publicKeyJwk, payload, signature }) {
+  const publicKey = createPublicKey({ key: publicKeyJwk, format: "jwk" });
+  return verify(
+    null,
+    Buffer.from(stableStringify(payload)),
+    publicKey,
+    Buffer.from(String(signature || ""), "base64url")
+  );
+}
+
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const text = await response.text();
-  return {
-    ok: response.ok,
-    status: response.status,
-    payload: text.trim() ? JSON.parse(text) : {}
-  };
+  const { timeoutMs = 10000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal
+    });
+    const text = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      payload: text.trim() ? JSON.parse(text) : {}
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function readJson(filePath, fallback = {}) {
@@ -360,6 +414,210 @@ async function readLaunchctlEnv(name) {
   }
   const result = await run("launchctl", ["getenv", name], { allowFailure: true });
   return result.ok ? result.stdout.trim() : "";
+}
+
+function explicitBaseUrl(options = {}) {
+  return normalizeBaseUrl(option(options, "url", process.env.AGENTSTUDIO_MCP_BASE_URL || ""));
+}
+
+function baseUrlFromEndpoint(value) {
+  const text = normalizeBaseUrl(value);
+  if (!text) {
+    return "";
+  }
+  try {
+    const parsed = new URL(text);
+    if (parsed.pathname === "/mcp") {
+      parsed.pathname = "/";
+      parsed.search = "";
+      parsed.hash = "";
+      return normalizeBaseUrl(parsed.toString());
+    }
+    if (
+      parsed.pathname === "/api/mcp/discovery" ||
+      parsed.pathname === "/.well-known/agentstudio/mcp.json" ||
+      parsed.pathname === "/api/mcp/handshake"
+    ) {
+      parsed.pathname = "/";
+      parsed.search = "";
+      parsed.hash = "";
+      return normalizeBaseUrl(parsed.toString());
+    }
+    return text;
+  } catch {
+    return "";
+  }
+}
+
+function parseScanPorts(options = {}) {
+  const raw = String(option(options, "scan-ports", process.env.AGENTSTUDIO_MCP_SCAN_PORTS || "")).trim();
+  const values = raw
+    ? raw.split(",").map((item) => Number(item.trim()))
+    : DEFAULT_SCAN_PORTS;
+  return uniqueValues(values
+    .filter((port) => Number.isInteger(port) && port > 0 && port <= 65535)
+    .map(String))
+    .map(Number);
+}
+
+async function registryBaseUrls(options = {}) {
+  const payload = await readJson(discoveryRegistryPath(options), null);
+  const server = payload?.servers?.[MCP_SERVER_NAME] || payload?.mcpServers?.[MCP_SERVER_NAME] || {};
+  const profiles = Object.values(payload?.serverConfig?.profiles || {});
+  const activeProfile = payload?.serverConfig?.activeName
+    ? payload?.serverConfig?.profiles?.[payload.serverConfig.activeName]
+    : null;
+  return uniqueValues([
+    activeProfile?.baseUrl,
+    baseUrlFromEndpoint(server.httpUrl),
+    baseUrlFromEndpoint(server.url),
+    baseUrlFromEndpoint(payload?.discovery?.preferredHttpDiscoveryUrl),
+    baseUrlFromEndpoint(payload?.discovery?.preferredApiDiscoveryUrl),
+    ...profiles.map((profile) => profile?.baseUrl)
+  ]);
+}
+
+async function candidateBaseUrls(options = {}) {
+  const explicit = explicitBaseUrl(options);
+  if (explicit) {
+    return [explicit];
+  }
+  const launchDiscoveryFile = await readLaunchctlEnv(AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV);
+  const launchDiscoveryUrl = await readLaunchctlEnv(AGENTSTUDIO_MCP_DISCOVERY_URL_ENV);
+  const launchMcpUrl = await readLaunchctlEnv(AGENTSTUDIO_MCP_URL_ENV);
+  const fileCandidates = uniqueValues([
+    discoveryRegistryPath(options),
+    launchDiscoveryFile
+  ]);
+  const fromFiles = [];
+  for (const filePath of fileCandidates) {
+    const payload = await readJson(filePath, null);
+    const server = payload?.servers?.[MCP_SERVER_NAME] || payload?.mcpServers?.[MCP_SERVER_NAME] || {};
+    const profiles = Object.values(payload?.serverConfig?.profiles || {});
+    const activeProfile = payload?.serverConfig?.activeName
+      ? payload?.serverConfig?.profiles?.[payload.serverConfig.activeName]
+      : null;
+    fromFiles.push(
+      activeProfile?.baseUrl,
+      baseUrlFromEndpoint(server.httpUrl),
+      baseUrlFromEndpoint(server.url),
+      baseUrlFromEndpoint(payload?.discovery?.preferredHttpDiscoveryUrl),
+      baseUrlFromEndpoint(payload?.discovery?.preferredApiDiscoveryUrl),
+      ...profiles.map((profile) => profile?.baseUrl)
+    );
+  }
+  const scanned = parseScanPorts(options).flatMap((port) => [
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`
+  ]);
+  return uniqueValues([
+    baseUrlFromEndpoint(process.env[AGENTSTUDIO_MCP_URL_ENV]),
+    baseUrlFromEndpoint(process.env[AGENTSTUDIO_MCP_DISCOVERY_URL_ENV]),
+    baseUrlFromEndpoint(launchMcpUrl),
+    baseUrlFromEndpoint(launchDiscoveryUrl),
+    ...fromFiles,
+    ...scanned
+  ]).map(normalizeBaseUrl);
+}
+
+async function fetchAgentStudioDiscovery(baseUrl) {
+  const url = `${baseUrl}/api/mcp/discovery`;
+  const result = await fetchJson(url, { timeoutMs: 1500 });
+  const payload = result.payload || {};
+  const identity = payload.identity || null;
+  if (
+    !result.ok ||
+    payload.name !== "AgentStudio" ||
+    payload.interfaceVersion !== MCP_INTERFACE_VERSION ||
+    payload.stableToolName !== MCP_STABLE_TOOL_NAME ||
+    identity?.algorithm !== "Ed25519" ||
+    !identity?.publicKeyJwk ||
+    !payload.handshake?.url
+  ) {
+    throw new Error("not an AgentStudio MCP discovery response");
+  }
+  return payload;
+}
+
+async function verifyAgentStudioHandshake(baseUrl, discovery) {
+  const nonce = randomBytes(32).toString("base64url");
+  const result = await fetchJson(`${baseUrl}/api/mcp/handshake`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      nonce,
+      client: {
+        name: packageJson.name,
+        version: packageJson.version
+      }
+    }),
+    timeoutMs: 2500
+  });
+  const payload = result.payload?.payload || {};
+  const signature = result.payload?.signature || {};
+  const publicKeyJwk = payload.identity?.publicKeyJwk;
+  if (
+    !result.ok ||
+    result.payload?.ok !== true ||
+    payload.schemaVersion !== "agentstudio.mcp.handshake.v1" ||
+    payload.nonce !== nonce ||
+    payload.server?.name !== "AgentStudio" ||
+    payload.server?.interfaceVersion !== MCP_INTERFACE_VERSION ||
+    payload.server?.stableToolName !== MCP_STABLE_TOOL_NAME ||
+    payload.identity?.keyId !== discovery.identity?.keyId ||
+    signature.algorithm !== "Ed25519" ||
+    !verifySignedPayload({ publicKeyJwk, payload, signature: signature.value })
+  ) {
+    throw new Error("AgentStudio MCP handshake signature verification failed");
+  }
+  return {
+    ok: true,
+    baseUrl,
+    discovery,
+    handshake: result.payload
+  };
+}
+
+async function discoverAgentStudioHub(options = {}) {
+  const attempts = [];
+  const candidates = await candidateBaseUrls(options);
+  for (const baseUrl of candidates) {
+    try {
+      const discovery = await fetchAgentStudioDiscovery(baseUrl);
+      const verified = await verifyAgentStudioHandshake(baseUrl, discovery);
+      return {
+        ...verified,
+        attempts: [
+          ...attempts,
+          { baseUrl, ok: true, verified: true }
+        ]
+      };
+    } catch (error) {
+      attempts.push({
+        baseUrl,
+        ok: false,
+        verified: false,
+        reason: error?.name === "AbortError" ? "timeout" : error?.message || String(error)
+      });
+    }
+  }
+  return {
+    ok: false,
+    attempts,
+    reason: "No signed AgentStudio MCP hub was discovered on this device."
+  };
+}
+
+async function optionsWithDiscoveredBaseUrl(options = {}) {
+  const discovered = await discoverAgentStudioHub(options);
+  if (!discovered.ok) {
+    throw new Error(`${discovered.reason} Use --url only if you know the AgentStudio base URL; it will still be handshake-verified.`);
+  }
+  return {
+    ...options,
+    "resolved-url": discovered.baseUrl,
+    __agentstudioDiscovery: discovered
+  };
 }
 
 async function publishLaunchctlEnv(env) {
@@ -795,8 +1053,7 @@ function buildDeviceHubManifest({
         "AGENTSTUDIO_MCP_URL",
         "AGENTSTUDIO_MCP_DISCOVERY_URL",
         "AGENTSTUDIO_MCP_DISCOVERY_FILE",
-        "http://127.0.0.1:8787/.well-known/agentstudio/mcp.json",
-        "http://127.0.0.1:8787/api/mcp/discovery"
+        "signed local port scan"
       ]
     },
     servers: {
@@ -811,9 +1068,9 @@ function buildDeviceHubManifest({
         connector: {
           packageName: packageJson.name,
           packageVersion: packageJson.version,
-          registerCommand: `npx ${packageJson.name}@${packageJson.version} register --url ${baseUrl}`,
+          registerCommand: `npx ${packageJson.name}@${packageJson.version} register`,
           interactiveInstallCommand,
-          installCommand: `npx ${packageJson.name}@${packageJson.version} install --url ${baseUrl} --target <client> --token-stdin`,
+          installCommand: `npx ${packageJson.name}@${packageJson.version} install --target <client> --token-stdin`,
           uninstallCommand: `npx ${packageJson.name}@${packageJson.version} uninstall --target <client>`,
           discoverCommand,
           scanCommand
@@ -829,7 +1086,7 @@ function buildDeviceHubManifest({
               marketplaceRoot,
               pluginRoot: codexPluginRoot,
               tokenEnv: DEFAULT_TOKEN_ENV,
-              installCommand: `npx ${packageJson.name}@${packageJson.version} install --url ${baseUrl} --target codex --token-stdin`
+              installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex --token-stdin`
             }
           : null),
         targets
@@ -1012,7 +1269,7 @@ async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot,
   const published = await publishDeviceHubManifest({
     baseUrl,
     targets: targetStatuses,
-    codex: existingServer.codex || null,
+    codex: normalizeCodexDiscovery(existingServer.codex),
     marketplaceRoot,
     codexPluginRoot,
     publishEnv,
@@ -1041,11 +1298,186 @@ async function writeDeviceUninstall({ baseUrl, uninstalled, publishEnv = true, d
   const published = await publishDeviceHubManifest({
     baseUrl,
     targets,
-    codex: existingServer.codex || null,
+    codex: normalizeCodexDiscovery(existingServer.codex),
     publishEnv,
     discoveryPath: manifestPath
   });
   return published.primaryPath;
+}
+
+function defaultTargetStatuses(existingTargets = {}) {
+  return Object.fromEntries(SUPPORTED_TARGETS.map((target) => [
+    target,
+    existingTargets[target] || {
+      installMode: "supported",
+      status: "not-installed"
+    }
+  ]));
+}
+
+function profileFromDiscovery({ name, discovered }) {
+  const baseUrl = discovered.baseUrl;
+  return {
+    name,
+    baseUrl,
+    mcpUrl: `${baseUrl}/mcp`,
+    discoveryUrl: `${baseUrl}/api/mcp/discovery`,
+    identityKeyId: discovered.handshake?.payload?.identity?.keyId || "",
+    serverId: discovered.discovery?.serverId || discovered.handshake?.payload?.server?.serverId || "",
+    serverVersion: discovered.discovery?.serverVersion || discovered.handshake?.payload?.server?.serverVersion || "",
+    interfaceVersion: discovered.discovery?.interfaceVersion || MCP_INTERFACE_VERSION,
+    stableToolName: discovered.discovery?.stableToolName || MCP_STABLE_TOOL_NAME,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function normalizeCodexDiscovery(codex) {
+  if (!codex) {
+    return null;
+  }
+  return {
+    ...codex,
+    installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex --token-stdin`
+  };
+}
+
+async function writeServerConfigProfile({ options, name = "default", discovered, publishEnv = true }) {
+  const discoveryPath = discoveryRegistryPath(options);
+  const existingManifest = await readJson(discoveryPath, {});
+  const existingServer = existingManifest?.servers?.[MCP_SERVER_NAME] || {};
+  const published = await publishDeviceHubManifest({
+    baseUrl: discovered.baseUrl,
+    targets: defaultTargetStatuses(existingServer.targets || {}),
+    codex: normalizeCodexDiscovery(existingServer.codex),
+    publishEnv,
+    discoveryPath
+  });
+  const manifest = await readJson(discoveryPath, {});
+  manifest.serverConfig = {
+    ...(manifest.serverConfig || {}),
+    activeName: name,
+    profiles: {
+      ...(existingManifest.serverConfig?.profiles || {}),
+      [name]: profileFromDiscovery({ name, discovered })
+    },
+    updatedAt: new Date().toISOString()
+  };
+  await writeJson(discoveryPath, manifest);
+  return {
+    ok: true,
+    path: published.primaryPath,
+    activeName: name,
+    profile: manifest.serverConfig.profiles[name]
+  };
+}
+
+async function resetServerConfig({ options, publishEnv = true }) {
+  const discoveryPath = discoveryRegistryPath(options);
+  const existingManifest = await readJson(discoveryPath, {});
+  const resetManifest = {
+    version: 1,
+    schemaVersion: "agentstudio.mcp.device-hub.v1",
+    generatedAt: new Date().toISOString(),
+    discovery: {
+      strategy: "shared-device-hub",
+      localEntry: {
+        type: "agentstudio-mcp-discover-local",
+        command: `npx ${packageJson.name}@${packageJson.version} discover-local`,
+        registryFile: discoveryPath
+      },
+      registryFile: discoveryPath,
+      localFiles: [discoveryPath],
+      env: {},
+      lookupOrder: [
+        "agentstudio-mcp discover-local",
+        "signed local port scan"
+      ]
+    },
+    servers: {},
+    serverConfig: {
+      activeName: "",
+      profiles: {},
+      updatedAt: new Date().toISOString(),
+      previousActiveName: existingManifest?.serverConfig?.activeName || ""
+    }
+  };
+  await writeJson(discoveryPath, resetManifest);
+  if (publishEnv && process.platform === "darwin") {
+    await run("launchctl", ["unsetenv", AGENTSTUDIO_MCP_URL_ENV], { allowFailure: true });
+    await run("launchctl", ["unsetenv", AGENTSTUDIO_MCP_DISCOVERY_URL_ENV], { allowFailure: true });
+    await run("launchctl", ["unsetenv", AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV], { allowFailure: true });
+  }
+  return {
+    ok: true,
+    path: discoveryPath,
+    reset: true
+  };
+}
+
+async function serverConfigCommand(options) {
+  const discoveryPath = discoveryRegistryPath(options);
+  if (options.reset) {
+    return resetServerConfig({ options, publishEnv: !options["no-env"] });
+  }
+  if (options.list) {
+    const manifest = await readJson(discoveryPath, {});
+    return {
+      ok: true,
+      path: discoveryPath,
+      activeName: manifest?.serverConfig?.activeName || "",
+      profiles: manifest?.serverConfig?.profiles || {},
+      currentServer: manifest?.servers?.[MCP_SERVER_NAME] || null
+    };
+  }
+  if (options.set) {
+    const url = explicitBaseUrl(options);
+    if (!url) {
+      throw new Error("server-config --set requires --url.");
+    }
+    const discovered = await discoverAgentStudioHub({ ...options, url });
+    if (!discovered.ok) {
+      throw new Error(`Failed to verify AgentStudio MCP server at ${url}: ${discovered.reason}`);
+    }
+    return writeServerConfigProfile({
+      options,
+      name: String(option(options, "name", "default")).trim() || "default",
+      discovered,
+      publishEnv: !options["no-env"]
+    });
+  }
+  if (options.switch) {
+    const name = String(options.switch || "").trim();
+    const manifest = await readJson(discoveryPath, {});
+    const profile = manifest?.serverConfig?.profiles?.[name];
+    if (!profile?.baseUrl) {
+      throw new Error(`No AgentStudio MCP server profile named ${name}.`);
+    }
+    const discovered = await discoverAgentStudioHub({ ...options, url: profile.baseUrl });
+    if (!discovered.ok) {
+      throw new Error(`Failed to verify AgentStudio MCP server profile ${name}: ${discovered.reason}`);
+    }
+    return writeServerConfigProfile({
+      options,
+      name,
+      discovered,
+      publishEnv: !options["no-env"]
+    });
+  }
+  if (options.refresh) {
+    const manifest = await readJson(discoveryPath, {});
+    const activeName = manifest?.serverConfig?.activeName || "default";
+    const discovered = await discoverAgentStudioHub(options);
+    if (!discovered.ok) {
+      throw new Error(discovered.reason);
+    }
+    return writeServerConfigProfile({
+      options,
+      name: activeName,
+      discovered,
+      publishEnv: !options["no-env"]
+    });
+  }
+  return serverConfigCommand({ ...options, list: true });
 }
 
 async function pathExists(filePath) {
@@ -1256,7 +1688,7 @@ async function scanInstallTargets(options = {}) {
     packageName: packageJson.name,
     packageVersion: packageJson.version,
     baseUrl: settings.baseUrl,
-    mcpUrl: `${settings.baseUrl}/mcp`,
+    mcpUrl: settings.baseUrl ? `${settings.baseUrl}/mcp` : "",
     candidates
   };
 }
@@ -1265,7 +1697,7 @@ function installerOptions(options) {
   const sharedVmName = option(options, "vm", "");
   const sharedVmUser = option(options, "vm-user", "");
   return {
-    baseUrl: normalizeBaseUrl(option(options, "url", process.env.AGENTSTUDIO_MCP_BASE_URL || DEFAULT_BASE_URL)),
+    baseUrl: normalizeBaseUrl(option(options, "resolved-url", explicitBaseUrl(options))),
     tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV)),
     codexBin: String(option(options, "codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_CODEX_BIN)),
     geminiBin: String(option(options, "gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN)),
@@ -1481,6 +1913,54 @@ async function resolveInteractiveToken(options) {
   return entered;
 }
 
+async function resolveHubForInstall(options) {
+  const discovered = await discoverAgentStudioHub(options);
+  if (discovered.ok) {
+    return {
+      ...options,
+      "resolved-url": discovered.baseUrl,
+      __agentstudioDiscovery: discovered
+    };
+  }
+  if (!canUseInstallTui(options)) {
+    throw new Error(`${discovered.reason} Run agentstudio-mcp server-config --set --url <agentstudio-url>, or rerun install in a TTY and choose manual configuration.`);
+  }
+  console.log("No signed AgentStudio MCP service was discovered on this device.");
+  console.log("The installer will not write any agent client config until a server identity signature is verified.");
+  console.log("");
+  const answer = await promptLine("Choose: [c]onfigure server URL now, [s]kip, manually configure later [s]: ");
+  if (!answer || answer.toLowerCase().startsWith("s")) {
+    return {
+      ...options,
+      __agentstudioSkippedDiscovery: {
+        ok: false,
+        skipped: true,
+        attempts: discovered.attempts,
+        reason: "Skipped. Manually configure later with agentstudio-mcp server-config --set --url <agentstudio-url>."
+      }
+    };
+  }
+  if (!answer.toLowerCase().startsWith("c")) {
+    return resolveHubForInstall(options);
+  }
+  const url = await promptLine("AgentStudio server URL: ");
+  const manual = await discoverAgentStudioHub({ ...options, url });
+  if (!manual.ok) {
+    throw new Error(`Failed to verify ${url}: ${manual.reason}`);
+  }
+  await writeServerConfigProfile({
+    options: { ...options, url },
+    name: String(option(options, "name", "manual")).trim() || "manual",
+    discovered: manual,
+    publishEnv: !options["no-env"]
+  });
+  return {
+    ...options,
+    "resolved-url": manual.baseUrl,
+    __agentstudioDiscovery: manual
+  };
+}
+
 async function installTargets({ options, targets, token, optionOverrides = {} }) {
   const mergedOptions = {
     ...options,
@@ -1658,12 +2138,22 @@ async function installSelectedCandidates({ options, selected, token }) {
 }
 
 async function installCommand(options) {
-  if (canUseInstallTui(options)) {
-    return installTuiCommand(options);
+  const resolvedOptions = await resolveHubForInstall(options);
+  if (resolvedOptions.__agentstudioSkippedDiscovery) {
+    return {
+      ok: false,
+      skipped: true,
+      packageName: packageJson.name,
+      packageVersion: packageJson.version,
+      ...resolvedOptions.__agentstudioSkippedDiscovery
+    };
   }
-  const targets = parseTargets(option(options, "target", "codex"));
-  const token = await resolveToken(options, { required: true });
-  return installTargets({ options, targets, token });
+  if (canUseInstallTui(options)) {
+    return installTuiCommand(resolvedOptions);
+  }
+  const targets = parseTargets(option(resolvedOptions, "target", "codex"));
+  const token = await resolveToken(resolvedOptions, { required: true });
+  return installTargets({ options: resolvedOptions, targets, token });
 }
 
 async function uninstallCommand(options) {
@@ -1727,14 +2217,16 @@ async function uninstallCommand(options) {
 }
 
 async function registerCommand(options) {
-  const settings = installerOptions(options);
-  const discoveryManifest = await writeDeviceUninstall({
-    baseUrl: settings.baseUrl,
-    uninstalled: {},
-    publishEnv: !options["no-env"],
-    discoveryPath: discoveryRegistryPath(options)
+  const resolvedOptions = await optionsWithDiscoveredBaseUrl(options);
+  const settings = installerOptions(resolvedOptions);
+  const profile = await writeServerConfigProfile({
+    options: resolvedOptions,
+    name: String(option(resolvedOptions, "name", "default")).trim() || "default",
+    discovered: resolvedOptions.__agentstudioDiscovery,
+    publishEnv: !resolvedOptions["no-env"]
   });
-  const localFiles = deviceDiscoveryPaths(options);
+  const discoveryManifest = profile.path;
+  const localFiles = deviceDiscoveryPaths(resolvedOptions);
   const env = deviceDiscoveryEnv({ baseUrl: settings.baseUrl, primaryPath: discoveryManifest });
   return {
     ok: true,
@@ -1750,8 +2242,10 @@ async function registerCommand(options) {
     },
     localFiles,
     env,
-    clientInstall: `agentstudio-mcp install --url ${settings.baseUrl} --target <client> --token-stdin`,
-    note: "Registered the shared AgentStudio MCP endpoint without installing it into any client."
+    clientInstall: `agentstudio-mcp install --target <client> --token-stdin`,
+    verifiedHandshake: resolvedOptions.__agentstudioDiscovery?.handshake?.payload?.identity?.keyId || "",
+    serverConfig: profile.profile,
+    note: "Discovered and registered the signed AgentStudio MCP endpoint without installing it into any client."
   };
 }
 
@@ -1790,83 +2284,45 @@ async function fetchDiscoveryUrl(url) {
 }
 
 async function discoverLocalCommand(options) {
-  const envFile = String(process.env[AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV] || await readLaunchctlEnv(AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV) || "").trim();
-  const envDiscoveryUrl = String(process.env[AGENTSTUDIO_MCP_DISCOVERY_URL_ENV] || await readLaunchctlEnv(AGENTSTUDIO_MCP_DISCOVERY_URL_ENV) || "").trim();
-  const envMcpUrl = String(process.env[AGENTSTUDIO_MCP_URL_ENV] || await readLaunchctlEnv(AGENTSTUDIO_MCP_URL_ENV) || "").trim();
-  const fileCandidates = uniqueValues([
-    envFile,
-    discoveryRegistryPath(options)
-  ]);
-  const urlCandidates = uniqueValues([
-    envDiscoveryUrl,
-    "http://127.0.0.1:8787/.well-known/agentstudio/mcp.json",
-    "http://127.0.0.1:8787/api/mcp/discovery"
-  ]);
-  const attempts = [];
-
-  if (envMcpUrl) {
+  const discovered = await discoverAgentStudioHub(options);
+  if (!discovered.ok) {
     return {
-      ok: true,
+      ok: false,
       packageName: packageJson.name,
       packageVersion: packageJson.version,
-      sourceType: "env",
-      source: AGENTSTUDIO_MCP_URL_ENV,
-      mcpUrl: envMcpUrl,
-      attempts
+      attempts: discovered.attempts,
+      reason: discovered.reason
     };
   }
-
-  for (const filePath of fileCandidates) {
-    try {
-      const result = await readLocalDiscoveryFile(filePath);
-      attempts.push({ sourceType: "file", source: filePath, ok: Boolean(result) });
-      if (result) {
-        return {
-          ok: true,
-          packageName: packageJson.name,
-          packageVersion: packageJson.version,
-          ...result,
-          attempts
-        };
-      }
-    } catch (error) {
-      attempts.push({ sourceType: "file", source: filePath, ok: false, reason: error.message || String(error) });
-    }
-  }
-
-  for (const url of urlCandidates) {
-    try {
-      const result = await fetchDiscoveryUrl(url);
-      attempts.push({ sourceType: "http", source: url, ok: Boolean(result) });
-      if (result) {
-        return {
-          ok: true,
-          packageName: packageJson.name,
-          packageVersion: packageJson.version,
-          ...result,
-          attempts
-        };
-      }
-    } catch (error) {
-      attempts.push({ sourceType: "http", source: url, ok: false, reason: error.message || String(error) });
-    }
-  }
-
   return {
-    ok: false,
+    ok: true,
     packageName: packageJson.name,
     packageVersion: packageJson.version,
-    attempts,
-    reason: "No local AgentStudio MCP discovery record found."
+    sourceType: "signed-handshake",
+    source: discovered.baseUrl,
+    baseUrl: discovered.baseUrl,
+    mcpUrl: `${discovered.baseUrl}/mcp`,
+    discoveryUrl: `${discovered.baseUrl}/api/mcp/discovery`,
+    identityKeyId: discovered.handshake?.payload?.identity?.keyId || "",
+    attempts: discovered.attempts,
+    payload: discovered.discovery
   };
 }
 
 async function doctorCommand(options) {
-  const settings = installerOptions(options);
-  const token = await resolveToken(options, { required: false });
+  const resolvedOptions = await optionsWithDiscoveredBaseUrl(options);
+  const settings = installerOptions(resolvedOptions);
+  const discovered = resolvedOptions.__agentstudioDiscovery || null;
+  const token = await resolveToken(resolvedOptions, { required: false });
   const discovery = await fetchJson(`${settings.baseUrl}/api/mcp/discovery`);
   const initialize = await ensureService(settings.baseUrl);
   const checks = {
+    signedDiscovery: {
+      ok: Boolean(discovered?.ok),
+      baseUrl: settings.baseUrl,
+      identityKeyId: discovered?.handshake?.payload?.identity?.keyId || "",
+      attempts: discovered?.attempts || []
+    },
     discovery: {
       ok: discovery.ok,
       status: discovery.status,
@@ -1896,7 +2352,7 @@ async function doctorCommand(options) {
     deviceManifest: {
       ok: false,
       exists: false,
-      path: discoveryRegistryPath(options)
+      path: discoveryRegistryPath(resolvedOptions)
     }
   };
 
@@ -1933,7 +2389,8 @@ async function doctorCommand(options) {
   }
 
   return {
-    ok: checks.discovery.ok
+    ok: checks.signedDiscovery.ok
+      && checks.discovery.ok
       && checks.initialize.ok
       && (!token || (checks.toolsList.ok && checks.systemHealth.ok)),
     packageName: packageJson.name,
@@ -1943,12 +2400,19 @@ async function doctorCommand(options) {
 }
 
 async function discoverCommand(options) {
-  const baseUrl = normalizeBaseUrl(option(options, "url", process.env.AGENTSTUDIO_MCP_BASE_URL || DEFAULT_BASE_URL));
+  const resolvedOptions = await optionsWithDiscoveredBaseUrl(options);
+  const baseUrl = installerOptions(resolvedOptions).baseUrl;
   const discovery = await fetchJson(`${baseUrl}/api/mcp/discovery`);
   if (!discovery.ok) {
     throw new Error(`AgentStudio MCP discovery failed: HTTP ${discovery.status}`);
   }
-  return discovery.payload;
+  return {
+    ...discovery.payload,
+    signedHandshake: {
+      ok: true,
+      identityKeyId: resolvedOptions.__agentstudioDiscovery?.handshake?.payload?.identity?.keyId || ""
+    }
+  };
 }
 
 function emitResult(result, options) {
@@ -1983,7 +2447,25 @@ async function main() {
     return;
   }
   if (command === "scan") {
-    emitResult(await scanInstallTargets(options), options);
+    const discovered = await discoverAgentStudioHub(options);
+    const scanOptions = discovered.ok
+      ? { ...options, "resolved-url": discovered.baseUrl, __agentstudioDiscovery: discovered }
+      : options;
+    const scan = await scanInstallTargets(scanOptions);
+    emitResult({
+      ...scan,
+      serverDiscovery: discovered.ok
+        ? {
+            ok: true,
+            baseUrl: discovered.baseUrl,
+            identityKeyId: discovered.handshake?.payload?.identity?.keyId || ""
+          }
+        : {
+            ok: false,
+            attempts: discovered.attempts,
+            reason: discovered.reason
+          }
+    }, options);
     return;
   }
   if (command === "discover-local") {
@@ -2004,6 +2486,10 @@ async function main() {
   }
   if (command === "discover") {
     emitResult(await discoverCommand(options), options);
+    return;
+  }
+  if (command === "server-config") {
+    emitResult(await serverConfigCommand(options), options);
     return;
   }
   throw new Error(`Unknown command: ${command}`);
