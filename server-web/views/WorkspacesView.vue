@@ -5,7 +5,13 @@ import { ConfigFoldCard, OptionBar, StatusPill } from '../components/common';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import type { HistorySessionPanelItem } from '../types/app';
 
-const { busyKey: globalBusyKey, formatCompactDate, isAuthenticated } = useConsole();
+const {
+  busyKey: globalBusyKey,
+  formatCompactDate,
+  isAuthenticated,
+  authState,
+  refreshAuthState
+} = useConsole();
 const localBusyKey = ref('');
 const busyKey = computed(() => localBusyKey.value || globalBusyKey.value);
 
@@ -138,11 +144,33 @@ function statusTone(status: string) {
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
+const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+async function csrfTokenFor(method: string) {
+  if (safeMethods.has(method)) return '';
+  let token = authState.value?.session.csrfToken || '';
+  if (!token && isAuthenticated.value) {
+    const session = await refreshAuthState();
+    token = session?.session.csrfToken || '';
+  }
+  return token;
+}
+
 async function apiFetch(path: string, options: RequestInit = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  if (options.body !== undefined && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const csrfToken = await csrfTokenFor(method);
+  if (csrfToken) headers.set('x-agentstudio-csrf', csrfToken);
+
   const res = await fetch(path, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     ...options,
+    method,
+    credentials: 'same-origin',
+    headers,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -632,7 +660,7 @@ load();
 }
 .ws-card-obj { font-size: 0.8rem; color: var(--text-secondary); margin: var(--space-1) 0 0; }
 .ws-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: 0.75rem; color: var(--text-secondary); margin-top: var(--space-1); }
-.ws-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+.ws-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 
 .ws-chain { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 0.82rem; }
 .ws-chain-item { display: flex; align-items: center; gap: 4px; }

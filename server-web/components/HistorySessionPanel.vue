@@ -168,6 +168,8 @@ function runItemAction(item: HistorySessionPanelItem) {
   position: relative;
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
   min-width: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -234,7 +236,6 @@ function runItemAction(item: HistorySessionPanelItem) {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: var(--space-1);
   padding: 0 var(--space-1-5);
   border-radius: var(--radius-sm);
   border: none;
@@ -253,7 +254,6 @@ function runItemAction(item: HistorySessionPanelItem) {
   max-width: 76px;
   min-width: 64px;
   height: 28px;
-  margin-right: var(--space-1);
   padding: 0 var(--space-1-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);

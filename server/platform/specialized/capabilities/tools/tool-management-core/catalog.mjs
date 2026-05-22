@@ -311,6 +311,7 @@ export const TOOL_MANAGEMENT_PROFILES = Object.freeze(
 );
 
 const TOOL_ID_BY_OPERATION_ID = Object.freeze({
+  "system.health": "system.health",
   "runtime.info": "agentstudio.runtime.info",
   "runtime.mounts": "agentstudio.runtime.mounts",
   "runtime.set_mounts": "agentstudio.runtime.mounts.set",
@@ -452,6 +453,7 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
+  "system.health": "storage:read",
   "runtime.info": "storage:read",
   "runtime.mounts": "storage:read",
   "runtime.set_mounts": "knowledge:maintain",

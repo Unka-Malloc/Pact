@@ -11,7 +11,7 @@ cd "$PROJECT_ROOT"
 
 PORT=8787
 VITE_PORT=5173
-DATA_DIR="$PROJECT_ROOT/.agentstudio-server-data"
+DATA_DIR="$PROJECT_ROOT/build/server-data"
 PROFILE="default"
 OPEN_BROWSER=true
 MODE="console"
@@ -24,7 +24,7 @@ usage() {
 
 选项:
   --port <n>        服务端端口（默认: 8787）
-  --data-dir <path> 数据目录（默认: .agentstudio-server-data）
+  --data-dir <path> 数据目录（默认: build/server-data）
   --profile <name>  运行档位（默认: default）
   --dev             使用 Vite 开发模式启动前端（默认启动内置控制台）
   --no-open         不自动打开浏览器
@@ -82,12 +82,12 @@ if [[ "$SKIP_CLEAN" != true ]]; then
   CLEAN_ARGS=(
     --port "$PORT"
     --data-dir "$DATA_DIR"
-    --launch-label "dev.agentstudio.server.${PORT}"
-    --launch-label "dev.agentstudio.background-supervisor"
-    --launch-label "dev.agentstudio.system-inspection"
-    --launch-plist "$HOME/Library/LaunchAgents/dev.agentstudio.server.${PORT}.plist"
-    --launch-plist "$HOME/Library/LaunchAgents/dev.agentstudio.background-supervisor.plist"
-    --launch-plist "$HOME/Library/LaunchAgents/dev.agentstudio.system-inspection.plist"
+    --launch-label "dev.splitall.server.${PORT}"
+    --launch-label "dev.splitall.background-supervisor"
+    --launch-label "dev.splitall.system-inspection"
+    --launch-plist "$HOME/Library/LaunchAgents/dev.splitall.server.${PORT}.plist"
+    --launch-plist "$HOME/Library/LaunchAgents/dev.splitall.background-supervisor.plist"
+    --launch-plist "$HOME/Library/LaunchAgents/dev.splitall.system-inspection.plist"
   )
   if [[ "$MODE" == "dev" ]]; then
     CLEAN_ARGS+=(--vite-port "$VITE_PORT")

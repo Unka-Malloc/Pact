@@ -6,7 +6,6 @@ import { viewToPath, adminSectionToSlug, slugToAdminView } from "../router/index
 // dependency (components → useConsole → components). Each view imports the
 // components it needs directly from ./components/common.
 import { bridge } from "../lib/bridge";
-import { createKnowledgeUploadSession } from "../lib/knowledge-upload-session";
 import type {
   AgentSettings,
   AgentModelConfig,
@@ -23,7 +22,6 @@ import type {
   ConsoleUser,
   DiscoveryConfig,
   DiscoveryConfigResponse,
-  DocumentParsingConfig,
   EmailRuleSet,
   AgentExploreRunResponse,
   EvidencePack,
@@ -69,7 +67,7 @@ import type {
 } from "../lib/types";
 import type {
   DrawerTab, AppView, AdminView, DebugTab, RuleAuthoringMode,
-  KnowledgeTab, OptionBarValue, OptionBarOption,
+  KnowledgeTab, KnowledgeManagementPanel, OptionBarValue, OptionBarOption,
   KnowledgeLogRow, AgentExploreSession, KnowledgeRecallDebugRun,
   HistorySessionPanelItem, ModelEntryBinding, AgentConfigurationAlert,
   DashboardAlert, WorkQueueRow, InfoFeedStageStatus, InfoFeedAttachment,
@@ -80,7 +78,7 @@ import type {
 } from "../types/app";
 export type {
   DrawerTab, AppView, AdminView, DebugTab, RuleAuthoringMode,
-  KnowledgeTab, OptionBarValue, OptionBarOption,
+  KnowledgeTab, KnowledgeManagementPanel, OptionBarValue, OptionBarOption,
   KnowledgeLogRow, AgentExploreSession, KnowledgeRecallDebugRun,
   HistorySessionPanelItem, ModelEntryBinding, AgentConfigurationAlert,
   DashboardAlert, WorkQueueRow, InfoFeedStageStatus, InfoFeedAttachment,
@@ -92,7 +90,8 @@ export type {
 
 // Navigation state shared across all useConsole() instances (module-level singleton)
 const debugTab = ref<DebugTab>("knowledgeRecall");
-const knowledgeTab = ref<KnowledgeTab>("wordCloud");
+const knowledgeTab = ref<KnowledgeTab>("management");
+const knowledgeManagementPanel = ref<KnowledgeManagementPanel>("knowledge");
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +134,7 @@ const modelLibraryProviderDefinitions: Array<{
   {
     id: "custom-http",
     label: "自定义 HTTP Adapter",
-    description: "AgentStudio agent 报文格式的外部智能体网关。",
+    description: "SplitAll agent 报文格式的外部智能体网关。",
   },
   {
     id: "local-model",
@@ -187,7 +186,7 @@ const emptySettings: AgentSettings = {
   agentPermissionGroups: [],
   agentExploreDefaults: {
     systemPrompt:
-      "You are AgentStudio Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
+      "You are SplitAll Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
     toolPolicyPrompt:
       "Always search from coarse to fine. For counts, totals, rankings, frequency, or 'which has the most' questions, first call knowledge_aggregate. For normal evidence recall, first call keyword_search with broad but meaningful keywords, then open_evidence only for promising evidenceId values.",
     continuationPrompt:
@@ -233,7 +232,7 @@ const emptySettings: AgentSettings = {
     toolChoice: "auto",
     reviewFusionModelAlias: "",
     reviewFusionSystemPrompt:
-      "你是 AgentStudio 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
+      "你是 SplitAll 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
     reviewFusionTemperature: 0.1,
     reviewFusionMaxTokens: 1200,
   },
@@ -414,13 +413,9 @@ const debugTabs: Array<{ id: DebugTab; label: string }> = [
 ];
 
 const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
+  { id: "management", label: "知识管理" },
   { id: "wordCloud", label: "词云" },
-  { id: "chunking", label: "文档切分" },
-  { id: "parsing", label: "文档解析" },
-  { id: "retrieval", label: "知识检索" },
-  { id: "distillation", label: "知识蒸馏" },
-  { id: "review", label: "人工审核" },
-  { id: "rules", label: "黄金规则" },
+  { id: "conflicts", label: "冲突审核" },
   { id: "maintenance", label: "知识库配置" },
 ];
 
@@ -440,21 +435,6 @@ function hasAnyFeature(featureIds: string[]) {
 const visibleKnowledgeTabs = computed(() =>
   hasFeature("knowledge-core") ? knowledgeTabs : []
 );
-function isKnowledgeTabId(value: string): value is KnowledgeTab {
-  return knowledgeTabs.some((tab) => tab.id === value);
-}
-function normalizeKnowledgeTabId(value: string): KnowledgeTab | null {
-  if (isKnowledgeTabId(value)) {
-    return value;
-  }
-  if (value === "management") {
-    return "parsing";
-  }
-  if (value === "conflicts") {
-    return "review";
-  }
-  return null;
-}
 const visibleDebugTabs = computed(() =>
   debugTabs.filter((tab) => {
     if (tab.id === "knowledgeRecall") {
@@ -475,7 +455,6 @@ const adminViewTitleMap: Partial<Record<AdminView, string>> = {
   agentConfig: "智能体配置",
   maintenanceAgent: "智能巡检",
   opsMonitor: "运维监控",
-  productionHealth: "生产健康",
   clients: "设备管理",
   storage: "系统概览",
   modules: "接入模块",
@@ -486,7 +465,6 @@ const viewTitleMap: Record<AppView, string> = {
   sources: "数据源",
   knowledge: "知识库",
   intelligence: "智能分析",
-  workspaces: "工作空间",
   debug: "调试面板",
   admin: "管理",
 };
@@ -559,8 +537,8 @@ let pendingRefreshStateTimer: number | null = null;
 let pendingRefreshStateOptions: RefreshStateOptions | null = null;
 let pendingRefreshStatePromise: Promise<void> | null = null;
 let pendingRefreshStateResolve: (() => void) | null = null;
-const AGENT_EXPLORE_STORAGE_KEY = "agentstudio.agentExplore.sessions.v1";
-const INFO_FEED_STORAGE_KEY = "agentstudio.infoFeed.history.v1";
+const AGENT_EXPLORE_STORAGE_KEY = "splitall.agentExplore.sessions.v1";
+const INFO_FEED_STORAGE_KEY = "splitall.infoFeed.history.v1";
 const filter = ref("");
 const drawerOpen = ref(false);
 const drawerTab = ref<DrawerTab>("discovery");
@@ -574,14 +552,14 @@ const clientMigrationMessages = ref<Record<string, string>>({});
 const editingMountPaths = ref<Record<string, boolean>>({});
 const newGrantLabel = ref("默认智能体");
 const newGrantScopes = ref<string[]>(["knowledge:read"]);
-const newGrantToolsets = ref<string[]>(["agentstudio.knowledge.read"]);
+const newGrantToolsets = ref<string[]>(["splitall.knowledge.read"]);
 const issuedToolToken = ref("");
 const toolManagementCatalogState = ref<ToolManagementCatalog | null>(null);
 const toolManagementGrantsState = ref<ToolManagementGrant[]>([]);
 const toolManagementMetricsState = ref<ToolManagementMetrics | null>(null);
 const toolManagementAuditItems = ref<ToolManagementAuditItem[]>([]);
-const selectedToolManagementToolId = ref("agentstudio.knowledge.health");
-const policyPreviewToolId = ref("agentstudio.knowledge.health");
+const selectedToolManagementToolId = ref("splitall.knowledge.health");
+const policyPreviewToolId = ref("splitall.knowledge.health");
 const policyPreviewProfileId = ref("external-knowledge-reader");
 const policyPreviewGrantId = ref("");
 const policyPreviewResult = ref<Record<string, unknown> | null>(null);
@@ -624,7 +602,6 @@ const wordCloudDraft = ref<KnowledgeWordCloudSet | null>(null);
 const wordCloudPrompt = ref("");
 const wordCloudModelAlias = ref("");
 const wordCloudCorpusPaths = ref<KnowledgeWordCloudCorpusPath[]>([]);
-const WORD_CLOUD_IMPORT_FILE_INPUT_ID = "word-cloud-import-file";
 const selectedWordBagId = ref("");
 const wordBagActionMenuId = ref("");
 const collapsedWordBagIds = ref<Set<string>>(new Set());
@@ -1482,7 +1459,7 @@ async function clearBrowserLocalStateFromUrl() {
   infoFeedKeywordCache.clear();
   url.searchParams.delete(CLEAR_LOCAL_STATE_PARAM);
   window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  (window as Window & { __agentstudioLocalStateClearReport?: Record<string, unknown> }).__agentstudioLocalStateClearReport = report;
+  (window as Window & { __splitallLocalStateClearReport?: Record<string, unknown> }).__splitallLocalStateClearReport = report;
   return true;
 }
 
@@ -1553,8 +1530,19 @@ watch(
 );
 
 watch(knowledgeReviewStatus, () => {
-  if (currentView.value === "knowledge" && knowledgeTab.value === "review") {
+  if (currentView.value === "knowledge" && knowledgeTab.value === "conflicts") {
     void refreshKnowledgeConflicts();
+  }
+});
+
+watch(knowledgeManagementPanel, (panel) => {
+  if (currentView.value !== "knowledge" || knowledgeTab.value !== "management") {
+    return;
+  }
+  if (panel === "rules") {
+    void refreshExpertRules();
+  } else {
+    void refreshKnowledgeConsole();
   }
 });
 
@@ -2402,7 +2390,7 @@ async function removeModelProvider(provider: CloudProvider | AgentModelConfig) {
   settingsDraft.value.modelLibraryEntries = [
     ...new Set(settingsDraft.value.modelLibraryAgents.map((item) => item.provider)),
   ] as CloudProvider[];
-  setBusy(`model-remove:${removeKey}`);
+  busyKey.value = `model-remove:${removeKey}`;
   error.value = "";
   try {
     const saved = await bridge.saveSettings(settingsPayloadForSave());
@@ -2510,7 +2498,7 @@ async function runModelEntryProbe(entry: AgentModelConfig): Promise<ModelProbeRe
 
 async function probeModelEntry(entry: AgentModelConfig) {
   const key = modelEntryStatusKey(entry);
-  setBusy(`model-probe:${key}`);
+  busyKey.value = `model-probe:${key}`;
   error.value = "";
   try {
     const result = await runModelEntryProbe(entry);
@@ -2781,6 +2769,17 @@ const toolManagementRiskRows = computed(() =>
   })),
 );
 
+const knowledgeManagementPanelOptionBarOptions = computed<OptionBarOption[]>(() => [
+  { value: "knowledge", label: "知识" },
+  { value: "rules", label: "规则" },
+]);
+
+function selectKnowledgeManagementPanel(panel: OptionBarValue) {
+  if (panel === "knowledge" || panel === "rules") {
+    knowledgeManagementPanel.value = panel;
+  }
+}
+
 const defaultAgentPermissionGroups = computed<AgentPermissionGroup[]>(() => {
   const readScopes = toolScopes.value
     .filter((scope) => /read|knowledge/i.test(scope.id))
@@ -2896,7 +2895,7 @@ const pendingKnowledgeReviewCount = computed(() => {
 });
 
 function knowledgeTabDisplayLabel(tab: { id: KnowledgeTab; label: string }) {
-  if (tab.id === "review" && pendingKnowledgeReviewCount.value > 0) {
+  if (tab.id === "conflicts" && pendingKnowledgeReviewCount.value > 0) {
     return `${tab.label} ${pendingKnowledgeReviewCount.value}`;
   }
   return tab.label;
@@ -3072,7 +3071,6 @@ function agentOptionsForModule(moduleId: string) {
 }
 
 const infoFeedModelOptions = computed(() => agentSelectorOptions.value);
-const agentModelOptions = computed(() => agentSelectorOptions.value);
 const agentExploreAgentOptions = computed(() => agentOptionsForModule("agentTools"));
 const ruleAuthoringModelOptions = computed(() => agentSelectorOptions.value);
 const wordCloudModelOptions = computed(() => agentSelectorOptions.value);
@@ -3276,7 +3274,6 @@ function normalizeWordCloudTermForUi(value: Partial<KnowledgeWordCloudTerm> | st
     term: String(record.term || "").trim(),
     frequency: Math.max(0, Number(record.frequency || 0)),
     weight: record.weight === undefined ? undefined : Number(record.weight),
-    quality: record.quality ? String(record.quality).trim() : undefined,
   };
 }
 
@@ -3337,9 +3334,6 @@ type WordCloudAbsorptionCandidate = {
 };
 
 const DEFAULT_WORD_CLOUD_ABSORB_THRESHOLD = 0.78;
-const WORD_CLOUD_DEFAULT_WORD_BAG_ID = "default";
-const WORD_CLOUD_OTHER_WORD_BAG_ID = "other";
-const WORD_CLOUD_LOW_WEIGHT_THRESHOLD = 0.15;
 
 function normalizeWordCloudThreshold(value: unknown, fallback = DEFAULT_WORD_CLOUD_ABSORB_THRESHOLD) {
   const next = Number(value);
@@ -3351,102 +3345,6 @@ function normalizeWordCloudThreshold(value: unknown, fallback = DEFAULT_WORD_CLO
 
 function formatWordCloudThreshold(value: unknown) {
   return normalizeWordCloudThreshold(value).toFixed(2);
-}
-
-function isWordCloudDefaultPreset(cloud: Partial<KnowledgeWordCloud> = {}) {
-  const wordBagId = String(cloud.wordBagId || "").trim().toLowerCase();
-  const label = String(cloud.label || "").trim().toLowerCase();
-  return wordBagId === WORD_CLOUD_DEFAULT_WORD_BAG_ID || label === "default" || label === "默认";
-}
-
-function isWordCloudOtherPreset(cloud: Partial<KnowledgeWordCloud> = {}) {
-  const wordBagId = String(cloud.wordBagId || "").trim().toLowerCase();
-  const label = String(cloud.label || "").trim().toLowerCase();
-  return wordBagId === WORD_CLOUD_OTHER_WORD_BAG_ID || wordBagId === "others" || label === "other" || label === "others" || label === "其它" || label === "其他";
-}
-
-function isWordCloudPresetCard(cloud: Partial<KnowledgeWordCloud> = {}) {
-  return isWordCloudDefaultPreset(cloud) || isWordCloudOtherPreset(cloud);
-}
-
-function isLowWeightWordCloudTerm(term: Partial<KnowledgeWordCloudTerm> = {}) {
-  const record = term as Partial<KnowledgeWordCloudTerm> & { quality?: string };
-  if (String(record.quality || "").trim().toLowerCase() === "low") {
-    return true;
-  }
-  const weight = Number(record.weight);
-  return Number.isFinite(weight) && weight > 0 && weight <= WORD_CLOUD_LOW_WEIGHT_THRESHOLD;
-}
-
-function collectAssignedWordCloudTermIds(wordBags: KnowledgeWordCloud[] = [], target = new Set<string>()) {
-  for (const cloud of wordBags) {
-    if (isWordCloudPresetCard(cloud)) {
-      continue;
-    }
-    for (const term of cloud.terms || []) {
-      const identity = wordCloudTermIdentity(term);
-      if (identity) {
-        target.add(identity);
-      }
-    }
-    collectAssignedWordCloudTermIds(cloud.children || [], target);
-  }
-  return target;
-}
-
-function createPresetWordCloudCard(
-  kind: "default" | "other",
-  terms: KnowledgeWordCloudTerm[] = [],
-  existing: Partial<KnowledgeWordCloud> | null = null,
-): KnowledgeWordCloud {
-  const isDefault = kind === "default";
-  return {
-    ...(existing || {}),
-    wordBagId: isDefault ? WORD_CLOUD_DEFAULT_WORD_BAG_ID : WORD_CLOUD_OTHER_WORD_BAG_ID,
-    label: isDefault ? "默认" : "其它",
-    summary: isDefault ? "所有尚未进入明确分组的词汇。" : "低权重、低置信或噪声词汇。",
-    relation: "separate",
-    absorbThreshold: 1,
-    terms,
-    removedTerms: (existing?.removedTerms || [])
-      .map((term) => normalizeWordCloudTermForUi(term))
-      .filter((term) => term.term),
-    children: [],
-  };
-}
-
-function reconcileWordCloudPresetCards(wordBags: KnowledgeWordCloud[] = [], termsSnapshot: KnowledgeWordCloudTerm[] = []) {
-  const regularCards = wordBags.filter((cloud) => !isWordCloudPresetCard(cloud));
-  const defaultCard = wordBags.find(isWordCloudDefaultPreset) || null;
-  const otherCard = wordBags.find(isWordCloudOtherPreset) || null;
-  const assignedIds = collectAssignedWordCloudTermIds(regularCards);
-  const defaultTerms: KnowledgeWordCloudTerm[] = [];
-  const otherTerms: KnowledgeWordCloudTerm[] = [];
-  const seen = new Set<string>();
-
-  for (const term of termsSnapshot) {
-    const normalized = normalizeWordCloudTermForUi(term);
-    const identity = wordCloudTermIdentity(normalized);
-    if (!identity || seen.has(identity) || assignedIds.has(identity)) {
-      continue;
-    }
-    seen.add(identity);
-    if (isLowWeightWordCloudTerm(term)) {
-      otherTerms.push(normalized);
-    } else {
-      defaultTerms.push(normalized);
-    }
-  }
-
-  return {
-    wordBags: [
-      ...regularCards,
-      createPresetWordCloudCard("default", defaultTerms, defaultCard),
-      createPresetWordCloudCard("other", otherTerms, otherCard),
-    ],
-    defaultTerms,
-    otherTerms,
-  };
 }
 
 function normalizeWordCloudText(value: unknown) {
@@ -3480,10 +3378,7 @@ function collectWordCloudAbsorptionCandidates(
   depth = 0,
   target: WordCloudAbsorptionCandidate[] = [],
 ) {
-  for (const cloud of wordBags) {
-    if (isWordCloudPresetCard(cloud)) {
-      continue;
-    }
+  for (const cloud of clouds) {
     target.push({
       cloud,
       depth,
@@ -3564,7 +3459,7 @@ function autoAbsorbWordCloudTerms(draft: KnowledgeWordCloudSet) {
     return 0;
   }
   const absorbIntoClouds = (wordBags: KnowledgeWordCloud[]) => {
-    for (const cloud of wordBags) {
+    for (const cloud of clouds) {
       const nextTerms = absorbedByCloud.get(cloud.wordBagId);
       if (nextTerms?.length) {
         const existingIds = new Set((cloud.terms || []).map((item) => wordCloudTermIdentity(item)));
@@ -3597,16 +3492,12 @@ function normalizeWordCloudCloudForUi(cloud: KnowledgeWordCloud, parentWordBagId
 }
 
 function normalizeWordCloudSetForUi(value: KnowledgeWordCloudSet): KnowledgeWordCloudSet {
-  const termsSnapshot = (value.termsSnapshot || []).map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term);
-  const normalizedWordBags = (value.wordBags || []).map((cloud) => normalizeWordCloudCloudForUi(cloud));
-  const reconciled = reconcileWordCloudPresetCards(normalizedWordBags, termsSnapshot);
   return {
     ...value,
-    termsSnapshot,
-    unassignedTerms: reconciled.defaultTerms,
+    termsSnapshot: (value.termsSnapshot || []).map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
+    unassignedTerms: (value.unassignedTerms || []).map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
     corpusPaths: normalizeWordCloudCorpusPathsForUi(value.corpusPaths || []),
-    wordBags: reconciled.wordBags,
-    wordBagCount: reconciled.wordBags.length,
+    wordBags: (value.wordBags || []).map((cloud) => normalizeWordCloudCloudForUi(cloud)),
   };
 }
 
@@ -3654,17 +3545,15 @@ function mutateWordCloudDraft(mutator: (draft: KnowledgeWordCloudSet) => void) {
 
 function createDefaultWordCloudSet(terms: KnowledgeWordCloudTerm[] = []): KnowledgeWordCloudSet {
   const now = new Date().toISOString();
-  const termsSnapshot = terms.map((term) => normalizeWordCloudTermForUi(term)).filter((term) => term.term);
-  const reconciled = reconcileWordCloudPresetCards([], termsSnapshot);
   return {
     schemaVersion: 1,
     wordBagSetId: `word-cloud-${Date.now().toString(36)}`,
     title: "语料词云",
     status: "draft",
-    wordBagCount: reconciled.wordBags.length,
-    termsSnapshot,
-    wordBags: reconciled.wordBags,
-    unassignedTerms: reconciled.defaultTerms,
+    wordBagCount: 0,
+    termsSnapshot: terms,
+    wordBags: [],
+    unassignedTerms: terms,
     corpusPaths: normalizeWordCloudCorpusPathsForUi(wordCloudCorpusPaths.value),
     modelAlias: wordCloudModelAlias.value,
     agentResponse: {},
@@ -3712,19 +3601,18 @@ function setWordCloudDraftFromState(state: KnowledgeWordCloudState | null) {
   );
   next.corpusPaths = nextCorpusPaths;
   autoAbsorbWordCloudTerms(next);
-  const normalizedNext = normalizeWordCloudSetForUi(next);
   // On first load collapse all; on subsequent updates only collapse newly added clouds
   const isFirstLoad = wordCloudDraft.value === null;
   const prevWordBagIds = new Set((wordCloudDraft.value?.wordBags || []).map((c) => c.wordBagId));
-  wordCloudDraft.value = normalizedNext;
-  selectedWordBagId.value = findWordCloudInTree(normalizedNext.wordBags, selectedWordBagId.value)
+  wordCloudDraft.value = next;
+  selectedWordBagId.value = findWordCloudInTree(next.wordBags, selectedWordBagId.value)
     ? selectedWordBagId.value
     : "";
-  if (normalizedNext.modelAlias) {
-    wordCloudModelAlias.value = normalizedNext.modelAlias;
+  if (next.modelAlias) {
+    wordCloudModelAlias.value = next.modelAlias;
   }
   wordCloudCorpusPaths.value = nextCorpusPaths;
-  const idsToCollapse = (normalizedNext.wordBags || [])
+  const idsToCollapse = (next.wordBags || [])
     .filter((c) => isFirstLoad || !prevWordBagIds.has(c.wordBagId))
     .map((c) => c.wordBagId);
   if (idsToCollapse.length > 0) {
@@ -3748,23 +3636,15 @@ const wordCloudTermFrequencyMap = computed(() => {
   return next;
 });
 const wordCloudCanvasClouds = computed(() => wordCloudDraft.value?.wordBags || []);
+const WORD_CLOUD_TAIL_LABELS = new Set(["default", "其它", "others"]);
 function isWordCloudTailCard(cloud: KnowledgeWordCloud): boolean {
-  return isWordCloudPresetCard(cloud);
-}
-function wordCloudTailRank(cloud: KnowledgeWordCloud) {
-  if (isWordCloudDefaultPreset(cloud)) {
-    return 0;
-  }
-  if (isWordCloudOtherPreset(cloud)) {
-    return 1;
-  }
-  return 2;
+  return WORD_CLOUD_TAIL_LABELS.has(String(cloud.label || "").trim().toLowerCase());
 }
 const wordCloudCardRows = computed(() => {
   const clouds = wordCloudCanvasClouds.value;
   const pinned = clouds.filter((c) => pinnedWordBagIds.value.has(c.wordBagId) && !isWordCloudTailCard(c));
   const normal = clouds.filter((c) => !pinnedWordBagIds.value.has(c.wordBagId) && !isWordCloudTailCard(c));
-  const tail = clouds.filter((c) => isWordCloudTailCard(c)).sort((left, right) => wordCloudTailRank(left) - wordCloudTailRank(right));
+  const tail = clouds.filter((c) => isWordCloudTailCard(c));
   return flattenWordCloudCards([...pinned, ...normal, ...tail]);
 });
 const selectedWordCloud = computed(() => {
@@ -3868,9 +3748,6 @@ function updateWordCloudField(wordBagId: string, field: "label" | "summary" | "r
   mutateWordCloudDraft((draft) => {
     const match = findWordCloudInTree(draft.wordBags || [], wordBagId);
     if (!match) {
-      return;
-    }
-    if (field === "label" && isWordCloudPresetCard(match.cloud)) {
       return;
     }
     if (field === "absorbThreshold") {
@@ -4188,7 +4065,6 @@ async function refreshWordCloudCorpusTerms(options: {
       corpusPaths: targetCorpusPaths,
     });
     autoAbsorbWordCloudTerms(wordCloudDraft.value);
-    wordCloudDraft.value = normalizeWordCloudSetForUi(wordCloudDraft.value);
     if (targetCorpusPaths.length > 0) {
       wordCloudCorpusPaths.value = targetCorpusPaths;
     }
@@ -4776,12 +4652,12 @@ function agentExploreThinkingParameters() {
   const mode = selectedAgentExploreThinkingMode.value;
   if (mode === "enabled") {
     return {
-      agentstudio_thinking_mode: "enabled",
+      splitall_thinking_mode: "enabled",
     };
   }
   if (mode === "disabled") {
     return {
-      agentstudio_thinking_mode: "disabled",
+      splitall_thinking_mode: "disabled",
     };
   }
   return {};
@@ -5723,14 +5599,14 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
   const exportPayload = {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    type: "agentstudio.agent-model-config.v1",
+    type: "splitall.agent-model-config.v1",
     source: "server-console-model-library",
     note: "导出的是当前智能体配置；密钥和 Token 字段已脱敏，未包含其它智能体配置。",
     model: redactAgentModelEntryForExport(normalizedEntry),
     providerSettings: redactedProviderSettingsForAgentExport(normalizedEntry, payload),
   };
   downloadTextFile(
-    `agentstudio-agent-${safeDownloadName(normalizedEntry.label || modelEntryStatusKey(normalizedEntry), "model")}-${timestamp}.json`,
+    `splitall-agent-${safeDownloadName(normalizedEntry.label || modelEntryStatusKey(normalizedEntry), "model")}-${timestamp}.json`,
     `${JSON.stringify(exportPayload, null, 2)}\n`,
     "application/json;charset=utf-8",
   );
@@ -6788,7 +6664,7 @@ function buildInfoFeedSummaryQuestion(run: InfoFeedRunState) {
     "2. 保留 evidence:: 或 ev_ 证据编号，便于页面点击查看。",
     "3. 如果原文检索和智能规划互相冲突，要明确说明冲突。",
     "4. 不要编造附件、证据、日期、金额或来源。",
-    "5. 不要频繁提问。只有在没有人类选择就无法继续检索、归纳或执行下一步时，才在答案末尾追加 fenced block：```agentstudio_user_options 换行 JSON 换行 ```。",
+    "5. 不要频繁提问。只有在没有人类选择就无法继续检索、归纳或执行下一步时，才在答案末尾追加 fenced block：```splitall_user_options 换行 JSON 换行 ```。",
     "   JSON 示例：{\"prompt\":\"你希望优先确认哪类内容？\",\"reason\":\"当前证据覆盖不足。\",\"options\":[{\"label\":\"继续补证据\",\"description\":\"扩大检索范围。\",\"followUpQuestion\":\"请继续补充直接证据。\"}]}",
   ].join("\n");
 }
@@ -6839,7 +6715,7 @@ function extractInfoFeedClarification(answer: string): { answer: string; clarifi
   const source = String(answer || "");
   let cleaned = source;
   let clarification: InfoFeedClarification | undefined;
-  const blockPattern = /```(?:agentstudio_user_options|agentstudio-options|json)\s*([\s\S]*?)```/gi;
+  const blockPattern = /```(?:splitall_user_options|splitall-options|json)\s*([\s\S]*?)```/gi;
   for (const match of source.matchAll(blockPattern)) {
     try {
       const parsed = JSON.parse(match[1].trim().replace(/^json\s*/i, ""));
@@ -7033,7 +6909,7 @@ async function runInfoFeedSummaryAgent(sequence = infoFeedRunSequence) {
         sessionId: run.agent?.workspaceId || run.runId,
         question: buildInfoFeedSummaryQuestion(run),
         systemPrompt:
-          "你是 AgentStudio 信息流总结智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
+          "你是 SplitAll 信息流总结智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
         parameters: {
           ...agentExploreThinkingParameters(),
           temperature: summaryTemperature,
@@ -8475,11 +8351,11 @@ function extractEvidenceRefsFromText(value: string) {
 }
 
 function evidenceRefHref(evidenceId: string) {
-  return `#agentstudio-evidence-${encodeURIComponent(evidenceId)}`;
+  return `#splitall-evidence-${encodeURIComponent(evidenceId)}`;
 }
 
 function evidenceIdFromHref(href: string) {
-  const prefix = "#agentstudio-evidence-";
+  const prefix = "#splitall-evidence-";
   if (!String(href || "").startsWith(prefix)) {
     return "";
   }
@@ -9107,7 +8983,7 @@ async function refreshAuthAdmin() {
 }
 
 async function updateConsoleUser(user: ConsoleUser, patch: Partial<ConsoleUser> & { password?: string }) {
-  setBusy(`auth:user:${user.userId}`);
+  busyKey.value = `auth:user:${user.userId}`;
   error.value = "";
   try {
     const result = await bridge.updateAuthUser(user.userId, patch);
@@ -9152,7 +9028,7 @@ async function saveOidcConfig() {
 }
 
 async function revokeConsoleSession(sessionId: string) {
-  setBusy(`auth:session:${sessionId}`);
+  busyKey.value = `auth:session:${sessionId}`;
   error.value = "";
   try {
     await bridge.revokeAuthSession(sessionId);
@@ -9237,14 +9113,13 @@ async function saveWordCloud() {
   }
   const draft = wordCloudDraft.value || createDefaultWordCloudSet(wordCloudTerms.value);
   autoAbsorbWordCloudTerms(draft);
-  const normalizedDraft = normalizeWordCloudSetForUi(draft);
   setBusy("knowledge:word-clouds:save");
   error.value = "";
   try {
     const result = await bridge.saveKnowledgeWordClouds({
       wordBagSet: {
-        ...normalizedDraft,
-        wordBagCount: normalizedDraft.wordBags.length,
+        ...draft,
+        wordBagCount: draft.wordBags.length,
         termsSnapshot: wordCloudTerms.value,
         corpusPaths: wordCloudCorpusPaths.value,
         modelAlias: wordCloudModelAlias.value,
@@ -9263,90 +9138,6 @@ async function saveWordCloud() {
     error.value = nextError instanceof Error ? nextError.message : "保存词云失败。";
   } finally {
     if (busyKey.value === "knowledge:word-clouds:save") {
-      clearAllBusy();
-    }
-  }
-}
-
-async function exportWordCloudSet() {
-  if (!canReadKnowledge.value) {
-    error.value = "需要 knowledge:read 权限才能导出词云。";
-    return;
-  }
-  const wordBagSetId = wordCloudDraft.value?.wordBagSetId || wordCloudState.value?.wordBagSet?.wordBagSetId || "";
-  setBusy("knowledge:word-clouds:export");
-  error.value = "";
-  try {
-    const result = await bridge.exportKnowledgeWordClouds(wordBagSetId ? { wordBagSetId } : {});
-    const exportedAt = formatMachineDate(result.exportedAt || new Date().toISOString(), "full").replace(/[: ]/g, "-");
-    const name = safeDownloadName(result.wordBagSet?.title || result.wordBagSet?.wordBagSetId || "word-bags", "word-bags");
-    downloadTextFile(
-      `word-bags-${name}-${exportedAt}.json`,
-      `${JSON.stringify(result, null, 2)}\n`,
-      "application/json;charset=utf-8",
-    );
-    wordCloudMessages.value = [{
-      id: `word-cloud-export-${Date.now()}`,
-      role: "system" as const,
-      text: `已导出 ${result.wordBagSet?.wordBagCount || result.wordBagSet?.wordBags?.length || 0} 个词袋。`,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "导出词云失败。";
-  } finally {
-    if (busyKey.value === "knowledge:word-clouds:export") {
-      clearAllBusy();
-    }
-  }
-}
-
-function triggerWordCloudImport() {
-  if (!canWriteKnowledge.value) {
-    error.value = "需要 knowledge:write 权限才能导入词云。";
-    return;
-  }
-  const input = document.getElementById(WORD_CLOUD_IMPORT_FILE_INPUT_ID) as HTMLInputElement | null;
-  input?.click();
-}
-
-async function importWordCloudSetFromFile(event: Event) {
-  if (!canWriteKnowledge.value) {
-    error.value = "需要 knowledge:write 权限才能导入词云。";
-    return;
-  }
-  const input = event.target as HTMLInputElement | null;
-  const file = input?.files?.[0] || null;
-  if (!file) {
-    return;
-  }
-  setBusy("knowledge:word-clouds:import");
-  error.value = "";
-  try {
-    const rawText = await file.text();
-    let importPayload: Record<string, unknown>;
-    try {
-      importPayload = JSON.parse(rawText) as Record<string, unknown>;
-    } catch {
-      throw new Error("导入文件不是有效 JSON。");
-    }
-    const result = await bridge.importKnowledgeWordClouds({
-      importPayload,
-      mode: "copy",
-    });
-    applySavedWordCloudSet(result.wordBagSet);
-    wordCloudMessages.value = [{
-      id: `word-cloud-import-${Date.now()}`,
-      role: "system" as const,
-      text: `已导入 ${result.wordBagSet.wordBagCount || result.wordBagSet.wordBags.length} 个词袋。`,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "导入词云失败。";
-  } finally {
-    if (input) {
-      input.value = "";
-    }
-    if (busyKey.value === "knowledge:word-clouds:import") {
       clearAllBusy();
     }
   }
@@ -9489,7 +9280,7 @@ async function resolveKnowledgeReview(
   if (!reviewId) {
     return;
   }
-  setBusy(`knowledge:review:${reviewId}:${resolution}`);
+  busyKey.value = `knowledge:review:${reviewId}:${resolution}`;
   error.value = "";
   try {
     await bridge.resolveKnowledgeReviewItem(reviewId, { resolution, patch });
@@ -9509,7 +9300,7 @@ async function fuseKnowledgeReview(item: KnowledgeReviewItem) {
     return;
   }
   const reviewId = String(item.reviewId || "");
-  setBusy(`knowledge:review:${reviewId}:merge`);
+  busyKey.value = `knowledge:review:${reviewId}:merge`;
   error.value = "";
   try {
     const response = await bridge.callAgentGateway({
@@ -10100,7 +9891,7 @@ async function switchAgentExploreTab(session: AgentExploreSession) {
 async function loadAgentExploreSession(session: AgentExploreSession) {
   stopAgentExplorePolling();
   agentExploreTraceOpen.value = true;
-  setBusy(`knowledge:agent-explore:load:${session.runId}`);
+  busyKey.value = `knowledge:agent-explore:load:${session.runId}`;
   error.value = "";
   agentExploreActiveTabId.value = session.runId;
   try {
@@ -10349,7 +10140,7 @@ async function publishRuleAuthoringPackage() {
     });
     ruleAuthoringResult.value = {
       ...(ruleAuthoringResult.value || {
-        protocolVersion: "agentstudio.knowledge-rule-authoring.v1",
+        protocolVersion: "splitall.knowledge-rule-authoring.v1",
         ok: true,
         status: "published",
       }),
@@ -10522,7 +10313,7 @@ async function loadEvidence(evidenceId: string, options: LoadEvidenceOptions = {
   const sequence = evidenceLoadSequence + 1;
   evidenceLoadSequence = sequence;
   const requestBusyKey = `knowledge:evidence:${normalized}`;
-  setBusy(requestBusyKey);
+  busyKey.value = requestBusyKey;
   selectedEvidenceId.value = normalized;
   selectedEvidence.value = null;
   evidenceLoadError.value = "";
@@ -10630,63 +10421,96 @@ async function runKnowledgeMaintenanceTask() {
   }
 }
 
-type KnowledgeIngestTrigger = "auto" | "manual";
-type KnowledgeIngestOptions = {
-  trigger?: KnowledgeIngestTrigger;
-  documentParsing?: DocumentParsingConfig;
-};
-
-function onIngestFilesSelected(files: File[], options: KnowledgeIngestOptions = {}) {
-  if (isBusy("knowledge:ingest")) {
-    error.value = "文件整理正在进行中，请等待当前任务完成后再选择新的文件。";
-    return;
-  }
+function onIngestFilesSelected(files: File[]) {
   ingestFiles.value = files;
   ingestProgress.value = ingestFiles.value.length
-    ? `已选择 ${ingestFiles.value.length} 个文件，正在自动整理…`
+    ? `已选择 ${ingestFiles.value.length} 个文件`
     : "";
-  if (ingestFiles.value.length > 0) {
-    void uploadFilesToKnowledge({ ...options, trigger: "auto" });
-  }
 }
 
-async function uploadFilesToKnowledge(options: KnowledgeIngestOptions = {}) {
-  const trigger = options.trigger || "manual";
-  if (isBusy("knowledge:ingest")) {
-    ingestProgress.value = "文件整理正在进行中。";
-    return;
-  }
-  if (!canWriteJobs.value) {
-    error.value = "当前账号没有创建文件整理任务的权限。";
-    return;
-  }
-  const filesToUpload = [...ingestFiles.value];
-  if (filesToUpload.length === 0) {
+async function sha256File(file: File) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Text(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function uploadFilesToKnowledge() {
+  if (ingestFiles.value.length === 0) {
     error.value = "请先选择需要入库的文件。";
     return;
   }
   setBusy("knowledge:ingest");
   error.value = "";
-  ingestProgress.value = trigger === "auto" ? "自动整理已启动，准备上传会话…" : "准备上传会话…";
+  ingestProgress.value = "准备上传会话…";
   ingestJob.value = null;
   normalizedManifest.value = null;
   try {
-    const uploadSession = await createKnowledgeUploadSession(filesToUpload, {
-      checkpointPrefix: "knowledge-console",
-      checkpointMode: "server-console",
-      checkpointSource: "knowledge-console",
-      onProgress: (progress) => {
-        ingestProgress.value = progress.message;
+    const fileDigests = await Promise.all(
+      ingestFiles.value.map(async (file) => ({
+        name: file.name,
+        relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+        mediaType: file.type || "application/octet-stream",
+        byteSize: file.size,
+        sha256: await sha256File(file),
+      })),
+    );
+    const totalBytes = ingestFiles.value.reduce((sum, file) => sum + file.size, 0);
+    const manifestDigest = await sha256Text(
+      JSON.stringify(fileDigests.map((file) => [file.relativePath, file.sha256, file.byteSize])),
+    );
+    const inputDigest = await sha256Text("");
+    const checkpointId = `knowledge-console:${manifestDigest}`;
+    const session = await bridge.createUploadSession({
+      manifest: {
+        manifestDigest,
+        inputDigest,
+        fileCount: ingestFiles.value.length,
+        totalBytes,
+        fileRecords: fileDigests.map((file) => ({
+          label: file.name,
+          relativePath: file.relativePath,
+          sha256: file.sha256,
+          byteSize: file.byteSize,
+        })),
+      },
+      files: fileDigests,
+      checkpoint: {
+        checkpointId,
+        parentCheckpointId: "",
+        mode: "server-console",
+        source: "knowledge-console",
+        inputDigest,
+        manifestDigest,
       },
     });
+    const chunkSize = 1024 * 1024;
+    let uploadedBytes = (session.files || []).reduce(
+      (sum, file) => sum + Math.min(Number(file.receivedBytes || 0), Number(file.byteSize || 0)),
+      0,
+    );
+    for (let fileIndex = 0; fileIndex < ingestFiles.value.length; fileIndex += 1) {
+      const file = ingestFiles.value[fileIndex];
+      const sessionFile = (session.files || []).find((item) => Number(item.index ?? item.fileIndex) === fileIndex);
+      let offset = Math.min(Number(sessionFile?.receivedBytes || 0), file.size);
+      while (offset < file.size) {
+        const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+        await bridge.uploadSessionChunk(session.sessionId, fileIndex, offset, chunk);
+        offset += chunk.size;
+        uploadedBytes += chunk.size;
+        ingestProgress.value = `上传中 ${Math.round((uploadedBytes / totalBytes) * 100)}%`;
+      }
+    }
     ingestProgress.value = "创建入库任务…";
     const job = await bridge.createJob({
       inputText: "",
       filePaths: [],
       uploadedFiles: [],
-      uploadSessionId: uploadSession.sessionId,
+      uploadSessionId: session.sessionId,
       settings: settingsDraft.value,
-      documentParsing: options.documentParsing,
     });
     ingestJob.value = job;
     ingestProgress.value = "已进入处理队列，进度会在下方实时更新。";
@@ -10703,7 +10527,7 @@ async function refreshIngestJob(options: { silent?: boolean } = {}) {
     return;
   }
   if (!options.silent) {
-    setBusy(`knowledge:ingest:${ingestJob.value.id}`);
+    busyKey.value = `knowledge:ingest:${ingestJob.value.id}`;
   }
   error.value = "";
   try {
@@ -10785,7 +10609,7 @@ async function addKnowledgeSource() {
 }
 
 async function updateKnowledgeSource(source: KnowledgeSource, patch: Record<string, unknown>) {
-  setBusy(`knowledge:source:${source.sourceId}`);
+  busyKey.value = `knowledge:source:${source.sourceId}`;
   error.value = "";
   try {
     const result = await bridge.updateKnowledgeSource(source.sourceId, patch);
@@ -10798,7 +10622,7 @@ async function updateKnowledgeSource(source: KnowledgeSource, patch: Record<stri
 }
 
 async function refreshKnowledgeSource(source: KnowledgeSource, force = false) {
-  setBusy(`knowledge:source:refresh:${source.sourceId}`);
+  busyKey.value = `knowledge:source:refresh:${source.sourceId}`;
   error.value = "";
   try {
     const result = await bridge.refreshKnowledgeSource(source.sourceId, { force });
@@ -10814,7 +10638,7 @@ async function refreshKnowledgeSource(source: KnowledgeSource, force = false) {
 }
 
 async function deleteKnowledgeSource(source: KnowledgeSource) {
-  setBusy(`knowledge:source:delete:${source.sourceId}`);
+  busyKey.value = `knowledge:source:delete:${source.sourceId}`;
   error.value = "";
   try {
     const result = await bridge.deleteKnowledgeSource(source.sourceId);
@@ -10828,15 +10652,19 @@ async function deleteKnowledgeSource(source: KnowledgeSource) {
 
 function ensureKnowledgeTabState() {
   if (!knowledgeTab.value) {
-    knowledgeTab.value = "wordCloud";
+    knowledgeTab.value = "management";
+    knowledgeManagementPanel.value = "knowledge";
     return;
   }
-  const normalizedTab = normalizeKnowledgeTabId(knowledgeTab.value);
-  if (normalizedTab && normalizedTab !== knowledgeTab.value) {
-    knowledgeTab.value = normalizedTab;
+  if (knowledgeTab.value === "management") {
+    if (knowledgeManagementPanel.value !== "knowledge" && knowledgeManagementPanel.value !== "rules") {
+      knowledgeManagementPanel.value = "knowledge";
+    }
+    return;
   }
-  if (!normalizedTab || !visibleKnowledgeTabs.value.some((item) => item.id === knowledgeTab.value)) {
-    knowledgeTab.value = "wordCloud";
+  if (!visibleKnowledgeTabs.value.some((item) => item.id === knowledgeTab.value)) {
+    knowledgeTab.value = "management";
+    knowledgeManagementPanel.value = "knowledge";
   }
 }
 
@@ -10877,11 +10705,8 @@ function switchView(view: AppView) {
     if (knowledgeTab.value === "wordCloud") {
       void refreshWordCloud({ silent: true });
     }
-    if (knowledgeTab.value === "rules") {
+    if (knowledgeTab.value === "management" && knowledgeManagementPanel.value === "rules") {
       void refreshExpertRules();
-    }
-    if (knowledgeTab.value === "review") {
-      void refreshKnowledgeConflicts();
     }
   }
   if (view === "debug") {
@@ -10932,13 +10757,13 @@ function openKnowledgeTab(tab: KnowledgeTab) {
   knowledgeTab.value = tab;
   currentView.value = "knowledge";
   _appRouter?.push(`/knowledge/${tab}`);
-  if (tab === "review") {
+  if (tab === "conflicts") {
     void refreshKnowledgeConflicts();
   }
   if (tab === "wordCloud") {
     void refreshWordCloud();
   }
-  if (tab === "rules") {
+  if (tab === "management" && knowledgeManagementPanel.value === "rules") {
     void refreshExpertRules();
   }
 }
@@ -10961,7 +10786,8 @@ function refreshSystemStatusLogs() {
 
 async function jumpToKnowledgeFileImport() {
   error.value = "";
-  knowledgeTab.value = "parsing";
+  knowledgeTab.value = "management";
+  knowledgeManagementPanel.value = "knowledge";
   switchView("knowledge");
   await nextTick();
   document
@@ -11067,7 +10893,7 @@ async function acknowledgeMonitorAlert(alertId: string) {
     error.value = "当前账号没有维护配置权限。";
     return;
   }
-  setBusy(`monitor-alert:ack:${alertId}`);
+  busyKey.value = `monitor-alert:ack:${alertId}`;
   error.value = "";
   try {
     const state = await bridge.acknowledgeMonitorAlert(alertId);
@@ -11313,7 +11139,7 @@ async function requestClientMigration(client: NonNullable<ServerConsoleState["cl
     return;
   }
 
-  setBusy(`client:migration:${clientId}`);
+  busyKey.value = `client:migration:${clientId}`;
   error.value = "";
   try {
     const result = await bridge.requestClientMigration(clientId, {
@@ -11448,7 +11274,6 @@ function queueSourceLabel(source: string) {
     watchdog: "守护进程巡检",
     "watchdog-reconcile": "守护进程补录",
     "queue-monitor": "队列监控",
-    "knowledge-distillation-workbench": "知识蒸馏",
   };
   return labels[String(source || "")] || source || "队列监控";
 }
@@ -11458,8 +11283,6 @@ function queueMonitorDetail(item: QueueMonitorItem) {
     item.interruptedReason ? `中断原因 ${item.interruptedReason}` : "",
     item.recoveryStatus ? `恢复状态 ${item.recoveryStatus}` : "",
     item.metadata?.stage ? `阶段 ${String(item.metadata.stage)}` : "",
-    item.metadata?.stageId ? `阶段 ${String(item.metadata.stageId)}` : "",
-    item.metadata?.progressPercent !== undefined ? `进度 ${String(item.metadata.progressPercent)}%` : "",
     item.checkpointTreeId ? `checkpoint ${item.checkpointTreeId}` : "",
   ].filter(Boolean).join(" · ") || item.kind || "队列";
 }
@@ -11889,7 +11712,7 @@ async function toggleGoldenRuleEnabled(pkg: Record<string, unknown>, ruleIndex: 
   if (!packageId) {
     return;
   }
-  setBusy(`golden-rule:${packageId}:${ruleIndex}`);
+  busyKey.value = `golden-rule:${packageId}:${ruleIndex}`;
   error.value = "";
 
   try {
@@ -11979,9 +11802,7 @@ async function performRefreshState(options: RefreshStateOptions = {}) {
   const showBusy = !options.silent;
   const forceDrafts = options.forceDrafts === true;
   if (showBusy) {
-    if (!busyKey.value) {
-      setBusy("refresh");
-    }
+    busyKey.value = busyKey.value || "refresh";
   }
   error.value = "";
 
@@ -12048,7 +11869,7 @@ function contextPreviewPayload() {
     contextProfileId: selectedAgentExploreContextProfile.value.value,
     inputSource: "server-console-context-preview",
     taskBrief: contextPreviewTask.value,
-    systemMemory: "AgentStudio server console preview. Preserve evidence ids and human expert guidance.",
+    systemMemory: "SplitAll server console preview. Preserve evidence ids and human expert guidance.",
     expertGuidance: [
       {
         feedbackId: "preview-human-guidance",
@@ -12286,7 +12107,7 @@ async function beginCodexOAuthLogin() {
     codexOAuthLogin.value = login;
     codexOAuthStatus.value = login.status;
     if (login.authorizationUrl) {
-      window.open(login.authorizationUrl, "agentstudio-codex-oauth");
+      window.open(login.authorizationUrl, "splitall-codex-oauth");
     }
     startCodexOAuthPolling();
     return login.status.valid;
@@ -12344,7 +12165,7 @@ async function saveModuleSettings() {
 }
 
 async function saveMountModules(busy = "mounts") {
-  setBusy(busy);
+  busyKey.value = busy;
   error.value = "";
 
   try {
@@ -12454,7 +12275,7 @@ async function saveAgentPermissionSettings() {
 
 async function probeModel(provider: CloudProvider) {
   const busy = `model-probe:${provider}`;
-  setBusy(busy);
+  busyKey.value = busy;
   error.value = "";
 
   try {
@@ -12827,7 +12648,7 @@ async function runMaintenanceAgentRunbook() {
 }
 
 async function approveMaintenanceAgentRun(run: MaintenanceAgentRun) {
-  setBusy(`maintenance-agent:approve:${run.runId}`);
+  busyKey.value = `maintenance-agent:approve:${run.runId}`;
   error.value = "";
   try {
     const result = await bridge.approveMaintenanceAgentRun(run.runId, {
@@ -12846,7 +12667,7 @@ async function approveMaintenanceAgentRun(run: MaintenanceAgentRun) {
 }
 
 async function cancelMaintenanceAgentRun(run: MaintenanceAgentRun) {
-  setBusy(`maintenance-agent:cancel:${run.runId}`);
+  busyKey.value = `maintenance-agent:cancel:${run.runId}`;
   error.value = "";
   try {
     const result = await bridge.cancelMaintenanceAgentRun(run.runId, {
@@ -12890,7 +12711,7 @@ async function createGrant() {
 }
 
 async function updateGrant(grant: ToolManagementGrant, patch: Partial<ToolManagementGrant>) {
-  setBusy(`grant:${grant.id}`);
+  busyKey.value = `grant:${grant.id}`;
   error.value = "";
 
   try {
@@ -12936,7 +12757,7 @@ async function toggleGrantToolset(grant: ToolManagementGrant, toolsetId: string)
 }
 
 async function rotateGrant(grant: ToolManagementGrant) {
-  setBusy(`grant:${grant.id}`);
+  busyKey.value = `grant:${grant.id}`;
   error.value = "";
   issuedToolToken.value = "";
 
@@ -12957,7 +12778,7 @@ async function deleteGrant(grant: ToolManagementGrant) {
     return;
   }
 
-  setBusy(`grant:${grant.id}`);
+  busyKey.value = `grant:${grant.id}`;
   error.value = "";
 
   try {
@@ -12983,7 +12804,7 @@ async function deleteJob(jobId: string) {
     return;
   }
 
-  setBusy(`job:${jobId}`);
+  busyKey.value = `job:${jobId}`;
   error.value = "";
 
   try {
@@ -13593,7 +13414,7 @@ const serverIdentity = computed(
   () =>
     consoleState.value?.discovery?.value?.serverLabel ||
     consoleState.value?.server.hostname ||
-    "AgentStudio Server",
+    "SplitAll Server",
 );
 
 const enabledMountCount = computed(
@@ -13884,13 +13705,9 @@ watch(
       }
     }
     if (viewId === "knowledge" && r.params.tab) {
-      const rawTab = String(r.params.tab);
-      const tab = normalizeKnowledgeTabId(rawTab);
-      if (tab && tab !== knowledgeTab.value) {
+      const tab = String(r.params.tab) as KnowledgeTab;
+      if (visibleKnowledgeTabs.value.some((t) => t.id === tab) && tab !== knowledgeTab.value) {
         knowledgeTab.value = tab;
-      }
-      if (tab && rawTab !== tab) {
-        _router.replace(`/knowledge/${tab}`).catch(() => {});
       }
     }
     if (viewId === "debug" && r.params.tab) {
@@ -14003,7 +13820,6 @@ onUnmounted(() => {
     agentExploreThinkingParameters, 
     agentExploreTraceOpen, 
     agentExploreWorkspaceId, 
-    agentModelOptions,
     agentModelAssignmentOptions, 
     agentModelOptionLabelCache, 
     agentModelOptionValueSet, 
@@ -14222,7 +14038,6 @@ onUnmounted(() => {
     ensureModuleAgentGroup, 
     ensureModuleAgentProfile, 
     error, 
-    exportWordCloudSet, 
     errorNeedsKnowledgeImportAction, 
     escapeHtmlText, 
     escapeRegexText, 
@@ -14299,7 +14114,6 @@ onUnmounted(() => {
     hydrateSearchResultPreview, 
     imageEvidenceAssets, 
     importClients, 
-    importWordCloudSetFromFile, 
     inactiveAgentModelOption, 
     inferRuleDraftFromMessage, 
     infoFeedAgentAnswer, 
@@ -14380,7 +14194,6 @@ onUnmounted(() => {
     isModelLibraryCardExpanded, 
     isReadableInfoFeedAttachment, 
     isTransientFetchError, 
-    isWordCloudPresetCard,
     issuedToolToken, 
     jaccardSimilarity, 
     jobStatusLabels, 
@@ -14394,23 +14207,25 @@ onUnmounted(() => {
     knowledgeLogColumnDividers, 
     knowledgeLogColumnLabels, 
     knowledgeLogColumnMinWidths, 
-    knowledgeLogColumnOrder, 
-    knowledgeLogColumnWidths, 
-    knowledgeLogFilters, 
-    knowledgeLogResizing, 
-    knowledgeLogStatusOptionBarOptions, 
-    knowledgeLogStatusOptions, 
-    knowledgeLogTableScrollLeft, 
-    knowledgeLogTableShellRef, 
-    knowledgeMaintenanceDraft, 
-    knowledgeMaintenanceTaskDescription, 
-    knowledgeModules, 
-    knowledgeRecallDebugForm, 
-    knowledgeRecallDebugGridStyle, 
-    knowledgeRecallDebugParameterSummary, 
-    knowledgeRecallDebugRuns, 
-    knowledgeRecentJobs, 
-    knowledgeResultAssetCount, 
+    knowledgeLogColumnOrder,
+    knowledgeLogColumnWidths,
+    knowledgeLogFilters,
+    knowledgeLogResizing,
+    knowledgeLogStatusOptionBarOptions,
+    knowledgeLogStatusOptions,
+    knowledgeLogTableScrollLeft,
+    knowledgeLogTableShellRef,
+    knowledgeMaintenanceDraft,
+    knowledgeMaintenanceTaskDescription,
+    knowledgeManagementPanel,
+    knowledgeManagementPanelOptionBarOptions,
+    knowledgeModules,
+    knowledgeRecallDebugForm,
+    knowledgeRecallDebugGridStyle,
+    knowledgeRecallDebugParameterSummary,
+    knowledgeRecallDebugRuns,
+    knowledgeRecentJobs,
+    knowledgeResultAssetCount,
     knowledgeResultEvidenceId, 
     knowledgeResultHierarchyPath, 
     knowledgeResultScore, 
@@ -14770,18 +14585,19 @@ onUnmounted(() => {
     saveOidcConfig, 
     saveRules, 
     saveSettings, 
-    saveWordCloud, 
-    scheduleDelayedRefreshState, 
-    scopeLabel, 
-    scrollToConfigTarget, 
-    searchKnowledge, 
-    selectAgentExploreHistoryItem, 
-    selectInfoFeedHistoryItem, 
-    selectKnowledgeReviewItem, 
-    selectServerPath, 
-    selectToolForManagement, 
-    selectWordCloud, 
-    selectedAgentExploreContextProfile, 
+    saveWordCloud,
+    scheduleDelayedRefreshState,
+    scopeLabel,
+    scrollToConfigTarget,
+    searchKnowledge,
+    selectAgentExploreHistoryItem,
+    selectInfoFeedHistoryItem,
+    selectKnowledgeManagementPanel,
+    selectKnowledgeReviewItem,
+    selectServerPath,
+    selectToolForManagement,
+    selectWordCloud,
+    selectedAgentExploreContextProfile,
     selectedAgentExploreModel, 
     selectedAgentExploreThinkingMode, 
     selectedAgentFromOptions, 
@@ -14876,7 +14692,6 @@ onUnmounted(() => {
     togglePermissionGroupToolset, 
     toggleWordCloudActionMenu, 
     toggleWordCloudCollapsed, 
-    triggerWordCloudImport, 
     pinWordCloud, 
     tokenizeKnowledgeReviewText, 
     toolCatalog, 

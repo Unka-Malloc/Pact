@@ -297,7 +297,17 @@ rankScoreV0 =
 - 授权封锁。
 - Checkpoint Tree 回档。
 
-目标智能体固定为：
+设备级 MCP Hub 的安装目标包括：
+
+- Codex
+- Gemini CLI
+- Kilo Code
+- Copilot
+- OpenClaw（OrbStack Kate）
+- Hermes Agent（OrbStack Serena）
+- Antigravity
+
+五阶段演示的首批真实 agent 固定为：
 
 - A：`orbstack - kate - openclaw`
 - B：`orbstack - serena - hermes agent`
@@ -336,21 +346,31 @@ Demo 数据允许清空重建。第一阶段到第三阶段默认给两个 subje
 - Checkpoint Tree 必须从第一阶段开始写入。即使第五阶段才展示回档，前面阶段的上传、下载、读取、列表、发现、权限检查、receipt 查询和修改也要成为可回放证据。
 - 知识与回档必须复用核心能力：知识走现有 KnowledgeCore / `knowledge.search`，文件树回档用 git-backed workspace 加产品封装，不另做只服务演示的旁路系统。
 - 管控台必须跟着阶段走：文件资产列表、知识访问记录、Skill 使用、权限策略、不可见过滤统计、Checkpoint Tree、restore preview 和 restore action 都要能逐步看到。
-- 先用本地 mock MCP client 验证，再安装到两个真实 OrbStack 智能体环境；真实安装后保留人工演示记录。
+- 先用本地 mock MCP client 验证，再安装到设备级目标智能体；OpenClaw（OrbStack Kate）和 Hermes Agent（OrbStack Serena）是首批真实 OrbStack 验收目标，真实安装后保留人工演示记录。
 - 如果 HTTP 或 stdio 某一侧的真实 agent 兼容性和本地 mock 结果不一致，优先修 MCP adapter，不降级为 agent 直连文件系统。
 
 Agent 安装策略：
 
-- Hermes：在 `~/.hermes/config.yaml` 增加 `mcp_servers.agentstudio`，指向 `http://host.orb.internal:8791/mcp`；修改前备份，只追加 agentstudio 条目。
-- OpenClaw：优先使用 project `.mcp.json` 或其 MCP import 机制配置 stdio proxy；如果 VM 不能直接访问 repo path，则复制最小 stdio proxy 到 OpenClaw workspace 下。
-- 不打印完整 agent config，避免泄漏现有 token、API key 或 bot token。
+- 统一服务端入口：本机 `http://127.0.0.1:8787/mcp`；OrbStack VM 内 `http://host.orb.internal:8787/mcp`。
+- 统一按 Stitch MCP 形态安装：HTTP MCP endpoint + 客户端侧认证 metadata / headers；AgentStudio 的 API key header 是 `X-AgentStudio-Api-Key`，值为 Tool Management grant token；Codex CLI 使用其标准 bearer token env var，服务端同时接受 bearer 和 header。
+- 终端用户安装不得依赖完整服务端 checkout；统一通过 `agentstudio-mcp-connector` release 包先注册共享 Hub：`npx agentstudio-mcp-connector@latest register --url <AgentStudio>`，再通过 `npx agentstudio-mcp-connector@latest discover-local` 发现同一个本机 Hub，最后运行 `npx agentstudio-mcp-connector@latest install` 进入 TUI 选择要连接的客户端；脚本化场景仍可使用 `--target codex --token-stdin`。
+- 没有 Node.js、npm、npx 或包管理器的智能体宿主机必须使用 portable zip release 包：`agentstudio-mcp-connector-<version>-<platform>.zip` 内置 Node runtime，提供 `./agentstudio-mcp register`、`./agentstudio-mcp install` TUI、`./agentstudio-mcp install --target <client>` 和 macOS `install.command`。
+- stdio proxy：仅作为目标 agent 不支持 HTTP MCP 或 headers 时的未来兼容入口；当前 release 安装路径默认不启用 stdio。
+- Codex：通过 `codex plugin marketplace add`、`codex plugin add` 和 `codex mcp add --url --bearer-token-env-var` 安装。
+- Gemini CLI：通过 `gemini mcp add --transport http --header X-AgentStudio-Api-Key` 安装，同时生成并校验 Stitch extension 同构 manifest。
+- Kilo Code：按 Kilo 标准 `~/.config/kilo/kilo.json` 的 remote MCP 配置格式结构化写入。
+- Copilot：通过 `copilot mcp add --transport http --header X-AgentStudio-Api-Key` 安装。
+- OpenClaw（OrbStack Kate）：通过 VM 内 `openclaw mcp set` 配置 `http://host.orb.internal:8787/mcp`。
+- Hermes Agent（OrbStack Serena）：通过 VM 内 `hermes mcp add --url --auth header` 安装，安装器随后用 Hermes config helper 启用并执行 `hermes mcp test`。
+- Antigravity：按官方 `~/.gemini/antigravity/mcp_config.json` 的 `serverUrl` + `headers` 格式结构化写入。
+- 所有 installer 修改前必须备份目标配置，只追加或替换 `agentstudio` 条目，不打印完整 agent config，避免泄漏现有 token、API key 或 bot token。
 
 实现默认约束：
 
 - 可以改 repo 代码、package scripts、server-web、demo build 目录。
 - 验证通过后可以备份并修改两个 OrbStack 智能体的 MCP 配置。
 - Demo workspace 可以清空重建；真实 agent 原配置只允许备份后追加 AgentStudio 配置，不做破坏性重写。
-- 手写 MCP 只覆盖本轮工具调用所需的最小协议，不追求完整 MCP server framework。
+- MCP 服务端只实现当前验收需要的标准 JSON-RPC 方法和 Streamable HTTP 最小面；目标客户端安装必须走 `agentstudio-mcp-connector` release 包，不得靠人工手写配置。`server:mcp:install` 只作为服务端开发者本机调试入口。
 
 ### 阶段一：MCP 服务 + 本机工作空间
 
@@ -530,7 +550,7 @@ Base.
 
 第一轮任务按下列 P0 包推进：
 
-- `P0-A MCP Service Shell`：新增 MCP server 启动入口，暴露 workspace/file/list/download/upload，支持 demo identity 注入，输出 OpenClaw 与 Hermes 配置样例。
+- `P0-A Device MCP Hub Shell`：新增 Stitch 形态 HTTP `/mcp`、agent-specific grant/token、统一本机入口 `agentstudio-mcp discover-local`、canonical registry `~/.agentstudio/mcp/servers.json`、`/.well-known/agentstudio/mcp.json` 和 `agentstudio-mcp-connector` release discovery publisher；stdio proxy 仅作为兼容兜底；release 包默认注册共享 Hub，不批量写入客户端；Codex、Gemini CLI、Kilo Code、Copilot、OpenClaw、Hermes Agent 和 Antigravity 只有在用户明确 opt-in 时才写入对应配置；对外 MCP tool surface 收敛为单一稳定工具 `agentstudio.call`，内部 operation 通过参数路由。
 - `P0-B Local Workspace Store`：初始化 demo workspace，建立 asset metadata，文件上传落盘，下载走 asset id。
 - `P0-C Operation Ledger + Checkpoint Node`：每个 MCP operation 写 ledger，文件上传、下载、读取、修改都写 checkpoint node。
 - `P0-D Knowledge Seed + Search`：写入 `AgentStudio 简介` seed knowledge，暴露 knowledge contribution/search/evidence，返回先做硬限制。
@@ -540,6 +560,10 @@ Base.
 后续验证入口：
 
 ```text
+npm run server:mcp:discover
+npm run server:mcp:doctor
+npm run server:verify:mcp-release
+npm run server:verify:mcp-http
 npm run server:verify:mcp-demo
 npm run server:verify:mcp-workspace-demo
 npm run server:verify:mcp-knowledge-demo
@@ -547,7 +571,7 @@ npm run server:verify:mcp-permission-demo
 npm run server:verify:checkpoint-restore-demo
 ```
 
-每个验证脚本必须输出参与 agent identity、workspace 路径、asset ids、MCP tool call 结果、operation ids、checkpoint node ids、audit ids、成功样例和拒绝样例。真实安装后还必须补一份人工演示记录，证明不是只在 mock client 中通过。
+`server:mcp:doctor` 必须输出设备级发现清单、HTTP endpoint、VM endpoint、stdio proxy、target 安装状态、`initialize` / `tools/list` 单工具校验 / `tools/call agentstudio.call(operation=system.health)` 结果、版本变更推送能力和 OrbStack 连通性。每个验证脚本必须输出参与 agent identity、workspace 路径、asset ids、MCP tool call 结果、operation ids、checkpoint node ids、audit ids、成功样例和拒绝样例。真实安装后还必须补一份人工演示记录，证明不是只在 mock client 中通过。
 
 ## 资产门禁模型
 

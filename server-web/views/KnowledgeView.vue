@@ -1,23 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { useConsole } from '../composables/useConsole';
-import KnowledgeDistillationWorkbench from '../components/KnowledgeDistillationWorkbench.vue';
-import KnowledgeImportCard from '../components/KnowledgeImportCard.vue';
-import { bridge } from '../lib/bridge';
-import {
-  createKnowledgeUploadedFilesPayload,
-  knowledgeUploadFileKey,
-  knowledgeUploadFileRelativePath,
-} from '../lib/knowledge-upload-session';
-import type { DocumentParseChunk, DocumentParsingConfig, SplitJob, SplitResult } from '../lib/types';
 import {
   AgentModelOptionBar,
   BinaryCheckbox,
   BrowseSelectButton,
   ConfigFoldCard,
   FeatureToggle,
-  HistorySessionPanel,
-  InfoFeedResultRow,
   OptionBar,
   StatusPill,
 } from '../components/common';
@@ -26,14 +15,16 @@ const {
   addManualWordCloud,
   autoFillCloudWithAgent,
   fillingWordBagIds,
+  addTermActionToCloud,
+  addTermInputToCloud,
   addVocabularyEntry,
   busyKey,
   canAdminKnowledge,
   canBrowseServerPaths,
   canMaintainKnowledge,
-  canReadKnowledge,
   canWriteJobs,
   canWriteKnowledge,
+  clearRemovedTermsFromCloud,
   clearWordCloudCorpusPaths,
   collapsedWordBagIds,
   currentMaintenanceTask,
@@ -46,7 +37,6 @@ const {
   emailSynonymRules,
   enabledStringOptionBarOptions,
   error,
-  exportWordCloudSet,
   expertRuleEnabled,
   expertVocabularyDraft,
   filter,
@@ -63,18 +53,13 @@ const {
   ingestJob,
   ingestProgress,
   isAuthenticated,
-  isWordCloudPresetCard,
   jobStatusLabels,
   jobStatusTone,
   jsonPreview,
-  knowledgeConsole,
   knowledgeConfigGroupDescription,
-  knowledgeFusionSummary,
   knowledgeMaintenanceTaskDescription,
-  knowledgeRecallDebugForm,
-  knowledgeRecallDebugGridStyle,
-  knowledgeRecallDebugParameterSummary,
-  knowledgeRecallDebugRuns,
+  knowledgeManagementPanel,
+  knowledgeManagementPanelOptionBarOptions,
   knowledgeReviewCanResolveWithDocument,
   knowledgeReviewCurrentDocuments,
   knowledgeReviewDetailText,
@@ -94,8 +79,6 @@ const {
   knowledgeReviewTitle,
   knowledgeReviewTone,
   knowledgeSchema,
-  knowledgeSourceState,
-  knowledgeStatus,
   knowledgeTab,
   maintenanceConfirm,
   maintenanceDryRun,
@@ -105,28 +88,24 @@ const {
   maintenanceTaskOptionBarOptions,
   normalizedManifest,
   onIngestFilesSelected,
-  openAgentEvidencePreview,
   openWordCloudCorpusDirectoryPicker,
   openWordCloudCorpusFilePicker,
-  importWordCloudSetFromFile,
   proposeWordCloud,
   refreshExpertRules,
   refreshIngestJob,
   refreshKnowledgeConflicts,
   refreshKnowledgeConsole,
-  refreshState,
   refreshWordCloud,
   removeTermFromCloud,
   removeWordCloudCorpusPath,
   resolveKnowledgeReview,
-  retrievalModeOptionBarOptions,
   rulesText,
-  runKnowledgeRecallDebugBatch,
   runKnowledgeMaintenanceTask,
   saveExpertVocabulary,
   saveKnowledgeMaintenance,
   saveRules,
   saveWordCloud,
+  selectKnowledgeManagementPanel,
   selectKnowledgeReviewItem,
   selectWordCloud,
   selectedKnowledgeReviewFusionModel,
@@ -138,15 +117,13 @@ const {
   setMaintenanceFieldFromEvent,
   setMaintenanceFieldValue,
   setVocabularyEntryEnabled,
-  settingsDraft,
+  setWordCloudTermInput,
   shortId,
   showAllVocabularyEntries,
   syncLocalSourceLabelFromPath,
   toggleGoldenRuleEnabled,
   toggleWordCloudActionMenu,
   toggleWordCloudCollapsed,
-  triggerWordCloudImport,
-  agentModelOptions,
   pinWordCloud,
   pinnedWordBagIds,
   updateVocabularyDomains,
@@ -167,12 +144,10 @@ const {
   wordCloudModelAlias,
   wordCloudModelOptions,
   wordCloudPrompt,
+  wordCloudTermInputs,
   wordCloudTerms,
   wordCloudVisibleTerms,
   wordCloudState,
-  escapeHtmlText,
-  markdownToSafeHtml,
-  sanitizeHtmlContent,
 } = useConsole();
 
 const expandedSummaryIds = ref<Set<string>>(new Set());
@@ -201,1409 +176,43 @@ function jumpToCloud(wordBagId: string) {
   });
 }
 
-const isDocumentParsingTab = computed(() => knowledgeTab.value === "parsing");
-const isKnowledgeRetrievalTab = computed(() => knowledgeTab.value === "retrieval");
-const isGoldenRulesTab = computed(() => knowledgeTab.value === "rules");
+const isManagementKnowledgePanel = computed(
+  () => knowledgeTab.value === "management" && knowledgeManagementPanel.value === "knowledge",
+);
+const isManagementRulesPanel = computed(
+  () => knowledgeTab.value === "management" && knowledgeManagementPanel.value === "rules",
+);
 const isKnownKnowledgeTab = computed(
   () =>
-    isDocumentParsingTab.value ||
-    isKnowledgeRetrievalTab.value ||
-    isGoldenRulesTab.value ||
-    knowledgeTab.value === "distillation" ||
-    knowledgeTab.value === "chunking" ||
+    isManagementKnowledgePanel.value ||
+    isManagementRulesPanel.value ||
     knowledgeTab.value === "wordCloud" ||
-    knowledgeTab.value === "review" ||
+    knowledgeTab.value === "conflicts" ||
     knowledgeTab.value === "maintenance",
 );
-
-const knowledgeImportModeLabels: Record<string, string> = {
-  wordCloud: "基础词汇库",
-  chunking: "文档切分",
-  parsing: "文档归一化",
-  retrieval: "索引与检索",
-  distillation: "知识蒸馏",
-  review: "人工审核",
-  rules: "专家规则",
-  maintenance: "配置维护",
-};
-
-const knowledgeImportModeLabel = computed(() => knowledgeImportModeLabels[knowledgeTab.value] || "知识库");
-const knowledgeImportModeDescription = computed(
-  () => `各子模块共享同一批解析结果，当前链路：${knowledgeImportModeLabel.value}。`,
-);
-
-type ChunkingMode = "dynamic" | "heading" | "semantic" | "fixed";
-type ChunkingPreviewDisplayMode = "preview" | "source";
-type ChunkRenderKind = "html" | "markdown" | "text";
-type ChunkQuality = "good" | "warn" | "risk";
-type ChunkingAttachmentStatus = "ready" | "pending" | "error";
-
-type ChunkPreview = {
-  id: string;
-  index: number;
-  title: string;
-  text: string;
-  sourceName: string;
-  tokens: number;
-  chars: number;
-  overlap: number;
-  quality: ChunkQuality;
-  boundary: string;
-  anchors: string[];
-  sourceStartLine: number;
-  sourceEndLine: number;
-  parentArtifactId: string;
-  granularity: string;
-  fragmentRange: string;
-  materialization: string;
-};
-
-type ChunkingAttachment = {
-  id: string;
-  name: string;
-  relativePath: string;
-  mediaType: string;
-  byteSize: number;
-  lastModified: number;
-  file?: File;
-  status: ChunkingAttachmentStatus;
-  statusLabel: string;
-  message: string;
-  text: string;
-};
-
-const chunkingModeOptions: Array<{ value: ChunkingMode; label: string }> = [
-  { value: "dynamic", label: "动态参数" },
-  { value: "heading", label: "标题优先" },
-  { value: "semantic", label: "语义段落" },
-  { value: "fixed", label: "固定窗口" },
-];
-
-const chunkingPreviewDisplayModeOptions: Array<{ value: ChunkingPreviewDisplayMode; label: string }> = [
-  { value: "preview", label: "预览" },
-  { value: "source", label: "原文" },
-];
-
-const chunkingAttachmentAccept = [
-  ".txt",
-  ".md",
-  ".markdown",
-  ".json",
-  ".csv",
-  ".tsv",
-  ".log",
-  ".xml",
-  ".html",
-  ".htm",
-  ".yaml",
-  ".yml",
-  ".eml",
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".ppt",
-  ".pptx",
-  ".xls",
-  ".xlsx",
-  "text/*",
-  "application/json",
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-].join(",");
-
-const chunkingReadableExtensions = new Set([
-  "txt",
-  "md",
-  "markdown",
-  "json",
-  "csv",
-  "tsv",
-  "log",
-  "xml",
-  "html",
-  "htm",
-  "yaml",
-  "yml",
-  "eml",
-]);
-
-const chunkingDocument = ref("");
-const chunkingMode = ref<ChunkingMode>("dynamic");
-const chunkingChunkSize = ref(180);
-const chunkingOverlap = ref(32);
-const chunkingHeadingDepth = ref("H2");
-const chunkingKeepTables = ref(true);
-const chunkingKeepEvidence = ref(true);
-const chunkingPreviewDisplayMode = ref<ChunkingPreviewDisplayMode>("preview");
-const selectedChunkId = ref("chunk-1");
-const chunkingAttachments = ref<ChunkingAttachment[]>([]);
-const chunkingDocumentSource = ref<"attachments" | "manual">("manual");
-
-function chunkingAttachmentKey(file: File) {
-  return knowledgeUploadFileKey(file);
-}
-
-function chunkingAttachmentExtension(name: string) {
-  const match = name.toLowerCase().match(/\.([^.]+)$/);
-  return match?.[1] || "";
-}
-
-function canReadChunkingAttachment(file: File) {
-  if (file.type.startsWith("text/")) {
-    return true;
-  }
-  const mediaType = file.type.toLowerCase();
-  if (mediaType === "application/json" || mediaType.includes("xml")) {
-    return true;
-  }
-  return chunkingReadableExtensions.has(chunkingAttachmentExtension(file.name));
-}
-
-function chunkingAttachmentTone(status: ChunkingAttachmentStatus) {
-  if (status === "ready") {
-    return "success";
-  }
-  if (status === "pending") {
-    return "warning";
-  }
-  return "danger";
-}
-
-function buildChunkingAttachmentDocument(attachments: ChunkingAttachment[]) {
-  return attachments
-    .map((attachment) => {
-      const meta = [
-        `- 文件名：${attachment.relativePath}`,
-        `- 文件大小：${formatBytes(attachment.byteSize)}`,
-        `- 解析状态：${attachment.message}`,
-      ].join("\n");
-      const body = attachment.text.trim()
-        ? attachment.text.trim()
-        : "[该附件已加入输入队列，等待后端 document-parser 提取正文后参与切分。]";
-      return `# 附件：${attachment.name}\n\n${meta}\n\n${body}`;
-    })
-    .join("\n\n---\n\n");
-}
-
-function syncChunkingDocumentFromAttachments() {
-  if (chunkingAttachments.value.length === 0) {
-    if (chunkingDocumentSource.value === "attachments") {
-      chunkingDocument.value = "";
-    }
-    return;
-  }
-  chunkingDocument.value = buildChunkingAttachmentDocument(chunkingAttachments.value);
-  selectedChunkId.value = "chunk-1";
-  chunkingDocumentSource.value = "attachments";
-}
-
-async function readChunkingAttachment(file: File): Promise<ChunkingAttachment> {
-  const relativePath = knowledgeUploadFileRelativePath(file);
-  const base = {
-    id: `${chunkingAttachmentKey(file)}:${Math.random().toString(36).slice(2, 8)}`,
-    name: file.name,
-    relativePath,
-    mediaType: file.type || "application/octet-stream",
-    byteSize: file.size,
-    lastModified: file.lastModified,
-    file,
-  };
-  if (!canReadChunkingAttachment(file)) {
-    return {
-      ...base,
-      status: "pending",
-      statusLabel: "待解析",
-      message: "已作为附件加入，等待后端解析",
-      text: "",
-    };
-  }
-  try {
-    const text = await file.text();
-    return {
-      ...base,
-      status: "ready",
-      statusLabel: "可切分",
-      message: "已读取正文",
-      text,
-    };
-  } catch {
-    return {
-      ...base,
-      status: "error",
-      statusLabel: "读取失败",
-      message: "浏览器无法读取该附件正文",
-      text: "",
-    };
-  }
-}
-
-async function addChunkingAttachmentFiles(files: File[], options: { startIngest?: boolean } = {}) {
-  if (!files.length) {
-    return;
-  }
-  const existingKeys = new Set(chunkingAttachments.value.map((attachment) =>
-    `${attachment.relativePath}:${attachment.byteSize}:${attachment.lastModified}`,
-  ));
-  const nextFiles = files.filter((file) => !existingKeys.has(chunkingAttachmentKey(file)));
-  if (!nextFiles.length) {
-    return;
-  }
-  const nextAttachments = await Promise.all(nextFiles.map(readChunkingAttachment));
-  chunkingAttachments.value = [...chunkingAttachments.value, ...nextAttachments];
-  syncChunkingDocumentFromAttachments();
-  if (options.startIngest !== false) {
-    onIngestFilesSelected(nextFiles, {
-      documentParsing: chunkingDocumentParsingConfig(),
-    });
-  }
-}
-
-function removeChunkingAttachment(id: string) {
-  chunkingAttachments.value = chunkingAttachments.value.filter((attachment) => attachment.id !== id);
-  syncChunkingDocumentFromAttachments();
-}
-
-function clearChunkingAttachments() {
-  chunkingAttachments.value = [];
-  syncChunkingDocumentFromAttachments();
-}
-
-function onChunkingDocumentInput() {
-  chunkingDocumentSource.value = "manual";
-}
-
-function headingTitle(text: string, fallback: string) {
-  const heading = text.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim();
-  if (heading) {
-    return heading;
-  }
-  const first = text.split(/\n/).find((line) => line.trim()) || fallback;
-  return first.replace(/^[-*]\s+/, "").slice(0, 28);
-}
-
-function chunkingHeadingLevel() {
-  return Number(chunkingHeadingDepth.value.replace("H", "")) || 2;
-}
-
-function chunkingPipelineId() {
-  if (chunkingMode.value === "dynamic") {
-    return "dynamic-parameter-v1";
-  }
-  if (chunkingMode.value === "semantic") {
-    return "semantic-paragraph-v1";
-  }
-  if (chunkingMode.value === "fixed") {
-    return "fixed-window-v1";
-  }
-  return "knowledge-rule-v1";
-}
-
-function chunkingDocumentParsingConfig(): DocumentParsingConfig {
-  const maxTokens = Math.max(80, Number(chunkingChunkSize.value) || 180);
-  const maxChars = Math.max(480, maxTokens * 4);
-  const useDynamicParsing = chunkingMode.value === "dynamic";
-  return {
-    pipelineId: chunkingPipelineId(),
-    expectedOutput: "chunks",
-    expectedOutputs: ["chunks", "preprocessResult"],
-    chunking: {
-      maxTokens,
-      maxChars,
-      overlapTokens: Math.max(0, Number(chunkingOverlap.value) || 0),
-      sectionLevel: chunkingHeadingLevel(),
-    },
-    ...(useDynamicParsing
-      ? {
-          contextBudget: {
-            knowledgeTokens: maxTokens,
-            budgetScope: "knowledge-console-document-chunking",
-          },
-          payloadBudget: {
-            maxResponseBytes: 256 * 1024,
-            maxEvidenceBytes: Math.max(32768, maxTokens * 64),
-          },
-          granularity: {
-            preferOriginalStructure: chunkingKeepTables.value,
-            allowPartialEvidence: true,
-            targetTokens: maxTokens,
-            targetChars: maxChars,
-            tableGranularity: chunkingKeepTables.value ? "row-window" : "cell-window",
-            secondaryParse: {
-              enabled: false,
-              algorithm: "auto",
-              targetTokens: maxTokens,
-              targetChars: maxChars,
-            },
-          },
-          dynamicParsing: {
-            enabled: true,
-            preserveStructureArtifacts: true,
-            tableGranularity: chunkingKeepTables.value ? "row-window" : "cell-window",
-          },
-        }
-      : {}),
-  };
-}
-
-function knowledgeImportDocumentParsingConfig(): DocumentParsingConfig {
-  const config = chunkingDocumentParsingConfig();
-  if (knowledgeTab.value === "chunking") {
-    return config;
-  }
-  return {
-    ...config,
-    pipelineId: "unified-knowledge-ingest-v1",
-    expectedOutput: "preprocessResult",
-    expectedOutputs: ["preprocessResult", "chunks"],
-  };
-}
-
-async function handleKnowledgeImportFiles(files: File[]) {
-  if (!files.length) {
-    return;
-  }
-  await addChunkingAttachmentFiles(files, { startIngest: false });
-  onIngestFilesSelected(files, {
-    documentParsing: knowledgeImportDocumentParsingConfig(),
-  });
-}
-
-function uploadKnowledgeImportFiles() {
-  return uploadFilesToKnowledge({
-    documentParsing: knowledgeImportDocumentParsingConfig(),
-  });
-}
-
-function chunkingSourceName() {
-  return chunkingAttachments.value.length === 1
-    ? chunkingAttachments.value[0]?.relativePath || "document.md"
-    : "document.md";
-}
-
-function sourceRangeStart(chunk: DocumentParseChunk) {
-  const metadataRange = (chunk.metadata?.sourceRange || {}) as Record<string, unknown>;
-  return Number(chunk.sourceStartLine || chunk.sourceRange?.startLine || metadataRange.startLine || 1);
-}
-
-function sourceRangeEnd(chunk: DocumentParseChunk, text: string, startLine: number) {
-  const metadataRange = (chunk.metadata?.sourceRange || {}) as Record<string, unknown>;
-  return Number(
-    chunk.sourceEndLine ||
-      chunk.sourceRange?.endLine ||
-      metadataRange.endLine ||
-      startLine + Math.max(1, text.split("\n").length) - 1,
-  );
-}
-
-function chunkMetadataString(chunk: DocumentParseChunk, key: string) {
-  return String((chunk.metadata?.[key] as string | undefined) || "").trim();
-}
-
-function chunkFragmentRange(chunk: DocumentParseChunk) {
-  const range = (chunk.metadata?.fragmentRange || {}) as Record<string, unknown>;
-  const entries = Object.entries(range)
-    .filter(([, value]) => value !== undefined && value !== null && String(value) !== "")
-    .map(([key, value]) => `${key}:${String(value)}`);
-  return entries.join(" · ");
-}
-
-function chunkMaterialization(chunk: DocumentParseChunk) {
-  const materialization = (chunk.metadata?.materialization || {}) as Record<string, unknown>;
-  return String(materialization.mode || chunkMetadataString(chunk, "granularity") || chunk.chunkType || "chunk");
-}
-
-function chunkPreviewFromBackend(chunk: DocumentParseChunk, offset: number): ChunkPreview {
-  const text = String(chunk.content || chunk.text || "");
-  const tokens = Number(chunk.tokenCount || 0);
-  const maxTokens = Math.max(80, Number(chunkingChunkSize.value) || 180);
-  const tableLines = text.split("\n").filter((line) => line.trim().startsWith("|")).length;
-  const hasEvidence = /证据|chunkId|sourceRange|附件|邮件|日志/.test(text);
-  const quality: ChunkQuality =
-    tokens > maxTokens * 1.18 || (!chunkingKeepTables.value && tableLines > 0)
-      ? "risk"
-      : tokens < maxTokens * 0.25
-        ? "warn"
-        : "good";
-  const headingPath = (Array.isArray(chunk.headingPath) && chunk.headingPath.length
-    ? chunk.headingPath
-    : Array.isArray(chunk.titlePath)
-      ? chunk.titlePath
-      : []
-  ).map((item) => String(item || "")).filter(Boolean);
-  const sourceStartLine = sourceRangeStart(chunk);
-  const sourceEndLine = sourceRangeEnd(chunk, text, sourceStartLine);
-  const granularity = chunkMetadataString(chunk, "granularity");
-  const parentArtifactId = chunkMetadataString(chunk, "parentArtifactId");
-  const fragmentRange = chunkFragmentRange(chunk);
-  const materialization = chunkMaterialization(chunk);
-  return {
-    id: chunk.id || `chunk-${offset + 1}`,
-    index: offset + 1,
-    title: chunk.title || headingTitle(text, `切片 ${offset + 1}`),
-    text,
-    sourceName: chunk.sourceName || chunkingSourceName(),
-    tokens,
-    chars: Number(chunk.charCount || text.length),
-    overlap: Number(chunk.overlapTokenCount || 0),
-    quality,
-    boundary:
-      quality === "good"
-        ? "后端边界"
-        : quality === "warn"
-          ? "偏短"
-          : "需复核",
-    anchors: [
-      ...(headingPath.length ? headingPath : [chunkingModeLabel.value]),
-      granularity || materialization,
-      chunk.sectionId ? `section:${String(chunk.sectionId).split("::").pop()}` : String(chunk.chunkType || "section"),
-      tableLines ? `table:${tableLines}` : "text",
-      chunkingKeepEvidence.value && hasEvidence ? "evidence" : "context",
-    ],
-    sourceStartLine,
-    sourceEndLine,
-    parentArtifactId,
-    granularity,
-    fragmentRange,
-    materialization,
-  };
-}
-
-const chunkingPreviews = ref<ChunkPreview[]>([]);
-const chunkingPreviewBusy = ref(false);
-const chunkingPreviewError = ref("");
-const chunkingPreviewStatus = ref("");
-const chunkingPreviewGeneratedAt = ref("");
-const chunkingStructureArtifactCount = ref(0);
-const chunkingGranularityFragmentCount = ref(0);
-const chunkingPayloadTruncated = ref(false);
-let chunkingPreviewRequestId = 0;
-let chunkingPreviewTimer: ReturnType<typeof setTimeout> | null = null;
-
-function chunkingPreviewAttachmentFiles() {
-  if (chunkingDocumentSource.value !== "attachments") {
-    return [];
-  }
-  return chunkingAttachments.value
-    .map((attachment) => attachment.file)
-    .filter((file): file is File => Boolean(file));
-}
-
-async function buildChunkingPreviewUploadedFiles(files: File[]) {
-  return createKnowledgeUploadedFilesPayload(files, {
-    onProgress: (progress) => {
-      chunkingPreviewStatus.value =
-        progress.stage === "upload" ? `准备预览输入 ${progress.percent}%` : progress.message;
-    },
-  });
-}
-
-async function refreshChunkingBackendPreview() {
-  const requestId = chunkingPreviewRequestId + 1;
-  chunkingPreviewRequestId = requestId;
-  const text = chunkingDocument.value.trim();
-  const attachmentFiles = chunkingPreviewAttachmentFiles();
-  if (!text && attachmentFiles.length === 0) {
-    chunkingPreviews.value = [];
-    chunkingStructureArtifactCount.value = 0;
-    chunkingGranularityFragmentCount.value = 0;
-    chunkingPayloadTruncated.value = false;
-    chunkingPreviewError.value = "";
-    chunkingPreviewStatus.value = "";
-    chunkingPreviewGeneratedAt.value = "";
-    chunkingPreviewBusy.value = false;
-    return;
-  }
-  if (!isAuthenticated.value || knowledgeTab.value !== "chunking") {
-    chunkingPreviewBusy.value = false;
-    chunkingPreviewStatus.value = "";
-    return;
-  }
-  chunkingPreviewBusy.value = true;
-  chunkingPreviewError.value = "";
-  chunkingPreviewStatus.value = attachmentFiles.length
-    ? "准备后端文件解析 dry-run..."
-    : "后端文档解析入口正在生成切片...";
-  try {
-    const config = chunkingDocumentParsingConfig();
-    const uploadedFiles = attachmentFiles.length
-      ? await buildChunkingPreviewUploadedFiles(attachmentFiles)
-      : [];
-    if (requestId !== chunkingPreviewRequestId) {
-      return;
-    }
-    chunkingPreviewStatus.value = "后端文档解析入口正在生成切片...";
-    const result = await bridge.parseDocument({
-      ...config,
-      inputText: uploadedFiles.length ? "" : text,
-      filePaths: [],
-      uploadedFiles,
-      settings: settingsDraft.value,
-      dryRun: true,
-    });
-    if (requestId !== chunkingPreviewRequestId) {
-      return;
-    }
-    chunkingPreviewGeneratedAt.value = result.generatedAt || "";
-    chunkingStructureArtifactCount.value = Number(
-      result.summary?.structureArtifacts || result.structureArtifacts?.length || 0,
-    );
-    chunkingGranularityFragmentCount.value = Number(
-      result.summary?.granularityFragments || result.granularityFragments?.length || 0,
-    );
-    chunkingPayloadTruncated.value = Boolean(result.payload?.truncated);
-    chunkingPreviewStatus.value = "";
-    chunkingPreviews.value = result.chunks.map(chunkPreviewFromBackend);
-    if (!chunkingPreviews.value.some((chunk) => chunk.id === selectedChunkId.value)) {
-      selectedChunkId.value = chunkingPreviews.value[0]?.id || "";
-    }
-  } catch (nextError) {
-    if (requestId !== chunkingPreviewRequestId) {
-      return;
-    }
-    chunkingPreviews.value = [];
-    chunkingStructureArtifactCount.value = 0;
-    chunkingGranularityFragmentCount.value = 0;
-    chunkingPayloadTruncated.value = false;
-    chunkingPreviewStatus.value = "";
-    chunkingPreviewError.value = nextError instanceof Error ? nextError.message : "后端文档解析失败。";
-  } finally {
-    if (requestId === chunkingPreviewRequestId) {
-      chunkingPreviewBusy.value = false;
-    }
-  }
-}
-
-function scheduleChunkingBackendPreview() {
-  if (chunkingPreviewTimer) {
-    clearTimeout(chunkingPreviewTimer);
-  }
-  chunkingPreviewTimer = setTimeout(() => {
-    void refreshChunkingBackendPreview();
-  }, 250);
-}
-
-const selectedChunk = computed(() =>
-  chunkingPreviews.value.find((chunk) => chunk.id === selectedChunkId.value) ||
-  chunkingPreviews.value[0] ||
-  null,
-);
-
-const chunkingPreviewDisplayModeLabel = computed(() =>
-  chunkingPreviewDisplayMode.value === "preview" ? "预览模式" : "原文模式",
-);
-
-function chunkRenderHint(chunk: ChunkPreview | null) {
-  if (!chunk) {
-    return "";
-  }
-  return [
-    chunk.sourceName,
-    chunk.title,
-    chunk.granularity,
-    chunk.materialization,
-    chunk.anchors.join(" "),
-  ].map((item) => String(item || "").toLowerCase()).join("\n");
-}
-
-function chunkRenderKind(chunk: ChunkPreview | null): ChunkRenderKind {
-  if (!chunk) {
-    return "text";
-  }
-  const text = String(chunk.text || "");
-  const hint = chunkRenderHint(chunk);
-  if (
-    /\.html?\b|text\/html/.test(hint) ||
-    /^\s*(<!doctype\s+html|<html|<body)\b/i.test(text) ||
-    /<\/(?:p|div|section|article|ul|ol|li|table|thead|tbody|tr|td|th|h[1-6]|pre|blockquote)>/i.test(text)
-  ) {
-    return "html";
-  }
-  if (
-    /\.md\b|\.markdown\b|text\/markdown/.test(hint) ||
-    /(^|\n)\s*(#{1,6}\s+|[-*]\s+|\d+\.\s+|>\s+|```|\|.+\|)/.test(text)
-  ) {
-    return "markdown";
-  }
-  return "text";
-}
-
-function chunkRenderKindLabel(chunk: ChunkPreview | null) {
-  const kind = chunkRenderKind(chunk);
-  if (kind === "html") {
-    return "HTML";
-  }
-  if (kind === "markdown") {
-    return "Markdown";
-  }
-  return "Text";
-}
-
-function chunkPlainTextToHtml(text: string) {
-  return String(text || "")
-    .replace(/\r\n/g, "\n")
-    .split(/\n{2,}/)
-    .map((paragraph) => `<p>${escapeHtmlText(paragraph).replace(/\n/g, "<br />")}</p>`)
-    .join("\n");
-}
-
-function chunkHtmlToSafeHtml(text: string) {
-  const source = String(text || "");
-  if (!source.trim()) {
-    return chunkPlainTextToHtml("暂无内容");
-  }
-  if (typeof DOMParser === "undefined") {
-    return sanitizeHtmlContent(source);
-  }
-  const document = new DOMParser().parseFromString(
-    /^\s*(<!doctype\s+html|<html|<body)\b/i.test(source)
-      ? source
-      : `<!doctype html><html><body>${source}</body></html>`,
-    "text/html",
-  );
-  return sanitizeHtmlContent(document.body?.innerHTML || source);
-}
-
-function chunkRenderedHtml(chunk: ChunkPreview | null) {
-  if (!chunk) {
-    return chunkPlainTextToHtml("暂无内容");
-  }
-  if (chunkRenderKind(chunk) === "html") {
-    return chunkHtmlToSafeHtml(chunk.text);
-  }
-  if (chunkRenderKind(chunk) === "markdown") {
-    return markdownToSafeHtml(chunk.text);
-  }
-  return chunkPlainTextToHtml(chunk.text || "暂无内容");
-}
-
-const chunkingAverageTokens = computed(() => {
-  if (!chunkingPreviews.value.length) {
-    return 0;
-  }
-  return Math.round(
-    chunkingPreviews.value.reduce((sum, chunk) => sum + chunk.tokens, 0) /
-      chunkingPreviews.value.length,
-  );
-});
-
-const chunkingRiskCount = computed(() =>
-  chunkingPreviews.value.filter((chunk) => chunk.quality === "risk").length,
-);
-
-const chunkingModeLabel = computed(
-  () => chunkingModeOptions.find((option) => option.value === chunkingMode.value)?.label || "标题优先",
-);
-
-const chunkingAttachmentSummary = computed(() => {
-  if (chunkingAttachments.value.length === 0) {
-    return "未添加附件";
-  }
-  const ready = chunkingAttachments.value.filter((attachment) => attachment.status === "ready").length;
-  const pending = chunkingAttachments.value.filter((attachment) => attachment.status === "pending").length;
-  return `${chunkingAttachments.value.length} 个附件 · ${ready} 可切分 · ${pending} 待解析`;
-});
-
-const chunkingHistoryBusyId = ref("");
-const chunkingHistoryRefreshing = ref(false);
-
-function chunkingJobReceipt(job: SplitJob) {
-  return ((job as SplitJob & { checkpointReceipt?: Record<string, unknown> }).checkpointReceipt || {}) as Record<string, unknown>;
-}
-
-function chunkingJobFiles(job: SplitJob) {
-  const receipt = chunkingJobReceipt(job);
-  const files = Array.isArray(receipt.files)
-    ? receipt.files
-    : Array.isArray(receipt.fileSamples)
-      ? receipt.fileSamples
-      : [];
-  return files
-    .map((file) => {
-      const record = file as Record<string, unknown>;
-      return String(record.originalFileName || record.relativePath || record.name || "").trim();
-    })
-    .filter(Boolean);
-}
-
-function isChunkingHistoryJob(job: SplitJob) {
-  const receipt = chunkingJobReceipt(job);
-  return Boolean(
-    job.checkpointId ||
-      (job as SplitJob & { uploadSessionId?: string }).uploadSessionId ||
-      (job as SplitJob & { archiveBatchId?: string }).archiveBatchId ||
-      receipt.checkpointId ||
-      receipt.fileCount,
-  );
-}
-
-const chunkingHistorySnapshot = ref<SplitJob[]>([]);
-const chunkingHistoryLoaded = ref(false);
-const removedChunkingHistoryJobIds = ref<Set<string>>(new Set());
-
-function markChunkingHistoryRemoved(jobId: string) {
-  if (!jobId) {
-    return;
-  }
-  const next = new Set(removedChunkingHistoryJobIds.value);
-  next.add(jobId);
-  removedChunkingHistoryJobIds.value = next;
-}
-
-function unmarkChunkingHistoryRemoved(jobId: string) {
-  if (!jobId || !removedChunkingHistoryJobIds.value.has(jobId)) {
-    return;
-  }
-  const next = new Set(removedChunkingHistoryJobIds.value);
-  next.delete(jobId);
-  removedChunkingHistoryJobIds.value = next;
-}
-
-const chunkingHistoryJobs = computed(() =>
-  chunkingHistorySnapshot.value
-    .filter((job) => !removedChunkingHistoryJobIds.value.has(job.id))
-    .filter(isChunkingHistoryJob)
-    .sort((left, right) => Math.max(parseTimeFromJob(right), 0) - Math.max(parseTimeFromJob(left), 0))
-    .slice(0, 80),
-);
-
-function parseTimeFromJob(job: SplitJob) {
-  return Date.parse(job.updatedAt || job.createdAt || "") || 0;
-}
-
-function chunkingJobTitle(job: SplitJob) {
-  const files = chunkingJobFiles(job);
-  if (files.length === 1) {
-    return files[0];
-  }
-  if (files.length > 1) {
-    return `${files[0]} 等 ${files.length} 个文件`;
-  }
-  return job.stage || `任务 ${shortId(job.id)}`;
-}
-
-function chunkingVersionNumber(job: SplitJob) {
-  const version = Number(job.versionNumber || 1);
-  return Number.isFinite(version) && version > 0 ? Math.trunc(version) : 1;
-}
-
-function chunkingJobMeta(job: SplitJob) {
-  const status = jobStatusLabels[job.status] || job.status || "unknown";
-  const progress = Number(job.progressPercent || 0);
-  return `${formatCompactDate(job.updatedAt || job.createdAt)} · v${chunkingVersionNumber(job)} · ${status} · ${progress}%`;
-}
-
-function chunkingJobPreview(job: SplitJob) {
-  const files = chunkingJobFiles(job);
-  const fileText = files.length ? ` · ${files.slice(0, 3).join("、")}${files.length > 3 ? "…" : ""}` : "";
-  const parentText = job.reparseFromJobId || job.parentJobId ? ` · 来源 v${Math.max(1, chunkingVersionNumber(job) - 1)}` : "";
-  return `${job.stage || "等待恢复"}${parentText}${job.error ? ` · ${job.error}` : ""}${fileText}`;
-}
-
-function isChunkingReparseDisabled(job: SplitJob) {
-  return job.status === "queued" || job.status === "running";
-}
-
-const chunkingHistoryPanelItems = computed(() =>
-  chunkingHistoryLoaded.value
-    ? chunkingHistoryJobs.value.map((job) => ({
-        id: job.id,
-        title: chunkingJobTitle(job),
-        meta: chunkingJobMeta(job),
-        preview: chunkingJobPreview(job),
-        active: ingestJob.value?.id === job.id,
-        disabled: chunkingHistoryBusyId.value === job.id,
-        actionLabel: "重新解析",
-        actionAriaLabel: `重新解析 ${chunkingJobTitle(job)}`,
-        actionDisabled: isChunkingReparseDisabled(job),
-        deleteText: "移除历史",
-        deleteLabel: `移除解析历史 ${chunkingJobTitle(job)}`,
-      }))
-    : [],
-);
-
-const selectedChunkingHistoryJobId = computed(() => {
-  const jobId = ingestJob.value?.id || "";
-  if (!jobId) {
-    return "";
-  }
-  return chunkingHistoryJobs.value.some((job) => job.id === jobId) ? jobId : "";
-});
-
-async function refreshChunkingHistory(options: { clearBefore?: boolean } = {}) {
-  if (!isAuthenticated.value || chunkingHistoryRefreshing.value) {
-    return;
-  }
-  if (options.clearBefore) {
-    chunkingHistoryLoaded.value = false;
-    chunkingHistorySnapshot.value = [];
-  }
-  chunkingHistoryRefreshing.value = true;
-  try {
-    const response = await bridge.listJobs(100);
-    chunkingHistorySnapshot.value = Array.isArray(response.items) ? response.items : [];
-    chunkingHistoryLoaded.value = true;
-  } finally {
-    chunkingHistoryRefreshing.value = false;
-  }
-}
-
-function attachmentFromJobFile(job: SplitJob, file: Record<string, unknown>, index: number): ChunkingAttachment {
-  const name = String(file.originalFileName || file.relativePath || file.name || `file-${index + 1}`);
-  return {
-    id: `${job.id}:file:${index}`,
-    name,
-    relativePath: name,
-    mediaType: String(file.mediaType || file.clientMediaType || "application/octet-stream"),
-    byteSize: Number(file.byteSize || 0),
-    lastModified: Date.parse(job.updatedAt || job.createdAt || "") || Date.now(),
-    status: "pending",
-    statusLabel: "已入库",
-    message: "历史任务已保留，正文需打开完成结果后恢复",
-    text: "",
-  };
-}
-
-function restoreChunkingAttachmentsFromJob(job: SplitJob) {
-  const receipt = chunkingJobReceipt(job);
-  const files = Array.isArray(receipt.files)
-    ? receipt.files
-    : Array.isArray(receipt.fileSamples)
-      ? receipt.fileSamples
-      : [];
-  chunkingAttachments.value = files.map((file, index) =>
-    attachmentFromJobFile(job, file as Record<string, unknown>, index),
-  );
-  syncChunkingDocumentFromAttachments();
-}
-
-function restoreChunkingFromResult(job: SplitJob, result: SplitResult | null) {
-  const sourceFiles = Array.isArray(result?.sourceFiles) ? result.sourceFiles : [];
-  if (!sourceFiles.length) {
-    restoreChunkingAttachmentsFromJob(job);
-    return;
-  }
-  chunkingAttachments.value = sourceFiles.map((source, index) => {
-    const record = source as Record<string, unknown>;
-    const name = String(record.originalFileName || record.name || record.path || `source-${index + 1}`);
-    const text = String(record.text || "");
-    return {
-      id: `${job.id}:source:${String(record.id || index)}`,
-      name,
-      relativePath: String(record.originalRelativePath || record.name || record.path || name),
-      mediaType: String(record.mediaType || "application/octet-stream"),
-      byteSize: Number(record.rawObjectByteSize || record.originalByteSize || record.byteSize || 0),
-      lastModified: Date.parse(String(record.sourceUpdatedAt || record.sourceCreatedAt || job.updatedAt || "")) || Date.now(),
-      status: text ? "ready" : "pending",
-      statusLabel: text ? "已恢复" : "已入库",
-      message: text ? "已从历史解析结果恢复正文" : "历史任务保留了文件记录，未保存可预览正文",
-      text,
-    };
-  });
-  syncChunkingDocumentFromAttachments();
-}
-
-async function selectChunkingHistoryItem(jobId: string) {
-  if (!jobId) {
-    return;
-  }
-  chunkingHistoryBusyId.value = jobId;
-  error.value = "";
-  try {
-    const job = await bridge.getJob(jobId);
-    if (!job) {
-      throw new Error("历史任务不存在。");
-    }
-    ingestJob.value = job;
-    normalizedManifest.value = null;
-    ingestProgress.value =
-      job.status === "completed"
-        ? "已从历史记录恢复任务。"
-        : `已从历史记录恢复任务：${job.stage || job.status}`;
-    if (job.status === "completed") {
-      const manifest = await bridge.getNormalizedDocuments(job.id).catch(() => null);
-      normalizedManifest.value = manifest || null;
-      const result = await bridge.getJobResult(job.id).catch(() => null);
-      if (!normalizedManifest.value && result?.normalizedDocuments) {
-        normalizedManifest.value = result.normalizedDocuments;
-      }
-      restoreChunkingFromResult(job, result);
-      return;
-    }
-    restoreChunkingAttachmentsFromJob(job);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "恢复切分历史失败。";
-  } finally {
-    chunkingHistoryBusyId.value = "";
-  }
-}
-
-async function reparseChunkingHistoryItem(jobId: string) {
-  if (!jobId) {
-    return;
-  }
-  chunkingHistoryBusyId.value = jobId;
-  error.value = "";
-  try {
-    const job = await bridge.reparseJob(jobId, {
-      documentParsing: chunkingDocumentParsingConfig(),
-      settings: settingsDraft.value,
-    });
-    ingestJob.value = job;
-    normalizedManifest.value = null;
-    ingestProgress.value = `已创建重新解析版本 v${chunkingVersionNumber(job)}，旧版本仍保留在切分历史中。`;
-    await refreshState({ silent: true });
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "重新解析历史文档失败。";
-  } finally {
-    chunkingHistoryBusyId.value = "";
-  }
-}
-
-async function deleteChunkingHistoryItem(jobId: string) {
-  if (!jobId || chunkingHistoryBusyId.value) {
-    return;
-  }
-  const job = chunkingHistoryJobs.value.find((item) => item.id === jobId);
-  const title = job ? chunkingJobTitle(job) : shortId(jobId);
-  if (!window.confirm(`移除解析历史“${title}”？这会从历史列表删除该任务记录，不会删除你的本地原始文件。`)) {
-    return;
-  }
-
-  chunkingHistoryBusyId.value = jobId;
-  error.value = "";
-  markChunkingHistoryRemoved(jobId);
-  chunkingHistorySnapshot.value = chunkingHistorySnapshot.value.filter((item) => item.id !== jobId);
-  try {
-    await bridge.deleteJob(jobId);
-    if (ingestJob.value?.id === jobId) {
-      ingestJob.value = null;
-      normalizedManifest.value = null;
-      ingestProgress.value = "";
-      chunkingAttachments.value = [];
-      syncChunkingDocumentFromAttachments();
-      chunkingPreviews.value = [];
-      chunkingStructureArtifactCount.value = 0;
-      chunkingGranularityFragmentCount.value = 0;
-      chunkingPayloadTruncated.value = false;
-      chunkingPreviewError.value = "";
-      chunkingPreviewStatus.value = "";
-      chunkingPreviewGeneratedAt.value = "";
-      selectedChunkId.value = "";
-    }
-    await Promise.all([
-      refreshChunkingHistory(),
-      refreshState({ silent: true }),
-    ]);
-  } catch (nextError) {
-    unmarkChunkingHistoryRemoved(jobId);
-    await refreshChunkingHistory().catch(() => null);
-    error.value = nextError instanceof Error ? nextError.message : "移除解析历史失败。";
-  } finally {
-    chunkingHistoryBusyId.value = "";
-  }
-}
-
-watch(
-  [knowledgeTab, isAuthenticated],
-	  ([tab, authenticated]) => {
-	    if (tab === "chunking" && authenticated) {
-	      void refreshChunkingHistory({ clearBefore: true });
-	    }
-	  },
-  { immediate: true },
-);
-
-watch(
-  [
-    knowledgeTab,
-    isAuthenticated,
-    chunkingDocument,
-    chunkingMode,
-    chunkingChunkSize,
-    chunkingOverlap,
-    chunkingHeadingDepth,
-    chunkingKeepTables,
-    chunkingKeepEvidence,
-  ],
-  () => {
-    scheduleChunkingBackendPreview();
-  },
-  { immediate: true },
-);
-
-function chunkQualityTone(quality: ChunkQuality) {
-  return quality === "good" ? "success" : quality === "warn" ? "warning" : "danger";
-}
-
-function chunkSourceRange(chunk: ChunkPreview) {
-  return `${chunk.sourceName || "document.md"}#L${chunk.sourceStartLine}-L${chunk.sourceEndLine}`;
-}
 </script>
 
 <template>
           <section class="knowledge-layout">
-            <KnowledgeImportCard
-              v-if="isKnownKnowledgeTab"
-              :mode-label="knowledgeImportModeLabel"
-              :mode-description="knowledgeImportModeDescription"
-              :can-read-knowledge="canReadKnowledge"
-              :can-write-jobs="canWriteJobs"
-              :busy-key="busyKey"
-              :ingest-progress="ingestProgress"
-              :ingest-job="ingestJob"
-              :normalized-manifest="normalizedManifest"
-              :job-status-labels="jobStatusLabels"
-              :job-status-tone="jobStatusTone"
-              :format-bytes="formatBytes"
-              :accept="chunkingAttachmentAccept"
-              @select="handleKnowledgeImportFiles"
-              @upload="uploadKnowledgeImportFiles"
-              @refresh="refreshIngestJob"
-            />
-
-            <KnowledgeDistillationWorkbench
-              v-if="knowledgeTab === 'distillation'"
-              :can-read-knowledge="canReadKnowledge"
-              :can-maintain-knowledge="canMaintainKnowledge"
-              :ingest-job="ingestJob"
-              :normalized-manifest="normalizedManifest"
-              :format-compact-date="formatCompactDate"
-              :model-options="agentModelOptions"
-            />
-
-            <article v-if="knowledgeTab === 'chunking'" class="surface-card document-chunking-console">
-              <div class="section-header document-chunking-header">
-	                <div>
-	                  <h3>文档切分</h3>
-	                  <p>面向统一文档解析入口的后端切片 dry-run。</p>
-	                </div>
-	                <div class="section-tags">
-	                  <span>{{ chunkingModeLabel }}</span>
-	                  <span>{{ chunkingPreviews.length }} 个切片</span>
-	                  <span>{{ chunkingAttachments.length }} 个附件</span>
-	                  <span>{{ chunkingPreviewBusy ? (chunkingPreviewStatus || "后端解析中") : `${chunkingAverageTokens} avg tokens` }}</span>
-	                  <span v-if="chunkingPreviewGeneratedAt">{{ formatCompactDate(chunkingPreviewGeneratedAt) }}</span>
-	                </div>
-              </div>
-
-              <div class="document-chunking-grid">
-                <section class="document-chunking-editor" aria-label="切分配置">
-                  <div class="compact-section-header">
-	                    <div>
-	                      <h4>输入与后端链路</h4>
-	                      <span>{{ chunkingDocument.length }} chars</span>
-	                    </div>
-                    <div class="document-chunking-header-actions">
-	                      <button
-	                        class="tool-button tool-button-ghost"
-	                        type="button"
-	                        :disabled="chunkingHistoryRefreshing"
-	                        @click="refreshChunkingHistory"
-                      >
-                        {{ chunkingHistoryRefreshing ? "刷新中" : "刷新历史" }}
-                      </button>
-	                      <button
-	                        class="tool-button danger-action"
-	                        type="button"
-	                        :disabled="!selectedChunkingHistoryJobId || Boolean(chunkingHistoryBusyId)"
-	                        @click="deleteChunkingHistoryItem(selectedChunkingHistoryJobId)"
-	                      >
-	                        移除当前历史
-	                      </button>
-	                    </div>
-	                  </div>
-
-		                  <HistorySessionPanel
-		                    class="document-chunking-history"
-		                    title="解析历史"
-		                    :subtitle="chunkingHistoryRefreshing ? '同步中' : `${chunkingHistoryPanelItems.length} 条`"
-                    :items="chunkingHistoryPanelItems"
-                    max-height="260px"
-                    open
-                    @select="selectChunkingHistoryItem"
-                    @action="reparseChunkingHistoryItem"
-                    @delete="deleteChunkingHistoryItem"
-                  />
-
-                  <div v-if="chunkingAttachments.length" class="document-chunking-attachments">
-                    <div class="compact-section-header">
-                      <div>
-                        <h4>附件</h4>
-                        <span>{{ chunkingAttachmentSummary }}</span>
-                      </div>
-	                      <button class="tool-button tool-button-ghost" type="button" @click="clearChunkingAttachments">
-	                        清空附件
-	                      </button>
-                    </div>
-                    <div class="document-chunking-attachment-list" role="list" aria-label="文档附件列表">
-                      <div
-                        v-for="attachment in chunkingAttachments"
-                        :key="attachment.id"
-                        class="document-chunking-attachment-row"
-                        role="listitem"
-                      >
-                        <span class="document-chunking-attachment-icon" aria-hidden="true">
-                          {{ chunkingAttachmentExtension(attachment.name).slice(0, 3).toUpperCase() || "DOC" }}
-                        </span>
-                        <span class="document-chunking-attachment-main">
-                          <strong>{{ attachment.relativePath }}</strong>
-                          <small>{{ formatBytes(attachment.byteSize) }} · {{ attachment.message }}</small>
-                        </span>
-                        <StatusPill
-                          :tone="chunkingAttachmentTone(attachment.status)"
-                          :label="attachment.statusLabel"
-                        />
-                        <button
-	                          class="tool-button tool-button-ghost document-chunking-attachment-remove"
-	                          type="button"
-	                          @click="removeChunkingAttachment(attachment.id)"
-	                        >
-	                          移出附件
-	                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <textarea
-                    v-model="chunkingDocument"
-                    class="document-chunking-input"
-                    spellcheck="false"
-                    aria-label="待切分文档"
-                    @input="onChunkingDocumentInput"
-                  />
-
-                  <div class="document-chunking-controls">
-                    <label>
-                      <span>切分策略</span>
-                      <select v-model="chunkingMode">
-                        <option
-                          v-for="option in chunkingModeOptions"
-                          :key="option.value"
-                          :value="option.value"
-                        >
-                          {{ option.label }}
-                        </option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>目标 token</span>
-                      <input v-model.number="chunkingChunkSize" min="80" max="640" step="20" type="number" />
-                    </label>
-                    <label>
-                      <span>重叠 token</span>
-                      <input v-model.number="chunkingOverlap" min="0" max="180" step="8" type="number" />
-                    </label>
-                    <label>
-                      <span>标题层级</span>
-                      <select v-model="chunkingHeadingDepth">
-                        <option value="H1">H1</option>
-                        <option value="H2">H2</option>
-                        <option value="H3">H3</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <div class="document-chunking-switches">
-                    <label>
-                      <span>保留表格边界</span>
-                      <FeatureToggle
-                        :model-value="chunkingKeepTables"
-                        aria-label="保留表格边界"
-                        @update:model-value="chunkingKeepTables = $event"
-                      />
-                    </label>
-                    <label>
-                      <span>保留证据锚点</span>
-                      <FeatureToggle
-                        :model-value="chunkingKeepEvidence"
-                        aria-label="保留证据锚点"
-                        @update:model-value="chunkingKeepEvidence = $event"
-                      />
-                    </label>
-                  </div>
-                </section>
-
-	                <section class="document-chunking-preview" aria-label="切片预览">
-	                  <p v-if="chunkingPreviewBusy" class="module-note">{{ chunkingPreviewStatus || "后端文档解析入口正在生成切片…" }}</p>
-	                  <p v-else-if="chunkingPreviewError" class="module-note">{{ chunkingPreviewError }}</p>
-	                  <div class="detail-metrics document-chunking-metrics">
-                    <div>
-                      <span>切片数</span>
-                      <strong>{{ chunkingPreviews.length }}</strong>
-                    </div>
-                    <div>
-                      <span>结构物</span>
-                      <strong>{{ chunkingStructureArtifactCount }}</strong>
-                    </div>
-                    <div>
-                      <span>粒度片段</span>
-                      <strong>{{ chunkingGranularityFragmentCount }}</strong>
-                    </div>
-                    <div>
-                      <span>平均 token</span>
-                      <strong>{{ chunkingAverageTokens }}</strong>
-                    </div>
-                    <div>
-                      <span>重叠</span>
-                      <strong>{{ chunkingOverlap }}</strong>
-                    </div>
-                    <div>
-                      <span>需复核</span>
-                      <strong>{{ chunkingRiskCount }}</strong>
-                    </div>
-                    <div>
-                      <span>Payload</span>
-                      <strong>{{ chunkingPayloadTruncated ? "截断" : "完整" }}</strong>
-                    </div>
-                  </div>
-
-	                  <div class="document-chunking-pipeline" aria-label="切分流水线">
-	                    <div>
-	                      <strong>Parse</strong>
-	                      <span>统一文档解析入口</span>
-	                    </div>
-	                    <div>
-	                      <strong>Split</strong>
-	                      <span>{{ chunkingModeLabel }} · 后端链路</span>
-	                    </div>
-	                    <div>
-	                      <strong>Anchor</strong>
-                      <span>sourceRange / parentArtifactId</span>
-                    </div>
-                  </div>
-
-                  <section class="document-chunk-block-section" aria-label="分块视图">
-                    <div class="compact-section-header">
-                      <div>
-                        <h4>分块视图</h4>
-                        <span>{{ chunkingPreviews.length }} chunks · {{ chunkingPreviewDisplayModeLabel }}</span>
-                      </div>
-                      <div class="document-chunking-mode-toggle" role="group" aria-label="切片显示模式">
-                        <button
-                          v-for="option in chunkingPreviewDisplayModeOptions"
-                          :key="option.value"
-                          type="button"
-                          :class="{ active: chunkingPreviewDisplayMode === option.value }"
-                          :aria-pressed="chunkingPreviewDisplayMode === option.value"
-                          @click="chunkingPreviewDisplayMode = option.value"
-                        >
-                          {{ option.label }}
-                        </button>
-                      </div>
-                    </div>
-                    <div class="document-chunk-blocks" role="list" aria-label="分块列表">
-                      <article
-                        v-for="chunk in chunkingPreviews"
-                        :key="`source-${chunk.id}`"
-                        class="document-chunk-block"
-                        :class="{ active: selectedChunk?.id === chunk.id }"
-                        role="listitem"
-                      >
-                        <span v-if="chunk.index > 1" class="document-chunk-split-line">
-                          <span>切分边界</span>
-                        </span>
-                        <button
-                          class="document-chunk-block-select"
-                          type="button"
-                          @click="selectedChunkId = chunk.id"
-                        >
-                          <span class="document-chunk-block-title">
-                            <strong>Chunk {{ chunk.index }}</strong>
-                            <small>
-                              {{ chunkSourceRange(chunk) }} · {{ chunk.tokens }} tokens ·
-                              {{ chunkingPreviewDisplayMode === "preview" ? chunkRenderKindLabel(chunk) : "Source" }}
-                            </small>
-                          </span>
-                          <StatusPill :tone="chunkQualityTone(chunk.quality)" :label="chunk.boundary" />
-                        </button>
-                        <div
-                          v-if="chunkingPreviewDisplayMode === 'preview'"
-                          class="document-chunk-block-rendered evidence-rendered-content"
-                          :data-render-kind="chunkRenderKind(chunk)"
-                          v-html="chunkRenderedHtml(chunk)"
-                        ></div>
-                        <pre v-else>{{ chunk.text }}</pre>
-                      </article>
-                    </div>
-                  </section>
-
-                  <div class="document-chunking-list" role="list" aria-label="切片列表">
-                    <button
-                      v-for="chunk in chunkingPreviews"
-                      :key="chunk.id"
-                      class="document-chunk-card"
-                      :class="{ active: selectedChunk?.id === chunk.id }"
-                      type="button"
-                      role="listitem"
-                      @click="selectedChunkId = chunk.id"
-                    >
-                      <span class="document-chunk-index">{{ chunk.index }}</span>
-                      <span class="document-chunk-main">
-                        <strong>{{ chunk.title }}</strong>
-                        <small>{{ chunk.tokens }} tokens · {{ chunk.chars }} chars · overlap {{ chunk.overlap }}</small>
-                      </span>
-                      <StatusPill :tone="chunkQualityTone(chunk.quality)" :label="chunk.boundary" />
-                    </button>
-                  </div>
-                </section>
-
-                <aside class="document-chunking-inspector" aria-label="切片详情">
-                  <div class="compact-section-header">
-                    <div>
-                      <h4>{{ selectedChunk?.title || "无切片" }}</h4>
-                      <span>
-                        {{ selectedChunk?.id || "chunk-empty" }} ·
-                        {{ chunkingPreviewDisplayModeLabel }} ·
-                        {{ chunkRenderKindLabel(selectedChunk) }}
-                      </span>
-                    </div>
-                    <StatusPill
-                      v-if="selectedChunk"
-                      :tone="chunkQualityTone(selectedChunk.quality)"
-                      :label="selectedChunk.boundary"
-                    />
-                  </div>
-
-                  <dl v-if="selectedChunk" class="module-status-list document-chunking-detail">
-                    <div>
-                      <dt>Token</dt>
-                      <dd>{{ selectedChunk.tokens }}</dd>
-                    </div>
-                    <div>
-                      <dt>Source Range</dt>
-                      <dd>{{ chunkSourceRange(selectedChunk) }}</dd>
-                    </div>
-                    <div>
-                      <dt>Anchor Path</dt>
-                      <dd>{{ selectedChunk.anchors.join(" / ") }}</dd>
-                    </div>
-                    <div>
-                      <dt>Parent Artifact</dt>
-                      <dd>{{ selectedChunk.parentArtifactId || "n/a" }}</dd>
-                    </div>
-                    <div>
-                      <dt>Granularity</dt>
-                      <dd>{{ selectedChunk.granularity || selectedChunk.materialization }}</dd>
-                    </div>
-                    <div>
-                      <dt>Fragment Range</dt>
-                      <dd>{{ selectedChunk.fragmentRange || "n/a" }}</dd>
-                    </div>
-                  </dl>
-
-                  <div
-                    v-if="selectedChunk && chunkingPreviewDisplayMode === 'preview'"
-                    class="document-chunking-rendered evidence-rendered-content"
-                    :data-render-kind="chunkRenderKind(selectedChunk)"
-                    v-html="chunkRenderedHtml(selectedChunk)"
-                  ></div>
-                  <pre v-else class="document-chunking-text">{{ selectedChunk?.text || "暂无内容" }}</pre>
-                </aside>
-              </div>
-            </article>
+            <div
+              v-if="knowledgeTab === 'management'"
+              class="knowledge-management-tabs"
+              role="tablist"
+              aria-label="知识管理面板"
+            >
+              <button
+                v-for="option in knowledgeManagementPanelOptionBarOptions"
+                :key="String(option.value)"
+                class="knowledge-management-tab"
+                :class="{ active: knowledgeManagementPanel === option.value }"
+                type="button"
+                role="tab"
+                :aria-selected="knowledgeManagementPanel === option.value"
+                @click="selectKnowledgeManagementPanel(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
 
             <template v-if="knowledgeTab === 'wordCloud'">
               <article class="surface-card word-cloud-stage">
@@ -1620,29 +229,6 @@ function chunkSourceRange(chunk: ChunkPreview) {
                       @click="refreshWordCloud"
                     >
                       {{ busyKey === "knowledge:word-clouds" ? "刷新中" : "刷新" }}
-                    </button>
-                    <button
-                      class="tool-button tool-button-ghost"
-                      type="button"
-                      :disabled="!canReadKnowledge || busyKey === 'knowledge:word-clouds:export'"
-                      @click="exportWordCloudSet"
-                    >
-                      {{ busyKey === "knowledge:word-clouds:export" ? "导出中" : "导出" }}
-                    </button>
-                    <input
-                      id="word-cloud-import-file"
-                      type="file"
-                      accept="application/json,.json"
-                      style="display: none"
-                      @change="importWordCloudSetFromFile"
-                    />
-                    <button
-                      class="tool-button tool-button-ghost"
-                      type="button"
-                      :disabled="!canWriteKnowledge || busyKey === 'knowledge:word-clouds:import'"
-                      @click="triggerWordCloudImport"
-                    >
-                      {{ busyKey === "knowledge:word-clouds:import" ? "导入中" : "导入" }}
                     </button>
                     <BrowseSelectButton
                       kind="server-directory"
@@ -1713,21 +299,15 @@ function chunkSourceRange(chunk: ChunkPreview) {
                         <div class="word-cloud-title-wrap">
                           <input
                             class="word-cloud-card-title-input"
-                            :class="{
-                              'has-confirm': titleFocusedWordBagId === row.cloud.wordBagId && selectedWordCloudModel.enabled && !fillingWordBagIds.has(row.cloud.wordBagId) && !isWordCloudPresetCard(row.cloud),
-                              locked: isWordCloudPresetCard(row.cloud),
-                            }"
+                            :class="{ 'has-confirm': titleFocusedWordBagId === row.cloud.wordBagId && selectedWordCloudModel.enabled && !fillingWordBagIds.has(row.cloud.wordBagId) }"
                             :value="row.cloud.label"
                             type="text"
                             autocomplete="off"
                             placeholder="未命名词袋"
-                            :readonly="isWordCloudPresetCard(row.cloud)"
-                            :aria-readonly="isWordCloudPresetCard(row.cloud)"
-                            :title="isWordCloudPresetCard(row.cloud) ? '预设词袋标题不可更改' : '可编辑词袋标题'"
                             @click.stop
-                            @focus="!isWordCloudPresetCard(row.cloud) && (titleFocusedWordBagId = row.cloud.wordBagId)"
+                            @focus="titleFocusedWordBagId = row.cloud.wordBagId"
                             @blur="titleFocusedWordBagId = null"
-                            @input="!isWordCloudPresetCard(row.cloud) && updateWordCloudField(row.cloud.wordBagId, 'label', ($event.target as HTMLInputElement).value)"
+                            @input="updateWordCloudField(row.cloud.wordBagId, 'label', ($event.target as HTMLInputElement).value)"
                           />
                           <!-- Spinner when filling -->
                           <span v-if="fillingWordBagIds.has(row.cloud.wordBagId)" class="word-cloud-title-filling" title="智能体正在填充词云…">
@@ -1737,7 +317,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
                           </span>
                           <!-- Confirm button when focused and model available -->
                           <button
-                            v-else-if="titleFocusedWordBagId === row.cloud.wordBagId && selectedWordCloudModel.enabled && !isWordCloudPresetCard(row.cloud)"
+                            v-else-if="titleFocusedWordBagId === row.cloud.wordBagId && selectedWordCloudModel.enabled"
                             class="word-cloud-title-confirm-btn"
                             type="button"
                             title="调用智能体填充相关词汇"
@@ -1768,7 +348,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
                             </svg>
                           </button>
                           <!-- add button + popover -->
-                          <div v-if="!isWordCloudPresetCard(row.cloud)" class="word-cloud-header-add-wrap">
+                          <div class="word-cloud-header-add-wrap">
                             <button
                               class="word-cloud-corner-btn word-cloud-corner-add-btn"
                               type="button"
@@ -1787,6 +367,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
                               @click.stop
                             >
                               <button type="button" @click="addChildWordCloud(row.cloud.wordBagId)">新增分组</button>
+                              <button type="button" @click="addTermActionToCloud(row.cloud.wordBagId)">新增词语</button>
                             </div>
                           </div>
                           <!-- collapse/expand button -->
@@ -1892,6 +473,28 @@ function chunkSourceRange(chunk: ChunkPreview) {
                             </button>
                           </div>
                         </div>
+                        <div class="word-cloud-inline-add">
+                          <div class="word-cloud-inline-field">再加一个词</div>
+                          <input
+                            placeholder="直接输入词"
+                            :value="wordCloudTermInputs[row.cloud.wordBagId] || ''"
+                            type="text"
+                            autocomplete="off"
+                            @input="setWordCloudTermInput(row.cloud.wordBagId, ($event.target as HTMLInputElement).value)"
+                            @keydown.enter.prevent="addTermInputToCloud(row.cloud.wordBagId)"
+                          />
+                          <button class="tool-button compact-action" type="button" @click.stop="addTermInputToCloud(row.cloud.wordBagId)">
+                            加入词袋
+                          </button>
+                          <button
+                            v-if="row.cloud.removedTerms?.length"
+                            class="tool-button tool-button-ghost compact-action"
+                            type="button"
+                            @click.stop="clearRemovedTermsFromCloud(row.cloud.wordBagId)"
+                          >
+                            清理已移除
+                          </button>
+                        </div>
                       </div>
                     </article>
                     <div v-if="wordCloudState === null && wordCloudCardRows.length === 0" class="word-cloud-loading">
@@ -1959,108 +562,83 @@ function chunkSourceRange(chunk: ChunkPreview) {
               </section>
             </template>
 
-            <article v-if="isKnowledgeRetrievalTab" class="surface-card debug-panel-card knowledge-recall-debug-card">
+            <article
+              id="knowledge-file-import"
+              v-if="isManagementKnowledgePanel"
+              class="surface-card ingest-upload-card"
+            >
               <div class="section-header">
                 <div>
-                  <h3>知识检索</h3>
-                  <p>面向文档索引和文档搜索的召回工作台；用于对比 TopK、融合策略、学习开关和证据可读性。</p>
-                </div>
-                <div class="section-tags">
-                  <span>{{ knowledgeConsole?.available ? "KnowledgeCore 可用" : "KnowledgeCore 未启用" }}</span>
-                  <span>{{ knowledgeStatus }}</span>
-                  <span>目录 {{ knowledgeSourceState?.summary.totalCount || 0 }}</span>
+                  <h3>临时上传</h3>
+                  <p>适合一次性导入少量文件。会持续更新的文件夹请使用系统配置中的“目录管理”。</p>
                 </div>
               </div>
-
-              <form class="debug-parameter-panel" @submit.prevent="runKnowledgeRecallDebugBatch">
-                <label class="full-row">
-                  <span>检索问题</span>
-                  <input
-                    v-model="knowledgeRecallDebugForm.query"
-                    type="search"
-                    placeholder="例如：HSBC 账单"
+              <div class="ingest-upload-grid">
+                <div class="ingest-choice">
+                  <span>选择文件夹</span>
+                  <BrowseSelectButton
+                    kind="local-directory"
+                    button-type="primary"
+                    button-text="选择文件夹"
+                    plain
+                    @select="onIngestFilesSelected"
                   />
-                </label>
-                <label>
-                  <span>TopK 对比</span>
-                  <input
-                    v-model="knowledgeRecallDebugForm.topKValues"
-                    type="text"
-                    placeholder="10 20 30"
+                </div>
+                <div class="ingest-choice">
+                  <span>选择文件</span>
+                  <BrowseSelectButton
+                    kind="local-files"
+                    button-type="primary"
+                    button-text="选择文件"
+                    plain
+                    @select="onIngestFilesSelected"
                   />
-                </label>
-                <OptionBar
-                  v-model="knowledgeRecallDebugForm.retrievalMode"
-                  label="召回模式"
-                  :options="retrievalModeOptionBarOptions"
-                />
-                <BinaryCheckbox
-                  v-model="knowledgeRecallDebugForm.keywordOnly"
-                  label="仅关键词"
-                />
-                <BinaryCheckbox
-                  v-model="knowledgeRecallDebugForm.learningEnabled"
-                  label="启用学习"
-                />
-                <BinaryCheckbox
-                  v-model="knowledgeRecallDebugForm.explain"
-                  label="返回解释"
-                />
+                </div>
                 <button
                   class="primary-action"
-                  type="submit"
-                  :disabled="busyKey === 'debug:knowledge-recall' || !knowledgeRecallDebugForm.query.trim()"
+                  type="button"
+                  :disabled="!canWriteJobs || busyKey === 'knowledge:ingest'"
+                  @click="uploadFilesToKnowledge"
                 >
-                  {{ busyKey === "debug:knowledge-recall" ? "批量召回中" : "批量对比召回" }}
+                  {{ busyKey === "knowledge:ingest" ? "上传中" : "开始整理" }}
                 </button>
-              </form>
-
-              <div class="debug-parameter-summary">
-                <strong>参数说明</strong>
-                <span>{{ knowledgeRecallDebugParameterSummary }}</span>
               </div>
-
-              <div
-                v-if="knowledgeRecallDebugRuns.length"
-                class="debug-compare-grid"
-                :style="knowledgeRecallDebugGridStyle"
-              >
-                <section
-                  v-for="run in knowledgeRecallDebugRuns"
-                  :key="run.runId"
-                  class="debug-compare-column"
-                  :data-status="run.status"
+              <p class="module-note">{{ ingestProgress || "选择文件后，处理进度会显示在这里。" }}</p>
+              <div v-if="ingestJob" class="ingest-queue-card">
+                <div>
+                  <strong>{{ ingestJob.id }}</strong>
+                  <span>{{ ingestJob.stage || "等待开始" }}</span>
+                </div>
+                <StatusPill :tone="jobStatusTone(ingestJob.status)" :label="jobStatusLabels[ingestJob.status]" />
+                <progress :value="Number(ingestJob.progressPercent || 0)" max="100" />
+                <button class="tool-button tool-button-ghost" type="button" @click="refreshIngestJob">
+                  刷新任务
+                </button>
+              </div>
+              <div v-if="normalizedManifest" class="job-table compact-job-table normalized-table">
+                <div class="job-table-header">
+                  <span>生成文档</span>
+                  <span>类型</span>
+                  <span>大小</span>
+                </div>
+                <div
+                  v-for="doc in [...normalizedManifest.documents, ...normalizedManifest.sourceMaterials]"
+                  :key="doc.documentId"
+                  class="job-row"
                 >
-                  <header class="debug-compare-header">
-                    <div>
-                      <h4>{{ run.label }}</h4>
-                      <span>{{ run.status }} · {{ run.elapsedMs }} ms · {{ run.items.length }} 条</span>
-                      <small v-if="knowledgeFusionSummary(run.response)">{{ knowledgeFusionSummary(run.response) }}</small>
-                    </div>
-                  </header>
-                  <div class="info-feed-results-list debug-result-list">
-                    <InfoFeedResultRow
-                      v-for="item in run.items"
-                      :key="String(item.evidenceId || item.itemId || item.documentId || item.title)"
-                      :item="item"
-                      tier="debug"
-                      @open="openAgentEvidencePreview"
-                    />
-                    <div v-if="run.status === 'running'" class="empty-note">正在召回。</div>
-                    <div v-else-if="run.status === 'failed'" class="empty-note">{{ run.error }}</div>
-                    <div v-else-if="run.status === 'completed' && run.items.length === 0" class="empty-note">没有召回结果。</div>
-                  </div>
-                  <ConfigFoldCard v-if="run.response" title="原始响应">
-                    <pre>{{ jsonPreview(run.response || {}) }}</pre>
-                  </ConfigFoldCard>
-                </section>
+                  <a :href="bridge.normalizedDocumentUrl(normalizedManifest.batchId, doc.documentId)" target="_blank" rel="noreferrer">
+                    {{ doc.title }}
+                  </a>
+                  <span>{{ doc.granularity }}</span>
+                  <span>{{ formatBytes(doc.byteSize) }}</span>
+                </div>
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'review'" class="surface-card knowledge-conflict-report">
+            <article v-if="knowledgeTab === 'conflicts'" class="surface-card knowledge-conflict-report">
               <div class="section-header">
                 <div>
-                  <h3>人工审核</h3>
+                  <h3>入库冲突审核</h3>
                   <p>知识录入发现同一路径不同内容、重复来源或结构化版本冲突时，会先进入这里等待人工决策。</p>
                 </div>
                 <div class="source-actions">
@@ -2316,7 +894,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
               <div class="section-header">
                 <div>
                   <h3>知识库配置</h3>
-                  <p>调整检索、索引和衰减策略。危险配置会要求二次确认。</p>
+                  <p>调整检索、索引、衰减策略和维护任务。危险操作会要求二次确认。</p>
                 </div>
                 <button class="tool-button" type="button" @click="refreshKnowledgeConsole">
                   重新加载
@@ -2361,21 +939,16 @@ function chunkSourceRange(chunk: ChunkPreview) {
                   <textarea v-model="maintenanceJson" rows="10" spellcheck="false" />
                 </label>
               </ConfigFoldCard>
-              <div class="knowledge-config-save-bar">
-                <button class="primary-action knowledge-config-save-button" type="button" :disabled="!canAdminKnowledge" @click="saveKnowledgeMaintenance">
+              <div class="source-actions">
+                <button class="primary-action" type="button" :disabled="!canAdminKnowledge" @click="saveKnowledgeMaintenance">
                   保存配置
                 </button>
               </div>
-            </article>
-
-            <article v-if="knowledgeTab === 'maintenance'" class="surface-card knowledge-maintenance-tasks">
-              <div class="section-header">
-                <div>
-                  <h3>手动维护任务</h3>
-                  <p>一次性执行知识库维护动作；用于校验、修复、清理、重建索引或触发进化学习。</p>
-                </div>
-              </div>
               <div class="maintenance-task-section">
+                <div class="config-group-header">
+                  <h4>手动维护任务</h4>
+                  <p>这不是配置项，而是一次性执行的知识库维护动作；用于校验、修复、清理、重建索引或触发进化学习。</p>
+                </div>
                 <div class="maintenance-runner">
                   <OptionBar
                     v-model="selectedMaintenanceTask"
@@ -2403,7 +976,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
             </article>
 
             <article
-              v-if="isGoldenRulesTab"
+              v-if="isManagementRulesPanel"
               class="surface-card expert-rules-page"
             >
               <div class="section-header">
@@ -2471,7 +1044,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
             </article>
 
             <article
-              v-if="isGoldenRulesTab"
+              v-if="isManagementRulesPanel"
               class="surface-card knowledge-vocabulary expert-rules-page"
             >
                 <div class="section-header">
@@ -2557,7 +1130,7 @@ function chunkSourceRange(chunk: ChunkPreview) {
             </article>
 
             <article
-              v-if="isGoldenRulesTab"
+              v-if="isManagementRulesPanel"
               class="surface-card knowledge-rules expert-rules-page"
             >
                 <div class="section-header">

@@ -1,18 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useConsole } from "./composables/useConsole";
 
-// ─── Sidebar collapse ────────────────────────────────────────────────────────
-const COLLAPSE_KEY = 'agentstudio-sidebar-collapsed';
-const sideNavCollapsed = ref(false);
-
-function toggleSidebarCollapse() {
-  sideNavCollapsed.value = !sideNavCollapsed.value;
-  try { localStorage.setItem(COLLAPSE_KEY, String(sideNavCollapsed.value)); } catch (e) {}
-}
-
 // ─── Theme toggle ────────────────────────────────────────────────────────────
-const THEME_KEY = 'agentstudio-theme';
+const THEME_KEY = 'splitall-theme';
 type ThemeMode = 'system' | 'dark' | 'light';
 const themeMode = ref<ThemeMode>('system');
 
@@ -34,8 +25,6 @@ onMounted(() => {
   try {
     const saved = localStorage.getItem(THEME_KEY) as ThemeMode | null;
     if (saved === 'dark' || saved === 'light') themeMode.value = saved;
-    const collapsed = localStorage.getItem(COLLAPSE_KEY);
-    if (collapsed === 'true') sideNavCollapsed.value = true;
   } catch (e) {}
 });
 import {
@@ -170,12 +159,12 @@ const {
 </script>
 
 <template>
-  <div class="dashboard-shell" :class="{ 'is-locked': !isAuthenticated, 'is-collapsed': isAuthenticated && sideNavCollapsed }">
-    <aside v-if="isAuthenticated" class="side-nav" :class="{ 'is-open': sideNavOpen, 'is-collapsed': sideNavCollapsed }">
+  <div class="dashboard-shell" :class="{ 'is-locked': !isAuthenticated }">
+    <aside v-if="isAuthenticated" class="side-nav" :class="{ 'is-open': sideNavOpen }">
       <div class="brand-block" :class="{ 'is-loading': !consoleState }">
         <div class="brand-mark" aria-hidden="true">S</div>
         <div class="brand-text">
-          <h1>AgentStudio</h1>
+          <h1>SplitAll</h1>
           <p class="brand-subtitle">
             <span v-if="!consoleState" class="brand-loading-label" aria-live="polite">
               正在初始化
@@ -198,8 +187,7 @@ const {
           type="button"
           @click="switchView('dashboard')"
         >
-          <span class="side-link-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span>
-          <span class="side-link-label">工作台</span>
+          工作台
         </button>
         <button
           class="side-link"
@@ -207,8 +195,7 @@ const {
           type="button"
           @click="switchView('feed')"
         >
-          <span class="side-link-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-          <span class="side-link-label">信息流</span>
+          信息流
         </button>
         <button
           class="side-link"
@@ -216,8 +203,7 @@ const {
           type="button"
           @click="switchView('sources')"
         >
-          <span class="side-link-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
-          <span class="side-link-label">数据源</span>
+          数据源
         </button>
 
         <button
@@ -226,8 +212,7 @@ const {
           type="button"
           @click="$router.push('/workspaces')"
         >
-          <span class="side-link-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
-          <span class="side-link-label">工作空间</span>
+          工作空间
         </button>
 
         <section v-if="hasFeature('knowledge-core')" class="side-nav-section" aria-label="知识库">
@@ -360,14 +345,6 @@ const {
           </button>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'productionHealth' }"
-            type="button"
-            @click="openAdmin('productionHealth')"
-          >
-            生产健康
-          </button>
-          <button
-            class="side-link side-link-subtle"
             :class="{ active: currentView === 'admin' && adminView === 'logs' }"
             type="button"
             @click="openAdmin('logs')"
@@ -379,12 +356,8 @@ const {
       </nav>
 
       <div class="side-nav-footer">
-        <button class="sidebar-collapse-toggle" type="button" :title="sideNavCollapsed ? '展开侧栏' : '收起侧栏'" @click="toggleSidebarCollapse">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
-        </button>
         <button class="side-cta" type="button" @click="openDrawer('discovery')">
-          <span class="side-link-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-          <span class="side-cta-label">系统配置</span>
+          系统配置
         </button>
       </div>
     </aside>
@@ -415,9 +388,9 @@ const {
             <span class="url-badge">{{
               consoleState?.server.url || "正在连接服务端…"
             }}</span>
-            <span class="identity-chip">{{
-              consoleState?.discovery?.value?.mode || "active"
-            }}</span>
+              <span class="identity-chip">{{
+	              consoleState?.discovery?.value?.mode || "active"
+	            }}</span>
           </div>
         </div>
 
@@ -486,7 +459,7 @@ const {
               <div class="auth-brand">
                 <div class="brand-mark" aria-hidden="true">S</div>
                 <div>
-                  <h1 class="auth-brand-name">AgentStudio</h1>
+                  <h1 class="auth-brand-name">SplitAll</h1>
                   <p class="brand-subtitle">知识管理控制台</p>
                 </div>
                 <!-- connecting spinner -->
@@ -521,11 +494,7 @@ const {
         </template>
         <!-- Authenticated: route-driven view rendering via Vue Router -->
         <template v-else-if="isAuthenticated">
-          <RouterView v-slot="{ Component }">
-            <transition name="view-fade" mode="out-in">
-              <component :is="Component" />
-            </transition>
-          </RouterView>
+          <RouterView />
         </template>
       </div>
     </main>
