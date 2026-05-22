@@ -18,7 +18,7 @@ const MARKETPLACE_NAME = "pact-local";
 const GEMINI_EXTENSION_NAME = "Pact";
 const MCP_SERVER_NAME = "pact";
 const MCP_CONNECTOR_PACKAGE_NAME = "pact-mcp-connector";
-const MCP_CONNECTOR_VERSION = "0.2.8";
+const MCP_CONNECTOR_VERSION = "0.0.1";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",

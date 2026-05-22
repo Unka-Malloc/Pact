@@ -41,7 +41,7 @@ try {
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "pact-mcp-connector");
-  assert.equal(result.packageVersion, "0.2.8");
+  assert.equal(result.packageVersion, "0.0.1");
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   const manifestText = JSON.stringify(manifest);
@@ -138,7 +138,7 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "pact-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "pact-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.2.8");
+  assert.equal(versionPayload.packageVersion, "0.0.1");
   assert.equal(versionPayload.stableToolName, "pact.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "pact-mcp.mjs"), "help"]);
   assert.match(help.stdout, /pact-mcp register/);
@@ -429,7 +429,7 @@ try {
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "pact-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "pact-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.2.8");
+  assert.equal(portablePayload.packageVersion, "0.0.1");
   const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "pact-mcp"), [
     "server-config",
     "--reset",
@@ -450,7 +450,7 @@ try {
   const portableZipVersion = await run(path.join(zipRoot, "pact-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "pact-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.2.8");
+  assert.equal(portableZipPayload.packageVersion, "0.0.1");
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
   assert.equal(await fs.access(path.join(zipRoot, "uninstall.command")).then(() => true), true);
 

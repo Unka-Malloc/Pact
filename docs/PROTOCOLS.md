@@ -474,7 +474,7 @@ Pact 必须写入设备级发现清单：
       "vmHttpUrl": "<signed-discovered-vm-url>/mcp",
       "connector": {
         "packageName": "pact-mcp-connector",
-        "packageVersion": "0.2.8",
+        "packageVersion": "0.0.1",
         "discoverCommand": "npx pact-mcp-connector@latest discover-local",
         "installCommand": "npx pact-mcp-connector@latest install --target <client>"
       },
