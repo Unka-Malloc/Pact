@@ -10,11 +10,39 @@ const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await fs.readFile(new URL("../package.json", import.meta.url), "utf8"));
 
 const DEFAULT_TOKEN_ENV = "AGENTSTUDIO_MCP_TOKEN";
-const DEFAULT_CODEX_BIN = "/Applications/Codex.app/Contents/Resources/codex";
+const DEFAULT_CODEX_BIN = "codex";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
 const DEFAULT_ORB_BIN = "orb";
+const CLAW_COMPATIBLE_COMMANDS = ["openclaw", "ironclaw", "zeroclaw"];
+const AGENT_CLI_TARGETS = [
+  {
+    target: "codex",
+    label: "Codex",
+    binOption: "codex-bin",
+    commandNames: ["codex"]
+  },
+  {
+    target: "gemini-cli",
+    label: "Gemini CLI",
+    binOption: "gemini-bin",
+    commandNames: ["gemini"]
+  },
+  {
+    target: "copilot",
+    label: "Copilot",
+    binOption: "copilot-bin",
+    commandNames: ["copilot"]
+  },
+  {
+    target: "kilo-code",
+    label: "Kilo Code",
+    binOption: "kilo-bin",
+    commandNames: ["kilo"]
+  }
+];
+const ORB_AGENT_CLI_TARGETS = AGENT_CLI_TARGETS.filter((descriptor) => descriptor.target !== "codex");
 const PLUGIN_NAME = "agentstudio-mcp";
 const MARKETPLACE_NAME = "agentstudio-local";
 const GEMINI_EXTENSION_NAME = "AgentStudio";
@@ -94,19 +122,19 @@ function usage() {
     "  --json                        Emit compact JSON.",
     "  --no-env                      Do not publish launchctl environment variables during register.",
     "  --discovery-file PATH         Registry file used by register/discover-local. Default: ~/.agentstudio/mcp/servers.json.",
-    "  --codex-bin PATH              Codex CLI path.",
-    "  --gemini-bin PATH             Gemini CLI path.",
-    "  --kilo-bin PATH               Kilo Code CLI path.",
-    "  --copilot-bin PATH            Copilot CLI path.",
-    "  --orb-bin PATH                OrbStack CLI path.",
+    "  --codex-bin COMMAND           Codex CLI command or explicit path. Default: codex.",
+    "  --gemini-bin COMMAND          Gemini CLI command or explicit path. Default: gemini.",
+    "  --kilo-bin COMMAND            Kilo Code CLI command or explicit path. Default: kilo.",
+    "  --copilot-bin COMMAND         Copilot CLI command or explicit path. Default: copilot.",
+    "  --orb-bin COMMAND             OrbStack CLI command or explicit path. Default: orb.",
     "  --vm NAME                     Shared OrbStack VM name for OpenClaw/Hermes.",
     "  --vm-user USER                Shared OrbStack VM user for OpenClaw/Hermes.",
-    "  --openclaw-vm NAME            Default: kate.",
-    "  --openclaw-user USER          Default: kate.",
-    "  --openclaw-bin PATH           Default: /home/kate/.npm-global/bin/openclaw.",
-    "  --hermes-vm NAME              Default: serena.",
-    "  --hermes-user USER            Default: serena.",
-    "  --hermes-bin PATH             Default: /home/serena/.local/bin/hermes.",
+    "  --openclaw-vm NAME            Explicit OrbStack VM for non-interactive OpenClaw install.",
+    "  --openclaw-user USER          Explicit OrbStack VM user for non-interactive OpenClaw install.",
+    "  --openclaw-bin PATH           Explicit OpenClaw-like CLI path. No default path is assumed.",
+    "  --hermes-vm NAME              Explicit OrbStack VM for non-interactive Hermes install.",
+    "  --hermes-user USER            Explicit OrbStack VM user for non-interactive Hermes install.",
+    "  --hermes-bin PATH             Explicit Hermes CLI path. No default path is assumed.",
     "",
     "Interactive install:",
     "  When --target is omitted in a TTY, install opens a multi-select menu.",
@@ -886,6 +914,48 @@ async function installGemini({ baseUrl, token, geminiBin, extensionRoot }) {
   };
 }
 
+async function installGeminiOrb({ baseUrl, token, orbBin, vmName, vmUser, geminiBin }) {
+  if (!vmName || !vmUser || !geminiBin) {
+    throw new Error("Gemini VM install requires a discovered or explicit OrbStack VM, user, and gemini CLI path.");
+  }
+  const url = `${vmBaseUrl(baseUrl)}/mcp`;
+  await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    geminiBin,
+    "mcp",
+    "add",
+    "--scope",
+    "user",
+    "--transport",
+    "http",
+    "--header",
+    `X-AgentStudio-Api-Key: ${token}`,
+    "--timeout",
+    String(HTTP_TIMEOUT_MS),
+    "--trust",
+    "--description",
+    "AgentStudio HTTP MCP service.",
+    MCP_SERVER_NAME,
+    url
+  ]);
+  const list = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"]);
+  const listOutput = `${list.stdout}\n${list.stderr}`;
+  if (!listOutput.includes(MCP_SERVER_NAME)) {
+    throw new Error("Gemini CLI MCP list inside OrbStack does not include agentstudio after install.");
+  }
+  return {
+    installMode: "gemini-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    url,
+    mcpListHasAgentStudio: true
+  };
+}
+
 async function installKilo({ baseUrl, token, kiloBin, kiloConfigPath }) {
   const config = await readJson(kiloConfigPath, {});
   const backupPath = await backupIfExists(kiloConfigPath);
@@ -911,6 +981,59 @@ async function installKilo({ baseUrl, token, kiloBin, kiloConfigPath }) {
   };
 }
 
+async function installKiloOrb({ baseUrl, token, orbBin, vmName, vmUser, kiloBin }) {
+  if (!vmName || !vmUser || !kiloBin) {
+    throw new Error("Kilo VM install requires a discovered or explicit OrbStack VM, user, and kilo CLI path.");
+  }
+  const url = `${vmBaseUrl(baseUrl)}/mcp`;
+  const script = [
+    "set -e",
+    "IFS= read -r token",
+    "node - \"$AGENTSTUDIO_URL\" \"$token\" <<'NODE'",
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "const path = require('path');",
+    "const url = process.argv[2];",
+    "const token = process.argv[3];",
+    "const filePath = path.join(os.homedir(), '.config', 'kilo', 'kilo.json');",
+    "fs.mkdirSync(path.dirname(filePath), { recursive: true });",
+    "let config = {};",
+    "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}",
+    "config.mcp = {",
+    "  ...(config.mcp || {}),",
+    "  agentstudio: {",
+    "    type: 'remote',",
+    "    url,",
+    "    enabled: true,",
+    "    headers: { 'X-AgentStudio-Api-Key': token },",
+    `    timeout: ${HTTP_TIMEOUT_MS}`,
+    "  }",
+    "};",
+    "fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\\n`);",
+    "NODE",
+    "\"$KILO_BIN\" mcp list >/dev/null 2>&1 || true"
+  ].join("\n");
+  await runWithInput(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    "env",
+    `KILO_BIN=${kiloBin}`,
+    `AGENTSTUDIO_URL=${url}`,
+    "bash",
+    "-lc",
+    script
+  ], `${token}\n`);
+  return {
+    installMode: "kilo-orbstack-global-kilo-json",
+    vm: vmName,
+    vmUser,
+    url,
+    configPath: "~/.config/kilo/kilo.json"
+  };
+}
+
 async function installCopilot({ baseUrl, token, copilotBin }) {
   await run(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
   await run(copilotBin, [
@@ -929,6 +1052,39 @@ async function installCopilot({ baseUrl, token, copilotBin }) {
   return {
     installMode: "copilot-release-mcp-cli",
     mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
+  };
+}
+
+async function installCopilotOrb({ baseUrl, token, orbBin, vmName, vmUser, copilotBin }) {
+  if (!vmName || !vmUser || !copilotBin) {
+    throw new Error("Copilot VM install requires a discovered or explicit OrbStack VM, user, and copilot CLI path.");
+  }
+  const url = `${vmBaseUrl(baseUrl)}/mcp`;
+  await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    copilotBin,
+    "mcp",
+    "add",
+    "--transport",
+    "http",
+    "--header",
+    `X-AgentStudio-Api-Key: ${token}`,
+    "--timeout",
+    String(HTTP_TIMEOUT_MS),
+    MCP_SERVER_NAME,
+    url
+  ]);
+  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "get", MCP_SERVER_NAME]);
+  return {
+    installMode: "copilot-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    url,
+    mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
   };
 }
 
@@ -954,7 +1110,14 @@ async function installAntigravity({ baseUrl, token, configPath }) {
 }
 
 async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, openclawBin }) {
-  const url = `${vmBaseUrl(baseUrl)}/mcp`;
+  if (!openclawBin) {
+    throw new Error("OpenClaw install requires a discovered or explicit OpenClaw-like CLI path.");
+  }
+  const isOrb = Boolean(vmName || vmUser);
+  if (isOrb && (!vmName || !vmUser)) {
+    throw new Error("OpenClaw VM install requires both OrbStack VM and user.");
+  }
+  const url = isOrb ? `${vmBaseUrl(baseUrl)}/mcp` : `${baseUrl}/mcp`;
   const config = {
     type: "http",
     url,
@@ -964,10 +1127,16 @@ async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, opencla
     timeout: HTTP_TIMEOUT_MS,
     enabled: true
   };
-  await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
-  const show = await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME]);
+  if (isOrb) {
+    await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
+  } else {
+    await run(openclawBin, ["mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
+  }
+  const show = isOrb
+    ? await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME])
+    : await run(openclawBin, ["mcp", "show", MCP_SERVER_NAME]);
   return {
-    installMode: "openclaw-release-mcp-cli",
+    installMode: isOrb ? "openclaw-orbstack-mcp-cli" : "openclaw-release-mcp-cli",
     vm: vmName,
     vmUser,
     url,
@@ -1510,16 +1679,36 @@ async function pathExists(filePath) {
   }
 }
 
-async function commandExists(command) {
+async function detectLocalCommandPaths(command) {
   const value = String(command || "").trim();
   if (!value) {
-    return false;
+    return [];
   }
   if (path.isAbsolute(value) || value.includes(path.sep)) {
-    return pathExists(value);
+    return await pathExists(value) ? [value] : [];
   }
-  const result = await run("bash", ["-lc", `command -v ${shellQuote(value)}`], { allowFailure: true });
-  return result.ok && result.stdout.trim().length > 0;
+  const result = await run("bash", [
+    "-lc",
+    `type -a -p ${shellQuote(value)} 2>/dev/null | awk '!seen[$0]++'`
+  ], { allowFailure: true });
+  if (!result.ok) {
+    return [];
+  }
+  return uniqueResolvedLocalPaths(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+}
+
+async function uniqueResolvedLocalPaths(paths) {
+  const seen = new Set();
+  const deduped = [];
+  for (const item of paths) {
+    const key = await fs.realpath(item).catch(() => item);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
 }
 
 async function directoryExists(dirPath) {
@@ -1551,6 +1740,26 @@ async function detectOrbVms(orbBin) {
 }
 
 async function detectOrbCommand({ orbBin, vmName, vmUser, command }) {
+  const paths = await detectOrbCommandPaths({ orbBin, vmName, vmUser, command });
+  return {
+    ok: paths.length > 0,
+    path: paths[0] || ""
+  };
+}
+
+async function detectOrbCommandPaths({ orbBin, vmName, vmUser, command }) {
+  const value = String(command || "").trim();
+  if (!value || !vmName || !vmUser) {
+    return [];
+  }
+  const probe = path.isAbsolute(value) || value.includes("/")
+    ? `command -v ${shellQuote(value)}`
+    : [
+        `type -a -p ${shellQuote(value)} 2>/dev/null | while IFS= read -r executable_path; do`,
+        "  resolved_path=$(readlink -f \"$executable_path\" 2>/dev/null || printf '%s' \"$executable_path\")",
+        "  printf '%s\\t%s\\n' \"$executable_path\" \"$resolved_path\"",
+        "done | awk -F '\\t' '!seen[$2]++ { print $1 }'"
+      ].join("\n");
   const result = await run(orbBin, [
     "-m",
     vmName,
@@ -1558,34 +1767,50 @@ async function detectOrbCommand({ orbBin, vmName, vmUser, command }) {
     vmUser,
     "bash",
     "-lc",
-    `command -v ${shellQuote(command)}`
+    probe
   ], { allowFailure: true });
-  return {
-    ok: result.ok && result.stdout.trim().length > 0,
-    path: result.stdout.trim().split(/\r?\n/)[0] || ""
-  };
+  if (!result.ok) {
+    return [];
+  }
+  return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
-function clawCandidateIdentity(candidate) {
-  if (candidate?.target !== "openclaw") {
-    return "";
-  }
+function candidateLocation(candidate) {
+  return String(candidate?.optionOverrides?.["execution-location"] || "local");
+}
+
+function candidateIdentity(candidate) {
   const overrides = candidate.optionOverrides || {};
-  const vmName = String(overrides["openclaw-vm"] || "").trim();
-  const vmUser = String(overrides["openclaw-user"] || "").trim();
-  if (!vmName || !vmUser) {
-    return "";
+  const location = candidateLocation(candidate);
+  if (candidate?.target === "openclaw") {
+    if (location === "orb") {
+      const vmName = String(overrides["orb-vm"] || overrides["openclaw-vm"] || "").trim();
+      const vmUser = String(overrides["orb-user"] || overrides["openclaw-user"] || "").trim();
+      return vmName && vmUser ? `openclaw:orb:${vmName}:${vmUser}` : "";
+    }
+    const openclawBin = String(overrides["openclaw-bin"] || "").trim();
+    return openclawBin ? `openclaw:local:${openclawBin}` : "";
   }
-  return `openclaw:${vmName}:${vmUser}`;
+  if (location === "orb" && ["gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
+    const vmName = String(overrides["orb-vm"] || "").trim();
+    const vmUser = String(overrides["orb-user"] || "").trim();
+    return vmName && vmUser ? `${candidate.target}:orb:${vmName}:${vmUser}` : "";
+  }
+  if (location === "local" && ["codex", "gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
+    const descriptor = AGENT_CLI_TARGETS.find((item) => item.target === candidate.target);
+    const binPath = descriptor ? String(overrides[descriptor.binOption] || "").trim() : "";
+    return binPath ? `${candidate.target}:local:${binPath}` : "";
+  }
+  return "";
 }
 
-function mergeClawCandidate(candidates, candidate) {
-  const identity = clawCandidateIdentity(candidate);
+function mergeInstallCandidate(candidates, candidate) {
+  const identity = candidateIdentity(candidate);
   if (!identity) {
     candidates.push(candidate);
     return;
   }
-  const existingIndex = candidates.findIndex((item) => clawCandidateIdentity(item) === identity);
+  const existingIndex = candidates.findIndex((item) => candidateIdentity(item) === identity);
   if (existingIndex < 0) {
     candidates.push(candidate);
     return;
@@ -1603,6 +1828,9 @@ function mergeClawCandidate(candidates, candidate) {
     };
     return;
   }
+  if (existing.status === "detected" && candidate.status === "detected") {
+    return;
+  }
   if (existing.status === candidate.status && existing.detail !== candidate.detail) {
     candidates[existingIndex] = {
       ...existing,
@@ -1615,48 +1843,154 @@ function mergeClawCandidate(candidates, candidate) {
   }
 }
 
-async function detectClawCompatibleTargets(settings) {
-  const vmNames = await detectOrbVms(settings.orbBin);
+async function commandSupportsMcp(command, argsPrefix = []) {
+  const result = await run(command, [...argsPrefix, "mcp", "--help"], { allowFailure: true });
+  const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
+  return output.includes("mcp");
+}
+
+async function orbCommandSupportsMcp({ orbBin, vmName, vmUser, command }) {
+  const result = await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    command,
+    "mcp",
+    "--help"
+  ], { allowFailure: true });
+  const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
+  return output.includes("mcp");
+}
+
+async function detectLocalClawCompatibleTargets() {
   const candidates = [];
-  const commandNames = ["openclaw", "ironclaw", "zeroclaw"];
-  for (const vmName of vmNames) {
-    const userCandidates = uniqueValues([settings.openclawVmUser, settings.hermesVmUser, vmName]);
+  for (const commandName of CLAW_COMPATIBLE_COMMANDS) {
+    const paths = await detectLocalCommandPaths(commandName);
+    for (const detectedPath of paths) {
+      if (!await commandSupportsMcp(detectedPath)) {
+        continue;
+      }
+      candidates.push({
+        id: `claw-compatible:local:${detectedPath}`,
+        target: "openclaw",
+        label: `${commandName} (local)`,
+        status: "detected",
+        detail: `claw-compatible MCP CLI at ${detectedPath}`,
+        optionOverrides: {
+          "execution-location": "local",
+          "openclaw-bin": detectedPath
+        }
+      });
+    }
+  }
+  return candidates;
+}
+
+async function detectLocalAgentCliTargets() {
+  const candidates = [];
+  for (const descriptor of AGENT_CLI_TARGETS) {
+    for (const commandName of descriptor.commandNames) {
+      const paths = await detectLocalCommandPaths(commandName);
+      for (const detectedPath of paths) {
+        candidates.push({
+          id: `${descriptor.target}:local:${detectedPath}`,
+          target: descriptor.target,
+          label: descriptor.label,
+          status: "detected",
+          detail: detectedPath,
+          optionOverrides: {
+            "execution-location": "local",
+            [descriptor.binOption]: detectedPath
+          }
+        });
+      }
+    }
+  }
+  return candidates;
+}
+
+function orbUserCandidates(settings, vmName) {
+  return uniqueValues([
+    settings.orbUser,
+    settings.openclawVmUser,
+    settings.hermesVmUser,
+    vmName
+  ]);
+}
+
+async function detectOrbClawCompatibleTargets(settings, vmNames = null) {
+  const names = vmNames || await detectOrbVms(settings.orbBin);
+  const candidates = [];
+  for (const vmName of names) {
+    const userCandidates = orbUserCandidates(settings, vmName);
     for (const vmUser of userCandidates) {
-      for (const commandName of commandNames) {
-        const detected = await detectOrbCommand({
+      for (const commandName of CLAW_COMPATIBLE_COMMANDS) {
+        const paths = await detectOrbCommandPaths({
           orbBin: settings.orbBin,
           vmName,
           vmUser,
           command: commandName
         });
-        if (!detected.ok) {
-          continue;
-        }
-        const capability = await run(settings.orbBin, [
-          "-m",
-          vmName,
-          "-u",
-          vmUser,
-          detected.path || commandName,
-          "mcp",
-          "--help"
-        ], { allowFailure: true });
-        const output = `${capability.stdout}\n${capability.stderr}`.toLowerCase();
-        if (!output.includes("mcp")) {
-          continue;
-        }
-        candidates.push({
-          id: `claw-compatible:${vmName}:${vmUser}:${detected.path || commandName}`,
-          target: "openclaw",
-          label: `${commandName} (${vmName})`,
-          status: "detected",
-          detail: `claw-compatible MCP CLI at ${detected.path || commandName}, user ${vmUser}`,
-          optionOverrides: {
-            "openclaw-vm": vmName,
-            "openclaw-user": vmUser,
-            "openclaw-bin": detected.path || commandName
+        for (const detectedPath of paths) {
+          if (!await orbCommandSupportsMcp({ orbBin: settings.orbBin, vmName, vmUser, command: detectedPath })) {
+            continue;
           }
-        });
+          candidates.push({
+            id: `claw-compatible:orb:${vmName}:${vmUser}:${detectedPath}`,
+            target: "openclaw",
+            label: `${targetLabel("openclaw")} (${vmName})`,
+            status: "detected",
+            detail: `claw-compatible MCP CLI at ${detectedPath}, user ${vmUser}`,
+            optionOverrides: {
+              "execution-location": "orb",
+              "orb-vm": vmName,
+              "orb-user": vmUser,
+              "openclaw-vm": vmName,
+              "openclaw-user": vmUser,
+              "openclaw-bin": detectedPath
+            }
+          });
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+async function detectOrbAgentCliTargets(settings, vmNames = null) {
+  const names = vmNames || await detectOrbVms(settings.orbBin);
+  const candidates = [];
+  for (const vmName of names) {
+    const userCandidates = orbUserCandidates(settings, vmName);
+    for (const vmUser of userCandidates) {
+      for (const descriptor of ORB_AGENT_CLI_TARGETS) {
+        for (const commandName of descriptor.commandNames) {
+          const paths = await detectOrbCommandPaths({
+            orbBin: settings.orbBin,
+            vmName,
+            vmUser,
+            command: commandName
+          });
+          for (const detectedPath of paths) {
+            if (!await orbCommandSupportsMcp({ orbBin: settings.orbBin, vmName, vmUser, command: detectedPath })) {
+              continue;
+            }
+            candidates.push({
+              id: `${descriptor.target}:orb:${vmName}:${vmUser}:${detectedPath}`,
+              target: descriptor.target,
+              label: `${descriptor.label} (${vmName})`,
+              status: "detected",
+              detail: `${descriptor.label} CLI at ${detectedPath}, user ${vmUser}`,
+              optionOverrides: {
+                "execution-location": "orb",
+                "orb-vm": vmName,
+                "orb-user": vmUser,
+                [descriptor.binOption]: detectedPath
+              }
+            });
+          }
+        }
       }
     }
   }
@@ -1666,43 +2000,28 @@ async function detectClawCompatibleTargets(settings) {
 async function scanInstallTargets(options = {}) {
   const settings = installerOptions(options);
   const candidates = [];
-  const codexDetected = await commandExists(settings.codexBin);
-  candidates.push({
-    id: "codex",
-    target: "codex",
-    label: targetLabel("codex"),
-    status: codexDetected ? "detected" : "not-detected",
-    detail: codexDetected ? settings.codexBin : "Codex CLI path not found"
-  });
-
-  const geminiDetected = await commandExists(settings.geminiBin);
-  candidates.push({
-    id: "gemini-cli",
-    target: "gemini-cli",
-    label: targetLabel("gemini-cli"),
-    status: geminiDetected ? "detected" : "not-detected",
-    detail: geminiDetected ? settings.geminiBin : "gemini command not found"
-  });
-
-  const copilotDetected = await commandExists(settings.copilotBin);
-  candidates.push({
-    id: "copilot",
-    target: "copilot",
-    label: targetLabel("copilot"),
-    status: copilotDetected ? "detected" : "not-detected",
-    detail: copilotDetected ? settings.copilotBin : "copilot command not found"
-  });
-
-  const kiloDetected = await commandExists(settings.kiloBin);
-  const kiloConfigExists = await pathExists(settings.kiloConfigPath);
-  candidates.push({
-    id: "kilo-code",
-    target: "kilo-code",
-    label: targetLabel("kilo-code"),
-    status: kiloDetected || kiloConfigExists ? "detected" : "not-detected",
-    detail: kiloDetected ? settings.kiloBin : kiloConfigExists ? settings.kiloConfigPath : "kilo command/config not found"
-  });
-
+  if (!options["no-scan"]) {
+    const vmNames = await detectOrbVms(settings.orbBin);
+    const discoveredCandidates = [
+      ...await detectLocalAgentCliTargets(settings),
+      ...await detectLocalClawCompatibleTargets(settings),
+      ...await detectOrbClawCompatibleTargets(settings, vmNames),
+      ...await detectOrbAgentCliTargets(settings, vmNames)
+    ];
+    for (const candidate of discoveredCandidates) {
+      mergeInstallCandidate(candidates, candidate);
+    }
+  } else {
+    for (const descriptor of AGENT_CLI_TARGETS) {
+      candidates.push({
+        id: descriptor.target,
+        target: descriptor.target,
+        label: descriptor.label,
+        status: "not-detected",
+        detail: `${descriptor.commandNames.join("/")} executable scan disabled`
+      });
+    }
+  }
   const antigravityConfigDir = path.dirname(settings.antigravityConfigPath);
   const antigravityDetected = await pathExists(settings.antigravityConfigPath) || await directoryExists(antigravityConfigDir);
   candidates.push({
@@ -1710,48 +2029,8 @@ async function scanInstallTargets(options = {}) {
     target: "antigravity",
     label: targetLabel("antigravity"),
     status: antigravityDetected ? "detected" : "not-detected",
-    detail: antigravityDetected ? settings.antigravityConfigPath : "Antigravity config path not found yet"
+    detail: antigravityDetected ? `config: ${settings.antigravityConfigPath}` : "Antigravity config path not found yet"
   });
-
-  const openClawDetected = await detectOrbCommand({
-    orbBin: settings.orbBin,
-    vmName: settings.openclawVm,
-    vmUser: settings.openclawVmUser,
-    command: settings.openclawBin
-  });
-  candidates.push({
-    id: "openclaw",
-    target: "openclaw",
-    label: `${targetLabel("openclaw")} (${settings.openclawVm})`,
-    status: openClawDetected.ok ? "detected" : "not-detected",
-    detail: openClawDetected.ok ? openClawDetected.path || settings.openclawBin : `OrbStack ${settings.openclawVm}:${settings.openclawVmUser} not detected`,
-    optionOverrides: {
-      "openclaw-vm": settings.openclawVm,
-      "openclaw-user": settings.openclawVmUser,
-      "openclaw-bin": openClawDetected.path || settings.openclawBin
-    }
-  });
-
-  const hermesDetected = await detectOrbCommand({
-    orbBin: settings.orbBin,
-    vmName: settings.hermesVm,
-    vmUser: settings.hermesVmUser,
-    command: settings.hermesBin
-  });
-  candidates.push({
-    id: "hermes",
-    target: "hermes",
-    label: `${targetLabel("hermes")} (${settings.hermesVm})`,
-    status: hermesDetected.ok ? "detected" : "not-detected",
-    detail: hermesDetected.ok ? hermesDetected.path || settings.hermesBin : `OrbStack ${settings.hermesVm}:${settings.hermesVmUser} not detected`
-  });
-
-  if (!options["no-scan"]) {
-    const dynamicClawTargets = await detectClawCompatibleTargets(settings);
-    for (const candidate of dynamicClawTargets) {
-      mergeClawCandidate(candidates, candidate);
-    }
-  }
 
   return {
     ok: true,
@@ -1766,6 +2045,16 @@ async function scanInstallTargets(options = {}) {
 function installerOptions(options) {
   const sharedVmName = option(options, "vm", "");
   const sharedVmUser = option(options, "vm-user", "");
+  const hasVmTarget = Boolean(
+    sharedVmName ||
+    sharedVmUser ||
+    option(options, "orb-vm", "") ||
+    option(options, "orb-user", "") ||
+    option(options, "openclaw-vm", "") ||
+    option(options, "openclaw-user", "") ||
+    option(options, "hermes-vm", "") ||
+    option(options, "hermes-user", "")
+  );
   return {
     baseUrl: normalizeBaseUrl(option(options, "resolved-url", explicitBaseUrl(options))),
     tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV)),
@@ -1774,16 +2063,19 @@ function installerOptions(options) {
     kiloBin: String(option(options, "kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN)),
     copilotBin: String(option(options, "copilot-bin", process.env.COPILOT_CLI_PATH || DEFAULT_COPILOT_BIN)),
     orbBin: String(option(options, "orb-bin", process.env.ORB_CLI_PATH || DEFAULT_ORB_BIN)),
+    executionLocation: String(option(options, "execution-location", hasVmTarget ? "orb" : "local")),
+    orbVm: String(option(options, "orb-vm", sharedVmName)),
+    orbUser: String(option(options, "orb-user", sharedVmUser)),
     marketplaceRoot: path.resolve(String(option(options, "marketplace-root", path.join(os.homedir(), ".agentstudio", "codex-plugin-marketplace")))),
     geminiExtensionRoot: path.resolve(String(option(options, "gemini-extension-root", path.join(os.homedir(), ".agentstudio", "gemini-extensions", PLUGIN_NAME)))),
     kiloConfigPath: path.resolve(String(option(options, "kilo-config", path.join(os.homedir(), ".config", "kilo", "kilo.json")))),
     antigravityConfigPath: path.resolve(String(option(options, "antigravity-config", path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json")))),
-    openclawVm: String(option(options, "openclaw-vm", sharedVmName || "kate")),
-    openclawVmUser: String(option(options, "openclaw-user", sharedVmUser || "kate")),
-    openclawBin: String(option(options, "openclaw-bin", "/home/kate/.npm-global/bin/openclaw")),
-    hermesVm: String(option(options, "hermes-vm", sharedVmName || "serena")),
-    hermesVmUser: String(option(options, "hermes-user", sharedVmUser || "serena")),
-    hermesBin: String(option(options, "hermes-bin", "/home/serena/.local/bin/hermes"))
+    openclawVm: String(option(options, "openclaw-vm", sharedVmName)),
+    openclawVmUser: String(option(options, "openclaw-user", sharedVmUser)),
+    openclawBin: String(option(options, "openclaw-bin", "")),
+    hermesVm: String(option(options, "hermes-vm", sharedVmName)),
+    hermesVmUser: String(option(options, "hermes-user", sharedVmUser)),
+    hermesBin: String(option(options, "hermes-bin", ""))
   };
 }
 
@@ -2099,32 +2391,59 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
           marketplaceRoot: settings.marketplaceRoot
         });
       } else if (target === "gemini-cli") {
-        clientResult = await installGemini({
-          baseUrl: settings.baseUrl,
-          token,
-          geminiBin: settings.geminiBin,
-          extensionRoot: settings.geminiExtensionRoot
-        });
+        clientResult = settings.executionLocation === "orb"
+          ? await installGeminiOrb({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              geminiBin: settings.geminiBin
+            })
+          : await installGemini({
+              baseUrl: settings.baseUrl,
+              token,
+              geminiBin: settings.geminiBin,
+              extensionRoot: settings.geminiExtensionRoot
+            });
       } else if (target === "kilo-code") {
-        clientResult = await installKilo({
-          baseUrl: settings.baseUrl,
-          token,
-          kiloBin: settings.kiloBin,
-          kiloConfigPath: settings.kiloConfigPath
-        });
+        clientResult = settings.executionLocation === "orb"
+          ? await installKiloOrb({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              kiloBin: settings.kiloBin
+            })
+          : await installKilo({
+              baseUrl: settings.baseUrl,
+              token,
+              kiloBin: settings.kiloBin,
+              kiloConfigPath: settings.kiloConfigPath
+            });
       } else if (target === "copilot") {
-        clientResult = await installCopilot({
-          baseUrl: settings.baseUrl,
-          token,
-          copilotBin: settings.copilotBin
-        });
+        clientResult = settings.executionLocation === "orb"
+          ? await installCopilotOrb({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              copilotBin: settings.copilotBin
+            })
+          : await installCopilot({
+              baseUrl: settings.baseUrl,
+              token,
+              copilotBin: settings.copilotBin
+            });
       } else if (target === "openclaw") {
         clientResult = await installOpenClaw({
           baseUrl: settings.baseUrl,
           token,
           orbBin: settings.orbBin,
-          vmName: settings.openclawVm,
-          vmUser: settings.openclawVmUser,
+          vmName: settings.openclawVm || settings.orbVm,
+          vmUser: settings.openclawVmUser || settings.orbUser,
           openclawBin: settings.openclawBin
         });
       } else if (target === "hermes") {

@@ -8,7 +8,7 @@ import { createToolManagementStore } from "../platform/specialized/capabilities/
 const execFileAsync = promisify(execFile);
 const DEFAULT_BASE_URL = "";
 const DEFAULT_TOKEN_ENV = "AGENTSTUDIO_MCP_TOKEN";
-const DEFAULT_CODEX_BIN = "/Applications/Codex.app/Contents/Resources/codex";
+const DEFAULT_CODEX_BIN = "codex";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
@@ -18,7 +18,7 @@ const MARKETPLACE_NAME = "agentstudio-local";
 const GEMINI_EXTENSION_NAME = "AgentStudio";
 const MCP_SERVER_NAME = "agentstudio";
 const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
-const MCP_CONNECTOR_VERSION = "0.2.5";
+const MCP_CONNECTOR_VERSION = "0.2.6";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
@@ -546,6 +546,9 @@ async function installAntigravity({ baseUrl, token, configPath }) {
 }
 
 async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, openclawBin }) {
+  if (!vmName || !vmUser || !openclawBin) {
+    throw new Error("OpenClaw install requires --openclaw-vm, --openclaw-user, and --openclaw-bin. No default OpenClaw path is assumed.");
+  }
   const url = `${vmBaseUrl(baseUrl)}/mcp`;
   const config = {
     type: "http",
@@ -568,6 +571,9 @@ async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, opencla
 }
 
 async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin }) {
+  if (!vmName || !vmUser || !hermesBin) {
+    throw new Error("Hermes install requires --hermes-vm, --hermes-user, and --hermes-bin. No default Hermes path is assumed.");
+  }
   const url = `${vmBaseUrl(baseUrl)}/mcp`;
   const script = [
     "set -e",
@@ -711,12 +717,12 @@ const antigravityConfigPath = path.resolve(argValue(
 ));
 const sharedVmName = argValue("--vm", "");
 const sharedVmUser = argValue("--vm-user", "");
-const openclawVm = argValue("--openclaw-vm", sharedVmName || "kate");
-const openclawVmUser = argValue("--openclaw-user", sharedVmUser || "kate");
-const openclawBin = argValue("--openclaw-bin", "/home/kate/.npm-global/bin/openclaw");
-const hermesVm = argValue("--hermes-vm", sharedVmName || "serena");
-const hermesVmUser = argValue("--hermes-user", sharedVmUser || "serena");
-const hermesBin = argValue("--hermes-bin", "/home/serena/.local/bin/hermes");
+const openclawVm = argValue("--openclaw-vm", sharedVmName);
+const openclawVmUser = argValue("--openclaw-user", sharedVmUser);
+const openclawBin = argValue("--openclaw-bin", "");
+const hermesVm = argValue("--hermes-vm", sharedVmName);
+const hermesVmUser = argValue("--hermes-user", sharedVmUser);
+const hermesBin = argValue("--hermes-bin", "");
 const verify = !hasFlag("--no-verify");
 
 await ensureService(baseUrl);

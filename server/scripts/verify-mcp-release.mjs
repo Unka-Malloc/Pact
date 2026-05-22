@@ -41,7 +41,7 @@ try {
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "agentstudio-mcp-connector");
-  assert.equal(result.packageVersion, "0.2.5");
+  assert.equal(result.packageVersion, "0.2.6");
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   const manifestText = JSON.stringify(manifest);
@@ -122,7 +122,7 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.2.5");
+  assert.equal(versionPayload.packageVersion, "0.2.6");
   assert.equal(versionPayload.stableToolName, "agentstudio.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "help"]);
   assert.match(help.stdout, /agentstudio-mcp register/);
@@ -132,6 +132,8 @@ try {
   assert.match(help.stdout, /agentstudio-mcp discover-local/);
   assert.match(help.stdout, /agentstudio-mcp server-config --set/);
   assert.match(help.stdout, /--no-auto-token/);
+  assert.doesNotMatch(help.stdout, /\/home\/kate/);
+  assert.doesNotMatch(help.stdout, /\/home\/serena/);
   const scan = await run("node", [
     path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"),
     "scan",
@@ -164,14 +166,38 @@ try {
     "  user=\"$4\"",
     "  shift 4",
     "  if [ \"$1\" = \"bash\" ] && [ \"$2\" = \"-lc\" ]; then",
-    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && [ \"$3\" = \"command -v 'openclaw'\" ]; then",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'openclaw'\"; then",
     "      printf '/usr/bin/openclaw\\n'",
+    "      exit 0",
+    "    fi",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'ironclaw'\"; then",
+    "      printf '/usr/local/bin/ironclaw\\n'",
+    "      exit 0",
+    "    fi",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'gemini'\"; then",
+    "      printf '/usr/bin/gemini\\n'",
+    "      exit 0",
+    "    fi",
+    "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"type -a -p 'copilot'\"; then",
+    "      printf '/usr/bin/copilot\\n'",
     "      exit 0",
     "    fi",
     "    exit 1",
     "  fi",
     "  if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && [ \"$1\" = \"/usr/bin/openclaw\" ] && [ \"$2\" = \"mcp\" ]; then",
     "    printf 'openclaw mcp help\\n'",
+    "    exit 0",
+    "  fi",
+    "  if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && [ \"$1\" = \"/usr/local/bin/ironclaw\" ] && [ \"$2\" = \"mcp\" ]; then",
+    "    printf 'ironclaw mcp help\\n'",
+    "    exit 0",
+    "  fi",
+    "  if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && [ \"$1\" = \"/usr/bin/gemini\" ] && [ \"$2\" = \"mcp\" ]; then",
+    "    printf 'gemini mcp help\\n'",
+    "    exit 0",
+    "  fi",
+    "  if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && [ \"$1\" = \"/usr/bin/copilot\" ] && [ \"$2\" = \"mcp\" ]; then",
+    "    printf 'copilot mcp help\\n'",
     "    exit 0",
     "  fi",
     "fi",
@@ -194,13 +220,27 @@ try {
   const clawScanPayload = JSON.parse(clawScan.stdout);
   const openClawCandidates = clawScanPayload.candidates.filter((candidate) => candidate.target === "openclaw");
   assert.equal(openClawCandidates.length, 1);
-  assert.equal(openClawCandidates[0].id, "openclaw");
   assert.equal(openClawCandidates[0].status, "detected");
   assert.equal(openClawCandidates[0].label, "OpenClaw (kate)");
   assert.match(openClawCandidates[0].detail, /\/usr\/bin\/openclaw/);
+  assert.equal(openClawCandidates[0].optionOverrides["execution-location"], "orb");
+  assert.equal(openClawCandidates[0].optionOverrides["orb-vm"], "kate");
+  assert.equal(openClawCandidates[0].optionOverrides["orb-user"], "kate");
   assert.equal(openClawCandidates[0].optionOverrides["openclaw-vm"], "kate");
   assert.equal(openClawCandidates[0].optionOverrides["openclaw-user"], "kate");
   assert.equal(openClawCandidates[0].optionOverrides["openclaw-bin"], "/usr/bin/openclaw");
+  const vmGemini = clawScanPayload.candidates.find((candidate) =>
+    candidate.target === "gemini-cli" && candidate.optionOverrides?.["execution-location"] === "orb"
+  );
+  assert.equal(vmGemini?.optionOverrides?.["gemini-bin"], "/usr/bin/gemini");
+  assert.equal(vmGemini?.optionOverrides?.["orb-vm"], "kate");
+  assert.equal(vmGemini?.optionOverrides?.["orb-user"], "kate");
+  const vmCopilot = clawScanPayload.candidates.find((candidate) =>
+    candidate.target === "copilot" && candidate.optionOverrides?.["execution-location"] === "orb"
+  );
+  assert.equal(vmCopilot?.optionOverrides?.["copilot-bin"], "/usr/bin/copilot");
+  assert.equal(vmCopilot?.optionOverrides?.["orb-vm"], "kate");
+  assert.equal(vmCopilot?.optionOverrides?.["orb-user"], "kate");
 
   const portableExtractDir = path.join(tempDir, "portable");
   await fs.mkdir(portableExtractDir, { recursive: true });
@@ -208,7 +248,7 @@ try {
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.2.5");
+  assert.equal(portablePayload.packageVersion, "0.2.6");
   const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), [
     "server-config",
     "--reset",
@@ -229,7 +269,7 @@ try {
   const portableZipVersion = await run(path.join(zipRoot, "agentstudio-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.2.5");
+  assert.equal(portableZipPayload.packageVersion, "0.2.6");
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
 
   console.log("mcp-release verification passed");
