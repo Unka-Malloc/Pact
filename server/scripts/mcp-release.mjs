@@ -157,10 +157,7 @@ async function createPortableBundle({ outputDir, packageJson }) {
     "#!/usr/bin/env sh",
     "set -e",
     "DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)",
-    "printf 'Target to uninstall [codex]: '",
-    "IFS= read -r targets",
-    "targets=${targets:-codex}",
-    "\"$DIR/agentstudio-mcp\" uninstall --target \"$targets\"",
+    "\"$DIR/agentstudio-mcp\" uninstall",
     "printf '\\nDone. Press Enter to close.'",
     "IFS= read -r _",
     ""
@@ -200,6 +197,9 @@ async function createPortableBundle({ outputDir, packageJson }) {
     "  Open install.command, choose one or more clients. The connector requests a local AgentStudio grant automatically.",
     "",
     "Uninstall:",
+    "  ./agentstudio-mcp uninstall",
+    "",
+    "Uninstall one client from a script:",
     "  ./agentstudio-mcp uninstall --target codex",
     "",
     `Platform: ${platform}`,
@@ -238,6 +238,8 @@ function githubOwnerRepo(packageJson) {
 async function createBootstrapInstaller({ outputDir, packageJson, tarballName, tarballSha256, portable }) {
   const scriptName = "agentstudio-mcp-install.sh";
   const scriptPath = path.join(outputDir, scriptName);
+  const uninstallScriptName = "agentstudio-mcp-uninstall.sh";
+  const uninstallScriptPath = path.join(outputDir, uninstallScriptName);
   const repo = githubOwnerRepo(packageJson);
   const minimumNodeMajor = Number(String(packageJson.engines?.node || ">=20").match(/\d+/)?.[0] || 20);
   const content = [
@@ -372,12 +374,22 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
   ].join("\n");
   await fs.writeFile(scriptPath, content);
   await fs.chmod(scriptPath, 0o755);
+  const uninstallContent = content
+    .replaceAll("Opening AgentStudio MCP client selector...", "Opening AgentStudio MCP client removal selector...")
+    .replaceAll(" install \"$@\"", " uninstall \"$@\"");
+  await fs.writeFile(uninstallScriptPath, uninstallContent);
+  await fs.chmod(uninstallScriptPath, 0o755);
   return {
     scriptName,
     scriptPath,
     sha256: await sha256(scriptPath),
     githubLatestUrl: `https://github.com/${repo}/releases/latest/download/${scriptName}`,
-    oneLineCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${scriptName})"`
+    oneLineCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${scriptName})"`,
+    uninstallScriptName,
+    uninstallScriptPath,
+    uninstallSha256: await sha256(uninstallScriptPath),
+    githubLatestUninstallUrl: `https://github.com/${repo}/releases/latest/download/${uninstallScriptName}`,
+    oneLineUninstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${uninstallScriptName})"`
   };
 }
 
@@ -414,17 +426,22 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       includesNodeRuntime: portable.includesNodeRuntime,
       bundledNodeVersion: portable.bundledNodeVersion,
       zipInstallEntry: "install.command",
+      zipUninstallEntry: "uninstall.command",
       installCommand: `./${portable.executable} register`,
       clientInstallCommand: `./${portable.executable} install --target <client>`,
+      interactiveUninstallCommand: `./${portable.executable} uninstall`,
+      clientUninstallCommand: `./${portable.executable} uninstall --target <client>`,
       doubleClickEntry: process.platform === "win32" ? "" : "install.command"
     },
     install: {
       githubOneLineCommand: bootstrap.oneLineCommand,
+      githubOneLineUninstallCommand: bootstrap.oneLineUninstallCommand,
       registryCommand: `npx ${packageJson.name}@latest register`,
       tarballCommand: `npm exec --package ./build/release/mcp/${tarballName} -- agentstudio-mcp register`,
       portableCommand: `./${portable.executable} register`,
       interactiveInstallCommand: `npx ${packageJson.name}@latest install`,
       clientInstallCommand: `npx ${packageJson.name}@latest install --target <client>`,
+      interactiveUninstallCommand: `npx ${packageJson.name}@latest uninstall`,
       uninstallCommand: `npx ${packageJson.name}@latest uninstall --target <client>`,
       doctorCommand: `npx ${packageJson.name}@latest doctor`,
       discoverCommand: `npx ${packageJson.name}@latest discover-local`,
@@ -444,6 +461,10 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       sha256: bootstrap.sha256,
       githubLatestUrl: bootstrap.githubLatestUrl,
       command: bootstrap.oneLineCommand,
+      uninstallScriptName: bootstrap.uninstallScriptName,
+      uninstallSha256: bootstrap.uninstallSha256,
+      uninstallGithubLatestUrl: bootstrap.githubLatestUninstallUrl,
+      uninstallCommand: bootstrap.oneLineUninstallCommand,
       strategy: "installed-node-source-tarball-with-portable-runtime-fallback",
       preferredDownload: tarballName,
       fallbackDownload: portable.zipArchiveName,
@@ -451,6 +472,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       fallbackSizeBytes: portable.zipSizeBytes,
       installsTo: "~/.agentstudio/mcp/connector",
       startsInteractiveInstaller: true,
+      startsInteractiveUninstaller: true,
       supportsMultiSelect: true
     },
     publish: {
@@ -460,6 +482,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
         portable.archiveName,
         portable.zipArchiveName,
         bootstrap.scriptName,
+        bootstrap.uninstallScriptName,
         "agentstudio-mcp-release.json",
         "latest.json"
       ]
@@ -530,7 +553,10 @@ async function main() {
     portableSha256: portable.sha256,
     portableZipSha256: portable.zipSha256,
     bootstrapInstallerSha256: bootstrap.sha256,
+    bootstrapUninstallerPath: bootstrap.uninstallScriptPath,
+    bootstrapUninstallerSha256: bootstrap.uninstallSha256,
     githubOneLineCommand: bootstrap.oneLineCommand,
+    githubOneLineUninstallCommand: bootstrap.oneLineUninstallCommand,
     publishCommand: manifest.publish.npmCommand,
     installCommand: manifest.install.registryCommand,
     published: Boolean(publishResult),

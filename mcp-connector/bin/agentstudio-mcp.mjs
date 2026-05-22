@@ -46,6 +46,34 @@ const AGENT_CLI_TARGETS = [
   }
 ];
 const ORB_AGENT_CLI_TARGETS = AGENT_CLI_TARGETS.filter((descriptor) => descriptor.target !== "codex");
+const APP_DISCOVERY_NAME_HINTS = [
+  "agentstudio",
+  "antigravity",
+  "aider",
+  "anthropic",
+  "chatgpt",
+  "claude",
+  "cline",
+  "codex",
+  "codeium",
+  "continue",
+  "copilot",
+  "cursor",
+  "devin",
+  "gemini",
+  "goose",
+  "hermes",
+  "kilo",
+  "openclaw",
+  "qodo",
+  "roo",
+  "serena",
+  "tabnine",
+  "trae",
+  "windsurf",
+  "zeroclaw"
+];
+const APP_DISCOVERY_WORD_HINTS = ["agent", "bot", "claw", "code"];
 const PLUGIN_NAME = "agentstudio-mcp";
 const MARKETPLACE_NAME = "agentstudio-local";
 const GEMINI_EXTENSION_NAME = "AgentStudio";
@@ -105,6 +133,7 @@ function usage() {
     "  agentstudio-mcp register",
     "  agentstudio-mcp install",
     "  agentstudio-mcp install --target codex",
+    "  agentstudio-mcp uninstall",
     "  agentstudio-mcp uninstall --target codex",
     "  agentstudio-mcp scan --json",
     "  agentstudio-mcp discover-local",
@@ -146,7 +175,10 @@ function usage() {
     "",
     "Interactive install:",
     "  When --target is omitted in a TTY, install opens a multi-select menu.",
-    "  Use Up/Down or j/k to move, Space to toggle, a to toggle detected clients, Enter to install."
+    "  Use Up/Down or j/k to move, Space to toggle, a to toggle detected clients, Enter to install.",
+    "",
+    "Interactive uninstall:",
+    "  When --target is omitted in a TTY, uninstall scans the same clients and opens a multi-select removal menu."
   ].join("\n");
 }
 
@@ -1475,6 +1507,37 @@ async function uninstallGemini({ geminiBin, extensionRoot }) {
   };
 }
 
+async function uninstallGeminiOrb({ orbBin, vmName, vmUser, geminiBin }) {
+  if (!vmName || !vmUser || !geminiBin) {
+    throw new Error("Gemini VM uninstall requires a discovered or explicit OrbStack VM, user, and gemini CLI path.");
+  }
+  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  const list = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"], { allowFailure: true });
+  const listOutput = `${list.stdout}\n${list.stderr}`;
+  return {
+    uninstallMode: "gemini-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    removedMcp: remove.ok,
+    mcpListHasAgentStudio: listOutput.includes(MCP_SERVER_NAME)
+  };
+}
+
+async function uninstallGeminiRemote({ context, geminiBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !geminiBin) {
+    throw new Error("Gemini remote uninstall requires a discovered remote context and gemini CLI path.");
+  }
+  const remove = await runRemoteLinuxCommand(context, [geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  const list = await runRemoteLinuxCommand(context, [geminiBin, "mcp", "list"], { allowFailure: true });
+  const listOutput = `${list.stdout}\n${list.stderr}`;
+  return {
+    uninstallMode: `gemini-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    removedMcp: remove.ok,
+    mcpListHasAgentStudio: listOutput.includes(MCP_SERVER_NAME)
+  };
+}
+
 async function removeNamedMcpEntry({ filePath, rootKey }) {
   const config = await readJson(filePath, null);
   if (!config?.[rootKey]?.[MCP_SERVER_NAME]) {
@@ -1504,11 +1567,99 @@ async function uninstallKilo({ kiloConfigPath, kiloBin }) {
   };
 }
 
+function kiloUninstallScript() {
+  return [
+    "set -e",
+    "node <<'NODE'",
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "const path = require('path');",
+    "const filePath = path.join(os.homedir(), '.config', 'kilo', 'kilo.json');",
+    "let config = {};",
+    "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { process.exit(0); }",
+    "if (config.mcp && Object.prototype.hasOwnProperty.call(config.mcp, 'agentstudio')) {",
+    "  delete config.mcp.agentstudio;",
+    "  fs.mkdirSync(path.dirname(filePath), { recursive: true });",
+    "  fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\\n`);",
+    "}",
+    "NODE",
+    "\"$KILO_BIN\" mcp list >/dev/null 2>&1 || true"
+  ].join("\n");
+}
+
+async function uninstallKiloOrb({ orbBin, vmName, vmUser, kiloBin }) {
+  if (!vmName || !vmUser || !kiloBin) {
+    throw new Error("Kilo VM uninstall requires a discovered or explicit OrbStack VM, user, and kilo CLI path.");
+  }
+  const remove = await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    "env",
+    `KILO_BIN=${kiloBin}`,
+    "bash",
+    "-lc",
+    kiloUninstallScript()
+  ], { allowFailure: true });
+  return {
+    uninstallMode: "kilo-orbstack-global-kilo-json",
+    vm: vmName,
+    vmUser,
+    configPath: "~/.config/kilo/kilo.json",
+    removedConfigEntry: remove.ok
+  };
+}
+
+async function uninstallKiloRemote({ context, kiloBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !kiloBin) {
+    throw new Error("Kilo remote uninstall requires a discovered remote context and kilo CLI path.");
+  }
+  const remove = await remoteLinuxShellWithInput(context, kiloUninstallScript(), "", {
+    KILO_BIN: kiloBin
+  });
+  return {
+    uninstallMode: `kilo-${context.kind}-global-kilo-json`,
+    remote: remoteContextLabel(context),
+    configPath: "~/.config/kilo/kilo.json",
+    removedConfigEntry: remove.ok
+  };
+}
+
 async function uninstallCopilot({ copilotBin }) {
   const remove = await run(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
   return {
     uninstallMode: "copilot-release-mcp-cli",
     removedMcp: remove.ok
+  };
+}
+
+async function uninstallCopilotOrb({ orbBin, vmName, vmUser, copilotBin }) {
+  if (!vmName || !vmUser || !copilotBin) {
+    throw new Error("Copilot VM uninstall requires a discovered or explicit OrbStack VM, user, and copilot CLI path.");
+  }
+  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
+  return {
+    uninstallMode: "copilot-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    removedMcp: remove.ok,
+    mcpGetHasAgentStudio: get.ok && get.stdout.includes(MCP_SERVER_NAME)
+  };
+}
+
+async function uninstallCopilotRemote({ context, copilotBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !copilotBin) {
+    throw new Error("Copilot remote uninstall requires a discovered remote context and copilot CLI path.");
+  }
+  const remove = await runRemoteLinuxCommand(context, [copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const get = await runRemoteLinuxCommand(context, [copilotBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
+  return {
+    uninstallMode: `copilot-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    removedMcp: remove.ok,
+    mcpGetHasAgentStudio: get.ok && get.stdout.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1523,30 +1674,37 @@ async function uninstallAntigravity({ configPath }) {
 }
 
 async function uninstallOpenClaw({ orbBin, vmName, vmUser, openclawBin }) {
-  const remove = await run(orbBin, [
-    "-m",
-    vmName,
-    "-u",
-    vmUser,
-    openclawBin,
-    "mcp",
-    "unset",
-    MCP_SERVER_NAME
-  ], { allowFailure: true });
-  const show = await run(orbBin, [
-    "-m",
-    vmName,
-    "-u",
-    vmUser,
-    openclawBin,
-    "mcp",
-    "show",
-    MCP_SERVER_NAME
-  ], { allowFailure: true });
+  if (!openclawBin) {
+    throw new Error("OpenClaw uninstall requires a discovered or explicit OpenClaw-like CLI path.");
+  }
+  const isOrb = Boolean(vmName || vmUser);
+  if (isOrb && (!vmName || !vmUser)) {
+    throw new Error("OpenClaw VM uninstall requires both OrbStack VM and user.");
+  }
+  const remove = isOrb
+    ? await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "unset", MCP_SERVER_NAME], { allowFailure: true })
+    : await run(openclawBin, ["mcp", "unset", MCP_SERVER_NAME], { allowFailure: true });
+  const show = isOrb
+    ? await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME], { allowFailure: true })
+    : await run(openclawBin, ["mcp", "show", MCP_SERVER_NAME], { allowFailure: true });
   return {
-    uninstallMode: "openclaw-release-mcp-cli",
+    uninstallMode: isOrb ? "openclaw-orbstack-mcp-cli" : "openclaw-release-mcp-cli",
     vm: vmName,
     vmUser,
+    removedMcp: remove.ok,
+    mcpShowHasAgentStudio: show.ok && show.stdout.includes(MCP_SERVER_NAME)
+  };
+}
+
+async function uninstallOpenClawRemote({ context, openclawBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !openclawBin) {
+    throw new Error("OpenClaw remote uninstall requires a discovered remote context and OpenClaw-like CLI path.");
+  }
+  const remove = await runRemoteLinuxCommand(context, [openclawBin, "mcp", "unset", MCP_SERVER_NAME], { allowFailure: true });
+  const show = await runRemoteLinuxCommand(context, [openclawBin, "mcp", "show", MCP_SERVER_NAME], { allowFailure: true });
+  return {
+    uninstallMode: `openclaw-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
     removedMcp: remove.ok,
     mcpShowHasAgentStudio: show.ok && show.stdout.includes(MCP_SERVER_NAME)
   };
@@ -1633,7 +1791,13 @@ async function writeDeviceUninstall({ baseUrl, uninstalled, publishEnv = true, d
   const targets = Object.fromEntries(SUPPORTED_TARGETS.map((target) => [
     target,
     uninstalled[target]
-      ? {
+      ? uninstalled[target].ok === false
+        ? {
+            installMode: uninstalled[target].uninstallMode || targetInstallMode(target),
+            status: "failed",
+            error: uninstalled[target].error || "Uninstall failed."
+          }
+        : {
           installMode: uninstalled[target].uninstallMode,
           status: "not-installed"
         }
@@ -2016,6 +2180,22 @@ async function packageManagerExecutablePaths(command, platform = detectHostOs())
   return uniqueResolvedLocalPaths(paths);
 }
 
+function appNameLooksAgentRelated(name, command = "") {
+  const lower = String(name || "").toLowerCase();
+  const normalized = lower.replace(/[^a-z0-9]+/g, " ").trim();
+  const commandLower = String(command || "").toLowerCase();
+  if (commandLower && normalized.includes(commandLower)) {
+    return true;
+  }
+  if (APP_DISCOVERY_NAME_HINTS.some((hint) => normalized.includes(hint))) {
+    return true;
+  }
+  return APP_DISCOVERY_WORD_HINTS.some((hint) => {
+    const pattern = new RegExp(`(^|\\s|-)${hint}(\\s|-|$)`);
+    return pattern.test(normalized) || normalized.endsWith(hint);
+  });
+}
+
 async function macAppExecutablePaths(command) {
   if (process.platform !== "darwin") {
     return [];
@@ -2032,19 +2212,19 @@ async function macAppExecutablePaths(command) {
     }
   }
   const paths = [];
-  const commandLower = String(command || "").toLowerCase();
   for (const appPath of apps) {
-    const infoPath = path.join(appPath, "Contents", "Info.plist");
-    const executableName = await run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleExecutable", infoPath], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-    if (!executableName.ok || !executableName.stdout.trim()) {
+    const appName = path.basename(appPath, ".app");
+    if (!appNameLooksAgentRelated(appName, command)) {
       continue;
     }
-    const bundleName = path.basename(appPath, ".app").toLowerCase();
-    const executablePath = path.join(appPath, "Contents", "MacOS", executableName.stdout.trim());
-    const executableLower = path.basename(executablePath).toLowerCase();
-    if ((bundleName.includes(commandLower) || executableLower.includes(commandLower)) && await fileExists(executablePath)) {
-      paths.push(executablePath);
-    }
+    // Do not probe Contents/MacOS/CFBundleExecutable: that is usually the GUI app
+    // and may trigger login/keychain prompts. Only pick embedded CLI helper paths.
+    paths.push(...await collectExecutablePathsFromDirs([
+      path.join(appPath, "Contents", "Resources"),
+      path.join(appPath, "Contents", "Resources", "bin"),
+      path.join(appPath, "Contents", "Resources", "app", "bin"),
+      path.join(appPath, "Contents", "Helpers")
+    ], command, "darwin"));
   }
   return paths;
 }
@@ -2074,13 +2254,15 @@ async function linuxDesktopExecutablePaths(command) {
     const found = await run("find", [root, "-maxdepth", "2", "-name", "*.desktop", "-type", "f"], { allowFailure: true, timeoutMs: 5000 });
     for (const filePath of found.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
       const content = await fs.readFile(filePath, "utf8").catch(() => "");
+      const nameLine = content.split(/\r?\n/).find((line) => line.startsWith("Name="));
       const execLine = content.split(/\r?\n/).find((line) => line.startsWith("Exec="));
       const executable = parseDesktopExec(execLine?.slice("Exec=".length));
       if (!executable) {
         continue;
       }
       const basename = path.basename(executable).toLowerCase();
-      if (!basename.includes(String(command).toLowerCase())) {
+      const discoveryName = `${path.basename(filePath, ".desktop")} ${nameLine?.slice("Name=".length) || ""} ${basename}`;
+      if (!basename.includes(String(command).toLowerCase()) && !appNameLooksAgentRelated(discoveryName, command)) {
         continue;
       }
       if (path.isAbsolute(executable)) {
@@ -2838,6 +3020,10 @@ function canUseInstallTui(options) {
     && process.stdout.isTTY;
 }
 
+function canUseUninstallTui(options) {
+  return canUseInstallTui(options);
+}
+
 function statusGlyph(status) {
   if (status === "detected") {
     return "ok";
@@ -2852,13 +3038,16 @@ function selectionGlyph(selected) {
   return selected ? "x" : " ";
 }
 
-function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = "" }) {
+function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = "", mode = "install" }) {
+  const action = mode === "uninstall" ? "uninstall" : "install";
+  const title = mode === "uninstall" ? "AgentStudio MCP uninstall" : "AgentStudio MCP install";
+  const mcpLine = baseUrl ? `MCP: ${baseUrl}/mcp` : "MCP: no server URL required for local client removal";
   const rows = [
     "\x1b[2J\x1b[H",
-    "AgentStudio MCP install",
+    title,
     "",
-    `MCP: ${baseUrl}/mcp`,
-    "Use Up/Down or j/k, Space to toggle, a to toggle detected, Enter to install, q to cancel.",
+    mcpLine,
+    `Use Up/Down or j/k, Space to toggle, a to toggle detected, Enter to ${action}, q to cancel.`,
     "",
     ...candidates.map((candidate, candidateIndex) => {
       const pointer = candidateIndex === index ? ">" : " ";
@@ -2947,6 +3136,90 @@ async function chooseInstallCandidates({ candidates, baseUrl }) {
     };
     process.stdout.write("\x1b[?25l");
     renderInstallMenu({ candidates, index, selectedIds, baseUrl, message });
+    stdin.setEncoding("utf8");
+    if (stdin.setRawMode) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.on("data", onData);
+  });
+}
+
+async function chooseUninstallCandidates({ candidates, baseUrl }) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("Interactive uninstall requires a TTY. Pass --target for non-interactive use.");
+  }
+  let index = Math.max(0, candidates.findIndex((candidate) => candidate.status === "detected"));
+  if (index < 0) {
+    index = 0;
+  }
+  const selectedIds = new Set();
+  let message = "Space selects one or more clients. Enter removes AgentStudio MCP from selected clients.";
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    const cleanup = () => {
+      stdin.off("data", onData);
+      if (stdin.setRawMode) {
+        stdin.setRawMode(Boolean(wasRaw));
+      }
+      stdin.pause();
+      process.stdout.write("\x1b[?25h\n");
+    };
+    const onData = (chunk) => {
+      const key = chunk.toString("utf8");
+      if (key === "\u0003") {
+        cleanup();
+        reject(new Error("Interactive uninstall cancelled."));
+        return;
+      }
+      if (key === "q" || key === "Q" || key === "\u001b") {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      if (key === "\r" || key === "\n") {
+        const selected = candidates.filter((candidate) => selectedIds.has(candidate.id));
+        if (selected.length === 0) {
+          message = "No clients selected. Press Space to select at least one client.";
+          renderInstallMenu({ candidates, index, selectedIds, baseUrl, message, mode: "uninstall" });
+          return;
+        }
+        cleanup();
+        resolve(selected);
+        return;
+      }
+      if (key === " ") {
+        const selected = candidates[index];
+        if (selectedIds.has(selected.id)) {
+          selectedIds.delete(selected.id);
+        } else {
+          selectedIds.add(selected.id);
+        }
+        message = selectedIds.size === 1 ? "1 client selected for removal." : `${selectedIds.size} clients selected for removal.`;
+      } else if (key === "a" || key === "A") {
+        const detected = candidates.filter((candidate) => candidate.status === "detected");
+        const shouldSelect = detected.some((candidate) => !selectedIds.has(candidate.id));
+        for (const candidate of detected) {
+          if (shouldSelect) {
+            selectedIds.add(candidate.id);
+          } else {
+            selectedIds.delete(candidate.id);
+          }
+        }
+        message = shouldSelect
+          ? `${detected.length} detected clients selected for removal.`
+          : "Detected clients cleared.";
+      }
+      if (key === "\u001b[A" || key === "k" || key === "K") {
+        index = (index - 1 + candidates.length) % candidates.length;
+      } else if (key === "\u001b[B" || key === "j" || key === "J") {
+        index = (index + 1) % candidates.length;
+      }
+      renderInstallMenu({ candidates, index, selectedIds, baseUrl, message, mode: "uninstall" });
+    };
+    process.stdout.write("\x1b[?25l");
+    renderInstallMenu({ candidates, index, selectedIds, baseUrl, message, mode: "uninstall" });
     stdin.setEncoding("utf8");
     if (stdin.setRawMode) {
       stdin.setRawMode(true);
@@ -3406,64 +3679,211 @@ async function installCommand(options) {
   });
 }
 
-async function uninstallCommand(options) {
-  const targets = parseTargets(option(options, "target", "codex"));
-  const settings = installerOptions(options);
+async function optionsWithStoredBaseUrl(options = {}) {
+  if (explicitBaseUrl(options) || option(options, "resolved-url", "")) {
+    return options;
+  }
+  const [storedBaseUrl] = await registryBaseUrls(options);
+  return storedBaseUrl
+    ? { ...options, "resolved-url": storedBaseUrl }
+    : options;
+}
+
+async function uninstallTargets({ options, targets, optionOverrides = {} }) {
+  const mergedOptions = {
+    ...options,
+    ...optionOverrides
+  };
+  const settings = installerOptions(mergedOptions);
+  const remoteContext = remoteContextFromSettings(settings);
   const uninstalled = {};
   for (const target of targets) {
-    if (target === "codex") {
-      uninstalled[target] = await uninstallCodex({
-        tokenEnv: settings.tokenEnv,
-        codexBin: settings.codexBin,
-        marketplaceRoot: settings.marketplaceRoot
-      });
-    } else if (target === "gemini-cli") {
-      uninstalled[target] = await uninstallGemini({
-        geminiBin: settings.geminiBin,
-        extensionRoot: settings.geminiExtensionRoot
-      });
-    } else if (target === "kilo-code") {
-      uninstalled[target] = await uninstallKilo({
-        kiloConfigPath: settings.kiloConfigPath,
-        kiloBin: settings.kiloBin
-      });
-    } else if (target === "copilot") {
-      uninstalled[target] = await uninstallCopilot({
-        copilotBin: settings.copilotBin
-      });
-    } else if (target === "openclaw") {
-      uninstalled[target] = await uninstallOpenClaw({
-        orbBin: settings.orbBin,
-        vmName: settings.openclawVm,
-        vmUser: settings.openclawVmUser,
-        openclawBin: settings.openclawBin
-      });
-    } else if (target === "hermes") {
-      uninstalled[target] = await uninstallHermes({
-        orbBin: settings.orbBin,
-        vmName: settings.hermesVm,
-        vmUser: settings.hermesVmUser,
-        hermesBin: settings.hermesBin
-      });
-    } else if (target === "antigravity") {
-      uninstalled[target] = await uninstallAntigravity({
-        configPath: settings.antigravityConfigPath
-      });
+    try {
+      if (target === "codex") {
+        uninstalled[target] = await uninstallCodex({
+          tokenEnv: settings.tokenEnv,
+          codexBin: settings.codexBin,
+          marketplaceRoot: settings.marketplaceRoot
+        });
+      } else if (target === "gemini-cli") {
+        uninstalled[target] = remoteContext
+          ? await uninstallGeminiRemote({
+              context: remoteContext,
+              geminiBin: settings.geminiBin
+            })
+          : settings.executionLocation === "orb"
+          ? await uninstallGeminiOrb({
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              geminiBin: settings.geminiBin
+            })
+          : await uninstallGemini({
+              geminiBin: settings.geminiBin,
+              extensionRoot: settings.geminiExtensionRoot
+            });
+      } else if (target === "kilo-code") {
+        uninstalled[target] = remoteContext
+          ? await uninstallKiloRemote({
+              context: remoteContext,
+              kiloBin: settings.kiloBin
+            })
+          : settings.executionLocation === "orb"
+          ? await uninstallKiloOrb({
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              kiloBin: settings.kiloBin
+            })
+          : await uninstallKilo({
+              kiloConfigPath: settings.kiloConfigPath,
+              kiloBin: settings.kiloBin
+            });
+      } else if (target === "copilot") {
+        uninstalled[target] = remoteContext
+          ? await uninstallCopilotRemote({
+              context: remoteContext,
+              copilotBin: settings.copilotBin
+            })
+          : settings.executionLocation === "orb"
+          ? await uninstallCopilotOrb({
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              copilotBin: settings.copilotBin
+            })
+          : await uninstallCopilot({
+              copilotBin: settings.copilotBin
+            });
+      } else if (target === "openclaw") {
+        uninstalled[target] = remoteContext
+          ? await uninstallOpenClawRemote({
+              context: remoteContext,
+              openclawBin: settings.openclawBin
+            })
+          : await uninstallOpenClaw({
+              orbBin: settings.orbBin,
+              vmName: settings.openclawVm || settings.orbVm,
+              vmUser: settings.openclawVmUser || settings.orbUser,
+              openclawBin: settings.openclawBin
+            });
+      } else if (target === "hermes") {
+        uninstalled[target] = await uninstallHermes({
+          orbBin: settings.orbBin,
+          vmName: settings.hermesVm,
+          vmUser: settings.hermesVmUser,
+          hermesBin: settings.hermesBin
+        });
+      } else if (target === "antigravity") {
+        uninstalled[target] = await uninstallAntigravity({
+          configPath: settings.antigravityConfigPath
+        });
+      }
+      uninstalled[target] = {
+        ok: true,
+        status: "not-installed",
+        ...(uninstalled[target] || {})
+      };
+    } catch (error) {
+      uninstalled[target] = {
+        ok: false,
+        status: "failed",
+        uninstallMode: targetInstallMode(target),
+        error: error?.message || String(error)
+      };
     }
   }
-  const discoveryManifest = await writeDeviceUninstall({
-    baseUrl: settings.baseUrl,
-    uninstalled,
-    discoveryPath: discoveryRegistryPath(options)
-  });
+  const discoveryManifest = settings.baseUrl
+    ? await writeDeviceUninstall({
+        baseUrl: settings.baseUrl,
+        uninstalled,
+        discoveryPath: discoveryRegistryPath(mergedOptions)
+      })
+    : "";
   return {
-    ok: true,
+    ok: Object.values(uninstalled).every((value) => value?.ok !== false),
     packageName: packageJson.name,
     packageVersion: packageJson.version,
     targets,
+    baseUrl: settings.baseUrl,
     discoveryManifest,
     uninstalled
   };
+}
+
+async function uninstallSelectedCandidates({ options, selected }) {
+  const partials = [];
+  let discoveryManifest = "";
+  let baseUrl = installerOptions(options).baseUrl;
+  const uninstalled = {};
+  for (const candidate of selected) {
+    const partial = await uninstallTargets({
+      options,
+      targets: [candidate.target],
+      optionOverrides: candidate.optionOverrides || {}
+    });
+    partials.push({
+      target: candidate.target,
+      id: candidate.id,
+      label: candidate.label,
+      ok: partial.ok,
+      discoveryManifest: partial.discoveryManifest
+    });
+    discoveryManifest = partial.discoveryManifest || discoveryManifest;
+    baseUrl = partial.baseUrl || baseUrl;
+    Object.assign(uninstalled, partial.uninstalled || {});
+  }
+  return {
+    ok: partials.every((partial) => partial.ok),
+    packageName: packageJson.name,
+    packageVersion: packageJson.version,
+    targets: [...new Set(selected.map((candidate) => candidate.target))],
+    baseUrl,
+    discoveryManifest,
+    uninstalled,
+    partials
+  };
+}
+
+async function uninstallTuiCommand(options) {
+  const settings = installerOptions(options);
+  const scan = await scanInstallTargets(options);
+  const selected = await chooseUninstallCandidates({
+    candidates: scan.candidates,
+    baseUrl: settings.baseUrl
+  });
+  if (!selected || selected.length === 0) {
+    return {
+      ok: false,
+      cancelled: true,
+      packageName: packageJson.name,
+      packageVersion: packageJson.version,
+      reason: "Interactive uninstall cancelled."
+    };
+  }
+  const result = await uninstallSelectedCandidates({ options, selected });
+  return {
+    ...result,
+    interactive: true,
+    selected: selected.map((candidate) => ({
+      id: candidate.id,
+      target: candidate.target,
+      label: candidate.label,
+      detail: candidate.detail
+    }))
+  };
+}
+
+async function uninstallCommand(options) {
+  const resolvedOptions = await optionsWithStoredBaseUrl(options);
+  if (canUseUninstallTui(options)) {
+    return uninstallTuiCommand(resolvedOptions);
+  }
+  const targets = parseTargets(option(resolvedOptions, "target", "codex"));
+  return uninstallTargets({
+    options: resolvedOptions,
+    targets
+  });
 }
 
 async function registerCommand(options) {
@@ -3748,6 +4168,12 @@ function formatUninstallResult(result) {
   ];
   for (const target of result.targets || []) {
     const item = result.uninstalled?.[target] || {};
+    const failed = item.status === "failed" || item.ok === false || Boolean(item.error);
+    if (failed) {
+      lines.push(`  [FAIL] ${targetLabel(target)} (${target})`);
+      lines.push(`      Reason: ${item.error || "Uninstall failed."}`);
+      continue;
+    }
     lines.push(`  [${item.removedMcp === false ? "WARN" : "OK"}] ${targetLabel(target)} (${target})`);
   }
   if (result.discoveryManifest) {

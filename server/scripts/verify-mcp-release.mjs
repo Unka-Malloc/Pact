@@ -41,7 +41,7 @@ try {
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "agentstudio-mcp-connector");
-  assert.equal(result.packageVersion, "0.2.7");
+  assert.equal(result.packageVersion, "0.2.8");
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   const manifestText = JSON.stringify(manifest);
@@ -61,16 +61,21 @@ try {
   assert.equal(result.portableZipSha256, await sha256(result.portableZipPath));
   assert.ok(manifest.install.registryCommand.includes("npx agentstudio-mcp-connector@latest register"));
   assert.ok(manifest.install.githubOneLineCommand.includes("agentstudio-mcp-install.sh"));
+  assert.ok(manifest.install.githubOneLineUninstallCommand.includes("agentstudio-mcp-uninstall.sh"));
   assert.ok(manifest.install.githubOneLineCommand.startsWith("/bin/sh -c"));
+  assert.ok(manifest.install.githubOneLineUninstallCommand.startsWith("/bin/sh -c"));
   assert.ok(manifest.install.portableCommand.includes("agentstudio-mcp register"));
   assert.ok(manifest.install.interactiveInstallCommand.includes("agentstudio-mcp-connector@latest install"));
+  assert.ok(manifest.install.interactiveUninstallCommand.includes("agentstudio-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.clientInstallCommand.includes("--target <client>"));
   assert.equal(Object.hasOwn(manifest.install, "bulkInstallCommand"), false);
   assert.ok(manifest.install.uninstallCommand.includes("npx agentstudio-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.discoverCommand.includes("agentstudio-mcp-connector@latest discover-local"));
   assert.ok(manifest.install.scanCommand.includes("agentstudio-mcp-connector@latest scan"));
   assert.equal(manifest.bootstrap.scriptName, "agentstudio-mcp-install.sh");
+  assert.equal(manifest.bootstrap.uninstallScriptName, "agentstudio-mcp-uninstall.sh");
   assert.equal(manifest.bootstrap.startsInteractiveInstaller, true);
+  assert.equal(manifest.bootstrap.startsInteractiveUninstaller, true);
   assert.equal(manifest.bootstrap.supportsMultiSelect, true);
   assert.equal(manifest.bootstrap.strategy, "installed-node-source-tarball-with-portable-runtime-fallback");
   assert.equal(manifest.bootstrap.preferredDownload, path.basename(result.tarballPath));
@@ -78,12 +83,18 @@ try {
   assert.equal(manifest.bootstrap.sourceSizeBytes, manifest.connector.sizeBytes);
   assert.equal(manifest.bootstrap.fallbackSizeBytes, manifest.portable.zipSizeBytes);
   assert.equal(manifest.bootstrap.sha256, await sha256(result.bootstrapInstallerPath));
+  assert.equal(manifest.bootstrap.uninstallSha256, await sha256(result.bootstrapUninstallerPath));
   assert.ok(manifest.publish.npmCommand.includes("npm publish"));
   assert.ok(manifest.publish.releaseFiles.includes("agentstudio-mcp-install.sh"));
+  assert.ok(manifest.publish.releaseFiles.includes("agentstudio-mcp-uninstall.sh"));
   assert.equal(result.bootstrapInstallerSha256, await sha256(result.bootstrapInstallerPath));
+  assert.equal(result.bootstrapUninstallerSha256, await sha256(result.bootstrapUninstallerPath));
   assert.ok(result.githubOneLineCommand.includes("agentstudio-mcp-install.sh"));
+  assert.ok(result.githubOneLineUninstallCommand.includes("agentstudio-mcp-uninstall.sh"));
   await run("sh", ["-n", result.bootstrapInstallerPath]);
+  await run("sh", ["-n", result.bootstrapUninstallerPath]);
   const bootstrapScript = await fs.readFile(result.bootstrapInstallerPath, "utf8");
+  const bootstrapUninstallScript = await fs.readFile(result.bootstrapUninstallerPath, "utf8");
   assert.match(bootstrapScript, /curl -fL --retry 3/);
   assert.match(bootstrapScript, /node_is_usable/);
   assert.match(bootstrapScript, /install_from_source_tarball/);
@@ -96,6 +107,9 @@ try {
   assert.doesNotMatch(bootstrapScript, /register >\/dev\/null/);
   assert.match(bootstrapScript, /agentstudio-mcp" install/);
   assert.match(bootstrapScript, /node "\$target_dir\/bin\/agentstudio-mcp\.mjs" install/);
+  assert.match(bootstrapUninstallScript, /agentstudio-mcp" uninstall/);
+  assert.match(bootstrapUninstallScript, /node "\$target_dir\/bin\/agentstudio-mcp\.mjs" uninstall/);
+  assert.match(bootstrapUninstallScript, /client removal selector/);
 
   const list = await run("tar", ["-tzf", result.tarballPath]);
   assert.match(list.stdout, /package\/bin\/agentstudio-mcp\.mjs/);
@@ -107,6 +121,7 @@ try {
   assert.match(portableList.stdout, /runtime\/node/m);
   assert.match(portableList.stdout, /app\/bin\/agentstudio-mcp\.mjs/m);
   assert.match(portableList.stdout, /install\.command/m);
+  assert.match(portableList.stdout, /uninstall\.command/m);
   assert.doesNotMatch(portableList.stdout, /server\//);
 
   const zipList = await run("unzip", ["-l", result.portableZipPath]);
@@ -114,6 +129,7 @@ try {
   assert.match(zipList.stdout, /runtime\/node/m);
   assert.match(zipList.stdout, /app\/bin\/agentstudio-mcp\.mjs/m);
   assert.match(zipList.stdout, /install\.command/m);
+  assert.match(zipList.stdout, /uninstall\.command/m);
   assert.doesNotMatch(zipList.stdout, /server\//);
 
   const extractDir = path.join(tempDir, "extract");
@@ -122,12 +138,14 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.2.7");
+  assert.equal(versionPayload.packageVersion, "0.2.8");
   assert.equal(versionPayload.stableToolName, "agentstudio.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"), "help"]);
   assert.match(help.stdout, /agentstudio-mcp register/);
   assert.match(help.stdout, /agentstudio-mcp install/);
+  assert.match(help.stdout, /agentstudio-mcp uninstall/);
   assert.match(help.stdout, /multi-select menu/);
+  assert.match(help.stdout, /multi-select removal menu/);
   assert.match(help.stdout, /agentstudio-mcp scan --json/);
   assert.match(help.stdout, /agentstudio-mcp discover-local/);
   assert.match(help.stdout, /agentstudio-mcp server-config --set/);
@@ -156,6 +174,47 @@ try {
   assert.equal(scanPayload.candidates.some((candidate) => candidate.target === "codex"), true);
   assert.equal(scanPayload.serverDiscovery.ok, false);
 
+  const uninstallHome = path.join(tempDir, "uninstall-home");
+  const kiloConfigPath = path.join(uninstallHome, ".config", "kilo", "kilo.json");
+  await fs.mkdir(path.dirname(kiloConfigPath), { recursive: true });
+  await fs.writeFile(kiloConfigPath, JSON.stringify({
+    mcp: {
+      agentstudio: { type: "remote", url: "http://example.invalid/mcp" },
+      other: { type: "remote", url: "http://other.invalid/mcp" }
+    }
+  }, null, 2));
+  const fakeKilo = path.join(tempDir, "fake-kilo");
+  await fs.writeFile(fakeKilo, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"list\" ]; then",
+    "  printf 'other\\n'",
+    "  exit 0",
+    "fi",
+    "exit 0",
+    ""
+  ].join("\n"), { mode: 0o755 });
+  const uninstall = await run("node", [
+    path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"),
+    "uninstall",
+    "--target",
+    "kilo-code",
+    "--kilo-config",
+    kiloConfigPath,
+    "--kilo-bin",
+    fakeKilo,
+    "--json"
+  ], {
+    env: {
+      HOME: uninstallHome
+    }
+  });
+  const uninstallPayload = JSON.parse(uninstall.stdout);
+  assert.equal(uninstallPayload.ok, true);
+  assert.equal(uninstallPayload.uninstalled["kilo-code"].status, "not-installed");
+  const kiloConfig = JSON.parse(await fs.readFile(kiloConfigPath, "utf8"));
+  assert.equal(Object.hasOwn(kiloConfig.mcp, "agentstudio"), false);
+  assert.equal(Object.hasOwn(kiloConfig.mcp, "other"), true);
+
   const layeredHome = path.join(tempDir, "layered-home");
   const fakeNvmBin = path.join(layeredHome, ".nvm", "versions", "node", "v99.0.0", "bin");
   await fs.mkdir(fakeNvmBin, { recursive: true });
@@ -169,6 +228,20 @@ try {
     "exit 1",
     ""
   ].join("\n"), { mode: 0o755 });
+  const plainAppGemini = path.join(layeredHome, "Applications", "Plain.app", "Contents", "Resources", "gemini");
+  const agentAppGemini = path.join(layeredHome, "Applications", "Gemini Agent.app", "Contents", "Resources", "gemini");
+  for (const appGemini of [plainAppGemini, agentAppGemini]) {
+    await fs.mkdir(path.dirname(appGemini), { recursive: true });
+    await fs.writeFile(appGemini, [
+      "#!/bin/sh",
+      "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+      "  printf 'Usage: gemini mcp add list remove\\n'",
+      "  exit 0",
+      "fi",
+      "exit 1",
+      ""
+    ].join("\n"), { mode: 0o755 });
+  }
   const layeredScan = await run(process.execPath, [
     path.join(extractDir, "package", "bin", "agentstudio-mcp.mjs"),
     "scan",
@@ -196,6 +269,13 @@ try {
     candidate.target === "gemini-cli" && candidate.optionOverrides?.["execution-location"] === "local"
   );
   assert.equal(layeredGemini?.optionOverrides?.["gemini-bin"], fakeGemini);
+  const layeredGeminiBins = layeredScanPayload.candidates
+    .filter((candidate) => candidate.target === "gemini-cli")
+    .map((candidate) => candidate.optionOverrides?.["gemini-bin"] || "");
+  assert.equal(layeredGeminiBins.includes(plainAppGemini), false);
+  if (process.platform === "darwin") {
+    assert.equal(layeredGeminiBins.includes(agentAppGemini), true);
+  }
 
   const fakeOrb = path.join(tempDir, "fake-orb");
   await fs.writeFile(fakeOrb, [
@@ -349,7 +429,7 @@ try {
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.2.7");
+  assert.equal(portablePayload.packageVersion, "0.2.8");
   const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "agentstudio-mcp"), [
     "server-config",
     "--reset",
@@ -370,8 +450,9 @@ try {
   const portableZipVersion = await run(path.join(zipRoot, "agentstudio-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "agentstudio-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.2.7");
+  assert.equal(portableZipPayload.packageVersion, "0.2.8");
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
+  assert.equal(await fs.access(path.join(zipRoot, "uninstall.command")).then(() => true), true);
 
   console.log("mcp-release verification passed");
 } finally {
