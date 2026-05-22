@@ -574,7 +574,10 @@ export const FEATURE_MANIFEST = Object.freeze({
       },
       package: {
         includePaths: ["server/platform/specialized/knowledge/storage/knowledge-core", "docs/PROTOCOLS.md"],
-        removePaths: ["server/platform/specialized/knowledge/invocation/knowledge-evolution-runtime"]
+        removePaths: [
+          "server/platform/specialized/knowledge/invocation/knowledge-evolution-runtime",
+          "server/scripts/verify-knowledge-distillation-optimization.mjs"
+        ]
       },
       tests: { suites: ["server:verify:knowledge-evolution"] }
     },
@@ -620,6 +623,7 @@ export const FEATURE_MANIFEST = Object.freeze({
           "server/protocols/agent-sync",
           "server/scripts/verify-agent-gateway.mjs",
           "server/scripts/verify-agent-gateway-compaction.mjs",
+          "server/scripts/verify-model-routing.mjs",
           "server/scripts/verify-agent-sync.mjs"
         ]
       },
