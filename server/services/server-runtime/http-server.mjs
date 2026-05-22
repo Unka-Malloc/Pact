@@ -58,6 +58,7 @@ import {
   shouldProxyRegisteredApiRequest
 } from "../../platform/common/operation-dispatcher/operation-dispatcher.mjs";
 import { listInterfaceCatalog } from "../../platform/common/operation-dispatcher/operation-registry.mjs";
+import { handleAgentStudioMcpHttpRequest } from "../../platform/common/mcp/http-mcp-adapter.mjs";
 import { createJobsController } from "../../platform/common/console/http/controllers/jobs-controller.mjs";
 import { createSystemController } from "../../platform/common/console/http/controllers/system-controller.mjs";
 import { buildConsoleState } from "../../platform/common/console/http/api-facade.mjs";
@@ -661,6 +662,22 @@ export async function startHttpServer({
       });
       const requestBody =
         method === "GET" || method === "HEAD" ? Buffer.alloc(0) : await readRequestBody(request);
+
+      if (
+        await handleAgentStudioMcpHttpRequest({
+          request,
+          response,
+          requestBody,
+          method,
+          url,
+          toolManagementPlatform,
+          listenUrl,
+          discoveryState,
+          logger: runtimeLogger
+        })
+      ) {
+        return;
+      }
 
       if (method === "POST" && url.pathname === "/api/rpc") {
         await dispatchRpcOperation({
