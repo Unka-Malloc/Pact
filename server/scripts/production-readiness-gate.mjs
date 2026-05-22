@@ -140,7 +140,7 @@ const GATES = [
     owner: "agent-runtime",
     coverage: [],
     commands: [["npm", "run", "server:verify:model-routing"]],
-    nextStep: "补齐 agentstudio.model-routing.v1、预算、fallback chain、熔断、prompt version 和成本台账。"
+    nextStep: "补齐 pact.model-routing.v1、预算、fallback chain、熔断、prompt version 和成本台账。"
   },
   {
     id: "capability-package-lifecycle",
@@ -149,7 +149,7 @@ const GATES = [
     owner: "tooling-governance",
     coverage: [],
     commands: [["npm", "run", "server:verify:capability-package-lifecycle"]],
-    nextStep: "补齐 agentstudio.tool-package.v1、agentstudio.skill-registry.v1、签名、依赖、审批、回滚和废弃策略。"
+    nextStep: "补齐 pact.tool-package.v1、pact.skill-registry.v1、签名、依赖、审批、回滚和废弃策略。"
   },
   {
     id: "data-connector-governance",
@@ -158,7 +158,7 @@ const GATES = [
     owner: "knowledge-connectors",
     coverage: [],
     commands: [["npm", "run", "server:verify:data-connector-governance"]],
-    nextStep: "补齐 agentstudio.data-connector-governance.v1、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载策略。"
+    nextStep: "补齐 pact.data-connector-governance.v1、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载策略。"
   },
   {
     id: "performance-capacity",
@@ -167,7 +167,7 @@ const GATES = [
     owner: "production-readiness",
     coverage: [],
     commands: [["npm", "run", "server:verify:performance-capacity"]],
-    nextStep: "补齐 agentstudio.performance-capacity.v1、容量目标、benchmark runner、失败注入和报告阈值。"
+    nextStep: "补齐 pact.performance-capacity.v1、容量目标、benchmark runner、失败注入和报告阈值。"
   },
   {
     id: "module-ecosystem",
@@ -176,7 +176,7 @@ const GATES = [
     owner: "module-management",
     coverage: [],
     commands: [["npm", "run", "server:verify:module-ecosystem"]],
-    nextStep: "补齐 agentstudio.module-ecosystem.v1、create-module、contract test、示例模块、CI 模板和 schema docs。"
+    nextStep: "补齐 pact.module-ecosystem.v1、create-module、contract test、示例模块、CI 模板和 schema docs。"
   },
   {
     id: "workspace-governance",
@@ -233,7 +233,7 @@ const GATES = [
       ["npm", "run", "server:verify:trace-context"],
       ["npm", "run", "server:verify:runtime-logging"]
     ],
-    nextStep: "补齐 agentstudio.trace.v1、span 关联、权限裁决引用、成本字段和 OpenTelemetry 导出映射。"
+    nextStep: "补齐 pact.trace.v1、span 关联、权限裁决引用、成本字段和 OpenTelemetry 导出映射。"
   },
   {
     id: "durable-workflow",
@@ -574,7 +574,7 @@ async function main() {
   const overallStatus = summary.blockedP0 || missing.length ? "blocked" : "pass";
   const report = {
     schemaVersion: 1,
-    reportType: "agentstudio.production-readiness.v1",
+    reportType: "pact.production-readiness.v1",
     runId,
     generatedAt: new Date().toISOString(),
     mode: options.quick ? "quick" : "full",

@@ -27,7 +27,7 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage:",
-    "  node server/scripts/agentstudio-create-module.mjs --template documentParser --module-id acme.parser --target ./modules/acme-parser",
+    "  node server/scripts/pact-create-module.mjs --template documentParser --module-id acme.parser --target ./modules/acme-parser",
     "",
     "Options:",
     "  --list                 List available templates",

@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PRODUCTION_HEALTH_REPORT_TYPE = "agentstudio.production-health.v1";
-export const PRODUCTION_READINESS_REPORT_TYPE = "agentstudio.production-readiness.v1";
+export const PRODUCTION_HEALTH_REPORT_TYPE = "pact.production-health.v1";
+export const PRODUCTION_READINESS_REPORT_TYPE = "pact.production-readiness.v1";
 export const DEFAULT_PRODUCTION_READINESS_REPORT_ROOT = "reports/production-readiness";
 
 const defaultRepoRoot = path.resolve(fileURLToPath(new URL("../../../..", import.meta.url)));

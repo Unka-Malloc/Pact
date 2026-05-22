@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class AgentStudioColors {
+class PactColors {
   static const background = Color(0xFFF8F9FF);
   static const surface = Color(0xFFFFFFFF);
   static const surfaceLow = Color(0xFFEEF4FF);
@@ -17,51 +17,51 @@ class AgentStudioColors {
   static const error = Color(0xFFBA1A1A);
 }
 
-ThemeData buildAgentStudioTheme() {
+ThemeData buildPactTheme() {
   final base = ThemeData.light(useMaterial3: true);
   final textTheme = base.textTheme.apply(
-    bodyColor: AgentStudioColors.text,
-    displayColor: AgentStudioColors.text,
+    bodyColor: PactColors.text,
+    displayColor: PactColors.text,
   );
 
   return base.copyWith(
-    scaffoldBackgroundColor: AgentStudioColors.background,
+    scaffoldBackgroundColor: PactColors.background,
     textTheme: textTheme,
     colorScheme: const ColorScheme.light(
-      surface: AgentStudioColors.surface,
-      primary: AgentStudioColors.primary,
+      surface: PactColors.surface,
+      primary: PactColors.primary,
       onPrimary: Colors.white,
-      secondary: AgentStudioColors.primaryStrong,
+      secondary: PactColors.primaryStrong,
       onSecondary: Colors.white,
-      error: AgentStudioColors.error,
+      error: PactColors.error,
       onError: Colors.white,
-      onSurface: AgentStudioColors.text,
-      surfaceContainerHighest: AgentStudioColors.surfaceHighest,
+      onSurface: PactColors.text,
+      surfaceContainerHighest: PactColors.surfaceHighest,
     ),
     cardTheme: CardThemeData(
-      color: AgentStudioColors.surface,
+      color: PactColors.surface,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AgentStudioColors.line),
+        side: const BorderSide(color: PactColors.line),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AgentStudioColors.surface,
+      fillColor: PactColors.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AgentStudioColors.line),
+        borderSide: const BorderSide(color: PactColors.line),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AgentStudioColors.line),
+        borderSide: const BorderSide(color: PactColors.line),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AgentStudioColors.primary, width: 1.2),
+        borderSide: const BorderSide(color: PactColors.primary, width: 1.2),
       ),
     ),
   );

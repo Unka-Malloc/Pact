@@ -3,13 +3,13 @@
   "label": "Document Ingestion Agent",
   "agentType": "ingestion",
   "toolsets": [
-    "agentstudio.document.parse",
-    "agentstudio.document.convert",
-    "agentstudio.knowledge.write"
+    "pact.document.parse",
+    "pact.document.convert",
+    "pact.knowledge.write"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "agentstudio.admin"
+    "pact.admin"
   ],
   "maxRisk": "safe_write",
   "approvalPolicy": "deny_repair",

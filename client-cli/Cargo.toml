@@ -1,5 +1,5 @@
 [package]
-name = "agentstudio-client-native"
+name = "pact-client-native"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
@@ -25,12 +25,12 @@ ureq = { version = "2.10", features = ["json"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
 
 [[bin]]
-name = "agentstudio-clientd"
-path = "src/bin/agentstudio-clientd.rs"
+name = "pact-clientd"
+path = "src/bin/pact-clientd.rs"
 
 [[bin]]
-name = "agentstudio-client"
-path = "src/bin/agentstudio-client.rs"
+name = "pact-client"
+path = "src/bin/pact-client.rs"
 
 [profile.release]
 codegen-units = 1

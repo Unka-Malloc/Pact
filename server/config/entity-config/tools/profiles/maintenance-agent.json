@@ -3,14 +3,14 @@
   "label": "Maintenance Agent",
   "agentType": "maintenance",
   "toolsets": [
-    "agentstudio.runtime.read",
-    "agentstudio.storage.read",
-    "agentstudio.jobs.read",
-    "agentstudio.knowledge.maintain"
+    "pact.runtime.read",
+    "pact.storage.read",
+    "pact.jobs.read",
+    "pact.knowledge.maintain"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "agentstudio.admin"
+    "pact.admin"
   ],
   "maxRisk": "repair_write",
   "approvalPolicy": "confirm_repair",

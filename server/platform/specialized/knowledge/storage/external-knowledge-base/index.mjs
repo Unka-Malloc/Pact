@@ -8,8 +8,8 @@ import {
 } from "../knowledge-core/index.mjs";
 import { createEmbeddingRuntime } from "../../retrieval/embedding-runtime/index.mjs";
 
-export const EXTERNAL_KNOWLEDGE_ADAPTER_PROTOCOL_VERSION = "agentstudio.external-knowledge-adapter.v1";
-export const DEFAULT_EXTERNAL_COLLECTION = "agentstudio_knowledge";
+export const EXTERNAL_KNOWLEDGE_ADAPTER_PROTOCOL_VERSION = "pact.external-knowledge-adapter.v1";
+export const DEFAULT_EXTERNAL_COLLECTION = "pact_knowledge";
 export const DEFAULT_EXTERNAL_DIMENSION = 128;
 
 function nowIso() {
@@ -106,42 +106,42 @@ function readRuntimeConfig({ runtimeOptions = {}, settings = {} } = {}) {
     {};
   const provider = String(
     input.provider ||
-      process.env.AGENTSTUDIO_EXTERNAL_KB_PROVIDER ||
-      process.env.AGENTSTUDIO_EXTERNAL_KNOWLEDGE_PROVIDER ||
+      process.env.PACT_EXTERNAL_KB_PROVIDER ||
+      process.env.PACT_EXTERNAL_KNOWLEDGE_PROVIDER ||
       ""
   ).trim().toLowerCase();
   const endpoint = String(
     input.endpoint ||
       input.url ||
-      process.env.AGENTSTUDIO_EXTERNAL_KB_URL ||
-      process.env.AGENTSTUDIO_EXTERNAL_KNOWLEDGE_URL ||
+      process.env.PACT_EXTERNAL_KB_URL ||
+      process.env.PACT_EXTERNAL_KNOWLEDGE_URL ||
       ""
   ).trim();
   return {
     enabled: input.enabled !== false && Boolean(provider && provider !== "disabled" && provider !== "none"),
     provider: provider || "disabled",
     endpoint,
-    apiKey: String(input.apiKey || process.env.AGENTSTUDIO_EXTERNAL_KB_API_KEY || "").trim(),
-    username: String(input.username || process.env.AGENTSTUDIO_EXTERNAL_KB_USERNAME || "").trim(),
-    password: String(input.password || process.env.AGENTSTUDIO_EXTERNAL_KB_PASSWORD || "").trim(),
+    apiKey: String(input.apiKey || process.env.PACT_EXTERNAL_KB_API_KEY || "").trim(),
+    username: String(input.username || process.env.PACT_EXTERNAL_KB_USERNAME || "").trim(),
+    password: String(input.password || process.env.PACT_EXTERNAL_KB_PASSWORD || "").trim(),
     collection: String(
       input.collection ||
         input.index ||
-        process.env.AGENTSTUDIO_EXTERNAL_KB_COLLECTION ||
-        process.env.AGENTSTUDIO_EXTERNAL_KB_INDEX ||
+        process.env.PACT_EXTERNAL_KB_COLLECTION ||
+        process.env.PACT_EXTERNAL_KB_INDEX ||
         DEFAULT_EXTERNAL_COLLECTION
     ).trim(),
     connectionString: String(
       input.connectionString ||
         input.databaseUrl ||
-        process.env.AGENTSTUDIO_EXTERNAL_KB_CONNECTION_STRING ||
+        process.env.PACT_EXTERNAL_KB_CONNECTION_STRING ||
         process.env.DATABASE_URL ||
         ""
     ).trim(),
-    dimension: normalizeDimension(input.dimension || process.env.AGENTSTUDIO_EXTERNAL_KB_DIMENSION),
-    requestTimeoutMs: normalizeLimit(input.requestTimeoutMs || process.env.AGENTSTUDIO_EXTERNAL_KB_TIMEOUT_MS, 15000, 120000),
+    dimension: normalizeDimension(input.dimension || process.env.PACT_EXTERNAL_KB_DIMENSION),
+    requestTimeoutMs: normalizeLimit(input.requestTimeoutMs || process.env.PACT_EXTERNAL_KB_TIMEOUT_MS, 15000, 120000),
     verifyTls: input.verifyTls !== false,
-    batchSize: normalizeLimit(input.batchSize || process.env.AGENTSTUDIO_EXTERNAL_KB_BATCH_SIZE, 64, 512)
+    batchSize: normalizeLimit(input.batchSize || process.env.PACT_EXTERNAL_KB_BATCH_SIZE, 64, 512)
   };
 }
 
@@ -528,17 +528,17 @@ function recordsFromDocumentItem({ item = {}, embeddingRuntime }) {
 
 function externalPayload(record = {}) {
   return {
-    agentstudio_record_id: record.recordId,
-    agentstudio_external_id: record.externalId,
-    agentstudio_target_type: record.targetType,
-    agentstudio_target_id: record.targetId,
-    agentstudio_document_id: record.documentId,
-    agentstudio_section_id: record.sectionId || "",
-    agentstudio_block_id: record.blockId || "",
-    agentstudio_asset_id: record.assetId || "",
-    agentstudio_batch_id: record.batchId || "",
-    agentstudio_source_id: record.sourceId || "",
-    agentstudio_deleted: false,
+    pact_record_id: record.recordId,
+    pact_external_id: record.externalId,
+    pact_target_type: record.targetType,
+    pact_target_id: record.targetId,
+    pact_document_id: record.documentId,
+    pact_section_id: record.sectionId || "",
+    pact_block_id: record.blockId || "",
+    pact_asset_id: record.assetId || "",
+    pact_batch_id: record.batchId || "",
+    pact_source_id: record.sourceId || "",
+    pact_deleted: false,
     title: record.title || "",
     text: record.text || "",
     snippet: record.snippet || "",
@@ -556,7 +556,7 @@ function evidenceMarkdown(evidence = {}) {
   const body = block.text || block.snippet || asset.caption || asset.ocrText || asset.text || evidence.snippet || "";
   return [
     "---",
-    "agentstudio_knowledge:",
+    "pact_knowledge:",
     `  protocolVersion: ${KNOWLEDGE_PROTOCOL_VERSION}`,
     `  evidenceId: ${evidence.evidenceId}`,
     `  source: external-knowledge-base`,
@@ -720,17 +720,17 @@ function createQdrantClient(config = {}) {
 
   function qdrantFilter({ batchId = "", sourceIds = [] } = {}) {
     const must = [
-      { key: "agentstudio_deleted", match: { value: false } }
+      { key: "pact_deleted", match: { value: false } }
     ];
     if (batchId) {
-      must.push({ key: "agentstudio_batch_id", match: { value: batchId } });
+      must.push({ key: "pact_batch_id", match: { value: batchId } });
     }
     const allowedSourceIds = asArray(sourceIds).filter(Boolean).map(String);
     if (allowedSourceIds.length === 1) {
-      must.push({ key: "agentstudio_source_id", match: { value: allowedSourceIds[0] } });
+      must.push({ key: "pact_source_id", match: { value: allowedSourceIds[0] } });
     }
     if (allowedSourceIds.length > 1) {
-      must.push({ key: "agentstudio_source_id", match: { any: allowedSourceIds } });
+      must.push({ key: "pact_source_id", match: { any: allowedSourceIds } });
     }
     return { must };
   }
@@ -778,8 +778,8 @@ function createQdrantClient(config = {}) {
         collection,
         query,
         results: asArray(payload.result).map((item) => ({
-          recordId: item.payload?.agentstudio_record_id || "",
-          externalId: String(item.id || item.payload?.agentstudio_external_id || ""),
+          recordId: item.payload?.pact_record_id || "",
+          externalId: String(item.id || item.payload?.pact_external_id || ""),
           score: Number(item.score || 0),
           backendTrace: { providerId: "qdrant", collection, id: item.id }
         })).filter((item) => item.recordId || item.externalId)
@@ -861,10 +861,10 @@ function createOpenSearchClient(config = {}) {
                 type: "knn_vector",
                 dimension: config.dimension || DEFAULT_EXTERNAL_DIMENSION
               },
-              agentstudio_batch_id: { type: "keyword" },
-              agentstudio_source_id: { type: "keyword" },
-              agentstudio_record_id: { type: "keyword" },
-              agentstudio_deleted: { type: "boolean" }
+              pact_batch_id: { type: "keyword" },
+              pact_source_id: { type: "keyword" },
+              pact_record_id: { type: "keyword" },
+              pact_deleted: { type: "boolean" }
             }
           }
         })
@@ -875,17 +875,17 @@ function createOpenSearchClient(config = {}) {
   }
 
   function filterClauses({ batchId = "", sourceIds = [] } = {}) {
-    const filters = [{ term: { agentstudio_deleted: false } }];
-    if (batchId) filters.push({ term: { agentstudio_batch_id: batchId } });
+    const filters = [{ term: { pact_deleted: false } }];
+    if (batchId) filters.push({ term: { pact_batch_id: batchId } });
     const allowedSourceIds = asArray(sourceIds).filter(Boolean).map(String);
-    if (allowedSourceIds.length) filters.push({ terms: { agentstudio_source_id: allowedSourceIds } });
+    if (allowedSourceIds.length) filters.push({ terms: { pact_source_id: allowedSourceIds } });
     return filters;
   }
 
   function hitsFromOpenSearch(payload = {}, scoreWeight = 1, reason = "opensearch") {
     return asArray(payload.hits?.hits).map((hit) => ({
-      recordId: hit._source?.agentstudio_record_id || hit._id || "",
-      externalId: hit._source?.agentstudio_external_id || hit._id || "",
+      recordId: hit._source?.pact_record_id || hit._id || "",
+      externalId: hit._source?.pact_external_id || hit._id || "",
       score: Number(hit._score || 0) * scoreWeight,
       backendTrace: { providerId: "opensearch", index, id: hit._id, reason }
     })).filter((item) => item.recordId || item.externalId);
@@ -1089,7 +1089,7 @@ function createPgVectorClient(config = {}) {
     const resolvedPool = await getPool();
     await resolvedPool.query("CREATE EXTENSION IF NOT EXISTS vector");
     await resolvedPool.query(`
-      CREATE TABLE IF NOT EXISTS agentstudio_external_knowledge (
+      CREATE TABLE IF NOT EXISTS pact_external_knowledge (
         record_id TEXT PRIMARY KEY,
         external_id TEXT NOT NULL,
         target_type TEXT NOT NULL,
@@ -1110,10 +1110,10 @@ function createPgVectorClient(config = {}) {
         deleted_at TIMESTAMPTZ
       )
     `);
-    await resolvedPool.query("CREATE INDEX IF NOT EXISTS idx_agentstudio_external_knowledge_batch ON agentstudio_external_knowledge(batch_id) WHERE deleted_at IS NULL");
-    await resolvedPool.query("CREATE INDEX IF NOT EXISTS idx_agentstudio_external_knowledge_source ON agentstudio_external_knowledge(source_id) WHERE deleted_at IS NULL");
-    await resolvedPool.query("CREATE INDEX IF NOT EXISTS idx_agentstudio_external_knowledge_fts ON agentstudio_external_knowledge USING GIN (to_tsvector('simple', title || ' ' || text || ' ' || snippet))");
-    return { ok: true, providerId: "pgvector", table: "agentstudio_external_knowledge" };
+    await resolvedPool.query("CREATE INDEX IF NOT EXISTS idx_pact_external_knowledge_batch ON pact_external_knowledge(batch_id) WHERE deleted_at IS NULL");
+    await resolvedPool.query("CREATE INDEX IF NOT EXISTS idx_pact_external_knowledge_source ON pact_external_knowledge(source_id) WHERE deleted_at IS NULL");
+    await resolvedPool.query("CREATE INDEX IF NOT EXISTS idx_pact_external_knowledge_fts ON pact_external_knowledge USING GIN (to_tsvector('simple', title || ' ' || text || ' ' || snippet))");
+    return { ok: true, providerId: "pgvector", table: "pact_external_knowledge" };
   }
 
   return {
@@ -1126,7 +1126,7 @@ function createPgVectorClient(config = {}) {
       for (const record of records) {
         await resolvedPool.query(
           `
-            INSERT INTO agentstudio_external_knowledge (
+            INSERT INTO pact_external_knowledge (
               record_id, external_id, target_type, target_id, document_id, section_id, block_id,
               asset_id, batch_id, source_id, title, text, snippet, payload, metadata, embedding, updated_at, deleted_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16::vector,now(),NULL)
@@ -1193,7 +1193,7 @@ function createPgVectorClient(config = {}) {
             external_id,
             1 - (embedding <=> $1::vector) +
               ts_rank_cd(to_tsvector('simple', title || ' ' || text || ' ' || snippet), plainto_tsquery('simple', $2)) AS score
-          FROM agentstudio_external_knowledge
+          FROM pact_external_knowledge
           WHERE ${clauses.join(" AND ")}
           ORDER BY score DESC
           LIMIT $${params.length}
@@ -1207,7 +1207,7 @@ function createPgVectorClient(config = {}) {
           recordId: row.record_id,
           externalId: row.external_id,
           score: Number(row.score || 0),
-          backendTrace: { providerId: "pgvector", table: "agentstudio_external_knowledge" }
+          backendTrace: { providerId: "pgvector", table: "pact_external_knowledge" }
         }))
       };
     },
@@ -1216,7 +1216,7 @@ function createPgVectorClient(config = {}) {
       await ensureSchema();
       const resolvedPool = await getPool();
       const result = await resolvedPool.query(
-        "UPDATE agentstudio_external_knowledge SET deleted_at = now(), updated_at = now() WHERE batch_id = $1 AND deleted_at IS NULL",
+        "UPDATE pact_external_knowledge SET deleted_at = now(), updated_at = now() WHERE batch_id = $1 AND deleted_at IS NULL",
         [batchId]
       );
       return { providerId: "pgvector", deleted: result.rowCount || 0 };

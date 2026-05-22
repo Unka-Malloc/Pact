@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "dependencyType": "agentstudio.agent-skill.dependencies",
+  "dependencyType": "pact.agent-skill.dependencies",
   "runtimeModules": [
     "KnowledgeAgentSkillRuntime",
     "EvidenceSufficiencyGate",
@@ -8,15 +8,15 @@
   ],
   "requiredTools": [
     {
-      "toolId": "agentstudio.knowledge.search",
+      "toolId": "pact.knowledge.search",
       "reason": "Coarse-to-fine retrieval"
     },
     {
-      "toolId": "agentstudio.knowledge.evidence",
+      "toolId": "pact.knowledge.evidence",
       "reason": "Evidence opening and citation validation"
     },
     {
-      "toolId": "agentstudio.knowledge.renderMarkdown",
+      "toolId": "pact.knowledge.renderMarkdown",
       "reason": "Evidence pack rendering"
     }
   ],

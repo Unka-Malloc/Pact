@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-export const WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION = "agentstudio.workspace-contribution.v1";
+export const WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION = "pact.workspace-contribution.v1";
 
 export const CONTRIBUTION_STATES = Object.freeze([
   "submitted",

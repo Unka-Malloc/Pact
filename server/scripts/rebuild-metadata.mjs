@@ -4,7 +4,7 @@ import { rebuildMetadataStore } from "../platform/common/storage/rebuild-metadat
 
 function parseArgs(argv) {
   const args = {
-    userDataPath: path.resolve(process.cwd(), ".agentstudio-server-data")
+    userDataPath: path.resolve(process.cwd(), ".pact-server-data")
   };
 
   for (let index = 0; index < argv.length; index += 1) {

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const ASSET_LINEAGE_PROTOCOL_VERSION = "agentstudio.asset-lineage.v1";
+export const ASSET_LINEAGE_PROTOCOL_VERSION = "pact.asset-lineage.v1";
 
 const REGISTRY_FILE = path.join("asset-lineage", "registry.json");
 

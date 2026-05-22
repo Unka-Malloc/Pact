@@ -14,7 +14,7 @@ function buildFixture() {
   const view = createDerivedKnowledgeView({
     upstreamKnowledgeRef: "upstream://kb/customer-renewal",
     upstreamPolicyRef: "upstream-policy://source/renewal",
-    derivedViewRef: "derived://agentstudio/customer-renewal/full",
+    derivedViewRef: "derived://pact/customer-renewal/full",
     derivedKnowledgeSpace: "workspace-a-library",
     dataClass: "customer-confidential",
     sensitivity: "restricted",

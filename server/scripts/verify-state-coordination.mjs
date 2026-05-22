@@ -10,7 +10,7 @@ import { loadMountConfig, saveMountConfig } from "../platform/common/module-mana
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 async function makeTempRoot() {
-  return fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-state-coordination-"));
+  return fs.mkdtemp(path.join(os.tmpdir(), "pact-state-coordination-"));
 }
 
 function operation(id) {

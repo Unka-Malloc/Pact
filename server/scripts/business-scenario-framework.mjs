@@ -13,7 +13,7 @@ import { readInitialOwnerCredentials } from "./test-auth-helper.mjs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "../..");
-const agentstudioCliPath = path.join(repoRoot, "server", "scripts", "agentstudio.mjs");
+const pactCliPath = path.join(repoRoot, "server", "scripts", "pact.mjs");
 const consoleAuthCliPath = path.join(repoRoot, "server", "scripts", "console-auth.mjs");
 const defaultReportPath = path.join(repoRoot, "build", "test-reports", "business-scenarios.json");
 
@@ -45,7 +45,7 @@ function cookieHeaderFrom(response) {
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
       : String(response.headers.get("set-cookie") || "")
-          .split(/,(?=\s*agentstudio_)/)
+          .split(/,(?=\s*pact_)/)
           .filter(Boolean);
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
@@ -113,9 +113,9 @@ function findPassword(output) {
 
 function authEnv(auth) {
   return {
-    AGENTSTUDIO_CONSOLE_COOKIE: auth?.cookie || "",
-    AGENTSTUDIO_CONSOLE_CSRF: auth?.csrf || "",
-    AGENTSTUDIO_SAFETY_CONFIRM: "1"
+    PACT_CONSOLE_COOKIE: auth?.cookie || "",
+    PACT_CONSOLE_CSRF: auth?.csrf || "",
+    PACT_SAFETY_CONFIRM: "1"
   };
 }
 
@@ -208,7 +208,7 @@ export function parseBusinessScenarioArgs(argv) {
 }
 
 export function printBusinessScenarioHelp() {
-  console.log(`AgentStudio server business scenarios
+  console.log(`Pact server business scenarios
 
 Usage:
   node server/scripts/verify-business-scenarios.mjs [--list]
@@ -348,8 +348,8 @@ export async function createBusinessHarness(options = {}) {
   const scenarioId = scenarioIdPath(options.scenarioId || "scenario");
   const userDataPath =
     options.userDataPath ||
-    (await fs.mkdtemp(path.join(os.tmpdir(), `agentstudio-business-${scenarioId}-`)));
-  const preserve = process.env.AGENTSTUDIO_KEEP_BUSINESS_SCENARIO_DATA === "1";
+    (await fs.mkdtemp(path.join(os.tmpdir(), `pact-business-${scenarioId}-`)));
+  const preserve = process.env.PACT_KEEP_BUSINESS_SCENARIO_DATA === "1";
   async function startServerInstance() {
     return startHttpServer({
       userDataPath,
@@ -380,11 +380,11 @@ export async function createBusinessHarness(options = {}) {
     }
     const normalizedMethod = String(method || "GET").toUpperCase();
     if (!["GET", "HEAD", "OPTIONS"].includes(normalizedMethod)) {
-      if (auth?.csrf && !headers["x-agentstudio-csrf"]) {
-        headers["x-agentstudio-csrf"] = auth.csrf;
+      if (auth?.csrf && !headers["x-pact-csrf"]) {
+        headers["x-pact-csrf"] = auth.csrf;
       }
-      if (requestOptions.safetyConfirm !== false && !headers["x-agentstudio-safety-confirm"]) {
-        headers["x-agentstudio-safety-confirm"] = "true";
+      if (requestOptions.safetyConfirm !== false && !headers["x-pact-safety-confirm"]) {
+        headers["x-pact-safety-confirm"] = "true";
       }
     }
     let body = requestOptions.body;
@@ -535,7 +535,7 @@ export async function createBusinessHarness(options = {}) {
 
   async function cli(args, requestOptions = {}) {
     const result = await new Promise((resolve) => {
-      const child = spawn(process.execPath, [agentstudioCliPath, "--server-url", server.url, ...args], {
+      const child = spawn(process.execPath, [pactCliPath, "--server-url", server.url, ...args], {
         cwd: repoRoot,
         env: {
           ...process.env,
@@ -569,7 +569,7 @@ export async function createBusinessHarness(options = {}) {
     };
     lastExchange = {
       method: "CLI",
-      path: `agentstudio ${args.join(" ")}`,
+      path: `pact ${args.join(" ")}`,
       status: result.status,
       ok: result.status === 0,
       request: "",
@@ -593,7 +593,7 @@ export async function createBusinessHarness(options = {}) {
   }
 
   function queueMonitorId(kind, ownerId) {
-    const source = `AgentStudio:${kind}:${ownerId}`;
+    const source = `Pact:${kind}:${ownerId}`;
     return `queue_item_${Buffer.from(source).toString("hex").slice(0, 32).padEnd(32, "0")}`;
   }
 

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "bundleType": "agentstudio.agent-skill.bundle",
-  "skillId": "agentstudio.knowledge.agent-skill",
-  "protocolVersion": "agentstudio.knowledge-agent-skill.v1",
+  "bundleType": "pact.agent-skill.bundle",
+  "skillId": "pact.knowledge.agent-skill",
+  "protocolVersion": "pact.knowledge-agent-skill.v1",
   "files": {
     "instructions": "README.md",
     "dependencies": "dependencies.json"

@@ -14,7 +14,7 @@ import {
 } from "../../preprocessing/file-processor/FileNormalizer/NormalizedDocuments/store.mjs";
 
 export const KNOWLEDGE_DISTILLATION_WORKBENCH_PROTOCOL_VERSION =
-  "agentstudio.knowledge-distillation-workbench.v1";
+  "pact.knowledge-distillation-workbench.v1";
 
 const EXPORT_CONTENT_TYPES = {
   markdown: "text/markdown; charset=utf-8",
@@ -420,7 +420,7 @@ function markdownToHtml(markdown = "") {
   if (inList) {
     html.push("</ul>");
   }
-  return `<!doctype html><html><head><meta charset="utf-8"><title>AgentStudio Knowledge Distillation</title></head><body>${html.join("\n")}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Pact Knowledge Distillation</title></head><body>${html.join("\n")}</body></html>`;
 }
 
 function sourceDirectoryTree(sources = []) {
@@ -755,7 +755,7 @@ function buildRawConversionStage({ run, manifest, sources }) {
   return stageOutput("原始语料格式转换", markdown, {
     conversionPackage: {
       outputFormat: "docx",
-      packageType: manifest.packageType || "agentstudio.normalized-documents",
+      packageType: manifest.packageType || "pact.normalized-documents",
       rootRelativePath: manifest.rootRelativePath || "normalized-documents",
       humanReadable: asObject(manifest.humanReadable),
       machineReadable: asObject(manifest.machineReadable)
@@ -982,7 +982,7 @@ async function buildDocxBuffer(title, markdown) {
       {
         children: [
           humanHeading(title || "知识蒸馏工作台导出"),
-          humanParagraph("AgentStudio 知识蒸馏工作台阶段导出。"),
+          humanParagraph("Pact 知识蒸馏工作台阶段导出。"),
           ...renderHumanDocxBodyBlocks(markdown)
         ]
       }

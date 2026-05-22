@@ -85,15 +85,15 @@ function verifyOperationsAndTools() {
   assert.equal(operations.get("sample_business_pack.materialize").safety.risk, "safe_write");
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const materializeTool = catalog.tools.find((tool) => tool.id === "agentstudio.sampleBusinessPack.materialize");
+  const materializeTool = catalog.tools.find((tool) => tool.id === "pact.sampleBusinessPack.materialize");
   assert.ok(materializeTool, "sample business pack materialize tool must be exposed");
   assert.equal(materializeTool.operationId, "sample_business_pack.materialize");
-  assert.ok(materializeTool.toolsets.includes("agentstudio.knowledge.maintain"));
+  assert.ok(materializeTool.toolsets.includes("pact.knowledge.maintain"));
   assert.ok(materializeTool.requiredScopes.includes("knowledge:maintain"));
 }
 
 async function main() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-sample-business-pack-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-sample-business-pack-"));
   try {
     await verifyManifestAndMaterialization(tempRoot);
     verifyOperationsAndTools();

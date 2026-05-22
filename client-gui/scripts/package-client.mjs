@@ -426,11 +426,11 @@ function publicModuleRecord(moduleConfig) {
 
 function writeBundleNotes(config, selected, bundle, options) {
   const lines = [
-    `AgentStudio ${options.platform} Client Bundle`,
+    `Pact ${options.platform} Client Bundle`,
     "",
     "Run the Flutter desktop frontend from this bundle.",
-    "The frontend resolves agentstudio-clientd as its local backend sidecar.",
-    "Run agentstudio-client for command-line operations against the same portable-data workspace.",
+    "The frontend resolves pact-clientd as its local backend sidecar.",
+    "Run pact-client for command-line operations against the same portable-data workspace.",
     "",
     "Enabled modules:",
     ...selected.map((item) => `- ${item.id}: ${item.label || item.id}`),

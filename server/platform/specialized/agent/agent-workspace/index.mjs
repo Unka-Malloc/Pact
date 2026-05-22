@@ -4,9 +4,9 @@ import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import Database from "better-sqlite3";
 
-export const AGENT_WORKSPACE_PROTOCOL_VERSION = "agentstudio.agent-workspace.v1";
-export const AGENT_WORKSPACE_CONTEXT_BUNDLE_VERSION = "agentstudio.workspace-context-bundle.v1";
-export const AGENT_SESSION_THREAD_VERSION = "agentstudio.agent-session-thread.v1";
+export const AGENT_WORKSPACE_PROTOCOL_VERSION = "pact.agent-workspace.v1";
+export const AGENT_WORKSPACE_CONTEXT_BUNDLE_VERSION = "pact.workspace-context-bundle.v1";
+export const AGENT_SESSION_THREAD_VERSION = "pact.agent-session-thread.v1";
 
 const ACCEPTED_SUBMISSION_TYPES = new Set([
   "evidenceCard",

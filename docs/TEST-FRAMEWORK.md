@@ -1,6 +1,6 @@
-# AgentStudio Unified Test Framework
+# Pact Unified Test Framework
 
-AgentStudio has server runtime code, a Vue server console, a Flutter desktop client,
+Pact has server runtime code, a Vue server console, a Flutter desktop client,
 Rust native client binaries, platform adapters, and large mail fixtures. The test
 framework is intentionally layered instead of tied to one language runner.
 
@@ -114,7 +114,7 @@ tests for:
 - daemon lifecycle and stale state cleanup.
 
 Use OWASP ASVS as the external vocabulary for security control requirements, but
-map those requirements to AgentStudio-owned suites instead of adding disconnected
+map those requirements to Pact-owned suites instead of adding disconnected
 checklists.
 
 ## Change Rules

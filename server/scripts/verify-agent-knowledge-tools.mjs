@@ -32,95 +32,95 @@ async function executeTool(baseUrl, token, toolId, input = {}) {
 }
 
 const expectedToolIds = [
-  "agentstudio.knowledge.console",
-  "agentstudio.knowledge.configSchema",
-  "agentstudio.knowledge.capabilities",
-  "agentstudio.knowledge.health",
-  "agentstudio.knowledge.maintenance.get",
-  "agentstudio.knowledge.maintenance.set",
-  "agentstudio.knowledge.reindex",
-  "agentstudio.knowledge.maintenance.run",
-  "agentstudio.knowledge.sync",
-  "agentstudio.knowledge.changes",
-  "agentstudio.knowledge.reviewItems",
-  "agentstudio.knowledge.reviewResolve",
-  "agentstudio.knowledge.feedback",
-  "agentstudio.knowledge.suggestions",
-  "agentstudio.knowledge.suggestionResolve",
-  "agentstudio.knowledge.learning.jobs",
-  "agentstudio.knowledge.learning.health",
-  "agentstudio.knowledge.evidenceGate.evaluate",
-  "agentstudio.knowledge.agentSkill",
-  "agentstudio.knowledge.agentSkill.plan",
-  "agentstudio.knowledge.agentSkill.run",
-  "agentstudio.knowledge.skills.list",
-  "agentstudio.knowledge.skills.get",
-  "agentstudio.knowledge.skills.generate",
-  "agentstudio.knowledge.skills.propose",
-  "agentstudio.knowledge.skills.resolve",
-  "agentstudio.knowledge.skillFramework",
-  "agentstudio.knowledge.skillFramework.set",
-  "agentstudio.knowledge.goldenRules.list",
-  "agentstudio.knowledge.goldenRules.set",
-  "agentstudio.knowledge.goldenRules.publish",
-  "agentstudio.knowledge.goldenRules.rollback",
-  "agentstudio.knowledge.ruleAuthoring.chat",
-  "agentstudio.knowledge.ruleAuthoring.run",
-  "agentstudio.knowledge.goldCases.list",
-  "agentstudio.knowledge.goldCases.set",
-  "agentstudio.knowledge.distillation.runs.create",
-  "agentstudio.knowledge.distillation.runs.get",
-  "agentstudio.knowledge.skills.evaluation.runs.create",
-  "agentstudio.knowledge.skills.deployments.create",
-  "agentstudio.knowledge.skills.deployments.rollback",
-  "agentstudio.knowledge.trainingSets.export",
-  "agentstudio.knowledge.evaluation.runs.create",
-  "agentstudio.knowledge.evaluation.runs.list",
-  "agentstudio.knowledge.evaluation.runs.get",
-  "agentstudio.knowledge.modelRoles",
-  "agentstudio.knowledge.modelDecision",
-  "agentstudio.knowledge.evolution",
-  "agentstudio.knowledge.evolution.runs.create",
-  "agentstudio.knowledge.evolution.runs.list",
-  "agentstudio.knowledge.evolution.runs.get",
-  "agentstudio.knowledge.hierarchy.audit",
-  "agentstudio.knowledge.evolution.deployments.list",
-  "agentstudio.knowledge.evolution.deployments.promote",
-  "agentstudio.knowledge.evolution.deployments.rollback",
-  "agentstudio.context.profiles",
-  "agentstudio.context.profiles.set",
-  "agentstudio.clientRuntime.profiles",
-  "agentstudio.clientRuntime.profiles.set",
-  "agentstudio.clientRuntime.resolve",
-  "agentstudio.clientRuntime.status",
-  "agentstudio.agentWorkspace.list",
-  "agentstudio.agentWorkspace.get",
-  "agentstudio.agentWorkspace.context",
-  "agentstudio.agentWorkspace.contextBundle.export",
-  "agentstudio.agentWorkspace.contextBundle.restore",
-  "agentstudio.agentWorkspace.chain",
-  "agentstudio.agentWorkspace.parent.set",
-  "agentstudio.agentWorkspace.profile.hotswap",
-  "agentstudio.agentWorkspace.sources.set",
-  "agentstudio.agentWorkspace.share",
-  "agentstudio.agentWorkspace.unshare",
-  "agentstudio.agentWorkspace.submissionResolve",
-  "agentstudio.agentWorkspace.issueResolve",
-  "agentstudio.agentWorkspace.locks",
-  "agentstudio.agentWorkspace.lock",
-  "agentstudio.knowledge.summarization.runs.create",
-  "agentstudio.knowledge.summarization.runs.get",
-  "agentstudio.knowledge.summarization.runs.approve",
-  "agentstudio.knowledge.search",
-  "agentstudio.knowledge.documentStructure",
-  "agentstudio.knowledge.item",
-  "agentstudio.knowledge.evidence",
-  "agentstudio.knowledge.asset",
-  "agentstudio.knowledge.renderMarkdown",
-  "agentstudio.knowledge.graph"
+  "pact.knowledge.console",
+  "pact.knowledge.configSchema",
+  "pact.knowledge.capabilities",
+  "pact.knowledge.health",
+  "pact.knowledge.maintenance.get",
+  "pact.knowledge.maintenance.set",
+  "pact.knowledge.reindex",
+  "pact.knowledge.maintenance.run",
+  "pact.knowledge.sync",
+  "pact.knowledge.changes",
+  "pact.knowledge.reviewItems",
+  "pact.knowledge.reviewResolve",
+  "pact.knowledge.feedback",
+  "pact.knowledge.suggestions",
+  "pact.knowledge.suggestionResolve",
+  "pact.knowledge.learning.jobs",
+  "pact.knowledge.learning.health",
+  "pact.knowledge.evidenceGate.evaluate",
+  "pact.knowledge.agentSkill",
+  "pact.knowledge.agentSkill.plan",
+  "pact.knowledge.agentSkill.run",
+  "pact.knowledge.skills.list",
+  "pact.knowledge.skills.get",
+  "pact.knowledge.skills.generate",
+  "pact.knowledge.skills.propose",
+  "pact.knowledge.skills.resolve",
+  "pact.knowledge.skillFramework",
+  "pact.knowledge.skillFramework.set",
+  "pact.knowledge.goldenRules.list",
+  "pact.knowledge.goldenRules.set",
+  "pact.knowledge.goldenRules.publish",
+  "pact.knowledge.goldenRules.rollback",
+  "pact.knowledge.ruleAuthoring.chat",
+  "pact.knowledge.ruleAuthoring.run",
+  "pact.knowledge.goldCases.list",
+  "pact.knowledge.goldCases.set",
+  "pact.knowledge.distillation.runs.create",
+  "pact.knowledge.distillation.runs.get",
+  "pact.knowledge.skills.evaluation.runs.create",
+  "pact.knowledge.skills.deployments.create",
+  "pact.knowledge.skills.deployments.rollback",
+  "pact.knowledge.trainingSets.export",
+  "pact.knowledge.evaluation.runs.create",
+  "pact.knowledge.evaluation.runs.list",
+  "pact.knowledge.evaluation.runs.get",
+  "pact.knowledge.modelRoles",
+  "pact.knowledge.modelDecision",
+  "pact.knowledge.evolution",
+  "pact.knowledge.evolution.runs.create",
+  "pact.knowledge.evolution.runs.list",
+  "pact.knowledge.evolution.runs.get",
+  "pact.knowledge.hierarchy.audit",
+  "pact.knowledge.evolution.deployments.list",
+  "pact.knowledge.evolution.deployments.promote",
+  "pact.knowledge.evolution.deployments.rollback",
+  "pact.context.profiles",
+  "pact.context.profiles.set",
+  "pact.clientRuntime.profiles",
+  "pact.clientRuntime.profiles.set",
+  "pact.clientRuntime.resolve",
+  "pact.clientRuntime.status",
+  "pact.agentWorkspace.list",
+  "pact.agentWorkspace.get",
+  "pact.agentWorkspace.context",
+  "pact.agentWorkspace.contextBundle.export",
+  "pact.agentWorkspace.contextBundle.restore",
+  "pact.agentWorkspace.chain",
+  "pact.agentWorkspace.parent.set",
+  "pact.agentWorkspace.profile.hotswap",
+  "pact.agentWorkspace.sources.set",
+  "pact.agentWorkspace.share",
+  "pact.agentWorkspace.unshare",
+  "pact.agentWorkspace.submissionResolve",
+  "pact.agentWorkspace.issueResolve",
+  "pact.agentWorkspace.locks",
+  "pact.agentWorkspace.lock",
+  "pact.knowledge.summarization.runs.create",
+  "pact.knowledge.summarization.runs.get",
+  "pact.knowledge.summarization.runs.approve",
+  "pact.knowledge.search",
+  "pact.knowledge.documentStructure",
+  "pact.knowledge.item",
+  "pact.knowledge.evidence",
+  "pact.knowledge.asset",
+  "pact.knowledge.renderMarkdown",
+  "pact.knowledge.graph"
 ];
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-knowledge-tools-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-agent-knowledge-tools-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -160,7 +160,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -169,7 +169,7 @@ try {
   const health = await executeTool(
     server.url,
     readGrant.payload.token,
-    "agentstudio.knowledge.health",
+    "pact.knowledge.health",
     {}
   );
   assert.equal(health.status, 200);
@@ -180,7 +180,7 @@ try {
   const search = await executeTool(
     server.url,
     readGrant.payload.token,
-    "agentstudio.knowledge.search",
+    "pact.knowledge.search",
     {
       query: "agent knowledge tool verification",
       limit: 3,
@@ -188,7 +188,7 @@ try {
     }
   );
   assert.equal(search.status, 200);
-  assert.equal(search.payload.result.protocolVersion, "agentstudio.knowledge.v1");
+  assert.equal(search.payload.result.protocolVersion, "pact.knowledge.v1");
   assert.equal(Array.isArray(search.payload.result.items), true);
 
   const adminGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
@@ -240,7 +240,7 @@ try {
   const workspaceContext = await executeTool(
     server.url,
     adminGrant.payload.token,
-    "agentstudio.agentWorkspace.context",
+    "pact.agentWorkspace.context",
     { workspaceId }
   );
   assert.equal(workspaceContext.status, 200);
@@ -252,21 +252,21 @@ try {
   const contextBundle = await executeTool(
     server.url,
     adminGrant.payload.token,
-    "agentstudio.agentWorkspace.contextBundle.export",
+    "pact.agentWorkspace.contextBundle.export",
     {
       workspaceId,
       format: "compressed"
     }
   );
   assert.equal(contextBundle.status, 200);
-  assert.equal(contextBundle.payload.result.bundleVersion, "agentstudio.workspace-context-bundle.v1");
+  assert.equal(contextBundle.payload.result.bundleVersion, "pact.workspace-context-bundle.v1");
   assert.equal(contextBundle.payload.result.compressed.encoding, "gzip+base64");
   assert.ok(contextBundle.payload.result.bundleHash);
 
   const restoreDenied = await executeTool(
     server.url,
     readGrant.payload.token,
-    "agentstudio.agentWorkspace.contextBundle.restore",
+    "pact.agentWorkspace.contextBundle.restore",
     {
       workspaceId: targetWorkspaceId,
       compressed: contextBundle.payload.result.compressed,
@@ -279,7 +279,7 @@ try {
   const restored = await executeTool(
     server.url,
     adminGrant.payload.token,
-    "agentstudio.agentWorkspace.contextBundle.restore",
+    "pact.agentWorkspace.contextBundle.restore",
     {
       workspaceId: targetWorkspaceId,
       compressed: contextBundle.payload.result.compressed,
@@ -296,7 +296,7 @@ try {
   const writeDenied = await executeTool(
     server.url,
     readGrant.payload.token,
-    "agentstudio.knowledge.feedback",
+    "pact.knowledge.feedback",
     {
       query: "agent knowledge tool verification",
       action: "searchMiss"

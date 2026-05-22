@@ -19,7 +19,7 @@ async function writeJson(filePath, value) {
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-source-evidence-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-source-evidence-"));
 
 try {
   const sourceRoot = path.join(userDataPath, "sources");

@@ -11,7 +11,7 @@ import {
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-performance-capacity-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-performance-capacity-"));
 
 try {
   const targets = listCapacityBenchmarkTargets();
@@ -61,15 +61,15 @@ try {
 
   const toolCatalog = createToolCatalog({ operations });
   for (const toolId of [
-    "agentstudio.performance.capacity.targets",
-    "agentstudio.performance.capacity.benchmark"
+    "pact.performance.capacity.targets",
+    "pact.performance.capacity.benchmark"
   ]) {
     assert.ok(toolCatalog.tools.some((tool) => tool.id === toolId), `missing tool ${toolId}`);
   }
 
   console.log("[performance-capacity] ok");
 } finally {
-  if (process.env.AGENTSTUDIO_KEEP_TEST_DATA !== "1") {
+  if (process.env.PACT_KEEP_TEST_DATA !== "1") {
     await fs.rm(userDataPath, { recursive: true, force: true });
   } else {
     console.log(`kept test data: ${userDataPath}`);

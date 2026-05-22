@@ -15,7 +15,7 @@ import {
   resolveFeatureRuntimeFromEnv
 } from "../platform/interactive/features/feature-manifest.mjs";
 
-const DEFAULT_SERVER_URL = process.env.AGENTSTUDIO_SERVER_URL || "http://127.0.0.1:8787";
+const DEFAULT_SERVER_URL = process.env.PACT_SERVER_URL || "http://127.0.0.1:8787";
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
 
 function parseArgs(argv) {
@@ -64,26 +64,26 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage:",
-    "  agentstudio --file a.txt [--wait] [--output-result result.json]",
-    "  agentstudio --path ./local [--wait] [--output-result result.json]",
-    "  agentstudio upload --path ./local --server-url http://127.0.0.1:8787",
-    "  agentstudio rpc --method GET --path /api/healthz",
-    "  agentstudio rpc-call jobs.list --params '{\"limit\":20}'",
-    "  agentstudio interfaces --format markdown",
-    "  agentstudio health",
-    "  agentstudio jobs list|get|result|delete ...",
-    "  agentstudio jobs normalized-docs --id JOB_ID",
-    "  agentstudio jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx",
-    "  agentstudio settings get|set --body settings.json",
-    "  agentstudio agents create --name NAME --model MODEL [--provider deepseek] [--api-key KEY]",
-    "  agentstudio agents update --id AGENT_UID [--name NAME] [--model MODEL] [--system-prompt TEXT]",
-    "  agentstudio agents delete --id AGENT_UID",
-    "  agentstudio tools catalog|toolsets|toolsets resolve|execute|dry-run|audit|metrics ...",
-    "  agentstudio tools grants list|create|rotate|revoke ...",
-    "  agentstudio tools policy preview --body preview.json",
+    "  pact --file a.txt [--wait] [--output-result result.json]",
+    "  pact --path ./local [--wait] [--output-result result.json]",
+    "  pact upload --path ./local --server-url http://127.0.0.1:8787",
+    "  pact rpc --method GET --path /api/healthz",
+    "  pact rpc-call jobs.list --params '{\"limit\":20}'",
+    "  pact interfaces --format markdown",
+    "  pact health",
+    "  pact jobs list|get|result|delete ...",
+    "  pact jobs normalized-docs --id JOB_ID",
+    "  pact jobs normalized-doc --id JOB_ID --document-id DOC_ID --output out.docx",
+    "  pact settings get|set --body settings.json",
+    "  pact agents create --name NAME --model MODEL [--provider deepseek] [--api-key KEY]",
+    "  pact agents update --id AGENT_UID [--name NAME] [--model MODEL] [--system-prompt TEXT]",
+    "  pact agents delete --id AGENT_UID",
+    "  pact tools catalog|toolsets|toolsets resolve|execute|dry-run|audit|metrics ...",
+    "  pact tools grants list|create|rotate|revoke ...",
+    "  pact tools policy preview --body preview.json",
     "",
     "Global options:",
-    "  --server-url URL        Defaults to AGENTSTUDIO_SERVER_URL or http://127.0.0.1:8787",
+    "  --server-url URL        Defaults to PACT_SERVER_URL or http://127.0.0.1:8787",
     "  --body JSON_OR_FILE     JSON string or path to a JSON file",
     "  --body-file FILE        JSON request body file",
     "  --params JSON_OR_FILE   JSON-RPC params string or path to a JSON file",
@@ -240,7 +240,7 @@ function applyCommonSafetyHeaders(args, headers = {}) {
   }
   return {
     ...headers,
-    "x-agentstudio-safety-confirm": headers["x-agentstudio-safety-confirm"] || "true"
+    "x-pact-safety-confirm": headers["x-pact-safety-confirm"] || "true"
   };
 }
 
@@ -271,14 +271,14 @@ function readHeaders(args) {
 
 function envAuthHeaders() {
   const headers = {};
-  if (process.env.AGENTSTUDIO_CONSOLE_COOKIE) {
-    headers.Cookie = process.env.AGENTSTUDIO_CONSOLE_COOKIE;
+  if (process.env.PACT_CONSOLE_COOKIE) {
+    headers.Cookie = process.env.PACT_CONSOLE_COOKIE;
   }
-  if (process.env.AGENTSTUDIO_CONSOLE_CSRF) {
-    headers["x-agentstudio-csrf"] = process.env.AGENTSTUDIO_CONSOLE_CSRF;
+  if (process.env.PACT_CONSOLE_CSRF) {
+    headers["x-pact-csrf"] = process.env.PACT_CONSOLE_CSRF;
   }
-  if (["1", "true", "yes"].includes(String(process.env.AGENTSTUDIO_SAFETY_CONFIRM || "").toLowerCase())) {
-    headers["x-agentstudio-safety-confirm"] = "true";
+  if (["1", "true", "yes"].includes(String(process.env.PACT_SAFETY_CONFIRM || "").toLowerCase())) {
+    headers["x-pact-safety-confirm"] = "true";
   }
   return headers;
 }
@@ -523,7 +523,7 @@ async function runUpload(args) {
     method: "POST",
     apiPath: "/api/upload-sessions",
     body: {
-      checkpoint: { checkpointId, mode: "agentstudio-cli" },
+      checkpoint: { checkpointId, mode: "pact-cli" },
       manifest: { manifestDigest, inputDigest: manifestDigest },
       files: files.map(({ name, relativePath, mediaType, sha256, byteSize }) => ({
         name,
@@ -567,7 +567,7 @@ async function runUpload(args) {
     method: "POST",
     apiPath: "/api/jobs",
     body: {
-      checkpoint: { checkpointId, mode: "agentstudio-cli" },
+      checkpoint: { checkpointId, mode: "pact-cli" },
       uploadSessionId: session.sessionId,
       uploadedFiles: [],
       settings
@@ -639,7 +639,7 @@ async function runRpc(args) {
 async function runServerRpcCall(args) {
   const rpcMethod = args["rpc-method"] || args._[1];
   if (!rpcMethod || rpcMethod === true) {
-    throw new Error("rpc-call requires a RPC method, for example: agentstudio rpc-call jobs.list");
+    throw new Error("rpc-call requires a RPC method, for example: pact rpc-call jobs.list");
   }
   const params = applyCommonSafetyFlags(args, await readRpcParams(args));
   const result = await requestJson({

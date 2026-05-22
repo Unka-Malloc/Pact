@@ -931,7 +931,7 @@ export type NormalizedDocumentEntry = {
 
 export type NormalizedDocumentsManifest = {
   schemaVersion: number;
-  packageType: "agentstudio.normalized-documents";
+  packageType: "pact.normalized-documents";
   batchId: string;
   generatedAt: string;
   rootRelativePath: string;
@@ -1911,7 +1911,7 @@ export type KnowledgeWordBagTermsResponse = {
 
 export type KnowledgeWordCloudExportResponse = {
   ok: boolean;
-  exportType: "agentstudio.knowledge.word_bags.export" | string;
+  exportType: "pact.knowledge.word_bags.export" | string;
   schemaVersion?: number;
   exportedAt: string;
   wordBagSet: KnowledgeWordBagSet;
@@ -2509,7 +2509,7 @@ export type ProductionHealthSection = {
 
 export type ProductionHealthResponse = {
   schemaVersion: number;
-  reportType: "agentstudio.production-health.v1" | string;
+  reportType: "pact.production-health.v1" | string;
   generatedAt: string;
   status: ProductionHealthGateStatus;
   tone: string;

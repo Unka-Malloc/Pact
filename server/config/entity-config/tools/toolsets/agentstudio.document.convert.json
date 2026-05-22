@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.document.convert",
+  "id": "pact.document.convert",
   "label": "Document convert",
   "requiredScopes": [
     "knowledge:write"

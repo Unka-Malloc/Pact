@@ -628,7 +628,7 @@ fn oauth_manifest(provider_id: &str, scopes: &[&str]) -> Value {
     json!({
         "type": "oauth2",
         "providerId": provider_id,
-        "authorizationUrl": format!("agentstudio://connectors/{}/oauth/start", provider_id),
+        "authorizationUrl": format!("pact://connectors/{}/oauth/start", provider_id),
         "tokenStorage": "system-keychain",
         "scopes": scopes
     })
@@ -1120,7 +1120,7 @@ fn invoke_connector_process(
     let cache_dir = connector_cache_dir(data_dir).join(&provider_id);
     fs::create_dir_all(&cache_dir)?;
     let request = json!({
-        "protocolVersion": "agentstudio.data-connector.process.v1",
+        "protocolVersion": "pact.data-connector.process.v1",
         "operation": operation,
         "providerId": provider_id,
         "params": params,
@@ -1141,15 +1141,15 @@ fn invoke_connector_process(
         .args(connector_process_args(manifest))
         .current_dir(&module_dir)
         .env(
-            "AGENTSTUDIO_CONNECTOR_PROTOCOL",
-            "agentstudio.data-connector.process.v1",
+            "PACT_CONNECTOR_PROTOCOL",
+            "pact.data-connector.process.v1",
         )
-        .env("AGENTSTUDIO_CONNECTOR_OPERATION", operation)
-        .env("AGENTSTUDIO_CONNECTOR_PROVIDER_ID", &provider_id)
-        .env("AGENTSTUDIO_CONNECTOR_DATA_DIR", data_dir.as_os_str())
-        .env("AGENTSTUDIO_CONNECTOR_MODULE_DIR", module_dir.as_os_str())
-        .env("AGENTSTUDIO_CONNECTOR_CACHE_DIR", cache_dir.as_os_str())
-        .env("AGENTSTUDIO_CONNECTOR_REMOTE_CALLS_ALLOWED", "0")
+        .env("PACT_CONNECTOR_OPERATION", operation)
+        .env("PACT_CONNECTOR_PROVIDER_ID", &provider_id)
+        .env("PACT_CONNECTOR_DATA_DIR", data_dir.as_os_str())
+        .env("PACT_CONNECTOR_MODULE_DIR", module_dir.as_os_str())
+        .env("PACT_CONNECTOR_CACHE_DIR", cache_dir.as_os_str())
+        .env("PACT_CONNECTOR_REMOTE_CALLS_ALLOWED", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

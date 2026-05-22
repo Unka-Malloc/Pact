@@ -1,6 +1,6 @@
-# AgentStudio Entity Config Layout
+# Pact Entity Config Layout
 
-AgentStudio uses folder-managed entity configs for human-maintainable runtime
+Pact uses folder-managed entity configs for human-maintainable runtime
 entities. Single JSON files remain acceptable only for singleton snapshots such
 as `settings.json`, `discovery.json`, or event/state caches.
 

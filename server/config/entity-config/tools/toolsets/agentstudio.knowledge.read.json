@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.knowledge.read",
+  "id": "pact.knowledge.read",
   "label": "Knowledge read",
   "requiredScopes": [
     "knowledge:read"

@@ -841,7 +841,7 @@ export async function searchSourceFiles({ userDataPath, query = "", limit = 20, 
   const highRelevanceCount = sortedItems.filter((item) => item.relevanceTier !== "low").length;
   const lowRelevanceCount = sortedItems.length - highRelevanceCount;
   const result = {
-    protocolVersion: "agentstudio.knowledge.source-search.v1",
+    protocolVersion: "pact.knowledge.source-search.v1",
     query: normalizeText(query),
     limit: returnAll ? "all" : safeLimit,
     retrievalMode: "raw-source-keyword",
@@ -918,7 +918,7 @@ export async function getSourceFileEvidence({ userDataPath, evidenceId } = {}) {
     .update(`:${preview.byteSize}:${preview.mtimeMs}`)
     .digest("hex");
   const truncationNotice = preview.truncated
-    ? `\n\n[AgentStudio evidence preview: 原始文件大小 ${formatByteCount(preview.byteSize)}，为保证服务端和界面稳定，本次只显示前 ${formatByteCount(preview.previewBytes)}。]`
+    ? `\n\n[Pact evidence preview: 原始文件大小 ${formatByteCount(preview.byteSize)}，为保证服务端和界面稳定，本次只显示前 ${formatByteCount(preview.previewBytes)}。]`
     : "";
   const displayText = `${raw}${truncationNotice}`;
   const evidence = {

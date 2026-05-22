@@ -28,9 +28,9 @@
 
 三个兼容：
 
-- 智能体兼容：不关心底层是什么大模型、agent framework 或机器人体系，统一通过 AgentStudio MCP service / Workspace API 接入。
+- 智能体兼容：不关心底层是什么大模型、agent framework 或机器人体系，统一通过 Pact MCP service / Workspace API 接入。
 - 信息源兼容：不关心信息来自知识库、网站订阅、文件库、业务系统、人工整理或智能体上传文档，统一进入 workspace asset model。
-- 工作空间环境兼容：不关心工作空间运行在容器、虚拟机、本机、云端、Linux、macOS 或 Windows；只要安装 AgentStudio 管理软件，智能体访问工作空间必须经过 AgentStudio。
+- 工作空间环境兼容：不关心工作空间运行在容器、虚拟机、本机、云端、Linux、macOS 或 Windows；只要安装 Pact 管理软件，智能体访问工作空间必须经过 Pact。
 
 优先级定义：
 
@@ -55,15 +55,15 @@
 | 决策 | 结论 |
 | --- | --- |
 | `DEC-P0-01` 产品边界 | 锁定“两个问题，一个能力，三个兼容”。不做完整 A2A Gateway、不做自治 Agent 平台、不做外部知识库同型复制。 |
-| `DEC-P0-02` 接入面 | 智能体默认通过 AgentStudio MCP service 接入；Workspace API 是协议事实源；其它入口只是适配。 |
+| `DEC-P0-02` 接入面 | 智能体默认通过 Pact MCP service 接入；Workspace API 是协议事实源；其它入口只是适配。 |
 | `DEC-P0-03` 身份模型 | 采用四层模型：subject 是权限主体，operator 是执行入口，agentProfile 是风险/能力上下文，libraryCard 是可审计访问凭据。 |
 | `DEC-P0-04` 资产模型 | 固定完整最小资产集：rawAssets、derivedAssets、contributedAssets、evidencePacks、artifacts、tasks、observations、proposals、decisions、memoryEntries、operationLedger、snapshots。 |
 | `DEC-P0-05` 权限模式 | 采用内置标准模式 + workspace 自定义扩展。内置模式保证互操作，自定义 mode/action 用于业务扩展。 |
-| `DEC-P0-06` 上游再授权 | 所有上游对象进入 AgentStudio 后必须生成 upstreamKnowledgeRef、derivedViewRef、derivedKnowledgeSpace、authorizationOverlay。 |
+| `DEC-P0-06` 上游再授权 | 所有上游对象进入 Pact 后必须生成 upstreamKnowledgeRef、derivedViewRef、derivedKnowledgeSpace、authorizationOverlay。 |
 | `DEC-P0-07` 出口裁决 | search、evidence、context、export、artifact、distillation、memory、tool call、eval 等所有出口强制复用同一权限裁决。 |
 | `DEC-P0-08` 统一 Checkpoint Tree | 任务、队列、访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露和恢复动作全部进入统一 Checkpoint Tree。 |
 | `DEC-P0-09` git worktree 边界 | 可以复用 git tree/diff/worktree 底层能力，但产品恢复必须是 append-only restore operation，禁止裸 reset 语义。 |
-| `DEC-P0-10` 工作空间环境 | 受管工作空间必须安装 AgentStudio 管理软件；智能体访问必须经过 adapter；直连文件系统视为未受管。 |
+| `DEC-P0-10` 工作空间环境 | 受管工作空间必须安装 Pact 管理软件；智能体访问必须经过 adapter；直连文件系统视为未受管。 |
 | `DEC-P0-11` 贡献状态机 | 固定 submitted -> scanned -> reviewed -> published/rejected/needs_changes -> adopted -> deprecated/revoked。 |
 | `DEC-P0-12` Skill 贡献值 | 采用“使用为主”的质量加权公式：以 usageCount * successRate 为核心，叠加 uniqueWorkspaceAdoptions，扣减 rollbackCount。 |
 | `DEC-P0-13` 贡献报表 | 资产贡献统计报表进入 P0，是管理者视角必备能力。 |
@@ -79,7 +79,7 @@
 | `DEC-P1-02` receipt/loan | 细粒度记录到 section/block/field/info ref；loan record 记录保留范围、过期、撤销和跨 workspace 流转。 |
 | `DEC-P1-03` connector 顺序 | 第一批信息源：本地文件、智能体上传、外部知识库。网站订阅延后。 |
 | `DEC-P1-04` Skill 沙箱 | Skill 可带 manifest 和资源；执行必须通过 Tool Management grant；安装和使用都写事件。 |
-| `DEC-P1-05` durable execution | 语义先行：定义 `agentstudio.workflow.v1`，第一版自研轻量 runner 对齐 workflow/activity/retry/signal/timer/resume。 |
+| `DEC-P1-05` durable execution | 语义先行：定义 `pact.workflow.v1`，第一版自研轻量 runner 对齐 workflow/activity/retry/signal/timer/resume。 |
 | `DEC-P1-06` 验收门禁 | 建立统一 production readiness 报告和门禁。 |
 | `DEC-P1-07` 可观测性 | 内部 Trace 是事实源，但字段设计预留 OpenTelemetry 导出映射。 |
 | `DEC-P1-08` 评估基准 | 建立最小真实样例集，覆盖 RAG、蒸馏、Agent、工具调用、权限拒绝、恢复演练。 |
@@ -122,11 +122,11 @@
 
 决议后回写：`Architecture.md`、`PROTOCOLS.md`、`WORKSPACE-ASSET-GOVERNANCE.md`。
 
-### DEC-P0-02 首选接入面是否确定为 AgentStudio MCP service / Workspace API
+### DEC-P0-02 首选接入面是否确定为 Pact MCP service / Workspace API
 
 需要决策：
 
-- OpenClaw、Codex、Claude Code、Cursor Agent、脚本型 agent 是否统一通过 AgentStudio MCP service / Workspace API 接入。
+- OpenClaw、Codex、Claude Code、Cursor Agent、脚本型 agent 是否统一通过 Pact MCP service / Workspace API 接入。
 - REST / OpenAPI / CLI / SDK 是不是只作为同一协议的其它 adapter。
 - 第一版 MCP 工具集是否只覆盖 workspace、asset、knowledge、contribution、checkpoint、permission、audit。
 
@@ -183,7 +183,7 @@
 
 需要决策：
 
-- 外部知识库进入 AgentStudio 后是否必须生成 `upstreamKnowledgeRef`、`derivedViewRef`、`derivedKnowledgeSpace`、`authorizationOverlay`。
+- 外部知识库进入 Pact 后是否必须生成 `upstreamKnowledgeRef`、`derivedViewRef`、`derivedKnowledgeSpace`、`authorizationOverlay`。
 - 下游智能体是否永远不能持有上游 token、上游对象路径、collection id 或裸 source id。
 - A/B 权限演示中，B 被拒绝时是显示明确权限错误，还是按策略隐藏存在性。
 
@@ -241,13 +241,13 @@
 
 需要决策：
 
-- AgentStudio 管理软件在本机、容器、虚拟机、云端分别承担哪些职责。
+- Pact 管理软件在本机、容器、虚拟机、云端分别承担哪些职责。
 - Linux、macOS、Windows 的路径、权限、文件监听、shell、进程能力如何抽象。
 - 智能体是否只能通过管理软件访问受管工作空间，是否允许直连文件系统。
 
-默认建议：受管工作空间必须经由 AgentStudio adapter 访问；本地文件系统直连只能作为未受管区域，不进入公共 workspace state。
+默认建议：受管工作空间必须经由 Pact adapter 访问；本地文件系统直连只能作为未受管区域，不进入公共 workspace state。
 
-已决议：受管工作空间强制经过 AgentStudio 管理软件和 adapter。
+已决议：受管工作空间强制经过 Pact 管理软件和 adapter。
 
 决议后回写：`Architecture.md`、`PROTOCOLS.md`、`WORKSPACE-ASSET-GOVERNANCE.md`。
 
@@ -403,7 +403,7 @@
 - workflow、activity、retry、signal、timer、resume、compensation 的最小集合。
 - 文档解析、外部知识库同步、批量恢复、批量导入是否都走 workflow。
 
-默认建议：先定义 `agentstudio.workflow.v1` 语义，第一版自研 runner 对齐接口，后续可替换。
+默认建议：先定义 `pact.workflow.v1` 语义，第一版自研 runner 对齐接口，后续可替换。
 
 已决议：语义先行，第一版自研轻量 runner 对齐。
 
@@ -621,7 +621,7 @@
 
 需要决策：
 
-- 是否支持多个 AgentStudio 实例之间同步 workspace asset。
+- 是否支持多个 Pact 实例之间同步 workspace asset。
 - 离线工作空间如何合并和冲突治理。
 - loan record 和 permission overlay 如何跨实例复制。
 

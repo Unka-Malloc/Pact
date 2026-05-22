@@ -198,7 +198,7 @@ function buildPlannerPrompt({ message, toolRegistry }) {
     timeoutMs: tool.timeoutMs
   }));
   return [
-    "你是 AgentStudio 服务端维护智能体的 planner。",
+    "你是 Pact 服务端维护智能体的 planner。",
     "只输出 JSON 对象，不输出 Markdown，不解释。",
     "你不能直接调用 API，只能从 tools 中选择工具并生成结构化 plan。",
     "destructive 风险禁止使用。repair_write 必须 requiresApproval=true。",

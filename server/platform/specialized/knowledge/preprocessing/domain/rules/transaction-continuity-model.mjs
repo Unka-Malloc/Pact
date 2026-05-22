@@ -2555,7 +2555,7 @@ function messageKnowledgeChildren(messages = []) {
 
 function transactionOverviewPayload(item) {
   return {
-    schemaVersion: "agentstudio.transaction-overview.v1",
+    schemaVersion: "pact.transaction-overview.v1",
     lineageId: item.lineageId,
     title: item.title,
     source: {
@@ -2600,7 +2600,7 @@ function transactionOverviewPayload(item) {
 
 function transactionMachinePayload(item) {
   return {
-    schemaVersion: "agentstudio.transaction-knowledge.v2",
+    schemaVersion: "pact.transaction-knowledge.v2",
     overview: transactionOverviewPayload(item),
     transaction: {
       lineageId: item.lineageId,
@@ -2760,7 +2760,7 @@ async function writeArtifacts({ outputPath, roots, lineages, stats, maxDocs = DE
   );
 
   const overviewChildren = [
-    heading("AgentStudio 事务接续模型总览"),
+    heading("Pact 事务接续模型总览"),
     heading("运行摘要", HeadingLevel.HEADING_2),
     tableFromRows([
       ["扫描根目录", roots.join("\n")],

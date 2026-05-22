@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const MODULE_ECOSYSTEM_PROTOCOL_VERSION = "agentstudio.module-ecosystem.v1";
-export const MOUNT_MODULE_PROTOCOL_VERSION = "agentstudio.mount-module.v1";
+export const MODULE_ECOSYSTEM_PROTOCOL_VERSION = "pact.module-ecosystem.v1";
+export const MOUNT_MODULE_PROTOCOL_VERSION = "pact.mount-module.v1";
 
 const MOUNT_TEMPLATE_IDS = new Set([
   "documentParser",
@@ -101,12 +101,12 @@ function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function normalizeIdentifier(value, fallback = "agentstudio.module") {
+function normalizeIdentifier(value, fallback = "pact.module") {
   const normalized = normalizeText(value || fallback);
   return normalized || fallback;
 }
 
-function safeName(value, fallback = "agentstudio-module") {
+function safeName(value, fallback = "pact-module") {
   return normalizeIdentifier(value, fallback)
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -170,7 +170,7 @@ function normalizeScaffoldRequest(input = {}, { userDataPath = "" } = {}) {
     moduleId,
     safeName: selectedSafeName,
     targetDir,
-    packageName: normalizeText(source.packageName) || `@agentstudio-module/${selectedSafeName}`,
+    packageName: normalizeText(source.packageName) || `@pact-module/${selectedSafeName}`,
     title: normalizeText(source.title) || template.title,
     description: normalizeText(source.description) || template.description,
     owner: normalizeText(source.owner) || "external",
@@ -267,7 +267,7 @@ function packageJson(request) {
         ? "node scripts/contract-test.mjs"
         : "node scripts/validate-manifest.mjs"
     },
-    agentstudio: {
+    pact: {
       protocolVersion: MODULE_ECOSYSTEM_PROTOCOL_VERSION,
       templateId: request.template.templateId,
       moduleId: request.moduleId
@@ -279,7 +279,7 @@ function sampleText(request) {
   return [
     `# ${request.title}`,
     "",
-    "This sample file is used by the AgentStudio module contract test.",
+    "This sample file is used by the Pact module contract test.",
     `moduleId: ${request.moduleId}`,
     `templateId: ${request.template.templateId}`
   ].join("\n");
@@ -412,7 +412,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = process.env.AGENTSTUDIO_REPO || path.resolve(__dirname, "../../..");
+const repoRoot = process.env.PACT_REPO || path.resolve(__dirname, "../../..");
 const { runModuleContractTest } = await import(pathToFileURL(path.join(repoRoot, "server/platform/common/module-manager/module-ecosystem/index.mjs")).href);
 const report = await runModuleContractTest({
   modulePath: path.resolve(__dirname, "../index.mjs"),
@@ -441,7 +441,7 @@ console.log(JSON.stringify({ ok: true, kind: manifest.kind, name: manifest.name,
 
 function ciWorkflowSource(request) {
   const command = request.template.kind === "mount" ? "npm run contract:test" : "npm run contract:test";
-  return `name: AgentStudio module contract
+  return `name: Pact module contract
 
 on:
   pull_request:
@@ -455,15 +455,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Checkout AgentStudio contract runtime
+      - name: Checkout Pact contract runtime
         uses: actions/checkout@v4
         with:
-          repository: Unka-Malloc/AgentStudio
-          path: agentstudio
+          repository: Unka-Malloc/Pact
+          path: pact
       - run: npm install --ignore-scripts
       - run: ${command}
         env:
-          AGENTSTUDIO_REPO: \${{ github.workspace }}/agentstudio
+          PACT_REPO: \${{ github.workspace }}/pact
 `;
 }
 
@@ -473,7 +473,7 @@ function readmeSource(request) {
     : `npm run contract:test`;
   return `# ${request.title}
 
-Generated for AgentStudio module ecosystem.
+Generated for Pact module ecosystem.
 
 - Protocol: \`${MODULE_ECOSYSTEM_PROTOCOL_VERSION}\`
 - Template: \`${request.template.templateId}\`
@@ -506,7 +506,7 @@ function scaffoldFiles(request) {
     files.push(
       {
         path: "module.json",
-        purpose: "AgentStudio mount module manifest.",
+        purpose: "Pact mount module manifest.",
         content: json(moduleManifest(request))
       },
       {
@@ -584,11 +584,11 @@ export async function planModuleScaffold(input = {}, options = {}) {
     files,
     commands: request.template.kind === "mount"
       ? [
-          `node server/scripts/agentstudio-create-module.mjs --template ${request.template.templateId} --module-id ${request.moduleId} --target ${request.targetDir}`,
-          `node server/scripts/agentstudio-module-contract-test.mjs --module ${path.join(request.targetDir, "index.mjs")} --mount-name ${request.mountName} --sample ${path.join(request.targetDir, "samples/sample.txt")}`
+          `node server/scripts/pact-create-module.mjs --template ${request.template.templateId} --module-id ${request.moduleId} --target ${request.targetDir}`,
+          `node server/scripts/pact-module-contract-test.mjs --module ${path.join(request.targetDir, "index.mjs")} --mount-name ${request.mountName} --sample ${path.join(request.targetDir, "samples/sample.txt")}`
         ]
       : [
-          `node server/scripts/agentstudio-create-module.mjs --template ${request.template.templateId} --module-id ${request.moduleId} --target ${request.targetDir}`,
+          `node server/scripts/pact-create-module.mjs --template ${request.template.templateId} --module-id ${request.moduleId} --target ${request.targetDir}`,
           `node ${path.join(request.targetDir, "scripts/validate-manifest.mjs")}`
         ]
   };

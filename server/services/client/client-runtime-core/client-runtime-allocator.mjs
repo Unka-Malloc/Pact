@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteJson } from "../../../platform/interactive/product-api.mjs";
 
-export const CLIENT_RUNTIME_ALLOCATOR_PROTOCOL_VERSION = "agentstudio.client-runtime-allocator.v1";
+export const CLIENT_RUNTIME_ALLOCATOR_PROTOCOL_VERSION = "pact.client-runtime-allocator.v1";
 
 const DEFAULT_PROFILE = {
   profileId: "default",

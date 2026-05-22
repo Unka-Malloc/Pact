@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const WORKSPACE_GOVERNANCE_PROTOCOL_VERSION = "agentstudio.workspace-governance.v1";
+export const WORKSPACE_GOVERNANCE_PROTOCOL_VERSION = "pact.workspace-governance.v1";
 
 const REGISTRY_FILE = path.join("workspace-governance", "registry.json");
 const DATA_CLASS_RANK = Object.freeze({

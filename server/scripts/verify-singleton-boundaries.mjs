@@ -147,7 +147,7 @@ async function seedSourceRoot(userDataPath, title) {
 }
 
 async function verifySourceSearchCacheIsUserDataScoped() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-singleton-source-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pact-singleton-source-"));
   const userA = path.join(root, "a");
   const userB = path.join(root, "b");
   try {
@@ -202,13 +202,13 @@ function importDictionary(mediaType) {
 }
 
 async function verifyImportRegistryCacheBoundary() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-singleton-import-"));
-  const originalPath = process.env.AGENTSTUDIO_IMPORT_FILE_TYPES_PATH;
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pact-singleton-import-"));
+  const originalPath = process.env.PACT_IMPORT_FILE_TYPES_PATH;
   try {
     const firstPath = path.join(root, "first.json");
     const secondPath = path.join(root, "second.json");
     await writeJson(firstPath, importDictionary("application/x-singleton-a"));
-    process.env.AGENTSTUDIO_IMPORT_FILE_TYPES_PATH = firstPath;
+    process.env.PACT_IMPORT_FILE_TYPES_PATH = firstPath;
     reloadImportFileTypeRegistry();
     assert.equal(importFileTypeConfigPath(), path.resolve(firstPath));
     assert.equal(mediaTypeForImportExtension(".singleton"), "application/x-singleton-a");
@@ -223,7 +223,7 @@ async function verifyImportRegistryCacheBoundary() {
     );
 
     await writeJson(secondPath, importDictionary("application/x-singleton-c"));
-    process.env.AGENTSTUDIO_IMPORT_FILE_TYPES_PATH = secondPath;
+    process.env.PACT_IMPORT_FILE_TYPES_PATH = secondPath;
     assert.equal(importFileTypeConfigPath(), path.resolve(secondPath));
     assert.equal(
       mediaTypeForImportExtension(".singleton"),
@@ -232,9 +232,9 @@ async function verifyImportRegistryCacheBoundary() {
     );
   } finally {
     if (originalPath === undefined) {
-      delete process.env.AGENTSTUDIO_IMPORT_FILE_TYPES_PATH;
+      delete process.env.PACT_IMPORT_FILE_TYPES_PATH;
     } else {
-      process.env.AGENTSTUDIO_IMPORT_FILE_TYPES_PATH = originalPath;
+      process.env.PACT_IMPORT_FILE_TYPES_PATH = originalPath;
     }
     reloadImportFileTypeRegistry();
     await fs.rm(root, { recursive: true, force: true });
@@ -242,7 +242,7 @@ async function verifyImportRegistryCacheBoundary() {
 }
 
 async function verifyPathScopedStateKeys() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-singleton-state-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pact-singleton-state-"));
   try {
     const first = stateFileKey(path.join(root, "a", "settings.json"));
     const second = stateFileKey(path.join(root, "b", "settings.json"));

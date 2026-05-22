@@ -27,7 +27,7 @@ function bearerHeaders(token) {
   };
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-tool-management-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-tool-management-"));
 const server = await startHttpServer({
   userDataPath,
   distPath: "",
@@ -44,18 +44,18 @@ try {
   assert.equal(catalog.payload.schemaVersion, 1);
   assert.ok(catalog.payload.fingerprint);
   const toolIds = new Set(catalog.payload.tools.map((tool) => tool.id));
-  assert.equal(toolIds.has("agentstudio.runtime.info"), true);
-  assert.equal(toolIds.has("agentstudio.runtime.mounts"), true);
-  assert.equal(toolIds.has("agentstudio.runtime.mounts.set"), true);
-  assert.equal(toolIds.has("agentstudio.runtime.mounts.reload"), true);
-  assert.equal(toolIds.has("agentstudio.knowledge.health"), true);
-  assert.equal(toolIds.has("agentstudio.knowledge.search"), true);
+  assert.equal(toolIds.has("pact.runtime.info"), true);
+  assert.equal(toolIds.has("pact.runtime.mounts"), true);
+  assert.equal(toolIds.has("pact.runtime.mounts.set"), true);
+  assert.equal(toolIds.has("pact.runtime.mounts.reload"), true);
+  assert.equal(toolIds.has("pact.knowledge.health"), true);
+  assert.equal(toolIds.has("pact.knowledge.search"), true);
   assert.equal(toolIds.has("agent-exploration.keyword_search"), true);
   assert.equal(toolIds.has("maintenance-agent.storage.doctor"), true);
 
   const toolsets = await fetchJson(`${server.url}/api/tool-management/v1/toolsets`);
   assert.equal(toolsets.status, 200);
-  assert.ok(toolsets.payload.toolsets.some((toolset) => toolset.id === "agentstudio.knowledge.read"));
+  assert.ok(toolsets.payload.toolsets.some((toolset) => toolset.id === "pact.knowledge.read"));
 
   const grantResult = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
@@ -75,7 +75,7 @@ try {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       label: "verify-document-parse-only",
-      toolsets: ["agentstudio.document.parse"]
+      toolsets: ["pact.document.parse"]
     })
   });
   assert.equal(narrowGrant.status, 201);
@@ -84,7 +84,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -95,7 +95,7 @@ try {
     method: "POST",
     headers: bearerHeaders(narrowGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -116,7 +116,7 @@ try {
     method: "POST",
     headers: bearerHeaders(rateLimitedGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -125,7 +125,7 @@ try {
     method: "POST",
     headers: bearerHeaders(rateLimitedGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -146,7 +146,7 @@ try {
     method: "POST",
     headers: bearerHeaders(originGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -159,7 +159,7 @@ try {
       Origin: "https://allowed.example"
     },
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -169,7 +169,7 @@ try {
     method: "POST",
     headers: bearerHeaders(grantResult.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -191,16 +191,16 @@ try {
 
   const cliCatalog = await execFileAsync(
     process.execPath,
-    [path.resolve("server/scripts/agentstudio.mjs"), "tools", "catalog", "--server-url", server.url],
+    [path.resolve("server/scripts/pact.mjs"), "tools", "catalog", "--server-url", server.url],
     { env: process.env }
   );
   const cliCatalogPayload = JSON.parse(cliCatalog.stdout);
   assert.equal(cliCatalogPayload.schemaVersion, 1);
-  assert.ok(cliCatalogPayload.tools.some((tool) => tool.id === "agentstudio.knowledge.health"));
+  assert.ok(cliCatalogPayload.tools.some((tool) => tool.id === "pact.knowledge.health"));
 
   const cliMetrics = await execFileAsync(
     process.execPath,
-    [path.resolve("server/scripts/agentstudio.mjs"), "tools", "metrics", "--server-url", server.url, "--limit", "20"],
+    [path.resolve("server/scripts/pact.mjs"), "tools", "metrics", "--server-url", server.url, "--limit", "20"],
     { env: process.env }
   );
   const cliMetricsPayload = JSON.parse(cliMetrics.stdout);
@@ -218,7 +218,7 @@ try {
     method: "POST",
     headers: bearerHeaders(grantResult.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -228,7 +228,7 @@ try {
     method: "POST",
     headers: bearerHeaders(rotated.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });
@@ -248,7 +248,7 @@ try {
     method: "POST",
     headers: bearerHeaders(runtimeReadGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts",
+      toolId: "pact.runtime.mounts",
       input: {}
     })
   });
@@ -260,7 +260,7 @@ try {
     method: "POST",
     headers: bearerHeaders(runtimeReadGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts.set",
+      toolId: "pact.runtime.mounts.set",
       input: {
         value: {
           mountRouting: {
@@ -292,10 +292,10 @@ try {
     method: "POST",
     headers: {
       ...bearerHeaders(runtimeMaintainGrant.payload.token),
-      "x-agentstudio-safety-confirm": "false"
+      "x-pact-safety-confirm": "false"
     },
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts.set",
+      toolId: "pact.runtime.mounts.set",
       input: {
         value: {
           mountRouting: {
@@ -314,7 +314,7 @@ try {
     method: "POST",
     headers: bearerHeaders(runtimeMaintainGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts.set",
+      toolId: "pact.runtime.mounts.set",
       input: {
         confirm: true,
         value: {
@@ -342,7 +342,7 @@ try {
     method: "POST",
     headers: bearerHeaders(runtimeReadGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts",
+      toolId: "pact.runtime.mounts",
       input: {}
     })
   });
@@ -360,10 +360,10 @@ try {
     method: "POST",
     headers: {
       ...bearerHeaders(runtimeMaintainGrant.payload.token),
-      "x-agentstudio-safety-confirm": "false"
+      "x-pact-safety-confirm": "false"
     },
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts.reload",
+      toolId: "pact.runtime.mounts.reload",
       input: {}
     })
   });
@@ -374,7 +374,7 @@ try {
     method: "POST",
     headers: bearerHeaders(runtimeMaintainGrant.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.runtime.mounts.reload",
+      toolId: "pact.runtime.mounts.reload",
       input: { confirm: true }
     })
   });
@@ -396,7 +396,7 @@ try {
     method: "POST",
     headers: bearerHeaders(rotated.payload.token),
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });

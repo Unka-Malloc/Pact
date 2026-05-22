@@ -29,15 +29,15 @@
 CLI 对应：
 
 ```bash
-agentstudio-client upload enqueue '<json>'
-agentstudio-client upload list
-agentstudio-client upload get <task-id>
-agentstudio-client upload run [task-id]
-agentstudio-client upload pause <task-id>
-agentstudio-client upload resume <task-id>
-agentstudio-client upload cancel <task-id>
-agentstudio-client upload retry <task-id>
-agentstudio-client upload clear-completed
+pact-client upload enqueue '<json>'
+pact-client upload list
+pact-client upload get <task-id>
+pact-client upload run [task-id]
+pact-client upload pause <task-id>
+pact-client upload resume <task-id>
+pact-client upload cancel <task-id>
+pact-client upload retry <task-id>
+pact-client upload clear-completed
 ```
 
 ## enqueue 请求

@@ -47,7 +47,7 @@ async function createKnowledgeJob(baseUrl, title, body) {
   return job;
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-skillization-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-knowledge-skillization-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -69,7 +69,7 @@ try {
   );
 
   const framework = await fetchJson(`${server.url}/api/knowledge/skill-framework`);
-  assert.equal(framework.framework.frameworkId, "agentstudio.default-knowledge-skill-framework");
+  assert.equal(framework.framework.frameworkId, "pact.default-knowledge-skill-framework");
   assert.ok(framework.framework.layers.some((layer) => layer.id === "honest_boundaries"));
 
   const updatedFramework = await fetchJson(`${server.url}/api/knowledge/skill-framework`, {
@@ -96,7 +96,7 @@ try {
       publish: true
     })
   });
-  assert.equal(generated.protocolVersion, "agentstudio.knowledge-skill.v1");
+  assert.equal(generated.protocolVersion, "pact.knowledge-skill.v1");
   assert.equal(generated.skill.status, "pending_review");
   assert.equal(generated.qualityReport.passed, true);
   assert.ok(generated.skill.evidenceRefs.length >= 1);
@@ -136,7 +136,7 @@ try {
       }
     })
   });
-  assert.equal(proposed.protocolVersion, "agentstudio.knowledge-skill.v1");
+  assert.equal(proposed.protocolVersion, "pact.knowledge-skill.v1");
   assert.equal(proposed.skill.status, "pending_review");
   assert.equal(proposed.qualityReport.creation.passed, true);
   assert.equal(proposed.skill.scope.createdByAgent, true);
@@ -164,14 +164,14 @@ try {
   await server.close();
 }
 
-const agentRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-skill-agent-"));
+const agentRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-knowledge-skill-agent-"));
 const agentWorkspace = createAgentWorkspace({ userDataPath: agentRoot });
 const contextRuntime = createContextRuntime({ userDataPath: agentRoot });
 const fakeKnowledgeCore = {
   enabled: true,
   async search(input = {}) {
     return {
-      protocolVersion: "agentstudio.knowledge.v1",
+      protocolVersion: "pact.knowledge.v1",
       query: input.query,
       hierarchy: {
         enforced: true,
@@ -197,7 +197,7 @@ const fakeKnowledgeCore = {
 const fakeKnowledgeSkillRuntime = {
   buildContextForQuery() {
     return {
-      protocolVersion: "agentstudio.knowledge-skill.v1",
+      protocolVersion: "pact.knowledge-skill.v1",
       query: "合同预算审批",
       skills: [
         {
@@ -214,7 +214,7 @@ const fakeKnowledgeSkillRuntime = {
   },
   searchSkills() {
     return {
-      protocolVersion: "agentstudio.knowledge-skill.v1",
+      protocolVersion: "pact.knowledge-skill.v1",
       items: [
         {
           skillId: "knowledge_skill_contract",
@@ -233,7 +233,7 @@ const fakeKnowledgeSkillRuntime = {
   },
   proposeSkill(input = {}) {
     return {
-      protocolVersion: "agentstudio.knowledge-skill.v1",
+      protocolVersion: "pact.knowledge-skill.v1",
       ok: true,
       skill: {
         skillId: "knowledge_skill_agent_proposed",

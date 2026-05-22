@@ -122,14 +122,14 @@ function verifyOperationsAndTools() {
   assert.equal(operations.get("asset_lineage.trace").target.method, "handleAssetLineageTrace");
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const recordTool = catalog.tools.find((tool) => tool.id === "agentstudio.assetLineage.record");
+  const recordTool = catalog.tools.find((tool) => tool.id === "pact.assetLineage.record");
   assert.ok(recordTool, "asset lineage record tool must be exposed");
-  assert.ok(recordTool.toolsets.includes("agentstudio.document.parse"));
-  assert.ok(recordTool.toolsets.includes("agentstudio.knowledge.maintain"));
+  assert.ok(recordTool.toolsets.includes("pact.document.parse"));
+  assert.ok(recordTool.toolsets.includes("pact.knowledge.maintain"));
 }
 
 async function main() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-asset-lineage-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-asset-lineage-"));
   try {
     await verifyRuntime(tempRoot);
     verifyOperationsAndTools();

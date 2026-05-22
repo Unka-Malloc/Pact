@@ -9,7 +9,7 @@ import {
   KNOWLEDGE_EVOLUTION_PROTOCOL_VERSION
 } from "../platform/specialized/knowledge/invocation/knowledge-evolution-runtime/index.mjs";
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-distillation-optimization-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-distillation-optimization-"));
 
 let evaluationCount = 0;
 const knowledgeCore = {
@@ -147,7 +147,7 @@ try {
 
   console.log("[knowledge-distillation-optimization] ok");
 } finally {
-  if (process.env.AGENTSTUDIO_KEEP_TEST_DATA !== "1") {
+  if (process.env.PACT_KEEP_TEST_DATA !== "1") {
     await fs.rm(userDataPath, { recursive: true, force: true });
   } else {
     console.log(`kept test data: ${userDataPath}`);

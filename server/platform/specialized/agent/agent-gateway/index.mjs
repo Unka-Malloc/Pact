@@ -201,7 +201,7 @@ function compactedMessagesForGateway(result = {}) {
     messages.push({
       role: "system",
       content: [
-        "AgentStudio context compaction summary follows. It is auxiliary memory, not canonical evidence.",
+        "Pact context compaction summary follows. It is auxiliary memory, not canonical evidence.",
         summary
       ].join("\n")
     });
@@ -279,7 +279,7 @@ async function prepareAgentGatewayInputWithCompaction({
   }
   const gatewayMessages = compactedMessagesForGateway(compaction);
   const compactedQuestion = [
-    "AgentStudio compacted prior context before this agent call.",
+    "Pact compacted prior context before this agent call.",
     `Boundary: ${compaction.boundary?.boundaryId || ""}`,
     compaction.summary || "",
     compaction.reinjection?.items?.length
@@ -446,7 +446,7 @@ function normalizeCustomHttpAdapterEntry(value = {}, settings = {}, fallbacks = 
       gateway.modelAlias ||
       fallbacks.alias ||
       settings.customModelAlias ||
-      process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_ALIAS
+      process.env.PACT_CUSTOM_HTTP_ADAPTER_ALIAS
   );
   const model = String(gateway.model || gateway.engine || "").trim();
   return {
@@ -460,35 +460,35 @@ function normalizeCustomHttpAdapterEntry(value = {}, settings = {}, fallbacks = 
         settings.customModelLabel ||
         "自定义 HTTP Adapter"
     ).trim(),
-    url: String(gateway.url || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_URL || "").trim(),
+    url: String(gateway.url || process.env.PACT_CUSTOM_HTTP_ADAPTER_URL || "").trim(),
     token: String(
       gateway.token ||
         gateway.apiKey ||
         fallbacks.token ||
         settings.customModelApiKey ||
-        process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN ||
+        process.env.PACT_CUSTOM_HTTP_ADAPTER_TOKEN ||
         ""
     ).trim(),
     tokenHeader:
       String(
-        gateway.tokenHeader || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN_HEADER || "token"
+        gateway.tokenHeader || process.env.PACT_CUSTOM_HTTP_ADAPTER_TOKEN_HEADER || "token"
       ).trim() || "token",
     tokenPrefix: String(
-      gateway.tokenPrefix ?? process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TOKEN_PREFIX ?? ""
+      gateway.tokenPrefix ?? process.env.PACT_CUSTOM_HTTP_ADAPTER_TOKEN_PREFIX ?? ""
     ),
     agentName: String(
       gateway.agentName ||
         gateway.label ||
-        process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_AGENT_NAME ||
+        process.env.PACT_CUSTOM_HTTP_ADAPTER_AGENT_NAME ||
         ""
     ).trim(),
     pluginList: asStringList(gateway.pluginList),
     engine: String(
-      gateway.engine || gateway.model || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_ENGINE || ""
+      gateway.engine || gateway.model || process.env.PACT_CUSTOM_HTTP_ADAPTER_ENGINE || ""
     ).trim(),
     parameters: asPlainObject(gateway.parameters),
     timeoutMs: normalizeTimeout(
-      gateway.timeoutMs || process.env.AGENTSTUDIO_CUSTOM_HTTP_ADAPTER_TIMEOUT_MS
+      gateway.timeoutMs || process.env.PACT_CUSTOM_HTTP_ADAPTER_TIMEOUT_MS
     ),
     systemPrompt: String(gateway.systemPrompt || gateway.prompt || "").trim()
   };
@@ -502,7 +502,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
       modelEntry.baseUrl ||
         modelEntry.url ||
         settings.deepSeekBaseUrl ||
-        process.env.AGENTSTUDIO_DEEPSEEK_BASE_URL ||
+        process.env.PACT_DEEPSEEK_BASE_URL ||
         "https://api.deepseek.com"
     ).trim() || "https://api.deepseek.com";
   const modelFieldPresent = ["model", "modelId", "engine"].some((key) =>
@@ -512,7 +512,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
   const model = configuredModel ?? (
     hasModelEntry
       ? ""
-      : String(settings.deepSeekModel || process.env.AGENTSTUDIO_DEEPSEEK_MODEL || "").trim()
+      : String(settings.deepSeekModel || process.env.PACT_DEEPSEEK_MODEL || "").trim()
   );
   const alias = adapterAlias(
     modelEntry.uid ||
@@ -536,7 +536,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
       modelEntry.apiKey ||
         modelEntry.token ||
         settings.deepSeekApiKey ||
-        process.env.AGENTSTUDIO_DEEPSEEK_API_KEY ||
+        process.env.PACT_DEEPSEEK_API_KEY ||
         ""
     ).trim(),
     tokenHeader: "Authorization",
@@ -549,7 +549,7 @@ function normalizeDeepSeekEntry(settings = {}, entry = {}) {
     parameters: asPlainObject(modelEntry.parameters),
     systemPrompt: String(modelEntry.systemPrompt || modelEntry.prompt || "").trim(),
     timeoutMs: normalizeTimeout(
-      modelEntry.timeoutMs || settings.deepSeekTimeoutMs || process.env.AGENTSTUDIO_DEEPSEEK_TIMEOUT_MS
+      modelEntry.timeoutMs || settings.deepSeekTimeoutMs || process.env.PACT_DEEPSEEK_TIMEOUT_MS
     )
   };
 }
@@ -1248,14 +1248,14 @@ function resolveDeepSeekModel(input = {}, config = {}) {
   return "deepseek-v4-pro";
 }
 
-function normalizeAgentStudioThinkingMode(value) {
+function normalizePactThinkingMode(value) {
   const mode = String(value || "").trim().toLowerCase();
   return ["enabled", "disabled"].includes(mode) ? mode : "";
 }
 
-function applyAgentStudioThinkingMode(parameters = {}, config = {}, input = {}) {
-  const mode = normalizeAgentStudioThinkingMode(parameters.agentstudio_thinking_mode);
-  delete parameters.agentstudio_thinking_mode;
+function applyPactThinkingMode(parameters = {}, config = {}, input = {}) {
+  const mode = normalizePactThinkingMode(parameters.pact_thinking_mode);
+  delete parameters.pact_thinking_mode;
   if (!mode) {
     return parameters;
   }
@@ -1300,7 +1300,7 @@ function buildDeepSeekRequest(input = {}, config = {}) {
     ...asPlainObject(config.parameters),
     ...asPlainObject(input.parameters)
   };
-  applyAgentStudioThinkingMode(parameters, config, input);
+  applyPactThinkingMode(parameters, config, input);
   const messages = buildChatMessages(input, config, parameters);
   delete parameters.systemPrompt;
 
@@ -1331,7 +1331,7 @@ function buildOpenAiCompatibleRequest(input = {}, config = {}) {
     ...configParameters,
     ...inputParameters
   };
-  applyAgentStudioThinkingMode(parameters, config, input);
+  applyPactThinkingMode(parameters, config, input);
   const extraBody = {
     ...asPlainObject(configParameters.extra_body),
     ...asPlainObject(inputParameters.extra_body)

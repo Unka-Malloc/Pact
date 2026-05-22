@@ -1,4 +1,4 @@
-# AgentStudio 🚀
+# Pact 🚀
 
 English | [简体中文](README.zh-CN.md)
 
@@ -12,9 +12,9 @@ English | [简体中文](README.zh-CN.md)
 
 While Large Language Models (LLMs) and local AI agents are becoming increasingly powerful, they often operate in isolated silos, lacking true collaboration. Traditional enterprise knowledge bases, on the other hand, store massive amounts of assets but fail to provide fine-grained, agent-centric access control.
 
-**AgentStudio was built to bridge this exact gap.**
+**Pact was built to bridge this exact gap.**
 
-AgentStudio does not build yet another LLM, nor does it aim to be a monolithic autonomous agent platform. Instead, we focus exclusively on the missing **"Governance Middleware"**: providing a **secure, controllable, editable, and 100% auditable** shared workspace for various local agents, automation scripts, and human team members.
+Pact does not build yet another LLM, nor does it aim to be a monolithic autonomous agent platform. Instead, we focus exclusively on the missing **"Governance Middleware"**: providing a **secure, controllable, editable, and 100% auditable** shared workspace for various local agents, automation scripts, and human team members.
 
 ## 🏛️ Architecture Overview
 
@@ -114,7 +114,7 @@ docker compose up -d
 
 ### CLI Interactions
 
-AgentStudio provides a powerful CLI tool for CI/CD and quick terminal operations:
+Pact provides a powerful CLI tool for CI/CD and quick terminal operations:
 
 ```bash
 npm run cli -- health
@@ -126,7 +126,7 @@ npm run cli -- rpc-call jobs.list --params '{"limit":20}'
 
 ### Core Design Documents
 
-These five documents are the authoritative source of truth for AgentStudio's architecture:
+These five documents are the authoritative source of truth for Pact's architecture:
 
 | Document | Description |
 | --- | --- |
@@ -160,4 +160,4 @@ This project is licensed under the [GNU General Public License v3.0 only](LICENS
 
 ---
 
-*"In AgentStudio, agents are not trusted. We only trust verifiable asset states and a replayable operation ledger."*
+*"In Pact, agents are not trusted. We only trust verifiable asset states and a replayable operation ledger."*

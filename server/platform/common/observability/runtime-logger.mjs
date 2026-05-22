@@ -62,7 +62,7 @@ function normalizeLogLevel(value, fallback = "debug") {
 function resolveLogDirectory({ runtimeOptions = {}, userDataPath = "" } = {}) {
   const explicit = String(
     runtimeOptions.logDir ||
-      process.env.AGENTSTUDIO_LOG_DIR ||
+      process.env.PACT_LOG_DIR ||
       ""
   ).trim();
   if (explicit) {
@@ -73,7 +73,7 @@ function resolveLogDirectory({ runtimeOptions = {}, userDataPath = "" } = {}) {
     return path.join(path.resolve(dataRoot), "logs", "runtime");
   }
   const workspaceRoot = path.resolve(
-    String(runtimeOptions.cwd || process.env.AGENTSTUDIO_WORKSPACE_ROOT || process.cwd())
+    String(runtimeOptions.cwd || process.env.PACT_WORKSPACE_ROOT || process.cwd())
   );
   if (workspaceRoot) {
     return path.join(workspaceRoot, "build", "logs", "runtime");
@@ -244,10 +244,10 @@ export function createRuntimeLogger({
   userDataPath = "",
   runtimeOptions = {},
   component = "server",
-  retentionDays = process.env.AGENTSTUDIO_LOG_RETENTION_DAYS,
-  maxTotalBytes = runtimeOptions.logMaxTotalBytes || process.env.AGENTSTUDIO_LOG_MAX_TOTAL_BYTES,
-  maxFileBytes = runtimeOptions.logMaxFileBytes || process.env.AGENTSTUDIO_LOG_MAX_FILE_BYTES,
-  level = runtimeOptions.logLevel || process.env.AGENTSTUDIO_LOG_LEVEL
+  retentionDays = process.env.PACT_LOG_RETENTION_DAYS,
+  maxTotalBytes = runtimeOptions.logMaxTotalBytes || process.env.PACT_LOG_MAX_TOTAL_BYTES,
+  maxFileBytes = runtimeOptions.logMaxFileBytes || process.env.PACT_LOG_MAX_FILE_BYTES,
+  level = runtimeOptions.logLevel || process.env.PACT_LOG_LEVEL
 } = {}) {
   const logDir = resolveLogDirectory({ runtimeOptions, userDataPath });
   const safeRetentionDays = normalizeRetentionDays(retentionDays);
@@ -265,7 +265,7 @@ export function createRuntimeLogger({
 
   function logPathFor(date = new Date(), index = 0) {
     const suffix = index > 0 ? `.${index}` : "";
-    return path.join(logDir, `agentstudio-${component}-${datePart(date)}${suffix}.jsonl`);
+    return path.join(logDir, `pact-${component}-${datePart(date)}${suffix}.jsonl`);
   }
 
   async function currentLogPath() {
@@ -293,7 +293,7 @@ export function createRuntimeLogger({
     const entries = await fs.readdir(logDir, { withFileTypes: true }).catch(() => []);
     const logFiles = [];
     for (const entry of entries) {
-      if (!entry.isFile() || !/^agentstudio-.+\.jsonl$/.test(entry.name)) {
+      if (!entry.isFile() || !/^pact-.+\.jsonl$/.test(entry.name)) {
         continue;
       }
       const filePath = path.join(logDir, entry.name);

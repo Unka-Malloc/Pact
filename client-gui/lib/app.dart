@@ -5,14 +5,14 @@ import 'src/services/runtime_services.dart';
 import 'src/ui/client_shell.dart';
 import 'src/ui/theme.dart';
 
-class AgentStudioApp extends StatefulWidget {
-  const AgentStudioApp({super.key});
+class PactApp extends StatefulWidget {
+  const PactApp({super.key});
 
   @override
-  State<AgentStudioApp> createState() => _AgentStudioAppState();
+  State<PactApp> createState() => _PactAppState();
 }
 
-class _AgentStudioAppState extends State<AgentStudioApp> {
+class _PactAppState extends State<PactApp> {
   late final AppController _controller;
 
   @override
@@ -30,9 +30,9 @@ class _AgentStudioAppState extends State<AgentStudioApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AgentStudio 便携客户端',
+      title: 'Pact 便携客户端',
       debugShowCheckedModeBanner: false,
-      theme: buildAgentStudioTheme(),
+      theme: buildPactTheme(),
       home: ClientShell(controller: _controller),
     );
   }

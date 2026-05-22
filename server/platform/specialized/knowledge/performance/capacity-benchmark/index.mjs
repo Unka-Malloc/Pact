@@ -4,7 +4,7 @@ import {
 } from "../../connectors/data-connector-governance/index.mjs";
 import { createKnowledgeCoreMount } from "../../storage/knowledge-core/index.mjs";
 
-export const PERFORMANCE_CAPACITY_PROTOCOL_VERSION = "agentstudio.performance-capacity.v1";
+export const PERFORMANCE_CAPACITY_PROTOCOL_VERSION = "pact.performance-capacity.v1";
 
 export const CAPACITY_TARGET_PROFILES = Object.freeze({
   smoke: {

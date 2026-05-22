@@ -34,9 +34,9 @@
 手动命令：
 
 ```bash
-agentstudio-client events sync --topic jobs.job --include-snapshot
-agentstudio-client upload retry <task-id>
-agentstudio-client upload run
+pact-client events sync --topic jobs.job --include-snapshot
+pact-client upload retry <task-id>
+pact-client upload run
 ```
 
 原则：

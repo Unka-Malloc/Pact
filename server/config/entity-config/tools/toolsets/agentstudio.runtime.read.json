@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.runtime.read",
+  "id": "pact.runtime.read",
   "label": "Runtime read",
   "requiredScopes": [
     "storage:read",

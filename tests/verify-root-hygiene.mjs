@@ -21,16 +21,16 @@ const forbiddenNames = new Set([
   "testing",
   "tmp",
   ".playwright-cli",
-  ".agentstudio-local-data",
-  ".agentstudio-server-data",
-  ".agentstudio-skill-data"
+  ".pact-local-data",
+  ".pact-server-data",
+  ".pact-skill-data"
 ]);
 
 const forbiddenPatterns = [
   /^page-v\d+\.png$/,
   /^page-.+\.png$/,
-  /^agentstudio-server-.+\.tar\.gz$/,
-  /^agentstudio-server-.+\.tar\.gz\.sha256$/,
+  /^pact-server-.+\.tar\.gz$/,
+  /^pact-server-.+\.tar\.gz\.sha256$/,
   /^.*\.result\.json$/,
   /^.*\.docx$/,
   /^.*\.pdf$/,
@@ -69,7 +69,7 @@ const allowedRootNames = new Set([
   "package.json",
   "server",
   "server-web",
-  "agentstudio-v1",
+  "pact-v1",
   "tests",
   "tsconfig.json",
   "vite.config.ts"

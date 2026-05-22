@@ -62,7 +62,7 @@ async function assertGovernanceDoc() {
     "authorizationOverlay",
     "derivedKnowledgeSpace",
     "knowledgeBase",
-    "agentstudio.knowledge.v1",
+    "pact.knowledge.v1",
     "npm run server:verify:knowledge-architecture-governance",
     "npm run server:verify:knowledge-markdown-chunking",
     "npm run server:verify:knowledge-docx-export",
@@ -91,7 +91,7 @@ async function assertGovernanceDoc() {
     "dispatchDynamicDocumentParsingAlgorithm",
     "bindDynamicDocumentParsingInvocation",
     "工业级蒸馏验收",
-    "agentstudio.knowledge-distillation-industrial.v1",
+    "pact.knowledge-distillation-industrial.v1",
     "markdown-project-digest",
     "email-thread-digest",
     "Repomix",
@@ -120,16 +120,16 @@ async function assertProtocolDocs() {
   const knowledgeProtocol = await read("server/protocols/knowledge/README.md");
 
   assertAllIncludes(protocols, [
-    "agentstudio.knowledge.v1",
-    "agentstudio.workspace.v1",
-    "agentstudio.operation.v1",
-    "agentstudio.context-bundle.v1",
-    "agentstudio.knowledge-access.v1",
-    "agentstudio.agent-library.v1",
-    "agentstudio.workspace-contribution.v1",
+    "pact.knowledge.v1",
+    "pact.workspace.v1",
+    "pact.operation.v1",
+    "pact.context-bundle.v1",
+    "pact.knowledge-access.v1",
+    "pact.agent-library.v1",
+    "pact.workspace-contribution.v1",
     "Middle Layer Strategy",
-    "上游资源经过 AgentStudio 后变细",
-    "下游本地智能体经过 AgentStudio 后能共享部分资产和能力",
+    "上游资源经过 Pact 后变细",
+    "下游本地智能体经过 Pact 后能共享部分资产和能力",
     "knowledgeBase",
     "knowledge.search",
     "knowledge.export.docx",
@@ -164,12 +164,12 @@ async function assertProtocolDocs() {
     "智能体兼容",
     "信息源兼容",
     "工作空间环境兼容",
-    "AgentStudio 管理软件",
+    "Pact 管理软件",
     "assetContributionReportV0",
     "workspaceId/contributions/report",
     "contributionGrant",
     "rankScore",
-    "agentstudio.checkpoint-tree.v1",
+    "pact.checkpoint-tree.v1",
     "Unified Checkpoint Tree Protocol",
     "checkpointNodeId",
     "effectKind",
@@ -182,7 +182,7 @@ async function assertProtocolDocs() {
     "checkpoint.restored",
     "git worktree",
     "MCP Demo Flows",
-    "AgentStudio MCP service",
+    "Pact MCP service",
     "OpenClaw 文档互通演示",
     "Skill 贡献排行榜演示",
     "workspace.skill.usage.report",
@@ -213,7 +213,7 @@ async function assertProtocolDocs() {
     "toolGrantId",
     "原始语料全文",
     "校验、引用、补证",
-    "agentstudio.knowledge-distillation-industrial.v1",
+    "pact.knowledge-distillation-industrial.v1",
     "markdown-project-digest",
     "email-thread-digest",
     "Repomix",
@@ -230,13 +230,13 @@ async function assertProtocolDocs() {
     "qdrant",
     "opensearch",
     "pgvector",
-    "AGENTSTUDIO_EXTERNAL_KB_PROVIDER"
+    "PACT_EXTERNAL_KB_PROVIDER"
   ], "docs/PROTOCOLS.md");
 
   assertAllIncludes(server, [
     "knowledgeBase",
     "KnowledgeCore",
-    "agentstudio.knowledge.v1",
+    "pact.knowledge.v1",
     "mount-modules.json",
     "热插拔",
     "热切换",
@@ -257,7 +257,7 @@ async function assertProtocolDocs() {
     "bindDynamicDocumentParsingInvocation",
     "payloadBudget.maxResponseBytes",
     "payload.nextContinuationToken",
-    "agentstudio.knowledge-distillation-industrial.v1",
+    "pact.knowledge-distillation-industrial.v1",
     "buildMarkdownProjectDigest",
     "buildEmailThreadDigest",
     "deepseek-v4-flash",
@@ -266,9 +266,9 @@ async function assertProtocolDocs() {
 
   assertAllIncludes(server, [
     "server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs",
-    "AGENTSTUDIO_SERVER_KNOWLEDGE_BASE_MODULE",
-    "AGENTSTUDIO_EXTERNAL_KB_PROVIDER",
-    "AGENTSTUDIO_EXTERNAL_KB_CONNECTION_STRING"
+    "PACT_SERVER_KNOWLEDGE_BASE_MODULE",
+    "PACT_EXTERNAL_KB_PROVIDER",
+    "PACT_EXTERNAL_KB_CONNECTION_STRING"
   ], "docs/SERVER.md");
 
   assertAllIncludes(architecture, [
@@ -297,7 +297,7 @@ async function assertProtocolDocs() {
     "终端贡献是第二信息源",
     "OpenClaw 文档互通演示",
     "Skill 贡献排行榜演示",
-    "AgentStudio MCP service",
+    "Pact MCP service",
     "rankScoreV0",
     "ContributionRegistry",
     "LeaderboardRuntime",
@@ -399,7 +399,7 @@ async function assertProtocolDocs() {
     "local agent retrieval",
     "self-contained Markdown/DOCX/HTML/PDF-style portable documents",
     "Industrial Distillation Benchmark Protocol",
-    "agentstudio.knowledge-distillation-industrial.v1",
+    "pact.knowledge-distillation-industrial.v1",
     "buildMarkdownProjectDigest",
     "buildEmailThreadDigest",
     "evaluateIndustrialDistillationGap",
@@ -481,7 +481,7 @@ async function assertIndustrialDistillationBenchmark() {
   const docs = await read("docs/KNOWLEDGE-GOVERNANCE.md");
 
   assertAllIncludes(module, [
-    "agentstudio.knowledge-distillation-industrial.v1",
+    "pact.knowledge-distillation-industrial.v1",
     "DEFAULT_INDUSTRIAL_DISTILLATION_MODEL",
     "deepseek-v4-flash",
     "buildMarkdownProjectDigest",
@@ -613,14 +613,14 @@ function assertOperationRegistry() {
 
 function assertToolManagementCatalog() {
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const tool = catalog.tools.find((item) => item.id === "agentstudio.knowledge.exportDocx");
-  assert.ok(tool, "Tool Management catalog must include agentstudio.knowledge.exportDocx");
+  const tool = catalog.tools.find((item) => item.id === "pact.knowledge.exportDocx");
+  assert.ok(tool, "Tool Management catalog must include pact.knowledge.exportDocx");
   assert.equal(tool.operationId, "knowledge.export_docx");
   assert.deepEqual(tool.requiredScopes, ["knowledge:read"]);
   assert.equal(tool.outputSchema?.type, "binary");
   assert.equal(tool.transport?.http?.path, "/api/knowledge/export/docx");
-  const sessionForkTool = catalog.tools.find((item) => item.id === "agentstudio.agentSession.fork");
-  assert.ok(sessionForkTool, "Tool Management catalog must include agentstudio.agentSession.fork");
+  const sessionForkTool = catalog.tools.find((item) => item.id === "pact.agentSession.fork");
+  assert.ok(sessionForkTool, "Tool Management catalog must include pact.agentSession.fork");
   assert.equal(sessionForkTool.operationId, "agent_sessions.fork");
   assert.deepEqual(sessionForkTool.requiredScopes, ["knowledge:write"]);
 }
@@ -754,7 +754,7 @@ async function assertStandardDataDirectory() {
   ];
   for (const file of files) {
     const text = await read(file);
-    assertIncludes(text, ".agentstudio-server-data", `${file} must use the standard server data directory`);
+    assertIncludes(text, ".pact-server-data", `${file} must use the standard server data directory`);
     assert.equal(text.includes("build/server-data"), false, `${file} must not default to build/server-data`);
   }
 }

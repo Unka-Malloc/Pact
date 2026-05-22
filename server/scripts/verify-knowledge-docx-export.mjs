@@ -24,7 +24,7 @@ function assertDocxNotIncludes(buffer, needle, message) {
 }
 
 async function assertNormalizedHumanDocxAndYamlMachineState() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-normalized-docx-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-normalized-docx-"));
   const jobId = "normalized-docx-export";
   const manifest = await generateNormalizedDocuments({
     userDataPath,
@@ -65,7 +65,7 @@ async function assertNormalizedHumanDocxAndYamlMachineState() {
     }
   });
 
-  assert.equal(manifest.packageType, "agentstudio.normalized-documents");
+  assert.equal(manifest.packageType, "pact.normalized-documents");
   assert.equal(manifest.packageRole, "external-knowledge-corpus");
   assert.equal(manifest.architecture.corpusExport.format, "docx");
   assert.equal(manifest.humanReadable.format, "docx");
@@ -89,7 +89,7 @@ async function assertNormalizedHumanDocxAndYamlMachineState() {
     path.join(userDataPath, "jobs", jobId, "normalized-documents", firstDocx.machineReadableRelativePath),
     "utf8"
   );
-  assert.ok(machineYaml.includes("agentstudio.normalized-document.machine.v1"));
+  assert.ok(machineYaml.includes("pact.normalized-document.machine.v1"));
   assert.ok(machineYaml.includes("chunk-background"));
   assert.ok(machineYaml.includes("section-background"));
   await fs.access(path.join(userDataPath, "jobs", jobId, "normalized-documents", "manifest.yaml"));
@@ -163,7 +163,7 @@ function buildKnowledgeDocument() {
 }
 
 async function assertKnowledgeCoreDocxExport() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-knowledge-docx-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-knowledge-docx-"));
   const knowledgeCore = await createKnowledgeCoreMount({ userDataPath });
   try {
     knowledgeCore.upsertDocuments({
@@ -182,7 +182,7 @@ async function assertKnowledgeCoreDocxExport() {
     assert.equal(result.manifest.documentRole, "human-readable-normalized-knowledge-document");
     assert.equal(result.manifest.documentCount, 1);
     assert.ok(result.buffer.length > 0);
-    assertDocxIncludes(result.buffer, "AgentStudio 知识文档导出");
+    assertDocxIncludes(result.buffer, "Pact 知识文档导出");
     assertDocxIncludes(result.buffer, "客户续费资料");
     assertDocxIncludes(result.buffer, "背景证据正文");
     assertDocxNotIncludes(result.buffer, "external-knowledge-corpus");

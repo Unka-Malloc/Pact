@@ -1,42 +1,42 @@
-# AgentStudio MCP Connector
+# Pact MCP Connector
 
-Release-packaged installer for connecting local AI agents to an AgentStudio MCP HTTP endpoint.
+Release-packaged installer for connecting local AI agents to an Pact MCP HTTP endpoint.
 
-This package is the client-side connector only. It does not contain the AgentStudio server.
+This package is the client-side connector only. It does not contain the Pact server.
 
 ## Install
 
 One command from GitHub Release:
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/AgentStudio/releases/latest/download/agentstudio-mcp-install.sh)"
+/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 This downloads the connector from GitHub Releases, verifies its checksum,
-installs it under `~/.agentstudio/mcp/connector`, then opens the multi-select TUI.
+installs it under `~/.pact/mcp/connector`, then opens the multi-select TUI.
 If Node.js 20+ is available, the installer uses the small source package. If
 Node.js is missing, it falls back to the larger portable zip with an embedded
 runtime.
 
-The connector does not assume a default IP address. It scans local AgentStudio
+The connector does not assume a default IP address. It scans local Pact
 candidates, fetches MCP discovery, then verifies the `/api/mcp/handshake`
 Ed25519 signature before using the endpoint.
 For normal local installs, it also requests a Tool Management grant token from
-the verified AgentStudio service. Users do not need to manually copy
-`AGENTSTUDIO_MCP_TOKEN`.
+the verified Pact service. Users do not need to manually copy
+`PACT_MCP_TOKEN`.
 
 For npm-based installs:
 
 ```bash
-npx agentstudio-mcp-connector@latest register
+npx pact-mcp-connector@latest register
 ```
 
-This writes one local registry at `~/.agentstudio/mcp/servers.json`. It does not mutate any agent client config.
+This writes one local registry at `~/.pact/mcp/servers.json`. It does not mutate any agent client config.
 
 For one target:
 
 ```bash
-agentstudio-mcp install
+pact-mcp install
 ```
 
 The interactive installer scans local clients and lets you choose one or more targets with the arrow keys and Space.
@@ -46,7 +46,7 @@ not a raw configuration dump. Use `--json` for scripts.
 For scripts:
 
 ```bash
-npx agentstudio-mcp-connector@latest install --target codex
+npx pact-mcp-connector@latest install --target codex
 ```
 
 Use `--token-stdin` only when installing with a pre-issued custom grant token.
@@ -56,11 +56,11 @@ Use `--token-stdin` only when installing with a pre-issued custom grant token.
 Manage the local connector's server address profiles:
 
 ```bash
-agentstudio-mcp server-config --set --url http://<host>:<port> --name local
-agentstudio-mcp server-config --switch local
-agentstudio-mcp server-config --refresh
-agentstudio-mcp server-config --reset
-agentstudio-mcp server-config --list
+pact-mcp server-config --set --url http://<host>:<port> --name local
+pact-mcp server-config --switch local
+pact-mcp server-config --refresh
+pact-mcp server-config --reset
+pact-mcp server-config --list
 ```
 
 `--set`, `--switch`, and `--refresh` verify the server's signed MCP handshake.
@@ -72,15 +72,15 @@ or configure a server again.
 Use the portable zip release artifact instead of the npm package:
 
 ```bash
-unzip agentstudio-mcp-connector-<version>-<platform>.zip
-cd agentstudio-mcp-connector-<version>-<platform>
-./agentstudio-mcp install
+unzip pact-mcp-connector-<version>-<platform>.zip
+cd pact-mcp-connector-<version>-<platform>
+./pact-mcp install
 ```
 
 For scripts:
 
 ```bash
-./agentstudio-mcp install --target codex
+./pact-mcp install --target codex
 ```
 
 The portable zip package includes its own Node.js runtime. macOS users can open `install.command` and follow the prompts.
@@ -88,7 +88,7 @@ The portable zip package includes its own Node.js runtime. macOS users can open 
 ## Verify
 
 ```bash
-AGENTSTUDIO_MCP_TOKEN='<issued-token>' npx agentstudio-mcp-connector@latest doctor
+PACT_MCP_TOKEN='<issued-token>' npx pact-mcp-connector@latest doctor
 ```
 
 The token is only needed for authenticated doctor checks. Normal install issues
@@ -97,7 +97,7 @@ one automatically.
 ## Discover Local Hub
 
 ```bash
-npx agentstudio-mcp-connector@latest discover-local
+npx pact-mcp-connector@latest discover-local
 ```
 
 Agents should use this command as the unified local discovery entrypoint.
@@ -105,13 +105,13 @@ Agents should use this command as the unified local discovery entrypoint.
 ## Scan Clients
 
 ```bash
-npx agentstudio-mcp-connector@latest scan --json
+npx pact-mcp-connector@latest scan --json
 ```
 
 ## Uninstall
 
 ```bash
-npx agentstudio-mcp-connector@latest uninstall --target codex
+npx pact-mcp-connector@latest uninstall --target codex
 ```
 
 Supported targets: `codex`, `gemini-cli`, `kilo-code`, `copilot`, `openclaw`, `hermes`, `antigravity`.

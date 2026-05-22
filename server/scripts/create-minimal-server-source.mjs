@@ -16,7 +16,7 @@ import {
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
-const DEFAULT_OUTPUT = path.join(REPO_ROOT, "agentstudio-v1");
+const DEFAULT_OUTPUT = path.join(REPO_ROOT, "pact-v1");
 const DEFAULT_DOCS = [
   "Architecture.md",
   "SERVER.md",
@@ -54,10 +54,10 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage:",
-    "  node server/scripts/create-minimal-server-source.mjs [--output agentstudio-v1] [--force]",
+    "  node server/scripts/create-minimal-server-source.mjs [--output pact-v1] [--force]",
     "",
     "Options:",
-    "  --output PATH          Target source tree directory. Default: ./agentstudio-v1",
+    "  --output PATH          Target source tree directory. Default: ./pact-v1",
     "  --edition ID           Feature edition to instantiate. Default: community",
     "  --feature-profile PATH Optional custom feature profile JSON.",
     "  --features LIST        Extra feature IDs to enable, comma-separated.",
@@ -94,12 +94,12 @@ function normalizeBooleanDisabled(args, key) {
 
 function packageJsonForTarget({ rootPackage, dependencies, edition }) {
   return {
-    name: "agentstudio-v1-minimal-server",
+    name: "pact-v1-minimal-server",
     version: rootPackage.version || "0.1.0",
     private: true,
     type: "module",
     bin: {
-      agentstudio: "server/scripts/agentstudio.mjs"
+      pact: "server/scripts/pact.mjs"
     },
     scripts: {
       start: `node server/scripts/start-server.mjs --with-ui --profile minimal --edition ${edition}`,
@@ -193,9 +193,9 @@ async function writeReadme({ targetPath, featureRuntime }) {
   await fs.writeFile(
     path.join(targetPath, "README.md"),
     [
-      "# agentstudio-v1",
+      "# pact-v1",
       "",
-      "Minimal AgentStudio server source tree generated from FeatureManifest.",
+      "Minimal Pact server source tree generated from FeatureManifest.",
       "",
       "## Feature Profile",
       "",
@@ -306,7 +306,7 @@ async function instantiateMinimalSource(args = {}) {
   await writeReadme({ targetPath, featureRuntime });
   await fs.writeFile(
     path.join(targetPath, ".gitignore"),
-    ["node_modules/", "data/", ".agentstudio-server-data/", "*.log", ""].join("\n"),
+    ["node_modules/", "data/", ".pact-server-data/", "*.log", ""].join("\n"),
     "utf8"
   );
 

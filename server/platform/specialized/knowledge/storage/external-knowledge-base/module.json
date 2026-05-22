@@ -1,10 +1,10 @@
 {
   "name": "ExternalKnowledgeBase",
   "version": 1,
-  "description": "Optional agentstudio.knowledge.v1 mount that mirrors KnowledgeCore records into mature external open-source knowledge backends.",
+  "description": "Optional pact.knowledge.v1 mount that mirrors KnowledgeCore records into mature external open-source knowledge backends.",
   "defaultLoaded": false,
-  "protocol": "agentstudio.knowledge.v1",
-  "adapterProtocol": "agentstudio.external-knowledge-adapter.v1",
+  "protocol": "pact.knowledge.v1",
+  "adapterProtocol": "pact.external-knowledge-adapter.v1",
   "components": {
     "knowledgeBase": {
       "path": "./index.mjs",

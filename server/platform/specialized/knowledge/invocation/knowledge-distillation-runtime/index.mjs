@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_INDUSTRIAL_DISTILLATION_MODEL } from "./industrial-benchmark.mjs";
 
-export const KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION = "agentstudio.knowledge-distillation.v1";
+export const KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION = "pact.knowledge-distillation.v1";
 export const PORTABLE_DISTILLATION_DOCUMENT_PROTOCOL_VERSION = "portable.knowledge-distillation.v1";
 const PORTABLE_DOCUMENT_FORBIDDEN_KEYS = new Set([
   "evidenceRefs",

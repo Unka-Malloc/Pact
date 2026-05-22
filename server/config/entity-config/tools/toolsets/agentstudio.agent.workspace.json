@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.agent.workspace",
+  "id": "pact.agent.workspace",
   "label": "Agent workspace",
   "requiredScopes": [
     "knowledge:read",

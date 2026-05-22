@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "frameworkId": "agentstudio.default-knowledge-skill-framework",
+  "frameworkId": "pact.default-knowledge-skill-framework",
   "version": 1,
   "layers": [
     {

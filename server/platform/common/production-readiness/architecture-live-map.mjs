@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildProductionHealthReport } from "./report-reader.mjs";
 
-export const ARCHITECTURE_LIVE_MAP_PROTOCOL_VERSION = "agentstudio.architecture-live-map.v1";
+export const ARCHITECTURE_LIVE_MAP_PROTOCOL_VERSION = "pact.architecture-live-map.v1";
 
 const defaultRepoRoot = path.resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
 

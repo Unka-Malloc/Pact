@@ -1,4 +1,4 @@
-export const KNOWLEDGE_HTML_EXPORT_PACKAGE_TYPE = "agentstudio.knowledge.html-export";
+export const KNOWLEDGE_HTML_EXPORT_PACKAGE_TYPE = "pact.knowledge.html-export";
 export const KNOWLEDGE_HTML_EXPORT_CONTENT_TYPE = "text/html; charset=utf-8";
 
 function scalar(value) {
@@ -59,7 +59,7 @@ function sectionHeadingTag(level) {
 function suggestedFileName(filters = {}, generatedAt = new Date().toISOString()) {
   const scope = filters.documentId || filters.batchId || filters.sourceId || "all";
   const stamp = generatedAt.replace(/[^0-9a-z]+/gi, "").slice(0, 14);
-  return `agentstudio-knowledge-${slug(scope)}-${stamp}.html`;
+  return `pact-knowledge-${slug(scope)}-${stamp}.html`;
 }
 
 function buildDocumentHtml(doc, index) {
@@ -157,7 +157,7 @@ export function buildKnowledgeHtmlExport({
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgentStudio 知识库导出</title>
+  <title>Pact 知识库导出</title>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem 1rem; color: #1a1a1a; }
     h1 { border-bottom: 2px solid #3b82f6; padding-bottom: 0.5rem; }
@@ -171,7 +171,7 @@ export function buildKnowledgeHtmlExport({
   </style>
 </head>
 <body>
-  <h1>AgentStudio 知识库导出</h1>
+  <h1>Pact 知识库导出</h1>
   <div class="kc-header">
     <ul>
       <li><strong>导出时间</strong>: ${escapeHtml(generatedAt)}</li>

@@ -19,7 +19,7 @@ import {
 const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const reportDir = path.join(repoRoot, "build", "test-reports", "smoke");
 const reportPath = path.join(reportDir, "source-evidence-memory-smoke.json");
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-memory-smoke-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-memory-smoke-"));
 const sourceRoot = path.join(userDataPath, "mail-source");
 const ignoredRoot = path.join(sourceRoot, "node_modules");
 const samples = [];

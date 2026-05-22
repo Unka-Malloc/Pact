@@ -24,7 +24,7 @@ async function requestJson(url, options = {}) {
 async function readRuntimeLogs(logDir) {
   const entries = await fs.readdir(logDir, { withFileTypes: true });
   const files = entries
-    .filter((entry) => entry.isFile() && /^agentstudio-.+\.jsonl$/.test(entry.name))
+    .filter((entry) => entry.isFile() && /^pact-.+\.jsonl$/.test(entry.name))
     .map((entry) => path.join(logDir, entry.name))
     .sort();
   const records = [];
@@ -52,9 +52,9 @@ function assertHasEvents(records, events) {
   }
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-runtime-logging-data-"));
-const logDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-runtime-logging-logs-"));
-const staleLogPath = path.join(logDir, "agentstudio-stale-2000-01-01.jsonl");
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-runtime-logging-data-"));
+const logDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-runtime-logging-logs-"));
+const staleLogPath = path.join(logDir, "pact-stale-2000-01-01.jsonl");
 await fs.writeFile(staleLogPath, JSON.stringify({ event: "old" }) + "\n", "utf8");
 const staleDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 await fs.utimes(staleLogPath, staleDate, staleDate);
@@ -165,7 +165,7 @@ try {
       Authorization: `Bearer ${grant.payload.token}`
     },
     body: JSON.stringify({
-      toolId: "agentstudio.knowledge.health",
+      toolId: "pact.knowledge.health",
       input: {}
     })
   });

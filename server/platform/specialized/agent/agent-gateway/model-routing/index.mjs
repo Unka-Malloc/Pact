@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const MODEL_ROUTING_PROTOCOL_VERSION = "agentstudio.model-routing.v1";
+export const MODEL_ROUTING_PROTOCOL_VERSION = "pact.model-routing.v1";
 
 const DEFAULT_STATE_FILE = path.join("state", "model-routing-state.json");
 const DEFAULT_LEDGER_FILE = path.join("logs", "model-routing-ledger.jsonl");

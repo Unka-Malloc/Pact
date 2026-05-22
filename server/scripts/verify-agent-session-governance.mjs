@@ -10,7 +10,7 @@ import {
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-session-governance-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-session-governance-"));
 
 try {
   const workspaceRuntime = createAgentWorkspace({ userDataPath });
@@ -117,9 +117,9 @@ try {
 
     const toolCatalog = createToolCatalog({ operations });
     for (const toolId of [
-      "agentstudio.agentSession.compare",
-      "agentstudio.agentSession.mergeProposal",
-      "agentstudio.agentSession.archive"
+      "pact.agentSession.compare",
+      "pact.agentSession.mergeProposal",
+      "pact.agentSession.archive"
     ]) {
       assert.ok(toolCatalog.tools.some((tool) => tool.id === toolId), `missing tool ${toolId}`);
     }
@@ -129,7 +129,7 @@ try {
     workspaceRuntime.close();
   }
 } finally {
-  if (process.env.AGENTSTUDIO_KEEP_TEST_DATA !== "1") {
+  if (process.env.PACT_KEEP_TEST_DATA !== "1") {
     await fs.rm(userDataPath, { recursive: true, force: true });
   } else {
     console.log(`kept test data: ${userDataPath}`);

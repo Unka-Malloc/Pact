@@ -30,7 +30,7 @@ async function readRuntimeLogs(logDir) {
   const entries = await fs.readdir(logDir, { withFileTypes: true }).catch(() => []);
   const records = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !/^agentstudio-.+\.jsonl$/.test(entry.name)) {
+    if (!entry.isFile() || !/^pact-.+\.jsonl$/.test(entry.name)) {
       continue;
     }
     records.push(...await readJsonl(path.join(logDir, entry.name)));
@@ -39,8 +39,8 @@ async function readRuntimeLogs(logDir) {
 }
 
 async function main() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-trace-context-data-"));
-  const logDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-trace-context-logs-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-trace-context-data-"));
+  const logDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-trace-context-logs-"));
   const server = await startHttpServer({
     userDataPath,
     runtimeOptions: {
@@ -53,7 +53,7 @@ async function main() {
     const auth = await installAuthenticatedFetch(server);
     const health = await requestJson(`${server.url}/api/healthz`);
     assert.equal(health.status, 200);
-    const healthTraceId = health.headers.get("x-agentstudio-trace-id");
+    const healthTraceId = health.headers.get("x-pact-trace-id");
     assert.match(healthTraceId, /^trace_/);
 
     const settings = await requestJson(`${server.url}/api/settings`, {
@@ -67,7 +67,7 @@ async function main() {
       })
     });
     assert.equal(settings.status, 200);
-    const settingsTraceId = settings.headers.get("x-agentstudio-trace-id");
+    const settingsTraceId = settings.headers.get("x-pact-trace-id");
     assert.match(settingsTraceId, /^trace_/);
 
     const maintenanceRun = await requestJson(`${server.url}/api/maintenance-agent/runs`, {
@@ -82,7 +82,7 @@ async function main() {
       })
     });
     assert.equal(maintenanceRun.status, 200);
-    const maintenanceTraceId = maintenanceRun.headers.get("x-agentstudio-trace-id");
+    const maintenanceTraceId = maintenanceRun.headers.get("x-pact-trace-id");
     assert.match(maintenanceTraceId, /^trace_/);
 
     await new Promise((resolve) => setTimeout(resolve, 400));

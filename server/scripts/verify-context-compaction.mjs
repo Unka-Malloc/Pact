@@ -31,7 +31,7 @@ function runCli(serverUrl, args = []) {
     const child = spawn(
       process.execPath,
       [
-        new URL("./agentstudio.mjs", import.meta.url).pathname,
+        new URL("./pact.mjs", import.meta.url).pathname,
         ...args,
         "--server-url",
         serverUrl
@@ -52,7 +52,7 @@ function runCli(serverUrl, args = []) {
     child.once("error", reject);
     child.once("close", (code) => {
       if (code !== 0) {
-        reject(new Error(stderr || stdout || `agentstudio CLI exited with ${code}`));
+        reject(new Error(stderr || stdout || `pact CLI exited with ${code}`));
         return;
       }
       try {
@@ -143,7 +143,7 @@ function sampleMessages() {
   ];
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-context-compaction-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-context-compaction-"));
 
 try {
   const profile = {
@@ -242,7 +242,7 @@ try {
     runtimeState: {
       activePlan: ["M0", "M1", "M2"],
       enabledTools: ["context.compaction.run"],
-      currentFiles: ["/workspace/AgentStudio/server/platform/specialized/agent/agent-context/interface/index.mjs"],
+      currentFiles: ["/workspace/Pact/server/platform/specialized/agent/agent-context/interface/index.mjs"],
       knowledgeReference: "expert-vocabulary@v7",
       userConstraints: ["Do not copy Claude Code source"]
     }
@@ -256,7 +256,7 @@ try {
   assert.ok(deterministic.tokenReport.savingsRatio > 0);
   assert.equal(/redaction-test-value-12345/.test(deterministic.summary), false);
   assert.equal(/\/Users\/unka\/private/.test(deterministic.summary), false);
-  assert.equal(deterministic.qualityReport.protocolVersion, "agentstudio.context.compaction.quality.v1");
+  assert.equal(deterministic.qualityReport.protocolVersion, "pact.context.compaction.quality.v1");
   assert.equal(deterministic.qualityReport.passed, true);
   assert.equal(deterministic.qualityReport.requiredAnchorCount, 2);
   assert.equal(deterministic.qualityReport.missingAnchorCount, 0);
@@ -335,7 +335,7 @@ try {
     taskBrief: "验证工作台重建式上下文压缩策略",
     runtimeState: {
       activePlan: ["M0", "M1", "M2"],
-      activeSkill: "agentstudio-context-compaction",
+      activeSkill: "pact-context-compaction",
       activeToolUseIds: ["tool-1"],
       openToolCalls: [{ id: "tool-1", name: "knowledge.health" }],
       enabledTools: ["context.compaction.run", "context.session_memory.clear"],

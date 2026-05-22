@@ -115,7 +115,7 @@ function runBusinessChecks({ featureRuntime, activeOperations, clientPackagingCo
   if (featureRuntime.edition === "community") {
     assertCondition(!activeOperationIds.has("knowledge.evolution.runs.create"), "community must not expose knowledge evolution RPC/HTTP/CLI operations", failures);
     assertCondition(!activeOperationIds.has("maintenance_agent.runs.create"), "community must not expose maintenance agent runbooks", failures);
-    assertCondition(!toolIds.has("agentstudio.knowledge.evolution.runs.create"), "community tool catalog must not expose knowledge evolution tool", failures);
+    assertCondition(!toolIds.has("pact.knowledge.evolution.runs.create"), "community tool catalog must not expose knowledge evolution tool", failures);
     assertCondition(clientModules["gmail-connector"]?.enabled !== true, "community client package must not enable Gmail connector", failures);
     assertCondition(clientModules["slack-connector"]?.enabled !== true, "community client package must not enable Slack connector", failures);
     assertCondition(
@@ -146,7 +146,7 @@ function runBusinessChecks({ featureRuntime, activeOperations, clientPackagingCo
 }
 
 async function verifySourceLayout(plan) {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), `agentstudio-feature-source-${plan.featureRuntime.edition}-`));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), `pact-feature-source-${plan.featureRuntime.edition}-`));
   try {
     await fs.cp(path.join(REPO_ROOT, "server"), path.join(tempRoot, "server"), {
       recursive: true,

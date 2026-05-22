@@ -157,11 +157,11 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const host = String(args.host || "127.0.0.1").trim();
   const port = normalizePort(args.port);
-  const label = String(args.label || `dev.agentstudio.server.${port}`).trim();
-  const supervisorLabel = String(args["supervisor-label"] || "dev.agentstudio.background-supervisor").trim();
-  const inspectionLabel = String(args["inspection-label"] || "dev.agentstudio.system-inspection").trim();
+  const label = String(args.label || `dev.pact.server.${port}`).trim();
+  const supervisorLabel = String(args["supervisor-label"] || "dev.pact.background-supervisor").trim();
+  const inspectionLabel = String(args["inspection-label"] || "dev.pact.system-inspection").trim();
   const dataDir = path.resolve(
-    String(args["data-dir"] || process.env.AGENTSTUDIO_SERVER_DATA_DIR || path.join(projectRoot, ".agentstudio-server-data"))
+    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || path.join(projectRoot, ".pact-server-data"))
   );
   const logsDir = path.join(projectRoot, "build", "logs");
   const logPath = path.join(logsDir, `server-${port}.log`);
@@ -203,11 +203,11 @@ async function main() {
       logPath,
       errorLogPath,
       environment: {
-        AGENTSTUDIO_SERVER_DATA_DIR: dataDir,
-        AGENTSTUDIO_BACKGROUND_SUPERVISOR: "1",
-        AGENTSTUDIO_IMPORT_WORKER_EXTERNAL: "1",
-        AGENTSTUDIO_SOURCE_WATCHER_EXTERNAL: "1",
-        AGENTSTUDIO_MAINTENANCE_WORKER_EXTERNAL: "1"
+        PACT_SERVER_DATA_DIR: dataDir,
+        PACT_BACKGROUND_SUPERVISOR: "1",
+        PACT_IMPORT_WORKER_EXTERNAL: "1",
+        PACT_SOURCE_WATCHER_EXTERNAL: "1",
+        PACT_MAINTENANCE_WORKER_EXTERNAL: "1"
       }
     }),
     "utf8"
@@ -225,7 +225,7 @@ async function main() {
       logPath: supervisorLogPath,
       errorLogPath: supervisorErrorLogPath,
       environment: {
-        AGENTSTUDIO_SERVER_DATA_DIR: dataDir
+        PACT_SERVER_DATA_DIR: dataDir
       }
     }),
     "utf8"
@@ -245,7 +245,7 @@ async function main() {
       logPath: inspectionLogPath,
       errorLogPath: inspectionErrorLogPath,
       environment: {
-        AGENTSTUDIO_SERVER_DATA_DIR: dataDir
+        PACT_SERVER_DATA_DIR: dataDir
       }
     }),
     "utf8"

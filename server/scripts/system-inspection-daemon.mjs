@@ -40,8 +40,8 @@ const projectRoot =
   path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dataDir =
   args.dataDir ||
-  process.env.AGENTSTUDIO_SERVER_DATA_DIR ||
-  path.join(projectRoot, ".agentstudio-server-data");
+  process.env.PACT_SERVER_DATA_DIR ||
+  path.join(projectRoot, ".pact-server-data");
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,7 +63,7 @@ async function loop() {
           updatedAt: nowIso(),
           projectRoot,
           dataDir,
-          supervisorServiceLabel: config.serviceLabel || "dev.agentstudio.background-supervisor",
+          supervisorServiceLabel: config.serviceLabel || "dev.pact.background-supervisor",
           runtime: "node"
         }
       });

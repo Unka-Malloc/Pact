@@ -210,7 +210,7 @@ export function createMaintenanceAgentService({
   operationConcurrencyScope = "maintenance-agent",
   toolManagementStore: incomingToolManagementStore = null,
   queueMonitor = null,
-  schedulerEnabled = process.env.AGENTSTUDIO_MAINTENANCE_WORKER_EXTERNAL !== "1",
+  schedulerEnabled = process.env.PACT_MAINTENANCE_WORKER_EXTERNAL !== "1",
   logger = getRuntimeLogger()
 }) {
   const auditStore = createMaintenanceAgentAuditStore({ userDataPath });
@@ -503,8 +503,8 @@ export function createMaintenanceAgentService({
         toolExecutionId,
         traceId,
         toolId: `maintenance-agent.${rawStep.toolId}`,
-        toolVersion: "agentstudio.maintenance-agent.v1",
-        toolsetIds: ["agentstudio.runtime.maintain"],
+        toolVersion: "pact.maintenance-agent.v1",
+        toolsetIds: ["pact.runtime.maintain"],
         subjectType: "agent-profile",
         subjectId: "maintenance-agent",
         grantId: "",
@@ -571,8 +571,8 @@ export function createMaintenanceAgentService({
         toolExecutionId,
         traceId,
         toolId: `maintenance-agent.${rawStep.toolId}`,
-        toolVersion: "agentstudio.maintenance-agent.v1",
-        toolsetIds: ["agentstudio.runtime.maintain"],
+        toolVersion: "pact.maintenance-agent.v1",
+        toolsetIds: ["pact.runtime.maintain"],
         subjectType: "agent-profile",
         subjectId: "maintenance-agent",
         grantId: "",

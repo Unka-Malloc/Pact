@@ -1,4 +1,4 @@
-const DEFAULT_PROTOCOL_VERSION = "agentstudio.knowledge.v1";
+const DEFAULT_PROTOCOL_VERSION = "pact.knowledge.v1";
 
 const SEVERITY_RANK = {
   critical: 3,
@@ -970,7 +970,7 @@ function parseMarkdownMetadata(markdown) {
     yaml,
     jsonBlocks,
     machineReadable: {
-      ...(asObject(yaml.agentstudio_knowledge)),
+      ...(asObject(yaml.pact_knowledge)),
       ...(jsonBlocks.find((block) => block && !block.parseError && block.protocolVersion) || {})
     }
   };

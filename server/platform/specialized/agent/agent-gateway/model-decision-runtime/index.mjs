@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const MODEL_DECISION_PROTOCOL_VERSION = "agentstudio.model-decision.v1";
+export const MODEL_DECISION_PROTOCOL_VERSION = "pact.model-decision.v1";
 
 const DEFAULT_ROLE_PROFILES = [
   {
@@ -728,7 +728,7 @@ function fallbackDecision(roleId, input) {
 
 function buildPrompt(role, input) {
   return [
-    "You are a AgentStudio knowledge-base decision helper.",
+    "You are a Pact knowledge-base decision helper.",
     "Return only compact JSON. Do not rewrite facts. Do not make canonical knowledge mutations.",
     `Role: ${role.roleId}`,
     `Purpose: ${role.purpose}`,

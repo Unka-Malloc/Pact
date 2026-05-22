@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.document.parse",
+  "id": "pact.document.parse",
   "label": "Document parse",
   "requiredScopes": [
     "knowledge:read"

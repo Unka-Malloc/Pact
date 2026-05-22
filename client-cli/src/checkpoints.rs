@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn save_and_load_preserves_pending_cleanup() {
         let base_dir =
-            std::env::temp_dir().join(format!("agentstudio-checkpoints-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("pact-checkpoints-{}", Uuid::new_v4()));
         fs::create_dir_all(&base_dir).unwrap();
 
         let mut store = CheckpointStore::default();

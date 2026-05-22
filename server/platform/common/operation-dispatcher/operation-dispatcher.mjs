@@ -184,7 +184,7 @@ function actorFromInput({ actor = null, authSession = null } = {}) {
 }
 
 function requestIdFromRequest(request) {
-  return request?.__agentstudioTraceContext?.requestId || request?.__agentstudioRequestId || "";
+  return request?.__pactTraceContext?.requestId || request?.__pactRequestId || "";
 }
 
 function actorScopeSet(actor = null, authSession = null) {
@@ -470,7 +470,7 @@ export async function dispatchOperation({
     if (!skipAuthorization && operation.externalAuth === true) {
       const hasCredential = Boolean(
         request?.headers?.["authorization"] ||
-        request?.headers?.["x-agentstudio-tool-token"]
+        request?.headers?.["x-pact-tool-token"]
       );
       if (!hasCredential) {
         const errorCode = operation.externalAuthMissingCode || "missing_external_auth";
@@ -478,7 +478,7 @@ export async function dispatchOperation({
           schemaVersion: 1,
           error: {
             code: errorCode,
-            message: "External authentication requires Authorization or x-agentstudio-tool-token."
+            message: "External authentication requires Authorization or x-pact-tool-token."
           },
           traceId: traceContext.traceId
         });

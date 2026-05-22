@@ -1847,7 +1847,7 @@
   color: var(--brand);
 }
 
-.evidence-rendered-content a[href^="#agentstudio-evidence-"] {
+.evidence-rendered-content a[href^="#pact-evidence-"] {
   padding: 1px 5px;
   border: 1px solid var(--brand);
   border-radius: var(--radius-full);

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, zipSync } from "fflate";
 
-export const SAMPLE_BUSINESS_PACK_PROTOCOL_VERSION = "agentstudio.sample-business-pack.v1";
+export const SAMPLE_BUSINESS_PACK_PROTOCOL_VERSION = "pact.sample-business-pack.v1";
 
 const DEFAULT_PACK_ID = "enterprise-knowledge-pilot";
 const SAMPLE_PACK_ROOT = "sample-business-packs";
@@ -199,7 +199,7 @@ const SAMPLE_PACKS = Object.freeze([
         content: () => [
           "# Enterprise Knowledge Pilot",
           "",
-          "本项目用于验证 AgentStudio 对多来源知识、权限裁决、上下文压缩和运行门禁的整合能力。",
+          "本项目用于验证 Pact 对多来源知识、权限裁决、上下文压缩和运行门禁的整合能力。",
           "",
           "## 核心材料",
           "",
@@ -248,9 +248,9 @@ const SAMPLE_PACKS = Object.freeze([
           "  metadata:",
           "    image: postgres:17-alpine",
           "    environment:",
-          "      POSTGRES_DB: agentstudio_samples",
-          "      POSTGRES_USER: agentstudio",
-          "      POSTGRES_PASSWORD: agentstudio",
+          "      POSTGRES_DB: pact_samples",
+          "      POSTGRES_USER: pact",
+          "      POSTGRES_PASSWORD: pact",
           "    ports:",
           "      - \"54329:5432\"",
           "volumes:",
@@ -267,7 +267,7 @@ const SAMPLE_PACKS = Object.freeze([
         content: () => [
           "# External Knowledge Base Sample",
           "",
-          "这个目录只提供服务端样例配置。启动 compose 后，可以把 `AGENTSTUDIO_EXTERNAL_KB_PROVIDER=qdrant` 和 `AGENTSTUDIO_EXTERNAL_KB_URL=http://127.0.0.1:6333` 写入运行环境。",
+          "这个目录只提供服务端样例配置。启动 compose 后，可以把 `PACT_EXTERNAL_KB_PROVIDER=qdrant` 和 `PACT_EXTERNAL_KB_URL=http://127.0.0.1:6333` 写入运行环境。",
           "",
           "验证脚本只检查样例包内容和协议，不启动外部容器。"
         ].join("\n")
@@ -310,7 +310,7 @@ const SAMPLE_PACKS = Object.freeze([
         serviceId: "metadata",
         role: "metadata-store",
         composePath: "external-knowledge/docker-compose.yml",
-        defaultEndpoint: "postgres://agentstudio:agentstudio@127.0.0.1:54329/agentstudio_samples"
+        defaultEndpoint: "postgres://pact:pact@127.0.0.1:54329/pact_samples"
       }
     ]
   }

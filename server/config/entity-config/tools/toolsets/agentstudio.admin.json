@@ -1,6 +1,6 @@
 {
-  "id": "agentstudio.admin",
-  "label": "AgentStudio admin",
+  "id": "pact.admin",
+  "label": "Pact admin",
   "requiredScopes": [
     "knowledge:admin",
     "storage:read",

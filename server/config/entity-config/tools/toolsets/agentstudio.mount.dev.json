@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.mount.dev",
+  "id": "pact.mount.dev",
   "label": "Mount development",
   "requiredScopes": [
     "knowledge:admin"

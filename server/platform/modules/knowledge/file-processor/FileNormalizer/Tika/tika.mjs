@@ -71,7 +71,7 @@ async function resolveFirstExistingPath(candidates) {
 }
 
 async function resolveTikaJarPath(settings = {}) {
-  const explicitPath = settings.tikaJarPath?.trim() || process.env.AGENTSTUDIO_TIKA_JAR_PATH || "";
+  const explicitPath = settings.tikaJarPath?.trim() || process.env.PACT_TIKA_JAR_PATH || "";
   const moduleCandidates = getKnowledgeModuleResourceRoots().flatMap((modulesRoot) =>
     TIKA_JAR_FILE_NAMES.map((fileName) => path.join(modulesRoot, "tika", fileName))
   );
@@ -88,7 +88,7 @@ async function resolveTikaJarPath(settings = {}) {
 }
 
 async function resolveJavaCommand(settings = {}) {
-  const explicitPath = settings.javaBinPath?.trim() || process.env.AGENTSTUDIO_JAVA_BIN_PATH || "";
+  const explicitPath = settings.javaBinPath?.trim() || process.env.PACT_JAVA_BIN_PATH || "";
   const moduleCandidates = getKnowledgeModuleResourceRoots().flatMap((modulesRoot) => {
     const basePath = path.join(modulesRoot, "runtime", "jre", getPlatformRuntimeFolderName());
     return [

@@ -25,7 +25,7 @@ function productionHealth(overrides = {}) {
   const gateOverrides = new Map((overrides.gates || []).map((gate) => [gate.id, gate]));
   return {
     schemaVersion: 1,
-    reportType: "agentstudio.production-health.v1",
+    reportType: "pact.production-health.v1",
     generatedAt: "2026-05-22T00:00:00.000Z",
     status: overrides.status || "pass",
     latestReport: {
@@ -98,10 +98,10 @@ function verifyOperationsAndTools() {
   assert.equal(operation.concurrencySafe, true);
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const tool = catalog.tools.find((item) => item.id === "agentstudio.architecture.liveMap");
+  const tool = catalog.tools.find((item) => item.id === "pact.architecture.liveMap");
   assert.ok(tool, "architecture live map tool must be exposed");
   assert.equal(tool.operationId, "architecture.live_map");
-  assert.ok(tool.toolsets.includes("agentstudio.runtime.read"));
+  assert.ok(tool.toolsets.includes("pact.runtime.read"));
   assert.ok(tool.requiredScopes.includes("storage:read"));
 }
 

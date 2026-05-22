@@ -59,7 +59,7 @@ function startPlannerServer() {
   });
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-maintenance-compaction-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-maintenance-compaction-"));
 try {
   const runtime = createContextRuntime({ userDataPath });
   await runtime.saveProfiles({

@@ -28,7 +28,7 @@ async function docxDocumentXml(filePath) {
 }
 
 async function main() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-continuity-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pact-continuity-"));
   const mailRoot = path.join(root, "mail");
   const outputPath = path.join(root, "out");
   const normalizedManifestPath = path.join(root, "normalized-manifest.json");
@@ -242,7 +242,7 @@ async function main() {
     JSON.stringify(
       {
         schemaVersion: 1,
-        packageType: "agentstudio.normalized-documents",
+        packageType: "pact.normalized-documents",
         documents: [
           {
             documentId: "doc-atlas-sow-v21",
@@ -366,8 +366,8 @@ async function main() {
     payload.businessEntities?.contractIds?.some((value) => value.toLowerCase() === "cn-2024-7788")
   );
   assert.ok(contractPayload, "contract machine-readable payload should exist");
-  assert.equal(contractPayload.schemaVersion, "agentstudio.transaction-knowledge.v2");
-  assert.equal(contractPayload.overview.schemaVersion, "agentstudio.transaction-overview.v1");
+  assert.equal(contractPayload.schemaVersion, "pact.transaction-knowledge.v2");
+  assert.equal(contractPayload.overview.schemaVersion, "pact.transaction-overview.v1");
   assert.equal(contractPayload.overview.occurrence.emailCount, 2);
   assert.equal(contractPayload.messages.length, 2);
   assert.ok(contractPayload.messages.some((message) => /Atlas-SOW-v2.1\.pdf/.test(message.bodyText)));
@@ -380,7 +380,7 @@ async function main() {
   const contractDocxXml = docxXmls.find((xml) => xml.includes("CN-2024-7788") || xml.includes("Atlas SOW v2.1"));
   assert.ok(contractDocxXml, "contract DOCX should contain business content");
   assert.ok(contractDocxXml.includes("事务概览 YAML"), "DOCX should include YAML overview section");
-  assert.ok(contractDocxXml.includes("agentstudio.transaction-overview.v1"), "DOCX should include machine-readable YAML overview");
+  assert.ok(contractDocxXml.includes("pact.transaction-overview.v1"), "DOCX should include machine-readable YAML overview");
   assert.equal(contractDocxXml.includes("这是一个"), false, "DOCX overview should not use natural-language template");
   assert.ok(contractDocxXml.includes("机器可读 JSON"), "DOCX should include machine-readable JSON appendix");
   process.stdout.write("Transaction continuity verification passed.\n");

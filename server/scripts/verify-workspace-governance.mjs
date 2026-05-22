@@ -189,14 +189,14 @@ function verifyOperationsAndTools() {
   assert.equal(operations.get("workspace_governance.share_grant").safety.requiresConfirmation, true);
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const policyTool = catalog.tools.find((tool) => tool.id === "agentstudio.workspaceGovernance.policy.set");
+  const policyTool = catalog.tools.find((tool) => tool.id === "pact.workspaceGovernance.policy.set");
   assert.ok(policyTool, "workspace governance policy tool must be exposed");
-  assert.ok(policyTool.toolsets.includes("agentstudio.agent.workspace"));
+  assert.ok(policyTool.toolsets.includes("pact.agent.workspace"));
   assert.equal(policyTool.requiresApproval, true);
 }
 
 async function main() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-workspace-governance-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-workspace-governance-"));
   try {
     await verifyGovernanceRuntime(tempRoot);
     verifyContributionGovernanceFields();

@@ -24,7 +24,7 @@ replay_pid*
 crash-*
 
 # App local data and generated workspace outputs
-.agentstudio-server-data/
+.pact-server-data/
 .splitall-server-data/
 /build/*
 !/build/

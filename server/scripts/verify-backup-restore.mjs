@@ -88,15 +88,15 @@ function verifyOperationsAndTools() {
   assert.equal(operations.get("storage.backups.restore_preview").readOnly, true);
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const restoreTool = catalog.tools.find((tool) => tool.id === "agentstudio.storageBackups.restore");
+  const restoreTool = catalog.tools.find((tool) => tool.id === "pact.storageBackups.restore");
   assert.ok(restoreTool, "storage restore tool must be exposed");
   assert.equal(restoreTool.operationId, "storage.backups.restore");
-  assert.ok(restoreTool.toolsets.includes("agentstudio.runtime.maintain"));
+  assert.ok(restoreTool.toolsets.includes("pact.runtime.maintain"));
   assert.ok(restoreTool.requiredScopes.includes("knowledge:maintain"));
 }
 
 async function main() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-backup-restore-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-backup-restore-"));
   try {
     await verifyBackupRestore(tempRoot);
     verifyOperationsAndTools();

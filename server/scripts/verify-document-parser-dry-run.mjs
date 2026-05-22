@@ -59,17 +59,17 @@ function documentParsingConfig({
   };
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-document-parser-dry-run-"));
-const agentStudioServer = await startHttpServer({
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-document-parser-dry-run-"));
+const pactServer = await startHttpServer({
   userDataPath,
   host: "127.0.0.1",
   port: 0
 });
 
 try {
-  await installAuthenticatedFetch(agentStudioServer);
+  await installAuthenticatedFetch(pactServer);
 
-  const beforeJobs = await fetchJson(`${agentStudioServer.url}/api/jobs?limit=20`);
+  const beforeJobs = await fetchJson(`${pactServer.url}/api/jobs?limit=20`);
   const fileBuffer = Buffer.from(
     [
       "# Dry-run parsing",
@@ -89,7 +89,7 @@ try {
     byteSize: fileBuffer.length,
     sha256: sha256(fileBuffer)
   };
-  const directParsed = await fetchJson(`${agentStudioServer.url}/api/knowledge/document-parser/parse`, {
+  const directParsed = await fetchJson(`${pactServer.url}/api/knowledge/document-parser/parse`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -118,7 +118,7 @@ try {
 
   const manifestDigest = sha256(JSON.stringify([[fileDigest.relativePath, fileDigest.sha256, fileDigest.byteSize]]));
   const inputDigest = sha256("");
-  const uploadSession = await fetchJson(`${agentStudioServer.url}/api/upload-sessions`, {
+  const uploadSession = await fetchJson(`${pactServer.url}/api/upload-sessions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -151,7 +151,7 @@ try {
   });
 
   await fetchJson(
-    `${agentStudioServer.url}/api/upload-sessions/${encodeURIComponent(
+    `${pactServer.url}/api/upload-sessions/${encodeURIComponent(
       uploadSession.sessionId
     )}/files/0?offset=0`,
     {
@@ -163,7 +163,7 @@ try {
     }
   );
 
-  const parsed = await fetchJson(`${agentStudioServer.url}/api/knowledge/document-parser/parse`, {
+  const parsed = await fetchJson(`${pactServer.url}/api/knowledge/document-parser/parse`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -183,9 +183,9 @@ try {
     })
   });
   const uploadSessionAfterParse = await fetchJsonResponse(
-    `${agentStudioServer.url}/api/upload-sessions/${encodeURIComponent(uploadSession.sessionId)}`
+    `${pactServer.url}/api/upload-sessions/${encodeURIComponent(uploadSession.sessionId)}`
   );
-  const afterJobs = await fetchJson(`${agentStudioServer.url}/api/jobs?limit=20`);
+  const afterJobs = await fetchJson(`${pactServer.url}/api/jobs?limit=20`);
 
   assert.equal(parsed.pipelineId, "unified-knowledge-ingest-v1");
   assert.ok(parsed.summary.sources >= 1, "dry-run parser should read upload-session sources");
@@ -207,8 +207,8 @@ try {
   );
 
   console.log("Document parser dry-run verification passed.");
-  console.log(`Server URL: ${agentStudioServer.url}`);
+  console.log(`Server URL: ${pactServer.url}`);
 } finally {
-  await agentStudioServer.close();
+  await pactServer.close();
   await fs.rm(userDataPath, { recursive: true, force: true });
 }

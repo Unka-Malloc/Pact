@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.runtime.maintain",
+  "id": "pact.runtime.maintain",
   "label": "Runtime maintain",
   "requiredScopes": [
     "knowledge:maintain"

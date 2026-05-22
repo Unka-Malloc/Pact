@@ -2,7 +2,7 @@
 
 # 安全策略
 
-Thank you for helping keep **AgentStudio** and its users safe. We take security seriously — it is foundational to our zero-trust governance model.
+Thank you for helping keep **Pact** and its users safe. We take security seriously — it is foundational to our zero-trust governance model.
 
 ---
 
@@ -23,13 +23,13 @@ Security updates are provided for the following versions:
 
 > ⚠️ **Please do NOT report security vulnerabilities through public GitHub Issues.**
 
-If you discover a security vulnerability in AgentStudio, we kindly ask you to report it responsibly through one of the following channels:
+If you discover a security vulnerability in Pact, we kindly ask you to report it responsibly through one of the following channels:
 
 ### Option 1: GitHub Security Advisory (Recommended / 推荐)
 
 Use GitHub's built-in private vulnerability reporting:
 
-👉 [**Report a Vulnerability via GitHub Security Advisory**](https://github.com/Unka-Malloc/AgentStudio/security/advisories/new)
+👉 [**Report a Vulnerability via GitHub Security Advisory**](https://github.com/Unka-Malloc/Pact/security/advisories/new)
 
 This creates a private discussion between you and the maintainers, with full support for coordinated disclosure.
 
@@ -67,7 +67,7 @@ We will keep you informed throughout the process and credit you in the advisory 
 
 ## Scope / 适用范围
 
-This security policy covers the following components of the AgentStudio project:
+This security policy covers the following components of the Pact project:
 
 ### In Scope / 适用范围内
 
@@ -92,7 +92,7 @@ This security policy covers the following components of the AgentStudio project:
 
 ## Zero-Trust Security Model / 零信任安全模型
 
-AgentStudio is built on a **zero-trust architecture** where agents are treated as untrusted external operators. This is a core design principle, not merely a feature:
+Pact is built on a **zero-trust architecture** where agents are treated as untrusted external operators. This is a core design principle, not merely a feature:
 
 - **Every state change** (writes, exports, permission requests) must pass through the strict Policy Engine
 - **Every operation** is recorded in the immutable Operation Ledger — no exceptions
@@ -111,10 +111,10 @@ For a deeper understanding of our security architecture, refer to:
 
 ## Acknowledgments / 致谢
 
-We gratefully acknowledge security researchers who help improve AgentStudio's security posture. Responsible reporters will be credited in release notes and security advisories (with permission).
+We gratefully acknowledge security researchers who help improve Pact's security posture. Responsible reporters will be credited in release notes and security advisories (with permission).
 
 ---
 
-*AgentStudio — where trust is earned through verifiable state, not assumed by default.*
+*Pact — where trust is earned through verifiable state, not assumed by default.*
 
-*AgentStudio — 信任来自可验证的状态，而非默认的假设。*
+*Pact — 信任来自可验证的状态，而非默认的假设。*

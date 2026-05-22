@@ -14,7 +14,7 @@ import {
   renderHumanDocxBodyBlocks
 } from "../../document-export/docx-human-renderer.mjs";
 
-export const KNOWLEDGE_DOCX_EXPORT_PACKAGE_TYPE = "agentstudio.knowledge.docx-export";
+export const KNOWLEDGE_DOCX_EXPORT_PACKAGE_TYPE = "pact.knowledge.docx-export";
 export const KNOWLEDGE_DOCX_EXPORT_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 const MAX_PARAGRAPH_CHARS = 6000;
@@ -254,7 +254,7 @@ function compactDocumentForAppendix(document = {}) {
 
 function buildExportChildren({ documents, generatedAt, filters, includeMachineReadable }) {
   const children = [
-    heading("AgentStudio 知识文档导出"),
+    heading("Pact 知识文档导出"),
     paragraph("本 DOCX 面向人类阅读和外部知识库导入，按文档、章节和段落顺序组织。")
   ];
 
@@ -341,7 +341,7 @@ function buildExportChildren({ documents, generatedAt, filters, includeMachineRe
 function suggestedFileName(filters = {}, generatedAt = new Date().toISOString()) {
   const scope = filters.documentId || filters.batchId || filters.sourceId || "all";
   const stamp = generatedAt.replace(/[^0-9a-z]+/gi, "").slice(0, 14);
-  return `agentstudio-knowledge-${slug(scope)}-${stamp}.docx`;
+  return `pact-knowledge-${slug(scope)}-${stamp}.docx`;
 }
 
 export async function buildKnowledgeDocxExport({

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { buildProductionHealthReport } from "./report-reader.mjs";
 
-export const EXECUTIVE_REPORT_PROTOCOL_VERSION = "agentstudio.executive-report.v1";
+export const EXECUTIVE_REPORT_PROTOCOL_VERSION = "pact.executive-report.v1";
 
 const STORE_FILE = path.join("executive-reports", "reports.json");
 
@@ -244,7 +244,7 @@ export async function buildExecutiveReport(input = {}) {
     timeRange: text(input.timeRange || "all"),
     status: risks.some((risk) => risk.severity === "critical") ? "blocked" : text(health.status || "unknown"),
     executiveSummary: {
-      headline: text(input.headline || "AgentStudio executive report"),
+      headline: text(input.headline || "Pact executive report"),
       keyFindings: keyFindings({ health, assetValue, evaluation, capacity, trace }),
       recommendedDecisions: risks.slice(0, 5).map((risk) => ({
         riskType: risk.type,

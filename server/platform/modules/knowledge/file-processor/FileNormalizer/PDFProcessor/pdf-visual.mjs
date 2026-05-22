@@ -110,9 +110,9 @@ async function resolvePdfVisualScriptPath() {
 async function resolvePythonCommand(settings = {}) {
   const explicitPath =
     settings.pdfVisualPythonPath?.trim() ||
-    process.env.AGENTSTUDIO_PDF_VISUAL_PYTHON_PATH ||
+    process.env.PACT_PDF_VISUAL_PYTHON_PATH ||
     settings.ocrPythonPath?.trim() ||
-    process.env.AGENTSTUDIO_OCR_PYTHON_PATH ||
+    process.env.PACT_OCR_PYTHON_PATH ||
     "";
   const resolvedPath = await resolveFirstExistingPath([
     explicitPath,
@@ -294,7 +294,7 @@ export async function extractPdfVisualElements({
   } catch (error) {
     if (error?.code === "ENOENT") {
       throw createPdfVisualError(
-        "未找到可用的 Python 运行环境。请填写 AGENTSTUDIO_PDF_VISUAL_PYTHON_PATH，或创建 .venv-pdf 并安装 pymupdf/pdfplumber。",
+        "未找到可用的 Python 运行环境。请填写 PACT_PDF_VISUAL_PYTHON_PATH，或创建 .venv-pdf 并安装 pymupdf/pdfplumber。",
         "PDF_VISUAL_UNAVAILABLE"
       );
     }

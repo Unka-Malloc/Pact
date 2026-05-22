@@ -118,7 +118,7 @@ function getBatchIdForSource(userDataPath, sourcePath, sourceName) {
   }
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-rebuild-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-rebuild-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {

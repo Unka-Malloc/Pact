@@ -39,7 +39,7 @@ async function startMockQdrant() {
     state.requests.push({ method: request.method, pathname: url.pathname });
     response.setHeader("content-type", "application/json");
     try {
-      if (request.method === "GET" && url.pathname === "/collections/agentstudio_external_test") {
+      if (request.method === "GET" && url.pathname === "/collections/pact_external_test") {
         if (!state.collectionCreated) {
           response.statusCode = 404;
           response.end(JSON.stringify({ status: { error: "not found" } }));
@@ -48,13 +48,13 @@ async function startMockQdrant() {
         response.end(JSON.stringify({ result: { status: "green" } }));
         return;
       }
-      if (request.method === "PUT" && url.pathname === "/collections/agentstudio_external_test") {
+      if (request.method === "PUT" && url.pathname === "/collections/pact_external_test") {
         state.collectionCreated = true;
         await readJson(request);
         response.end(JSON.stringify({ result: true }));
         return;
       }
-      if (request.method === "PUT" && url.pathname === "/collections/agentstudio_external_test/points") {
+      if (request.method === "PUT" && url.pathname === "/collections/pact_external_test/points") {
         const body = await readJson(request);
         for (const point of body.points || []) {
           state.points.set(String(point.id), point);
@@ -62,7 +62,7 @@ async function startMockQdrant() {
         response.end(JSON.stringify({ result: { operation_id: 1, status: "completed" } }));
         return;
       }
-      if (request.method === "POST" && url.pathname === "/collections/agentstudio_external_test/points/search") {
+      if (request.method === "POST" && url.pathname === "/collections/pact_external_test/points/search") {
         const body = await readJson(request);
         const result = [...state.points.values()]
           .filter((point) => matchesQdrantFilter(point.payload || {}, body.filter || {}))
@@ -74,7 +74,7 @@ async function startMockQdrant() {
         response.end(JSON.stringify({ result }));
         return;
       }
-      if (request.method === "POST" && url.pathname === "/collections/agentstudio_external_test/points/delete") {
+      if (request.method === "POST" && url.pathname === "/collections/pact_external_test/points/delete") {
         const body = await readJson(request);
         for (const [id, point] of state.points.entries()) {
           if (matchesQdrantFilter(point.payload || {}, body.filter || {})) {
@@ -132,12 +132,12 @@ async function startMockOpenSearch() {
     state.requests.push({ method: request.method, pathname: url.pathname });
     response.setHeader("content-type", "application/json");
     try {
-      if (request.method === "HEAD" && url.pathname === "/agentstudio_external_test") {
+      if (request.method === "HEAD" && url.pathname === "/pact_external_test") {
         response.statusCode = state.indexCreated ? 200 : 404;
         response.end();
         return;
       }
-      if (request.method === "PUT" && url.pathname === "/agentstudio_external_test") {
+      if (request.method === "PUT" && url.pathname === "/pact_external_test") {
         state.indexCreated = true;
         await readJson(request);
         response.end(JSON.stringify({ acknowledged: true }));
@@ -155,7 +155,7 @@ async function startMockOpenSearch() {
         response.end(JSON.stringify({ errors: false, items: [] }));
         return;
       }
-      if (request.method === "POST" && url.pathname === "/agentstudio_external_test/_search") {
+      if (request.method === "POST" && url.pathname === "/pact_external_test/_search") {
         const body = await readJson(request);
         const filters = body.query?.bool?.filter || body.query?.knn?.embedding?.filter?.bool?.filter || [];
         const hits = [...state.documents.entries()]
@@ -168,7 +168,7 @@ async function startMockOpenSearch() {
         response.end(JSON.stringify({ hits: { hits } }));
         return;
       }
-      if (request.method === "POST" && url.pathname === "/agentstudio_external_test/_delete_by_query") {
+      if (request.method === "POST" && url.pathname === "/pact_external_test/_delete_by_query") {
         const body = await readJson(request);
         const filters = body.query?.bool?.filter || [];
         for (const [id, source] of state.documents.entries()) {
@@ -263,14 +263,14 @@ function buildKnowledgeDocument({
 
 async function assertQdrantAdapter() {
   const mockQdrant = await startMockQdrant();
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-external-kb-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-external-kb-"));
   const mount = await createExternalKnowledgeBaseMount({
     userDataPath,
     runtimeOptions: {
       externalKnowledgeBase: {
         provider: "qdrant",
         endpoint: mockQdrant.baseUrl,
-        collection: "agentstudio_external_test",
+        collection: "pact_external_test",
         dimension: 128
       }
     }
@@ -290,14 +290,14 @@ async function assertQdrantAdapter() {
       limit: 5,
       batchId: "batch-external"
     });
-    assert.equal(search.protocolVersion, "agentstudio.knowledge.v1");
+    assert.equal(search.protocolVersion, "pact.knowledge.v1");
     assert.equal(search.externalKnowledgeBase.used, true);
     assert.equal(search.items.length, 1);
     assert.match(search.items[0].title, /Budget approval/);
 
     const evidence = await mount.getEvidence({ evidenceId: search.items[0].evidenceId });
     assert.equal(evidence.documentId, "external-doc-renewal");
-    assert.match(evidence.markdown, /agentstudio_knowledge:/);
+    assert.match(evidence.markdown, /pact_knowledge:/);
     assert.match(evidence.markdown, /budget approval/i);
 
     const rendered = await mount.renderMarkdown({ evidenceId: search.items[0].evidenceId });
@@ -324,14 +324,14 @@ async function assertQdrantAdapter() {
 
 async function assertOpenSearchAdapter() {
   const mockOpenSearch = await startMockOpenSearch();
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-external-kb-os-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-external-kb-os-"));
   const mount = await createExternalKnowledgeBaseMount({
     userDataPath,
     runtimeOptions: {
       externalKnowledgeBase: {
         provider: "opensearch",
         endpoint: mockOpenSearch.baseUrl,
-        collection: "agentstudio_external_test",
+        collection: "pact_external_test",
         dimension: 128
       }
     }

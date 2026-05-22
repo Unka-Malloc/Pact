@@ -50,10 +50,10 @@ function mcpRequest(method, params = {}, id = 1) {
 }
 
 async function readDeviceManifest() {
-  const manifestPath = path.join(os.homedir(), ".agentstudio", "mcp", "servers.json");
+  const manifestPath = path.join(os.homedir(), ".pact", "mcp", "servers.json");
   try {
     const payload = JSON.parse(await fs.readFile(manifestPath, "utf8"));
-    const server = payload?.servers?.agentstudio || {};
+    const server = payload?.servers?.pact || {};
     const targets = server.targets || {};
     const installedTargets = Object.entries(targets)
       .filter(([, value]) => value?.status === "installed")
@@ -103,26 +103,26 @@ async function checkOrbStackVm({ vm, user, healthUrl }) {
 }
 
 async function discoverSignedBaseUrl() {
-  const explicitUrl = String(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || "")).trim();
-  const args = ["mcp-connector/bin/agentstudio-mcp.mjs", "discover-local", "--json"];
+  const explicitUrl = String(argValue("--url", process.env.PACT_MCP_BASE_URL || "")).trim();
+  const args = ["mcp-connector/bin/pact-mcp.mjs", "discover-local", "--json"];
   if (explicitUrl) {
     args.push("--url", explicitUrl);
   }
   const result = await run(process.execPath, args);
   const payload = JSON.parse(result.stdout);
   if (!payload.ok || !payload.baseUrl) {
-    throw new Error(payload.reason || "No signed AgentStudio MCP hub discovered.");
+    throw new Error(payload.reason || "No signed Pact MCP hub discovered.");
   }
   return payload;
 }
 
 const signedDiscovery = await discoverSignedBaseUrl();
 const baseUrl = String(signedDiscovery.baseUrl).replace(/\/+$/, "");
-const token = String(argValue("--token", process.env.AGENTSTUDIO_MCP_TOKEN || "")).trim();
+const token = String(argValue("--token", process.env.PACT_MCP_TOKEN || "")).trim();
 const headers = token
   ? {
       "Content-Type": "application/json",
-      "X-AgentStudio-Api-Key": token
+      "X-Pact-Api-Key": token
     }
   : { "Content-Type": "application/json" };
 
@@ -144,7 +144,7 @@ report.initialize = await jsonFetch(`${baseUrl}/mcp`, {
   body: JSON.stringify(mcpRequest("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
-    clientInfo: { name: "agentstudio-mcp-doctor", version: "1" }
+    clientInfo: { name: "pact-mcp-doctor", version: "1" }
   }))
 });
 
@@ -158,9 +158,9 @@ if (token) {
     method: "POST",
     headers,
     body: JSON.stringify(mcpRequest("tools/call", {
-      name: "agentstudio.call",
+      name: "pact.call",
       arguments: {
-        apiVersion: "agentstudio.mcp.v1",
+        apiVersion: "pact.mcp.v1",
         operation: "system.health",
         input: {}
       }
@@ -171,18 +171,18 @@ if (token) {
     ok: false,
     status: 0,
     skipped: true,
-    reason: "Set AGENTSTUDIO_MCP_TOKEN or pass --token to verify tools/list."
+    reason: "Set PACT_MCP_TOKEN or pass --token to verify tools/list."
   };
   report.systemHealth = {
     ok: false,
     status: 0,
     skipped: true,
-    reason: "Set AGENTSTUDIO_MCP_TOKEN or pass --token to verify tools/call system.health."
+    reason: "Set PACT_MCP_TOKEN or pass --token to verify tools/call system.health."
   };
 }
 
 report.deviceManifest = await readDeviceManifest();
-const vmHealthUrl = String(report.discovery.payload?.mcpServers?.agentstudio?.vmHttpUrl || "")
+const vmHealthUrl = String(report.discovery.payload?.mcpServers?.pact?.vmHttpUrl || "")
   .replace(/\/mcp$/, "/api/healthz");
 report.orbStack = vmHealthUrl
   ? {
@@ -201,7 +201,7 @@ const ok = report.signedDiscovery.ok
   && (!token || (
     report.toolsList.ok
     && (report.toolsList.payload?.result?.tools || []).length === 1
-    && report.toolsList.payload?.result?.tools?.[0]?.name === "agentstudio.call"
+    && report.toolsList.payload?.result?.tools?.[0]?.name === "pact.call"
     && report.systemHealth.ok
     && report.systemHealth.payload?.result?.structuredContent?.payload?.ok === true
   ));
@@ -217,8 +217,8 @@ console.log(JSON.stringify({
     discovery: {
       ok: report.discovery.ok,
       status: report.discovery.status,
-      httpUrl: report.discovery.payload?.mcpServers?.agentstudio?.httpUrl || "",
-      vmHttpUrl: report.discovery.payload?.mcpServers?.agentstudio?.vmHttpUrl || "",
+      httpUrl: report.discovery.payload?.mcpServers?.pact?.httpUrl || "",
+      vmHttpUrl: report.discovery.payload?.mcpServers?.pact?.vmHttpUrl || "",
       installerPackage: report.discovery.payload?.installer?.packageName || "",
       githubOneLineCommand: report.discovery.payload?.installer?.githubOneLineCommand || "",
       installerCommand: report.discovery.payload?.installer?.installCommand || "",
@@ -243,7 +243,7 @@ console.log(JSON.stringify({
       skipped: report.toolsList.skipped === true,
       toolCount: report.toolsList.payload?.result?.tools?.length || 0,
       stableToolOnly: (report.toolsList.payload?.result?.tools || []).length === 1
-        && report.toolsList.payload?.result?.tools?.[0]?.name === "agentstudio.call",
+        && report.toolsList.payload?.result?.tools?.[0]?.name === "pact.call",
       reason: report.toolsList.reason || ""
     },
     systemHealth: {

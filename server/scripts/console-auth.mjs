@@ -29,7 +29,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  console.log(`AgentStudio Console Auth
+  console.log(`Pact Console Auth
 
 Usage:
   npm run server:auth -- list-users
@@ -40,7 +40,7 @@ Usage:
   npm run server:auth -- disable --username USER
 
 Options:
-  --data-dir PATH        Defaults to .agentstudio-server-data
+  --data-dir PATH        Defaults to .pact-server-data
   --username USER
   --user-id USER_ID
   --display-name NAME
@@ -71,7 +71,7 @@ async function main() {
   }
 
   const userDataPath = path.resolve(
-    String(args["data-dir"] || process.env.AGENTSTUDIO_SERVER_DATA_DIR || path.join(projectRoot, ".agentstudio-server-data"))
+    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || path.join(projectRoot, ".pact-server-data"))
   );
   const auth = createConsoleAuth({ userDataPath });
 

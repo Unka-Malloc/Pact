@@ -43,7 +43,7 @@ function readBearerToken(request) {
   if (match) {
     return match[1].trim();
   }
-  return String(request?.headers?.["x-agentstudio-tool-token"] || "").trim();
+  return String(request?.headers?.["x-pact-tool-token"] || "").trim();
 }
 
 function parseJson(value, fallback) {

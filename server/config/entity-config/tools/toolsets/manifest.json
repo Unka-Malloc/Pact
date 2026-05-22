@@ -1,5 +1,5 @@
 {
   "schemaVersion": 1,
-  "entityType": "agentstudio.tool-management.toolsets",
+  "entityType": "pact.tool-management.toolsets",
   "count": 16
 }

@@ -213,7 +213,7 @@ export function createMaintenanceToolRegistry({
         method: requestInfo.method,
         url: requestInfo.url.pathname,
         headers: shouldConfirm
-          ? { "x-agentstudio-safety-confirm": "true", "x-agentstudio-confirm": "true" }
+          ? { "x-pact-safety-confirm": "true", "x-pact-confirm": "true" }
           : {},
         socket: { remoteAddress: "maintenance-agent" }
       };

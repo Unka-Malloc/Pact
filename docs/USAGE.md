@@ -1,4 +1,4 @@
-# AgentStudio 使用说明
+# Pact 使用说明
 
 当前交付形态只有两部分：
 
@@ -56,7 +56,7 @@ http://127.0.0.1:8787
 
 ## 3. 命令行入口
 
-仓库提供统一 `agentstudio` CLI。安装为 package bin 后可直接调用，也可以通过 npm 脚本调用：
+仓库提供统一 `pact` CLI。安装为 package bin 后可直接调用，也可以通过 npm 脚本调用：
 
 ```bash
 npm run cli -- health
@@ -111,12 +111,12 @@ npm run cli -- \
 常用命令：
 
 ```bash
-agentstudio-client connectors list
-agentstudio-client connectors install slack
-agentstudio-client connectors enable slack
-agentstudio-client connectors auth start slack '{"accountHint":"me@example.com"}'
-agentstudio-client connectors sync slack '{"syncBatchId":"client-batch-2026-03","messages":[]}'
-agentstudio-client connectors query-local "3 月账单"
+pact-client connectors list
+pact-client connectors install slack
+pact-client connectors enable slack
+pact-client connectors auth start slack '{"accountHint":"me@example.com"}'
+pact-client connectors sync slack '{"syncBatchId":"client-batch-2026-03","messages":[]}'
+pact-client connectors query-local "3 月账单"
 ```
 
 外部连接器可以按目录包动态安装。包内必须包含 `connector.json`，进程型连接器的 `runtime.kind` 为 `process`，`entrypoint` 指向包内相对路径的可执行文件：
@@ -128,12 +128,12 @@ acme-files-connector/
 ```
 
 ```bash
-agentstudio-client connectors install ./acme-files-connector
-agentstudio-client connectors enable acme-files
-agentstudio-client connectors sync acme-files '{"syncBatchId":"client-batch-2026-03"}'
-agentstudio-client connectors query-local "3 月账单"
-agentstudio-client connectors health acme-files
-agentstudio-client connectors uninstall acme-files '{"removeCache":true}'
+pact-client connectors install ./acme-files-connector
+pact-client connectors enable acme-files
+pact-client connectors sync acme-files '{"syncBatchId":"client-batch-2026-03"}'
+pact-client connectors query-local "3 月账单"
+pact-client connectors health acme-files
+pact-client connectors uninstall acme-files '{"removeCache":true}'
 ```
 
 运行时通过标准输入接收 JSON 请求，通过标准输出返回 JSON。请求包含 `operation`、`providerId`、`params`、`paths` 和 `policy`；`policy.remoteCallsAllowed=false` 表示 `localQuery` 只能查询本地 mirror，不能现场访问远端 API。卸载时如 `uninstallPolicy.removeModuleOnUninstall=true`，客户端会在调用连接器 `uninstall` 钩子后删除 `portable-data/connectors/modules/<providerId>`。
@@ -142,7 +142,7 @@ agentstudio-client connectors uninstall acme-files '{"removeCache":true}'
 
 ## 6. 归一化 DOCX 输出
 
-AgentStudio 当前定位为外部知识库的解析归一中转层，不在本地追加长期知识库模块。任务完成后可以导出：
+Pact 当前定位为外部知识库的解析归一中转层，不在本地追加长期知识库模块。任务完成后可以导出：
 
 - `result.json`：任务分析、邮件/事务结构、源文件审计和归一化 DOCX manifest。
 - `normalized-documents/*.docx`：面向阅读、归档和外部知识库摄取的多颗粒度 DOCX 文档。

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "updatedAt": "2026-04-30T00:00:00.000Z",
-  "description": "AgentStudio import file type dictionary. Add or remove extensions here instead of editing code.",
+  "description": "Pact import file type dictionary. Add or remove extensions here instead of editing code.",
   "includeUnknownReadableText": true,
   "plainTextFallbackExtension": ".txt",
   "readableTextDetection": {

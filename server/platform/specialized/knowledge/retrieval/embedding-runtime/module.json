@@ -1,13 +1,13 @@
 {
   "name": "EmbeddingRuntime",
   "version": 1,
-  "description": "Optional agentstudio.embedding.v1 module with an offline deterministic hashing fallback runtime.",
+  "description": "Optional pact.embedding.v1 module with an offline deterministic hashing fallback runtime.",
   "defaultLoaded": false,
-  "protocol": "agentstudio.embedding.v1",
+  "protocol": "pact.embedding.v1",
   "components": {
     "embeddingRuntime": {
       "path": "./index.mjs",
-      "protocol": "agentstudio.embedding.v1",
+      "protocol": "pact.embedding.v1",
       "factory": "createEmbeddingRuntime",
       "providerId": "builtin:hashing-vector-runtime",
       "providerType": "offline-fallback",

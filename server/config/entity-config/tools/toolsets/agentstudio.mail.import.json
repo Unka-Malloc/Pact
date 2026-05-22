@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.mail.import",
+  "id": "pact.mail.import",
   "label": "Mail import",
   "requiredScopes": [
     "knowledge:write"

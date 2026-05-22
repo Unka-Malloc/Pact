@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "entityType": "agentstudio.entity-config-root",
+  "entityType": "pact.entity-config-root",
   "description": "Human-maintainable entity configuration bundles for tools, skills, standards, and specs.",
   "categories": [
     "tools",

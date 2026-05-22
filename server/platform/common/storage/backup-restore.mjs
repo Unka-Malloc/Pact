@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const BACKUP_RESTORE_PROTOCOL_VERSION = "agentstudio.backup-restore.v1";
+export const BACKUP_RESTORE_PROTOCOL_VERSION = "pact.backup-restore.v1";
 
 const BACKUP_ROOT_DIR = "backups";
 const BACKUP_FILES_DIR = "files";

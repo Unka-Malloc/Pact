@@ -2,7 +2,7 @@
 
 ## Purpose
 
-AgentStudio uses a prebuild gate so renderer builds cannot proceed until regression and smoke coverage pass. The smoke layer is intentionally smaller than the full release suite, but it must cover process startup, API reachability, CLI behavior, and memory growth in historically risky paths.
+Pact uses a prebuild gate so renderer builds cannot proceed until regression and smoke coverage pass. The smoke layer is intentionally smaller than the full release suite, but it must cover process startup, API reachability, CLI behavior, and memory growth in historically risky paths.
 
 ## Standards Applied
 

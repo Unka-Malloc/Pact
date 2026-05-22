@@ -250,7 +250,7 @@ function rankCategories({ rows, taxonomy, minDocuments }) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const userDataPath = path.resolve(
-    String(args["data-dir"] || process.env.AGENTSTUDIO_SERVER_DATA_DIR || path.join(projectRoot, ".agentstudio-server-data"))
+    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || path.join(projectRoot, ".pact-server-data"))
   );
   const maxDocuments = Math.floor(clampNumber(args["max-documents"], 20000, 1, 200000));
   const topicLimit = Math.floor(clampNumber(args.limit, 16, 1, 100));
@@ -266,7 +266,7 @@ async function main() {
   const selected = rankCategories({ rows, taxonomy, minDocuments }).slice(0, topicLimit);
 
   const report = {
-    protocolVersion: "agentstudio.knowledge-skill-distillation.v1",
+    protocolVersion: "pact.knowledge-skill-distillation.v1",
     userDataPath,
     dryRun,
     scannedDocumentCount: rows.length,

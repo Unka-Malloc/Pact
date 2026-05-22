@@ -2,9 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const CAPABILITY_PACKAGE_LIFECYCLE_PROTOCOL_VERSION = "agentstudio.capability-package-lifecycle.v1";
-export const TOOL_PACKAGE_PROTOCOL_VERSION = "agentstudio.tool-package.v1";
-export const SKILL_REGISTRY_PROTOCOL_VERSION = "agentstudio.skill-registry.v1";
+export const CAPABILITY_PACKAGE_LIFECYCLE_PROTOCOL_VERSION = "pact.capability-package-lifecycle.v1";
+export const TOOL_PACKAGE_PROTOCOL_VERSION = "pact.tool-package.v1";
+export const SKILL_REGISTRY_PROTOCOL_VERSION = "pact.skill-registry.v1";
 
 const REGISTRY_FILE = path.join("capability-packages", "registry.json");
 const KIND_PROTOCOL = Object.freeze({

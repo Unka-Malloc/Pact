@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const workspaceRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dockerfile = path.join(workspaceRoot, "client-gui", "docker", "ubuntu-client.Dockerfile");
-const image = process.env.AGENTSTUDIO_UBUNTU_IMAGE || "agentstudio-client-ubuntu:local";
-const platform = process.env.AGENTSTUDIO_UBUNTU_PLATFORM || "linux/amd64";
+const image = process.env.PACT_UBUNTU_IMAGE || "pact-client-ubuntu:local";
+const platform = process.env.PACT_UBUNTU_PLATFORM || "linux/amd64";
 const guiArtifactDir = path.join(workspaceRoot, "build", "artifacts", "ubuntu-client-gui");
 
 function run(command, args, options = {}) {
@@ -21,7 +21,7 @@ function run(command, args, options = {}) {
 function main() {
   mkdirSync(guiArtifactDir, { recursive: true });
 
-  if (process.env.AGENTSTUDIO_UBUNTU_SKIP_IMAGE_BUILD !== "1") {
+  if (process.env.PACT_UBUNTU_SKIP_IMAGE_BUILD !== "1") {
     run("docker", [
       "build",
       "--platform",
@@ -69,7 +69,7 @@ function main() {
     "npm run client:native:test",
     "npm run client:build:linux",
     "npm run client:linux:smoke",
-    "AGENTSTUDIO_GUI_ARTIFACT_DIR=/artifacts npm run client:linux:gui-smoke",
+    "PACT_GUI_ARTIFACT_DIR=/artifacts npm run client:linux:gui-smoke",
   ].join(" && ");
 
   run("docker", [
@@ -80,13 +80,13 @@ function main() {
     "--mount",
     `type=bind,src=${workspaceRoot},dst=/source,readonly`,
     "--mount",
-    "type=volume,src=agentstudio-ubuntu-pub-cache,dst=/root/.pub-cache",
+    "type=volume,src=pact-ubuntu-pub-cache,dst=/root/.pub-cache",
     "--mount",
-    "type=volume,src=agentstudio-ubuntu-cargo-registry,dst=/root/.cargo/registry",
+    "type=volume,src=pact-ubuntu-cargo-registry,dst=/root/.cargo/registry",
     "--mount",
-    "type=volume,src=agentstudio-ubuntu-cargo-git,dst=/root/.cargo/git",
+    "type=volume,src=pact-ubuntu-cargo-git,dst=/root/.cargo/git",
     "--mount",
-    "type=volume,src=agentstudio-ubuntu-cargo-target,dst=/workspace/client-cli/target",
+    "type=volume,src=pact-ubuntu-cargo-target,dst=/workspace/client-cli/target",
     "--mount",
     `type=bind,src=${guiArtifactDir},dst=/artifacts`,
     "-w",

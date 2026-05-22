@@ -115,6 +115,6 @@ jobs:
         with:
           context: .
           push: false
-          tags: agentstudio-server:ci
+          tags: pact-server:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

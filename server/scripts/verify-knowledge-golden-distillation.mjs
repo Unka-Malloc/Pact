@@ -81,7 +81,7 @@ function assertPortableDocument(document) {
   assert.deepEqual(forbiddenPortablePaths(document), []);
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-golden-distillation-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-golden-distillation-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -91,7 +91,7 @@ const server = await startHttpServer({
 await installAuthenticatedFetch(server);
 
 try {
-  const billingBody = "本月账单需要在 2026-05-10 前完成付款。发票抬头为 AgentStudio Test Ltd，付款金额为 1200 元。";
+  const billingBody = "本月账单需要在 2026-05-10 前完成付款。发票抬头为 Pact Test Ltd，付款金额为 1200 元。";
   const securityBody = "账号登录验证码为 123456。如果不是本人操作，需要立即检查账号安全。";
   const adBody = "限时电子书和会员优惠活动，本邮件不包含账单付款、发票或安全风险。";
   await createKnowledgeJob(
@@ -111,7 +111,7 @@ try {
   );
 
   const rules = await fetchJson(`${server.url}/api/knowledge/golden-rules`);
-  assert.equal(rules.protocolVersion, "agentstudio.golden-rule.v1");
+  assert.equal(rules.protocolVersion, "pact.golden-rule.v1");
   assert.ok(rules.items.some((item) => item.packageId === "default-golden-rules"));
 
   const framework = await fetchJson(`${server.url}/api/knowledge/skill-framework`);
@@ -138,7 +138,7 @@ try {
       publish: true
     })
   });
-  assert.equal(generated.protocolVersion, "agentstudio.knowledge-skill.v1");
+  assert.equal(generated.protocolVersion, "pact.knowledge-skill.v1");
   assert.equal(generated.skill.status, "pending_review");
   assert.equal(generated.qualityReport.passed, true);
 
@@ -197,7 +197,7 @@ try {
       semanticSupportRequired: false
     })
   });
-  assert.equal(distillation.protocolVersion, "agentstudio.knowledge-distillation.v1");
+  assert.equal(distillation.protocolVersion, "pact.knowledge-distillation.v1");
   assert.equal(distillation.status, "completed");
   assert.equal(distillation.rawCorpus.primary, true);
   assert.ok(distillation.rawCorpus.documentCount >= 1);

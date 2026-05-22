@@ -56,8 +56,8 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
 
   function hasSafetyConfirm(request) {
     const value = String(
-      request?.headers?.["x-agentstudio-safety-confirm"] ||
-        request?.headers?.["x-agentstudio-confirm"] ||
+      request?.headers?.["x-pact-safety-confirm"] ||
+        request?.headers?.["x-pact-confirm"] ||
         ""
     ).toLowerCase();
     return ["1", "true", "yes"].includes(value);
@@ -68,13 +68,13 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
       return true;
     }
     logRouter("warn", "tool_management.http.confirmation_required", {
-      requestId: request?.__agentstudioRequestId || ""
+      requestId: request?.__pactRequestId || ""
     });
     sendJson(response, 403, {
       schemaVersion: 1,
       error: {
         code: "confirmation_required",
-        message: "Tool management grant changes require x-agentstudio-safety-confirm: true."
+        message: "Tool management grant changes require x-pact-safety-confirm: true."
       }
     });
     return false;
@@ -90,7 +90,7 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
     });
     if (!authorization.ok) {
       logRouter("warn", "tool_management.http.denied", {
-        requestId: request?.__agentstudioRequestId || "",
+        requestId: request?.__pactRequestId || "",
         method,
         route: url.pathname,
         scopes,
@@ -101,7 +101,7 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
       return null;
     }
     logRouter("debug", "tool_management.http.authorized", {
-      requestId: request?.__agentstudioRequestId || "",
+      requestId: request?.__pactRequestId || "",
       method,
       route: url.pathname,
       scopes,
@@ -119,7 +119,7 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
     const normalizedMethod = String(method || "GET").toUpperCase();
     const startedAt = Date.now();
     logRouter("info", "tool_management.http.requested", {
-      requestId: request?.__agentstudioRequestId || "",
+      requestId: request?.__pactRequestId || "",
       method: normalizedMethod,
       route: url.pathname,
       suffix,
@@ -129,7 +129,7 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
 
     async function complete(status, payload = {}) {
       logRouter(status >= 400 ? "warn" : "info", "tool_management.http.completed", {
-        requestId: request?.__agentstudioRequestId || "",
+        requestId: request?.__pactRequestId || "",
         method: normalizedMethod,
         route: url.pathname,
         suffix,
@@ -360,7 +360,7 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
     });
     } catch (error) {
       logRouter("error", "tool_management.http.failed", {
-        requestId: request?.__agentstudioRequestId || "",
+        requestId: request?.__pactRequestId || "",
         method: normalizedMethod,
         route: url.pathname,
         suffix,

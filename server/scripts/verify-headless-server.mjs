@@ -92,7 +92,7 @@ function buildMinimalPdfBuffer(lines) {
   return Buffer.from(body, "latin1");
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-server-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-server-"));
 const mailDir = path.join(userDataPath, "mailbox");
 const documentsDir = path.join(userDataPath, "documents");
 const incrementalDir = path.join(userDataPath, "mailbox-incremental");
@@ -114,8 +114,8 @@ const mockSourceCodeAgentModulePath = fileURLToPath(
 const mockAnalysisModulePath = fileURLToPath(
   new URL("../../tests/server/mock-analysis-engine.mjs", import.meta.url)
 );
-const agentStudioCliPath = fileURLToPath(new URL("./agentstudio.mjs", import.meta.url));
-const agentStudioServer = await startHttpServer({
+const pactCliPath = fileURLToPath(new URL("./pact.mjs", import.meta.url));
+const pactServer = await startHttpServer({
   userDataPath,
   host: "127.0.0.1",
   port: 0,
@@ -128,14 +128,14 @@ const agentStudioServer = await startHttpServer({
     }
   }
 });
-const agentStudioAuth = await installAuthenticatedFetch(agentStudioServer);
+const pactAuth = await installAuthenticatedFetch(pactServer);
 let minimalServer = null;
 let migrationActiveServer = null;
 let migrationBootstrapServer = null;
 
 function runCli(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [agentStudioCliPath, ...args], {
+    const child = spawn(process.execPath, [pactCliPath, ...args], {
       cwd: path.resolve(fileURLToPath(new URL("../..", import.meta.url))),
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -361,21 +361,21 @@ try {
     )
   ];
 
-  const health = await fetchJson(`${agentStudioServer.url}/api/healthz`);
+  const health = await fetchJson(`${pactServer.url}/api/healthz`);
   assert.equal(health.ok, true);
 
-  const rootInfo = await fetchJson(`${agentStudioServer.url}/`);
-  assert.equal(rootInfo.service, "AgentStudio Server");
+  const rootInfo = await fetchJson(`${pactServer.url}/`);
+  assert.equal(rootInfo.service, "Pact Server");
 
   const cliHealth = JSON.parse(
-    await runCli(["--server-url", agentStudioServer.url, "health"])
+    await runCli(["--server-url", pactServer.url, "health"])
   );
   assert.equal(cliHealth.ok, true);
   const cliRpcHealth = JSON.parse(
     await runCli([
       "rpc",
       "--server-url",
-      agentStudioServer.url,
+      pactServer.url,
       "--method",
       "GET",
       "--path",
@@ -383,17 +383,17 @@ try {
     ])
   );
   assert.equal(cliRpcHealth.ok, true);
-  const interfaceCatalog = await fetchJson(`${agentStudioServer.url}/api/interfaces`);
+  const interfaceCatalog = await fetchJson(`${pactServer.url}/api/interfaces`);
   assert.equal(interfaceCatalog.transport.rpc, "POST /api/rpc");
   assert.ok(interfaceCatalog.interfaces.some((item) => item.id === "jobs.create"));
   assert.equal(interfaceCatalog.interfaces.some((item) => item.id === "exports.create"), false);
-  const legacyExportEndpoint = await fetch(`${agentStudioServer.url}/api/export`, {
+  const legacyExportEndpoint = await fetch(`${pactServer.url}/api/export`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({})
   });
   assert.equal(legacyExportEndpoint.status, 404);
-  const rpcHealth = await fetchJson(`${agentStudioServer.url}/api/rpc`, {
+  const rpcHealth = await fetchJson(`${pactServer.url}/api/rpc`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -409,7 +409,7 @@ try {
     await runCli([
       "rpc-call",
       "--server-url",
-      agentStudioServer.url,
+      pactServer.url,
       "system.health"
     ])
   );
@@ -418,7 +418,7 @@ try {
     await runCli([
       "rpc-call",
       "--server-url",
-      agentStudioServer.url,
+      pactServer.url,
       "jobs.list",
       "--params",
       JSON.stringify({ limit: 5 })
@@ -437,13 +437,13 @@ try {
       "Date: Mon, 27 Apr 2026 10:00:00 +0000",
       "Message-ID: <cli-upload@contoso.com>",
       "",
-      "这封邮件用于验证 agentstudio --file 能通过上传会话提交任务。"
+      "这封邮件用于验证 pact --file 能通过上传会话提交任务。"
     ].join("\n"),
     "utf8"
   );
   await runCli([
     "--server-url",
-    agentStudioServer.url,
+    pactServer.url,
     "--file",
     cliUploadPath,
     "--wait",
@@ -461,19 +461,19 @@ try {
   assert.equal(cliUploadedResult.sourceFiles.length, 1);
   assert.equal(cliUploadedResult.sourceFiles[0].kind, "email");
 
-  const rulesInfo = await fetchJson(`${agentStudioServer.url}/api/email-rules`);
+  const rulesInfo = await fetchJson(`${pactServer.url}/api/email-rules`);
   assert.ok(rulesInfo.path.endsWith("rules/email-rules.json"));
   assert.ok(rulesInfo.rules.reportSeries.length >= 2);
   await fs.access(rulesInfo.path);
 
-  const vocabularyInfo = await fetchJson(`${agentStudioServer.url}/api/expert-vocabulary`);
+  const vocabularyInfo = await fetchJson(`${pactServer.url}/api/expert-vocabulary`);
   assert.ok(vocabularyInfo.path.endsWith("rules/expert-vocabulary.json"));
   assert.ok(vocabularyInfo.vocabulary.version >= 1);
   assert.ok(vocabularyInfo.vocabulary.entries.length >= 20);
   assert.ok(vocabularyInfo.vocabulary.checksum);
   await fs.access(vocabularyInfo.path);
 
-  const taxonomyInfo = await fetchJson(`${agentStudioServer.url}/api/knowledge-taxonomy`);
+  const taxonomyInfo = await fetchJson(`${pactServer.url}/api/knowledge-taxonomy`);
   assert.ok(taxonomyInfo.path.endsWith("rules/knowledge-taxonomy.json"));
   assert.ok(taxonomyInfo.taxonomy.version >= 1);
   assert.ok(taxonomyInfo.taxonomy.categories.length >= 20);
@@ -483,8 +483,8 @@ try {
   assert.ok(taxonomyInfo.guidance.emailRulesPath.endsWith("rules/email-rules.json"));
   await fs.access(taxonomyInfo.path);
 
-  const consoleState = await fetchJson(`${agentStudioServer.url}/api/console/state`);
-  assert.equal(consoleState.server.url, agentStudioServer.url);
+  const consoleState = await fetchJson(`${pactServer.url}/api/console/state`);
+  assert.equal(consoleState.server.url, pactServer.url);
   assert.equal(consoleState.runtime.profile, "default");
   assert.ok(consoleState.settings.path.endsWith("settings.json"));
   assert.ok(consoleState.discovery.path.endsWith("discovery.json"));
@@ -511,7 +511,7 @@ try {
   assert.ok(Array.isArray(consoleState.jobs.items));
   assert.ok(Array.isArray(consoleState.clients.items));
 
-  const runtimeMountsBeforeSwitch = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`);
+  const runtimeMountsBeforeSwitch = await fetchJson(`${pactServer.url}/api/runtime/mounts`);
   assert.ok(runtimeMountsBeforeSwitch.path.endsWith("mount-modules.json"));
   assert.ok(runtimeMountsBeforeSwitch.paths.modulesPath.endsWith("mount-modules.json"));
   assert.ok(runtimeMountsBeforeSwitch.paths.routingPath.endsWith("mount-routing.json"));
@@ -520,7 +520,7 @@ try {
     "test/mock-structured-document-parser"
   );
 
-  const rejectedMountSwitch = await fetchJsonResponse(`${agentStudioServer.url}/api/runtime/mounts`, {
+  const rejectedMountSwitch = await fetchJsonResponse(`${pactServer.url}/api/runtime/mounts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -533,7 +533,7 @@ try {
   });
   assert.equal(rejectedMountSwitch.status, 400);
   assert.equal(rejectedMountSwitch.payload.ok, false);
-  const runtimeMountsAfterRejectedSwitch = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`);
+  const runtimeMountsAfterRejectedSwitch = await fetchJson(`${pactServer.url}/api/runtime/mounts`);
   assert.equal(
     runtimeMountsAfterRejectedSwitch.runtime.mounts.find((item) => item.name === "documentParser")?.id,
     "test/mock-structured-document-parser"
@@ -543,7 +543,7 @@ try {
     path.join(userDataPath, "missing-document-parser.mjs")
   );
 
-  const acceptedMountSwitch = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`, {
+  const acceptedMountSwitch = await fetchJson(`${pactServer.url}/api/runtime/mounts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -563,7 +563,7 @@ try {
       analysis: mockAnalysisModulePath
     }
   });
-  const switchedMounts = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts/reload`, {
+  const switchedMounts = await fetchJson(`${pactServer.url}/api/runtime/mounts/reload`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -572,7 +572,7 @@ try {
   });
   assert.equal(switchedMounts.value.mountModules.documentParser, mockDocumentParserModuleV2Path);
 
-  const runtimeMountsAfterSwitch = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`);
+  const runtimeMountsAfterSwitch = await fetchJson(`${pactServer.url}/api/runtime/mounts`);
   assert.equal(
     runtimeMountsAfterSwitch.runtime.mounts.find((item) => item.name === "documentParser")?.id,
     "test/mock-structured-document-parser-v2"
@@ -587,7 +587,7 @@ try {
     "",
     "需要确认 documentParser 热切换后，新任务立即走新挂载。"
   ].join("\n");
-  const switchedParserJob = await fetchJson(`${agentStudioServer.url}/api/jobs`, {
+  const switchedParserJob = await fetchJson(`${pactServer.url}/api/jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -610,16 +610,16 @@ try {
       }
     })
   });
-  await waitForCompletedJob(agentStudioServer.url, switchedParserJob.id);
+  await waitForCompletedJob(pactServer.url, switchedParserJob.id);
   const switchedParserResult = await fetchJson(
-    `${agentStudioServer.url}/api/jobs/${switchedParserJob.id}/result`
+    `${pactServer.url}/api/jobs/${switchedParserJob.id}/result`
   );
   assert.equal(
     switchedParserResult.sourceFiles[0].documentParserId,
     "test/mock-structured-document-parser-v2"
   );
 
-  const reloadedMounts = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts/reload`, {
+  const reloadedMounts = await fetchJson(`${pactServer.url}/api/runtime/mounts/reload`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -628,7 +628,7 @@ try {
   });
   assert.equal(reloadedMounts.ok, true);
 
-  const imageRouteSwitch = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`, {
+  const imageRouteSwitch = await fetchJson(`${pactServer.url}/api/runtime/mounts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -649,13 +649,13 @@ try {
     "multimodalParser"
   );
 
-  const imageRouteInfo = await fetchJson(`${agentStudioServer.url}/api/runtime/info`);
+  const imageRouteInfo = await fetchJson(`${pactServer.url}/api/runtime/info`);
   assert.equal(
     imageRouteInfo.runtime.mountRouting.extensionRoutes[".png"].mountName,
     "multimodalParser"
   );
 
-  const rejectedRouteSwitch = await fetchJsonResponse(`${agentStudioServer.url}/api/runtime/mounts`, {
+  const rejectedRouteSwitch = await fetchJsonResponse(`${pactServer.url}/api/runtime/mounts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -673,12 +673,12 @@ try {
   });
   assert.equal(rejectedRouteSwitch.status, 400);
   assert.equal(rejectedRouteSwitch.payload.ok, false);
-  const runtimeMountsAfterRejectedRoute = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`);
+  const runtimeMountsAfterRejectedRoute = await fetchJson(`${pactServer.url}/api/runtime/mounts`);
   assert.equal(runtimeMountsAfterRejectedRoute.runtime.mountRouting.extensionRoutes[".badroute"], undefined);
   assert.equal(runtimeMountsAfterRejectedRoute.value.mountRouting.extensionRoutes[".badroute"], undefined);
 
   const imageBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02, 0x03, 0x04]);
-  const imageJob = await fetchJson(`${agentStudioServer.url}/api/jobs`, {
+  const imageJob = await fetchJson(`${pactServer.url}/api/jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -701,8 +701,8 @@ try {
       }
     })
   });
-  await waitForCompletedJob(agentStudioServer.url, imageJob.id);
-  const imageResult = await fetchJson(`${agentStudioServer.url}/api/jobs/${imageJob.id}/result`);
+  await waitForCompletedJob(pactServer.url, imageJob.id);
+  const imageResult = await fetchJson(`${pactServer.url}/api/jobs/${imageJob.id}/result`);
   assert.equal(imageResult.sourceFiles[0].kind, "image");
   assert.equal(imageResult.sourceFiles[0].documentParserId, "test/mock-multimodal-parser");
   assert.match(imageResult.sourceFiles[0].text, /^\[multimodal\]/);
@@ -720,7 +720,7 @@ try {
       }
     }
   });
-  const customMountSwitch = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts/reload`, {
+  const customMountSwitch = await fetchJson(`${pactServer.url}/api/runtime/mounts/reload`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -736,7 +736,7 @@ try {
     "sourceCodeAgent"
   );
 
-  const runtimeMountsWithCustomAgent = await fetchJson(`${agentStudioServer.url}/api/runtime/mounts`);
+  const runtimeMountsWithCustomAgent = await fetchJson(`${pactServer.url}/api/runtime/mounts`);
   assert.equal(
     runtimeMountsWithCustomAgent.runtime.mounts.find((item) => item.name === "sourceCodeAgent")?.id,
     "test/mock-source-code-agent-parser"
@@ -747,7 +747,7 @@ try {
     "    pending = [item for item in records if item.get('status') != 'done']",
     "    return pending"
   ].join("\n");
-  const pythonJob = await fetchJson(`${agentStudioServer.url}/api/jobs`, {
+  const pythonJob = await fetchJson(`${pactServer.url}/api/jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -770,8 +770,8 @@ try {
       }
     })
   });
-  await waitForCompletedJob(agentStudioServer.url, pythonJob.id);
-  const pythonResult = await fetchJson(`${agentStudioServer.url}/api/jobs/${pythonJob.id}/result`);
+  await waitForCompletedJob(pactServer.url, pythonJob.id);
+  const pythonResult = await fetchJson(`${pactServer.url}/api/jobs/${pythonJob.id}/result`);
   assert.equal(pythonResult.sourceFiles[0].kind, "text");
   assert.equal(
     pythonResult.sourceFiles[0].documentParserId,
@@ -779,7 +779,7 @@ try {
   );
   assert.match(pythonResult.sourceFiles[0].text, /^\[agent-code\]/);
 
-  const savedRulesInfo = await fetchJson(`${agentStudioServer.url}/api/email-rules`, {
+  const savedRulesInfo = await fetchJson(`${pactServer.url}/api/email-rules`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -815,7 +815,7 @@ try {
       (item) => item.department === "财务部"
     )
   );
-  const savedVocabularyInfo = await fetchJson(`${agentStudioServer.url}/api/expert-vocabulary`, {
+  const savedVocabularyInfo = await fetchJson(`${pactServer.url}/api/expert-vocabulary`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -842,11 +842,11 @@ try {
       (item) => item.pathSegments.join("/") === "测试/专家/人工校验"
     )
   );
-  const vocabularyVersions = await fetchJson(`${agentStudioServer.url}/api/expert-vocabulary/versions`);
+  const vocabularyVersions = await fetchJson(`${pactServer.url}/api/expert-vocabulary/versions`);
   assert.ok(
     vocabularyVersions.history.some((item) => item.version === vocabularyInfo.vocabulary.version)
   );
-  const savedSettings = await fetchJson(`${agentStudioServer.url}/api/settings`, {
+  const savedSettings = await fetchJson(`${pactServer.url}/api/settings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -857,7 +857,7 @@ try {
   });
   assert.equal(savedSettings.analysisModuleId, "mock:agent-only-module");
 
-  const createdJob = await fetchJson(`${agentStudioServer.url}/api/jobs`, {
+  const createdJob = await fetchJson(`${pactServer.url}/api/jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -878,11 +878,11 @@ try {
   assert.equal(typeof createdJob.id, "string");
   assert.equal(typeof createdJob.archiveBatchId, "string");
 
-  const completedJob = await waitForCompletedJob(agentStudioServer.url, createdJob.id);
+  const completedJob = await waitForCompletedJob(pactServer.url, createdJob.id);
   assert.equal(completedJob.status, "completed");
 
   const result = await fetchJson(
-    `${agentStudioServer.url}/api/jobs/${createdJob.id}/result`
+    `${pactServer.url}/api/jobs/${createdJob.id}/result`
   );
   assert.equal(result.analysisRuntime.moduleId, "mock:agent-only-module");
   assert.equal(result.analysisRuntime.moduleSource, "tests/server/mock-analysis-engine");
@@ -918,7 +918,7 @@ try {
   assert.ok(result.overview.currentCount > 0);
   assert.ok(result.overview.historicalCount > 0);
   assert.ok(result.lifecycle.newCount > 0);
-  assert.equal(result.normalizedDocuments.packageType, "agentstudio.normalized-documents");
+  assert.equal(result.normalizedDocuments.packageType, "pact.normalized-documents");
   assert.ok(
     result.normalizedDocuments.documents.some((item) => item.granularity === "message")
   );
@@ -988,7 +988,7 @@ try {
     new Date(nextWeeklyEmail.mtime),
     new Date(nextWeeklyEmail.mtime)
   );
-  const switchedBackSettings = await fetchJson(`${agentStudioServer.url}/api/settings`, {
+  const switchedBackSettings = await fetchJson(`${pactServer.url}/api/settings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -999,7 +999,7 @@ try {
   });
   assert.equal(switchedBackSettings.analysisModuleId, "builtin:heuristic-hybrid-v1");
 
-  const followupJob = await fetchJson(`${agentStudioServer.url}/api/jobs`, {
+  const followupJob = await fetchJson(`${pactServer.url}/api/jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -1017,12 +1017,12 @@ try {
     })
   });
   const followupCompletedJob = await waitForCompletedJob(
-    agentStudioServer.url,
+    pactServer.url,
     followupJob.id
   );
   assert.equal(followupCompletedJob.status, "completed");
   const followupResult = await fetchJson(
-    `${agentStudioServer.url}/api/jobs/${followupJob.id}/result`
+    `${pactServer.url}/api/jobs/${followupJob.id}/result`
   );
   assert.equal(followupResult.analysisRuntime.moduleId, "builtin:heuristic-hybrid-v1");
   assert.equal(followupResult.analysisRuntime.moduleSource, "builtin");
@@ -1101,8 +1101,8 @@ try {
     )
   );
 
-  const storageSummary = await fetchJson(`${agentStudioServer.url}/api/storage/summary`);
-  assert.ok(storageSummary.databasePath.endsWith("metadata/agentstudio.sqlite"));
+  const storageSummary = await fetchJson(`${pactServer.url}/api/storage/summary`);
+  assert.ok(storageSummary.databasePath.endsWith("metadata/pact.sqlite"));
   assert.ok(storageSummary.objectRootPath.endsWith("objects"));
   assert.ok(storageSummary.batchCount >= 2);
   assert.ok(storageSummary.rawObjectCount >= 7);
@@ -1111,7 +1111,7 @@ try {
   await fs.access(storageSummary.databasePath);
 
   const searchResult = await fetchJson(
-    `${agentStudioServer.url}/api/search?q=${encodeURIComponent("开票信息")}&limit=5&formalOnly=1`
+    `${pactServer.url}/api/search?q=${encodeURIComponent("开票信息")}&limit=5&formalOnly=1`
   );
   assert.ok(searchResult.items.length > 0);
   assert.ok(
@@ -1125,7 +1125,7 @@ try {
   const weeklyEmail = result.emails.find((item) => item.subject.includes("周报"));
   assert.ok(weeklyEmail);
   const weeklyDownload = await fetch(
-    `${agentStudioServer.url}/api/raw-objects/${encodeURIComponent(weeklyEmail.rawObjectId)}`
+    `${pactServer.url}/api/raw-objects/${encodeURIComponent(weeklyEmail.rawObjectId)}`
   );
   assert.equal(weeklyDownload.ok, true);
   assert.match(
@@ -1134,7 +1134,7 @@ try {
   );
   assert.equal(await weeklyDownload.text(), bundledWeeklyEmail.content);
 
-  const mixedDocumentJob = await fetchJson(`${agentStudioServer.url}/api/jobs`, {
+  const mixedDocumentJob = await fetchJson(`${pactServer.url}/api/jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -1151,14 +1151,14 @@ try {
       }
     })
   });
-  await waitForCompletedJob(agentStudioServer.url, mixedDocumentJob.id);
+  await waitForCompletedJob(pactServer.url, mixedDocumentJob.id);
   const mixedDocumentResult = await fetchJson(
-    `${agentStudioServer.url}/api/jobs/${mixedDocumentJob.id}/result`
+    `${pactServer.url}/api/jobs/${mixedDocumentJob.id}/result`
   );
   assert.equal(Object.hasOwn(mixedDocumentResult, "cloudParsing"), false);
   assert.equal(Object.hasOwn(mixedDocumentResult, "chunks"), false);
   const normalizedManifest = mixedDocumentResult.normalizedDocuments;
-  assert.equal(normalizedManifest.packageType, "agentstudio.normalized-documents");
+  assert.equal(normalizedManifest.packageType, "pact.normalized-documents");
   assert.ok(normalizedManifest.documents.some((item) => item.granularity === "deck"));
   assert.ok(normalizedManifest.documents.some((item) => item.granularity === "slide"));
   assert.ok(normalizedManifest.documents.some((item) => item.granularity === "section"));
@@ -1177,13 +1177,13 @@ try {
   );
 
   const normalizedList = await fetchJson(
-    `${agentStudioServer.url}/api/jobs/${mixedDocumentJob.id}/normalized-documents`
+    `${pactServer.url}/api/jobs/${mixedDocumentJob.id}/normalized-documents`
   );
   assert.equal(normalizedList.documents.length, normalizedManifest.documents.length);
   const firstDocxDocument = normalizedList.documents.find((item) => item.relativePath.endsWith(".docx"));
   assert.ok(firstDocxDocument);
   const normalizedDownload = await fetch(
-    `${agentStudioServer.url}/api/jobs/${mixedDocumentJob.id}/normalized-documents/${encodeURIComponent(
+    `${pactServer.url}/api/jobs/${mixedDocumentJob.id}/normalized-documents/${encodeURIComponent(
       firstDocxDocument.documentId
     )}`
   );
@@ -1200,14 +1200,14 @@ try {
   const firstSourceMaterial = normalizedList.sourceMaterials[0];
   assert.ok(firstSourceMaterial);
   const sourceMaterialDownload = await fetch(
-    `${agentStudioServer.url}/api/jobs/${mixedDocumentJob.id}/normalized-documents/${encodeURIComponent(
+    `${pactServer.url}/api/jobs/${mixedDocumentJob.id}/normalized-documents/${encodeURIComponent(
       firstSourceMaterial.documentId
     )}`
   );
   assert.equal(sourceMaterialDownload.ok, true);
   assert.ok((sourceMaterialDownload.headers.get("content-type") || "").length > 0);
 
-  const normalizedRpcList = await fetchJson(`${agentStudioServer.url}/api/rpc`, {
+  const normalizedRpcList = await fetchJson(`${pactServer.url}/api/rpc`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1219,7 +1219,7 @@ try {
   });
   assert.equal(normalizedRpcList.id, "normalized-list");
   assert.equal(normalizedRpcList.result.documents.length, normalizedManifest.documents.length);
-  const normalizedRpcDownload = await fetchJson(`${agentStudioServer.url}/api/rpc`, {
+  const normalizedRpcDownload = await fetchJson(`${pactServer.url}/api/rpc`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1239,7 +1239,7 @@ try {
   const cliNormalizedList = JSON.parse(
     await runCli([
       "--server-url",
-      agentStudioServer.url,
+      pactServer.url,
       "jobs",
       "normalized-docs",
       "--id",
@@ -1250,7 +1250,7 @@ try {
   const cliNormalizedOutputPath = path.join(userDataPath, "normalized-cli-download.docx");
   await runCli([
     "--server-url",
-    agentStudioServer.url,
+    pactServer.url,
     "jobs",
     "normalized-doc",
     "--id",
@@ -1274,7 +1274,7 @@ try {
       }
     }
   });
-  await installAuthenticatedFetch(minimalServer, { auth: agentStudioAuth });
+  await installAuthenticatedFetch(minimalServer, { auth: pactAuth });
   const minimalJob = await fetchJson(`${minimalServer.url}/api/jobs`, {
     method: "POST",
     headers: {
@@ -1480,11 +1480,11 @@ try {
   );
   assert.equal(discoveryClientsAfterAligned.summary.alignedCount, 1);
 
-  const missingResponse = await fetch(`${agentStudioServer.url}/missing`);
+  const missingResponse = await fetch(`${pactServer.url}/missing`);
   assert.equal(missingResponse.status, 404);
 
   console.log("Headless server verification passed.");
-  console.log(`Server URL: ${agentStudioServer.url}`);
+  console.log(`Server URL: ${pactServer.url}`);
   console.log(`User data dir: ${userDataPath}`);
 } finally {
   if (migrationBootstrapServer) {
@@ -1496,6 +1496,6 @@ try {
   if (minimalServer) {
     await minimalServer.close();
   }
-  await agentStudioServer.close();
+  await pactServer.close();
   await fs.rm(userDataPath, { recursive: true, force: true });
 }

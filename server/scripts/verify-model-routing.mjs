@@ -128,7 +128,7 @@ function verifyPolicyNormalization() {
 }
 
 async function verifyGatewayRouting() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-model-routing-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-model-routing-"));
   const mock = await startRoutingMockServer();
   try {
     const settings = routingSettings(mock);

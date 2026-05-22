@@ -1,4 +1,4 @@
-# AgentStudio Agent Rules
+# Pact Agent Rules
 
 ## 用户配置真实性
 

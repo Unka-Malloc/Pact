@@ -15,7 +15,7 @@ _Upcoming changes will be documented here._
 
 ### 🎉 Initial Release / 首次发布
 
-The inaugural release of **AgentStudio** — a controllable agent collaboration platform (可控的智能体协作空间).
+The inaugural release of **Pact** — a controllable agent collaboration platform (可控的智能体协作空间).
 
 ### Added
 
@@ -81,5 +81,5 @@ The inaugural release of **AgentStudio** — a controllable agent collaboration 
 - **OpenSearch** integration for enterprise search and analytics
 - Pluggable adapter architecture for additional knowledge base backends
 
-[unreleased]: https://github.com/Unka-Malloc/AgentStudio/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Unka-Malloc/AgentStudio/releases/tag/v0.1.0
+[unreleased]: https://github.com/Unka-Malloc/Pact/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Unka-Malloc/Pact/releases/tag/v0.1.0

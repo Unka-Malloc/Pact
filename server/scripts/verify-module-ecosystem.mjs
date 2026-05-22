@@ -39,7 +39,7 @@ async function verifyMountScaffold(tempRoot) {
   assert.ok(scaffold.written.some((file) => file.path === "index.mjs"));
 
   const manifest = JSON.parse(await fs.readFile(path.join(targetDir, "module.json"), "utf8"));
-  assert.equal(manifest.protocolVersion, "agentstudio.mount-module.v1");
+  assert.equal(manifest.protocolVersion, "pact.mount-module.v1");
   assert.equal(manifest.ecosystemProtocolVersion, MODULE_ECOSYSTEM_PROTOCOL_VERSION);
   assert.equal(manifest.mountName, "documentParser");
 
@@ -54,7 +54,7 @@ async function verifyMountScaffold(tempRoot) {
   assert.ok(contract.checks.some((check) => check.name === "extractDocument text" && check.ok));
 
   const cliContract = await execFileAsync(process.execPath, [
-    "server/scripts/agentstudio-module-contract-test.mjs",
+    "server/scripts/pact-module-contract-test.mjs",
     "--module",
     path.join(targetDir, "index.mjs"),
     "--mount-name",
@@ -78,7 +78,7 @@ async function verifyMountScaffold(tempRoot) {
 async function verifyPackageScaffold(tempRoot) {
   const targetDir = path.join(tempRoot, "acme-tool");
   await execFileAsync(process.execPath, [
-    "server/scripts/agentstudio-create-module.mjs",
+    "server/scripts/pact-create-module.mjs",
     "--template",
     "toolPackage",
     "--module-id",
@@ -94,7 +94,7 @@ async function verifyPackageScaffold(tempRoot) {
   assert.equal(validation.manifest.kind, "tool");
 
   const cliValidation = await execFileAsync(process.execPath, [
-    "server/scripts/agentstudio-module-contract-test.mjs",
+    "server/scripts/pact-module-contract-test.mjs",
     "--manifest",
     path.join(targetDir, "capability-package.json")
   ]);
@@ -117,9 +117,9 @@ function verifyOperationsAndTools() {
   assert.equal(operations.get("module_ecosystem.scaffold").safety.requiresConfirmation, true);
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const scaffoldTool = catalog.tools.find((tool) => tool.id === "agentstudio.modules.scaffold");
+  const scaffoldTool = catalog.tools.find((tool) => tool.id === "pact.modules.scaffold");
   assert.ok(scaffoldTool, "module scaffold tool must be exposed");
-  assert.ok(scaffoldTool.toolsets.includes("agentstudio.mount.dev"));
+  assert.ok(scaffoldTool.toolsets.includes("pact.mount.dev"));
   assert.equal(scaffoldTool.requiresApproval, true);
 }
 
@@ -130,7 +130,7 @@ async function main() {
   assert.ok(templates.templates.some((template) => template.templateId === "toolPackage"));
   assert.ok(templates.templates.some((template) => template.templateId === "skillPackage"));
 
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-module-ecosystem-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-module-ecosystem-"));
   try {
     await verifyMountScaffold(tempRoot);
     await verifyPackageScaffold(tempRoot);

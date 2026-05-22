@@ -3,9 +3,9 @@
   "label": "Admin Operator",
   "agentType": "operator",
   "toolsets": [
-    "agentstudio.admin",
-    "agentstudio.knowledge.admin",
-    "agentstudio.runtime.maintain"
+    "pact.admin",
+    "pact.knowledge.admin",
+    "pact.runtime.maintain"
   ],
   "toolAllow": [],
   "toolDeny": [],

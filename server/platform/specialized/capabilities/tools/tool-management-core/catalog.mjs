@@ -77,7 +77,7 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
 
 const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
   {
-    id: "agentstudio.knowledge.read",
+    id: "pact.knowledge.read",
     label: "Knowledge read",
     requiredScopes: ["knowledge:read"],
     maxRisk: "read_only",
@@ -85,7 +85,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: true
   },
   {
-    id: "agentstudio.knowledge.write",
+    id: "pact.knowledge.write",
     label: "Knowledge write",
     requiredScopes: ["knowledge:read", "knowledge:write"],
     maxRisk: "safe_write",
@@ -93,7 +93,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.knowledge.maintain",
+    id: "pact.knowledge.maintain",
     label: "Knowledge maintenance",
     requiredScopes: ["knowledge:read", "knowledge:write", "knowledge:maintain"],
     maxRisk: "repair_write",
@@ -101,7 +101,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.knowledge.admin",
+    id: "pact.knowledge.admin",
     label: "Knowledge admin",
     requiredScopes: ["knowledge:read", "knowledge:write", "knowledge:maintain", "knowledge:admin"],
     maxRisk: "repair_write",
@@ -109,7 +109,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.storage.read",
+    id: "pact.storage.read",
     label: "Storage read",
     requiredScopes: ["storage:read"],
     maxRisk: "read_only",
@@ -117,7 +117,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: true
   },
   {
-    id: "agentstudio.jobs.read",
+    id: "pact.jobs.read",
     label: "Jobs read",
     requiredScopes: ["jobs:read"],
     maxRisk: "read_only",
@@ -125,7 +125,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: true
   },
   {
-    id: "agentstudio.document.parse",
+    id: "pact.document.parse",
     label: "Document parse",
     requiredScopes: ["knowledge:read"],
     maxRisk: "read_only",
@@ -133,7 +133,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.document.convert",
+    id: "pact.document.convert",
     label: "Document convert",
     requiredScopes: ["knowledge:write"],
     maxRisk: "safe_write",
@@ -141,7 +141,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.mail.import",
+    id: "pact.mail.import",
     label: "Mail import",
     requiredScopes: ["knowledge:write"],
     maxRisk: "safe_write",
@@ -149,7 +149,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.result.export",
+    id: "pact.result.export",
     label: "Result export",
     requiredScopes: ["knowledge:read"],
     maxRisk: "read_only",
@@ -157,7 +157,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.agent.workspace",
+    id: "pact.agent.workspace",
     label: "Agent workspace",
     requiredScopes: ["knowledge:read", "knowledge:write"],
     maxRisk: "safe_write",
@@ -165,7 +165,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.agent.sync.publish",
+    id: "pact.agent.sync.publish",
     label: "Agent sync publish",
     requiredScopes: ["agent_sync:publish"],
     maxRisk: "safe_write",
@@ -173,7 +173,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.runtime.read",
+    id: "pact.runtime.read",
     label: "Runtime read",
     requiredScopes: ["storage:read", "jobs:read"],
     maxRisk: "read_only",
@@ -181,7 +181,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.runtime.maintain",
+    id: "pact.runtime.maintain",
     label: "Runtime maintain",
     requiredScopes: ["knowledge:maintain"],
     maxRisk: "repair_write",
@@ -189,7 +189,7 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.mount.dev",
+    id: "pact.mount.dev",
     label: "Mount development",
     requiredScopes: ["knowledge:admin"],
     maxRisk: "repair_write",
@@ -197,8 +197,8 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
-    id: "agentstudio.admin",
-    label: "AgentStudio admin",
+    id: "pact.admin",
+    label: "Pact admin",
     requiredScopes: ["knowledge:admin", "storage:read", "jobs:read", "agent_sync:publish"],
     maxRisk: "repair_write",
     grantable: false,
@@ -211,9 +211,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "maintenance-agent",
     label: "Maintenance Agent",
     agentType: "maintenance",
-    toolsets: ["agentstudio.runtime.read", "agentstudio.storage.read", "agentstudio.jobs.read", "agentstudio.knowledge.maintain"],
+    toolsets: ["pact.runtime.read", "pact.storage.read", "pact.jobs.read", "pact.knowledge.maintain"],
     toolAllow: [],
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     maxRisk: "repair_write",
     approvalPolicy: "confirm_repair",
     concurrencyLimit: 1,
@@ -224,9 +224,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "agent-exploration",
     label: "Agent Exploration",
     agentType: "exploration",
-    toolsets: ["agentstudio.knowledge.read"],
+    toolsets: ["pact.knowledge.read"],
     toolAllow: [],
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     maxRisk: "read_only",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 4,
@@ -237,9 +237,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "document-ingestion-agent",
     label: "Document Ingestion Agent",
     agentType: "ingestion",
-    toolsets: ["agentstudio.document.parse", "agentstudio.document.convert", "agentstudio.knowledge.write"],
+    toolsets: ["pact.document.parse", "pact.document.convert", "pact.knowledge.write"],
     toolAllow: [],
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     maxRisk: "safe_write",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 2,
@@ -250,9 +250,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "mail-import-agent",
     label: "Mail Import Agent",
     agentType: "mail-import",
-    toolsets: ["agentstudio.mail.import", "agentstudio.document.parse", "agentstudio.knowledge.write"],
+    toolsets: ["pact.mail.import", "pact.document.parse", "pact.knowledge.write"],
     toolAllow: [],
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     maxRisk: "safe_write",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 2,
@@ -263,9 +263,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "external-knowledge-reader",
     label: "External Knowledge Reader",
     agentType: "external",
-    toolsets: ["agentstudio.knowledge.read"],
+    toolsets: ["pact.knowledge.read"],
     toolAllow: [],
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     maxRisk: "read_only",
     approvalPolicy: "deny_write",
     concurrencyLimit: 4,
@@ -276,9 +276,9 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "external-knowledge-writer",
     label: "External Knowledge Writer",
     agentType: "external",
-    toolsets: ["agentstudio.knowledge.read", "agentstudio.knowledge.write"],
+    toolsets: ["pact.knowledge.read", "pact.knowledge.write"],
     toolAllow: [],
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     maxRisk: "safe_write",
     approvalPolicy: "deny_repair",
     concurrencyLimit: 2,
@@ -289,7 +289,7 @@ const DEFAULT_TOOL_MANAGEMENT_PROFILES = Object.freeze([
     id: "admin-operator",
     label: "Admin Operator",
     agentType: "operator",
-    toolsets: ["agentstudio.admin", "agentstudio.knowledge.admin", "agentstudio.runtime.maintain"],
+    toolsets: ["pact.admin", "pact.knowledge.admin", "pact.runtime.maintain"],
     toolAllow: [],
     toolDeny: [],
     maxRisk: "repair_write",
@@ -312,144 +312,144 @@ export const TOOL_MANAGEMENT_PROFILES = Object.freeze(
 
 const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "system.health": "system.health",
-  "runtime.info": "agentstudio.runtime.info",
-  "runtime.mounts": "agentstudio.runtime.mounts",
-  "runtime.set_mounts": "agentstudio.runtime.mounts.set",
-  "runtime.reload_mounts": "agentstudio.runtime.mounts.reload",
-  "architecture.live_map": "agentstudio.architecture.liveMap",
-  "sample_business_pack.list": "agentstudio.sampleBusinessPack.list",
-  "sample_business_pack.get": "agentstudio.sampleBusinessPack.get",
-  "sample_business_pack.materialize": "agentstudio.sampleBusinessPack.materialize",
-  "executive_report.list": "agentstudio.executiveReport.list",
-  "executive_report.preview": "agentstudio.executiveReport.preview",
-  "executive_report.generate": "agentstudio.executiveReport.generate",
-  "module_ecosystem.templates": "agentstudio.modules.templates",
-  "module_ecosystem.plan": "agentstudio.modules.plan",
-  "module_ecosystem.scaffold": "agentstudio.modules.scaffold",
-  "module_ecosystem.contract_test": "agentstudio.modules.contractTest",
-  "storage.summary": "agentstudio.storageSummary",
-  "storage.backups.list": "agentstudio.storageBackups.list",
-  "storage.backups.create": "agentstudio.storageBackups.create",
-  "storage.backups.restore_preview": "agentstudio.storageBackups.restorePreview",
-  "storage.backups.restore": "agentstudio.storageBackups.restore",
-  "jobs.list": "agentstudio.jobs.list",
-  "jobs.get": "agentstudio.jobs.get",
-  "knowledge.affair_taxonomy": "agentstudio.knowledge.affairTaxonomy",
-  "knowledge.console": "agentstudio.knowledge.console",
-  "knowledge.config_schema": "agentstudio.knowledge.configSchema",
-  "knowledge.capabilities": "agentstudio.knowledge.capabilities",
-  "knowledge.export_docx": "agentstudio.knowledge.exportDocx",
-  "knowledge.health": "agentstudio.knowledge.health",
-  "knowledge.maintenance.get": "agentstudio.knowledge.maintenance.get",
-  "knowledge.maintenance.set": "agentstudio.knowledge.maintenance.set",
-  "knowledge.reindex": "agentstudio.knowledge.reindex",
-  "knowledge.maintenance.run": "agentstudio.knowledge.maintenance.run",
-  "knowledge.sync": "agentstudio.knowledge.sync",
-  "knowledge.changes": "agentstudio.knowledge.changes",
-  "knowledge.review_items": "agentstudio.knowledge.reviewItems",
-  "knowledge.review_resolve": "agentstudio.knowledge.reviewResolve",
-  "knowledge.feedback": "agentstudio.knowledge.feedback",
-  "knowledge.suggestions": "agentstudio.knowledge.suggestions",
-  "knowledge.suggestion_resolve": "agentstudio.knowledge.suggestionResolve",
-  "knowledge.learning.jobs": "agentstudio.knowledge.learning.jobs",
-  "knowledge.learning.health": "agentstudio.knowledge.learning.health",
-  "knowledge.evidence_gate.evaluate": "agentstudio.knowledge.evidenceGate.evaluate",
-  "knowledge.agent_skill.describe": "agentstudio.knowledge.agentSkill",
-  "knowledge.agent_skill.plan": "agentstudio.knowledge.agentSkill.plan",
-  "knowledge.agent_skill.run": "agentstudio.knowledge.agentSkill.run",
-  "knowledge.skills.list": "agentstudio.knowledge.skills.list",
-  "knowledge.skills.get": "agentstudio.knowledge.skills.get",
-  "knowledge.skills.generate": "agentstudio.knowledge.skills.generate",
-  "knowledge.skills.propose": "agentstudio.knowledge.skills.propose",
-  "knowledge.skills.resolve": "agentstudio.knowledge.skills.resolve",
-  "knowledge.skills.framework": "agentstudio.knowledge.skillFramework",
-  "knowledge.skills.framework_save": "agentstudio.knowledge.skillFramework.set",
-  "knowledge.golden_rules.list": "agentstudio.knowledge.goldenRules.list",
-  "knowledge.golden_rules.save": "agentstudio.knowledge.goldenRules.set",
-  "knowledge.golden_rules.publish": "agentstudio.knowledge.goldenRules.publish",
-  "knowledge.golden_rules.rollback": "agentstudio.knowledge.goldenRules.rollback",
-  "knowledge.rule_authoring.chat": "agentstudio.knowledge.ruleAuthoring.chat",
-  "knowledge.rule_authoring.runs.get": "agentstudio.knowledge.ruleAuthoring.run",
-  "knowledge.gold_cases.list": "agentstudio.knowledge.goldCases.list",
-  "knowledge.gold_cases.save": "agentstudio.knowledge.goldCases.set",
-  "knowledge.distillation.runs.create": "agentstudio.knowledge.distillation.runs.create",
-  "knowledge.distillation.runs.get": "agentstudio.knowledge.distillation.runs.get",
-  "knowledge.skills.evaluation.runs.create": "agentstudio.knowledge.skills.evaluation.runs.create",
-  "knowledge.skills.deployments.create": "agentstudio.knowledge.skills.deployments.create",
-  "knowledge.skills.deployments.rollback": "agentstudio.knowledge.skills.deployments.rollback",
-  "knowledge.training_sets.export": "agentstudio.knowledge.trainingSets.export",
-  "knowledge.evaluation.runs.create": "agentstudio.knowledge.evaluation.runs.create",
-  "knowledge.evaluation.runs.list": "agentstudio.knowledge.evaluation.runs.list",
-  "knowledge.evaluation.runs.get": "agentstudio.knowledge.evaluation.runs.get",
-  "knowledge.model_roles": "agentstudio.knowledge.modelRoles",
-  "knowledge.model_decision": "agentstudio.knowledge.modelDecision",
-  "knowledge.evolution.describe": "agentstudio.knowledge.evolution",
-  "knowledge.evolution.runs.create": "agentstudio.knowledge.evolution.runs.create",
-  "knowledge.evolution.runs.list": "agentstudio.knowledge.evolution.runs.list",
-  "knowledge.evolution.runs.get": "agentstudio.knowledge.evolution.runs.get",
-  "knowledge.hierarchy.audit": "agentstudio.knowledge.hierarchy.audit",
-  "knowledge.evolution.deployments.list": "agentstudio.knowledge.evolution.deployments.list",
-  "knowledge.evolution.deployments.promote": "agentstudio.knowledge.evolution.deployments.promote",
-  "knowledge.evolution.deployments.rollback": "agentstudio.knowledge.evolution.deployments.rollback",
-  "context.profiles.get": "agentstudio.context.profiles",
-  "context.profiles.set": "agentstudio.context.profiles.set",
-  "context.session_memory.get": "agentstudio.agentMemory.sessionMemory.get",
-  "context.session_memory.clear": "agentstudio.agentMemory.sessionMemory.clear",
-  "client_runtime.profiles.get": "agentstudio.clientRuntime.profiles",
-  "client_runtime.profiles.set": "agentstudio.clientRuntime.profiles.set",
-  "client_runtime.resolve": "agentstudio.clientRuntime.resolve",
-  "client_runtime.status": "agentstudio.clientRuntime.status",
-  "agent_workspaces.list": "agentstudio.agentWorkspace.list",
-  "agent_workspaces.get": "agentstudio.agentWorkspace.get",
-  "agent_workspaces.context.get": "agentstudio.agentWorkspace.context",
-  "agent_workspaces.context_bundle.export": "agentstudio.agentWorkspace.contextBundle.export",
-  "agent_workspaces.context_bundle.restore": "agentstudio.agentWorkspace.contextBundle.restore",
-  "agent_workspaces.chain.get": "agentstudio.agentWorkspace.chain",
-  "agent_workspaces.parent.set": "agentstudio.agentWorkspace.parent.set",
-  "agent_workspaces.profile.hotswap": "agentstudio.agentWorkspace.profile.hotswap",
-  "agent_workspaces.sources.set": "agentstudio.agentWorkspace.sources.set",
-  "agent_workspaces.share": "agentstudio.agentWorkspace.share",
-  "agent_workspaces.unshare": "agentstudio.agentWorkspace.unshare",
-  "workspace_governance.describe": "agentstudio.workspaceGovernance.describe",
-  "workspace_governance.policy.set": "agentstudio.workspaceGovernance.policy.set",
-  "workspace_governance.evaluate": "agentstudio.workspaceGovernance.evaluate",
-  "workspace_governance.share_grant": "agentstudio.workspaceGovernance.shareGrant",
-  "asset_lineage.describe": "agentstudio.assetLineage.describe",
-  "asset_lineage.record": "agentstudio.assetLineage.record",
-  "asset_lineage.trace": "agentstudio.assetLineage.trace",
-  "asset_lineage.reparse_plan": "agentstudio.assetLineage.reparsePlan",
-  "agent_sessions.list": "agentstudio.agentSession.list",
-  "agent_sessions.get": "agentstudio.agentSession.get",
-  "agent_sessions.context.get": "agentstudio.agentSession.context",
-  "agent_sessions.events.append": "agentstudio.agentSession.events.append",
-  "agent_sessions.fork": "agentstudio.agentSession.fork",
-  "agent_sessions.compare": "agentstudio.agentSession.compare",
-  "agent_sessions.merge_proposal": "agentstudio.agentSession.mergeProposal",
-  "agent_sessions.archive": "agentstudio.agentSession.archive",
-  "agent_workspaces.submissions.resolve": "agentstudio.agentWorkspace.submissionResolve",
-  "agent_workspaces.issues.resolve": "agentstudio.agentWorkspace.issueResolve",
-  "agent_workspaces.locks.list": "agentstudio.agentWorkspace.locks",
-  "agent_workspaces.locks.write": "agentstudio.agentWorkspace.lock",
-  "knowledge.summarization.runs.create": "agentstudio.knowledge.summarization.runs.create",
-  "knowledge.summarization.runs.get": "agentstudio.knowledge.summarization.runs.get",
-  "knowledge.summarization.runs.approve": "agentstudio.knowledge.summarization.runs.approve",
-  "knowledge.search": "agentstudio.knowledge.search",
-  "knowledge.document_structure": "agentstudio.knowledge.documentStructure",
-  "knowledge.item": "agentstudio.knowledge.item",
-  "knowledge.evidence": "agentstudio.knowledge.evidence",
-  "knowledge.asset": "agentstudio.knowledge.asset",
-  "knowledge.render_markdown": "agentstudio.knowledge.renderMarkdown",
-  "knowledge.graph": "agentstudio.knowledge.graph",
-  "agent_sync.publish": "agentstudio.agentSync.publish",
-  "data_connectors.governance.describe": "agentstudio.dataConnectors.governance",
-  "data_connectors.governance.plan": "agentstudio.dataConnectors.governance.plan",
-  "data_connectors.governance.conformance": "agentstudio.dataConnectors.governance.conformance",
-  "performance.capacity.targets": "agentstudio.performance.capacity.targets",
-  "performance.capacity.benchmark": "agentstudio.performance.capacity.benchmark",
-  "capability_packages.list": "agentstudio.capabilityPackages.list",
-  "capability_packages.plan": "agentstudio.capabilityPackages.plan",
-  "capability_packages.submit": "agentstudio.capabilityPackages.submit",
-  "capability_packages.lifecycle": "agentstudio.capabilityPackages.lifecycle"
+  "runtime.info": "pact.runtime.info",
+  "runtime.mounts": "pact.runtime.mounts",
+  "runtime.set_mounts": "pact.runtime.mounts.set",
+  "runtime.reload_mounts": "pact.runtime.mounts.reload",
+  "architecture.live_map": "pact.architecture.liveMap",
+  "sample_business_pack.list": "pact.sampleBusinessPack.list",
+  "sample_business_pack.get": "pact.sampleBusinessPack.get",
+  "sample_business_pack.materialize": "pact.sampleBusinessPack.materialize",
+  "executive_report.list": "pact.executiveReport.list",
+  "executive_report.preview": "pact.executiveReport.preview",
+  "executive_report.generate": "pact.executiveReport.generate",
+  "module_ecosystem.templates": "pact.modules.templates",
+  "module_ecosystem.plan": "pact.modules.plan",
+  "module_ecosystem.scaffold": "pact.modules.scaffold",
+  "module_ecosystem.contract_test": "pact.modules.contractTest",
+  "storage.summary": "pact.storageSummary",
+  "storage.backups.list": "pact.storageBackups.list",
+  "storage.backups.create": "pact.storageBackups.create",
+  "storage.backups.restore_preview": "pact.storageBackups.restorePreview",
+  "storage.backups.restore": "pact.storageBackups.restore",
+  "jobs.list": "pact.jobs.list",
+  "jobs.get": "pact.jobs.get",
+  "knowledge.affair_taxonomy": "pact.knowledge.affairTaxonomy",
+  "knowledge.console": "pact.knowledge.console",
+  "knowledge.config_schema": "pact.knowledge.configSchema",
+  "knowledge.capabilities": "pact.knowledge.capabilities",
+  "knowledge.export_docx": "pact.knowledge.exportDocx",
+  "knowledge.health": "pact.knowledge.health",
+  "knowledge.maintenance.get": "pact.knowledge.maintenance.get",
+  "knowledge.maintenance.set": "pact.knowledge.maintenance.set",
+  "knowledge.reindex": "pact.knowledge.reindex",
+  "knowledge.maintenance.run": "pact.knowledge.maintenance.run",
+  "knowledge.sync": "pact.knowledge.sync",
+  "knowledge.changes": "pact.knowledge.changes",
+  "knowledge.review_items": "pact.knowledge.reviewItems",
+  "knowledge.review_resolve": "pact.knowledge.reviewResolve",
+  "knowledge.feedback": "pact.knowledge.feedback",
+  "knowledge.suggestions": "pact.knowledge.suggestions",
+  "knowledge.suggestion_resolve": "pact.knowledge.suggestionResolve",
+  "knowledge.learning.jobs": "pact.knowledge.learning.jobs",
+  "knowledge.learning.health": "pact.knowledge.learning.health",
+  "knowledge.evidence_gate.evaluate": "pact.knowledge.evidenceGate.evaluate",
+  "knowledge.agent_skill.describe": "pact.knowledge.agentSkill",
+  "knowledge.agent_skill.plan": "pact.knowledge.agentSkill.plan",
+  "knowledge.agent_skill.run": "pact.knowledge.agentSkill.run",
+  "knowledge.skills.list": "pact.knowledge.skills.list",
+  "knowledge.skills.get": "pact.knowledge.skills.get",
+  "knowledge.skills.generate": "pact.knowledge.skills.generate",
+  "knowledge.skills.propose": "pact.knowledge.skills.propose",
+  "knowledge.skills.resolve": "pact.knowledge.skills.resolve",
+  "knowledge.skills.framework": "pact.knowledge.skillFramework",
+  "knowledge.skills.framework_save": "pact.knowledge.skillFramework.set",
+  "knowledge.golden_rules.list": "pact.knowledge.goldenRules.list",
+  "knowledge.golden_rules.save": "pact.knowledge.goldenRules.set",
+  "knowledge.golden_rules.publish": "pact.knowledge.goldenRules.publish",
+  "knowledge.golden_rules.rollback": "pact.knowledge.goldenRules.rollback",
+  "knowledge.rule_authoring.chat": "pact.knowledge.ruleAuthoring.chat",
+  "knowledge.rule_authoring.runs.get": "pact.knowledge.ruleAuthoring.run",
+  "knowledge.gold_cases.list": "pact.knowledge.goldCases.list",
+  "knowledge.gold_cases.save": "pact.knowledge.goldCases.set",
+  "knowledge.distillation.runs.create": "pact.knowledge.distillation.runs.create",
+  "knowledge.distillation.runs.get": "pact.knowledge.distillation.runs.get",
+  "knowledge.skills.evaluation.runs.create": "pact.knowledge.skills.evaluation.runs.create",
+  "knowledge.skills.deployments.create": "pact.knowledge.skills.deployments.create",
+  "knowledge.skills.deployments.rollback": "pact.knowledge.skills.deployments.rollback",
+  "knowledge.training_sets.export": "pact.knowledge.trainingSets.export",
+  "knowledge.evaluation.runs.create": "pact.knowledge.evaluation.runs.create",
+  "knowledge.evaluation.runs.list": "pact.knowledge.evaluation.runs.list",
+  "knowledge.evaluation.runs.get": "pact.knowledge.evaluation.runs.get",
+  "knowledge.model_roles": "pact.knowledge.modelRoles",
+  "knowledge.model_decision": "pact.knowledge.modelDecision",
+  "knowledge.evolution.describe": "pact.knowledge.evolution",
+  "knowledge.evolution.runs.create": "pact.knowledge.evolution.runs.create",
+  "knowledge.evolution.runs.list": "pact.knowledge.evolution.runs.list",
+  "knowledge.evolution.runs.get": "pact.knowledge.evolution.runs.get",
+  "knowledge.hierarchy.audit": "pact.knowledge.hierarchy.audit",
+  "knowledge.evolution.deployments.list": "pact.knowledge.evolution.deployments.list",
+  "knowledge.evolution.deployments.promote": "pact.knowledge.evolution.deployments.promote",
+  "knowledge.evolution.deployments.rollback": "pact.knowledge.evolution.deployments.rollback",
+  "context.profiles.get": "pact.context.profiles",
+  "context.profiles.set": "pact.context.profiles.set",
+  "context.session_memory.get": "pact.agentMemory.sessionMemory.get",
+  "context.session_memory.clear": "pact.agentMemory.sessionMemory.clear",
+  "client_runtime.profiles.get": "pact.clientRuntime.profiles",
+  "client_runtime.profiles.set": "pact.clientRuntime.profiles.set",
+  "client_runtime.resolve": "pact.clientRuntime.resolve",
+  "client_runtime.status": "pact.clientRuntime.status",
+  "agent_workspaces.list": "pact.agentWorkspace.list",
+  "agent_workspaces.get": "pact.agentWorkspace.get",
+  "agent_workspaces.context.get": "pact.agentWorkspace.context",
+  "agent_workspaces.context_bundle.export": "pact.agentWorkspace.contextBundle.export",
+  "agent_workspaces.context_bundle.restore": "pact.agentWorkspace.contextBundle.restore",
+  "agent_workspaces.chain.get": "pact.agentWorkspace.chain",
+  "agent_workspaces.parent.set": "pact.agentWorkspace.parent.set",
+  "agent_workspaces.profile.hotswap": "pact.agentWorkspace.profile.hotswap",
+  "agent_workspaces.sources.set": "pact.agentWorkspace.sources.set",
+  "agent_workspaces.share": "pact.agentWorkspace.share",
+  "agent_workspaces.unshare": "pact.agentWorkspace.unshare",
+  "workspace_governance.describe": "pact.workspaceGovernance.describe",
+  "workspace_governance.policy.set": "pact.workspaceGovernance.policy.set",
+  "workspace_governance.evaluate": "pact.workspaceGovernance.evaluate",
+  "workspace_governance.share_grant": "pact.workspaceGovernance.shareGrant",
+  "asset_lineage.describe": "pact.assetLineage.describe",
+  "asset_lineage.record": "pact.assetLineage.record",
+  "asset_lineage.trace": "pact.assetLineage.trace",
+  "asset_lineage.reparse_plan": "pact.assetLineage.reparsePlan",
+  "agent_sessions.list": "pact.agentSession.list",
+  "agent_sessions.get": "pact.agentSession.get",
+  "agent_sessions.context.get": "pact.agentSession.context",
+  "agent_sessions.events.append": "pact.agentSession.events.append",
+  "agent_sessions.fork": "pact.agentSession.fork",
+  "agent_sessions.compare": "pact.agentSession.compare",
+  "agent_sessions.merge_proposal": "pact.agentSession.mergeProposal",
+  "agent_sessions.archive": "pact.agentSession.archive",
+  "agent_workspaces.submissions.resolve": "pact.agentWorkspace.submissionResolve",
+  "agent_workspaces.issues.resolve": "pact.agentWorkspace.issueResolve",
+  "agent_workspaces.locks.list": "pact.agentWorkspace.locks",
+  "agent_workspaces.locks.write": "pact.agentWorkspace.lock",
+  "knowledge.summarization.runs.create": "pact.knowledge.summarization.runs.create",
+  "knowledge.summarization.runs.get": "pact.knowledge.summarization.runs.get",
+  "knowledge.summarization.runs.approve": "pact.knowledge.summarization.runs.approve",
+  "knowledge.search": "pact.knowledge.search",
+  "knowledge.document_structure": "pact.knowledge.documentStructure",
+  "knowledge.item": "pact.knowledge.item",
+  "knowledge.evidence": "pact.knowledge.evidence",
+  "knowledge.asset": "pact.knowledge.asset",
+  "knowledge.render_markdown": "pact.knowledge.renderMarkdown",
+  "knowledge.graph": "pact.knowledge.graph",
+  "agent_sync.publish": "pact.agentSync.publish",
+  "data_connectors.governance.describe": "pact.dataConnectors.governance",
+  "data_connectors.governance.plan": "pact.dataConnectors.governance.plan",
+  "data_connectors.governance.conformance": "pact.dataConnectors.governance.conformance",
+  "performance.capacity.targets": "pact.performance.capacity.targets",
+  "performance.capacity.benchmark": "pact.performance.capacity.benchmark",
+  "capability_packages.list": "pact.capabilityPackages.list",
+  "capability_packages.plan": "pact.capabilityPackages.plan",
+  "capability_packages.submit": "pact.capabilityPackages.submit",
+  "capability_packages.lifecycle": "pact.capabilityPackages.lifecycle"
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
@@ -543,13 +543,13 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
 });
 
 const TOOLSET_BY_SCOPE = Object.freeze({
-  "knowledge:read": "agentstudio.knowledge.read",
-  "knowledge:write": "agentstudio.knowledge.write",
-  "knowledge:maintain": "agentstudio.knowledge.maintain",
-  "knowledge:admin": "agentstudio.knowledge.admin",
-  "storage:read": "agentstudio.storage.read",
-  "jobs:read": "agentstudio.jobs.read",
-  "agent_sync:publish": "agentstudio.agent.sync.publish"
+  "knowledge:read": "pact.knowledge.read",
+  "knowledge:write": "pact.knowledge.write",
+  "knowledge:maintain": "pact.knowledge.maintain",
+  "knowledge:admin": "pact.knowledge.admin",
+  "storage:read": "pact.storage.read",
+  "jobs:read": "pact.jobs.read",
+  "agent_sync:publish": "pact.agent.sync.publish"
 });
 
 const RISK_RANK = Object.freeze({
@@ -616,51 +616,51 @@ function normalizeRisk(operation = {}) {
 
 function inferToolsets(operation, scopes = [], toolId = "") {
   const toolsets = new Set(scopes.map((scope) => TOOLSET_BY_SCOPE[scope]).filter(Boolean));
-  if (toolId.startsWith("agentstudio.runtime.")) {
+  if (toolId.startsWith("pact.runtime.")) {
     if (operation.id === "runtime.info" || operation.id === "runtime.mounts") {
-      toolsets.add("agentstudio.runtime.read");
+      toolsets.add("pact.runtime.read");
     } else {
-      toolsets.add("agentstudio.runtime.maintain");
+      toolsets.add("pact.runtime.maintain");
     }
   }
-  if (toolId.startsWith("agentstudio.architecture.")) {
-    toolsets.add("agentstudio.runtime.read");
+  if (toolId.startsWith("pact.architecture.")) {
+    toolsets.add("pact.runtime.read");
   }
-  if (toolId.startsWith("agentstudio.sampleBusinessPack.")) {
-    toolsets.add(operation.id === "sample_business_pack.materialize" ? "agentstudio.knowledge.maintain" : "agentstudio.runtime.read");
+  if (toolId.startsWith("pact.sampleBusinessPack.")) {
+    toolsets.add(operation.id === "sample_business_pack.materialize" ? "pact.knowledge.maintain" : "pact.runtime.read");
   }
-  if (toolId.startsWith("agentstudio.storageBackups.")) {
+  if (toolId.startsWith("pact.storageBackups.")) {
     toolsets.add(
       operation.id === "storage.backups.list" || operation.id === "storage.backups.restore_preview"
-        ? "agentstudio.runtime.read"
-        : "agentstudio.runtime.maintain"
+        ? "pact.runtime.read"
+        : "pact.runtime.maintain"
     );
   }
-  if (toolId.startsWith("agentstudio.modules.")) {
-    toolsets.add(operation.id === "module_ecosystem.templates" ? "agentstudio.runtime.read" : "agentstudio.mount.dev");
+  if (toolId.startsWith("pact.modules.")) {
+    toolsets.add(operation.id === "module_ecosystem.templates" ? "pact.runtime.read" : "pact.mount.dev");
   }
-  if (toolId.startsWith("agentstudio.executiveReport.")) {
-    toolsets.add(operation.id === "executive_report.generate" ? "agentstudio.knowledge.maintain" : "agentstudio.runtime.read");
+  if (toolId.startsWith("pact.executiveReport.")) {
+    toolsets.add(operation.id === "executive_report.generate" ? "pact.knowledge.maintain" : "pact.runtime.read");
   }
   if (
-    toolId.startsWith("agentstudio.agentWorkspace.") ||
-    toolId.startsWith("agentstudio.agentSession.") ||
-    toolId.startsWith("agentstudio.workspaceGovernance.")
+    toolId.startsWith("pact.agentWorkspace.") ||
+    toolId.startsWith("pact.agentSession.") ||
+    toolId.startsWith("pact.workspaceGovernance.")
   ) {
-    toolsets.add("agentstudio.agent.workspace");
+    toolsets.add("pact.agent.workspace");
   }
   if (toolId.includes(".renderMarkdown")) {
-    toolsets.add("agentstudio.result.export");
+    toolsets.add("pact.result.export");
   }
   if (toolId.includes(".asset") || toolId.includes(".evidence")) {
-    toolsets.add("agentstudio.document.parse");
+    toolsets.add("pact.document.parse");
   }
-  if (toolId.startsWith("agentstudio.assetLineage.")) {
-    toolsets.add("agentstudio.document.parse");
-    toolsets.add("agentstudio.knowledge.maintain");
+  if (toolId.startsWith("pact.assetLineage.")) {
+    toolsets.add("pact.document.parse");
+    toolsets.add("pact.knowledge.maintain");
   }
   if (operation.id === "agent_sync.publish") {
-    toolsets.add("agentstudio.agent.sync.publish");
+    toolsets.add("pact.agent.sync.publish");
   }
   return [...toolsets];
 }
@@ -678,7 +678,7 @@ function createInternalToolDefinition({
   id,
   label,
   description,
-  owner = "agentstudio",
+  owner = "pact",
   source = "handler-backed",
   handlerId,
   featureId = "core-platform",
@@ -737,9 +737,9 @@ function createInternalToolDefinitions() {
     createInternalToolDefinition({
       id: "agent-exploration.knowledge_skill_search",
       label: "Agent exploration skill search",
-      description: "Search published AgentStudio KnowledgeSkills inside the agent exploration runtime.",
+      description: "Search published Pact KnowledgeSkills inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.knowledge_skill_search",
-      toolsets: ["agentstudio.knowledge.read"],
+      toolsets: ["pact.knowledge.read"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -749,7 +749,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration keyword search",
       description: "Run local knowledge recall inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.keyword_search",
-      toolsets: ["agentstudio.knowledge.read"],
+      toolsets: ["pact.knowledge.read"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -759,7 +759,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration aggregate",
       description: "Run knowledge aggregation inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.knowledge_aggregate",
-      toolsets: ["agentstudio.knowledge.read"],
+      toolsets: ["pact.knowledge.read"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -769,7 +769,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration open evidence",
       description: "Open a specific evidence pack inside the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.open_evidence",
-      toolsets: ["agentstudio.knowledge.read", "agentstudio.document.parse"],
+      toolsets: ["pact.knowledge.read", "pact.document.parse"],
       requiredScopes: ["knowledge:read"],
       featureId: "agent-exploration",
       tags: ["agent-exploration"]
@@ -779,7 +779,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration skill proposal",
       description: "Create a pending-review KnowledgeSkill from evidence found by an exploration run.",
       handlerId: "AgentExplorationRuntime.knowledge_skill_propose",
-      toolsets: ["agentstudio.knowledge.write", "agentstudio.agent.workspace"],
+      toolsets: ["pact.knowledge.write", "pact.agent.workspace"],
       requiredScopes: ["knowledge:read", "knowledge:write"],
       risk: "safe_write",
       featureId: "agent-exploration",
@@ -790,7 +790,7 @@ function createInternalToolDefinitions() {
       label: "Agent exploration HTTP request",
       description: "Call an allowlisted HTTP endpoint from the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.http_request",
-      toolsets: ["agentstudio.agent.workspace"],
+      toolsets: ["pact.agent.workspace"],
       requiredScopes: ["knowledge:read", "knowledge:write"],
       risk: "safe_write",
       featureId: "agent-exploration",
@@ -801,25 +801,25 @@ function createInternalToolDefinitions() {
       label: "Agent exploration local command",
       description: "Run an allowlisted local command from the agent exploration runtime.",
       handlerId: "AgentExplorationRuntime.local_command",
-      toolsets: ["agentstudio.mount.dev"],
+      toolsets: ["pact.mount.dev"],
       requiredScopes: ["knowledge:admin"],
       risk: "repair_write",
       featureId: "agent-exploration",
       tags: ["agent-exploration", "allowlisted-command"]
     }),
     ...[
-      ["system.health", "System health", "agentstudio.runtime.read", "storage:read", "read_only"],
-      ["runtime.info", "Runtime info", "agentstudio.runtime.read", "storage:read", "read_only"],
-      ["storage.summary", "Storage summary", "agentstudio.storage.read", "storage:read", "read_only"],
-      ["storage.doctor", "Storage doctor", "agentstudio.runtime.read", "storage:read", "read_only"],
-      ["storage.reconcile", "Storage reconcile", "agentstudio.runtime.maintain", "knowledge:maintain", "repair_write"],
-      ["jobs.list", "Jobs list", "agentstudio.jobs.read", "jobs:read", "read_only"],
-      ["jobs.failed_review", "Failed jobs review", "agentstudio.jobs.read", "jobs:read", "read_only"],
-      ["knowledge.health", "Knowledge health", "agentstudio.knowledge.read", "knowledge:read", "read_only"],
-      ["knowledge.maintenance.settings", "Knowledge maintenance settings", "agentstudio.knowledge.maintain", "knowledge:maintain", "read_only"],
-      ["knowledge.maintenance.run", "Knowledge maintenance run", "agentstudio.knowledge.maintain", "knowledge:maintain", "safe_write"],
-      ["knowledge.reindex", "Knowledge reindex", "agentstudio.knowledge.maintain", "knowledge:maintain", "repair_write"],
-      ["runtime.reload_mounts", "Runtime reload mounts", "agentstudio.runtime.maintain", "knowledge:maintain", "repair_write"]
+      ["system.health", "System health", "pact.runtime.read", "storage:read", "read_only"],
+      ["runtime.info", "Runtime info", "pact.runtime.read", "storage:read", "read_only"],
+      ["storage.summary", "Storage summary", "pact.storage.read", "storage:read", "read_only"],
+      ["storage.doctor", "Storage doctor", "pact.runtime.read", "storage:read", "read_only"],
+      ["storage.reconcile", "Storage reconcile", "pact.runtime.maintain", "knowledge:maintain", "repair_write"],
+      ["jobs.list", "Jobs list", "pact.jobs.read", "jobs:read", "read_only"],
+      ["jobs.failed_review", "Failed jobs review", "pact.jobs.read", "jobs:read", "read_only"],
+      ["knowledge.health", "Knowledge health", "pact.knowledge.read", "knowledge:read", "read_only"],
+      ["knowledge.maintenance.settings", "Knowledge maintenance settings", "pact.knowledge.maintain", "knowledge:maintain", "read_only"],
+      ["knowledge.maintenance.run", "Knowledge maintenance run", "pact.knowledge.maintain", "knowledge:maintain", "safe_write"],
+      ["knowledge.reindex", "Knowledge reindex", "pact.knowledge.maintain", "knowledge:maintain", "repair_write"],
+      ["runtime.reload_mounts", "Runtime reload mounts", "pact.runtime.maintain", "knowledge:maintain", "repair_write"]
     ].map(([toolName, label, toolset, scope, risk]) =>
       createInternalToolDefinition({
         id: `maintenance-agent.${toolName}`,
@@ -916,7 +916,7 @@ export function createToolCatalog({ operations = [], activeFeatureIds = null } =
       version: "1",
       label: String(operation.label || toolId),
       description: String(operation.description || operation.label || toolId),
-      owner: "agentstudio",
+      owner: "pact",
       source: "operation-backed",
       featureId: operation.featureId || "",
       operationId: operation.id,

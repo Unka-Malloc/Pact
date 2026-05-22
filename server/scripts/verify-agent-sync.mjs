@@ -22,7 +22,7 @@ function hasTopic(result, topic) {
   );
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-sync-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-agent-sync-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {

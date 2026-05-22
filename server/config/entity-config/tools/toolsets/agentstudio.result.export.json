@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.result.export",
+  "id": "pact.result.export",
   "label": "Result export",
   "requiredScopes": [
     "knowledge:read"

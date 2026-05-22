@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.storage.read",
+  "id": "pact.storage.read",
   "label": "Storage read",
   "requiredScopes": [
     "storage:read"

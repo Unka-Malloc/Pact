@@ -25,7 +25,7 @@ withDefaults(defineProps<{
   filterable: false,
   teleported: true,
   persistent: false,
-  popperClass: "agentstudio-select-popper",
+  popperClass: "pact-select-popper",
   disabled: false,
   clearable: false,
   size: "default",

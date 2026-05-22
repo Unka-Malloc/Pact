@@ -11,8 +11,8 @@ function argValue(name, fallback = "") {
   return fallback;
 }
 
-const explicitUrl = String(argValue("--url", process.env.AGENTSTUDIO_MCP_BASE_URL || "")).trim();
-const args = ["mcp-connector/bin/agentstudio-mcp.mjs", "discover", "--json"];
+const explicitUrl = String(argValue("--url", process.env.PACT_MCP_BASE_URL || "")).trim();
+const args = ["mcp-connector/bin/pact-mcp.mjs", "discover", "--json"];
 if (explicitUrl) {
   args.push("--url", explicitUrl);
 }

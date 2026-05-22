@@ -1,5 +1,5 @@
 {
-  "id": "agentstudio.jobs.read",
+  "id": "pact.jobs.read",
   "label": "Jobs read",
   "requiredScopes": [
     "jobs:read"

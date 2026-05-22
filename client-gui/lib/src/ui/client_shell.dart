@@ -175,8 +175,8 @@ class _ClientShellState extends State<ClientShell> {
     return Container(
       width: 184,
       decoration: const BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
-        border: Border(right: BorderSide(color: AgentStudioColors.line)),
+        color: PactColors.surfaceLow,
+        border: Border(right: BorderSide(color: PactColors.line)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -184,9 +184,9 @@ class _ClientShellState extends State<ClientShell> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'AgentStudio',
+              'Pact',
               style: TextStyle(
-                color: AgentStudioColors.primary,
+                color: PactColors.primary,
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.2,
@@ -232,8 +232,8 @@ class _ClientShellState extends State<ClientShell> {
       constraints: const BoxConstraints(minHeight: 72),
       padding: const EdgeInsets.fromLTRB(24, 10, 24, 8),
       decoration: const BoxDecoration(
-        color: AgentStudioColors.background,
-        border: Border(bottom: BorderSide(color: AgentStudioColors.line)),
+        color: PactColors.background,
+        border: Border(bottom: BorderSide(color: PactColors.line)),
       ),
       child: Row(
         children: [
@@ -254,7 +254,7 @@ class _ClientShellState extends State<ClientShell> {
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -266,14 +266,14 @@ class _ClientShellState extends State<ClientShell> {
           IconButton(
             onPressed: () => _showHelpDialog(context),
             icon: const Icon(Icons.help_outline),
-            color: AgentStudioColors.textMuted,
+            color: PactColors.textMuted,
           ),
           Stack(
             children: [
               IconButton(
                 onPressed: () => controller.selectSection(AppSection.localLogs),
                 icon: const Icon(Icons.notifications_none),
-                color: AgentStudioColors.textMuted,
+                color: PactColors.textMuted,
               ),
               if (controller.alertCount > 0)
                 const Positioned(
@@ -281,7 +281,7 @@ class _ClientShellState extends State<ClientShell> {
                   top: 10,
                   child: CircleAvatar(
                     radius: 4,
-                    backgroundColor: AgentStudioColors.error,
+                    backgroundColor: PactColors.error,
                   ),
                 ),
             ],
@@ -289,10 +289,10 @@ class _ClientShellState extends State<ClientShell> {
           const SizedBox(width: 4),
           const CircleAvatar(
             radius: 16,
-            backgroundColor: AgentStudioColors.surfaceHighest,
+            backgroundColor: PactColors.surfaceHighest,
             child: Icon(
               Icons.person_outline,
-              color: AgentStudioColors.textMuted,
+              color: PactColors.textMuted,
               size: 18,
             ),
           ),
@@ -410,7 +410,7 @@ class _ClientShellState extends State<ClientShell> {
                 child: _MetricTile(
                   label: '接口',
                   value: '${controller.serverOperations.length}',
-                  accent: AgentStudioColors.primary,
+                  accent: PactColors.primary,
                 ),
               ),
               const SizedBox(width: 12),
@@ -418,7 +418,7 @@ class _ClientShellState extends State<ClientShell> {
                 child: _MetricTile(
                   label: '切面',
                   value: '${controller.serverFeatureCount}',
-                  accent: AgentStudioColors.success,
+                  accent: PactColors.success,
                 ),
               ),
               const SizedBox(width: 12),
@@ -426,7 +426,7 @@ class _ClientShellState extends State<ClientShell> {
                 child: _MetricTile(
                   label: '写接口',
                   value: '${controller.serverWriteOperationCount}',
-                  accent: AgentStudioColors.warning,
+                  accent: PactColors.warning,
                 ),
               ),
               const SizedBox(width: 12),
@@ -434,7 +434,7 @@ class _ClientShellState extends State<ClientShell> {
                 child: _MetricTile(
                   label: '管理',
                   value: '${controller.serverAdminOperationCount}',
-                  accent: AgentStudioColors.error,
+                  accent: PactColors.error,
                 ),
               ),
             ],
@@ -524,7 +524,7 @@ class _ClientShellState extends State<ClientShell> {
               controller.serverOperationError,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.error),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.error),
             ),
           ],
           const SizedBox(height: 14),
@@ -546,7 +546,7 @@ class _ClientShellState extends State<ClientShell> {
     final requestCard = _SectionCard(
       title: '通用调用',
       subtitle: controller.invokingServerRequest ? '调用中' : 'HTTP JSON',
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -643,14 +643,14 @@ class _ClientShellState extends State<ClientShell> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AgentStudioColors.surfaceHigh,
+              color: PactColors.surfaceHigh,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AgentStudioColors.line),
+              border: Border.all(color: PactColors.line),
             ),
             child: controller.serverOperationResult == null
                 ? const Text(
                     '调用结果会显示在这里。',
-                    style: TextStyle(color: AgentStudioColors.textMuted),
+                    style: TextStyle(color: PactColors.textMuted),
                   )
                 : SelectableText(
                     const JsonEncoder.withIndent(
@@ -744,7 +744,7 @@ class _ClientShellState extends State<ClientShell> {
               tooltip: '返回',
               onPressed: () => setState(() => _showMailModuleSettings = false),
               icon: const Icon(Icons.arrow_back),
-              color: AgentStudioColors.textMuted,
+              color: PactColors.textMuted,
               style: IconButton.styleFrom(
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
@@ -771,8 +771,8 @@ class _ClientShellState extends State<ClientShell> {
                       CircleAvatar(
                         radius: 22,
                         backgroundColor: enabled
-                            ? AgentStudioColors.primaryStrong
-                            : AgentStudioColors.surfaceHighest,
+                            ? PactColors.primaryStrong
+                            : PactColors.surfaceHighest,
                         child: const Icon(
                           Icons.mail_outline,
                           color: Colors.white,
@@ -793,7 +793,7 @@ class _ClientShellState extends State<ClientShell> {
                             Text(
                               supported ? 'Mail.app 本地工作空间同步' : '当前平台不可用',
                               style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AgentStudioColors.textMuted),
+                                  ?.copyWith(color: PactColors.textMuted),
                             ),
                           ],
                         ),
@@ -892,7 +892,7 @@ class _ClientShellState extends State<ClientShell> {
     final detailCard = _SectionCard(
       title: '模块状态',
       subtitle: supported ? 'macOS' : '不可用',
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -979,7 +979,7 @@ class _ClientShellState extends State<ClientShell> {
                 '启用邮箱分析',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: AgentStudioColors.text,
+                  color: PactColors.text,
                 ),
               ),
             ),
@@ -1092,7 +1092,7 @@ class _ClientShellState extends State<ClientShell> {
                 Text(
                   controller.dataConnectorError,
                   style: const TextStyle(
-                    color: AgentStudioColors.error,
+                    color: PactColors.error,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1102,7 +1102,7 @@ class _ClientShellState extends State<ClientShell> {
                 Text(
                   '本地后台尚未返回数据连接器清单。',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                 )
               else
@@ -1215,7 +1215,7 @@ class _ClientShellState extends State<ClientShell> {
     final sourcesCard = _SectionCard(
       title: '聚合输入',
       subtitle: '${snapshot.dataSources.length} 个入口',
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: snapshot.dataSources.isEmpty
           ? const _EmptyPanel(label: '暂无事实输入。')
           : Column(
@@ -1232,7 +1232,7 @@ class _ClientShellState extends State<ClientShell> {
     final nodesCard = _SectionCard(
       title: '领域与事务',
       subtitle: '$visibleNodeCount 个',
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: snapshot.nodes.isEmpty
           ? const _EmptyPanel(label: '暂无节点。')
           : Column(
@@ -1323,7 +1323,7 @@ class _ClientShellState extends State<ClientShell> {
     return _SectionCard(
       title: '知识库搜索',
       subtitle: subtitle,
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1368,7 +1368,7 @@ class _ClientShellState extends State<ClientShell> {
               controller.knowledgeSearchError,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.error),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.error),
             ),
           ] else if (hasQuery &&
               results.isEmpty &&
@@ -1417,7 +1417,7 @@ class _ClientShellState extends State<ClientShell> {
     return _SectionCard(
       title: '节点详情',
       subtitle: node == null ? '未选择' : node.kind,
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: node == null
           ? const _EmptyPanel(label: '未选择节点。')
           : Column(
@@ -1688,7 +1688,7 @@ class _ClientShellState extends State<ClientShell> {
               controller.statusCaption,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
             ),
           ),
         ],
@@ -1706,7 +1706,7 @@ class _ClientShellState extends State<ClientShell> {
             child: _MetricTile(
               label: '已校验',
               value: '${controller.queueCount}',
-              accent: AgentStudioColors.primary,
+              accent: PactColors.primary,
             ),
           ),
           const SizedBox(width: 12),
@@ -1714,7 +1714,7 @@ class _ClientShellState extends State<ClientShell> {
             child: _MetricTile(
               label: '原始数据',
               value: controller.queueBytesLabel,
-              accent: AgentStudioColors.text,
+              accent: PactColors.text,
             ),
           ),
           const SizedBox(width: 12),
@@ -1723,8 +1723,8 @@ class _ClientShellState extends State<ClientShell> {
               label: '告警数',
               value: '${controller.alertCount}',
               accent: controller.alertCount > 0
-                  ? AgentStudioColors.error
-                  : AgentStudioColors.success,
+                  ? PactColors.error
+                  : PactColors.success,
             ),
           ),
           const SizedBox(width: 12),
@@ -1732,7 +1732,7 @@ class _ClientShellState extends State<ClientShell> {
             child: _MetricTile(
               label: '运行时长',
               value: controller.uptimeLabel,
-              accent: AgentStudioColors.warning,
+              accent: PactColors.warning,
             ),
           ),
         ],
@@ -1744,7 +1744,7 @@ class _ClientShellState extends State<ClientShell> {
     return _SectionCard(
       title: '运行安全',
       subtitle: controller.connected ? '已连接' : '未连接',
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1764,7 +1764,7 @@ class _ClientShellState extends State<ClientShell> {
                       ? '已通过引导服务握手校验，当前处于安全连接状态。'
                       : '尚未配置引导地址，请先连接客户端再提交任务。',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                 ),
               ],
@@ -1774,8 +1774,8 @@ class _ClientShellState extends State<ClientShell> {
           CircleAvatar(
             radius: 18,
             backgroundColor: controller.connected
-                ? AgentStudioColors.primaryStrong
-                : AgentStudioColors.surfaceHighest,
+                ? PactColors.primaryStrong
+                : PactColors.surfaceHighest,
             child: Icon(
               controller.connected ? Icons.verified : Icons.shield_outlined,
               color: Colors.white,
@@ -1879,7 +1879,7 @@ class _ClientShellState extends State<ClientShell> {
                               '第 ${safePageIndex + 1} / $pageCount 页',
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AgentStudioColors.textMuted),
+                                  ?.copyWith(color: PactColors.textMuted),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -1961,7 +1961,7 @@ class _ClientShellState extends State<ClientShell> {
                           '第 ${safePageIndex + 1} / $pageCount 页',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AgentStudioColors.textMuted),
+                              ?.copyWith(color: PactColors.textMuted),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -2084,9 +2084,9 @@ class _ClientShellState extends State<ClientShell> {
       child: Container(
         height: 460,
         decoration: BoxDecoration(
-          color: AgentStudioColors.surfaceLow,
+          color: PactColors.surfaceLow,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AgentStudioColors.surfaceHighest),
+          border: Border.all(color: PactColors.surfaceHighest),
         ),
         clipBehavior: Clip.antiAlias,
         child: Scrollbar(
@@ -2127,7 +2127,7 @@ class _ClientShellState extends State<ClientShell> {
           TextField(
             controller: controller.bootstrapController,
             decoration: const InputDecoration(
-              hintText: 'https://agentstudio.io/bootstrap/v1',
+              hintText: 'https://pact.io/bootstrap/v1',
               labelText: '引导地址',
             ),
             onSubmitted: (_) => controller.connect(),
@@ -2169,7 +2169,7 @@ class _ClientShellState extends State<ClientShell> {
                       ? '当前已连接到 ${controller.resolvedServiceUrl}'
                       : '保存并连接到引导地址后，客户端才会开始提交任务。',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                 ),
               ),
@@ -2182,7 +2182,7 @@ class _ClientShellState extends State<ClientShell> {
     final statusCard = _SectionCard(
       title: '连接状态',
       subtitle: controller.connected ? '在线' : '待配置',
-      surfaceColor: AgentStudioColors.surfaceLow,
+      surfaceColor: PactColors.surfaceLow,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2526,7 +2526,7 @@ class _ClientShellState extends State<ClientShell> {
             constraints: const BoxConstraints(minHeight: 260),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AgentStudioColors.surfaceLow,
+              color: PactColors.surfaceLow,
               borderRadius: BorderRadius.circular(14),
             ),
             child: SelectableText(
@@ -2602,7 +2602,7 @@ class _ClientShellState extends State<ClientShell> {
           Text(
             label,
             style: const TextStyle(
-              color: AgentStudioColors.textMuted,
+              color: PactColors.textMuted,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.6,
@@ -2612,7 +2612,7 @@ class _ClientShellState extends State<ClientShell> {
           Text(
             value,
             style: TextStyle(
-              color: danger ? AgentStudioColors.error : AgentStudioColors.text,
+              color: danger ? PactColors.error : PactColors.text,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -2626,8 +2626,8 @@ class _ClientShellState extends State<ClientShell> {
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
-        border: Border(top: BorderSide(color: AgentStudioColors.line)),
+        color: PactColors.surfaceLow,
+        border: Border(top: BorderSide(color: PactColors.line)),
       ),
       child: Row(
         children: [
@@ -2637,28 +2637,28 @@ class _ClientShellState extends State<ClientShell> {
                 : '未连接',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
           ),
           const SizedBox(width: 18),
           Text(
             '队列 ${controller.queueCount}',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
           ),
           const SizedBox(width: 18),
           Text(
             '告警 ${controller.alertCount}',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
           ),
           const Spacer(),
           Text(
-            'AgentStudio 企业版构建 2026.4',
+            'Pact 企业版构建 2026.4',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
           ),
         ],
       ),
@@ -2709,17 +2709,17 @@ class _ServerOperationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final risk = operation.risk.isEmpty ? 'unknown' : operation.risk;
     final riskColor = switch (risk) {
-      'read_only' => AgentStudioColors.success,
-      'safe_write' => AgentStudioColors.warning,
-      'repair_write' => AgentStudioColors.error,
-      _ => AgentStudioColors.textMuted,
+      'read_only' => PactColors.success,
+      'safe_write' => PactColors.warning,
+      'repair_write' => PactColors.error,
+      _ => PactColors.textMuted,
     };
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
+        color: PactColors.surfaceLow,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AgentStudioColors.line),
+        border: Border.all(color: PactColors.line),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2729,13 +2729,13 @@ class _ServerOperationTile extends StatelessWidget {
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
-              color: AgentStudioColors.surfaceHigh,
+              color: PactColors.surfaceHigh,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
               operation.httpMethod.isEmpty ? 'API' : operation.httpMethod,
               style: const TextStyle(
-                color: AgentStudioColors.text,
+                color: PactColors.text,
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
               ),
@@ -2760,7 +2760,7 @@ class _ServerOperationTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -2785,7 +2785,7 @@ class _ServerOperationTile extends StatelessWidget {
             tooltip: '填入调用',
             onPressed: onUse,
             icon: const Icon(Icons.input_outlined),
-            color: AgentStudioColors.textMuted,
+            color: PactColors.textMuted,
           ),
         ],
       ),
@@ -2808,16 +2808,16 @@ class _CompactTag extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 260),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceHigh,
+        color: PactColors.surfaceHigh,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color ?? AgentStudioColors.line),
+        border: Border.all(color: color ?? PactColors.line),
       ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: color ?? AgentStudioColors.textMuted,
+          color: color ?? PactColors.textMuted,
           fontSize: 11,
           fontWeight: FontWeight.w700,
         ),
@@ -2887,8 +2887,8 @@ class _KnowledgeGraphViewState extends State<_KnowledgeGraphView>
       borderRadius: BorderRadius.circular(14),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: AgentStudioColors.surfaceLow,
-          border: Border.all(color: AgentStudioColors.line),
+          color: PactColors.surfaceLow,
+          border: Border.all(color: PactColors.line),
         ),
         child: widget.snapshot.nodes.isEmpty
             ? const Center(child: _EmptyPanel(label: '暂无图谱数据。'))
@@ -2941,11 +2941,11 @@ class _KnowledgeGraphViewState extends State<_KnowledgeGraphView>
                           left: 10,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: AgentStudioColors.surface.withValues(
+                              color: PactColors.surface.withValues(
                                 alpha: 0.92,
                               ),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AgentStudioColors.line),
+                              border: Border.all(color: PactColors.line),
                             ),
                             child: Padding(
                               padding: const EdgeInsets.all(4),
@@ -3025,7 +3025,7 @@ class _KnowledgeGraphViewState extends State<_KnowledgeGraphView>
         padding: EdgeInsets.zero,
         visualDensity: VisualDensity.compact,
         style: IconButton.styleFrom(
-          foregroundColor: AgentStudioColors.text,
+          foregroundColor: PactColors.text,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         onPressed: onPressed,
@@ -3048,10 +3048,10 @@ class _KnowledgeGraphViewState extends State<_KnowledgeGraphView>
           ),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: AgentStudioColors.surface.withValues(alpha: 0.48),
+              color: PactColors.surface.withValues(alpha: 0.48),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: AgentStudioColors.primaryStrong.withValues(alpha: 0.18),
+                color: PactColors.primaryStrong.withValues(alpha: 0.18),
               ),
               boxShadow: [
                 BoxShadow(
@@ -3072,7 +3072,7 @@ class _KnowledgeGraphViewState extends State<_KnowledgeGraphView>
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AgentStudioColors.text.withValues(alpha: 0.88),
+                      color: PactColors.text.withValues(alpha: 0.88),
                       fontWeight: FontWeight.w800,
                       height: 1.16,
                     ),
@@ -3250,10 +3250,10 @@ class _CompactGraphPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: AgentStudioColors.primary.withValues(alpha: 0.05),
+        color: PactColors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: AgentStudioColors.primaryStrong.withValues(alpha: 0.12),
+          color: PactColors.primaryStrong.withValues(alpha: 0.12),
         ),
       ),
       child: Padding(
@@ -3263,7 +3263,7 @@ class _CompactGraphPill extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: AgentStudioColors.textMuted,
+            color: PactColors.textMuted,
             fontWeight: FontWeight.w700,
             height: 1,
           ),
@@ -4381,8 +4381,8 @@ class _KnowledgeGraphPainter extends CustomPainter {
             text: label,
             style: TextStyle(
               color: node.kind == 'root'
-                  ? AgentStudioColors.primary
-                  : AgentStudioColors.text.withValues(
+                  ? PactColors.primary
+                  : PactColors.text.withValues(
                       alpha: selected ? 0.94 : 0.68 + heat * 0.18,
                     ),
               fontSize: node.kind == 'domain'
@@ -4511,9 +4511,9 @@ class _KnowledgeGraphDataSourceTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surface,
+        color: PactColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AgentStudioColors.line),
+        border: Border.all(color: PactColors.line),
       ),
       child: Row(
         children: [
@@ -4522,8 +4522,8 @@ class _KnowledgeGraphDataSourceTile extends StatelessWidget {
                 ? Icons.power_settings_new
                 : Icons.power_off_outlined,
             color: source.enabled
-                ? AgentStudioColors.success
-                : AgentStudioColors.textMuted,
+                ? PactColors.success
+                : PactColors.textMuted,
             size: 18,
           ),
           const SizedBox(width: 10),
@@ -4545,7 +4545,7 @@ class _KnowledgeGraphDataSourceTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                 ),
               ],
@@ -4580,20 +4580,20 @@ class _KnowledgeGraphNodeTile extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: selected
-                ? AgentStudioColors.surfaceHigh
-                : AgentStudioColors.surface,
+                ? PactColors.surfaceHigh
+                : PactColors.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: selected
-                  ? AgentStudioColors.primaryStrong
-                  : AgentStudioColors.line,
+                  ? PactColors.primaryStrong
+                  : PactColors.line,
             ),
           ),
           child: Row(
             children: [
               Icon(
                 _nodeIcon(node.kind),
-                color: AgentStudioColors.primary,
+                color: PactColors.primary,
                 size: 18,
               ),
               const SizedBox(width: 10),
@@ -4615,7 +4615,7 @@ class _KnowledgeGraphNodeTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AgentStudioColors.textMuted,
+                        color: PactColors.textMuted,
                       ),
                     ),
                   ],
@@ -4673,15 +4673,15 @@ class _KnowledgeGraphRelationTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surface,
+        color: PactColors.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AgentStudioColors.line),
+        border: Border.all(color: PactColors.line),
       ),
       child: Row(
         children: [
           Icon(
             outgoing ? Icons.arrow_forward : Icons.arrow_back,
-            color: AgentStudioColors.primary,
+            color: PactColors.primary,
             size: 16,
           ),
           const SizedBox(width: 10),
@@ -4703,7 +4703,7 @@ class _KnowledgeGraphRelationTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                   ),
                 ),
               ],
@@ -4742,9 +4742,9 @@ class _KnowledgeTimelineTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: AgentStudioColors.surface,
+            color: PactColors.surface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AgentStudioColors.line),
+            border: Border.all(color: PactColors.line),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4755,7 +4755,7 @@ class _KnowledgeTimelineTile extends StatelessWidget {
                   width: 10,
                   height: 10,
                   decoration: const BoxDecoration(
-                    color: AgentStudioColors.primary,
+                    color: PactColors.primary,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -4786,7 +4786,7 @@ class _KnowledgeTimelineTile extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AgentStudioColors.text,
+                        color: PactColors.text,
                       ),
                     ),
                     if (meta.isNotEmpty) ...[
@@ -4796,7 +4796,7 @@ class _KnowledgeTimelineTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AgentStudioColors.textMuted,
+                          color: PactColors.textMuted,
                         ),
                       ),
                     ],
@@ -4809,7 +4809,7 @@ class _KnowledgeTimelineTile extends StatelessWidget {
                   padding: EdgeInsets.only(top: 3),
                   child: Icon(
                     Icons.open_in_new,
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                     size: 15,
                   ),
                 ),
@@ -4852,15 +4852,15 @@ class _KnowledgeSearchResultTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: AgentStudioColors.surface,
+            color: PactColors.surface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AgentStudioColors.line),
+            border: Border.all(color: PactColors.line),
           ),
           child: Row(
             children: [
               const Icon(
                 Icons.mail_outline,
-                color: AgentStudioColors.primary,
+                color: PactColors.primary,
                 size: 16,
               ),
               const SizedBox(width: 10),
@@ -4883,7 +4883,7 @@ class _KnowledgeSearchResultTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AgentStudioColors.textMuted,
+                          color: PactColors.textMuted,
                         ),
                       ),
                     ],
@@ -4893,7 +4893,7 @@ class _KnowledgeSearchResultTile extends StatelessWidget {
               const SizedBox(width: 8),
               const Icon(
                 Icons.open_in_new,
-                color: AgentStudioColors.textMuted,
+                color: PactColors.textMuted,
                 size: 15,
               ),
             ],
@@ -4922,7 +4922,7 @@ class _SectionCard extends StatelessWidget {
     required this.subtitle,
     required this.child,
     this.leading,
-    this.surfaceColor = AgentStudioColors.surface,
+    this.surfaceColor = PactColors.surface,
   });
 
   final String title;
@@ -4939,7 +4939,7 @@ class _SectionCard extends StatelessWidget {
         color: surfaceColor,
         borderRadius: BorderRadius.circular(18),
         border: const Border.fromBorderSide(
-          BorderSide(color: AgentStudioColors.line),
+          BorderSide(color: PactColors.line),
         ),
       ),
       child: Column(
@@ -4959,7 +4959,7 @@ class _SectionCard extends StatelessWidget {
               Text(
                 subtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AgentStudioColors.textMuted,
+                  color: PactColors.textMuted,
                 ),
               ),
             ],
@@ -4992,8 +4992,8 @@ class _LogLineTile extends StatelessWidget {
     return RepaintBoundary(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: newest ? AgentStudioColors.surfaceHigh : Colors.transparent,
-          border: const Border(bottom: BorderSide(color: AgentStudioColors.line)),
+          color: newest ? PactColors.surfaceHigh : Colors.transparent,
+          border: const Border(bottom: BorderSide(color: PactColors.line)),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -5005,7 +5005,7 @@ class _LogLineTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: textTheme.labelSmall?.copyWith(
-                  color: AgentStudioColors.textMuted,
+                  color: PactColors.textMuted,
                   fontFamily: 'monospace',
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -5016,7 +5016,7 @@ class _LogLineTile extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: textTheme.bodySmall?.copyWith(
-                  color: AgentStudioColors.text,
+                  color: PactColors.text,
                   fontFamily: 'monospace',
                   height: 1.25,
                 ),
@@ -5065,7 +5065,7 @@ class _MailImportProgressPanel extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.text,
+                    color: PactColors.text,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -5079,7 +5079,7 @@ class _MailImportProgressPanel extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AgentStudioColors.textMuted,
+                      color: PactColors.textMuted,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -5095,7 +5095,7 @@ class _MailImportProgressPanel extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
             ),
           ],
           const SizedBox(height: 10),
@@ -5116,7 +5116,7 @@ class _MailImportProgressPanel extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AgentStudioColors.textMuted,
+                    color: PactColors.textMuted,
                     fontFeatures: const [FontFeature.tabularFigures()],
                     fontWeight: FontWeight.w700,
                   ),
@@ -5147,8 +5147,8 @@ class _MailSyncProgressBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         child: const LinearProgressIndicator(
           minHeight: 4,
-          backgroundColor: AgentStudioColors.surfaceHighest,
-          valueColor: AlwaysStoppedAnimation<Color>(AgentStudioColors.warning),
+          backgroundColor: PactColors.surfaceHighest,
+          valueColor: AlwaysStoppedAnimation<Color>(PactColors.warning),
         ),
       );
     }
@@ -5162,19 +5162,19 @@ class _MailSyncProgressBar extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            const ColoredBox(color: AgentStudioColors.surfaceHighest),
+            const ColoredBox(color: PactColors.surfaceHighest),
             FractionallySizedBox(
               alignment: Alignment.centerLeft,
               widthFactor: local,
               child: const SizedBox.expand(
-                child: ColoredBox(color: AgentStudioColors.warning),
+                child: ColoredBox(color: PactColors.warning),
               ),
             ),
             FractionallySizedBox(
               alignment: Alignment.centerLeft,
               widthFactor: cloud,
               child: const SizedBox.expand(
-                child: ColoredBox(color: AgentStudioColors.primaryStrong),
+                child: ColoredBox(color: PactColors.primaryStrong),
               ),
             ),
           ],
@@ -5205,7 +5205,7 @@ class _SidebarItem extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: active ? AgentStudioColors.surface : Colors.transparent,
+          color: active ? PactColors.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -5213,15 +5213,15 @@ class _SidebarItem extends StatelessWidget {
             Icon(
               icon,
               size: 18,
-              color: active ? AgentStudioColors.primary : AgentStudioColors.textMuted,
+              color: active ? PactColors.primary : PactColors.textMuted,
             ),
             const SizedBox(width: 10),
             Text(
               label,
               style: TextStyle(
                 color: active
-                    ? AgentStudioColors.primary
-                    : AgentStudioColors.textMuted,
+                    ? PactColors.primary
+                    : PactColors.textMuted,
                 fontWeight: active ? FontWeight.w700 : FontWeight.w600,
               ),
             ),
@@ -5266,10 +5266,10 @@ class _DataConnectorTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceHigh,
+        color: PactColors.surfaceHigh,
         borderRadius: BorderRadius.circular(12),
         border: const Border.fromBorderSide(
-          BorderSide(color: AgentStudioColors.line),
+          BorderSide(color: PactColors.line),
         ),
       ),
       child: Row(
@@ -5278,12 +5278,12 @@ class _DataConnectorTile extends StatelessWidget {
           CircleAvatar(
             radius: 20,
             backgroundColor: enabled
-                ? AgentStudioColors.primaryStrong
-                : AgentStudioColors.surfaceHighest,
+                ? PactColors.primaryStrong
+                : PactColors.surfaceHighest,
             child: Icon(
               _connectorIcon(sourceType),
               size: 19,
-              color: enabled ? Colors.white : AgentStudioColors.textMuted,
+              color: enabled ? Colors.white : PactColors.textMuted,
             ),
           ),
           const SizedBox(width: 14),
@@ -5366,7 +5366,7 @@ class _PrimaryActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final baseStyle = FilledButton.styleFrom(
-      backgroundColor: AgentStudioColors.primary,
+      backgroundColor: PactColors.primary,
       foregroundColor: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -5416,10 +5416,10 @@ class _BinaryCheckboxState extends State<_BinaryCheckbox> {
     final highlighted = interactive && (_hovered || _focused);
     final checked = widget.value;
     final labelColor = widget.disabled
-        ? AgentStudioColors.textMuted
+        ? PactColors.textMuted
         : checked || highlighted
-        ? AgentStudioColors.primaryStrong
-        : AgentStudioColors.text;
+        ? PactColors.primaryStrong
+        : PactColors.text;
 
     return Semantics(
       checked: checked,
@@ -5452,7 +5452,7 @@ class _BinaryCheckboxState extends State<_BinaryCheckbox> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: highlighted
-                      ? AgentStudioColors.primaryStrong.withValues(alpha: 0.32)
+                      ? PactColors.primaryStrong.withValues(alpha: 0.32)
                       : Colors.transparent,
                 ),
               ),
@@ -5465,13 +5465,13 @@ class _BinaryCheckboxState extends State<_BinaryCheckbox> {
                     height: 16,
                     decoration: BoxDecoration(
                       color: checked && !widget.disabled
-                          ? AgentStudioColors.primaryStrong
+                          ? PactColors.primaryStrong
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
                         color: checked && !widget.disabled
-                            ? AgentStudioColors.primaryStrong
-                            : AgentStudioColors.line,
+                            ? PactColors.primaryStrong
+                            : PactColors.line,
                       ),
                     ),
                     child: checked
@@ -5520,9 +5520,9 @@ class _SecondaryActionButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        backgroundColor: AgentStudioColors.surfaceHigh,
-        foregroundColor: AgentStudioColors.textMuted,
-        side: const BorderSide(color: AgentStudioColors.line),
+        backgroundColor: PactColors.surfaceHigh,
+        foregroundColor: PactColors.textMuted,
+        side: const BorderSide(color: PactColors.line),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -5551,15 +5551,15 @@ class _ExportButton extends StatelessWidget {
         onPressed: onPressed,
         style: FilledButton.styleFrom(
           backgroundColor: accent
-              ? AgentStudioColors.primaryStrong
-              : AgentStudioColors.surfaceLow,
-          foregroundColor: accent ? Colors.white : AgentStudioColors.text,
-          disabledBackgroundColor: AgentStudioColors.surfaceHighest,
-          disabledForegroundColor: AgentStudioColors.textMuted,
+              ? PactColors.primaryStrong
+              : PactColors.surfaceLow,
+          foregroundColor: accent ? Colors.white : PactColors.text,
+          disabledBackgroundColor: PactColors.surfaceHighest,
+          disabledForegroundColor: PactColors.textMuted,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: AgentStudioColors.line),
+            side: const BorderSide(color: PactColors.line),
           ),
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
@@ -5589,8 +5589,8 @@ class _RunTile extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: active
-              ? AgentStudioColors.surface
-              : AgentStudioColors.surfaceHighest,
+              ? PactColors.surface
+              : PactColors.surfaceHighest,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
@@ -5617,7 +5617,7 @@ class _RunTile extends StatelessWidget {
               '${run.fileCount} 个文件 • ${displayStageLabel(run.stage)}',
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
             ),
           ],
         ),
@@ -5646,8 +5646,8 @@ class _CheckpointTile extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: active
-              ? AgentStudioColors.surface
-              : AgentStudioColors.surfaceHighest,
+              ? PactColors.surface
+              : PactColors.surfaceHighest,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
@@ -5676,7 +5676,7 @@ class _CheckpointTile extends StatelessWidget {
               '${checkpointModeLabel(node.mode)} • ${node.fileCount} 个文件 • ${shortId(node.checkpointId)}',
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
             ),
           ],
         ),
@@ -5783,7 +5783,7 @@ class _UploadSessionTileState extends State<_UploadSessionTile> {
                 padding: const EdgeInsets.only(left: 10),
                 decoration: const BoxDecoration(
                   border: Border(
-                    left: BorderSide(color: AgentStudioColors.surfaceHighest),
+                    left: BorderSide(color: PactColors.surfaceHighest),
                   ),
                 ),
                 child: Column(
@@ -6093,7 +6093,7 @@ class _QueuedFilesTreeState extends State<_QueuedFilesTree> {
                 padding: const EdgeInsets.only(left: 10),
                 decoration: const BoxDecoration(
                   border: Border(
-                    left: BorderSide(color: AgentStudioColors.surfaceHighest),
+                    left: BorderSide(color: PactColors.surfaceHighest),
                   ),
                 ),
                 child: Column(
@@ -6267,10 +6267,10 @@ class _UploadSessionFolderCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          color: AgentStudioColors.surfaceLow,
+          color: PactColors.surfaceLow,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: AgentStudioColors.primary.withValues(alpha: 0.2),
+            color: PactColors.primary.withValues(alpha: 0.2),
           ),
         ),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
@@ -6281,14 +6281,14 @@ class _UploadSessionFolderCard extends StatelessWidget {
                   ? Icons.folder_open_outlined
                   : Icons.folder_copy_outlined,
               size: 18,
-              color: AgentStudioColors.primary,
+              color: PactColors.primary,
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 node.name.isEmpty ? '未命名文件夹' : node.name,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AgentStudioColors.primary,
+                  color: PactColors.primary,
                   fontWeight: FontWeight.w700,
                 ),
                 maxLines: 1,
@@ -6298,7 +6298,7 @@ class _UploadSessionFolderCard extends StatelessWidget {
             if (hasChildren)
               Icon(
                 expanded ? Icons.expand_less : Icons.chevron_right,
-                color: AgentStudioColors.textMuted,
+                color: PactColors.textMuted,
               ),
           ],
         ),
@@ -6342,9 +6342,9 @@ class _UploadSessionFileLineCard extends StatelessWidget {
     return Container(
       margin: EdgeInsets.only(left: leftPadding),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
+        color: PactColors.surfaceLow,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AgentStudioColors.surfaceHighest),
+        border: Border.all(color: PactColors.surfaceHighest),
       ),
       padding: const EdgeInsets.all(10),
       child: Column(
@@ -6365,7 +6365,7 @@ class _UploadSessionFileLineCard extends StatelessWidget {
                           child: Icon(
                             Icons.insert_drive_file_outlined,
                             size: 18,
-                            color: AgentStudioColors.textMuted,
+                            color: PactColors.textMuted,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -6377,7 +6377,7 @@ class _UploadSessionFileLineCard extends StatelessWidget {
                                 '$prefix${file.name.isEmpty ? '未命名文件' : file.name}',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
-                                      color: AgentStudioColors.text,
+                                      color: PactColors.text,
                                       fontWeight: FontWeight.w700,
                                     ),
                                 maxLines: 1,
@@ -6387,7 +6387,7 @@ class _UploadSessionFileLineCard extends StatelessWidget {
                                 uploadTime,
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
-                                      color: AgentStudioColors.textMuted,
+                                      color: PactColors.textMuted,
                                       height: 1.4,
                                     ),
                                 maxLines: 1,
@@ -6458,7 +6458,7 @@ class _ProgressRow extends StatelessWidget {
               suffix,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
             ),
           ],
         ),
@@ -6468,9 +6468,9 @@ class _ProgressRow extends StatelessWidget {
           child: LinearProgressIndicator(
             value: progress.clamp(0, 1),
             minHeight: 6,
-            backgroundColor: AgentStudioColors.surfaceHighest,
+            backgroundColor: PactColors.surfaceHighest,
             valueColor: const AlwaysStoppedAnimation<Color>(
-              AgentStudioColors.primaryStrong,
+              PactColors.primaryStrong,
             ),
           ),
         ),
@@ -6504,9 +6504,9 @@ class _ProgressBarRow extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress.clamp(0, 1),
               minHeight: 6,
-              backgroundColor: AgentStudioColors.surfaceHighest,
+              backgroundColor: PactColors.surfaceHighest,
               valueColor: const AlwaysStoppedAnimation<Color>(
-                AgentStudioColors.primaryStrong,
+                PactColors.primaryStrong,
               ),
             ),
           ),
@@ -6516,7 +6516,7 @@ class _ProgressBarRow extends StatelessWidget {
           dataText,
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
         ),
       ],
     );
@@ -6539,7 +6539,7 @@ class _MetricTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
+        color: PactColors.surfaceLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -6548,7 +6548,7 @@ class _MetricTile extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AgentStudioColors.textMuted,
+              color: PactColors.textMuted,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
             ),
@@ -6590,7 +6590,7 @@ class _StatusPill extends StatelessWidget {
       '排队中' ||
       '上传中' => const Color(0xFFDDE1FF),
       'failed' || 'error' || '失败' || '网络中断' => const Color(0xFFFFDAD6),
-      _ => AgentStudioColors.surfaceHighest,
+      _ => PactColors.surfaceHighest,
     };
     final foreground = switch (normalized) {
       'completed' ||
@@ -6598,16 +6598,16 @@ class _StatusPill extends StatelessWidget {
       '已完成' ||
       '已接入' ||
       '已连接' ||
-      '客户端已确认' => AgentStudioColors.success,
+      '客户端已确认' => PactColors.success,
       'running' ||
       'processing' ||
       'queued' ||
       '运行中' ||
       '服务端处理中' ||
       '排队中' ||
-      '上传中' => AgentStudioColors.primary,
-      'failed' || 'error' || '失败' || '网络中断' => AgentStudioColors.error,
-      _ => AgentStudioColors.textMuted,
+      '上传中' => PactColors.primary,
+      'failed' || 'error' || '失败' || '网络中断' => PactColors.error,
+      _ => PactColors.textMuted,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -6653,7 +6653,7 @@ class _DataRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
+        color: PactColors.surfaceLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -6671,7 +6671,7 @@ class _DataRow extends StatelessWidget {
               detail,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AgentStudioColors.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: PactColors.textMuted),
             ),
           ],
         ],
@@ -6704,14 +6704,14 @@ class _EmptyPanel extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AgentStudioColors.surfaceLow,
+        color: PactColors.surfaceLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
         label,
         style: Theme.of(
           context,
-        ).textTheme.bodyMedium?.copyWith(color: AgentStudioColors.textMuted),
+        ).textTheme.bodyMedium?.copyWith(color: PactColors.textMuted),
       ),
     );
   }

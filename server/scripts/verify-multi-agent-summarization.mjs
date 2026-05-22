@@ -47,7 +47,7 @@ async function createKnowledgeJob(baseUrl, title, body) {
 }
 
 async function verifySummarizationWorkspaceContextHotSwap() {
-  const directDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-summarization-direct-"));
+  const directDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-summarization-direct-"));
   const workspaceId = "verify-summarization-workspace-hot-swap";
   const agentWorkspace = createAgentWorkspace({ userDataPath: directDataPath });
   try {
@@ -80,7 +80,7 @@ async function verifySummarizationWorkspaceContextHotSwap() {
           assert.equal(input.workspaceContext.toolGrantId, "workspace-summary-grant");
           assert.deepEqual(input.knowledgeSourceIds, ["summary-source-a"]);
           return {
-            protocolVersion: "agentstudio.context.v1",
+            protocolVersion: "pact.context.v1",
             profileId: input.contextProfileId,
             roleId: input.roleId,
             budgetReport: { maxInputTokens: 4096, estimatedTokens: 256 },
@@ -97,7 +97,7 @@ async function verifySummarizationWorkspaceContextHotSwap() {
               searchInput = input;
               assert.deepEqual(input.scopeSourceIds, ["summary-source-a"]);
               return {
-                protocolVersion: "agentstudio.knowledge.v1",
+                protocolVersion: "pact.knowledge.v1",
                 query: input.query,
                 items: [
                   {
@@ -175,7 +175,7 @@ async function verifySummarizationWorkspaceContextHotSwap() {
 
 await verifySummarizationWorkspaceContextHotSwap();
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-multi-agent-summarization-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-multi-agent-summarization-"));
 const server = await startHttpServer({
   userDataPath,
   runtimeOptions: {
@@ -197,7 +197,7 @@ try {
   );
 
   const profiles = await fetchJson(`${server.url}/api/context/profiles`);
-  assert.equal(profiles.protocolVersion, "agentstudio.context.v1");
+  assert.equal(profiles.protocolVersion, "pact.context.v1");
   assert.equal(profiles.profiles.some((profile) => profile.profileId === "balanced"), true);
 
   const created = await fetchJson(`${server.url}/api/knowledge/summarization/runs`, {
@@ -210,8 +210,8 @@ try {
       includePrivate: true
     })
   });
-  assert.equal(created.protocolVersion, "agentstudio.summarization.v1");
-  assert.equal(created.coordinatorProtocolVersion, "agentstudio.multi-agent.v1");
+  assert.equal(created.protocolVersion, "pact.summarization.v1");
+  assert.equal(created.coordinatorProtocolVersion, "pact.multi-agent.v1");
   assert.equal(created.graphRuntime, "langgraph-js");
   assert.equal(created.run.status, "completed");
   assert.ok(created.workspace.workspaceId);

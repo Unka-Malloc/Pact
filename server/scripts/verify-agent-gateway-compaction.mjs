@@ -53,7 +53,7 @@ function messages() {
   }));
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-gateway-compaction-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-agent-gateway-compaction-"));
 try {
   const gatewayCalls = [];
   const runtime = createContextRuntime({
@@ -154,7 +154,7 @@ try {
       customHttpAdapter: {
         provider: "custom-http",
         alias: "direct-gateway",
-        url: "http://agentstudio.local/agent",
+        url: "http://pact.local/agent",
         token: "",
         agentName: "direct",
         timeoutMs: 30000
@@ -162,7 +162,7 @@ try {
       customHttpAdapter: {
         provider: "custom-http",
         alias: "direct-gateway",
-        url: "http://agentstudio.local/agent",
+        url: "http://pact.local/agent",
         token: "",
         agentName: "direct",
         timeoutMs: 30000
@@ -213,7 +213,7 @@ try {
   });
   assert.equal(gatewayResult.contextCompaction.compacted, true);
   assert.equal(capturedPayloads.length, 1);
-  assert.match(capturedPayloads[0].question, /AgentStudio compacted prior context/);
+  assert.match(capturedPayloads[0].question, /Pact compacted prior context/);
   assert.match(capturedPayloads[0].question, /direct-evidence|direct-risk/);
 
   const mockGateway = await startMockGateway();
@@ -270,7 +270,7 @@ try {
     assert.equal(response.status, 200);
     assert.equal(response.payload.contextCompaction.compacted, true);
     assert.ok(mockGateway.requests.length >= 1);
-    assert.match(String(mockGateway.requests.at(-1).question || ""), /AgentStudio compacted prior context/);
+    assert.match(String(mockGateway.requests.at(-1).question || ""), /Pact compacted prior context/);
     assert.match(String(mockGateway.requests.at(-1).question || ""), /http-gateway-evidence|http-gateway-risk/);
   } finally {
     await server.close();

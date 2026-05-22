@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await fs.readFile(new URL("../package.json", import.meta.url), "utf8"));
 
-const DEFAULT_TOKEN_ENV = "AGENTSTUDIO_MCP_TOKEN";
+const DEFAULT_TOKEN_ENV = "PACT_MCP_TOKEN";
 const DEFAULT_CODEX_BIN = "codex";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
@@ -47,7 +47,7 @@ const AGENT_CLI_TARGETS = [
 ];
 const ORB_AGENT_CLI_TARGETS = AGENT_CLI_TARGETS.filter((descriptor) => descriptor.target !== "codex");
 const APP_DISCOVERY_NAME_HINTS = [
-  "agentstudio",
+  "pact",
   "antigravity",
   "aider",
   "anthropic",
@@ -74,12 +74,12 @@ const APP_DISCOVERY_NAME_HINTS = [
   "zeroclaw"
 ];
 const APP_DISCOVERY_WORD_HINTS = ["agent", "bot", "claw", "code"];
-const PLUGIN_NAME = "agentstudio-mcp";
-const MARKETPLACE_NAME = "agentstudio-local";
-const GEMINI_EXTENSION_NAME = "AgentStudio";
-const MCP_SERVER_NAME = "agentstudio";
-const MCP_STABLE_TOOL_NAME = "agentstudio.call";
-const MCP_INTERFACE_VERSION = "agentstudio.mcp.v1";
+const PLUGIN_NAME = "pact-mcp";
+const MARKETPLACE_NAME = "pact-local";
+const GEMINI_EXTENSION_NAME = "Pact";
+const MCP_SERVER_NAME = "pact";
+const MCP_STABLE_TOOL_NAME = "pact.call";
+const MCP_INTERFACE_VERSION = "pact.mcp.v1";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
@@ -90,10 +90,10 @@ const SUPPORTED_TARGETS = [
   "hermes",
   "antigravity"
 ];
-const AGENTSTUDIO_MCP_URL_ENV = "AGENTSTUDIO_MCP_URL";
-const AGENTSTUDIO_MCP_DISCOVERY_URL_ENV = "AGENTSTUDIO_MCP_DISCOVERY_URL";
-const AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV = "AGENTSTUDIO_MCP_DISCOVERY_FILE";
-const DEFAULT_DISCOVERY_REGISTRY = path.join(os.homedir(), ".agentstudio", "mcp", "servers.json");
+const PACT_MCP_URL_ENV = "PACT_MCP_URL";
+const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
+const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
+const DEFAULT_DISCOVERY_REGISTRY = path.join(os.homedir(), ".pact", "mcp", "servers.json");
 const DEFAULT_SCAN_PORTS = [8787, 8788, 8789, 8790, 8791, 8792, 8793, 8794, 8795, 8796, 8797];
 const TARGET_ALIASES = new Map([
   ["gemini", "gemini-cli"],
@@ -130,32 +130,32 @@ const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
 function usage() {
   return [
     "Usage:",
-    "  agentstudio-mcp register",
-    "  agentstudio-mcp install",
-    "  agentstudio-mcp install --target codex",
-    "  agentstudio-mcp uninstall",
-    "  agentstudio-mcp uninstall --target codex",
-    "  agentstudio-mcp scan --json",
-    "  agentstudio-mcp discover-local",
-    "  agentstudio-mcp doctor",
-    "  agentstudio-mcp discover",
-    "  agentstudio-mcp server-config --set --url http://host:port --name local",
-    "  agentstudio-mcp server-config --switch local",
-    "  agentstudio-mcp server-config --refresh",
-    "  agentstudio-mcp server-config --reset",
+    "  pact-mcp register",
+    "  pact-mcp install",
+    "  pact-mcp install --target codex",
+    "  pact-mcp uninstall",
+    "  pact-mcp uninstall --target codex",
+    "  pact-mcp scan --json",
+    "  pact-mcp discover-local",
+    "  pact-mcp doctor",
+    "  pact-mcp discover",
+    "  pact-mcp server-config --set --url http://host:port --name local",
+    "  pact-mcp server-config --switch local",
+    "  pact-mcp server-config --refresh",
+    "  pact-mcp server-config --reset",
     "",
     "Options:",
     "  --target LIST                 Comma-separated targets for non-interactive install. Default: codex.",
-    "  --url URL                     Explicit AgentStudio base URL. Still requires signed MCP handshake.",
+    "  --url URL                     Explicit Pact base URL. Still requires signed MCP handshake.",
     "  --scan-ports LIST            Local ports to scan when --url is omitted. Default: 8787-8797.",
-    "  --token TOKEN                 AgentStudio MCP token. Prefer --token-stdin or --token-env.",
+    "  --token TOKEN                 Pact MCP token. Prefer --token-stdin or --token-env.",
     "  --token-stdin                 Read token from stdin.",
-    "  --token-env NAME              Token environment variable. Default: AGENTSTUDIO_MCP_TOKEN.",
+    "  --token-env NAME              Token environment variable. Default: PACT_MCP_TOKEN.",
     "  --no-auto-token               Require an explicit token instead of requesting a local grant.",
     "  --no-verify                   Skip post-install MCP HTTP verification.",
     "  --json                        Emit compact JSON.",
     "  --no-env                      Do not publish launchctl environment variables during register.",
-    "  --discovery-file PATH         Registry file used by register/discover-local. Default: ~/.agentstudio/mcp/servers.json.",
+    "  --discovery-file PATH         Registry file used by register/discover-local. Default: ~/.pact/mcp/servers.json.",
     "  --codex-bin COMMAND           Codex CLI command or explicit path. Default: codex.",
     "  --gemini-bin COMMAND          Gemini CLI command or explicit path. Default: gemini.",
     "  --kilo-bin COMMAND            Kilo Code CLI command or explicit path. Default: kilo.",
@@ -252,7 +252,7 @@ function targetLabel(target) {
 }
 
 function targetInstallMode(target) {
-  return TARGET_INSTALL_MODES[target] || "agentstudio-mcp-client-install";
+  return TARGET_INSTALL_MODES[target] || "pact-mcp-client-install";
 }
 
 function redactToken(value) {
@@ -303,7 +303,7 @@ function discoveryRegistryPath(options = {}) {
   const requested = option(
     options,
     "discovery-file",
-    process.env[AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV] || DEFAULT_DISCOVERY_REGISTRY
+    process.env[PACT_MCP_DISCOVERY_FILE_ENV] || DEFAULT_DISCOVERY_REGISTRY
   );
   return path.resolve(expandHomePath(requested));
 }
@@ -314,9 +314,9 @@ function deviceDiscoveryPaths(options = {}) {
 
 function deviceDiscoveryEnv({ baseUrl, primaryPath }) {
   return {
-    [AGENTSTUDIO_MCP_URL_ENV]: `${baseUrl}/mcp`,
-    [AGENTSTUDIO_MCP_DISCOVERY_URL_ENV]: `${baseUrl}/.well-known/agentstudio/mcp.json`,
-    [AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV]: primaryPath
+    [PACT_MCP_URL_ENV]: `${baseUrl}/mcp`,
+    [PACT_MCP_DISCOVERY_URL_ENV]: `${baseUrl}/.well-known/pact/mcp.json`,
+    [PACT_MCP_DISCOVERY_FILE_ENV]: primaryPath
   };
 }
 
@@ -465,7 +465,7 @@ async function backupIfExists(filePath) {
   } catch {
     return "";
   }
-  const backupPath = `${filePath}.agentstudio-backup-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z")}`;
+  const backupPath = `${filePath}.pact-backup-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z")}`;
   await fs.copyFile(filePath, backupPath);
   return backupPath;
 }
@@ -513,7 +513,7 @@ async function readLaunchctlEnv(name) {
 }
 
 function explicitBaseUrl(options = {}) {
-  return normalizeBaseUrl(option(options, "url", process.env.AGENTSTUDIO_MCP_BASE_URL || ""));
+  return normalizeBaseUrl(option(options, "url", process.env.PACT_MCP_BASE_URL || ""));
 }
 
 function baseUrlFromEndpoint(value) {
@@ -531,7 +531,7 @@ function baseUrlFromEndpoint(value) {
     }
     if (
       parsed.pathname === "/api/mcp/discovery" ||
-      parsed.pathname === "/.well-known/agentstudio/mcp.json" ||
+      parsed.pathname === "/.well-known/pact/mcp.json" ||
       parsed.pathname === "/api/mcp/handshake"
     ) {
       parsed.pathname = "/";
@@ -546,7 +546,7 @@ function baseUrlFromEndpoint(value) {
 }
 
 function parseScanPorts(options = {}) {
-  const raw = String(option(options, "scan-ports", process.env.AGENTSTUDIO_MCP_SCAN_PORTS || "")).trim();
+  const raw = String(option(options, "scan-ports", process.env.PACT_MCP_SCAN_PORTS || "")).trim();
   const values = raw
     ? raw.split(",").map((item) => Number(item.trim()))
     : DEFAULT_SCAN_PORTS;
@@ -578,9 +578,9 @@ async function candidateBaseUrls(options = {}) {
   if (explicit) {
     return [explicit];
   }
-  const launchDiscoveryFile = await readLaunchctlEnv(AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV);
-  const launchDiscoveryUrl = await readLaunchctlEnv(AGENTSTUDIO_MCP_DISCOVERY_URL_ENV);
-  const launchMcpUrl = await readLaunchctlEnv(AGENTSTUDIO_MCP_URL_ENV);
+  const launchDiscoveryFile = await readLaunchctlEnv(PACT_MCP_DISCOVERY_FILE_ENV);
+  const launchDiscoveryUrl = await readLaunchctlEnv(PACT_MCP_DISCOVERY_URL_ENV);
+  const launchMcpUrl = await readLaunchctlEnv(PACT_MCP_URL_ENV);
   const fileCandidates = uniqueValues([
     discoveryRegistryPath(options),
     launchDiscoveryFile
@@ -607,8 +607,8 @@ async function candidateBaseUrls(options = {}) {
     `http://localhost:${port}`
   ]);
   return uniqueValues([
-    baseUrlFromEndpoint(process.env[AGENTSTUDIO_MCP_URL_ENV]),
-    baseUrlFromEndpoint(process.env[AGENTSTUDIO_MCP_DISCOVERY_URL_ENV]),
+    baseUrlFromEndpoint(process.env[PACT_MCP_URL_ENV]),
+    baseUrlFromEndpoint(process.env[PACT_MCP_DISCOVERY_URL_ENV]),
     baseUrlFromEndpoint(launchMcpUrl),
     baseUrlFromEndpoint(launchDiscoveryUrl),
     ...fromFiles,
@@ -616,26 +616,26 @@ async function candidateBaseUrls(options = {}) {
   ]).map(normalizeBaseUrl);
 }
 
-async function fetchAgentStudioDiscovery(baseUrl) {
+async function fetchPactDiscovery(baseUrl) {
   const url = `${baseUrl}/api/mcp/discovery`;
   const result = await fetchJson(url, { timeoutMs: 1500 });
   const payload = result.payload || {};
   const identity = payload.identity || null;
   if (
     !result.ok ||
-    payload.name !== "AgentStudio" ||
+    payload.name !== "Pact" ||
     payload.interfaceVersion !== MCP_INTERFACE_VERSION ||
     payload.stableToolName !== MCP_STABLE_TOOL_NAME ||
     identity?.algorithm !== "Ed25519" ||
     !identity?.publicKeyJwk ||
     !payload.handshake?.url
   ) {
-    throw new Error("not an AgentStudio MCP discovery response");
+    throw new Error("not an Pact MCP discovery response");
   }
   return payload;
 }
 
-async function verifyAgentStudioHandshake(baseUrl, discovery) {
+async function verifyPactHandshake(baseUrl, discovery) {
   const nonce = randomBytes(32).toString("base64url");
   const result = await fetchJson(`${baseUrl}/api/mcp/handshake`, {
     method: "POST",
@@ -655,16 +655,16 @@ async function verifyAgentStudioHandshake(baseUrl, discovery) {
   if (
     !result.ok ||
     result.payload?.ok !== true ||
-    payload.schemaVersion !== "agentstudio.mcp.handshake.v1" ||
+    payload.schemaVersion !== "pact.mcp.handshake.v1" ||
     payload.nonce !== nonce ||
-    payload.server?.name !== "AgentStudio" ||
+    payload.server?.name !== "Pact" ||
     payload.server?.interfaceVersion !== MCP_INTERFACE_VERSION ||
     payload.server?.stableToolName !== MCP_STABLE_TOOL_NAME ||
     payload.identity?.keyId !== discovery.identity?.keyId ||
     signature.algorithm !== "Ed25519" ||
     !verifySignedPayload({ publicKeyJwk, payload, signature: signature.value })
   ) {
-    throw new Error("AgentStudio MCP handshake signature verification failed");
+    throw new Error("Pact MCP handshake signature verification failed");
   }
   return {
     ok: true,
@@ -674,13 +674,13 @@ async function verifyAgentStudioHandshake(baseUrl, discovery) {
   };
 }
 
-async function discoverAgentStudioHub(options = {}) {
+async function discoverPactHub(options = {}) {
   const attempts = [];
   const candidates = await candidateBaseUrls(options);
   for (const baseUrl of candidates) {
     try {
-      const discovery = await fetchAgentStudioDiscovery(baseUrl);
-      const verified = await verifyAgentStudioHandshake(baseUrl, discovery);
+      const discovery = await fetchPactDiscovery(baseUrl);
+      const verified = await verifyPactHandshake(baseUrl, discovery);
       return {
         ...verified,
         attempts: [
@@ -700,19 +700,19 @@ async function discoverAgentStudioHub(options = {}) {
   return {
     ok: false,
     attempts,
-    reason: "No signed AgentStudio MCP hub was discovered on this device."
+    reason: "No signed Pact MCP hub was discovered on this device."
   };
 }
 
 async function optionsWithDiscoveredBaseUrl(options = {}) {
-  const discovered = await discoverAgentStudioHub(options);
+  const discovered = await discoverPactHub(options);
   if (!discovered.ok) {
-    throw new Error(`${discovered.reason} Use --url only if you know the AgentStudio base URL; it will still be handshake-verified.`);
+    throw new Error(`${discovered.reason} Use --url only if you know the Pact base URL; it will still be handshake-verified.`);
   }
   return {
     ...options,
     "resolved-url": discovered.baseUrl,
-    __agentstudioDiscovery: discovered
+    __pactDiscovery: discovered
   };
 }
 
@@ -759,12 +759,12 @@ async function ensureService(baseUrl) {
       params: {
         protocolVersion: "2025-06-18",
         capabilities: {},
-        clientInfo: { name: "agentstudio-mcp-connector", version: packageJson.version }
+        clientInfo: { name: "pact-mcp-connector", version: packageJson.version }
       }
     })
   });
-  if (!initialize.ok || initialize.payload?.result?.serverInfo?.name !== "AgentStudio") {
-    throw new Error(`AgentStudio MCP is not available at ${baseUrl}/mcp.`);
+  if (!initialize.ok || initialize.payload?.result?.serverInfo?.name !== "Pact") {
+    throw new Error(`Pact MCP is not available at ${baseUrl}/mcp.`);
   }
   return initialize;
 }
@@ -823,27 +823,27 @@ async function createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv }) {
   await writeJson(path.join(pluginRoot, ".codex-plugin", "plugin.json"), {
     name: PLUGIN_NAME,
     version: packageJson.version,
-    description: "AgentStudio MCP integration for Codex.",
+    description: "Pact MCP integration for Codex.",
     author: {
       name: "Unka Y.Y.",
       url: "https://github.com/Unka-Malloc"
     },
-    homepage: "https://github.com/Unka-Malloc/AgentStudio",
-    repository: "https://github.com/Unka-Malloc/AgentStudio",
+    homepage: "https://github.com/Unka-Malloc/Pact",
+    repository: "https://github.com/Unka-Malloc/Pact",
     license: "GPL-3.0-or-later",
-    keywords: ["agentstudio", "mcp", "workspace", "knowledge"],
+    keywords: ["pact", "mcp", "workspace", "knowledge"],
     mcpServers: "./.mcp.json",
     interface: {
-      displayName: "AgentStudio MCP",
-      shortDescription: "Connect Codex to AgentStudio MCP",
-      longDescription: "Use the AgentStudio HTTP MCP endpoint through the stable agentstudio.call tool.",
+      displayName: "Pact MCP",
+      shortDescription: "Connect Codex to Pact MCP",
+      longDescription: "Use the Pact HTTP MCP endpoint through the stable pact.call tool.",
       developerName: "Unka-Malloc",
       category: "Coding",
       capabilities: ["Interactive", "Read", "Write"],
-      websiteURL: "https://github.com/Unka-Malloc/AgentStudio",
-      privacyPolicyURL: "https://github.com/Unka-Malloc/AgentStudio",
-      termsOfServiceURL: "https://github.com/Unka-Malloc/AgentStudio",
-      defaultPrompt: ["Use AgentStudio MCP through the stable agentstudio.call tool"],
+      websiteURL: "https://github.com/Unka-Malloc/Pact",
+      privacyPolicyURL: "https://github.com/Unka-Malloc/Pact",
+      termsOfServiceURL: "https://github.com/Unka-Malloc/Pact",
+      defaultPrompt: ["Use Pact MCP through the stable pact.call tool"],
       brandColor: "#2563EB",
       screenshots: []
     }
@@ -854,14 +854,14 @@ async function createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv }) {
         type: "http",
         url: `${baseUrl}/mcp`,
         bearer_token_env_var: tokenEnv,
-        note: "AgentStudio HTTP MCP service. Token is provided through AGENTSTUDIO_MCP_TOKEN by the connector installer."
+        note: "Pact HTTP MCP service. Token is provided through PACT_MCP_TOKEN by the connector installer."
       }
     }
   });
   await writeJson(path.join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), {
     name: MARKETPLACE_NAME,
     interface: {
-      displayName: "AgentStudio Local"
+      displayName: "Pact Local"
     },
     plugins: [
       {
@@ -917,12 +917,12 @@ async function createGeminiExtension({ extensionRoot, baseUrl, token }) {
   await writeJson(path.join(extensionRoot, "gemini-extension.json"), {
     name: GEMINI_EXTENSION_NAME,
     version: packageJson.version,
-    description: "Connect Gemini CLI to the AgentStudio MCP service.",
+    description: "Connect Gemini CLI to the Pact MCP service.",
     mcpServers: {
       [MCP_SERVER_NAME]: {
         httpUrl: `${baseUrl}/mcp`,
         headers: {
-          "X-AgentStudio-Api-Key": token
+          "X-Pact-Api-Key": token
         },
         timeout: HTTP_TIMEOUT_MS
       }
@@ -930,7 +930,7 @@ async function createGeminiExtension({ extensionRoot, baseUrl, token }) {
   });
   await writeText(
     path.join(extensionRoot, "README.md"),
-    "# AgentStudio MCP\n\nGemini CLI extension generated by the `agentstudio-mcp` connector release package.\n"
+    "# Pact MCP\n\nGemini CLI extension generated by the `pact-mcp` connector release package.\n"
   );
 }
 
@@ -946,24 +946,24 @@ async function installGemini({ baseUrl, token, geminiBin, extensionRoot }) {
     "--transport",
     "http",
     "--header",
-    `X-AgentStudio-Api-Key: ${token}`,
+    `X-Pact-Api-Key: ${token}`,
     "--timeout",
     String(HTTP_TIMEOUT_MS),
     "--trust",
     "--description",
-    "AgentStudio HTTP MCP service.",
+    "Pact HTTP MCP service.",
     MCP_SERVER_NAME,
     `${baseUrl}/mcp`
   ]);
   const list = await run(geminiBin, ["mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   if (!listOutput.includes(MCP_SERVER_NAME)) {
-    throw new Error("Gemini CLI MCP list does not include agentstudio after install.");
+    throw new Error("Gemini CLI MCP list does not include pact after install.");
   }
   return {
     installMode: "gemini-release-mcp-cli",
     extensionRoot,
-    mcpListHasAgentStudio: true
+    mcpListHasPact: true
   };
 }
 
@@ -986,26 +986,26 @@ async function installGeminiOrb({ baseUrl, token, orbBin, vmName, vmUser, gemini
     "--transport",
     "http",
     "--header",
-    `X-AgentStudio-Api-Key: ${token}`,
+    `X-Pact-Api-Key: ${token}`,
     "--timeout",
     String(HTTP_TIMEOUT_MS),
     "--trust",
     "--description",
-    "AgentStudio HTTP MCP service.",
+    "Pact HTTP MCP service.",
     MCP_SERVER_NAME,
     url
   ]);
   const list = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   if (!listOutput.includes(MCP_SERVER_NAME)) {
-    throw new Error("Gemini CLI MCP list inside OrbStack does not include agentstudio after install.");
+    throw new Error("Gemini CLI MCP list inside OrbStack does not include pact after install.");
   }
   return {
     installMode: "gemini-orbstack-mcp-cli",
     vm: vmName,
     vmUser,
     url,
-    mcpListHasAgentStudio: true
+    mcpListHasPact: true
   };
 }
 
@@ -1024,25 +1024,25 @@ async function installGeminiRemote({ baseUrl, token, context, geminiBin }) {
     "--transport",
     "http",
     "--header",
-    `X-AgentStudio-Api-Key: ${token}`,
+    `X-Pact-Api-Key: ${token}`,
     "--timeout",
     String(HTTP_TIMEOUT_MS),
     "--trust",
     "--description",
-    "AgentStudio HTTP MCP service.",
+    "Pact HTTP MCP service.",
     MCP_SERVER_NAME,
     url
   ]);
   const list = await runRemoteLinuxCommand(context, [geminiBin, "mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   if (!listOutput.includes(MCP_SERVER_NAME)) {
-    throw new Error(`Gemini CLI MCP list inside ${remoteContextLabel(context)} does not include agentstudio after install.`);
+    throw new Error(`Gemini CLI MCP list inside ${remoteContextLabel(context)} does not include pact after install.`);
   }
   return {
     installMode: `gemini-${context.kind}-mcp-cli`,
     remote: remoteContextLabel(context),
     url,
-    mcpListHasAgentStudio: true
+    mcpListHasPact: true
   };
 }
 
@@ -1056,7 +1056,7 @@ async function installKilo({ baseUrl, token, kiloBin, kiloConfigPath }) {
       url: `${baseUrl}/mcp`,
       enabled: true,
       headers: {
-        "X-AgentStudio-Api-Key": token
+        "X-Pact-Api-Key": token
       },
       timeout: HTTP_TIMEOUT_MS
     }
@@ -1067,7 +1067,7 @@ async function installKilo({ baseUrl, token, kiloBin, kiloConfigPath }) {
     installMode: "kilo-release-global-kilo-json",
     configPath: kiloConfigPath,
     backupPath,
-    mcpListHasAgentStudio: list.stdout.includes(MCP_SERVER_NAME) || list.stderr.includes(MCP_SERVER_NAME)
+    mcpListHasPact: list.stdout.includes(MCP_SERVER_NAME) || list.stderr.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1079,7 +1079,7 @@ async function installKiloOrb({ baseUrl, token, orbBin, vmName, vmUser, kiloBin 
   const script = [
     "set -e",
     "IFS= read -r token",
-    "node - \"$AGENTSTUDIO_URL\" \"$token\" <<'NODE'",
+    "node - \"$PACT_URL\" \"$token\" <<'NODE'",
     "const fs = require('fs');",
     "const os = require('os');",
     "const path = require('path');",
@@ -1091,11 +1091,11 @@ async function installKiloOrb({ baseUrl, token, orbBin, vmName, vmUser, kiloBin 
     "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}",
     "config.mcp = {",
     "  ...(config.mcp || {}),",
-    "  agentstudio: {",
+    "  pact: {",
     "    type: 'remote',",
     "    url,",
     "    enabled: true,",
-    "    headers: { 'X-AgentStudio-Api-Key': token },",
+    "    headers: { 'X-Pact-Api-Key': token },",
     `    timeout: ${HTTP_TIMEOUT_MS}`,
     "  }",
     "};",
@@ -1110,7 +1110,7 @@ async function installKiloOrb({ baseUrl, token, orbBin, vmName, vmUser, kiloBin 
     vmUser,
     "env",
     `KILO_BIN=${kiloBin}`,
-    `AGENTSTUDIO_URL=${url}`,
+    `PACT_URL=${url}`,
     "bash",
     "-lc",
     script
@@ -1132,7 +1132,7 @@ async function installKiloRemote({ baseUrl, token, context, kiloBin }) {
   const script = [
     "set -e",
     "IFS= read -r token",
-    "node - \"$AGENTSTUDIO_URL\" \"$token\" <<'NODE'",
+    "node - \"$PACT_URL\" \"$token\" <<'NODE'",
     "const fs = require('fs');",
     "const os = require('os');",
     "const path = require('path');",
@@ -1144,11 +1144,11 @@ async function installKiloRemote({ baseUrl, token, context, kiloBin }) {
     "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}",
     "config.mcp = {",
     "  ...(config.mcp || {}),",
-    "  agentstudio: {",
+    "  pact: {",
     "    type: 'remote',",
     "    url,",
     "    enabled: true,",
-    "    headers: { 'X-AgentStudio-Api-Key': token },",
+    "    headers: { 'X-Pact-Api-Key': token },",
     `    timeout: ${HTTP_TIMEOUT_MS}`,
     "  }",
     "};",
@@ -1158,7 +1158,7 @@ async function installKiloRemote({ baseUrl, token, context, kiloBin }) {
   ].join("\n");
   const result = await remoteLinuxShellWithInput(context, script, `${token}\n`, {
     KILO_BIN: kiloBin,
-    AGENTSTUDIO_URL: url
+    PACT_URL: url
   });
   if (!result.ok) {
     throw new Error(`Kilo remote install failed in ${remoteContextLabel(context)}: ${result.stderr || result.stdout}`);
@@ -1179,7 +1179,7 @@ async function installCopilot({ baseUrl, token, copilotBin }) {
     "--transport",
     "http",
     "--header",
-    `X-AgentStudio-Api-Key: ${token}`,
+    `X-Pact-Api-Key: ${token}`,
     "--timeout",
     String(HTTP_TIMEOUT_MS),
     MCP_SERVER_NAME,
@@ -1188,7 +1188,7 @@ async function installCopilot({ baseUrl, token, copilotBin }) {
   const get = await run(copilotBin, ["mcp", "get", MCP_SERVER_NAME]);
   return {
     installMode: "copilot-release-mcp-cli",
-    mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
   };
 }
 
@@ -1209,7 +1209,7 @@ async function installCopilotOrb({ baseUrl, token, orbBin, vmName, vmUser, copil
     "--transport",
     "http",
     "--header",
-    `X-AgentStudio-Api-Key: ${token}`,
+    `X-Pact-Api-Key: ${token}`,
     "--timeout",
     String(HTTP_TIMEOUT_MS),
     MCP_SERVER_NAME,
@@ -1221,7 +1221,7 @@ async function installCopilotOrb({ baseUrl, token, orbBin, vmName, vmUser, copil
     vm: vmName,
     vmUser,
     url,
-    mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
   };
 }
 
@@ -1238,7 +1238,7 @@ async function installCopilotRemote({ baseUrl, token, context, copilotBin }) {
     "--transport",
     "http",
     "--header",
-    `X-AgentStudio-Api-Key: ${token}`,
+    `X-Pact-Api-Key: ${token}`,
     "--timeout",
     String(HTTP_TIMEOUT_MS),
     MCP_SERVER_NAME,
@@ -1249,7 +1249,7 @@ async function installCopilotRemote({ baseUrl, token, context, copilotBin }) {
     installMode: `copilot-${context.kind}-mcp-cli`,
     remote: remoteContextLabel(context),
     url,
-    mcpGetHasAgentStudio: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
   };
 }
 
@@ -1261,7 +1261,7 @@ async function installAntigravity({ baseUrl, token, configPath }) {
     [MCP_SERVER_NAME]: {
       serverUrl: `${baseUrl}/mcp`,
       headers: {
-        "X-AgentStudio-Api-Key": token
+        "X-Pact-Api-Key": token
       },
       disabled: false
     }
@@ -1287,7 +1287,7 @@ async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, opencla
     type: "http",
     url,
     headers: {
-      "X-AgentStudio-Api-Key": token
+      "X-Pact-Api-Key": token
     },
     timeout: HTTP_TIMEOUT_MS,
     enabled: true
@@ -1305,7 +1305,7 @@ async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, opencla
     vm: vmName,
     vmUser,
     url,
-    mcpShowHasAgentStudio: show.stdout.includes(MCP_SERVER_NAME) || show.stdout.includes(url)
+    mcpShowHasPact: show.stdout.includes(MCP_SERVER_NAME) || show.stdout.includes(url)
   };
 }
 
@@ -1318,7 +1318,7 @@ async function installOpenClawRemote({ baseUrl, token, context, openclawBin }) {
     type: "http",
     url,
     headers: {
-      "X-AgentStudio-Api-Key": token
+      "X-Pact-Api-Key": token
     },
     timeout: HTTP_TIMEOUT_MS,
     enabled: true
@@ -1329,7 +1329,7 @@ async function installOpenClawRemote({ baseUrl, token, context, openclawBin }) {
     installMode: `openclaw-${context.kind}-mcp-cli`,
     remote: remoteContextLabel(context),
     url,
-    mcpShowHasAgentStudio: show.stdout.includes(MCP_SERVER_NAME) || show.stdout.includes(url)
+    mcpShowHasPact: show.stdout.includes(MCP_SERVER_NAME) || show.stdout.includes(url)
   };
 }
 
@@ -1338,18 +1338,18 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
   const script = [
     "set -e",
     "IFS= read -r token",
-    "export MCP_AGENTSTUDIO_API_KEY=\"$token\"",
+    "export MCP_PACT_API_KEY=\"$token\"",
     "if [ -d \"$HOME/.hermes/hermes-agent\" ]; then",
     "  cd \"$HOME/.hermes/hermes-agent\"",
     "  if [ -f venv/bin/activate ]; then . venv/bin/activate; fi",
     "  python - <<'PY'",
     "import os",
     "from hermes_cli.config import save_env_value",
-    "save_env_value('MCP_AGENTSTUDIO_API_KEY', os.environ['MCP_AGENTSTUDIO_API_KEY'])",
+    "save_env_value('MCP_PACT_API_KEY', os.environ['MCP_PACT_API_KEY'])",
     "PY",
     "fi",
-    "printf 'y\\n' | \"$HERMES_BIN\" mcp remove agentstudio >/dev/null 2>&1 || true",
-    "printf 'y\\ny\\n' | \"$HERMES_BIN\" mcp add agentstudio --url \"$AGENTSTUDIO_URL\" --auth header"
+    "printf 'y\\n' | \"$HERMES_BIN\" mcp remove pact >/dev/null 2>&1 || true",
+    "printf 'y\\ny\\n' | \"$HERMES_BIN\" mcp add pact --url \"$PACT_URL\" --auth header"
   ].join("\n");
   await runWithInput(orbBin, [
     "-m",
@@ -1358,7 +1358,7 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
     vmUser,
     "env",
     `HERMES_BIN=${hermesBin}`,
-    `AGENTSTUDIO_URL=${url}`,
+    `PACT_URL=${url}`,
     "bash",
     "-lc",
     script
@@ -1371,7 +1371,7 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
     "  python - <<'PY'",
     "from hermes_cli.config import load_config, save_config",
     "cfg = load_config()",
-    "server = cfg.setdefault('mcp_servers', {}).setdefault('agentstudio', {})",
+    "server = cfg.setdefault('mcp_servers', {}).setdefault('pact', {})",
     "server['enabled'] = True",
     "save_config(cfg)",
     "PY",
@@ -1386,7 +1386,7 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
     vm: vmName,
     vmUser,
     url,
-    mcpListHasAgentStudio: listOutput.includes(MCP_SERVER_NAME),
+    mcpListHasPact: listOutput.includes(MCP_SERVER_NAME),
     mcpListEnabled: listOutput.includes("enabled")
   };
 }
@@ -1407,35 +1407,35 @@ function buildDeviceHubManifest({
   const scanCommand = `npx ${packageJson.name}@${packageJson.version} scan --json`;
   return {
     version: 1,
-    schemaVersion: "agentstudio.mcp.device-hub.v1",
+    schemaVersion: "pact.mcp.device-hub.v1",
     generatedAt: new Date().toISOString(),
     discovery: {
       strategy: "shared-device-hub",
       localEntry: {
-        type: "agentstudio-mcp-discover-local",
+        type: "pact-mcp-discover-local",
         command: discoverCommand,
         registryFile: discoveryPath
       },
-      preferredHttpDiscoveryUrl: `${baseUrl}/.well-known/agentstudio/mcp.json`,
+      preferredHttpDiscoveryUrl: `${baseUrl}/.well-known/pact/mcp.json`,
       preferredApiDiscoveryUrl: `${baseUrl}/api/mcp/discovery`,
       registryFile: discoveryPath,
       localFiles: [discoveryPath],
       env,
       lookupOrder: [
-        "agentstudio-mcp discover-local",
-        "AGENTSTUDIO_MCP_URL",
-        "AGENTSTUDIO_MCP_DISCOVERY_URL",
-        "AGENTSTUDIO_MCP_DISCOVERY_FILE",
+        "pact-mcp discover-local",
+        "PACT_MCP_URL",
+        "PACT_MCP_DISCOVERY_URL",
+        "PACT_MCP_DISCOVERY_FILE",
         "signed local port scan"
       ]
     },
     servers: {
       [MCP_SERVER_NAME]: {
-        name: "AgentStudio",
+        name: "Pact",
         transport: "streamable-http",
         httpUrl: `${baseUrl}/mcp`,
         vmHttpUrl: `${parsed.protocol}//host.orb.internal:${port}/mcp`,
-        discoveryUrl: `${baseUrl}/.well-known/agentstudio/mcp.json`,
+        discoveryUrl: `${baseUrl}/.well-known/pact/mcp.json`,
         apiDiscoveryUrl: `${baseUrl}/api/mcp/discovery`,
         stableToolName: MCP_STABLE_TOOL_NAME,
         connector: {
@@ -1450,7 +1450,7 @@ function buildDeviceHubManifest({
         },
         auth: {
           type: "auto-local-grant-or-provided-token",
-          acceptedHeaders: ["Authorization: Bearer <token>", "X-AgentStudio-Api-Key"],
+          acceptedHeaders: ["Authorization: Bearer <token>", "X-Pact-Api-Key"],
           tokenEnv: DEFAULT_TOKEN_ENV
         },
         codex: codex || (codexPluginRoot
@@ -1519,7 +1519,7 @@ async function uninstallGeminiOrb({ orbBin, vmName, vmUser, geminiBin }) {
     vm: vmName,
     vmUser,
     removedMcp: remove.ok,
-    mcpListHasAgentStudio: listOutput.includes(MCP_SERVER_NAME)
+    mcpListHasPact: listOutput.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1534,7 +1534,7 @@ async function uninstallGeminiRemote({ context, geminiBin }) {
     uninstallMode: `gemini-${context.kind}-mcp-cli`,
     remote: remoteContextLabel(context),
     removedMcp: remove.ok,
-    mcpListHasAgentStudio: listOutput.includes(MCP_SERVER_NAME)
+    mcpListHasPact: listOutput.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1563,7 +1563,7 @@ async function uninstallKilo({ kiloConfigPath, kiloBin }) {
     configPath: kiloConfigPath,
     backupPath: removed.backupPath,
     removedConfigEntry: removed.removed,
-    mcpListHasAgentStudio: list.stdout.includes(MCP_SERVER_NAME) || list.stderr.includes(MCP_SERVER_NAME)
+    mcpListHasPact: list.stdout.includes(MCP_SERVER_NAME) || list.stderr.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1577,8 +1577,8 @@ function kiloUninstallScript() {
     "const filePath = path.join(os.homedir(), '.config', 'kilo', 'kilo.json');",
     "let config = {};",
     "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { process.exit(0); }",
-    "if (config.mcp && Object.prototype.hasOwnProperty.call(config.mcp, 'agentstudio')) {",
-    "  delete config.mcp.agentstudio;",
+    "if (config.mcp && Object.prototype.hasOwnProperty.call(config.mcp, 'pact')) {",
+    "  delete config.mcp.pact;",
     "  fs.mkdirSync(path.dirname(filePath), { recursive: true });",
     "  fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\\n`);",
     "}",
@@ -1645,7 +1645,7 @@ async function uninstallCopilotOrb({ orbBin, vmName, vmUser, copilotBin }) {
     vm: vmName,
     vmUser,
     removedMcp: remove.ok,
-    mcpGetHasAgentStudio: get.ok && get.stdout.includes(MCP_SERVER_NAME)
+    mcpGetHasPact: get.ok && get.stdout.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1659,7 +1659,7 @@ async function uninstallCopilotRemote({ context, copilotBin }) {
     uninstallMode: `copilot-${context.kind}-mcp-cli`,
     remote: remoteContextLabel(context),
     removedMcp: remove.ok,
-    mcpGetHasAgentStudio: get.ok && get.stdout.includes(MCP_SERVER_NAME)
+    mcpGetHasPact: get.ok && get.stdout.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1692,7 +1692,7 @@ async function uninstallOpenClaw({ orbBin, vmName, vmUser, openclawBin }) {
     vm: vmName,
     vmUser,
     removedMcp: remove.ok,
-    mcpShowHasAgentStudio: show.ok && show.stdout.includes(MCP_SERVER_NAME)
+    mcpShowHasPact: show.ok && show.stdout.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1706,21 +1706,21 @@ async function uninstallOpenClawRemote({ context, openclawBin }) {
     uninstallMode: `openclaw-${context.kind}-mcp-cli`,
     remote: remoteContextLabel(context),
     removedMcp: remove.ok,
-    mcpShowHasAgentStudio: show.ok && show.stdout.includes(MCP_SERVER_NAME)
+    mcpShowHasPact: show.ok && show.stdout.includes(MCP_SERVER_NAME)
   };
 }
 
 async function uninstallHermes({ orbBin, vmName, vmUser, hermesBin }) {
   const script = [
     "set -e",
-    "printf 'y\\n' | \"$HERMES_BIN\" mcp remove agentstudio >/dev/null 2>&1 || true",
+    "printf 'y\\n' | \"$HERMES_BIN\" mcp remove pact >/dev/null 2>&1 || true",
     "if [ -d \"$HOME/.hermes/hermes-agent\" ]; then",
     "  cd \"$HOME/.hermes/hermes-agent\"",
     "  if [ -f venv/bin/activate ]; then . venv/bin/activate; fi",
     "  python - <<'PY'",
     "from hermes_cli.config import load_config, save_config",
     "cfg = load_config()",
-    "cfg.get('mcp_servers', {}).pop('agentstudio', None)",
+    "cfg.get('mcp_servers', {}).pop('pact', None)",
     "save_config(cfg)",
     "PY",
     "fi"
@@ -1743,7 +1743,7 @@ async function uninstallHermes({ orbBin, vmName, vmUser, hermesBin }) {
     vm: vmName,
     vmUser,
     removedMcp: remove.ok,
-    mcpListHasAgentStudio: listOutput.includes(MCP_SERVER_NAME)
+    mcpListHasPact: listOutput.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -1887,12 +1887,12 @@ async function resetServerConfig({ options, publishEnv = true }) {
   const existingManifest = await readJson(discoveryPath, {});
   const resetManifest = {
     version: 1,
-    schemaVersion: "agentstudio.mcp.device-hub.v1",
+    schemaVersion: "pact.mcp.device-hub.v1",
     generatedAt: new Date().toISOString(),
     discovery: {
       strategy: "shared-device-hub",
       localEntry: {
-        type: "agentstudio-mcp-discover-local",
+        type: "pact-mcp-discover-local",
         command: `npx ${packageJson.name}@${packageJson.version} discover-local`,
         registryFile: discoveryPath
       },
@@ -1900,7 +1900,7 @@ async function resetServerConfig({ options, publishEnv = true }) {
       localFiles: [discoveryPath],
       env: {},
       lookupOrder: [
-        "agentstudio-mcp discover-local",
+        "pact-mcp discover-local",
         "signed local port scan"
       ]
     },
@@ -1914,9 +1914,9 @@ async function resetServerConfig({ options, publishEnv = true }) {
   };
   await writeJson(discoveryPath, resetManifest);
   if (publishEnv && process.platform === "darwin") {
-    await run("launchctl", ["unsetenv", AGENTSTUDIO_MCP_URL_ENV], { allowFailure: true });
-    await run("launchctl", ["unsetenv", AGENTSTUDIO_MCP_DISCOVERY_URL_ENV], { allowFailure: true });
-    await run("launchctl", ["unsetenv", AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV], { allowFailure: true });
+    await run("launchctl", ["unsetenv", PACT_MCP_URL_ENV], { allowFailure: true });
+    await run("launchctl", ["unsetenv", PACT_MCP_DISCOVERY_URL_ENV], { allowFailure: true });
+    await run("launchctl", ["unsetenv", PACT_MCP_DISCOVERY_FILE_ENV], { allowFailure: true });
   }
   return {
     ok: true,
@@ -1945,9 +1945,9 @@ async function serverConfigCommand(options) {
     if (!url) {
       throw new Error("server-config --set requires --url.");
     }
-    const discovered = await discoverAgentStudioHub({ ...options, url });
+    const discovered = await discoverPactHub({ ...options, url });
     if (!discovered.ok) {
-      throw new Error(`Failed to verify AgentStudio MCP server at ${url}: ${discovered.reason}`);
+      throw new Error(`Failed to verify Pact MCP server at ${url}: ${discovered.reason}`);
     }
     return writeServerConfigProfile({
       options,
@@ -1961,11 +1961,11 @@ async function serverConfigCommand(options) {
     const manifest = await readJson(discoveryPath, {});
     const profile = manifest?.serverConfig?.profiles?.[name];
     if (!profile?.baseUrl) {
-      throw new Error(`No AgentStudio MCP server profile named ${name}.`);
+      throw new Error(`No Pact MCP server profile named ${name}.`);
     }
-    const discovered = await discoverAgentStudioHub({ ...options, url: profile.baseUrl });
+    const discovered = await discoverPactHub({ ...options, url: profile.baseUrl });
     if (!discovered.ok) {
-      throw new Error(`Failed to verify AgentStudio MCP server profile ${name}: ${discovered.reason}`);
+      throw new Error(`Failed to verify Pact MCP server profile ${name}: ${discovered.reason}`);
     }
     return writeServerConfigProfile({
       options,
@@ -1977,7 +1977,7 @@ async function serverConfigCommand(options) {
   if (options.refresh) {
     const manifest = await readJson(discoveryPath, {});
     const activeName = manifest?.serverConfig?.activeName || "default";
-    const discovered = await discoverAgentStudioHub(options);
+    const discovered = await discoverPactHub(options);
     if (!discovered.ok) {
       throw new Error(discovered.reason);
     }
@@ -2996,8 +2996,8 @@ function installerOptions(options) {
     remoteBin: String(option(options, "remote-bin", "")),
     orbVm: String(option(options, "orb-vm", sharedVmName)),
     orbUser: String(option(options, "orb-user", sharedVmUser)),
-    marketplaceRoot: path.resolve(String(option(options, "marketplace-root", path.join(os.homedir(), ".agentstudio", "codex-plugin-marketplace")))),
-    geminiExtensionRoot: path.resolve(String(option(options, "gemini-extension-root", path.join(os.homedir(), ".agentstudio", "gemini-extensions", PLUGIN_NAME)))),
+    marketplaceRoot: path.resolve(String(option(options, "marketplace-root", path.join(os.homedir(), ".pact", "codex-plugin-marketplace")))),
+    geminiExtensionRoot: path.resolve(String(option(options, "gemini-extension-root", path.join(os.homedir(), ".pact", "gemini-extensions", PLUGIN_NAME)))),
     kiloConfigPath: path.resolve(String(option(options, "kilo-config", path.join(os.homedir(), ".config", "kilo", "kilo.json")))),
     antigravityConfigPath: path.resolve(String(option(options, "antigravity-config", path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json")))),
     openclawVm: String(option(options, "openclaw-vm", sharedVmName)),
@@ -3040,7 +3040,7 @@ function selectionGlyph(selected) {
 
 function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = "", mode = "install" }) {
   const action = mode === "uninstall" ? "uninstall" : "install";
-  const title = mode === "uninstall" ? "AgentStudio MCP uninstall" : "AgentStudio MCP install";
+  const title = mode === "uninstall" ? "Pact MCP uninstall" : "Pact MCP install";
   const mcpLine = baseUrl ? `MCP: ${baseUrl}/mcp` : "MCP: no server URL required for local client removal";
   const rows = [
     "\x1b[2J\x1b[H",
@@ -3154,7 +3154,7 @@ async function chooseUninstallCandidates({ candidates, baseUrl }) {
     index = 0;
   }
   const selectedIds = new Set();
-  let message = "Space selects one or more clients. Enter removes AgentStudio MCP from selected clients.";
+  let message = "Space selects one or more clients. Enter removes Pact MCP from selected clients.";
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
@@ -3289,7 +3289,7 @@ async function resolveInteractiveToken(options) {
     return token;
   }
   const tokenEnv = String(option(options, "token-env", DEFAULT_TOKEN_ENV));
-  const entered = await promptLine(`AgentStudio MCP token (${tokenEnv}): `, { hidden: true });
+  const entered = await promptLine(`Pact MCP token (${tokenEnv}): `, { hidden: true });
   if (!entered) {
     throw new Error(`Missing token. Provide --token-stdin, --token, or ${tokenEnv}.`);
   }
@@ -3307,13 +3307,13 @@ async function requestLocalMcpGrant(options, { targets = [] } = {}) {
     },
     body: JSON.stringify({
       targets: targetList,
-      label: `AgentStudio MCP ${targetList.length ? targetList.map(targetLabel).join(", ") : "local agent"}`,
+      label: `Pact MCP ${targetList.length ? targetList.map(targetLabel).join(", ") : "local agent"}`,
       connectorVersion: packageJson.version
     })
   });
   if (!response.ok || !response.payload?.token) {
     const reason = response.payload?.error?.message || response.payload?.error || `HTTP ${response.status}`;
-    throw new Error(`Failed to request local AgentStudio MCP token: ${reason}`);
+    throw new Error(`Failed to request local Pact MCP token: ${reason}`);
   }
   return {
     token: String(response.payload.token || "").trim(),
@@ -3342,37 +3342,37 @@ async function resolveInstallToken(options, { targets = [] } = {}) {
 }
 
 async function resolveHubForInstall(options) {
-  const discovered = await discoverAgentStudioHub(options);
+  const discovered = await discoverPactHub(options);
   if (discovered.ok) {
     return {
       ...options,
       "resolved-url": discovered.baseUrl,
-      __agentstudioDiscovery: discovered
+      __pactDiscovery: discovered
     };
   }
   if (!canUseInstallTui(options)) {
-    throw new Error(`${discovered.reason} Run agentstudio-mcp server-config --set --url <agentstudio-url>, or rerun install in a TTY and choose manual configuration.`);
+    throw new Error(`${discovered.reason} Run pact-mcp server-config --set --url <pact-url>, or rerun install in a TTY and choose manual configuration.`);
   }
-  console.log("No signed AgentStudio MCP service was discovered on this device.");
+  console.log("No signed Pact MCP service was discovered on this device.");
   console.log("The installer will not write any agent client config until a server identity signature is verified.");
   console.log("");
   const answer = await promptLine("Choose: [c]onfigure server URL now, [s]kip, manually configure later [s]: ");
   if (!answer || answer.toLowerCase().startsWith("s")) {
     return {
       ...options,
-      __agentstudioSkippedDiscovery: {
+      __pactSkippedDiscovery: {
         ok: false,
         skipped: true,
         attempts: discovered.attempts,
-        reason: "Skipped. Manually configure later with agentstudio-mcp server-config --set --url <agentstudio-url>."
+        reason: "Skipped. Manually configure later with pact-mcp server-config --set --url <pact-url>."
       }
     };
   }
   if (!answer.toLowerCase().startsWith("c")) {
     return resolveHubForInstall(options);
   }
-  const url = await promptLine("AgentStudio server URL: ");
-  const manual = await discoverAgentStudioHub({ ...options, url });
+  const url = await promptLine("Pact server URL: ");
+  const manual = await discoverPactHub({ ...options, url });
   if (!manual.ok) {
     throw new Error(`Failed to verify ${url}: ${manual.reason}`);
   }
@@ -3385,7 +3385,7 @@ async function resolveHubForInstall(options) {
   return {
     ...options,
     "resolved-url": manual.baseUrl,
-    __agentstudioDiscovery: manual
+    __pactDiscovery: manual
   };
 }
 
@@ -3657,13 +3657,13 @@ async function installSelectedCandidates({ options, selected, tokenInfo }) {
 
 async function installCommand(options) {
   const resolvedOptions = await resolveHubForInstall(options);
-  if (resolvedOptions.__agentstudioSkippedDiscovery) {
+  if (resolvedOptions.__pactSkippedDiscovery) {
     return {
       ok: false,
       skipped: true,
       packageName: packageJson.name,
       packageVersion: packageJson.version,
-      ...resolvedOptions.__agentstudioSkippedDiscovery
+      ...resolvedOptions.__pactSkippedDiscovery
     };
   }
   if (canUseInstallTui(options)) {
@@ -3892,7 +3892,7 @@ async function registerCommand(options) {
   const profile = await writeServerConfigProfile({
     options: resolvedOptions,
     name: String(option(resolvedOptions, "name", "default")).trim() || "default",
-    discovered: resolvedOptions.__agentstudioDiscovery,
+    discovered: resolvedOptions.__pactDiscovery,
     publishEnv: !resolvedOptions["no-env"]
   });
   const discoveryManifest = profile.path;
@@ -3907,15 +3907,15 @@ async function registerCommand(options) {
     mcpUrl: `${settings.baseUrl}/mcp`,
     discoveryManifest,
     localEntry: {
-      command: "agentstudio-mcp discover-local",
+      command: "pact-mcp discover-local",
       registryFile: discoveryManifest
     },
     localFiles,
     env,
-    clientInstall: `agentstudio-mcp install --target <client>`,
-    verifiedHandshake: resolvedOptions.__agentstudioDiscovery?.handshake?.payload?.identity?.keyId || "",
+    clientInstall: `pact-mcp install --target <client>`,
+    verifiedHandshake: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,
-    note: "Discovered and registered the signed AgentStudio MCP endpoint without installing it into any client."
+    note: "Discovered and registered the signed Pact MCP endpoint without installing it into any client."
   };
 }
 
@@ -3954,7 +3954,7 @@ async function fetchDiscoveryUrl(url) {
 }
 
 async function discoverLocalCommand(options) {
-  const discovered = await discoverAgentStudioHub(options);
+  const discovered = await discoverPactHub(options);
   if (!discovered.ok) {
     return {
       ok: false,
@@ -3982,7 +3982,7 @@ async function discoverLocalCommand(options) {
 async function doctorCommand(options) {
   const resolvedOptions = await optionsWithDiscoveredBaseUrl(options);
   const settings = installerOptions(resolvedOptions);
-  const discovered = resolvedOptions.__agentstudioDiscovery || null;
+  const discovered = resolvedOptions.__pactDiscovery || null;
   const token = await resolveToken(resolvedOptions, { required: false });
   const discovery = await fetchJson(`${settings.baseUrl}/api/mcp/discovery`);
   const initialize = await ensureService(settings.baseUrl);
@@ -3997,7 +3997,7 @@ async function doctorCommand(options) {
       ok: discovery.ok,
       status: discovery.status,
       installerPackage: discovery.payload?.installer?.packageName || "",
-      httpUrl: discovery.payload?.mcpServers?.agentstudio?.httpUrl || ""
+      httpUrl: discovery.payload?.mcpServers?.pact?.httpUrl || ""
     },
     initialize: {
       ok: true,
@@ -4011,13 +4011,13 @@ async function doctorCommand(options) {
       skipped: true,
       toolCount: 0,
       stableToolOnly: false,
-      reason: "Set AGENTSTUDIO_MCP_TOKEN, pass --token, or use --token-stdin to verify tools/list."
+      reason: "Set PACT_MCP_TOKEN, pass --token, or use --token-stdin to verify tools/list."
     },
     systemHealth: {
       ok: false,
       skipped: true,
       healthy: false,
-      reason: "Set AGENTSTUDIO_MCP_TOKEN, pass --token, or use --token-stdin to verify tools/call system.health."
+      reason: "Set PACT_MCP_TOKEN, pass --token, or use --token-stdin to verify tools/call system.health."
     },
     deviceManifest: {
       ok: false,
@@ -4074,13 +4074,13 @@ async function discoverCommand(options) {
   const baseUrl = installerOptions(resolvedOptions).baseUrl;
   const discovery = await fetchJson(`${baseUrl}/api/mcp/discovery`);
   if (!discovery.ok) {
-    throw new Error(`AgentStudio MCP discovery failed: HTTP ${discovery.status}`);
+    throw new Error(`Pact MCP discovery failed: HTTP ${discovery.status}`);
   }
   return {
     ...discovery.payload,
     signedHandshake: {
       ok: true,
-      identityKeyId: resolvedOptions.__agentstudioDiscovery?.handshake?.payload?.identity?.keyId || ""
+      identityKeyId: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || ""
     }
   };
 }
@@ -4111,21 +4111,21 @@ function formatTargetInstallLine(target, item = {}) {
 function formatInstallResult(result) {
   if (result.skipped) {
     return [
-      "AgentStudio MCP install skipped.",
+      "Pact MCP install skipped.",
       "",
       result.reason || "No client configuration was changed.",
-      "Run later: agentstudio-mcp server-config --set --url <agentstudio-url>"
+      "Run later: pact-mcp server-config --set --url <pact-url>"
     ].join("\n");
   }
   if (result.cancelled) {
     return [
-      "AgentStudio MCP install cancelled.",
+      "Pact MCP install cancelled.",
       "",
       result.reason || "No client configuration was changed."
     ].join("\n");
   }
   const lines = [
-    result.ok ? "AgentStudio MCP install completed." : "AgentStudio MCP install completed with errors.",
+    result.ok ? "Pact MCP install completed." : "Pact MCP install completed with errors.",
     "",
     "Server:",
     `  MCP URL: ${result.baseUrl ? `${result.baseUrl}/mcp` : "unknown"}`
@@ -4140,7 +4140,7 @@ function formatInstallResult(result) {
     lines.push(...formatTargetInstallLine(target, installed[target] || {}));
   }
   lines.push("", "Next:");
-  lines.push("  Run: agentstudio-mcp doctor");
+  lines.push("  Run: pact-mcp doctor");
   lines.push("  Restart any selected agent app that was already running.");
   if (!result.ok) {
     lines.push("  Re-run failed clients after fixing the reason above.");
@@ -4150,20 +4150,20 @@ function formatInstallResult(result) {
 
 function formatRegisterResult(result) {
   return [
-    "AgentStudio MCP hub registered.",
+    "Pact MCP hub registered.",
     "",
     `MCP URL: ${result.mcpUrl || (result.baseUrl ? `${result.baseUrl}/mcp` : "unknown")}`,
     `Verified handshake: ${result.verifiedHandshake || "yes"}`,
     `Local registry: ${result.discoveryManifest || ""}`,
     "",
     "Next:",
-    "  agentstudio-mcp install"
+    "  pact-mcp install"
   ].join("\n");
 }
 
 function formatUninstallResult(result) {
   const lines = [
-    result.ok ? "AgentStudio MCP uninstall completed." : "AgentStudio MCP uninstall completed with errors.",
+    result.ok ? "Pact MCP uninstall completed." : "Pact MCP uninstall completed with errors.",
     ""
   ];
   for (const target of result.targets || []) {
@@ -4185,7 +4185,7 @@ function formatUninstallResult(result) {
 function formatDoctorResult(result) {
   const checks = result.checks || {};
   const lines = [
-    result.ok ? "AgentStudio MCP doctor passed." : "AgentStudio MCP doctor found issues.",
+    result.ok ? "Pact MCP doctor passed." : "Pact MCP doctor found issues.",
     "",
     `  [${checks.signedDiscovery?.ok ? "OK" : "FAIL"}] Signed discovery${checks.signedDiscovery?.baseUrl ? `: ${checks.signedDiscovery.baseUrl}` : ""}`,
     `  [${checks.discovery?.ok ? "OK" : "FAIL"}] Discovery${checks.discovery?.httpUrl ? `: ${checks.discovery.httpUrl}` : ""}`,
@@ -4208,16 +4208,16 @@ function formatDoctorResult(result) {
 function formatServerConfigResult(result) {
   if (result.reset) {
     return [
-      "AgentStudio MCP server config reset.",
+      "Pact MCP server config reset.",
       "",
       `Local registry: ${result.path || ""}`,
-      "Next install will scan for a signed AgentStudio server again."
+      "Next install will scan for a signed Pact server again."
     ].join("\n");
   }
   if (result.profiles) {
     const names = Object.keys(result.profiles);
     return [
-      "AgentStudio MCP server config.",
+      "Pact MCP server config.",
       "",
       `Active profile: ${result.activeName || "(none)"}`,
       `Profiles: ${names.length ? names.join(", ") : "(none)"}`,
@@ -4225,7 +4225,7 @@ function formatServerConfigResult(result) {
     ].join("\n");
   }
   return [
-    "AgentStudio MCP server config updated.",
+    "Pact MCP server config updated.",
     "",
     `Active profile: ${result.activeName || result.profile?.name || "default"}`,
     `MCP URL: ${result.profile?.mcpUrl || (result.profile?.baseUrl ? `${result.profile.baseUrl}/mcp` : "")}`,
@@ -4287,9 +4287,9 @@ async function main() {
     return;
   }
   if (command === "scan") {
-    const discovered = await discoverAgentStudioHub(options);
+    const discovered = await discoverPactHub(options);
     const scanOptions = discovered.ok
-      ? { ...options, "resolved-url": discovered.baseUrl, __agentstudioDiscovery: discovered }
+      ? { ...options, "resolved-url": discovered.baseUrl, __pactDiscovery: discovered }
       : options;
     const scan = await scanInstallTargets(scanOptions);
     emitResult({

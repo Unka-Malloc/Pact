@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const AGENT_EVALUATION_PROTOCOL_VERSION = "agentstudio.agent-evaluation.v1";
+export const AGENT_EVALUATION_PROTOCOL_VERSION = "pact.agent-evaluation.v1";
 
 function nowIso() {
   return new Date().toISOString();

@@ -12,7 +12,7 @@ import {
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-data-connector-governance-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-data-connector-governance-"));
 
 const manifest = {
   providerId: "drive-enterprise",
@@ -206,16 +206,16 @@ try {
 
   const toolCatalog = createToolCatalog({ operations });
   for (const toolId of [
-    "agentstudio.dataConnectors.governance",
-    "agentstudio.dataConnectors.governance.plan",
-    "agentstudio.dataConnectors.governance.conformance"
+    "pact.dataConnectors.governance",
+    "pact.dataConnectors.governance.plan",
+    "pact.dataConnectors.governance.conformance"
   ]) {
     assert.ok(toolCatalog.tools.some((tool) => tool.id === toolId), `missing tool ${toolId}`);
   }
 
   console.log("[data-connector-governance] ok");
 } finally {
-  if (process.env.AGENTSTUDIO_KEEP_TEST_DATA !== "1") {
+  if (process.env.PACT_KEEP_TEST_DATA !== "1") {
     await fs.rm(userDataPath, { recursive: true, force: true });
   } else {
     console.log(`kept test data: ${userDataPath}`);

@@ -418,7 +418,7 @@ type BridgeRequestOptions = SafetyRequestOptions & {
 };
 
 function safetyHeaders(options: SafetyRequestOptions = {}): Record<string, string> {
-  return options.safetyConfirm ? { "x-agentstudio-safety-confirm": "true" } : {};
+  return options.safetyConfirm ? { "x-pact-safety-confirm": "true" } : {};
 }
 
 async function postJson<T>(url: string, payload?: unknown, options: BridgeRequestOptions = {}): Promise<T> {
@@ -426,7 +426,7 @@ async function postJson<T>(url: string, payload?: unknown, options: BridgeReques
     ? {
         "Content-Type": "application/json",
         Accept: "application/json",
-        ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
+        ...(csrfToken ? { "x-pact-csrf": csrfToken } : {}),
         ...safetyHeaders(options)
       }
     : { Accept: "application/json" };
@@ -451,7 +451,7 @@ async function postJson<T>(url: string, payload?: unknown, options: BridgeReques
 async function deleteJson<T>(url: string, options: BridgeRequestOptions = {}): Promise<T> {
   const headers: HeadersInit = {
     Accept: "application/json",
-    ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
+    ...(csrfToken ? { "x-pact-csrf": csrfToken } : {}),
     ...safetyHeaders(options)
   };
   const response = await fetch(url, {
@@ -474,7 +474,7 @@ async function deleteJson<T>(url: string, options: BridgeRequestOptions = {}): P
 async function getJson<T>(url: string, options: BridgeRequestOptions = {}): Promise<T> {
   const headers: HeadersInit = {
     Accept: "application/json",
-    ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
+    ...(csrfToken ? { "x-pact-csrf": csrfToken } : {}),
   };
   const response = await fetch(url, {
     method: "GET",
@@ -498,7 +498,7 @@ async function putBinaryJson<T>(url: string, payload: Blob | ArrayBuffer): Promi
     method: "PUT",
     headers: {
       Accept: "application/json",
-      ...(csrfToken ? { "x-agentstudio-csrf": csrfToken } : {}),
+      ...(csrfToken ? { "x-pact-csrf": csrfToken } : {}),
     },
     body: payload,
     credentials: "same-origin"

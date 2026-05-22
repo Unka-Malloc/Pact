@@ -74,8 +74,8 @@ const args = parseArgs(process.argv.slice(2));
 const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
-      process.env.AGENTSTUDIO_SERVER_DATA_DIR ||
-      path.join(projectRoot, ".agentstudio-server-data")
+      process.env.PACT_SERVER_DATA_DIR ||
+      path.join(projectRoot, ".pact-server-data")
   )
 );
 const roles = normalizeBackgroundRoleList(args.roles || args.role);
@@ -85,7 +85,7 @@ const logger = createRuntimeLogger({
   userDataPath,
   runtimeOptions: {
     cwd: projectRoot,
-    logDir: args["log-dir"] || process.env.AGENTSTUDIO_LOG_DIR || ""
+    logDir: args["log-dir"] || process.env.PACT_LOG_DIR || ""
   },
   component: "background-supervisor"
 });
@@ -150,8 +150,8 @@ function spawnRole(role) {
     cwd: projectRoot,
     env: {
       ...process.env,
-      AGENTSTUDIO_BACKGROUND_WORKER_ROLE: role,
-      AGENTSTUDIO_IMPORT_WORKER_EXTERNAL: role === "import-worker" ? "0" : process.env.AGENTSTUDIO_IMPORT_WORKER_EXTERNAL || ""
+      PACT_BACKGROUND_WORKER_ROLE: role,
+      PACT_IMPORT_WORKER_EXTERNAL: role === "import-worker" ? "0" : process.env.PACT_IMPORT_WORKER_EXTERNAL || ""
     },
     stdio: ["ignore", "ignore", "ignore", "ipc"]
   });

@@ -319,7 +319,7 @@ function buildWordCloudAgentPrompt({ terms, prompt }) {
   const supervisorPrompt = String(prompt || "").trim();
   const wordBagHint = normalizePromptHint(supervisorPrompt);
   const lines = [
-    "你是 AgentStudio 词云分组智能体。你只能根据输入的语料词频进行分组，不要编造新词。",
+    "你是 Pact 词云分组智能体。你只能根据输入的语料词频进行分组，不要编造新词。",
     "任务：根据用户意图自动判断需要多少个分类卡片，把词语归集到可嵌套的词云树。",
     "一个词可以属于多个顶层卡片；同一卡片内部如果词语被放进子分组，就不要再留在父卡片 terms 中。",
     "无法归类的高置信词先放进 label 为 Default 的顶层卡片。",
@@ -3401,7 +3401,7 @@ export function createSystemController({
 <html lang="zh-CN" translate="no" class="notranslate">
   <head><meta charset="utf-8"><meta name="google" content="notranslate"><title>Codex OAuth 验证</title></head>
   <body translate="no" class="notranslate">
-    <p>Codex OAuth 验证已返回。可以关闭此页，AgentStudio 控制台会自动刷新状态。</p>
+    <p>Codex OAuth 验证已返回。可以关闭此页，Pact 控制台会自动刷新状态。</p>
     <script>setTimeout(() => window.close(), 800);</script>
   </body>
 </html>`);
@@ -4177,7 +4177,7 @@ export function createSystemController({
           "Content-Type": result.contentType,
           "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
           "Cache-Control": "no-store",
-          "X-AgentStudio-Knowledge-Export": "docx"
+          "X-Pact-Knowledge-Export": "docx"
         });
         response.end(result.buffer);
         return;
@@ -4199,7 +4199,7 @@ export function createSystemController({
           "Content-Type": result.contentType,
           "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
           "Cache-Control": "no-store",
-          "X-AgentStudio-Knowledge-Export": "markdown"
+          "X-Pact-Knowledge-Export": "markdown"
         });
         response.end(result.buffer);
         return;
@@ -4221,7 +4221,7 @@ export function createSystemController({
           "Content-Type": result.contentType,
           "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
           "Cache-Control": "no-store",
-          "X-AgentStudio-Knowledge-Export": "html"
+          "X-Pact-Knowledge-Export": "html"
         });
         response.end(result.buffer);
         return;
@@ -4774,7 +4774,7 @@ export function createSystemController({
         "Content-Type": result.contentType,
         "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
         "Cache-Control": "no-store",
-        "X-AgentStudio-Knowledge-Export": "distillation-workbench"
+        "X-Pact-Knowledge-Export": "distillation-workbench"
       });
       response.end(result.buffer);
     },
@@ -4790,7 +4790,7 @@ export function createSystemController({
         "Content-Type": result.contentType,
         "Content-Disposition": `attachment; filename="${contentDispositionFileName(result.fileName)}"`,
         "Cache-Control": "no-store",
-        "X-AgentStudio-Knowledge-Export": "distillation-workbench-package"
+        "X-Pact-Knowledge-Export": "distillation-workbench-package"
       });
       response.end(result.buffer);
     },

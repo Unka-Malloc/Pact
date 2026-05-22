@@ -1,4 +1,4 @@
-# AgentStudio Tests
+# Pact Tests
 
 This directory stores repository-level test assets.
 

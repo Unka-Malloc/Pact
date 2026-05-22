@@ -1,12 +1,12 @@
-# Contributing to AgentStudio 🤝
+# Contributing to Pact 🤝
 
-# 参与贡献 AgentStudio
+# 参与贡献 Pact
 
 English | [简体中文](README.zh-CN.md)
 
-Thank you for your interest in contributing to **AgentStudio** — a controllable agent collaboration platform (可控的智能体协作空间). We welcome contributions from the community and are grateful for every pull request, bug report, and idea.
+Thank you for your interest in contributing to **Pact** — a controllable agent collaboration platform (可控的智能体协作空间). We welcome contributions from the community and are grateful for every pull request, bug report, and idea.
 
-> *"In AgentStudio, agents are not trusted. We only trust verifiable asset states and a replayable operation ledger."*
+> *"In Pact, agents are not trusted. We only trust verifiable asset states and a replayable operation ledger."*
 
 ---
 
@@ -54,7 +54,7 @@ When filing a bug, please include:
 4. **Actual behavior** — What actually happened
 5. **Logs / Screenshots** — Server logs, console output, or screenshots if relevant
 
-👉 [**Open a Bug Report**](https://github.com/Unka-Malloc/AgentStudio/issues/new?labels=bug)
+👉 [**Open a Bug Report**](https://github.com/Unka-Malloc/Pact/issues/new?labels=bug)
 
 ### Feature Requests / 功能请求
 
@@ -65,7 +65,7 @@ For feature requests, describe:
 3. **Alternatives** you've considered
 4. **Context** — Which component(s) would be affected (`server`, `server-web`, `client-cli`, `client-gui`, `modules`)
 
-👉 [**Open a Feature Request**](https://github.com/Unka-Malloc/AgentStudio/issues/new?labels=enhancement)
+👉 [**Open a Feature Request**](https://github.com/Unka-Malloc/Pact/issues/new?labels=enhancement)
 
 > **Note**: For security vulnerabilities, please **do not** open a public issue. See [SECURITY.md](SECURITY.md) instead.
 
@@ -84,8 +84,8 @@ For feature requests, describe:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Unka-Malloc/AgentStudio.git
-cd AgentStudio
+git clone https://github.com/Unka-Malloc/Pact.git
+cd Pact
 
 # 2. Install server dependencies
 npm install
@@ -167,7 +167,7 @@ In summary:
 
 ## Core Design Documents / 核心设计文档
 
-AgentStudio maintains **5 core design documents** that define the project's architecture and philosophy. These are the canonical sources of truth:
+Pact maintains **5 core design documents** that define the project's architecture and philosophy. These are the canonical sources of truth:
 
 | # | Document | Purpose |
 |---|----------|---------|
@@ -232,7 +232,7 @@ refactor(modules): extract knowledge slicing into standalone pipeline
 
 ## License / 许可证
 
-By contributing to AgentStudio, you agree that your contributions will be licensed under the **[GPL-3.0-only](LICENSE)** license.
+By contributing to Pact, you agree that your contributions will be licensed under the **[GPL-3.0-only](LICENSE)** license.
 
 This means all contributed code must be compatible with GPL-3.0-only. If your contribution includes third-party code, please ensure its license is GPL-3.0 compatible and clearly attribute it.
 
@@ -240,6 +240,6 @@ This means all contributed code must be compatible with GPL-3.0-only. If your co
 
 ---
 
-Thank you for helping make AgentStudio better! 🚀
+Thank you for helping make Pact better! 🚀
 
 感谢您的贡献！

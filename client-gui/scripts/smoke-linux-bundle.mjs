@@ -107,8 +107,8 @@ async function main() {
 
   const bundleDir = findLinuxBundle();
   const flutterBinary = path.join(bundleDir, "flutter_client");
-  const cli = path.join(bundleDir, "agentstudio-client");
-  const daemon = path.join(bundleDir, "agentstudio-clientd");
+  const cli = path.join(bundleDir, "pact-client");
+  const daemon = path.join(bundleDir, "pact-clientd");
   const packagingManifest = path.join(bundleDir, "portable-data", "backend", "packaging-modules.json");
   for (const file of [flutterBinary, cli, daemon]) {
     if (!existsSync(file)) {
@@ -133,14 +133,14 @@ async function main() {
       throw new Error(`Linux bundle manifest must not include macOS-only module: ${moduleId}`);
     }
   }
-  const macOSMailTool = path.join(bundleDir, "agentstudio-macos-mail-tool");
+  const macOSMailTool = path.join(bundleDir, "pact-macos-mail-tool");
   if (existsSync(macOSMailTool)) {
     throw new Error(`Linux bundle must not include macOS Mail sidecar: ${macOSMailTool}`);
   }
 
-  const dataDir = path.join(os.tmpdir(), `agentstudio-ubuntu-smoke-${process.pid}-${Date.now()}`);
+  const dataDir = path.join(os.tmpdir(), `pact-ubuntu-smoke-${process.pid}-${Date.now()}`);
   mkdirSync(dataDir, { recursive: true });
-  const env = { ...process.env, AGENTSTUDIO_PORTABLE_DIR: dataDir };
+  const env = { ...process.env, PACT_PORTABLE_DIR: dataDir };
   try {
     writeMailWorkspace(dataDir);
     const rebuild = runJson(cli, ["index", "rebuild"], env);

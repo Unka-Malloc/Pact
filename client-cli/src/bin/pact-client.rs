@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde_json::{Value, json};
-use agentstudio_client_native::backend_core::{Backend, load_rpc_endpoint_from_portable_data};
+use pact_client_native::backend_core::{Backend, load_rpc_endpoint_from_portable_data};
 use std::env;
 use std::path::Path;
 
@@ -14,7 +14,7 @@ fn main() -> Result<()> {
 
     match args.as_slice() {
         [scope, action] if scope == "daemon" && action == "start" => {
-            agentstudio_client_native::backend_core::run_daemon_forever()
+            pact_client_native::backend_core::run_daemon_forever()
         }
         [scope, action] if scope == "daemon" && action == "status" => {
             let backend = Backend::from_portable_data_dir()?;
@@ -538,48 +538,48 @@ fn parse_json_arg(value: &str) -> Value {
 fn print_usage() {
     eprintln!(
         "Usage:
-  agentstudio-client daemon start|status|stop
-  agentstudio-client config get|set <json>|patch <json>
-  agentstudio-client logs tail|clear
-  agentstudio-client files collect <path>
-  agentstudio-client files open <path>
-  agentstudio-client server api <GET|POST|PUT|DELETE> <path> [json-body] [service-base-url]
-  agentstudio-client server <agentstudio-server-cli-args...>
-  agentstudio-client vocabulary pull|apply
-  agentstudio-client index rebuild
-  agentstudio-client mail auth
-  agentstudio-client mail import start|status|pause|resume|cancel
-  agentstudio-client mail stats
-  agentstudio-client mail search <query>
-  agentstudio-client mail open --doc-id <id>
-  agentstudio-client mail open --message-key <key>
-  agentstudio-client upload enqueue <json>
-  agentstudio-client upload list|get <task-id>|run [task-id]
-  agentstudio-client upload pause|resume|cancel|retry <task-id>
-  agentstudio-client upload clear-completed
-  agentstudio-client events sync [--service-url URL] [--topic TOPIC] [--cursor N]
-  agentstudio-client knowledge status
-  agentstudio-client knowledge sync [--push-outbox]
-  agentstudio-client knowledge search <query>
-  agentstudio-client connectors list
-  agentstudio-client connectors install <provider-id-or-manifest-json-or-package-path>
-  agentstudio-client connectors enable|disable|uninstall <provider-id>
-  agentstudio-client connectors auth start|status|revoke <provider-id> [json]
-  agentstudio-client connectors sync <provider-id> [json]
-  agentstudio-client connectors health [provider-id]
-  agentstudio-client connectors query-local <query>
-  agentstudio-client knowledge document get|open <document-id>
-  agentstudio-client knowledge export [document-id]
-  agentstudio-client knowledge agent-context <query>
-  agentstudio-client knowledge agent-answer [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <query>
-  agentstudio-client agent invoke [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <question>
-  agentstudio-client agents sync [--service-url URL]
-  agentstudio-client agents list
-  agentstudio-client context compaction run|preview <json-or-question>
-  agentstudio-client context compaction records
-  agentstudio-client context session-memory get|clear [json-or-session-id]
-  agentstudio-client rpc <method> [json-params]
-  agentstudio-client task cancel <task-id>"
+  pact-client daemon start|status|stop
+  pact-client config get|set <json>|patch <json>
+  pact-client logs tail|clear
+  pact-client files collect <path>
+  pact-client files open <path>
+  pact-client server api <GET|POST|PUT|DELETE> <path> [json-body] [service-base-url]
+  pact-client server <pact-server-cli-args...>
+  pact-client vocabulary pull|apply
+  pact-client index rebuild
+  pact-client mail auth
+  pact-client mail import start|status|pause|resume|cancel
+  pact-client mail stats
+  pact-client mail search <query>
+  pact-client mail open --doc-id <id>
+  pact-client mail open --message-key <key>
+  pact-client upload enqueue <json>
+  pact-client upload list|get <task-id>|run [task-id]
+  pact-client upload pause|resume|cancel|retry <task-id>
+  pact-client upload clear-completed
+  pact-client events sync [--service-url URL] [--topic TOPIC] [--cursor N]
+  pact-client knowledge status
+  pact-client knowledge sync [--push-outbox]
+  pact-client knowledge search <query>
+  pact-client connectors list
+  pact-client connectors install <provider-id-or-manifest-json-or-package-path>
+  pact-client connectors enable|disable|uninstall <provider-id>
+  pact-client connectors auth start|status|revoke <provider-id> [json]
+  pact-client connectors sync <provider-id> [json]
+  pact-client connectors health [provider-id]
+  pact-client connectors query-local <query>
+  pact-client knowledge document get|open <document-id>
+  pact-client knowledge export [document-id]
+  pact-client knowledge agent-context <query>
+  pact-client knowledge agent-answer [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <query>
+  pact-client agent invoke [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <question>
+  pact-client agents sync [--service-url URL]
+  pact-client agents list
+  pact-client context compaction run|preview <json-or-question>
+  pact-client context compaction records
+  pact-client context session-memory get|clear [json-or-session-id]
+  pact-client rpc <method> [json-params]
+  pact-client task cancel <task-id>"
     );
 }
 

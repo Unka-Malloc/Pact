@@ -15,7 +15,7 @@ async function fetchJson(url, options = {}) {
   return JSON.parse(rawText);
 }
 
-const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-server-smoke-"));
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-server-smoke-"));
 let server = null;
 
 try {

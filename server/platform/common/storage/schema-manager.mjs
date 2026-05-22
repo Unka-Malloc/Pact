@@ -44,7 +44,7 @@ function getDatabaseDirectory(userDataPath) {
 }
 
 export function getMetadataDatabasePath(userDataPath) {
-  return path.join(getDatabaseDirectory(userDataPath), "agentstudio.sqlite");
+  return path.join(getDatabaseDirectory(userDataPath), "pact.sqlite");
 }
 
 export function initializeMetadataSchema(db) {

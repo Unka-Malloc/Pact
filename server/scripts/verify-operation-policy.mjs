@@ -56,16 +56,16 @@ async function main() {
   assert.equal(deniedRepair.ok, false);
   assert.equal(deniedRepair.status, 428);
 
-  const disabledDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-auth-disabled-"));
+  const disabledDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-auth-disabled-"));
   await assert.rejects(
     () => startHttpServer({
       userDataPath: disabledDir,
       runtimeOptions: { profile: "minimal", consoleAuth: "disabled" }
     }),
-    /AGENTSTUDIO_CONSOLE_AUTH=disabled/
+    /PACT_CONSOLE_AUTH=disabled/
   );
 
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-operation-policy-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-operation-policy-"));
   const server = await startHttpServer({
     userDataPath,
     runtimeOptions: { profile: "minimal" }

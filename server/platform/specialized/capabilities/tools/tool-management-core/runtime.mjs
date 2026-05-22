@@ -648,8 +648,8 @@ export function createToolExecutionRuntime({
       };
     }
 
-    const previousAuthorization = request.__agentstudioToolRuntimeAuthorization;
-    request.__agentstudioToolRuntimeAuthorization = {
+    const previousAuthorization = request.__pactToolRuntimeAuthorization;
+    request.__pactToolRuntimeAuthorization = {
       ok: true,
       grant: authorization.grant,
       toolExecutionId,
@@ -900,7 +900,7 @@ export function createToolExecutionRuntime({
         }
       };
     } finally {
-      request.__agentstudioToolRuntimeAuthorization = previousAuthorization;
+      request.__pactToolRuntimeAuthorization = previousAuthorization;
     }
   }
 

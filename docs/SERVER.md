@@ -1,4 +1,4 @@
-# AgentStudio Server
+# Pact Server
 
 `server` 是当前唯一受维护的服务端实现。本文档记录服务端的启动方式、配置文件、接口、存储结构、挂载机制与运维能力。
 
@@ -149,7 +149,7 @@ node server/scripts/start-server.mjs
 
 ## 4. 配置文件
 
-默认数据目录：`.agentstudio-server-data/`
+默认数据目录：`.pact-server-data/`
 
 当前主要配置文件：
 
@@ -184,19 +184,19 @@ node server/scripts/start-server.mjs
 - `vectorStore`
 - `graphStore`
 
-`knowledgeBase` 默认由内置 `KnowledgeCore` 实现，协议版本为 `agentstudio.knowledge.v1`。应用层只调用知识库协议方法，不直接访问 KnowledgeCore 的 SQLite、资产目录、向量实现或 Markdown 渲染逻辑。外部知识库实现可以通过 `mount-modules.json` 替换 `knowledgeBase`，只要保持协议方法兼容。
+`knowledgeBase` 默认由内置 `KnowledgeCore` 实现，协议版本为 `pact.knowledge.v1`。应用层只调用知识库协议方法，不直接访问 KnowledgeCore 的 SQLite、资产目录、向量实现或 Markdown 渲染逻辑。外部知识库实现可以通过 `mount-modules.json` 替换 `knowledgeBase`，只要保持协议方法兼容。
 
 内置外部知识库 mount 位于 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`。它保留 `KnowledgeCore` 作为 canonical evidence / asset / DOCX export 真相源，同时把第二层检索记录镜像到成熟开源后端。当前支持 `qdrant`、`opensearch` 和 `pgvector`：
 
 ```bash
-AGENTSTUDIO_SERVER_KNOWLEDGE_BASE_MODULE=server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs \
-AGENTSTUDIO_EXTERNAL_KB_PROVIDER=qdrant \
-AGENTSTUDIO_EXTERNAL_KB_URL=http://127.0.0.1:6333 \
-AGENTSTUDIO_EXTERNAL_KB_COLLECTION=agentstudio_knowledge \
+PACT_SERVER_KNOWLEDGE_BASE_MODULE=server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs \
+PACT_EXTERNAL_KB_PROVIDER=qdrant \
+PACT_EXTERNAL_KB_URL=http://127.0.0.1:6333 \
+PACT_EXTERNAL_KB_COLLECTION=pact_knowledge \
 npm run server:start
 ```
 
-`AGENTSTUDIO_EXTERNAL_KB_PROVIDER` 可取 `qdrant`、`opensearch` 或 `pgvector`。Qdrant/OpenSearch 使用 `AGENTSTUDIO_EXTERNAL_KB_URL`；pgvector 使用 `AGENTSTUDIO_EXTERNAL_KB_CONNECTION_STRING`，并要求部署环境提供 `pg` Node.js 驱动。
+`PACT_EXTERNAL_KB_PROVIDER` 可取 `qdrant`、`opensearch` 或 `pgvector`。Qdrant/OpenSearch 使用 `PACT_EXTERNAL_KB_URL`；pgvector 使用 `PACT_EXTERNAL_KB_CONNECTION_STRING`，并要求部署环境提供 `pg` Node.js 驱动。
 
 ### 5.2 自定义挂载
 
@@ -233,13 +233,13 @@ npm run server:start
 
 KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 application 层的内嵌数据库：
 
-- `KnowledgeCore` 只通过 `agentstudio.knowledge.v1` 暴露能力。
-- `EmbeddingRuntime` 只通过 `agentstudio.embedding.v1` 生成文本、图片或混合证据 embedding。
-- `VectorStore` 只通过 `agentstudio.vector.v1` 做 upsert/search/delete。
-- `assetStore` 只通过 `agentstudio.assetStore.v1` 管理二进制资产和 URL/path policy。
-- `retrieval` 只通过 `agentstudio.retrieval.v1` 做融合召回、parent expansion、rerank 和 evidence shaping。
+- `KnowledgeCore` 只通过 `pact.knowledge.v1` 暴露能力。
+- `EmbeddingRuntime` 只通过 `pact.embedding.v1` 生成文本、图片或混合证据 embedding。
+- `VectorStore` 只通过 `pact.vector.v1` 做 upsert/search/delete。
+- `assetStore` 只通过 `pact.assetStore.v1` 管理二进制资产和 URL/path policy。
+- `retrieval` 只通过 `pact.retrieval.v1` 做融合召回、parent expansion、rerank 和 evidence shaping。
 
-应用层、HTTP、JSON-RPC 和 CLI 不允许直接读取 `knowledge-core/knowledge.sqlite`，也不允许拼接 `knowledge-core/assets/` 文件路径。它们只能调用注册接口，再由接口分发器调用 `knowledgeBase` mount 方法。外部知识库实现可以是本地模块，也可以在模块内部再转 RPC；但对 AgentStudio 应用层暴露的仍然必须是同一组 `knowledge.*` 方法。
+应用层、HTTP、JSON-RPC 和 CLI 不允许直接读取 `knowledge-core/knowledge.sqlite`，也不允许拼接 `knowledge-core/assets/` 文件路径。它们只能调用注册接口，再由接口分发器调用 `knowledgeBase` mount 方法。外部知识库实现可以是本地模块，也可以在模块内部再转 RPC；但对 Pact 应用层暴露的仍然必须是同一组 `knowledge.*` 方法。
 
 资产 URL 也是协议的一部分：
 
@@ -285,11 +285,11 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 - `POST /api/agent-workspaces/:workspaceId/locks`
 - `GET/POST /api/context/profiles`
 
-同等受限能力通过 Tool Management v1 的 `agentstudio.knowledge.*` 工具暴露给授权智能体。任何事实、实体、关系和分类法变更只允许生成审核项或建议，不允许由总结链路直接覆盖 canonical knowledge。
+同等受限能力通过 Tool Management v1 的 `pact.knowledge.*` 工具暴露给授权智能体。任何事实、实体、关系和分类法变更只允许生成审核项或建议，不允许由总结链路直接覆盖 canonical knowledge。
 
 工作空间上下文热切换接口直接面向运行时：`GET /api/agent-workspaces/:workspaceId/context` 返回解析继承链后的 profile、模型别名、工具授权、知识源、fingerprint 和 `sharingMode=team-shared`；`GET /api/agent-workspaces/:workspaceId/context-bundle?format=compressed` 导出带 `bundleHash` 的 `gzip+base64` 上下文包；`POST /api/agent-workspaces/:workspaceId/context-bundle/restore` 把该包恢复到目标工作空间。恢复会校验可选 `bundleHash`，失败时不改变目标上下文；成功时热切换目标 workspace 的 profile、`modelAlias`、`toolGrantId` 和知识源集合，并写入 `context_bundle_restore` run 与 handoff artifact。
 
-授权智能体使用 Tool Management v1 的同名能力：`agentstudio.agentWorkspace.context`、`agentstudio.agentWorkspace.contextBundle.export`、`agentstudio.agentWorkspace.contextBundle.restore`、`agentstudio.agentWorkspace.profile.hotswap`、`agentstudio.agentWorkspace.sources.set`、`agentstudio.agentWorkspace.share/unshare`。只读 grant 只能读取上下文和导出包；恢复、profile 热切换、继承和共享变更需要 `knowledge:maintain`。
+授权智能体使用 Tool Management v1 的同名能力：`pact.agentWorkspace.context`、`pact.agentWorkspace.contextBundle.export`、`pact.agentWorkspace.contextBundle.restore`、`pact.agentWorkspace.profile.hotswap`、`pact.agentWorkspace.sources.set`、`pact.agentWorkspace.share/unshare`。只读 grant 只能读取上下文和导出包；恢复、profile 热切换、继承和共享变更需要 `knowledge:maintain`。
 
 多智能体总结运行时也把 `workspaceId` 作为运行状态入口。传入已有 workspace 时不会覆盖该 workspace profile；调用方未显式指定模型、上下文 profile、工具授权或检索源时，运行时继承 workspace 的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds`，并把这些值传给上下文组装、AgentGateway 和 KnowledgeCore 检索。若 `ClientRuntimeAllocator` 同时注入默认值，优先级为调用方显式参数、已选 workspace 的 `workspaceContext`、allocator 默认值。响应和 run input 会保留 `workspaceContext`，便于核对长任务实际使用的上下文 generation。
 
@@ -329,7 +329,7 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 - `POST /api/knowledge/evolution/deployments/:deploymentId/promote`
 - `POST /api/knowledge/evolution/deployments/:deploymentId/rollback`
 
-对应工具授权入口位于 `/api/tool-management/v1/execute` 的 `agentstudio.knowledge.*` 工具。评估运行只产出指标和建议，不默认写入真实反馈；进化运行必须使用真实反馈或人工提供 case，避免用系统自己生成的样本直接发布策略。
+对应工具授权入口位于 `/api/tool-management/v1/execute` 的 `pact.knowledge.*` 工具。评估运行只产出指标和建议，不默认写入真实反馈；进化运行必须使用真实反馈或人工提供 case，避免用系统自己生成的样本直接发布策略。
 
 发布策略：
 
@@ -539,7 +539,7 @@ checkpoint 贯穿客户端与服务端：
 
 ### 10.4 SQLite 元数据库
 
-- `metadata/agentstudio.sqlite`
+- `metadata/pact.sqlite`
 
 这是当前唯一元数据真相源，也是检索入口。
 
@@ -625,7 +625,7 @@ npm run server:reconcile -- --apply --prune-orphan-objects
 - `POST /api/runtime/mounts`
 - `POST /api/runtime/mounts/reload`
 
-Tool Management v1 也暴露同一热插拔面：`agentstudio.runtime.info`、`agentstudio.runtime.mounts` 用于只读巡检；`agentstudio.runtime.mounts.set`、`agentstudio.runtime.mounts.reload` 需要 `knowledge:maintain` grant、`metadata.maxRisk=repair_write` 风险上限和 `confirm: true`。工具执行不会绕过 `runtime.set_mounts` / `runtime.reload_mounts` 的统一 Operation、审计、并发锁和 mount 路由能力校验。
+Tool Management v1 也暴露同一热插拔面：`pact.runtime.info`、`pact.runtime.mounts` 用于只读巡检；`pact.runtime.mounts.set`、`pact.runtime.mounts.reload` 需要 `knowledge:maintain` grant、`metadata.maxRisk=repair_write` 风险上限和 `confirm: true`。工具执行不会绕过 `runtime.set_mounts` / `runtime.reload_mounts` 的统一 Operation、审计、并发锁和 mount 路由能力校验。
 - `GET /api/settings`
 - `POST /api/settings`
 
@@ -662,7 +662,7 @@ Tool Management v1 也暴露同一热插拔面：`agentstudio.runtime.info`、`a
 任务完成后还会生成归一化知识文档包，落盘在 `<userDataPath>/jobs/<jobId>/normalized-documents/`。PPT/PDF/HTML 会同时输出允许入库的原始材料副本；EML/MSG 只输出 message/thread/transaction DOCX，原始邮件继续走 raw object 审计存储。
 归一化 DOCX 是面向人类阅读和外部知识库导入的第一层 `raw-corpus-construction` 语料包：默认只保持标题、章节顺序、段落、列表和简单表格，不把 chunk id、sourceRange、evidence locator 等机器字段放进正文。机器解析中间态使用 YAML：`manifest.yaml` 和每个 DOCX 的 `machineReadableRelativePath` sidecar 保存 `sectionId`、`sourceRange`、chunk 定位和解析证据。已收纳到第二层 `knowledge-index-construction` 的 canonical knowledge 还可以通过 `GET /api/knowledge/export/docx` 或 CLI `knowledge export-docx --output knowledge.docx` 导出为标准 DOCX；如需机器附录，显式传入 `includeMachineReadable=true`，附录格式为 YAML。第三层 `knowledge-distillation` 优先从第一层原始语料全文蒸馏，必要时分批、多轮覆盖全文，并用 `knowledge.search` / evidence pack 做校验、引用和补证；知识蒸馏必须调用模型闭环，模型不可用时任务失败，不降级成规则整理。智能体在线上下文可以消费蒸馏出的独立文档或背景摘要。
 
-工业级知识蒸馏基准使用 `agentstudio.knowledge-distillation-industrial.v1`：项目目录先用 `buildMarkdownProjectDigest()` 扫描所有 Markdown 文件并保留目录树、路径、标题树和全文；邮件目录先用 `buildEmailThreadDigest()` 按 RFC 5322 `Message-ID / In-Reply-To / References` 与 RFC 5256 `REFERENCES` 线程语义合并同一事项并按时间从旧到新排列；框架默认模型别名为 `deepseek-v4-flash`，模型闭环为强制路径。真实目录入口是 `npm run server:knowledge:industrial-distill-plan -- --project-dir <project> --email-dir <emails> --output <report.json>`，回归门禁是 `npm run server:verify:knowledge-industrial-distillation`，差距评估指标为 coverage、same-matter merge、timeline order、source trace 和 unsupported claims。
+工业级知识蒸馏基准使用 `pact.knowledge-distillation-industrial.v1`：项目目录先用 `buildMarkdownProjectDigest()` 扫描所有 Markdown 文件并保留目录树、路径、标题树和全文；邮件目录先用 `buildEmailThreadDigest()` 按 RFC 5322 `Message-ID / In-Reply-To / References` 与 RFC 5256 `REFERENCES` 线程语义合并同一事项并按时间从旧到新排列；框架默认模型别名为 `deepseek-v4-flash`，模型闭环为强制路径。真实目录入口是 `npm run server:knowledge:industrial-distill-plan -- --project-dir <project> --email-dir <emails> --output <report.json>`，回归门禁是 `npm run server:verify:knowledge-industrial-distillation`，差距评估指标为 coverage、same-matter merge、timeline order、source trace 和 unsupported claims。
 
 统一文档解析入口遵守结构吸附切分原则和动态参数文档解析策略（`dynamic-parameter-document-parsing-policy`）。文档切分无关粗细，只关乎保留文档的结构和信息；服务端默认先吸附标题树、页/幻灯片顺序、段落、列表、表格、图片、附件、邮件线程和事务时间线等原文档边界，不能把固定 token/字符大小作为第一切分边界。面对超长段落、表格、列表或代码块时，服务端先保留完整 `structureArtifacts`，再派生 `granularityFragments` 用于检索；`knowledge.search` / `knowledge.get.evidence` 调用方必须显式传入 `contextBudget.knowledgeTokens`，第二层按该动态预算决定返回完整结构还是局部颗粒度片段。策略实现拆成 `dispatchDynamicDocumentParsingAlgorithm(input)` 和 `bindDynamicDocumentParsingInvocation(request, runtimeState)`：调度器负责把参数选择映射成独立算法函数，绑定器负责单次接口调用级参数、热重载注册表和策略默认值绑定。调用方显式传入 `granularity.secondaryParse.enabled=true` 时，可以触发较慢的二次解析，backendTrace 必须记录算法、目标颗粒度、父结构和耗时。长段落、长表格或多图片 evidence 回传还必须检查 `payloadBudget.maxResponseBytes` / `payloadBudget.maxEvidenceBytes`；空间不足时返回 `payload.truncated=true` 与 `payload.nextContinuationToken`，由后续 search/evidence continuation 断点续传。
 
@@ -687,7 +687,7 @@ Content-Type: application/json
 }
 ```
 
-服务端 HTTP/RPC 能力统一暴露给 `agentstudio` CLI：
+服务端 HTTP/RPC 能力统一暴露给 `pact` CLI：
 
 ```bash
 npm run cli -- health
@@ -701,7 +701,7 @@ npm run cli -- interfaces --format markdown
 npm run cli -- rpc --method PUT --path /api/upload-sessions/id/files/0?offset=0 --raw-file chunk.bin --content-type application/octet-stream
 ```
 
-`agentstudio --file` 和 `agentstudio --path` 是高阶上传工作流，内部按注册表顺序调用 `uploads.create_session`、`uploads.upload_chunk`、`jobs.create`、`jobs.get`、`jobs.result`，走与 Flutter 客户端相同的上传会话、checkpoint、分块上传和 `/api/jobs` 提交流程。`agentstudio rpc` 是原始 HTTP 调用入口；`agentstudio rpc-call` 是 JSON-RPC 调用入口。
+`pact --file` 和 `pact --path` 是高阶上传工作流，内部按注册表顺序调用 `uploads.create_session`、`uploads.upload_chunk`、`jobs.create`、`jobs.get`、`jobs.result`，走与 Flutter 客户端相同的上传会话、checkpoint、分块上传和 `/api/jobs` 提交流程。`pact rpc` 是原始 HTTP 调用入口；`pact rpc-call` 是 JSON-RPC 调用入口。
 
 ## 15. 离线 Ubuntu 服务端包
 
@@ -714,8 +714,8 @@ npm run server:pack:offline:linux:x64
 产物默认写入：
 
 ```text
-build/release/agentstudio-server-linux-x64.tar.gz
-build/release/agentstudio-server-linux-x64.tar.gz.sha256
+build/release/pact-server-linux-x64.tar.gz
+build/release/pact-server-linux-x64.tar.gz.sha256
 ```
 
 离线包包含：
@@ -725,7 +725,7 @@ build/release/agentstudio-server-linux-x64.tar.gz.sha256
 - `server/platform/modules/knowledge/runtime/jre/linux-x64/`：Linux JRE。
 - `server/platform/modules/knowledge/tika/tika-app-*.jar`：Tika 应用包。
 - `build/dist/`：已构建的服务端控制台静态资源。
-- `bin/start-server`、`bin/agentstudio`：不依赖宿主 Node/npm/Java 的启动脚本。
+- `bin/start-server`、`bin/pact`：不依赖宿主 Node/npm/Java 的启动脚本。
 - `offline-manifest.json`：目标平台、运行时、模块和组件清单。
 - `license-manifest.json`：离线知识库 license gate 结果。
 - `OFFLINE-UBUNTU-RUNBOOK.md`：目标机部署和排障说明。
@@ -744,7 +744,7 @@ build/release/agentstudio-server-linux-x64.tar.gz.sha256
 ```bash
 node server/scripts/verify-knowledge-license-manifest.mjs
 node server/scripts/verify-knowledge-license-manifest.mjs --check-allowlist
-node server/scripts/verify-knowledge-license-manifest.mjs --manifest build/release/agentstudio-server-linux-x64/license-manifest.json
+node server/scripts/verify-knowledge-license-manifest.mjs --manifest build/release/pact-server-linux-x64/license-manifest.json
 node server/scripts/verify-knowledge-license-manifest.mjs --temp-manifest
 ```
 
@@ -759,8 +759,8 @@ node server/scripts/verify-knowledge-license-manifest.mjs --temp-manifest
 目标机部署：
 
 ```bash
-tar -xzf agentstudio-server-linux-x64.tar.gz
-cd agentstudio-server-linux-x64
+tar -xzf pact-server-linux-x64.tar.gz
+cd pact-server-linux-x64
 ./bin/start-server --host 0.0.0.0 --port 8787 --data-dir ./data
 ```
 
@@ -891,7 +891,7 @@ npm run server:verify:agent-knowledge-tools
 - 密码管理：用户创建和密码修改只允许通过服务端命令行执行，不通过网页或远程 HTTP 修改
 - 密码存储：只保存 salt + `crypto.scrypt` 不可逆密码哈希，不保存明文密码
 - 会话：`HttpOnly` / `SameSite=Strict` cookie
-- CSRF：所有受保护的非 GET 写操作必须带 `x-agentstudio-csrf`
+- CSRF：所有受保护的非 GET 写操作必须带 `x-pact-csrf`
 - OIDC：配置接口已预留，未配置时只启用本地账号
 
 第一版角色：
@@ -1110,12 +1110,12 @@ npm run server:verify:agent-sync
 
 ## 20. 工具管理平台
 
-服务端只保留 `agentstudio.tool-management.v1` 作为智能体工具和外部 token 工具的统一管理平台。旧 `/api/tool-platform/*` 和 `/api/agent-tools/*` 已移除；授权数据保存在 `<userDataPath>/tool-management/tool-management.sqlite`。
+服务端只保留 `pact.tool-management.v1` 作为智能体工具和外部 token 工具的统一管理平台。旧 `/api/tool-platform/*` 和 `/api/agent-tools/*` 已移除；授权数据保存在 `<userDataPath>/tool-management/tool-management.sqlite`。
 
 核心能力：
 
 - `ToolCatalogRegistry`：从 `SERVER_API_OPERATIONS` 生成公开工具目录，同时登记 MaintenanceAgent、AgentExplorationRuntime 的内部 handler-backed 工具，并输出 catalog fingerprint。
-- `ToolsetRegistry`：内置 `agentstudio.knowledge.read/write/maintain/admin`、`agentstudio.storage.read`、`agentstudio.jobs.read`、`agentstudio.agent.sync.publish` 等企业授权单元。
+- `ToolsetRegistry`：内置 `pact.knowledge.read/write/maintain/admin`、`pact.storage.read`、`pact.jobs.read`、`pact.agent.sync.publish` 等企业授权单元。
 - `ToolManagementStore`：保存 grant、token hash、policy decision、tool execution、metric event 和 catalog snapshot；grant 支持 toolset 白名单/黑名单、scope、限流、来源 Origin/CIDR、过期和撤销。
 - `ToolPolicyEngine`：按 platform、grant、agent profile、session 和 runtime safety 计算 allow/deny/confirmation。
 - `ToolExecutionRuntime`：统一执行、dry-run、batch、输入 schema 校验、timeout、结果大小限制、串行锁、审计和指标埋点。
@@ -1124,13 +1124,13 @@ npm run server:verify:agent-sync
 CLI：
 
 ```bash
-agentstudio tools catalog
-agentstudio tools toolsets
-agentstudio tools toolsets resolve --body '{"toolsets":["agentstudio.knowledge.read"]}'
-agentstudio tools grants create --body grant.json
-agentstudio tools execute --tool-id agentstudio.knowledge.health --body '{}'
-agentstudio tools audit --limit 50
-agentstudio tools metrics --since 2026-05-02T00:00:00.000Z
+pact tools catalog
+pact tools toolsets
+pact tools toolsets resolve --body '{"toolsets":["pact.knowledge.read"]}'
+pact tools grants create --body grant.json
+pact tools execute --tool-id pact.knowledge.health --body '{}'
+pact tools audit --limit 50
+pact tools metrics --since 2026-05-02T00:00:00.000Z
 ```
 
 新增回归：

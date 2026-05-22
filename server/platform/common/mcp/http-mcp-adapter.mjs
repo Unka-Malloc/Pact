@@ -7,17 +7,17 @@ import {
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export const DEFAULT_TIMEOUT_MS = 300_000;
-export const MCP_INTERFACE_VERSION = "agentstudio.mcp.v1";
+export const MCP_INTERFACE_VERSION = "pact.mcp.v1";
 export const MCP_TOOLSET_VERSION = "2026-05-22.1";
-export const MCP_STABLE_TOOL_NAME = "agentstudio.call";
+export const MCP_STABLE_TOOL_NAME = "pact.call";
 export const MCP_SERVER_VERSION = "0.2.8";
-export const MCP_CONNECTOR_PACKAGE_NAME = "agentstudio-mcp-connector";
+export const MCP_CONNECTOR_PACKAGE_NAME = "pact-mcp-connector";
 export const MCP_CONNECTOR_VERSION = "0.2.8";
-export const MCP_CONNECTOR_GITHUB_REPO = "Unka-Malloc/AgentStudio";
-export const AGENTSTUDIO_MCP_URL_ENV = "AGENTSTUDIO_MCP_URL";
-export const AGENTSTUDIO_MCP_DISCOVERY_URL_ENV = "AGENTSTUDIO_MCP_DISCOVERY_URL";
-export const AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV = "AGENTSTUDIO_MCP_DISCOVERY_FILE";
-export const AGENTSTUDIO_MCP_DISCOVERY_FILE = "~/.agentstudio/mcp/servers.json";
+export const MCP_CONNECTOR_GITHUB_REPO = "Unka-Malloc/Pact";
+export const PACT_MCP_URL_ENV = "PACT_MCP_URL";
+export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
+export const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
+export const PACT_MCP_DISCOVERY_FILE = "~/.pact/mcp/servers.json";
 
 function jsonRpcResult(id, result = {}) {
   return {
@@ -68,8 +68,8 @@ function isAllowedOrigin(request) {
 
 function normalizeApiKeyHeader(request) {
   const headers = request.headers || {};
-  if (!headers.authorization && !headers["x-agentstudio-tool-token"] && headers["x-agentstudio-api-key"]) {
-    headers["x-agentstudio-tool-token"] = String(headers["x-agentstudio-api-key"] || "").trim();
+  if (!headers.authorization && !headers["x-pact-tool-token"] && headers["x-pact-api-key"]) {
+    headers["x-pact-tool-token"] = String(headers["x-pact-api-key"] || "").trim();
   }
 }
 
@@ -115,11 +115,11 @@ function activeMcpTools(toolManagementPlatform) {
     .map(publicMcpTool);
 }
 
-function agentStudioCallTool() {
+function pactCallTool() {
   return {
     name: MCP_STABLE_TOOL_NAME,
-    title: "AgentStudio Call",
-    description: "Stable AgentStudio MCP entrypoint. Pass an AgentStudio operation id and input; AgentStudio handles routing, authorization, versioning, and audit.",
+    title: "Pact Call",
+    description: "Stable Pact MCP entrypoint. Pass an Pact operation id and input; Pact handles routing, authorization, versioning, and audit.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -127,13 +127,13 @@ function agentStudioCallTool() {
       properties: {
         apiVersion: {
           type: "string",
-          description: "AgentStudio MCP interface version expected by the caller.",
+          description: "Pact MCP interface version expected by the caller.",
           default: MCP_INTERFACE_VERSION,
           enum: [MCP_INTERFACE_VERSION]
         },
         operation: {
           type: "string",
-          description: "Internal AgentStudio operation id, for example system.health or agentstudio.knowledge.search."
+          description: "Internal Pact operation id, for example system.health or pact.knowledge.search."
         },
         input: {
           type: "object",
@@ -187,19 +187,19 @@ function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
   return { baseUrl, vmBaseUrl };
 }
 
-export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
+export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`;
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install`;
-  const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/agentstudio-mcp-install.sh)"`;
+  const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor`;
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local`;
   const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan --json`;
   return {
     schemaVersion: 1,
-    name: "AgentStudio",
+    name: "Pact",
     interfaceVersion: MCP_INTERFACE_VERSION,
     toolsetVersion: MCP_TOOLSET_VERSION,
     serverVersion: MCP_SERVER_VERSION,
@@ -215,26 +215,26 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
     localDiscovery: {
       entrypoint: {
         command: discoverCommand,
-        registryFile: AGENTSTUDIO_MCP_DISCOVERY_FILE,
-        schemaVersion: "agentstudio.mcp.device-hub.v1"
+        registryFile: PACT_MCP_DISCOVERY_FILE,
+        schemaVersion: "pact.mcp.device-hub.v1"
       },
       env: {
-        [AGENTSTUDIO_MCP_URL_ENV]: `${baseUrl}/mcp`,
-        [AGENTSTUDIO_MCP_DISCOVERY_URL_ENV]: `${baseUrl}/.well-known/agentstudio/mcp.json`,
-        [AGENTSTUDIO_MCP_DISCOVERY_FILE_ENV]: AGENTSTUDIO_MCP_DISCOVERY_FILE
+        [PACT_MCP_URL_ENV]: `${baseUrl}/mcp`,
+        [PACT_MCP_DISCOVERY_URL_ENV]: `${baseUrl}/.well-known/pact/mcp.json`,
+        [PACT_MCP_DISCOVERY_FILE_ENV]: PACT_MCP_DISCOVERY_FILE
       },
       files: [
-        AGENTSTUDIO_MCP_DISCOVERY_FILE
+        PACT_MCP_DISCOVERY_FILE
       ],
       http: [
-        `${baseUrl}/.well-known/agentstudio/mcp.json`,
+        `${baseUrl}/.well-known/pact/mcp.json`,
         `${baseUrl}/api/mcp/discovery`
       ],
       lookupOrder: [
-        "agentstudio-mcp discover-local",
-        "AGENTSTUDIO_MCP_URL",
-        "AGENTSTUDIO_MCP_DISCOVERY_URL",
-        "AGENTSTUDIO_MCP_DISCOVERY_FILE",
+        "pact-mcp discover-local",
+        "PACT_MCP_URL",
+        "PACT_MCP_DISCOVERY_URL",
+        "PACT_MCP_DISCOVERY_FILE",
         "signed local port scan"
       ]
     },
@@ -258,16 +258,16 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
         requiresInstalledNode: false,
         strategy: "embedded-node-runtime",
         preferredArchive: "zip",
-        bootstrapScript: "agentstudio-mcp-install.sh",
-        githubLatestBootstrapUrl: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/agentstudio-mcp-install.sh`,
+        bootstrapScript: "pact-mcp-install.sh",
+        githubLatestBootstrapUrl: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh`,
         githubOneLineCommand,
         supportsMultiSelect: true,
         releaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.zip`,
         tarballReleaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.tar.gz`,
         zipInstallEntry: "install.command",
-        installCommand: "./agentstudio-mcp register",
-        interactiveInstallCommand: "./agentstudio-mcp install",
-        clientInstallCommand: "./agentstudio-mcp install --target <client>",
+        installCommand: "./pact-mcp register",
+        interactiveInstallCommand: "./pact-mcp install",
+        clientInstallCommand: "./pact-mcp install --target <client>",
         doubleClickEntry: "install.command"
       }
     },
@@ -278,31 +278,31 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
       doctorCommand
     },
     mcpServers: {
-      agentstudio: {
+      pact: {
         httpUrl: `${baseUrl}/mcp`,
         vmHttpUrl: `${vmBaseUrl}/mcp`,
         headers: {
-          "X-AgentStudio-Api-Key": "${AGENTSTUDIO_MCP_TOKEN}"
+          "X-Pact-Api-Key": "${PACT_MCP_TOKEN}"
         },
-        authProviderType: "agentstudio_api_key",
+        authProviderType: "pact_api_key",
         timeout: DEFAULT_TIMEOUT_MS
       }
     },
     codex: {
       mcp_servers: {
-        agentstudio: {
+        pact: {
           url: `${baseUrl}/mcp`,
-          bearer_token_env_var: "AGENTSTUDIO_MCP_TOKEN"
+          bearer_token_env_var: "PACT_MCP_TOKEN"
         }
       }
     },
     geminiCli: {
       mcpServers: {
-        agentstudio: {
+        pact: {
           url: `${baseUrl}/mcp`,
           type: "http",
           headers: {
-            "X-AgentStudio-Api-Key": "${AGENTSTUDIO_MCP_TOKEN}"
+            "X-Pact-Api-Key": "${PACT_MCP_TOKEN}"
           },
           timeout: DEFAULT_TIMEOUT_MS,
           trust: true
@@ -311,30 +311,30 @@ export function buildAgentStudioMcpDiscovery({ listenUrl = "", discoveryState = 
     },
     geminiExtension: {
       mcpServers: {
-        agentstudio: {
+        pact: {
           httpUrl: `${baseUrl}/mcp`,
           headers: {
-            "X-AgentStudio-Api-Key": "${AGENTSTUDIO_MCP_TOKEN}"
+            "X-Pact-Api-Key": "${PACT_MCP_TOKEN}"
           },
           timeout: DEFAULT_TIMEOUT_MS
         }
       }
     },
     auth: {
-      type: "agentstudio_tool_management_token",
-      acceptedHeaders: ["Authorization: Bearer <token>", "X-AgentStudio-Api-Key"],
-      tokenSource: "AgentStudio Tool Management grant token"
+      type: "pact_tool_management_token",
+      acceptedHeaders: ["Authorization: Bearer <token>", "X-Pact-Api-Key"],
+      tokenSource: "Pact Tool Management grant token"
     },
     identity: discoveryState?.mcpIdentity
       ? publicMcpIdentity(discoveryState.mcpIdentity)
       : null,
     handshake: {
-      schemaVersion: "agentstudio.mcp.handshake.v1",
+      schemaVersion: "pact.mcp.handshake.v1",
       method: "POST",
       url: `${baseUrl}/api/mcp/handshake`,
       nonceBytes: 32,
       signatureAlgorithm: "Ed25519",
-      signaturePayloadEncoding: "agentstudio.stable-json.v1"
+      signaturePayloadEncoding: "pact.stable-json.v1"
     }
   };
 }
@@ -351,7 +351,7 @@ function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
       status: 503,
       body: {
         ok: false,
-        error: "AgentStudio MCP identity is not available."
+        error: "Pact MCP identity is not available."
       }
     };
   }
@@ -368,7 +368,7 @@ function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
     };
   }
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
-  const discovery = buildAgentStudioMcpDiscovery({ listenUrl, discoveryState });
+  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   const issuedAt = new Date().toISOString();
   const payload = buildMcpHandshakePayload({
     nonce,
@@ -405,21 +405,21 @@ function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, dis
   const body = parseRequestBody(requestBody);
   const targets = normalizeGrantTargets(body.targets || body.target || body.clientId);
   const resolved = toolManagementPlatform.registry.resolveToolset({});
-  const label = String(body.label || `AgentStudio MCP ${targets.join(", ") || "local agent"}`).trim();
+  const label = String(body.label || `Pact MCP ${targets.join(", ") || "local agent"}`).trim();
   const result = toolManagementPlatform.store.createGrant({
     label,
     type: "machine",
     toolsets: resolved.toolsets,
     scopes: resolved.requiredScopes,
-    toolDeny: ["agentstudio.admin"],
+    toolDeny: ["pact.admin"],
     metadata: {
-      issuedBy: "agentstudio-mcp-local-pairing",
+      issuedBy: "pact-mcp-local-pairing",
       connectorVersion: String(body.connectorVersion || ""),
       targets,
       serverId: discoveryState?.serverId || "",
       identityKeyId: discoveryState?.mcpIdentity?.keyId || ""
     },
-    reason: "Issued by local AgentStudio MCP connector pairing."
+    reason: "Issued by local Pact MCP connector pairing."
   });
   return {
     status: 201,
@@ -454,7 +454,7 @@ function mcpInitializeResult() {
       }
     },
     serverInfo: {
-      name: "AgentStudio",
+      name: "Pact",
       version: MCP_SERVER_VERSION
     },
     _meta: mcpVersionInfo()
@@ -474,13 +474,13 @@ function mcpToolResult(payload) {
   };
 }
 
-function validateAgentStudioCallInput(input) {
+function validatePactCallInput(input) {
   const payload = input && typeof input === "object" ? input : {};
   const apiVersion = String(payload.apiVersion || MCP_INTERFACE_VERSION).trim();
   if (apiVersion !== MCP_INTERFACE_VERSION) {
     return {
       ok: false,
-      error: jsonRpcError(null, -32602, `Unsupported AgentStudio MCP apiVersion: ${apiVersion}`, {
+      error: jsonRpcError(null, -32602, `Unsupported Pact MCP apiVersion: ${apiVersion}`, {
         expectedApiVersion: MCP_INTERFACE_VERSION,
         toolsetVersion: MCP_TOOLSET_VERSION,
         upgrade: mcpVersionInfo()
@@ -491,7 +491,7 @@ function validateAgentStudioCallInput(input) {
   if (!operation) {
     return {
       ok: false,
-      error: jsonRpcError(null, -32602, "agentstudio.call requires arguments.operation.", {
+      error: jsonRpcError(null, -32602, "pact.call requires arguments.operation.", {
         expectedApiVersion: MCP_INTERFACE_VERSION
       })
     };
@@ -503,13 +503,13 @@ function validateAgentStudioCallInput(input) {
   };
 }
 
-function agentStudioMetaResult({ operation, toolManagementPlatform }) {
-  if (operation === "agentstudio.mcp.version" || operation === "agentstudio.version") {
+function pactMetaResult({ operation, toolManagementPlatform }) {
+  if (operation === "pact.mcp.version" || operation === "pact.version") {
     return mcpToolResult({
       result: mcpVersionInfo()
     });
   }
-  if (operation === "agentstudio.capabilities.list") {
+  if (operation === "pact.capabilities.list") {
     return mcpToolResult({
       result: {
         ...mcpVersionInfo(),
@@ -523,7 +523,7 @@ function agentStudioMetaResult({ operation, toolManagementPlatform }) {
 function sendMcpSseVersionEvent(response) {
   const payload = jsonRpcNotification("notifications/tools/list_changed", {
     ...mcpVersionInfo(),
-    reason: "AgentStudio MCP tool surface or schema version changed."
+    reason: "Pact MCP tool surface or schema version changed."
   });
   response.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -567,7 +567,7 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
       };
     }
     return jsonRpcResult(id, {
-      tools: [agentStudioCallTool()],
+      tools: [pactCallTool()],
       _meta: mcpVersionInfo()
     });
   }
@@ -578,7 +578,7 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
       return jsonRpcError(id, -32602, "tools/call requires params.name.");
     }
     if (toolName !== MCP_STABLE_TOOL_NAME) {
-      return jsonRpcError(id, -32602, `AgentStudio MCP exposes only ${MCP_STABLE_TOOL_NAME}.`, {
+      return jsonRpcError(id, -32602, `Pact MCP exposes only ${MCP_STABLE_TOOL_NAME}.`, {
         stableToolName: MCP_STABLE_TOOL_NAME,
         expectedArguments: {
           operation: toolName,
@@ -596,13 +596,13 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
         })
       };
     }
-    const parsedCall = validateAgentStudioCallInput(params.arguments);
+    const parsedCall = validatePactCallInput(params.arguments);
     if (!parsedCall.ok) {
       const error = parsedCall.error;
       error.id = id;
       return error;
     }
-    const metaResult = agentStudioMetaResult({
+    const metaResult = pactMetaResult({
       operation: parsedCall.operation,
       toolManagementPlatform
     });
@@ -644,7 +644,7 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
   return jsonRpcError(id, -32601, `MCP method not found: ${method}`);
 }
 
-export async function handleAgentStudioMcpHttpRequest({
+export async function handlePactMcpHttpRequest({
   request,
   response,
   requestBody,
@@ -655,13 +655,13 @@ export async function handleAgentStudioMcpHttpRequest({
   discoveryState = null,
   logger = null
 }) {
-  if (url.pathname === "/.well-known/agentstudio/mcp.json" || url.pathname === "/api/mcp/discovery") {
+  if (url.pathname === "/.well-known/pact/mcp.json" || url.pathname === "/api/mcp/discovery") {
     if (method !== "GET" && method !== "HEAD") {
       response.writeHead(405, { Allow: "GET", "Cache-Control": "no-store" });
       response.end();
       return true;
     }
-    sendJson(response, 200, buildAgentStudioMcpDiscovery({ listenUrl, discoveryState }));
+    sendJson(response, 200, buildPactMcpDiscovery({ listenUrl, discoveryState }));
     return true;
   }
 
@@ -699,7 +699,7 @@ export async function handleAgentStudioMcpHttpRequest({
       sendJson(response, result.status, result.body);
     } catch (error) {
       logger?.warn?.("mcp.local_grant.failed", {
-        requestId: request?.__agentstudioRequestId || "",
+        requestId: request?.__pactRequestId || "",
         error: error?.message || "local grant failed"
       });
       sendJson(response, 400, {
@@ -757,7 +757,7 @@ export async function handleAgentStudioMcpHttpRequest({
     payload = parseRequestBody(requestBody);
   } catch (error) {
     logger?.warn?.("mcp.http.invalid_json", {
-      requestId: request?.__agentstudioRequestId || ""
+      requestId: request?.__pactRequestId || ""
     });
     sendJson(response, 400, jsonRpcError(null, -32700, "MCP request body must be valid JSON."));
     return true;

@@ -127,28 +127,28 @@ async function createPortableBundle({ outputDir, packageJson }) {
   await fs.copyFile(path.join(connectorRoot, "package.json"), path.join(appRoot, "package.json"));
   await fs.copyFile(path.join(connectorRoot, "README.md"), path.join(appRoot, "README.md"));
   await fs.copyFile(
-    path.join(connectorRoot, "bin", "agentstudio-mcp.mjs"),
-    path.join(appRoot, "bin", "agentstudio-mcp.mjs")
+    path.join(connectorRoot, "bin", "pact-mcp.mjs"),
+    path.join(appRoot, "bin", "pact-mcp.mjs")
   );
 
-  await writeExecutable(path.join(stagingRoot, "agentstudio-mcp"), [
+  await writeExecutable(path.join(stagingRoot, "pact-mcp"), [
     "#!/usr/bin/env sh",
     "set -e",
     "DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)",
-    "exec \"$DIR/runtime/node\" \"$DIR/app/bin/agentstudio-mcp.mjs\" \"$@\"",
+    "exec \"$DIR/runtime/node\" \"$DIR/app/bin/pact-mcp.mjs\" \"$@\"",
     ""
   ].join("\n"));
-  await writeExecutable(path.join(stagingRoot, "agentstudio-mcp.cmd"), [
+  await writeExecutable(path.join(stagingRoot, "pact-mcp.cmd"), [
     "@echo off",
     "set DIR=%~dp0",
-    "\"%DIR%runtime\\node.exe\" \"%DIR%app\\bin\\agentstudio-mcp.mjs\" %*",
+    "\"%DIR%runtime\\node.exe\" \"%DIR%app\\bin\\pact-mcp.mjs\" %*",
     ""
   ].join("\r\n"));
   await writeExecutable(path.join(stagingRoot, "install.command"), [
     "#!/usr/bin/env sh",
     "set -e",
     "DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)",
-    "\"$DIR/agentstudio-mcp\" install",
+    "\"$DIR/pact-mcp\" install",
     "printf '\\nDone. Press Enter to close.'",
     "IFS= read -r _",
     ""
@@ -157,7 +157,7 @@ async function createPortableBundle({ outputDir, packageJson }) {
     "#!/usr/bin/env sh",
     "set -e",
     "DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)",
-    "\"$DIR/agentstudio-mcp\" uninstall",
+    "\"$DIR/pact-mcp\" uninstall",
     "printf '\\nDone. Press Enter to close.'",
     "IFS= read -r _",
     ""
@@ -166,41 +166,41 @@ async function createPortableBundle({ outputDir, packageJson }) {
     "#!/usr/bin/env sh",
     "set -e",
     "DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)",
-    "\"$DIR/agentstudio-mcp\" doctor",
+    "\"$DIR/pact-mcp\" doctor",
     "printf '\\nDone. Press Enter to close.'",
     "IFS= read -r _",
     ""
   ].join("\n"));
   await fs.writeFile(path.join(stagingRoot, "README.txt"), [
-    "AgentStudio MCP Connector Portable Package",
+    "Pact MCP Connector Portable Package",
     "",
     "This package includes its own Node.js runtime. The target machine does not need Node.js, npm, npx, or a package manager.",
     "",
     "Command-line hub registration:",
-    "  ./agentstudio-mcp register",
+    "  ./pact-mcp register",
     "",
-    "The connector scans local AgentStudio candidates and verifies the MCP identity signature before using a URL.",
+    "The connector scans local Pact candidates and verifies the MCP identity signature before using a URL.",
     "",
     "Discover the local shared hub:",
-    "  ./agentstudio-mcp discover-local",
+    "  ./pact-mcp discover-local",
     "",
     "Connect clients interactively:",
-    "  ./agentstudio-mcp install",
+    "  ./pact-mcp install",
     "",
     "Connect one client from a script:",
-    "  ./agentstudio-mcp install --target codex",
+    "  ./pact-mcp install --target codex",
     "",
     "Use --token-stdin only when installing with a pre-issued custom grant token:",
-    "  printf '%s\\n' '<issued-token>' | ./agentstudio-mcp install --target codex --token-stdin",
+    "  printf '%s\\n' '<issued-token>' | ./pact-mcp install --target codex --token-stdin",
     "",
     "macOS double-click flow:",
-    "  Open install.command, choose one or more clients. The connector requests a local AgentStudio grant automatically.",
+    "  Open install.command, choose one or more clients. The connector requests a local Pact grant automatically.",
     "",
     "Uninstall:",
-    "  ./agentstudio-mcp uninstall",
+    "  ./pact-mcp uninstall",
     "",
     "Uninstall one client from a script:",
-    "  ./agentstudio-mcp uninstall --target codex",
+    "  ./pact-mcp uninstall --target codex",
     "",
     `Platform: ${platform}`,
     `Connector: ${packageJson.name}@${packageJson.version}`,
@@ -223,7 +223,7 @@ async function createPortableBundle({ outputDir, packageJson }) {
     zipSha256: await sha256(zipArchivePath),
     zipSizeBytes: zipStat.size,
     rootName,
-    executable: unixExecutableName("agentstudio-mcp"),
+    executable: unixExecutableName("pact-mcp"),
     includesNodeRuntime: true,
     bundledNodeVersion: process.version
   };
@@ -232,13 +232,13 @@ async function createPortableBundle({ outputDir, packageJson }) {
 function githubOwnerRepo(packageJson) {
   const repositoryUrl = String(packageJson.repository?.url || "");
   const match = repositoryUrl.match(/github\.com[:/](.+?)(?:\.git)?$/);
-  return match?.[1] || "Unka-Malloc/AgentStudio";
+  return match?.[1] || "Unka-Malloc/Pact";
 }
 
 async function createBootstrapInstaller({ outputDir, packageJson, tarballName, tarballSha256, portable }) {
-  const scriptName = "agentstudio-mcp-install.sh";
+  const scriptName = "pact-mcp-install.sh";
   const scriptPath = path.join(outputDir, scriptName);
-  const uninstallScriptName = "agentstudio-mcp-uninstall.sh";
+  const uninstallScriptName = "pact-mcp-uninstall.sh";
   const uninstallScriptPath = path.join(outputDir, uninstallScriptName);
   const repo = githubOwnerRepo(packageJson);
   const minimumNodeMajor = Number(String(packageJson.engines?.node || ">=20").match(/\d+/)?.[0] || 20);
@@ -252,8 +252,8 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     `MINIMUM_NODE_MAJOR=${JSON.stringify(minimumNodeMajor)}`,
     `SOURCE_TARBALL=${JSON.stringify(tarballName)}`,
     `SOURCE_TARBALL_SHA256=${JSON.stringify(tarballSha256)}`,
-    "BASE_URL=\"${AGENTSTUDIO_MCP_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/latest/download}\"",
-    "INSTALL_PARENT=\"${AGENTSTUDIO_MCP_INSTALL_DIR:-$HOME/.agentstudio/mcp/connector}\"",
+    "BASE_URL=\"${PACT_MCP_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/latest/download}\"",
+    "INSTALL_PARENT=\"${PACT_MCP_INSTALL_DIR:-$HOME/.pact/mcp/connector}\"",
     "",
     "require_command() {",
     "  if ! command -v \"$1\" >/dev/null 2>&1; then",
@@ -303,7 +303,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  require_command tar",
     "  tarball_path=\"$tmp_dir/$SOURCE_TARBALL\"",
     "  download_url=\"${BASE_URL%/}/$SOURCE_TARBALL\"",
-    "  echo \"Downloading AgentStudio MCP connector $VERSION source package...\"",
+    "  echo \"Downloading Pact MCP connector $VERSION source package...\"",
     "  curl -fL --retry 3 --connect-timeout 20 -o \"$tarball_path\" \"$download_url\"",
     "  actual_sha256=$(hash_file \"$tarball_path\")",
     "  if [ \"$actual_sha256\" != \"$SOURCE_TARBALL_SHA256\" ]; then",
@@ -318,12 +318,12 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  target_dir=\"$INSTALL_PARENT/$PACKAGE_NAME-$VERSION-node\"",
     "  rm -rf \"$target_dir\"",
     "  mv \"$extract_dir/package\" \"$target_dir\"",
-    "  chmod +x \"$target_dir/bin/agentstudio-mcp.mjs\" 2>/dev/null || true",
+    "  chmod +x \"$target_dir/bin/pact-mcp.mjs\" 2>/dev/null || true",
     "  rm -f \"$INSTALL_PARENT/current\"",
     "  ln -s \"$target_dir\" \"$INSTALL_PARENT/current\" 2>/dev/null || true",
-    "  echo \"Installed AgentStudio MCP connector at $target_dir\"",
-    "  echo \"Opening AgentStudio MCP client selector...\"",
-    "  exec node \"$target_dir/bin/agentstudio-mcp.mjs\" install \"$@\"",
+    "  echo \"Installed Pact MCP connector at $target_dir\"",
+    "  echo \"Opening Pact MCP client selector...\"",
+    "  exec node \"$target_dir/bin/pact-mcp.mjs\" install \"$@\"",
     "}",
     "",
     "install_from_portable_zip() {",
@@ -342,7 +342,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  esac",
     "  zip_path=\"$tmp_dir/$archive\"",
     "  download_url=\"${BASE_URL%/}/$archive\"",
-    "  echo \"Downloading AgentStudio MCP connector $VERSION portable runtime for $platform...\"",
+    "  echo \"Downloading Pact MCP connector $VERSION portable runtime for $platform...\"",
     "  curl -fL --retry 3 --connect-timeout 20 -o \"$zip_path\" \"$download_url\"",
     "  actual_sha256=$(hash_file \"$zip_path\")",
     "  if [ \"$actual_sha256\" != \"$archive_sha256\" ]; then",
@@ -359,9 +359,9 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  mv \"$extract_dir/$archive_root\" \"$target_dir\"",
     "  rm -f \"$INSTALL_PARENT/current\"",
     "  ln -s \"$target_dir\" \"$INSTALL_PARENT/current\" 2>/dev/null || true",
-    "  echo \"Installed AgentStudio MCP connector at $target_dir\"",
-    "  echo \"Opening AgentStudio MCP client selector...\"",
-    "  exec \"$target_dir/agentstudio-mcp\" install \"$@\"",
+    "  echo \"Installed Pact MCP connector at $target_dir\"",
+    "  echo \"Opening Pact MCP client selector...\"",
+    "  exec \"$target_dir/pact-mcp\" install \"$@\"",
     "}",
     "",
     "if node_is_usable; then",
@@ -375,7 +375,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
   await fs.writeFile(scriptPath, content);
   await fs.chmod(scriptPath, 0o755);
   const uninstallContent = content
-    .replaceAll("Opening AgentStudio MCP client selector...", "Opening AgentStudio MCP client removal selector...")
+    .replaceAll("Opening Pact MCP client selector...", "Opening Pact MCP client removal selector...")
     .replaceAll(" install \"$@\"", " uninstall \"$@\"");
   await fs.writeFile(uninstallScriptPath, uninstallContent);
   await fs.chmod(uninstallScriptPath, 0o755);
@@ -396,7 +396,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
 function releaseManifest({ channel, packageJson, tarballName, tarballPath, checksum, sizeBytes, portable, bootstrap }) {
   return {
     schemaVersion: 1,
-    packageType: "agentstudio.mcp-connector-release.v1",
+    packageType: "pact.mcp-connector-release.v1",
     generatedAt: new Date().toISOString(),
     channel,
     interfaceVersion: MCP_INTERFACE_VERSION,
@@ -437,7 +437,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       githubOneLineCommand: bootstrap.oneLineCommand,
       githubOneLineUninstallCommand: bootstrap.oneLineUninstallCommand,
       registryCommand: `npx ${packageJson.name}@latest register`,
-      tarballCommand: `npm exec --package ./build/release/mcp/${tarballName} -- agentstudio-mcp register`,
+      tarballCommand: `npm exec --package ./build/release/mcp/${tarballName} -- pact-mcp register`,
       portableCommand: `./${portable.executable} register`,
       interactiveInstallCommand: `npx ${packageJson.name}@latest install`,
       clientInstallCommand: `npx ${packageJson.name}@latest install --target <client>`,
@@ -470,7 +470,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       fallbackDownload: portable.zipArchiveName,
       sourceSizeBytes: sizeBytes,
       fallbackSizeBytes: portable.zipSizeBytes,
-      installsTo: "~/.agentstudio/mcp/connector",
+      installsTo: "~/.pact/mcp/connector",
       startsInteractiveInstaller: true,
       startsInteractiveUninstaller: true,
       supportsMultiSelect: true
@@ -483,7 +483,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
         portable.zipArchiveName,
         bootstrap.scriptName,
         bootstrap.uninstallScriptName,
-        "agentstudio-mcp-release.json",
+        "pact-mcp-release.json",
         "latest.json"
       ]
     }
@@ -530,7 +530,7 @@ async function main() {
     portable,
     bootstrap
   });
-  const manifestPath = path.join(outputDir, "agentstudio-mcp-release.json");
+  const manifestPath = path.join(outputDir, "pact-mcp-release.json");
   const latestPath = path.join(outputDir, "latest.json");
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   await fs.writeFile(latestPath, `${JSON.stringify(manifest, null, 2)}\n`);

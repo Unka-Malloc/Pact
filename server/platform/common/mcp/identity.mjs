@@ -2,8 +2,8 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } 
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const IDENTITY_SCHEMA_VERSION = "agentstudio.mcp.identity.v1";
-const HANDSHAKE_SCHEMA_VERSION = "agentstudio.mcp.handshake.v1";
+const IDENTITY_SCHEMA_VERSION = "pact.mcp.identity.v1";
+const HANDSHAKE_SCHEMA_VERSION = "pact.mcp.handshake.v1";
 
 function sortValue(value) {
   if (Array.isArray(value)) {
@@ -104,7 +104,7 @@ export function buildMcpHandshakePayload({
     issuedAt,
     identity: publicMcpIdentity(identity),
     server: {
-      name: "AgentStudio",
+      name: "Pact",
       serverId: discovery?.serverId || "",
       serverVersion: discovery?.serverVersion || "",
       interfaceVersion: discovery?.interfaceVersion || "",
@@ -115,7 +115,7 @@ export function buildMcpHandshakePayload({
       baseUrl,
       mcpUrl: `${baseUrl}/mcp`,
       discoveryUrl: `${baseUrl}/api/mcp/discovery`,
-      wellKnownUrl: `${baseUrl}/.well-known/agentstudio/mcp.json`,
+      wellKnownUrl: `${baseUrl}/.well-known/pact/mcp.json`,
       vmMcpUrl: `${vmBaseUrl}/mcp`
     }
   };
@@ -125,7 +125,7 @@ export function signMcpHandshake({ identity, payload }) {
   const privateKey = createPrivateKey({ key: identity.privateKeyJwk, format: "jwk" });
   return {
     algorithm: "Ed25519",
-    payloadEncoding: "agentstudio.stable-json.v1",
+    payloadEncoding: "pact.stable-json.v1",
     value: sign(null, Buffer.from(stableStringify(payload)), privateKey).toString("base64url")
   };
 }

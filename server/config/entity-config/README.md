@@ -1,4 +1,4 @@
-# AgentStudio Entity Configs
+# Pact Entity Configs
 
 This directory stores human-maintainable configuration entities as folders and lightweight bundles.
 

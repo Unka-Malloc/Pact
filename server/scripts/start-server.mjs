@@ -46,16 +46,16 @@ function normalizePort(value, fallback) {
 }
 
 function usage() {
-  console.log(`AgentStudio Server
+  console.log(`Pact Server
 
 Usage:
   node server/scripts/start-server.mjs [--host 0.0.0.0] [--port 8787] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default] [--edition community|pro|enterprise|custom]
 
 Options:
-  --host                    监听地址，默认读取 AGENTSTUDIO_SERVER_HOST，否则使用 127.0.0.1
-  --allow-public-console    允许监听非回环地址；等价于 AGENTSTUDIO_ALLOW_PUBLIC_CONSOLE=1
-  --port                    监听端口，默认读取 AGENTSTUDIO_SERVER_PORT，否则使用 8787
-  --data-dir                数据目录，默认 .agentstudio-server-data/
+  --host                    监听地址，默认读取 PACT_SERVER_HOST，否则使用 127.0.0.1
+  --allow-public-console    允许监听非回环地址；等价于 PACT_ALLOW_PUBLIC_CONSOLE=1
+  --port                    监听端口，默认读取 PACT_SERVER_PORT，否则使用 8787
+  --data-dir                数据目录，默认 .pact-server-data/
   --with-ui                 同时提供 build/dist 前端页面；build/dist 不存在时会报错
   --profile                 运行档位：default|minimal，默认 default
   --edition                 功能版本：community|pro|enterprise|custom
@@ -90,86 +90,86 @@ if (args.help) {
   process.exit(0);
 }
 
-const host = String(args.host || process.env.AGENTSTUDIO_SERVER_HOST || "127.0.0.1").trim();
-const port = normalizePort(args.port || process.env.AGENTSTUDIO_SERVER_PORT, 8787);
+const host = String(args.host || process.env.PACT_SERVER_HOST || "127.0.0.1").trim();
+const port = normalizePort(args.port || process.env.PACT_SERVER_PORT, 8787);
 const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
-      process.env.AGENTSTUDIO_SERVER_DATA_DIR ||
-      path.join(projectRoot, ".agentstudio-server-data")
+      process.env.PACT_SERVER_DATA_DIR ||
+      path.join(projectRoot, ".pact-server-data")
   )
 );
 const withUi =
-  args["with-ui"] === true || process.env.AGENTSTUDIO_SERVER_WITH_UI === "1";
+  args["with-ui"] === true || process.env.PACT_SERVER_WITH_UI === "1";
 const runtimeOptions = {
-  profile: String(args.profile || process.env.AGENTSTUDIO_SERVER_PROFILE || "default").trim(),
+  profile: String(args.profile || process.env.PACT_SERVER_PROFILE || "default").trim(),
   featureEdition: String(
-    args.edition || process.env.AGENTSTUDIO_FEATURE_EDITION || ""
+    args.edition || process.env.PACT_FEATURE_EDITION || ""
   ).trim(),
   featureProfile: String(
-    args["feature-profile"] || process.env.AGENTSTUDIO_FEATURE_PROFILE || ""
+    args["feature-profile"] || process.env.PACT_FEATURE_PROFILE || ""
   ).trim(),
   allowPublicConsole: args["allow-public-console"] === true,
   cwd: projectRoot,
   mountModules: {
     analysis: String(
-      args["analysis-module"] || process.env.AGENTSTUDIO_SERVER_ANALYSIS_MODULE || ""
+      args["analysis-module"] || process.env.PACT_SERVER_ANALYSIS_MODULE || ""
     ).trim(),
-    ocr: String(args["ocr-module"] || process.env.AGENTSTUDIO_SERVER_OCR_MODULE || "").trim(),
+    ocr: String(args["ocr-module"] || process.env.PACT_SERVER_OCR_MODULE || "").trim(),
     multimodalParser: String(
       args["multimodal-parser-module"] ||
-        process.env.AGENTSTUDIO_SERVER_MULTIMODAL_PARSER_MODULE ||
+        process.env.PACT_SERVER_MULTIMODAL_PARSER_MODULE ||
         ""
     ).trim(),
     documentParser: String(
-      args["document-parser-module"] || process.env.AGENTSTUDIO_SERVER_DOCUMENT_PARSER_MODULE || ""
+      args["document-parser-module"] || process.env.PACT_SERVER_DOCUMENT_PARSER_MODULE || ""
     ).trim(),
     pdfProcessor: String(
-      args["pdf-processor-module"] || process.env.AGENTSTUDIO_SERVER_PDF_PROCESSOR_MODULE || ""
+      args["pdf-processor-module"] || process.env.PACT_SERVER_PDF_PROCESSOR_MODULE || ""
     ).trim(),
     knowledgeBase: String(
-      args["knowledge-base-module"] || process.env.AGENTSTUDIO_SERVER_KNOWLEDGE_BASE_MODULE || ""
+      args["knowledge-base-module"] || process.env.PACT_SERVER_KNOWLEDGE_BASE_MODULE || ""
     ).trim(),
     vectorStore: String(
-      args["vector-store-module"] || process.env.AGENTSTUDIO_SERVER_VECTOR_STORE_MODULE || ""
+      args["vector-store-module"] || process.env.PACT_SERVER_VECTOR_STORE_MODULE || ""
     ).trim(),
     graphStore: String(
-      args["graph-store-module"] || process.env.AGENTSTUDIO_SERVER_GRAPH_STORE_MODULE || ""
+      args["graph-store-module"] || process.env.PACT_SERVER_GRAPH_STORE_MODULE || ""
     ).trim()
   }
 };
 const discoveryOptions = {
-  serverId: String(args["server-id"] || process.env.AGENTSTUDIO_SERVER_ID || "").trim(),
-  serverLabel: String(args["server-label"] || process.env.AGENTSTUDIO_SERVER_LABEL || "").trim(),
+  serverId: String(args["server-id"] || process.env.PACT_SERVER_ID || "").trim(),
+  serverLabel: String(args["server-label"] || process.env.PACT_SERVER_LABEL || "").trim(),
   bootstrapBaseUrl: String(
-    args["bootstrap-url"] || process.env.AGENTSTUDIO_BOOTSTRAP_URL || ""
+    args["bootstrap-url"] || process.env.PACT_BOOTSTRAP_URL || ""
   ).trim(),
   advertisedBaseUrl: String(
-    args["advertised-base-url"] || process.env.AGENTSTUDIO_ADVERTISED_BASE_URL || ""
+    args["advertised-base-url"] || process.env.PACT_ADVERTISED_BASE_URL || ""
   ).trim(),
   activeServiceUrl: String(
-    args["active-service-url"] || process.env.AGENTSTUDIO_ACTIVE_SERVICE_URL || ""
+    args["active-service-url"] || process.env.PACT_ACTIVE_SERVICE_URL || ""
   ).trim(),
   forwardBaseUrl: String(
-    args["forward-to-url"] || process.env.AGENTSTUDIO_FORWARD_TO_URL || ""
+    args["forward-to-url"] || process.env.PACT_FORWARD_TO_URL || ""
   ).trim(),
   mode: String(
-    args["discovery-mode"] || process.env.AGENTSTUDIO_DISCOVERY_MODE || "active"
+    args["discovery-mode"] || process.env.PACT_DISCOVERY_MODE || "active"
   ).trim(),
   configVersion: String(
-    args["config-version"] || process.env.AGENTSTUDIO_DISCOVERY_CONFIG_VERSION || ""
+    args["config-version"] || process.env.PACT_DISCOVERY_CONFIG_VERSION || ""
   ).trim(),
   refreshIntervalSeconds:
     args["refresh-interval-seconds"] ||
-    process.env.AGENTSTUDIO_DISCOVERY_REFRESH_INTERVAL_SECONDS ||
+    process.env.PACT_DISCOVERY_REFRESH_INTERVAL_SECONDS ||
     "",
   checkInIntervalSeconds:
     args["check-in-interval-seconds"] ||
-    process.env.AGENTSTUDIO_DISCOVERY_CHECK_IN_INTERVAL_SECONDS ||
+    process.env.PACT_DISCOVERY_CHECK_IN_INTERVAL_SECONDS ||
     "",
   offlineAfterSeconds:
     args["offline-after-seconds"] ||
-    process.env.AGENTSTUDIO_DISCOVERY_OFFLINE_AFTER_SECONDS ||
+    process.env.PACT_DISCOVERY_OFFLINE_AFTER_SECONDS ||
     ""
 };
 const distPath = withUi ? defaultDistPath : "";
@@ -187,7 +187,7 @@ const serverHandle = await startHttpServer({
   port
 });
 
-console.log(`AgentStudio server is running at ${serverHandle.url}`);
+console.log(`Pact server is running at ${serverHandle.url}`);
 console.log(`Listening on ${serverHandle.host}:${serverHandle.port}`);
 console.log(`Data dir: ${userDataPath}`);
 console.log(`UI mode: ${withUi ? "enabled" : "api-only"}`);

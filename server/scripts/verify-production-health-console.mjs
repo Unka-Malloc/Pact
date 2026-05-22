@@ -17,7 +17,7 @@ async function writeSampleReport(root, runId, overrides = {}) {
   await fs.mkdir(reportDir, { recursive: true });
   const report = {
     schemaVersion: 1,
-    reportType: "agentstudio.production-readiness.v1",
+    reportType: "pact.production-readiness.v1",
     runId,
     generatedAt: overrides.generatedAt || "2026-05-21T00:00:00.000Z",
     mode: overrides.mode || "full",
@@ -74,7 +74,7 @@ async function writeSampleReport(root, runId, overrides = {}) {
 }
 
 async function verifyReportReader() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-production-health-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-production-health-"));
   const reportRoot = path.join(tempRoot, "reports", "production-readiness");
   try {
     const missing = await buildProductionHealthReport({

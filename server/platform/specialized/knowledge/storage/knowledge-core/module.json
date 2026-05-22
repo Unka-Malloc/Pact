@@ -1,9 +1,9 @@
 {
   "name": "KnowledgeCore",
   "version": 1,
-  "description": "Built-in agentstudio.knowledge.v1 module for multimodal knowledge storage, retrieval, Markdown evidence rendering, and maintenance.",
+  "description": "Built-in pact.knowledge.v1 module for multimodal knowledge storage, retrieval, Markdown evidence rendering, and maintenance.",
   "defaultLoaded": true,
-  "protocol": "agentstudio.knowledge.v1",
+  "protocol": "pact.knowledge.v1",
   "components": {
     "knowledgeBase": {
       "path": "./index.mjs",
@@ -12,12 +12,12 @@
     },
     "vectorFallback": {
       "path": "./index.mjs",
-      "protocol": "agentstudio.vector.v1",
+      "protocol": "pact.vector.v1",
       "packaging": "core"
     },
     "embeddingFallback": {
       "path": "./index.mjs",
-      "protocol": "agentstudio.embedding.v1",
+      "protocol": "pact.embedding.v1",
       "packaging": "core"
     }
   }

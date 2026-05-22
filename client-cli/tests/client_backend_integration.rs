@@ -7,24 +7,24 @@ use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 fn unique_temp_dir(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("agentstudio-it-{}-{}", name, Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("pact-it-{}-{}", name, Uuid::new_v4()));
     fs::create_dir_all(&path).unwrap();
     path
 }
 
 fn clientd_bin() -> PathBuf {
-    std::env::var_os("CARGO_BIN_EXE_agentstudio-clientd")
+    std::env::var_os("CARGO_BIN_EXE_pact-clientd")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/agentstudio-clientd")
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-clientd")
         })
 }
 
 fn client_bin() -> PathBuf {
-    std::env::var_os("CARGO_BIN_EXE_agentstudio-client")
+    std::env::var_os("CARGO_BIN_EXE_pact-client")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/agentstudio-client")
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-client")
         })
 }
 
@@ -102,7 +102,7 @@ fn wait_for_command_result(dir: &Path, command_id: &str) -> Value {
 
 fn start_daemon(dir: &Path) -> Child {
     let child = Command::new(clientd_bin())
-        .env("AGENTSTUDIO_PORTABLE_DIR", dir)
+        .env("PACT_PORTABLE_DIR", dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -120,7 +120,7 @@ fn start_daemon(dir: &Path) -> Child {
 
 fn stop_daemon(dir: &Path, child: &mut Child) {
     let _ = Command::new(client_bin())
-        .env("AGENTSTUDIO_PORTABLE_DIR", dir)
+        .env("PACT_PORTABLE_DIR", dir)
         .args(["daemon", "stop"])
         .output();
     for _ in 0..50 {
@@ -176,7 +176,7 @@ fn cli_direct_rebuild_and_search_do_not_require_daemon() {
     write_workspace(&dir);
 
     let rebuild = Command::new(client_bin())
-        .env("AGENTSTUDIO_PORTABLE_DIR", &dir)
+        .env("PACT_PORTABLE_DIR", &dir)
         .args(["index", "rebuild"])
         .output()
         .unwrap();
@@ -190,7 +190,7 @@ fn cli_direct_rebuild_and_search_do_not_require_daemon() {
     assert_eq!(rebuild_json["updatedDocumentCount"], 1);
 
     let search = Command::new(client_bin())
-        .env("AGENTSTUDIO_PORTABLE_DIR", &dir)
+        .env("PACT_PORTABLE_DIR", &dir)
         .args(["mail", "search", "msa"])
         .output()
         .unwrap();
@@ -213,7 +213,7 @@ fn daemon_status_and_stop_use_shared_workspace() {
     let mut child = start_daemon(&dir);
 
     let status = Command::new(client_bin())
-        .env("AGENTSTUDIO_PORTABLE_DIR", &dir)
+        .env("PACT_PORTABLE_DIR", &dir)
         .args(["daemon", "status"])
         .output()
         .unwrap();

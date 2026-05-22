@@ -164,7 +164,7 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     headers.set('Content-Type', 'application/json');
   }
   const csrfToken = await csrfTokenFor(method);
-  if (csrfToken) headers.set('x-agentstudio-csrf', csrfToken);
+  if (csrfToken) headers.set('x-pact-csrf', csrfToken);
 
   const res = await fetch(path, {
     ...options,

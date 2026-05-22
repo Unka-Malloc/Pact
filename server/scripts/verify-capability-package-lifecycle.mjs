@@ -94,7 +94,7 @@ function skillManifest() {
 }
 
 async function verifyRegistryLifecycle() {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-capability-packages-"));
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-capability-packages-"));
   try {
     const registry = createCapabilityPackageRegistry({ userDataPath });
     const toolV1 = toolManifest("1.0.0");
@@ -174,13 +174,13 @@ function verifyOperationRegistry() {
 function verifyToolCatalogExposure() {
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
   const toolIds = new Set(catalog.tools.map((tool) => tool.id));
-  assert.ok(toolIds.has("agentstudio.capabilityPackages.list"));
-  assert.ok(toolIds.has("agentstudio.capabilityPackages.plan"));
-  assert.ok(toolIds.has("agentstudio.capabilityPackages.submit"));
-  assert.ok(toolIds.has("agentstudio.capabilityPackages.lifecycle"));
-  const submitTool = catalog.tools.find((tool) => tool.id === "agentstudio.capabilityPackages.submit");
+  assert.ok(toolIds.has("pact.capabilityPackages.list"));
+  assert.ok(toolIds.has("pact.capabilityPackages.plan"));
+  assert.ok(toolIds.has("pact.capabilityPackages.submit"));
+  assert.ok(toolIds.has("pact.capabilityPackages.lifecycle"));
+  const submitTool = catalog.tools.find((tool) => tool.id === "pact.capabilityPackages.submit");
   assert.ok(submitTool.requiredScopes.includes("knowledge:maintain"));
-  assert.ok(submitTool.toolsets.includes("agentstudio.knowledge.maintain"));
+  assert.ok(submitTool.toolsets.includes("pact.knowledge.maintain"));
 }
 
 async function main() {

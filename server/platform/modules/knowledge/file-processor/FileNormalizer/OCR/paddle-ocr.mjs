@@ -118,7 +118,7 @@ async function resolveOcrScriptPath() {
 
 async function resolvePythonCommand(settings = {}) {
   const explicitPath =
-    settings.ocrPythonPath?.trim() || process.env.AGENTSTUDIO_OCR_PYTHON_PATH || "";
+    settings.ocrPythonPath?.trim() || process.env.PACT_OCR_PYTHON_PATH || "";
   const bundledCandidates = getBundledOcrPythonCandidates();
   const localCandidates = getLocalVenvPythonCandidates();
   const resolvedPath = await resolveFirstExistingPath([
@@ -239,7 +239,7 @@ export async function extractTextWithPaddleOcr({
   const scriptPath = await resolveOcrScriptPath();
   const pythonCommand = await resolvePythonCommand(settings);
   const lang =
-    settings.ocrLanguage?.trim() || process.env.AGENTSTUDIO_PADDLEOCR_LANG || "ch";
+    settings.ocrLanguage?.trim() || process.env.PACT_PADDLEOCR_LANG || "ch";
   let targetPath = filePath;
   let cleanupPath = "";
 
@@ -258,7 +258,7 @@ export async function extractTextWithPaddleOcr({
       [scriptPath, "--input", targetPath, "--file-type", fileType, "--lang", lang],
       {
         env: {
-          AGENTSTUDIO_PADDLEOCR_LANG: lang
+          PACT_PADDLEOCR_LANG: lang
         }
       }
     );

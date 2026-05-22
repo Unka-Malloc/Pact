@@ -509,8 +509,8 @@ function isTruthyFlag(value) {
 function hasSafetyConfirmation(context = {}) {
   const input = getSafetyInput(context);
   const safetyHeader = String(
-    context.request?.headers?.["x-agentstudio-safety-confirm"] ||
-    context.request?.headers?.["x-agentstudio-confirm"] ||
+    context.request?.headers?.["x-pact-safety-confirm"] ||
+    context.request?.headers?.["x-pact-confirm"] ||
     ""
   ).trim();
   // L-3: removed URL query-param confirm path — it appears in access logs and

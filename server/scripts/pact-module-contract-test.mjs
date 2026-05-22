@@ -27,8 +27,8 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage:",
-    "  node server/scripts/agentstudio-module-contract-test.mjs --module ./index.mjs --mount-name documentParser --sample ./sample.txt",
-    "  node server/scripts/agentstudio-module-contract-test.mjs --manifest ./capability-package.json",
+    "  node server/scripts/pact-module-contract-test.mjs --module ./index.mjs --mount-name documentParser --sample ./sample.txt",
+    "  node server/scripts/pact-module-contract-test.mjs --manifest ./capability-package.json",
     "",
     "Options:",
     "  --module PATH          Mount module entrypoint",

@@ -14,7 +14,7 @@ const serverHandle = await startLocalHttpServer({
   distPath
 });
 
-console.log(`AgentStudio local service is running at ${serverHandle.url}`);
+console.log(`Pact local service is running at ${serverHandle.url}`);
 console.log(`Settings are stored in ${userDataPath}`);
 
 async function shutdown(code = 0) {

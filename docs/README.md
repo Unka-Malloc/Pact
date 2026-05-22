@@ -1,8 +1,8 @@
-# AgentStudio Docs
+# Pact Docs
 
-> Documentation index for AgentStudio — a controllable agent collaboration space.
+> Documentation index for Pact — a controllable agent collaboration space.
 >
-> AgentStudio 文档索引 — 可控的智能体协作空间。
+> Pact 文档索引 — 可控的智能体协作空间。
 
 本文档目录分为核心设计文档和运行支持文档。新的长期架构决策只能进入核心设计文档，避免重新扩散成多份互相漂移的设计说明。
 

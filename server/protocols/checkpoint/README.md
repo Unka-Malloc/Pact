@@ -130,7 +130,7 @@ content-type: application/json
     "clientBatchId": "string",
     "clientUid": "string",
     "sourceType": "string",
-    "mode": "initial|resume|append|branch|agentstudio-cli"
+    "mode": "initial|resume|append|branch|pact-cli"
   },
   "uploadSessionId": "string",
   "uploadedFiles": [],

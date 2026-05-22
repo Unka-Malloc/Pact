@@ -7,7 +7,7 @@ import { createAgentWorkspace } from "../platform/specialized/agent/agent-worksp
 import { createContextRuntime } from "../platform/specialized/agent/agent-context/interface/index.mjs";
 import { createAgentExplorationRuntime } from "../platform/specialized/capabilities/tools/agent-exploration-runtime/index.mjs";
 
-const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-agent-explore-"));
+const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-agent-explore-"));
 const toolServer = await new Promise((resolve, reject) => {
   const server = http.createServer((request, response) => {
     response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
@@ -31,7 +31,7 @@ const fakeKnowledgeCore = {
     assert.equal(input.keywordOnly, false);
     assert.equal(input.learningEnabled, true);
     return {
-      protocolVersion: "agentstudio.knowledge.v1",
+      protocolVersion: "pact.knowledge.v1",
       query: input.query,
       retrievalMode: "hybrid",
       retrievalProfileId: "balanced",
@@ -69,7 +69,7 @@ const fakeKnowledgeCore = {
     assert.equal(input.metric, "email_advertising_by_sender");
     assert.equal(input.groupBy, "senderEmail");
     return {
-      protocolVersion: "agentstudio.knowledge.v1",
+      protocolVersion: "pact.knowledge.v1",
       ok: true,
       metric: input.metric,
       groupBy: input.groupBy,

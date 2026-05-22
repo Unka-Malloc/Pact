@@ -11,7 +11,7 @@ import { createToolCatalog } from "../platform/specialized/capabilities/tools/to
 function productionHealth() {
   return {
     schemaVersion: 1,
-    reportType: "agentstudio.production-health.v1",
+    reportType: "pact.production-health.v1",
     generatedAt: "2026-05-22T00:00:00.000Z",
     status: "blocked",
     latestReport: {
@@ -134,13 +134,13 @@ function verifyOperationsAndTools() {
   assert.equal(operations.get("executive_report.preview").target.method, "handleExecutiveReportPreview");
 
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const generateTool = catalog.tools.find((tool) => tool.id === "agentstudio.executiveReport.generate");
+  const generateTool = catalog.tools.find((tool) => tool.id === "pact.executiveReport.generate");
   assert.ok(generateTool, "executive report generate tool must be exposed");
-  assert.ok(generateTool.toolsets.includes("agentstudio.knowledge.maintain"));
+  assert.ok(generateTool.toolsets.includes("pact.knowledge.maintain"));
 }
 
 async function main() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentstudio-executive-report-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-executive-report-"));
   try {
     await verifyReportStore(tempRoot);
     verifyOperationsAndTools();

@@ -42,7 +42,7 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-console.log("Building AgentStudio server console...");
+console.log("Building Pact server console...");
 await runCommand("npm", ["run", "build:renderer:raw"]);
 
 const passthroughArgs = process.argv.slice(2);
@@ -51,7 +51,7 @@ startupArgs.add("--with-ui");
 
 const finalArgs = ["server/scripts/start-server.mjs", ...Array.from(startupArgs)];
 
-console.log("Starting AgentStudio server with console...");
+console.log("Starting Pact server with console...");
 const serverProcess = spawn("node", finalArgs, {
   cwd: process.cwd(),
   stdio: "inherit",

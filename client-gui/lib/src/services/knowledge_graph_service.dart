@@ -1193,7 +1193,7 @@ class _AffairClusterer {
         id: 'result:${_stableKey(label)}',
         label: label,
         kind: '分析事务',
-        sourceLabel: 'AgentStudio',
+        sourceLabel: 'Pact',
         taxonomyPath: taxonomyPath,
         time: month,
         metadata: _stringMetadata(transaction, const [

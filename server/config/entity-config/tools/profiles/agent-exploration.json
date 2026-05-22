@@ -3,11 +3,11 @@
   "label": "Agent Exploration",
   "agentType": "exploration",
   "toolsets": [
-    "agentstudio.knowledge.read"
+    "pact.knowledge.read"
   ],
   "toolAllow": [],
   "toolDeny": [
-    "agentstudio.admin"
+    "pact.admin"
   ],
   "maxRisk": "read_only",
   "approvalPolicy": "deny_repair",

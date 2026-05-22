@@ -1,18 +1,18 @@
 {
-  "name": "agentstudio-mcp-connector",
+  "name": "pact-mcp-connector",
   "version": "0.2.8",
-  "description": "Release-packaged AgentStudio MCP connector installer for local AI agents.",
+  "description": "Release-packaged Pact MCP connector installer for local AI agents.",
   "type": "module",
   "license": "GPL-3.0-or-later",
   "author": "Unka Y.Y.",
-  "homepage": "https://github.com/Unka-Malloc/AgentStudio#readme",
+  "homepage": "https://github.com/Unka-Malloc/Pact#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Unka-Malloc/AgentStudio.git",
+    "url": "git+https://github.com/Unka-Malloc/Pact.git",
     "directory": "mcp-connector"
   },
   "bin": {
-    "agentstudio-mcp": "bin/agentstudio-mcp.mjs"
+    "pact-mcp": "bin/pact-mcp.mjs"
   },
   "files": [
     "bin/",
@@ -20,7 +20,7 @@
     "package.json"
   ],
   "keywords": [
-    "agentstudio",
+    "pact",
     "mcp",
     "codex",
     "gemini",
