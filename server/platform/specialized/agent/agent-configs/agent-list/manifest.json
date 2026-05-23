@@ -1,13 +1,6 @@
 {
   "schemaVersion": 1,
   "kind": "agent-list",
-  "updatedAt": "2026-05-22T01:42:42.107Z",
-  "entries": [
-    {
-      "id": "business-config-agent",
-      "file": "business-config-agent.json",
-      "label": "Business Config Agent",
-      "enabled": true
-    }
-  ]
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "entries": []
 }

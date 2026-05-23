@@ -339,7 +339,7 @@ export async function startHttpServer({
     component: "server"
   });
   setRuntimeLogger(runtimeLogger);
-  await getAgentConfigRegistry().refresh({
+  await getAgentConfigRegistry({ rootPath: path.join(userDataPath, "agent-configs") }).refresh({
     settingsFallback: await loadSettings(userDataPath)
   });
   runtimeLogger.info("server.start.requested", {
