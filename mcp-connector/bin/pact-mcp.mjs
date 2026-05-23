@@ -904,7 +904,7 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
   const plugin = await createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv });
   await run(codexBin, ["plugin", "marketplace", "add", marketplaceRoot], { allowFailure: true });
   await run(codexBin, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
-  await run(codexBin, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`]);
+  const pluginAdd = await run(codexBin, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
   await run(codexBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
   await run(codexBin, [
     "mcp",
@@ -920,7 +920,9 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
   });
   return {
     installMode: "codex-release-plugin-and-mcp-cli",
-    plugin: `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+    plugin: pluginAdd.ok ? `${PLUGIN_NAME}@${MARKETPLACE_NAME}` : null,
+    pluginAddOk: pluginAdd.ok,
+    pluginAddError: pluginAdd.ok ? null : `${(pluginAdd.stderr || pluginAdd.stdout || "").trim()}`,
     pluginRoot: plugin.pluginRoot,
     marketplacePath: plugin.marketplacePath,
     mcpGet: mcpGet.stdout

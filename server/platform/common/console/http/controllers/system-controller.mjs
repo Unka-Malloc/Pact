@@ -5718,6 +5718,91 @@ export function createSystemController({
       const result = agentWorkspace.unshareWorkspace(workspaceId, target, workspaceAccessOptions(authSession));
       sendJson(response, result.ok ? 200 : 400, result);
     },
+    async handleCreateWorkspaceFolder({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.createWorkspaceFolder !== "function") {
+        sendJson(response, 503, {
+          error: "工作空间文件夹接口不可用。"
+        });
+        return;
+      }
+      const result = agentWorkspace.createWorkspaceFolder({
+        workspaceId,
+        ...parseJsonBody(requestBody),
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 201 : result.status || 400, result);
+    },
+    async handleListWorkspaceFiles({ workspaceId, url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.listWorkspaceFiles !== "function") {
+        sendJson(response, 503, {
+          error: "工作空间文件列表接口不可用。"
+        });
+        return;
+      }
+      const result = agentWorkspace.listWorkspaceFiles({
+        workspaceId,
+        path: url.searchParams.get("path") || "",
+        folderPath: url.searchParams.get("folderPath") || url.searchParams.get("folder-path") || "",
+        recursive: !["0", "false", "no"].includes(String(url.searchParams.get("recursive") || "true").toLowerCase()),
+        includeDirectories: !["0", "false", "no"].includes(String(url.searchParams.get("includeDirectories") || url.searchParams.get("include-directories") || "true").toLowerCase()),
+        includeFiles: !["0", "false", "no"].includes(String(url.searchParams.get("includeFiles") || url.searchParams.get("include-files") || "true").toLowerCase()),
+        limit: Number(url.searchParams.get("limit") || 500),
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 200 : result.status || 400, result);
+    },
+    async handleGetWorkspaceFile({ workspaceId, url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.workspaceFileMetadata !== "function") {
+        sendJson(response, 503, {
+          error: "工作空间文件查询接口不可用。"
+        });
+        return;
+      }
+      const result = agentWorkspace.workspaceFileMetadata({
+        workspaceId,
+        path: url.searchParams.get("path") || url.searchParams.get("filePath") || url.searchParams.get("file-path") || "",
+        includeHash: !["0", "false", "no"].includes(String(url.searchParams.get("includeHash") || url.searchParams.get("include-hash") || "true").toLowerCase()),
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 200 : result.status || 400, result);
+    },
+    async handleDownloadWorkspaceFile({ workspaceId, url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.downloadWorkspaceFile !== "function") {
+        sendJson(response, 503, {
+          error: "工作空间文件下载接口不可用。"
+        });
+        return;
+      }
+      const result = agentWorkspace.downloadWorkspaceFile({
+        workspaceId,
+        path: url.searchParams.get("path") || url.searchParams.get("filePath") || url.searchParams.get("file-path") || "",
+        includeText: !["0", "false", "no"].includes(String(url.searchParams.get("includeText") || url.searchParams.get("include-text") || "true").toLowerCase()),
+        encoding: url.searchParams.get("encoding") || "utf8",
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 200 : result.status || 400, result);
+    },
+    async handleUploadWorkspaceFile({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.uploadWorkspaceFile !== "function") {
+        sendJson(response, 503, {
+          error: "工作空间存储接口不可用。"
+        });
+        return;
+      }
+      const payload = parseJsonBody(requestBody);
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+        sendJson(response, 400, { error: "请求体必须是 JSON 对象。" });
+        return;
+      }
+      const result = agentWorkspace.uploadWorkspaceFile({
+        workspaceId,
+        ...payload,
+        createdBy: authSession?.user?.username || authSession?.user?.userId || payload.createdBy || "",
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 201 : result.status || 400, result);
+    },
+
     async handleKnowledgeSummarizationRun({ requestBody, response }) {
       if (!summarizationRuntime) {
         sendJson(response, 503, {

@@ -64,6 +64,11 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
     description: "Read server storage summaries."
   },
   {
+    id: "storage:write",
+    label: "Write storage",
+    description: "Write workspace artifacts and related storage records."
+  },
+  {
     id: "jobs:read",
     label: "Read jobs",
     description: "Read job lists and job details."
@@ -115,6 +120,14 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     maxRisk: "read_only",
     grantable: true,
     defaultForAgents: true
+  },
+  {
+    id: "pact.storage.write",
+    label: "Storage write",
+    requiredScopes: ["storage:write"],
+    maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
   },
   {
     id: "pact.jobs.read",
@@ -399,6 +412,7 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "client_runtime.profiles.set": "pact.clientRuntime.profiles.set",
   "client_runtime.resolve": "pact.clientRuntime.resolve",
   "client_runtime.status": "pact.clientRuntime.status",
+  "agent_workspaces.create": "pact.agentWorkspace.create",
   "agent_workspaces.list": "pact.agentWorkspace.list",
   "agent_workspaces.get": "pact.agentWorkspace.get",
   "agent_workspaces.context.get": "pact.agentWorkspace.context",
@@ -410,6 +424,11 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.sources.set": "pact.agentWorkspace.sources.set",
   "agent_workspaces.share": "pact.agentWorkspace.share",
   "agent_workspaces.unshare": "pact.agentWorkspace.unshare",
+  "agent_workspaces.folder.create": "pact.agentWorkspace.folder.create",
+  "agent_workspaces.files.list": "pact.agentWorkspace.files.list",
+  "agent_workspaces.file.upload": "pact.agentWorkspace.file.upload",
+  "agent_workspaces.file.stat": "pact.agentWorkspace.file.stat",
+  "agent_workspaces.file.download": "pact.agentWorkspace.file.download",
   "workspace_governance.describe": "pact.workspaceGovernance.describe",
   "workspace_governance.policy.set": "pact.workspaceGovernance.policy.set",
   "workspace_governance.evaluate": "pact.workspaceGovernance.evaluate",
@@ -450,6 +469,15 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "capability_packages.plan": "pact.capabilityPackages.plan",
   "capability_packages.submit": "pact.capabilityPackages.submit",
   "capability_packages.lifecycle": "pact.capabilityPackages.lifecycle"
+});
+
+const TOOL_ALIAS_IDS_BY_OPERATION_ID = Object.freeze({
+  "agent_workspaces.create": ["pact.workspace.create"],
+  "agent_workspaces.folder.create": ["pact.workspace.folder.create"],
+  "agent_workspaces.files.list": ["pact.workspace.files.list"],
+  "agent_workspaces.file.upload": ["pact.workspace.file.upload"],
+  "agent_workspaces.file.stat": ["pact.workspace.file.stat"],
+  "agent_workspaces.file.download": ["pact.workspace.file.download"]
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
@@ -507,6 +535,7 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "context.profiles.set": "knowledge:admin",
   "context.session_memory.clear": "knowledge:admin",
   "client_runtime.profiles.set": "knowledge:admin",
+  "agent_workspaces.create": "knowledge:write",
   "agent_workspaces.submissions.resolve": "knowledge:maintain",
   "agent_workspaces.issues.resolve": "knowledge:maintain",
   "agent_workspaces.context_bundle.restore": "knowledge:maintain",
@@ -515,6 +544,11 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.sources.set": "knowledge:maintain",
   "agent_workspaces.share": "knowledge:maintain",
   "agent_workspaces.unshare": "knowledge:maintain",
+  "agent_workspaces.folder.create": "storage:write",
+  "agent_workspaces.files.list": "storage:read",
+  "agent_workspaces.file.upload": "storage:write",
+  "agent_workspaces.file.stat": "storage:read",
+  "agent_workspaces.file.download": "storage:read",
   "workspace_governance.describe": "knowledge:read",
   "workspace_governance.policy.set": "knowledge:admin",
   "workspace_governance.evaluate": "knowledge:read",
@@ -548,6 +582,7 @@ const TOOLSET_BY_SCOPE = Object.freeze({
   "knowledge:maintain": "pact.knowledge.maintain",
   "knowledge:admin": "pact.knowledge.admin",
   "storage:read": "pact.storage.read",
+  "storage:write": "pact.storage.write",
   "jobs:read": "pact.jobs.read",
   "agent_sync:publish": "pact.agent.sync.publish"
 });
@@ -644,6 +679,7 @@ function inferToolsets(operation, scopes = [], toolId = "") {
   }
   if (
     toolId.startsWith("pact.agentWorkspace.") ||
+    toolId.startsWith("pact.workspace.") ||
     toolId.startsWith("pact.agentSession.") ||
     toolId.startsWith("pact.workspaceGovernance.")
   ) {
@@ -911,7 +947,7 @@ export function createToolCatalog({ operations = [], activeFeatureIds = null } =
     const { method, endpoint } = normalizeHttpEndpoint(operation);
     const risk = normalizeRisk(operation);
     const requiresApproval = operation.destructive === true || risk === "destructive" || operation.safety?.requiresConfirmation === true;
-    tools.push({
+    const tool = {
       id: toolId,
       version: "1",
       label: String(operation.label || toolId),
@@ -957,7 +993,16 @@ export function createToolCatalog({ operations = [], activeFeatureIds = null } =
       },
       status: "active",
       tags: uniqueStrings([operation.featureId || "", operation.feature, operation.binary ? "binary" : "", risk])
-    });
+    };
+    tools.push(tool);
+    for (const aliasId of TOOL_ALIAS_IDS_BY_OPERATION_ID[operation.id] || []) {
+      tools.push({
+        ...tool,
+        id: aliasId,
+        label: `${tool.label} (${aliasId})`,
+        tags: uniqueStrings([...tool.tags, "alias"])
+      });
+    }
   }
   tools.push(
     ...createInternalToolDefinitions().filter((tool) =>
@@ -1020,11 +1065,13 @@ export function createToolCatalogRegistry({ operations = [], activeFeatureIds = 
   }
 
   function resolveToolset(input = {}) {
-    const requestedToolsets = uniqueStrings(input.toolsets || input.toolsetIds || []);
+    const requestedToolsets = uniqueStrings(input.toolsets || input.toolsetIds || input.toolset || []);
+    const requestedScopes = uniqueStrings(input.scopes || input.scopeIds || input.scope || []);
+    const requestedCombined = [...new Set([...requestedToolsets, ...scopesToToolsets(requestedScopes)])];
     const allow = new Set(uniqueStrings(input.toolAllow || []));
     const deny = new Set(uniqueStrings(input.toolDeny || []));
-    const selected = requestedToolsets.length
-      ? new Set(requestedToolsets)
+    const selected = requestedCombined.length
+      ? new Set(requestedCombined)
       : new Set(TOOL_MANAGEMENT_TOOLSETS.filter((toolset) => toolset.defaultForAgents).map((toolset) => toolset.id));
     const tools = catalog.tools.filter((tool) => {
       if (deny.has(tool.id)) {

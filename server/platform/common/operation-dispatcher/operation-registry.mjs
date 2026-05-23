@@ -3214,7 +3214,17 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       command: ["agent-workspaces", "create"],
       usage: "agent-workspaces create --body workspace.json"
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["knowledge:write"],
+    inputSchema: {
+      type: "object",
+      required: ["title"],
+      properties: {
+        title: { type: "string" },
+        objective: { type: "string" },
+        metadata: { type: "object" },
+        parentWorkspaceId: { type: "string" }
+      }
+    }
   },
   {
     id: "agent_workspaces.list",
@@ -3290,6 +3300,37 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       pathParams: { workspaceId: ["workspace-id", "id"] }
     },
     requiredScopes: ["knowledge:write"]
+  },
+  {
+    id: "agent_workspaces.folder.create",
+    feature: "agent_workspace",
+    label: "在智能体共享工作空间中创建文件夹",
+    target: { controller: "system", method: "handleCreateWorkspaceFolder" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/folders",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_workspaces.folder.create",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "folders", "create"],
+      usage: "agent-workspaces folders create --workspace-id WORKSPACE_ID --body folder.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["workspaceId"],
+      properties: {
+        workspaceId: { type: "string" },
+        folderPath: { type: "string" },
+        path: { type: "string" }
+      }
+    }
   },
   {
     id: "agent_sessions.list",
@@ -3574,6 +3615,147 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
     requiredScopes: ["knowledge:write"]
+  },
+  {
+    id: "agent_workspaces.files.list",
+    feature: "agent_workspace",
+    label: "列出智能体共享工作空间文件路径",
+    target: { controller: "system", method: "handleListWorkspaceFiles" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/files",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "folderPath", "folder-path"] },
+        { name: "recursive", aliases: ["recursive"] },
+        { name: "includeDirectories", aliases: ["include-directories", "includeDirectories"] },
+        { name: "includeFiles", aliases: ["include-files", "includeFiles"] },
+        { name: "limit", aliases: ["limit"] }
+      ],
+      coerce: { recursive: "boolean", includeDirectories: "boolean", includeFiles: "boolean", limit: "number" }
+    },
+    rpc: {
+      method: "agent_workspaces.files.list",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "folderPath", "folder-path"] },
+        { name: "recursive", aliases: ["recursive"] },
+        { name: "includeDirectories", aliases: ["include-directories", "includeDirectories"] },
+        { name: "includeFiles", aliases: ["include-files", "includeFiles"] },
+        { name: "limit", aliases: ["limit"] }
+      ]
+    },
+    cli: {
+      command: ["agent-workspaces", "files"],
+      usage: "agent-workspaces files --workspace-id WORKSPACE_ID [--path files]",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    readOnly: true,
+    concurrencySafe: true
+  },
+  {
+    id: "agent_workspaces.file.upload",
+    feature: "agent_workspace",
+    label: "上传文件到智能体共享工作空间",
+    target: { controller: "system", method: "handleUploadWorkspaceFile" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/files",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_workspaces.file.upload",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "files", "upload"],
+      usage: "agent-workspaces files upload --workspace-id WORKSPACE_ID --body file.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["workspaceId"],
+      properties: {
+        workspaceId: { type: "string" },
+        folderPath: { type: "string" },
+        fileName: { type: "string" },
+        path: { type: "string" },
+        content: { type: "string" },
+        contentBase64: { type: "string" }
+      }
+    },
+    readOnly: false,
+    safety: { risk: "safe_write" }
+  },
+  {
+    id: "agent_workspaces.file.stat",
+    feature: "agent_workspace",
+    label: "查询智能体共享工作空间文件元信息",
+    target: { controller: "system", method: "handleGetWorkspaceFile" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/files/stat",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "includeHash", aliases: ["include-hash", "includeHash"] }
+      ],
+      coerce: { includeHash: "boolean" }
+    },
+    rpc: {
+      method: "agent_workspaces.file.stat",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "includeHash", aliases: ["include-hash", "includeHash"] }
+      ]
+    },
+    cli: {
+      command: ["agent-workspaces", "files", "stat"],
+      usage: "agent-workspaces files stat --workspace-id WORKSPACE_ID --path files/a.txt",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    readOnly: true,
+    concurrencySafe: true
+  },
+  {
+    id: "agent_workspaces.file.download",
+    feature: "agent_workspace",
+    label: "下载智能体共享工作空间文件内容",
+    target: { controller: "system", method: "handleDownloadWorkspaceFile" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/files/download",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "includeText", aliases: ["include-text", "includeText"] },
+        { name: "encoding", aliases: ["encoding"] }
+      ],
+      coerce: { includeText: "boolean" }
+    },
+    rpc: {
+      method: "agent_workspaces.file.download",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "includeText", aliases: ["include-text", "includeText"] },
+        { name: "encoding", aliases: ["encoding"] }
+      ]
+    },
+    cli: {
+      command: ["agent-workspaces", "files", "download"],
+      usage: "agent-workspaces files download --workspace-id WORKSPACE_ID --path files/a.txt",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    binary: true
   },
 
   // ── Workspace inheritance, profile & sharing operations ─────────────────

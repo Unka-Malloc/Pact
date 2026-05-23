@@ -132,6 +132,7 @@
     "server:verify:agent-gateway-compaction": "node server/scripts/verify-agent-gateway-compaction.mjs",
     "server:verify:agent-sync": "node server/scripts/verify-agent-sync.mjs",
     "server:verify:agent-knowledge-tools": "node server/scripts/verify-agent-knowledge-tools.mjs",
+    "server:verify:agent-workspace-file-upload": "node server/scripts/verify-agent-workspace-file-upload.mjs",
     "server:verify:mcp-http": "node server/scripts/verify-mcp-http.mjs",
     "server:verify:mcp-release": "node server/scripts/verify-mcp-release.mjs",
     "server:verify:tool-management": "node server/scripts/verify-tool-management-platform.mjs",

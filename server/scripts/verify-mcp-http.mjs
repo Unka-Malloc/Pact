@@ -172,6 +172,33 @@ try {
   assert.deepEqual(localGrant.payload.targets, ["codex"]);
   assert.equal(localGrant.payload.toolsets.includes("pact.knowledge.read"), true);
 
+  const legacyScopeGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      targets: ["codex"],
+      label: "verify-mcp-local-grant-legacy-scope",
+      scope: "storage:write"
+    })
+  });
+  assert.equal(legacyScopeGrant.status, 201);
+  assert.equal(legacyScopeGrant.payload.ok, true);
+  assert.equal(legacyScopeGrant.payload.scopes.includes("storage:write"), true);
+  assert.equal(legacyScopeGrant.payload.toolsets.includes("pact.storage.write"), true);
+
+  const legacyToolsetGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      targets: ["codex"],
+      label: "verify-mcp-local-grant-legacy-toolset",
+      toolset: "pact.storage.write"
+    })
+  });
+  assert.equal(legacyToolsetGrant.status, 201);
+  assert.equal(legacyToolsetGrant.payload.ok, true);
+  assert.equal(legacyToolsetGrant.payload.toolsets.includes("pact.storage.write"), true);
+
   const expectedTools = ["pact.knowledge", "pact.workspace", "pact.list", "pact.skill", "pact.help"];
 
   const localGrantList = await fetchJson(`${server.url}/mcp`, {

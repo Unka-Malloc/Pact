@@ -32,14 +32,104 @@ async function sha256(filePath) {
   return hash.digest("hex");
 }
 
+function resolveVerifyTargetPlatform() {
+  if (process.platform === "darwin") {
+    return "darwin-arm64";
+  }
+  if (process.platform === "win32") {
+    return "windows-x64";
+  }
+  if (process.platform === "linux") {
+    return "linux-x64";
+  }
+  throw new Error(`Unsupported platform for verify: ${process.platform}`);
+}
+
+function archiveInspectOrder(platform) {
+  const normalized = String(platform || "");
+  if (normalized.startsWith("linux")) {
+    return ["tar.gz"];
+  }
+  if (normalized.startsWith("darwin")) {
+    return ["tar.gz", "zip"];
+  }
+  return ["tar.gz", "zip"];
+}
+
+function resolvePortableArchivePaths(result, manifest) {
+  const tarballPath = Array.isArray(result.portableTarballs)
+    ? result.portableTarballs.find((entry) => path.basename(entry) === path.basename(manifest.portable.tarball))
+    : null;
+  const zipPath = Array.isArray(result.portableZips)
+    ? result.portableZips.find((entry) => path.basename(entry) === path.basename(manifest.portable.zipArchive || ""))
+    : null;
+
+  const archives = [];
+  if (tarballPath) {
+    archives.push({
+      type: "tar.gz",
+      path: tarballPath,
+      archive: manifest.portable.tarball,
+      sha: manifest.portable.sha256,
+      sizeBytes: manifest.portable.sizeBytes
+    });
+  }
+  if (zipPath) {
+    archives.push({
+      type: "zip",
+      path: zipPath,
+      archive: manifest.portable.zipArchive,
+      sha: manifest.portable.zipSha256,
+      sizeBytes: manifest.portable.zipSizeBytes
+    });
+  }
+  return archives;
+}
+
+function stripPortableArchiveSuffix(name) {
+  return name
+    .replace(/\.tar\.gz$/, "")
+    .replace(/\.zip$/, "");
+}
+
+async function checkPortableArchiveContents(archivePath, type, portableName, extractDirBase) {
+  const extractDir = path.join(tempDir, `${extractDirBase}-${type}`);
+  await fs.mkdir(extractDir, { recursive: true });
+
+  if (type === "zip") {
+    await run("unzip", ["-q", archivePath, "-d", extractDir]);
+  } else {
+    await run("tar", ["-xzf", archivePath, "-C", extractDir]);
+  }
+
+  const rootName = stripPortableArchiveSuffix(portableName);
+  const rootDir = path.join(extractDir, rootName);
+  const portableExecutable = path.join(rootDir, "pact-mcp");
+  const version = await run(portableExecutable, ["version", "--json"]);
+  const payload = JSON.parse(version.stdout);
+  assert.equal(payload.packageName, "pact-mcp-connector");
+  assert.equal(payload.packageVersion, expectedVersion);
+  assert.equal(await fs.access(path.join(rootDir, "install.command")).then(() => true), true);
+  assert.equal(await fs.access(path.join(rootDir, "uninstall.command")).then(() => true), true);
+  const portableReset = await run(portableExecutable, ["server-config", "--reset", "--json"], {
+    env: {
+      HOME: path.join(tempDir, `${extractDirBase}-home`)
+    }
+  });
+  const resetPayload = JSON.parse(portableReset.stdout);
+  assert.equal(resetPayload.ok, true);
+  assert.equal(resetPayload.reset, true);
+}
+
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-mcp-release-"));
 try {
+  const verifyTargetPlatform = resolveVerifyTargetPlatform();
   const release = await run("node", [
     "server/scripts/mcp-release.mjs",
     "--output-dir",
     tempDir,
     "--platforms",
-    "darwin-arm64",
+    verifyTargetPlatform,
     "--json"
   ]);
   const result = JSON.parse(release.stdout);
@@ -56,13 +146,34 @@ try {
   assert.equal(Object.hasOwn(manifest.portable, "tarballPath"), false);
   assert.equal(Object.hasOwn(manifest.portable, "zipPath"), false);
   assert.equal(Object.hasOwn(manifest.bootstrap, "scriptPath"), false);
+  const portablePlatform = manifest.portable.currentPlatform || verifyTargetPlatform;
+  const archiveOrder = archiveInspectOrder(portablePlatform);
+  const portableArchives = resolvePortableArchivePaths(result, manifest);
+  const portableArchivesForPlatform = archiveOrder
+    .map((type) => portableArchives.find((entry) => entry.type === type))
+    .filter(Boolean);
+  assert.ok(portableArchivesForPlatform.length > 0);
   assert.equal(manifest.connector.sha256, await sha256(result.tarballPath));
   assert.equal(manifest.portable.requiresInstalledNode, false);
   assert.equal(manifest.portable.includesNodeRuntime ?? true, true);
-  assert.equal(manifest.portable.preferredArchive, "zip");
-  assert.equal(manifest.portable.sha256, await sha256(result.portableTarballs[0]));
-  assert.equal(manifest.portable.zipSha256, await sha256(result.portableZips[0]));
-  assert.equal(result.portableZipSha256[0], await sha256(result.portableZips[0]));
+  if (portablePlatform.startsWith("linux")) {
+    assert.equal(manifest.portable.preferredArchive, "tar.gz");
+  } else {
+    assert.ok(["tar.gz", "zip"].includes(manifest.portable.preferredArchive));
+  }
+  const tarArchive = portableArchives.find((entry) => entry.type === "tar.gz");
+  const zipArchive = portableArchives.find((entry) => entry.type === "zip");
+  if (tarArchive) {
+    assert.equal(manifest.portable.sha256, await sha256(tarArchive.path));
+  }
+  if (zipArchive) {
+    const zipSha = await sha256(zipArchive.path);
+    assert.equal(manifest.portable.zipSha256, zipSha);
+    const zipResultIndex = result.portableZips.findIndex((entry) => entry === zipArchive.path);
+    if (zipResultIndex >= 0) {
+      assert.equal(result.portableZipSha256[zipResultIndex], zipSha);
+    }
+  }
   assert.ok(manifest.install.registryCommand.includes("npx pact-mcp-connector@latest register"));
   assert.ok(manifest.install.githubOneLineCommand.includes("pact-mcp-install.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
@@ -83,9 +194,11 @@ try {
   assert.equal(manifest.bootstrap.supportsMultiSelect, true);
   assert.equal(manifest.bootstrap.strategy, "installed-node-source-tarball-with-portable-runtime-fallback");
   assert.equal(manifest.bootstrap.preferredDownload, path.basename(result.tarballPath));
-  assert.equal(manifest.bootstrap.fallbackDownload, path.basename(result.portableZips[0]));
+  assert.ok(portableArchivesForPlatform.find((entry) => entry.type === manifest.portable.preferredArchive) || portableArchivesForPlatform[0]);
+  const fallbackArchive = portableArchivesForPlatform.find((entry) => entry.type === manifest.portable.preferredArchive) || portableArchivesForPlatform[0];
+  assert.equal(manifest.bootstrap.fallbackDownload, path.basename(fallbackArchive.path));
   assert.equal(manifest.bootstrap.sourceSizeBytes, manifest.connector.sizeBytes);
-  assert.equal(manifest.bootstrap.fallbackSizeBytes, manifest.portable.zipSizeBytes);
+  assert.equal(manifest.bootstrap.fallbackSizeBytes, fallbackArchive.sizeBytes);
   assert.equal(manifest.bootstrap.sha256, await sha256(result.bootstrapInstallerPath));
   assert.equal(manifest.bootstrap.uninstallSha256, await sha256(result.bootstrapUninstallerPath));
   assert.ok(manifest.publish.npmCommand.includes("npm publish"));
@@ -102,7 +215,7 @@ try {
   assert.match(bootstrapScript, /curl -fL --retry 3/);
   assert.match(bootstrapScript, /node_is_usable/);
   assert.match(bootstrapScript, /install_from_source_tarball/);
-  assert.match(bootstrapScript, /install_from_portable_zip/);
+  assert.match(bootstrapScript, /install_from_portable_archive/);
   assert.match(bootstrapScript, /SOURCE_TARBALL=/);
   assert.match(bootstrapScript, /archive_sha256=/);
   assert.doesNotMatch(bootstrapScript, /127\.0\.0\.1:8787/);
@@ -120,21 +233,25 @@ try {
   assert.match(list.stdout, /package\/package\.json/);
   assert.doesNotMatch(list.stdout, /package\/server\//);
 
-  const portableList = await run("tar", ["-tzf", result.portableTarballs[0]]);
-  assert.match(portableList.stdout, /pact-mcp$/m);
-  assert.match(portableList.stdout, /runtime\/node/m);
-  assert.match(portableList.stdout, /app\/bin\/pact-mcp\.mjs/m);
-  assert.match(portableList.stdout, /install\.command/m);
-  assert.match(portableList.stdout, /uninstall\.command/m);
-  assert.doesNotMatch(portableList.stdout, /server\//);
-
-  const zipList = await run("unzip", ["-l", result.portableZips[0]]);
-  assert.match(zipList.stdout, /pact-mcp$/m);
-  assert.match(zipList.stdout, /runtime\/node/m);
-  assert.match(zipList.stdout, /app\/bin\/pact-mcp\.mjs/m);
-  assert.match(zipList.stdout, /install\.command/m);
-  assert.match(zipList.stdout, /uninstall\.command/m);
-  assert.doesNotMatch(zipList.stdout, /server\//);
+  for (const portableArchive of portableArchivesForPlatform) {
+    if (portableArchive.type === "zip") {
+      const zipList = await run("unzip", ["-l", portableArchive.path]);
+      assert.match(zipList.stdout, /pact-mcp$/m);
+      assert.match(zipList.stdout, /runtime\/node/m);
+      assert.match(zipList.stdout, /app\/bin\/pact-mcp\.mjs/m);
+      assert.match(zipList.stdout, /install\.command/m);
+      assert.match(zipList.stdout, /uninstall\.command/m);
+      assert.doesNotMatch(zipList.stdout, /server\//);
+      continue;
+    }
+    const portableList = await run("tar", ["-tzf", portableArchive.path]);
+    assert.match(portableList.stdout, /pact-mcp$/m);
+    assert.match(portableList.stdout, /runtime\/node/m);
+    assert.match(portableList.stdout, /app\/bin\/pact-mcp\.mjs/m);
+    assert.match(portableList.stdout, /install\.command/m);
+    assert.match(portableList.stdout, /uninstall\.command/m);
+    assert.doesNotMatch(portableList.stdout, /server\//);
+  }
 
   const extractDir = path.join(tempDir, "extract");
   await fs.mkdir(extractDir, { recursive: true });
@@ -427,36 +544,14 @@ try {
   assert.equal(dockerCopilot?.optionOverrides?.["remote-name"], "agentbox");
   assert.equal(dockerCopilot?.optionOverrides?.["remote-bin"], fakeDocker);
 
-  const portableExtractDir = path.join(tempDir, "portable");
-  await fs.mkdir(portableExtractDir, { recursive: true });
-  await run("tar", ["-xzf", result.portableTarballs[0], "-C", portableExtractDir]);
-  const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "pact-mcp"), ["version", "--json"]);
-  const portablePayload = JSON.parse(portableVersion.stdout);
-  assert.equal(portablePayload.packageName, "pact-mcp-connector");
-  assert.equal(portablePayload.packageVersion, expectedVersion);
-  const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "pact-mcp"), [
-    "server-config",
-    "--reset",
-    "--json"
-  ], {
-    env: {
-      HOME: path.join(tempDir, "portable-home")
-    }
-  });
-  const resetPayload = JSON.parse(portableReset.stdout);
-  assert.equal(resetPayload.ok, true);
-  assert.equal(resetPayload.reset, true);
-
-  const portableZipExtractDir = path.join(tempDir, "portable-zip");
-  await fs.mkdir(portableZipExtractDir, { recursive: true });
-  await run("unzip", ["-q", result.portableZips[0], "-d", portableZipExtractDir]);
-  const zipRoot = path.join(portableZipExtractDir, manifest.portable.zipArchive.replace(/\.zip$/, ""));
-  const portableZipVersion = await run(path.join(zipRoot, "pact-mcp"), ["version", "--json"]);
-  const portableZipPayload = JSON.parse(portableZipVersion.stdout);
-  assert.equal(portableZipPayload.packageName, "pact-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, expectedVersion);
-  assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
-  assert.equal(await fs.access(path.join(zipRoot, "uninstall.command")).then(() => true), true);
+  for (const portableArchive of portableArchivesForPlatform) {
+    await checkPortableArchiveContents(
+      portableArchive.path,
+      portableArchive.type,
+      portableArchive.archive,
+      portableArchive.type
+    );
+  }
 
   console.log("mcp-release verification passed");
 } finally {

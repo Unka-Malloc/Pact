@@ -42,6 +42,10 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
 function parseJson(value, fallback = {}) {
   try {
     return value ? JSON.parse(value) : fallback;
@@ -79,6 +83,37 @@ function stableJson(value) {
 
 function stableId(prefix, ...parts) {
   return `${prefix}_${stableHash(prefix, ...parts).slice(0, 24)}`;
+}
+
+function normalizeWorkspaceRelativePath(value, options = {}) {
+  const raw = String(value || "").replace(/\\/g, "/").trim();
+  if (!raw || raw === ".") {
+    if (options.allowEmpty) {
+      return "";
+    }
+    throw new Error("路径不能为空。");
+  }
+  if (raw.includes("\0") || raw.startsWith("/") || /^[A-Za-z]:\//.test(raw)) {
+    throw new Error("路径必须是工作空间相对路径。");
+  }
+  const normalized = path.posix.normalize(raw);
+  if (!normalized || normalized === ".") {
+    if (options.allowEmpty) {
+      return "";
+    }
+    throw new Error("路径不能为空。");
+  }
+  if (normalized === ".." || normalized.startsWith("../")) {
+    throw new Error("路径不能跳出工作空间。");
+  }
+  return normalized.replace(/^\/+/, "");
+}
+
+function joinWorkspaceRelativePath(...parts) {
+  return normalizeWorkspaceRelativePath(
+    parts.map((part) => String(part || "").replace(/\\/g, "/").trim()).filter(Boolean).join("/"),
+    { allowEmpty: false }
+  );
 }
 
 function optionalLimit(value, max = 500) {
@@ -515,6 +550,24 @@ function hydrateSessionEvent(row) {
   };
 }
 
+function fileMetadataFromStat({ workspaceId, relativePath, absolutePath, stat, includeHash = false }) {
+  const isFile = stat.isFile();
+  const metadata = {
+    workspaceId,
+    relativePath,
+    name: path.posix.basename(relativePath) || "",
+    type: stat.isDirectory() ? "directory" : isFile ? "file" : "other",
+    sizeBytes: Number(stat.size || 0),
+    createdAt: stat.birthtime?.toISOString?.() || "",
+    updatedAt: stat.mtime?.toISOString?.() || "",
+    contentSha256: ""
+  };
+  if (includeHash && isFile) {
+    metadata.contentSha256 = crypto.createHash("sha256").update(fs.readFileSync(absolutePath)).digest("hex");
+  }
+  return metadata;
+}
+
 function gateSubmission({ existingDuplicate = null, submission, writePolicy = {} }) {
   const reasons = [];
   const type = String(submission.type || "").trim();
@@ -898,6 +951,208 @@ export function createAgentWorkspace({ userDataPath }) {
   function canAccessWorkspaceId(workspaceId, input = {}) {
     const workspace = hydrateWorkspace(selectWorkspaceStmt.get(String(workspaceId || "")));
     return canAccessWorkspace(workspace, input);
+  }
+
+  function workspaceFsRoot(workspace) {
+    const fsPath = workspace?.fsPath || path.join(rootPath, "folders", String(workspace?.workspaceId || ""));
+    const resolved = path.resolve(fsPath);
+    fs.mkdirSync(resolved, { recursive: true });
+    return resolved;
+  }
+
+  function resolveWorkspacePath(workspace, relativePath = "", options = {}) {
+    const root = workspaceFsRoot(workspace);
+    const normalized = normalizeWorkspaceRelativePath(relativePath, { allowEmpty: options.allowEmpty === true });
+    const target = normalized ? path.resolve(root, ...normalized.split("/")) : root;
+    if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+      throw new Error("路径不能跳出工作空间。");
+    }
+    return {
+      root,
+      relativePath: normalized,
+      absolutePath: target
+    };
+  }
+
+  function workspaceForStorage(input = {}) {
+    const workspaceId = String(input.workspaceId || input.workspace_id || input.id || "").trim();
+    const workspace = hydrateWorkspace(selectWorkspaceRawStmt.get(workspaceId));
+    if (!workspace) {
+      return { ok: false, status: 404, error: "工作空间不存在或不可访问。" };
+    }
+    if (!canAccessWorkspace(workspace, input)) {
+      return { ok: false, status: 403, error: "工作空间不可访问。" };
+    }
+    return { ok: true, workspace };
+  }
+
+  function decodeWorkspaceFileContent(input = {}) {
+    if (Object.hasOwn(input, "contentBase64")) {
+      const raw = String(input.contentBase64 || "").trim();
+      if (!raw) {
+        return Buffer.alloc(0);
+      }
+      return Buffer.from(raw, "base64");
+    }
+    if (Object.hasOwn(input, "content")) {
+      return Buffer.from(String(input.content || ""), String(input.encoding || "utf8"));
+    }
+    throw new Error("content 或 contentBase64 至少提供一个。");
+  }
+
+  function createWorkspaceFolder(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    let resolved;
+    try {
+      const folderPath = normalizeWorkspaceRelativePath(
+        input.folderPath || input.folder || input.directory || input.path || input.relativePath || "",
+        { allowEmpty: false }
+      );
+      resolved = resolveWorkspacePath(access.workspace, folderPath);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (fs.existsSync(resolved.absolutePath) && !fs.statSync(resolved.absolutePath).isDirectory()) {
+      return { ok: false, status: 409, error: "目标路径已存在且不是文件夹。" };
+    }
+    fs.mkdirSync(resolved.absolutePath, { recursive: true });
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      folder: fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        stat: fs.statSync(resolved.absolutePath)
+      })
+    };
+  }
+
+  function listWorkspaceFiles(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    let base;
+    try {
+      base = resolveWorkspacePath(
+        access.workspace,
+        input.folderPath || input.folder || input.directory || input.path || input.relativePath || "",
+        { allowEmpty: true }
+      );
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (!fs.existsSync(base.absolutePath)) {
+      return {
+        protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+        ok: true,
+        workspaceId: access.workspace.workspaceId,
+        basePath: base.relativePath,
+        exists: false,
+        paths: [],
+        files: []
+      };
+    }
+    const includeDirectories = input.includeDirectories !== false;
+    const includeFiles = input.includeFiles !== false;
+    const recursive = input.recursive !== false;
+    const limit = boundedInteger(input.limit, 500, 1, 5000);
+    const files = [];
+    const visit = (absoluteDir, relativeDir) => {
+      if (files.length >= limit) {
+        return;
+      }
+      const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
+        if (files.length >= limit) {
+          return;
+        }
+        const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+        const absolutePath = path.join(absoluteDir, entry.name);
+        const stat = fs.statSync(absolutePath);
+        if ((entry.isDirectory() && includeDirectories) || (entry.isFile() && includeFiles) || (!entry.isDirectory() && !entry.isFile())) {
+          files.push(fileMetadataFromStat({
+            workspaceId: access.workspace.workspaceId,
+            relativePath,
+            absolutePath,
+            stat
+          }));
+        }
+        if (entry.isDirectory() && recursive) {
+          visit(absolutePath, relativePath);
+        }
+      }
+    };
+    const baseStat = fs.statSync(base.absolutePath);
+    if (baseStat.isDirectory()) {
+      visit(base.absolutePath, base.relativePath);
+    } else if (includeFiles) {
+      files.push(fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: base.relativePath,
+        absolutePath: base.absolutePath,
+        stat: baseStat
+      }));
+    }
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      basePath: base.relativePath,
+      exists: true,
+      paths: files.map((file) => file.relativePath),
+      files,
+      count: files.length
+    };
+  }
+
+  function workspaceFileMetadata(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    let resolved;
+    try {
+      resolved = resolveWorkspacePath(
+        access.workspace,
+        input.path || input.relativePath || input.filePath || input.file || "",
+        { allowEmpty: false }
+      );
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (!fs.existsSync(resolved.absolutePath)) {
+      return {
+        protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+        ok: true,
+        workspaceId: access.workspace.workspaceId,
+        exists: false,
+        file: {
+          workspaceId: access.workspace.workspaceId,
+          relativePath: resolved.relativePath
+        }
+      };
+    }
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      exists: true,
+      file: fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        stat: fs.statSync(resolved.absolutePath),
+        includeHash: input.includeHash !== false
+      })
+    };
   }
 
   function sessionWorkspaceSummary(workspaceId) {
@@ -1488,13 +1743,24 @@ export function createAgentWorkspace({ userDataPath }) {
       stableId("workspace", input.title || "", input.objective || "", timestamp);
     const fsPath = path.join(rootPath, "folders", workspaceId);
     fs.mkdirSync(fsPath, { recursive: true });
+    const ownerUserId = String(input.ownerUserId || input.owner_user_id || input.userId || "").trim();
+    const defaultAdminUserId = String(input.defaultAdminUserId || input.adminUserId || ownerUserId || "").trim();
+    const inputMetadata = asObject(input.metadata);
     const workspace = {
       workspaceId,
       title: normalizeText(input.title || "Knowledge Agent Workspace") || "Knowledge Agent Workspace",
       objective: normalizeText(input.objective || input.query || ""),
       status: String(input.status || "active"),
-      ownerUserId: String(input.ownerUserId || input.owner_user_id || input.userId || "").trim(),
-      metadata: asObject(input.metadata),
+      ownerUserId,
+      metadata: {
+        ...inputMetadata,
+        defaultAdminUserId,
+        adminUserIds: uniqueStrings([
+          ...asArray(inputMetadata.adminUserIds),
+          ...asArray(inputMetadata.administrators),
+          defaultAdminUserId
+        ])
+      },
       createdAt: input.createdAt || timestamp,
       updatedAt: timestamp,
       fsPath
@@ -1747,6 +2013,101 @@ export function createAgentWorkspace({ userDataPath }) {
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       artifact: hydrateArtifact(db.prepare("SELECT * FROM aw_artifacts WHERE artifact_id = ?").get(artifactId))
+    };
+  }
+
+  function uploadWorkspaceFile(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const fileName = String(input.fileName || input.filename || input.name || "").trim();
+    const explicitPath = String(input.path || input.relativePath || input.filePath || input.targetPath || "").trim();
+    if (!fileName && !explicitPath) {
+      return { ok: false, status: 400, error: "fileName 不能为空。" };
+    }
+    let contentBuffer;
+    try {
+      contentBuffer = decodeWorkspaceFileContent(input);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    let resolved;
+    try {
+      const relativePath = explicitPath
+        ? normalizeWorkspaceRelativePath(explicitPath, { allowEmpty: false })
+        : joinWorkspaceRelativePath(input.folderPath || input.folder || input.directory || "files", fileName);
+      resolved = resolveWorkspacePath(access.workspace, relativePath);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (fs.existsSync(resolved.absolutePath) && fs.statSync(resolved.absolutePath).isDirectory()) {
+      return { ok: false, status: 409, error: "目标路径是文件夹，不能上传为文件。" };
+    }
+    const overwritten = fs.existsSync(resolved.absolutePath);
+    if (overwritten && input.overwrite === false) {
+      return { ok: false, status: 409, error: "文件已存在。" };
+    }
+    fs.mkdirSync(path.dirname(resolved.absolutePath), { recursive: true });
+    fs.writeFileSync(resolved.absolutePath, contentBuffer);
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const artifact = createArtifact({
+      workspaceId: access.workspace.workspaceId,
+      level: String(input.level || "artifact"),
+      title: fileName || path.posix.basename(resolved.relativePath),
+      content: contentBuffer.toString(String(input.encoding || "utf8")),
+      status: String(input.status || "draft"),
+      createdBy: input.createdBy || input.actorUserId || input.agentId || "",
+      artifactId: input.artifactId,
+      runId: input.runId || "",
+      citations: input.citations,
+      revision: input.revision,
+      createdAt: input.createdAt,
+      coverageReport: {
+        ...(asObject(input.coverageReport || input.coverage)),
+        workspaceFilePath: resolved.relativePath
+      }
+    }).artifact;
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      overwritten,
+      file: fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        stat: fs.statSync(resolved.absolutePath),
+        includeHash: true
+      }),
+      artifact
+    };
+  }
+
+  function downloadWorkspaceFile(input = {}) {
+    const statResult = workspaceFileMetadata(input);
+    if (!statResult.ok || !statResult.exists) {
+      return statResult.exists === false
+        ? { ...statResult, ok: false, status: 404, error: "文件不存在。" }
+        : statResult;
+    }
+    if (statResult.file.type !== "file") {
+      return { ok: false, status: 400, error: "目标路径不是文件。" };
+    }
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const resolved = resolveWorkspacePath(access.workspace, statResult.file.relativePath);
+    const content = fs.readFileSync(resolved.absolutePath);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      file: statResult.file,
+      encoding: "base64",
+      contentBase64: content.toString("base64"),
+      content: input.includeText === false ? undefined : content.toString(String(input.textEncoding || input.encoding || "utf8"))
     };
   }
 
@@ -2700,6 +3061,11 @@ export function createAgentWorkspace({ userDataPath }) {
     submit,
     resolveSubmission,
     createArtifact,
+    createWorkspaceFolder,
+    listWorkspaceFiles,
+    workspaceFileMetadata,
+    uploadWorkspaceFile,
+    downloadWorkspaceFile,
     updateArtifactsStatus,
     createIssue,
     updateIssue,

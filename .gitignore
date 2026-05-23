@@ -30,6 +30,7 @@ crash-*
 !/build/
 !/build/README.md
 /reports/production-readiness/
+/.cache/
 
 # Java / Rust / Node build outputs
 node_modules/

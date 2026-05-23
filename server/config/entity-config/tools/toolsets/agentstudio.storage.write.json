@@ -1,0 +1,10 @@
+{
+  "id": "pact.storage.write",
+  "label": "Storage write",
+  "requiredScopes": [
+    "storage:write"
+  ],
+  "maxRisk": "safe_write",
+  "grantable": true,
+  "defaultForAgents": false
+}

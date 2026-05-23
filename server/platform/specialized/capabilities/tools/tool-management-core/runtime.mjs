@@ -109,6 +109,17 @@ function buildDirectOperationRequest({ operation, input = {} }) {
   for (const name of pathParamNames) {
     if (params[name] === undefined && input[name] !== undefined) {
       params[name] = input[name];
+      continue;
+    }
+    const paramDefinition = [
+      ...(operation.http?.params || []),
+      ...(operation.rpc?.params || [])
+    ].find((item) => item.name === name);
+    const aliasValue = (paramDefinition?.aliases || []).map((alias) => input[alias]).find(
+      (item) => item !== undefined && item !== null && item !== ""
+    );
+    if (params[name] === undefined && aliasValue !== undefined) {
+      params[name] = aliasValue;
     }
   }
   let path = operation.http?.path || "/";
@@ -120,7 +131,10 @@ function buildDirectOperationRequest({ operation, input = {} }) {
     ? input.query
     : input;
   for (const queryParam of operation.http?.query || []) {
-    const value = query[queryParam.name];
+    const aliases = [queryParam.name, ...(queryParam.aliases || [])];
+    const value = aliases.map((alias) => query[alias]).find(
+      (item) => item !== undefined && item !== null && item !== ""
+    );
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(queryParam.name, String(value));
     }

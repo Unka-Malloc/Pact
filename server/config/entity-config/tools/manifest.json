@@ -5,11 +5,11 @@
   "groups": [
     {
       "kind": "scopes",
-      "count": 7
+      "count": 8
     },
     {
       "kind": "toolsets",
-      "count": 16
+      "count": 17
     },
     {
       "kind": "profiles",

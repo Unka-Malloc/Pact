@@ -55,6 +55,13 @@ async function main() {
   });
   assert.equal(deniedRepair.ok, false);
   assert.equal(deniedRepair.status, 428);
+  const upload = byId.get("agent_workspaces.file.upload");
+  assert.ok(upload, "agent_workspaces.file.upload must be registered");
+  assert.equal(upload.requiredScopes.includes("storage:write"), true);
+  assert.equal(upload.readOnly, false);
+  assert.equal(upload.safety.risk, "safe_write");
+  assert.equal(upload.safety.requiresConfirmation, false);
+  assert.equal(upload.public, false);
 
   const disabledDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-auth-disabled-"));
   await assert.rejects(

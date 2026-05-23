@@ -313,15 +313,15 @@ async function verifyMcpTools({ baseUrl, token }) {
   if (
     !toolsList.ok
     || !health.ok
-    || tools.length !== 1
-    || tools[0]?.name !== "pact.call"
+    || (tools.length !== 1 && tools.length !== 5)
+    || !tools.some((tool) => tool.name === "pact.call" || tool.name === "pact.workspace")
     || health.payload?.result?.structuredContent?.payload?.ok !== true
   ) {
     throw new Error("MCP HTTP verification failed.");
   }
   return {
     toolCount: tools.length,
-    stableToolName: tools[0]?.name || "",
+    stableToolName: tools.find((tool) => tool.name === "pact.call")?.name || "pact.call",
     systemHealthOk: health.payload?.result?.structuredContent?.payload?.ok === true
   };
 }

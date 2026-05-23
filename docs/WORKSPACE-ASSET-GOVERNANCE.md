@@ -356,7 +356,7 @@ Agent 安装策略：
 - 终端用户安装不得依赖完整服务端 checkout；统一通过 `pact-mcp-connector` release 包扫描本机 Pact 服务并验证签名，再运行 `npx pact-mcp-connector@latest install` 进入 TUI 选择要连接的客户端。安装器默认向已验证的本机 Pact 申请 Tool Management grant token 并写入客户端配置；脚本化场景使用 `--target codex` 即可，`--token-stdin` 只用于预先签发的自定义 grant。显式服务端地址必须先通过 `server-config --set --url <Pact>` 验证并保存。
 - 一行安装脚本优先使用已有 Node.js 20+ 下载小体积 source tarball；没有 Node.js、npm、npx 或包管理器的智能体宿主机必须 fallback 到 portable zip release 包：`pact-mcp-connector-<version>-<platform>.zip` 内置 Node runtime，提供 `./pact-mcp install` TUI、`./pact-mcp install --target <client>` 和 macOS `install.command`。
 - stdio proxy：仅作为目标 agent 不支持 HTTP MCP 或 headers 时的未来兼容入口；当前 release 安装路径默认不启用 stdio。
-- Codex：通过 `codex plugin marketplace add`、`codex plugin add` 和 `codex mcp add --url --bearer-token-env-var` 安装。
+- Codex：通过 `codex mcp add --url --bearer-token-env-var` 安装；如需兼容旧版 CLI，可再尝试 `codex plugin marketplace add` 与 `codex plugin add`（失败不影响主流程）。
 - Gemini CLI：通过 `gemini mcp add --transport http --header X-Pact-Api-Key` 安装，同时生成并校验 Stitch extension 同构 manifest。
 - Kilo Code：按 Kilo 标准 `~/.config/kilo/kilo.json` 的 remote MCP 配置格式结构化写入。
 - Copilot：通过 `copilot mcp add --transport http --header X-Pact-Api-Key` 安装。

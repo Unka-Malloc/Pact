@@ -15,7 +15,11 @@ When the user asks to release the current version (currently `v0.0.1`), the agen
    Run `npm run server:verify:mcp-release` locally to ensure the build works and tests pass.
 
 2. **Bump Versions in Code:**
-   Update the version string to the target version (currently `0.0.1`) in the following files:
+   Run the metadata bump script first so the three required files are updated together:
+   ```bash
+   npm run metadata:bump -- --version <VERSION>
+   ```
+   The script updates:
    - `package.json` (the root project)
    - `mcp-connector/package.json`
    - `server/platform/common/mcp/http-mcp-adapter.mjs` (variables `MCP_SERVER_VERSION` and `MCP_CONNECTOR_VERSION`)
@@ -30,11 +34,11 @@ When the user asks to release the current version (currently `v0.0.1`), the agen
    ```
 
 4. **Generate Release Assets:**
-   Run the release packaging script to generate the portable bundles and tarballs. By default, this will download `v20.12.2` Node.js binaries for 5 target platforms (`darwin-arm64`, `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`) which may take a minute or two:
+   Run the release packaging script to generate the portable bundles and tarballs. By default, this will use the project-preferred Node.js version (resolved from project configuration first, then local Node runtime) for 4 target platforms (`darwin-arm64`, `linux-x64` (x86_64/amd64), `linux-arm64`, `linux-x64-musl` (x86_64/amd64 musl)). macOS outputs both `.zip` and `.tar.gz`; Linux platforms default to `.tar.gz`. Output asset names are named with `x86_64` (for example `linux-x86_64`, `linux-x86_64-musl`). Override with `--node-version=<version>` or `PACT_MCP_NODE_VERSION` if you need a pinned version.
    ```bash
    npm run server:mcp:release
    ```
-   *Note: If you only need specific platforms, you can pass `-- --platforms=linux-x64,darwin-arm64`.*
+   *Note: If you only need specific platforms, you can pass `-- --platforms=linux-x64,darwin-arm64` (x86_64 is still `linux-x64`).*
    This will output files to `build/release/mcp/`.
 
 5. **Upload Assets to GitHub Release:**

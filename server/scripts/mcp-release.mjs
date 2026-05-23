@@ -104,54 +104,186 @@ async function writeExecutable(filePath, content) {
   }
 }
 
+function getNodeCacheDirectory() {
+  if (process.env.PACT_MCP_NODE_RUNTIME_CACHE_DIR && process.env.PACT_MCP_NODE_RUNTIME_CACHE_DIR.trim()) {
+    return process.env.PACT_MCP_NODE_RUNTIME_CACHE_DIR.trim();
+  }
+
+  return path.join(projectRoot, ".cache", "pact", "mcp-node-runtime");
+}
+
+async function hasUsableCachedNodeArchive(archivePath) {
+  try {
+    const stat = await fs.stat(archivePath);
+    return stat.isFile() && stat.size > 1024;
+  } catch {
+    return false;
+  }
+}
+
+function getNodeArchiveFilename(version, target) {
+  const isMusl = target.includes("-musl");
+  const targetBase = isMusl ? target.replace(/-musl$/, "") : target;
+  return isMusl ? `node-${version}-${targetBase}-musl.tar.gz` : `node-${version}-${target}.tar.gz`;
+}
+
+function getNodeArchivePath(version, target) {
+  const archive = getNodeArchiveFilename(version, target);
+  return path.join(getNodeCacheDirectory(), archive);
+}
+
+function releaseBundlePlatform(target) {
+  if (target === "linux-x64") {
+    return "linux-x86_64";
+  }
+  if (target === "linux-x64-musl") {
+    return "linux-x86_64-musl";
+  }
+  return target;
+}
+
+function parseNodeVersionFromEngineRange(engineRange) {
+  if (!engineRange || typeof engineRange !== "string") {
+    return null;
+  }
+
+  const cleaned = engineRange.trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  const exactMatch = cleaned.match(/^(?:v)?(\d+\.\d+\.\d+)$/);
+  if (exactMatch) {
+    return { exact: normalizeNodeVersion(exactMatch[1]) };
+  }
+  return null;
+}
+
+async function resolveProjectNodeVersion() {
+  try {
+    const packageData = await readJson(path.join(connectorRoot, "package.json"));
+    const engineRange = packageData?.engines?.node;
+    const parsed = parseNodeVersionFromEngineRange(String(engineRange || "").trim());
+    if (!parsed) {
+      return "";
+    }
+
+    if (parsed.exact) {
+      return parsed.exact;
+    }
+
+    return "";
+  } catch (error) {
+    console.error(`Warning: ${error?.message || String(error)}; project Node resolution skipped.`);
+    return "";
+  }
+}
+
+function normalizeNodeVersion(version) {
+  return String(version).trim().startsWith("v") ? String(version).trim() : `v${String(version).trim()}`;
+}
+
+async function resolveBundledNodeVersion(explicitVersion = "") {
+  if (typeof explicitVersion === "string" && explicitVersion.trim()) {
+    return normalizeNodeVersion(explicitVersion);
+  }
+
+  const envVersion = process.env.PACT_MCP_NODE_VERSION || process.env.PACT_MCP_NODE_LTS_VERSION;
+  if (envVersion && envVersion.trim()) {
+    return normalizeNodeVersion(envVersion);
+  }
+
+  const projectNodeVersion = await resolveProjectNodeVersion();
+  if (projectNodeVersion) {
+    return projectNodeVersion;
+  }
+
+  if (process.versions.node) {
+    return normalizeNodeVersion(process.versions.node);
+  }
+
+  try {
+    const response = await fetch("https://nodejs.org/dist/index.json");
+    if (!response.ok) {
+      throw new Error(`Failed to resolve latest LTS: ${response.status} ${response.statusText}`);
+    }
+
+    const releases = await response.json();
+    const latestLts = releases.find((release) => release.lts);
+    if (!latestLts?.version) {
+      throw new Error("No LTS release found in nodejs.org index");
+    }
+
+    return normalizeNodeVersion(latestLts.version);
+  } catch (error) {
+    console.error(`Warning: ${error?.message || String(error)}; falling back to current Node runtime version.`);
+    return normalizeNodeVersion(process.versions.node);
+  }
+}
 
 async function downloadNodeBinary(version, target, outputDir) {
   const isMusl = target.includes("-musl");
   const baseUrl = isMusl 
     ? "https://unofficial-builds.nodejs.org/download/release" 
     : "https://nodejs.org/dist";
-  
-  const parts = target.split('-');
-  const os = parts[0];
-  const arch = parts[1];
-  const filename = isMusl ? `node-${version}-${os}-${arch}-musl.tar.gz` : `node-${version}-${os}-${arch}.tar.gz`;
+  const filename = getNodeArchiveFilename(version, target);
   const downloadUrl = `${baseUrl}/${version}/${filename}`;
-  const archivePath = path.join(outputDir, filename);
+  const cacheDir = getNodeCacheDirectory();
+  const archivePath = getNodeArchivePath(version, target);
+  const tempArchivePath = `${archivePath}.download`;
 
-  console.error(`Downloading ${downloadUrl}...`);
-  const res = await fetch(downloadUrl);
-  if (!res.ok) {
-    throw new Error(`Failed to download Node binary from ${downloadUrl}: ${res.statusText}`);
+  await fs.mkdir(cacheDir, { recursive: true });
+  if (await hasUsableCachedNodeArchive(archivePath)) {
+    console.error(`Using cached Node runtime: ${archivePath}`);
+  } else {
+    console.error(`Downloading ${downloadUrl}...`);
+    const res = await fetch(downloadUrl);
+    if (!res.ok) {
+      throw new Error(`Failed to download Node binary from ${downloadUrl}: ${res.statusText}`);
+    }
+    
+    const fileStream = (await import("node:fs")).createWriteStream(tempArchivePath);
+    try {
+      await pipeline(res.body, fileStream);
+      await fs.rename(tempArchivePath, archivePath);
+    } catch (error) {
+      await fs.rm(tempArchivePath, { force: true });
+      throw error;
+    }
   }
-  
-  const fileStream = (await import("node:fs")).createWriteStream(archivePath);
-  await pipeline(res.body, fileStream);
+
+  if (!await hasUsableCachedNodeArchive(archivePath)) {
+    throw new Error(`Failed to download or locate cached Node binary: ${archivePath}`);
+  }
 
   const extractDir = path.join(outputDir, `extracted-${target}`);
+  await fs.rm(extractDir, { recursive: true, force: true });
   await fs.mkdir(extractDir, { recursive: true });
   await run("tar", ["-xzf", archivePath, "-C", extractDir, "--strip-components=1"]);
   
   return path.join(extractDir, "bin", "node");
 }
 
-async function createPortableBundle({ outputDir, packageJson, target }) {
-  const platform = target;
+async function createPortableBundle({ outputDir, packageJson, target, bundledVersion }) {
+  const platform = releaseBundlePlatform(target);
   const rootName = `${packageJson.name}-${packageJson.version}-${platform}`;
   const stagingRoot = path.join(outputDir, rootName);
   const appRoot = path.join(stagingRoot, "app");
   const runtimeRoot = path.join(stagingRoot, "runtime");
   const runtimePath = path.join(runtimeRoot, "node");
+  const generateZip = !platform.startsWith("linux");
   const archiveName = `${rootName}.tar.gz`;
   const archivePath = path.join(outputDir, archiveName);
-  const zipArchiveName = `${rootName}.zip`;
-  const zipArchivePath = path.join(outputDir, zipArchiveName);
+  const zipArchiveName = generateZip ? `${rootName}.zip` : null;
+  const zipArchivePath = zipArchiveName ? path.join(outputDir, zipArchiveName) : null;
 
   await fs.rm(stagingRoot, { recursive: true, force: true });
   await fs.rm(archivePath, { force: true });
-  await fs.rm(zipArchivePath, { force: true });
+  if (zipArchivePath) {
+    await fs.rm(zipArchivePath, { force: true });
+  }
   await fs.mkdir(path.join(appRoot, "bin"), { recursive: true });
   await fs.mkdir(runtimeRoot, { recursive: true });
-  const bundledVersion = "v20.12.2";
   const downloadedNodeBin = await downloadNodeBinary(bundledVersion, target, outputDir);
   await fs.copyFile(downloadedNodeBin, runtimePath);
   await fs.chmod(runtimePath, 0o755);
@@ -239,10 +371,16 @@ async function createPortableBundle({ outputDir, packageJson, target }) {
     ""
   ].join("\n"));
 
-  await run("tar", ["-czf", archivePath, "-C", outputDir, rootName]);
-  await run("zip", ["-qry", zipArchivePath, rootName], { cwd: outputDir });
   const stat = await fs.stat(archivePath);
-  const zipStat = await fs.stat(zipArchivePath);
+  await run("tar", ["-czf", archivePath, "-C", outputDir, rootName]);
+  let zipSha256 = null;
+  let zipSizeBytes = null;
+  if (zipArchivePath) {
+    await run("zip", ["-qry", zipArchivePath, rootName], { cwd: outputDir });
+    const zipStat = await fs.stat(zipArchivePath);
+    zipSha256 = await sha256(zipArchivePath);
+    zipSizeBytes = zipStat.size;
+  }
   return {
     platform,
     archiveName,
@@ -251,8 +389,8 @@ async function createPortableBundle({ outputDir, packageJson, target }) {
     sizeBytes: stat.size,
     zipArchiveName,
     zipArchivePath,
-    zipSha256: await sha256(zipArchivePath),
-    zipSizeBytes: zipStat.size,
+    zipSha256,
+    zipSizeBytes,
     rootName,
     executable: unixExecutableName("pact-mcp"),
     includesNodeRuntime: true,
@@ -371,27 +509,36 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  platform=\"${platform}-musl\"",
     "fi",
     "",
-    "install_from_portable_zip() {",
-    "  require_command unzip",
+    "install_from_portable_archive() {",
+    "  require_command tar",
     "  case \"$platform\" in",
-    ...portables.flatMap(p => [
-      `    ${p.platform})`,
-      `      archive=${JSON.stringify(p.zipArchiveName)}`,
-      `      archive_sha256=${JSON.stringify(p.zipSha256)}`,
-      `      archive_root=${JSON.stringify(p.rootName)}`,
-      "      ;;"
-    ]),
+    ...portables.flatMap(p => {
+      const archiveName = p.zipArchiveName || p.archiveName;
+      const archiveSha = p.zipArchiveName ? p.zipSha256 : p.sha256;
+      const archiveType = p.zipArchiveName ? "zip" : "tar";
+      return [
+        `    ${p.platform})`,
+        `      archive=${JSON.stringify(archiveName)}`,
+        `      archive_sha256=${JSON.stringify(archiveSha)}`,
+        `      archive_root=${JSON.stringify(p.rootName)}`,
+        `      archive_type=${JSON.stringify(archiveType)}`,
+        "      ;;"
+      ];
+    }),
     "    *)",
-    "      echo \"No usable Node.js runtime was found and this release has no portable zip for: $platform\" >&2",
-    `      echo "This release contains ${portables.map(p => p.platform).join(', ')}. Build and upload the matching portable zip for this platform." >&2`,
+    "      echo \"No usable Node.js runtime was found and this release has no portable archive for: $platform\" >&2",
+    `      echo "This release contains ${portables.map(p => p.platform).join(', ')}. Build and upload the matching portable archive for this platform." >&2`,
     "      exit 1",
     "      ;;",
     "  esac",
-    "  zip_path=\"$tmp_dir/$archive\"",
+    "  archive_path=\"$tmp_dir/$archive\"",
+    "  if [ \"$archive_type\" = \"zip\" ]; then",
+    "    require_command unzip",
+    "  fi",
     "  download_url=\"${BASE_URL%/}/$archive\"",
     "  echo \"Downloading Pact MCP connector $VERSION portable runtime for $platform...\"",
-    "  curl -fL --retry 3 --connect-timeout 20 -o \"$zip_path\" \"$download_url\"",
-    "  actual_sha256=$(hash_file \"$zip_path\")",
+    "  curl -fL --retry 3 --connect-timeout 20 -o \"$archive_path\" \"$download_url\"",
+    "  actual_sha256=$(hash_file \"$archive_path\")",
     "  if [ \"$actual_sha256\" != \"$archive_sha256\" ]; then",
     "    echo \"Checksum mismatch for $archive\" >&2",
     "    echo \"expected: $archive_sha256\" >&2",
@@ -400,7 +547,11 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  fi",
     "  extract_dir=\"$tmp_dir/portable\"",
     "  mkdir -p \"$extract_dir\" \"$INSTALL_PARENT\"",
-    "  unzip -q \"$zip_path\" -d \"$extract_dir\"",
+    "  if [ \"$archive_type\" = \"zip\" ]; then",
+    "    unzip -q \"$archive_path\" -d \"$extract_dir\"",
+    "  else",
+    "    tar -xzf \"$archive_path\" -C \"$extract_dir\"",
+    "  fi",
     "  target_dir=\"$INSTALL_PARENT/$archive_root\"",
     "  rm -rf \"$target_dir\"",
     "  mv \"$extract_dir/$archive_root\" \"$target_dir\"",
@@ -420,7 +571,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "fi",
     "",
     "echo \"No usable Node.js $MINIMUM_NODE_MAJOR+ runtime found; falling back to the portable connector.\"",
-    "install_from_portable_zip \"$@\"",
+    "install_from_portable_archive \"$@\"",
     ""
   ].join("\n");
   await fs.writeFile(scriptPath, content);
@@ -446,6 +597,9 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
 
 function releaseManifest({ channel, packageJson, tarballName, tarballPath, checksum, sizeBytes, portables, bootstrap }) {
   const portable = portables[0];
+  const hasFallbackZip = Boolean(portable.zipArchiveName);
+  const fallbackDownload = hasFallbackZip ? portable.zipArchiveName : portable.archiveName;
+  const fallbackSizeBytes = hasFallbackZip ? portable.zipSizeBytes : portable.sizeBytes;
   return {
     schemaVersion: 1,
     packageType: "pact.mcp-connector-release.v1",
@@ -466,7 +620,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
     portable: {
       strategy: "embedded-node-runtime",
       requiresInstalledNode: false,
-      preferredArchive: "zip",
+      preferredArchive: hasFallbackZip ? "zip" : "tar.gz",
       currentPlatform: portable.platform,
       tarball: portable.archiveName,
       sha256: portable.sha256,
@@ -479,6 +633,10 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       bundledNodeVersion: portable.bundledNodeVersion,
       zipInstallEntry: "install.command",
       zipUninstallEntry: "uninstall.command",
+      installArchive: portable.archiveName,
+      installArchiveSha256: portable.sha256,
+      installArchiveSizeBytes: portable.sizeBytes,
+      installArchiveType: portable.zipArchiveName ? "zip" : "tar",
       installCommand: `./${portable.executable} register`,
       clientInstallCommand: `./${portable.executable} install --target <client>`,
       interactiveUninstallCommand: `./${portable.executable} uninstall`,
@@ -519,9 +677,9 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       uninstallCommand: bootstrap.oneLineUninstallCommand,
       strategy: "installed-node-source-tarball-with-portable-runtime-fallback",
       preferredDownload: tarballName,
-      fallbackDownload: portable.zipArchiveName,
+      fallbackDownload,
       sourceSizeBytes: sizeBytes,
-      fallbackSizeBytes: portable.zipSizeBytes,
+      fallbackSizeBytes,
       installsTo: "~/.pact/mcp/connector",
       startsInteractiveInstaller: true,
       startsInteractiveUninstaller: true,
@@ -532,7 +690,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       releaseFiles: [
         tarballName,
         ...portables.map(p => p.archiveName),
-        ...portables.map(p => p.zipArchiveName),
+        ...portables.map((p) => p.zipArchiveName).filter(Boolean),
         bootstrap.scriptName,
         bootstrap.uninstallScriptName,
         "pact-mcp-release.json",
@@ -565,11 +723,13 @@ async function main() {
   const portables = [];
   const defaultTargets = ['darwin-arm64', 'linux-x64', 'linux-arm64', 'linux-x64-musl'];
   const targets = args.platforms ? String(args.platforms).split(',') : defaultTargets;
+  const bundledVersion = await resolveBundledNodeVersion(args["node-version"] || args["lts-version"]);
   for (const target of targets) {
     portables.push(await createPortableBundle({
       outputDir,
       packageJson,
-      target
+      target,
+      bundledVersion
     }));
   }
   const bootstrap = await createBootstrapInstaller({
@@ -605,12 +765,12 @@ async function main() {
     bootstrapInstallerPath: bootstrap.scriptPath,
     tarballPath,
     portableTarballs: portables.map(p => p.archivePath),
-    portableZips: portables.map(p => p.zipArchivePath),
+    portableZips: portables.map(p => p.zipArchivePath).filter(Boolean),
     packageName: packageJson.name,
     packageVersion: packageJson.version,
     sha256: checksum,
     portableSha256: portables.map(p => p.sha256),
-    portableZipSha256: portables.map(p => p.zipSha256),
+    portableZipSha256: portables.map((p) => p.zipSha256).filter(Boolean),
     bootstrapInstallerSha256: bootstrap.sha256,
     bootstrapUninstallerPath: bootstrap.uninstallScriptPath,
     bootstrapUninstallerSha256: bootstrap.uninstallSha256,
