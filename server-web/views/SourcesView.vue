@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { useConsole } from '../composables/useConsole';
-import {
-  StatusPill,
-} from '../components/common';
+import StatusPill from '../components/StatusPill.vue';
 const {
   enabledMountCount,
   totalMountCount,

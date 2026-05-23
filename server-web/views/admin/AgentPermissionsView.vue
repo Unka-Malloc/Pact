@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
-import {
-  ConfigFoldCard,
-  FeatureToggle,
-} from '../../components/common';
+import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
+import FeatureToggle from '../../components/FeatureToggle.vue';
 const {
   addAgentPermissionGroup,
   adminView,

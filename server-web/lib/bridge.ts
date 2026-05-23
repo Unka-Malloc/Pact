@@ -83,6 +83,17 @@ type Bridge = {
   listAuthAudit: (limit?: number) => Promise<{ items: ConsoleAuditItem[] }>;
   listAuthSessions: () => Promise<{ sessions: Array<Record<string, unknown>> }>;
   revokeAuthSession: (sessionId: string) => Promise<{ ok: boolean }>;
+  listMcpAuthorizationRequests: (status?: string) => Promise<{ requests: McpAuthorizationRequest[] }>;
+  resolveMcpAuthorizationRequest: (
+    requestId: string,
+    payload: {
+      resolution: "approved" | "rejected";
+      clientName?: string;
+      scopes?: string[];
+      toolsets?: string[];
+      toolAllow?: string[];
+    },
+  ) => Promise<{ ok: boolean; grantId?: string }>;
   getSettings: () => Promise<AgentSettings>;
   saveSettings: (settings: AgentSettings) => Promise<AgentSettings>;
   probeModel: (payload: {
@@ -358,6 +369,15 @@ type Bridge = {
   knowledgeDistillationWorkbenchPackageUrl: (runId: string) => string;
 };
 
+export type McpAuthorizationRequest = {
+  requestId: string;
+  status: "pending" | "approved" | "rejected";
+  clientName?: string;
+  reason?: string;
+  requestedScopes?: string[];
+  requestedTools?: string[];
+} & Record<string, unknown>;
+
 let csrfToken = "";
 
 function updateCsrfToken(value: unknown) {
@@ -533,6 +553,14 @@ const browserBridge: Bridge = {
   listAuthSessions: () => postJson<{ sessions: Array<Record<string, unknown>> }>("/api/auth/sessions"),
   revokeAuthSession: (sessionId) =>
     postJson<{ ok: boolean }>(`/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke`, {}),
+  listMcpAuthorizationRequests: (status = "pending") =>
+    getJson<{ requests: McpAuthorizationRequest[] }>(`/api/console/mcp/authorization/requests?status=${status}`),
+  resolveMcpAuthorizationRequest: (requestId, payload) =>
+    postJson<{ ok: boolean; grantId?: string }>(
+      `/api/console/mcp/authorization/requests/${encodeURIComponent(requestId)}/resolve`,
+      payload,
+      { safetyConfirm: true },
+    ),
   getSettings: () => getJson<AgentSettings>("/api/settings"),
   saveSettings: (settings) => postJson<AgentSettings>("/api/settings", settings, { safetyConfirm: true }),
   probeModel: (payload) =>

@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { useConsole } from '../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  BrowseSelectButton,
-  ConfigFoldCard,
-  FeatureToggle,
-  OptionBar,
-  StatusPill,
-} from '../components/common';
+import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
+import BrowseSelectButton from '../components/BrowseSelectButton.vue';
+import ConfigFoldCard from '../components/ConfigFoldCard.vue';
+import FeatureToggle from '../components/FeatureToggle.vue';
+import OptionBar from '../components/OptionBar.vue';
+import StatusPill from '../components/StatusPill.vue';
 const {
   addModuleAgentProfileFromDraft,
   analysisModuleOptionBarOptions,

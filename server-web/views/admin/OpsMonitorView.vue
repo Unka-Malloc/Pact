@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
-import {
-  ConfigFoldCard,
-  StatusPill,
-} from '../../components/common';
+import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
+import StatusPill from '../../components/StatusPill.vue';
 const {
   acknowledgeMonitorAlert,
   activeMonitorAlerts,

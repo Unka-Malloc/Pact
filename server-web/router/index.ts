@@ -1,4 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-router";
+export type { AdminSection, DebugTab, KnowledgeTab } from "./routes";
+export { adminSectionToSlug, slugToAdminView, viewToPath } from "./routes";
 
 // ─── Views ────────────────────────────────────────────────────────────────────
 import WorkspacesView from "../views/WorkspacesView.vue";
@@ -21,22 +23,8 @@ import ProductionHealthView from "../views/admin/ProductionHealthView.vue";
 import StorageView from "../views/admin/StorageView.vue";
 import ToolsView from "../views/admin/ToolsView.vue";
 
-// ─── Route definitions ─────────────────────────────────────────────────────
-export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance";
-export type DebugTab = "knowledgeRecall" | "agentRetrieval";
-export type AdminSection =
-  | "storage"
-  | "jobs"
-  | "logs"
-  | "ops-monitor"
-  | "clients"
-  | "tools"
-  | "modules"
-  | "productionHealth"
-  | "agent-management"
-  | "agent-permissions"
-  | "agent-config"
-  | "maintenance-agent";
+const validKnowledgeTabs = new Set(["management", "wordCloud", "conflicts", "maintenance"]);
+const validDebugTabs = new Set(["knowledgeRecall", "agentRetrieval"]);
 
 const routes: RouteRecordRaw[] = [
   // Agent workspace
@@ -49,10 +37,12 @@ const routes: RouteRecordRaw[] = [
   { path: "/intelligence", component: IntelligenceView, meta: { viewId: "intelligence" } },
 
   // Knowledge sub-tabs
-  { path: "/knowledge", redirect: "/knowledge/wordCloud" },
+  { path: "/knowledge", redirect: "/knowledge/management" },
   {
     path: "/knowledge/:tab",
     component: KnowledgeView,
+    beforeEnter: (to) =>
+      validKnowledgeTabs.has(String(to.params.tab)) ? true : "/knowledge/management",
     meta: { viewId: "knowledge" },
   },
 
@@ -64,6 +54,8 @@ const routes: RouteRecordRaw[] = [
   {
     path: "/debug/:tab",
     component: DebugView,
+    beforeEnter: (to) =>
+      validDebugTabs.has(String(to.params.tab)) ? true : "/debug/knowledgeRecall",
     meta: { viewId: "debug" },
   },
 
@@ -93,62 +85,12 @@ export const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 });
 
-// ─── Route → AppView helpers ───────────────────────────────────────────────
-
-/** Maps AppView to its canonical route path. */
-export function viewToPath(
-  view: string,
-  opts?: { tab?: string; adminSection?: string },
-): string {
-  switch (view) {
-    case "dashboard":   return "/";
-    case "feed":        return "/feed";
-    case "sources":     return "/sources";
-    case "intelligence": return "/intelligence";
-    case "knowledge":
-      return `/knowledge/${opts?.tab ?? "wordCloud"}`;
-    case "debug":
-      return `/debug/${opts?.tab ?? "knowledgeRecall"}`;
-    case "admin":
-      return `/admin/${adminSectionToSlug(opts?.adminSection ?? "storage")}`;
-    default:            return "/";
+router.beforeEach((to) => {
+  if (to.path.startsWith("/knowledge/") && !validKnowledgeTabs.has(String(to.params.tab))) {
+    return { path: "/knowledge/management", replace: true };
   }
-}
-
-/** Maps AdminView key to URL slug. */
-export function adminSectionToSlug(section: string): string {
-  const map: Record<string, string> = {
-    storage: "storage",
-    jobs: "jobs",
-    logs: "logs",
-    opsMonitor: "ops-monitor",
-    clients: "clients",
-    tools: "tools",
-    modules: "modules",
-    productionHealth: "production-health",
-    agentManagement: "agent-management",
-    agentPermissions: "agent-permissions",
-    agentConfig: "agent-config",
-    maintenanceAgent: "maintenance-agent",
-  };
-  return map[section] ?? "storage";
-}
-
-/** Maps URL slug back to AdminView key. */
-export function slugToAdminView(slug: string): string {
-  const map: Record<string, string> = {
-    storage: "storage",
-    jobs: "jobs",
-    logs: "logs",
-    "ops-monitor": "opsMonitor",
-    clients: "clients",
-    tools: "tools",
-    modules: "modules",
-    "production-health": "productionHealth",
-    "agent-management": "agentManagement",
-    "agent-permissions": "agentPermissions",
-    "agent-config": "agentConfig",
-    "maintenance-agent": "maintenanceAgent",
-  };
-  return map[slug] ?? "storage";
-}
+  if (to.path.startsWith("/debug/") && !validDebugTabs.has(String(to.params.tab))) {
+    return { path: "/debug/knowledgeRecall", replace: true };
+  }
+  return true;
+});

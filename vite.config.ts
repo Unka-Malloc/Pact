@@ -1,3 +1,5 @@
+import { DEFAULT_SERVER_PORT } from "./server/config/ServerEnv.mjs";
+
 import path from "node:path";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
@@ -48,13 +50,13 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_ORIGIN || `http://127.0.0.1:${process.env.VITE_API_PORT || "8787"}`,
+        target: process.env.VITE_API_ORIGIN || `http://127.0.0.1:${process.env.VITE_API_PORT || DEFAULT_SERVER_PORT}`,
         changeOrigin: true,
         secure: false,
         configure: (proxy) => {
           const targetOrigin =
             process.env.VITE_API_ORIGIN ||
-            `http://127.0.0.1:${process.env.VITE_API_PORT || "8787"}`;
+            `http://127.0.0.1:${process.env.VITE_API_PORT || DEFAULT_SERVER_PORT}`;
           proxy.on("proxyReq", (proxyReq) => {
             proxyReq.setHeader("origin", targetOrigin);
           });

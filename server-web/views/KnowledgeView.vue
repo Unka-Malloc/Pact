@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { useConsole } from '../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  BinaryCheckbox,
-  BrowseSelectButton,
-  ConfigFoldCard,
-  FeatureToggle,
-  OptionBar,
-  StatusPill,
-} from '../components/common';
+import { useRoute } from 'vue-router';
+import { useConsole, type KnowledgeTab } from '../composables/useConsole';
+import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
+import BinaryCheckbox from '../components/BinaryCheckbox.vue';
+import BrowseSelectButton from '../components/BrowseSelectButton.vue';
+import ConfigFoldCard from '../components/ConfigFoldCard.vue';
+import FeatureToggle from '../components/FeatureToggle.vue';
+import OptionBar from '../components/OptionBar.vue';
+import SegmentedToggle from '../components/SegmentedToggle.vue';
+import StatusPill from '../components/StatusPill.vue';
 const {
   addChildWordCloud,
   addManualWordCloud,
@@ -148,7 +148,29 @@ const {
   wordCloudTerms,
   wordCloudVisibleTerms,
   wordCloudState,
+  highlightedConfigTarget,
+  publishRuleAuthoringPackage,
+  ruleActionOptionBarOptions,
+  ruleAuthoringCanSubmit,
+  ruleAuthoringDraftPayload,
+  ruleAuthoringForm,
+  ruleAuthoringManualSummary,
+  ruleAuthoringModelOptions,
+  ruleAuthoringResult,
+  ruleAuthoringStatusLabel,
+  ruleCreationMode,
+  ruleMatchStrategyOptionBarOptions,
+  ruleScopeOptionBarOptions,
+  runRuleAuthoringChat,
 } = useConsole();
+
+const route = useRoute();
+const activeKnowledgeTab = computed<KnowledgeTab>(() => {
+  const tab = String(route.params.tab ?? "");
+  return tab === "management" || tab === "wordCloud" || tab === "conflicts" || tab === "maintenance"
+    ? tab
+    : knowledgeTab.value;
+});
 
 const expandedSummaryIds = ref<Set<string>>(new Set());
 function toggleSummaryExpanded(wordBagId: string) {
@@ -177,44 +199,32 @@ function jumpToCloud(wordBagId: string) {
 }
 
 const isManagementKnowledgePanel = computed(
-  () => knowledgeTab.value === "management" && knowledgeManagementPanel.value === "knowledge",
+  () => activeKnowledgeTab.value === "management" && knowledgeManagementPanel.value === "knowledge",
 );
 const isManagementRulesPanel = computed(
-  () => knowledgeTab.value === "management" && knowledgeManagementPanel.value === "rules",
+  () => activeKnowledgeTab.value === "management" && knowledgeManagementPanel.value === "rules",
 );
 const isKnownKnowledgeTab = computed(
   () =>
     isManagementKnowledgePanel.value ||
     isManagementRulesPanel.value ||
-    knowledgeTab.value === "wordCloud" ||
-    knowledgeTab.value === "conflicts" ||
-    knowledgeTab.value === "maintenance",
+    activeKnowledgeTab.value === "wordCloud" ||
+    activeKnowledgeTab.value === "conflicts" ||
+    activeKnowledgeTab.value === "maintenance",
 );
 </script>
 
 <template>
           <section class="knowledge-layout">
-            <div
-              v-if="knowledgeTab === 'management'"
-              class="knowledge-management-tabs"
-              role="tablist"
+            <SegmentedToggle
+              v-if="activeKnowledgeTab === 'management'"
+              v-model="knowledgeManagementPanel"
+              :options="knowledgeManagementPanelOptionBarOptions"
               aria-label="知识管理面板"
-            >
-              <button
-                v-for="option in knowledgeManagementPanelOptionBarOptions"
-                :key="String(option.value)"
-                class="knowledge-management-tab"
-                :class="{ active: knowledgeManagementPanel === option.value }"
-                type="button"
-                role="tab"
-                :aria-selected="knowledgeManagementPanel === option.value"
-                @click="selectKnowledgeManagementPanel(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
+              size="large"
+            />
 
-            <template v-if="knowledgeTab === 'wordCloud'">
+            <template v-if="activeKnowledgeTab === 'wordCloud'">
               <article class="surface-card word-cloud-stage">
                 <div class="section-header">
                   <div>
@@ -635,17 +645,18 @@ const isKnownKnowledgeTab = computed(
               </div>
             </article>
 
-            <article v-if="knowledgeTab === 'conflicts'" class="surface-card knowledge-conflict-report">
+            <article v-if="activeKnowledgeTab === 'conflicts'" class="surface-card knowledge-conflict-report">
               <div class="section-header">
                 <div>
                   <h3>入库冲突审核</h3>
                   <p>知识录入发现同一路径不同内容、重复来源或结构化版本冲突时，会先进入这里等待人工决策。</p>
                 </div>
                 <div class="source-actions">
-                  <OptionBar
+                  <SegmentedToggle
                     v-model="knowledgeReviewStatus"
                     class="compact-select"
                     :options="knowledgeReviewStatusOptionBarOptions"
+                    size="small"
                   />
                   <button
                     class="tool-button"
@@ -890,7 +901,7 @@ const isKnownKnowledgeTab = computed(
 	              </div>
 	            </article>
 
-            <article v-if="knowledgeTab === 'maintenance'" class="surface-card knowledge-maintenance">
+            <article v-if="activeKnowledgeTab === 'maintenance'" class="surface-card knowledge-maintenance">
               <div class="section-header">
                 <div>
                   <h3>知识库配置</h3>
@@ -1127,6 +1138,131 @@ const isKnownKnowledgeTab = computed(
                     收起
                   </button>
                 </div>
+            </article>
+
+            <article v-if="isManagementRulesPanel" class="surface-card rule-authoring-card">
+              <div class="section-header">
+                <div>
+                  <h3>创建规则</h3>
+                  <p>同一份规则草稿支持智能对话和人工配置两种创建方式，任一侧修改都会同步到另一侧。</p>
+                </div>
+                <SegmentedToggle
+                  v-model="ruleCreationMode"
+                  :options="[{ value: 'chat', label: '智能对话' }, { value: 'manual', label: '人工配置' }]"
+                  aria-label="创建规则方式"
+                />
+              </div>
+              <form class="rule-authoring-form" :data-mode="ruleCreationMode" @submit.prevent="runRuleAuthoringChat">
+                <template v-if="ruleCreationMode === 'chat'">
+                  <label class="full-row">
+                    <span>需求</span>
+                    <textarea
+                      v-model="ruleAuthoringForm.message"
+                      rows="4"
+                      placeholder="例如：生成一个黄金规则，完全一样的知识直接跳过"
+                    ></textarea>
+                  </label>
+                  <AgentModelOptionBar
+                    data-config-target="rule-authoring-agent"
+                    :data-config-highlighted="highlightedConfigTarget === 'rule-authoring-agent'"
+                    v-model="ruleAuthoringForm.modelAlias"
+                    label="智能体"
+                    placeholder="未分配智能体"
+                    :options="ruleAuthoringModelOptions"
+                  />
+                </template>
+                <template v-else>
+                  <label>
+                    <span>规则名称</span>
+                    <input
+                      v-model="ruleAuthoringForm.ruleName"
+                      type="text"
+                      placeholder="例如：重复知识处理规则"
+                    />
+                  </label>
+                  <OptionBar
+                    v-model="ruleAuthoringForm.scope"
+                    label="适用范围"
+                    :options="ruleScopeOptionBarOptions"
+                  />
+                  <OptionBar
+                    v-model="ruleAuthoringForm.matchStrategy"
+                    label="匹配方式"
+                    :options="ruleMatchStrategyOptionBarOptions"
+                  />
+                  <OptionBar
+                    v-model="ruleAuthoringForm.action"
+                    label="执行动作"
+                    :options="ruleActionOptionBarOptions"
+                  />
+                  <label>
+                    <span>最低置信度</span>
+                    <input
+                      v-model.number="ruleAuthoringForm.confidence"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                    />
+                  </label>
+                  <label class="full-row">
+                    <span>补充说明</span>
+                    <textarea
+                      v-model="ruleAuthoringForm.notes"
+                      rows="3"
+                      placeholder="写清楚边界条件、例外情况或需要人工审核的场景"
+                    ></textarea>
+                  </label>
+                </template>
+                <button
+                  class="primary-action"
+                  type="submit"
+                  :disabled="busyKey === 'knowledge:rule-authoring' || !ruleAuthoringCanSubmit"
+                >
+                  {{ busyKey === "knowledge:rule-authoring" ? "生成中" : (ruleCreationMode === "manual" ? "按配置创建规则" : "生成规则草稿") }}
+                </button>
+              </form>
+              <div class="rule-authoring-sync-preview">
+                <strong>同步草稿</strong>
+                <span>{{ ruleAuthoringManualSummary }}</span>
+                <div class="rule-authoring-config-label">机器可读配置</div>
+                <pre>{{ jsonPreview(ruleAuthoringDraftPayload) }}</pre>
+              </div>
+              <div v-if="ruleAuthoringResult" class="rule-authoring-result">
+                <div class="rule-authoring-status">
+                  <strong>{{ ruleAuthoringStatusLabel(ruleAuthoringResult.status) }}</strong>
+                  <span v-if="ruleAuthoringResult.runId">{{ shortId(ruleAuthoringResult.runId) }}</span>
+                </div>
+                <div class="rule-authoring-pipeline">
+                  <span
+                    v-for="(step, stepIndex) in ruleAuthoringResult.steps || []"
+                    :key="`${String(step.stage || 'stage')}:${stepIndex}`"
+                    :data-status="String(step.status || '')"
+                  >
+                    {{ step.stage }} · {{ step.status }}
+                  </span>
+                </div>
+                <div v-if="ruleAuthoringResult.confirmation" class="rule-authoring-confirm">
+                  <span>
+                    规则包 {{ ruleAuthoringResult.confirmation.packageId }} v{{ ruleAuthoringResult.confirmation.version }}
+                    已保存为草稿。
+                  </span>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    :disabled="busyKey === 'knowledge:rule-authoring:publish'"
+                    @click="publishRuleAuthoringPackage"
+                  >
+                    {{ busyKey === "knowledge:rule-authoring:publish" ? "发布中" : "确认发布" }}
+                  </button>
+                </div>
+                <ConfigFoldCard title="门禁结果">
+                  <pre>{{ jsonPreview(ruleAuthoringResult.gate || {}) }}</pre>
+                </ConfigFoldCard>
+                <ConfigFoldCard title="生成的 JSON 规则包">
+                  <pre>{{ jsonPreview(ruleAuthoringResult.package || {}) }}</pre>
+                </ConfigFoldCard>
+              </div>
             </article>
 
             <article

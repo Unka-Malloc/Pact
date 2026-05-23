@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  BinaryCheckbox,
-  ConfigFoldCard,
-  OptionBar,
-  StatusPill,
-} from '../../components/common';
+import AgentModelOptionBar from '../../components/AgentModelOptionBar.vue';
+import BinaryCheckbox from '../../components/BinaryCheckbox.vue';
+import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
+import OptionBar from '../../components/OptionBar.vue';
+import StatusPill from '../../components/StatusPill.vue';
 const {
   addModelProvider,
   addableModelProviderOptionBarOptions,
@@ -687,7 +685,7 @@ const {
                   <pre>{{ jsonPreview({
                     http_request: {
                       method: 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS',
-                      url: 'http://127.0.0.1:8787/api/tool-management/v1/execute',
+                      url: 'http://127.0.0.1:7228/api/tool-management/v1/execute',
                       headers: {},
                       query: {},
                       body: {},

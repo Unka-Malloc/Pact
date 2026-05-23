@@ -1198,30 +1198,7 @@
   gap: var(--space-3-5);
 }
 
-.rule-creation-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-0-5);
-  padding: 3px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-}
 
-.rule-creation-toggle button {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.rule-creation-toggle button[data-active="true"] {
-  background: var(--bg-surface);
-  color: var(--brand);
-  box-shadow: 0 1px 4px rgba(22, 22, 22, 0.08);
-}
 
 .rule-authoring-form {
   display: grid;
@@ -2630,43 +2607,7 @@ progress::-moz-progress-bar {
   min-width: min(620px, 100%);
 }
 
-.knowledge-management-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-1);
-  width: min(360px, 100%);
-  min-height: 44px;
-  padding: 4px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--info-surface);
-}
 
-.knowledge-management-tab {
-  min-width: 0;
-  min-height: 36px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--info);
-  font: inherit;
-  font-size: var(--text-base);
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.knowledge-management-tab:hover,
-.knowledge-management-tab:focus-visible {
-  color: var(--brand);
-  background: var(--bg-surface);
-}
-
-.knowledge-management-tab.active {
-  color: var(--text-on-brand);
-  background: var(--brand);
-  box-shadow: 0 2px 8px rgba(15, 98, 254, 0.24);
-}
 
 .document-chunking-console {
   display: grid;

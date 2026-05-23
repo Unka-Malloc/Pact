@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useConsole } from '../../composables/useConsole';
-import {
-  OptionBar,
-  StatusPill,
-} from '../../components/common';
+import OptionBar from '../../components/OptionBar.vue';
+import StatusPill from '../../components/StatusPill.vue';
 const {
   adminView,
   busyKey,

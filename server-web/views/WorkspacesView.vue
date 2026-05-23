@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useConsole } from '../composables/useConsole';
-import { ConfigFoldCard, OptionBar, StatusPill } from '../components/common';
+import BinaryCheckbox from '../components/BinaryCheckbox.vue';
+import ConfigFoldCard from '../components/ConfigFoldCard.vue';
+import OptionBar from '../components/OptionBar.vue';
+import StatusPill from '../components/StatusPill.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import type { HistorySessionPanelItem } from '../types/app';
 
@@ -713,14 +716,16 @@ load();
           确定要移除工作空间 <strong>{{ selected?.title }}</strong> 吗？
           此操作将解除该空间在系统中的注册。
         </p>
-        <label style="display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); font-size: 0.9rem; cursor: pointer;">
-          <input type="checkbox" v-model="deleteFolderChecked" />
-          <span>同时从文件系统中彻底删除物理文件夹及所有快照数据</span>
-        </label>
+        <div style="margin-top: var(--space-3);">
+          <BinaryCheckbox
+            v-model="deleteFolderChecked"
+            label="同时从文件系统中彻底删除物理文件夹及所有快照数据"
+          />
+        </div>
 
         <div style="display: flex; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-4);">
           <button class="tool-button tool-button-ghost" @click="showDeleteModal = false">取消</button>
-          <button class="tool-button" style="background: var(--status-error); color: var(--bg-surface); border-color: transparent;" @click="deleteWorkspace">确认移除</button>
+          <button class="tool-button danger-action" @click="deleteWorkspace">确认移除</button>
         </div>
       </div>
     </div>

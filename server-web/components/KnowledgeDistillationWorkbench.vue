@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AgentModelOptionBar, StatusPill } from "./common";
+import AgentModelOptionBar from "./AgentModelOptionBar.vue";
+import StatusPill from "./StatusPill.vue";
 import { bridge } from "../lib/bridge";
 import type { AgentModelConfig, AgentSettings, ModelProbeResponse, NormalizedDocumentsManifest, SplitJob } from "../lib/types";
 

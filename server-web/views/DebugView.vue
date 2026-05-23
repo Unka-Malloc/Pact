@@ -1,13 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { useConsole } from '../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  BinaryCheckbox,
-  ConfigFoldCard,
-  HistorySessionPanel,
-  InfoFeedResultRow,
-  OptionBar,
-} from '../components/common';
+import type { DebugTab } from '../composables/useConsole';
+import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
+import BinaryCheckbox from '../components/BinaryCheckbox.vue';
+import ConfigFoldCard from '../components/ConfigFoldCard.vue';
+import HistorySessionPanel from '../components/HistorySessionPanel.vue';
+import InfoFeedResultRow from '../components/InfoFeedResultRow.vue';
+import OptionBar from '../components/OptionBar.vue';
 const {
   agentExploreActiveTabId,
   agentExploreAgentOptions,
@@ -74,11 +75,17 @@ const {
   thinkingModeOptionBarOptions,
   visibleDebugTabs,
 } = useConsole();
+
+const route = useRoute();
+const activeDebugTab = computed<DebugTab>(() => {
+  const tab = String(route.params.tab ?? "");
+  return tab === "knowledgeRecall" || tab === "agentRetrieval" ? tab : debugTab.value;
+});
 </script>
 
 <template>
           <section class="debug-panel-shell">
-            <article v-if="debugTab === 'knowledgeRecall'" class="surface-card debug-panel-card knowledge-recall-debug-card">
+            <article v-if="activeDebugTab === 'knowledgeRecall'" class="surface-card debug-panel-card knowledge-recall-debug-card">
               <div class="section-header">
                 <div>
                   <h3>知识库召回</h3>
@@ -176,7 +183,7 @@ const {
               </div>
             </article>
 
-            <article v-if="debugTab === 'agentRetrieval'" class="surface-card agent-explore-card agent-explore-home debug-panel-card">
+            <article v-if="activeDebugTab === 'agentRetrieval'" class="surface-card agent-explore-card agent-explore-home debug-panel-card">
             <div class="section-header">
               <div>
                 <h3>智能体检索</h3>

@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { useConsole } from '../../composables/useConsole';
-import {
-  ConfigFoldCard,
-  FeatureToggle,
-  OptionBar,
-  StatusPill,
-} from '../../components/common';
+import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
+import FeatureToggle from '../../components/FeatureToggle.vue';
+import OptionBar from '../../components/OptionBar.vue';
+import SegmentedToggle from '../../components/SegmentedToggle.vue';
+import StatusPill from '../../components/StatusPill.vue';
 const {
   activeToolManagementToolCount,
   adminView,
@@ -60,10 +60,25 @@ const {
   toolsetLabel,
   updateGrant,
 } = useConsole();
+
+const activeTab = ref("catalog");
 </script>
 
 <template>
           <section class="tools-layout">
+            <div class="segmented-control-container" style="display: flex; justify-content: center; margin-bottom: 24px;">
+              <SegmentedToggle
+                v-model="activeTab"
+                :options="[
+                  { value: 'catalog', label: '工具目录与微调' },
+                  { value: 'grants', label: '网关授权分配' },
+                  { value: 'sandbox', label: '策略与调用分析' }
+                ]"
+                size="large"
+              />
+            </div>
+
+            <template v-if="activeTab === 'catalog'">
             <article class="surface-card">
               <div class="section-header">
                 <div>
@@ -196,7 +211,9 @@ const {
                 <strong>尚未加载工具目录</strong>
               </div>
             </article>
+            </template>
 
+            <template v-if="activeTab === 'sandbox'">
             <article class="surface-card">
               <div class="section-header">
                 <div>
@@ -274,7 +291,9 @@ const {
               </div>
               <pre v-if="policyPreviewResult">{{ jsonPreview(policyPreviewResult) }}</pre>
             </article>
+            </template>
 
+            <template v-if="activeTab === 'grants'">
             <article class="surface-card permission-create-card">
               <div class="section-header">
                 <div>
@@ -422,7 +441,9 @@ const {
                 <span>创建授权后，智能体才能调用受限工具入口。</span>
               </div>
             </article>
+            </template>
 
+            <template v-if="activeTab === 'sandbox'">
             <article class="surface-card">
               <div class="section-header">
                 <div>
@@ -458,5 +479,6 @@ const {
                 <strong>暂无工具调用记录</strong>
               </div>
             </article>
+            </template>
           </section>
 </template>

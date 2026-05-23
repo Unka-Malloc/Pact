@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
-import {
-  BrowseSelectButton,
-  FeatureToggle,
-  StatusPill,
-} from '../../components/common';
+import BrowseSelectButton from '../../components/BrowseSelectButton.vue';
+import FeatureToggle from '../../components/FeatureToggle.vue';
+import StatusPill from '../../components/StatusPill.vue';
 const {
   adminView,
   busyKey,

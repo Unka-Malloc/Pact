@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { useConsole } from '../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  BrowseSelectButton,
-  HistorySessionPanel,
-  InfoFeedResultRow,
-  OptionBar,
-  StatusPill,
-} from '../components/common';
+import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
+import BrowseSelectButton from '../components/BrowseSelectButton.vue';
+import HistorySessionPanel from '../components/HistorySessionPanel.vue';
+import InfoFeedResultRow from '../components/InfoFeedResultRow.vue';
+import OptionBar from '../components/OptionBar.vue';
+import StatusPill from '../components/StatusPill.vue';
 const {
   agentExploreStepSummary,
   chooseInfoFeedClarification,

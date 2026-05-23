@@ -6,9 +6,10 @@ import FeatureToggle from "./FeatureToggle.vue";
 import HistorySessionPanel from "./HistorySessionPanel.vue";
 import InfoFeedResultRow from "./InfoFeedResultRow.vue";
 import OptionBar from "./OptionBar.vue";
+import SegmentedToggle from "./SegmentedToggle.vue";
 import StatusPill from "./StatusPill.vue";
 
-export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, OptionBar, StatusPill };
+export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, OptionBar, SegmentedToggle, StatusPill };
 
 export type CommonComponentRegistration = {
   name: string;
@@ -87,5 +88,12 @@ export const commonComponentRegistry: CommonComponentRegistration[] = [
     category: "result",
     description: "信息流和调试面板复用的结果行渲染组件。",
     usageRule: "需要与信息流结果保持一致的召回/规划结果展示时使用，避免重新绘制相似卡片。",
+  },
+  {
+    name: "SegmentedToggle",
+    file: "server-web/components/SegmentedToggle.vue",
+    category: "choice",
+    description: "多选项平铺分段控制器组件。",
+    usageRule: "页面需要分段切换视图或选项时使用，替代零散的 tabs 样式或 el-radio-group。",
   },
 ];

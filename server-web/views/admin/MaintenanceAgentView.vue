@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  ConfigFoldCard,
-  OptionBar,
-  StatusPill,
-} from '../../components/common';
+import AgentModelOptionBar from '../../components/AgentModelOptionBar.vue';
+import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
+import OptionBar from '../../components/OptionBar.vue';
+import StatusPill from '../../components/StatusPill.vue';
 const {
   adminView,
   agentSelectorOptions,

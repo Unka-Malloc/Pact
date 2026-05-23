@@ -1,39 +1,33 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
 import { useConsole } from '../composables/useConsole';
-import {
-  AgentModelOptionBar,
-  ConfigFoldCard,
-  OptionBar,
-  StatusPill,
-} from '../components/common';
+import StatusPill from '../components/StatusPill.vue';
+import SegmentedToggle from '../components/SegmentedToggle.vue';
+import { watch } from 'vue';
+
 const {
   busyKey,
   consoleState,
-  currentView,
   dashboardAlertInboxId,
   dashboardAlertSummary,
   dashboardAlerts,
   dismissDashboardAlert,
-  highlightedConfigTarget,
-  isAuthenticated,
-  jsonPreview,
   knowledgeConsole,
   openDashboardAlert,
-  publishRuleAuthoringPackage,
-  ruleActionOptionBarOptions,
-  ruleAuthoringCanSubmit,
-  ruleAuthoringDraftPayload,
-  ruleAuthoringForm,
-  ruleAuthoringManualSummary,
-  ruleAuthoringModelOptions,
-  ruleAuthoringResult,
-  ruleAuthoringStatusLabel,
-  ruleCreationMode,
-  ruleMatchStrategyOptionBarOptions,
-  ruleScopeOptionBarOptions,
-  runRuleAuthoringChat,
-  shortId,
+  mcpAuthorizationRequests,
+  mcpAuthorizationStatus,
+  mcpAuthorizationStatusOptionBarOptions,
+  refreshMcpAuthorizationRequests,
+  resolveMcpAuthorizationRequest,
 } = useConsole();
+
+watch(mcpAuthorizationStatus, () => {
+  refreshMcpAuthorizationRequests();
+});
+
+onMounted(() => {
+  refreshMcpAuthorizationRequests();
+});
 </script>
 
 <template>
@@ -131,143 +125,68 @@ const {
         <span>空配置、中断和后台巡检当前都没有需要处理的事项。</span>
       </div>
     </article>
-    <article class="surface-card rule-authoring-card">
+    <article class="surface-card">
       <div class="section-header">
         <div>
-          <h3>创建规则</h3>
-          <p>同一份规则草稿支持智能对话和人工配置两种创建方式，任一侧修改都会同步到另一侧。</p>
+          <h3>MCP 客户端授权</h3>
+          <p>来自外部 MCP 客户端的授权请求，批准后将为其自动创建工具授权 (Grant)。</p>
         </div>
-        <div class="rule-creation-toggle" role="tablist" aria-label="创建规则方式">
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="ruleCreationMode === 'chat'"
-            :data-active="ruleCreationMode === 'chat'"
-            @click="ruleCreationMode = 'chat'"
-          >
-            智能对话
-          </button>
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="ruleCreationMode === 'manual'"
-            :data-active="ruleCreationMode === 'manual'"
-            @click="ruleCreationMode = 'manual'"
-          >
-            人工配置
-          </button>
-        </div>
-      </div>
-      <form class="rule-authoring-form" :data-mode="ruleCreationMode" @submit.prevent="runRuleAuthoringChat">
-        <template v-if="ruleCreationMode === 'chat'">
-          <label class="full-row">
-            <span>需求</span>
-            <textarea
-              v-model="ruleAuthoringForm.message"
-              rows="4"
-              placeholder="例如：生成一个黄金规则，完全一样的知识直接跳过"
-            ></textarea>
-          </label>
-          <AgentModelOptionBar
-            data-config-target="rule-authoring-agent"
-            :data-config-highlighted="highlightedConfigTarget === 'rule-authoring-agent'"
-            v-model="ruleAuthoringForm.modelAlias"
-            label="智能体"
-            placeholder="未分配智能体"
-            :options="ruleAuthoringModelOptions"
+        <div class="source-actions">
+          <SegmentedToggle
+            v-model="mcpAuthorizationStatus"
+            :options="mcpAuthorizationStatusOptionBarOptions"
+            aria-label="授权请求状态"
+            size="small"
           />
-        </template>
-        <template v-else>
-          <label>
-            <span>规则名称</span>
-            <input
-              v-model="ruleAuthoringForm.ruleName"
-              type="text"
-              placeholder="例如：重复知识处理规则"
-            />
-          </label>
-          <OptionBar
-            v-model="ruleAuthoringForm.scope"
-            label="适用范围"
-            :options="ruleScopeOptionBarOptions"
-          />
-          <OptionBar
-            v-model="ruleAuthoringForm.matchStrategy"
-            label="匹配方式"
-            :options="ruleMatchStrategyOptionBarOptions"
-          />
-          <OptionBar
-            v-model="ruleAuthoringForm.action"
-            label="执行动作"
-            :options="ruleActionOptionBarOptions"
-          />
-          <label>
-            <span>最低置信度</span>
-            <input
-              v-model.number="ruleAuthoringForm.confidence"
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-            />
-          </label>
-          <label class="full-row">
-            <span>补充说明</span>
-            <textarea
-              v-model="ruleAuthoringForm.notes"
-              rows="3"
-              placeholder="写清楚边界条件、例外情况或需要人工审核的场景"
-            ></textarea>
-          </label>
-        </template>
-        <button
-          class="primary-action"
-          type="submit"
-          :disabled="busyKey === 'knowledge:rule-authoring' || !ruleAuthoringCanSubmit"
-        >
-          {{ busyKey === "knowledge:rule-authoring" ? "生成中" : (ruleCreationMode === "manual" ? "按配置创建规则" : "生成规则草稿") }}
-        </button>
-      </form>
-      <div class="rule-authoring-sync-preview">
-        <strong>同步草稿</strong>
-        <span>{{ ruleAuthoringManualSummary }}</span>
-        <div class="rule-authoring-config-label">机器可读配置</div>
-        <pre>{{ jsonPreview(ruleAuthoringDraftPayload) }}</pre>
-      </div>
-      <div v-if="ruleAuthoringResult" class="rule-authoring-result">
-        <div class="rule-authoring-status">
-          <strong>{{ ruleAuthoringStatusLabel(ruleAuthoringResult.status) }}</strong>
-          <span v-if="ruleAuthoringResult.runId">{{ shortId(ruleAuthoringResult.runId) }}</span>
-        </div>
-        <div class="rule-authoring-pipeline">
-          <span
-            v-for="(step, stepIndex) in ruleAuthoringResult.steps || []"
-            :key="`${String(step.stage || 'stage')}:${stepIndex}`"
-            :data-status="String(step.status || '')"
-          >
-            {{ step.stage }} · {{ step.status }}
-          </span>
-        </div>
-        <div v-if="ruleAuthoringResult.confirmation" class="rule-authoring-confirm">
-          <span>
-            规则包 {{ ruleAuthoringResult.confirmation.packageId }} v{{ ruleAuthoringResult.confirmation.version }}
-            已保存为草稿。
-          </span>
           <button
             class="tool-button"
             type="button"
-            :disabled="busyKey === 'knowledge:rule-authoring:publish'"
-            @click="publishRuleAuthoringPackage"
+            :disabled="busyKey === 'mcp-authorization-requests:refresh'"
+            @click="refreshMcpAuthorizationRequests"
           >
-            {{ busyKey === "knowledge:rule-authoring:publish" ? "发布中" : "确认发布" }}
+            {{ busyKey === "mcp-authorization-requests:refresh" ? "刷新中" : "刷新列表" }}
           </button>
         </div>
-        <ConfigFoldCard title="门禁结果">
-          <pre>{{ jsonPreview(ruleAuthoringResult.gate || {}) }}</pre>
-        </ConfigFoldCard>
-        <ConfigFoldCard title="生成的 JSON 规则包">
-          <pre>{{ jsonPreview(ruleAuthoringResult.package || {}) }}</pre>
-        </ConfigFoldCard>
+      </div>
+
+      <div v-if="mcpAuthorizationRequests.length" class="configuration-alert-list">
+        <article
+          v-for="req in mcpAuthorizationRequests"
+          :key="req.requestId"
+          class="configuration-alert-item"
+          data-tone="warning"
+        >
+          <span class="configuration-alert-category">MCP Request</span>
+          <strong>{{ req.clientName || 'Unknown Client' }}</strong>
+          <span>用途说明: {{ req.reason || '无' }}</span>
+          <em>状态: {{ req.status === 'pending' ? '待审批' : req.status === 'approved' ? '已批准' : '已拒绝' }}</em>
+          <em v-if="req.requestedTools?.length || req.requestedScopes?.length">
+            请求 {{ req.requestedTools?.length || 0 }} 个工具, {{ req.requestedScopes?.length || 0 }} 个权限域
+          </em>
+
+          <div v-if="req.status === 'pending'" class="configuration-alert-actions">
+            <button
+              class="configuration-alert-action"
+              type="button"
+              :disabled="busyKey === `mcp-authorization-requests:resolve:${req.requestId}`"
+              @click="resolveMcpAuthorizationRequest(req.requestId, 'approved')"
+            >
+              Approve (批准)
+            </button>
+            <button
+              class="configuration-alert-action danger-action"
+              type="button"
+              :disabled="busyKey === `mcp-authorization-requests:resolve:${req.requestId}`"
+              @click="resolveMcpAuthorizationRequest(req.requestId, 'rejected')"
+            >
+              Reject (拒绝)
+            </button>
+          </div>
+        </article>
+      </div>
+      <div v-else class="configuration-alert-empty">
+        <strong>没有待处理的授权请求</strong>
+        <span>目前没有客户端发起新的 MCP 授权请求。</span>
       </div>
     </article>
   </section>

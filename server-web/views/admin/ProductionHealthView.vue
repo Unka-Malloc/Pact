@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { StatusPill } from "../../components/common";
+import StatusPill from "../../components/StatusPill.vue";
 import { bridge } from "../../lib/bridge";
 import type { ProductionHealthGate, ProductionHealthResponse } from "../../lib/types";
 

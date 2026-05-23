@@ -1,11 +1,11 @@
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { viewToPath, adminSectionToSlug, slugToAdminView } from "../router/index";
+import { viewToPath, adminSectionToSlug, slugToAdminView } from "../router/routes";
 // Note: common components are NOT imported here — that would create a circular
 // dependency (components → useConsole → components). Each view imports the
-// components it needs directly from ./components/common.
-import { bridge } from "../lib/bridge";
+// component files it needs directly.
+import { bridge, type McpAuthorizationRequest } from "../lib/bridge";
 import type {
   AgentSettings,
   AgentModelConfig,
@@ -570,6 +570,14 @@ const loginForm = ref({ username: "", password: "" });
 const authUsers = ref<ConsoleUser[]>([]);
 const authAudit = ref<ConsoleAuditItem[]>([]);
 const authSessions = ref<Array<Record<string, unknown>>>([]);
+const mcpAuthorizationRequests = ref<McpAuthorizationRequest[]>([]);
+const mcpAuthorizationStatus = ref<"all" | "pending" | "approved" | "rejected">("pending");
+const mcpAuthorizationStatusOptionBarOptions = [
+  { value: "pending", label: "待审批" },
+  { value: "approved", label: "已批准" },
+  { value: "rejected", label: "已拒绝" },
+  { value: "all", label: "所有" }
+];
 const maintenanceAgentConfig = ref<MaintenanceAgentConfig | null>(null);
 const maintenanceAgentRuns = ref<MaintenanceAgentRun[]>([]);
 const selectedMaintenanceAgentRun = ref<MaintenanceAgentRun | null>(null);
@@ -8983,6 +8991,45 @@ async function refreshAuthAdmin() {
   }
 }
 
+async function refreshMcpAuthorizationRequests() {
+  const busy = "mcp-authorization-requests:refresh";
+  setBusy(busy);
+  try {
+    const result = await bridge.listMcpAuthorizationRequests(mcpAuthorizationStatus.value);
+    mcpAuthorizationRequests.value = Array.isArray(result.requests) ? result.requests : [];
+  } catch (nextError) {
+    mcpAuthorizationRequests.value = [];
+    error.value =
+      nextError instanceof Error ? nextError.message : "加载 MCP 授权请求失败。";
+  } finally {
+    clearBusy(busy);
+  }
+}
+
+async function resolveMcpAuthorizationRequest(
+  requestId: string,
+  resolution: "approved" | "rejected",
+) {
+  const busy = `mcp-authorization-requests:resolve:${requestId}`;
+  const request = mcpAuthorizationRequests.value.find((item) => item.requestId === requestId);
+  setBusy(busy);
+  try {
+    await bridge.resolveMcpAuthorizationRequest(requestId, {
+      resolution,
+      clientName: request?.clientName,
+      scopes: request?.requestedScopes || [],
+      toolsets: [],
+      toolAllow: request?.requestedTools || [],
+    });
+    await refreshMcpAuthorizationRequests();
+  } catch (nextError) {
+    error.value =
+      nextError instanceof Error ? nextError.message : "处理 MCP 授权请求失败。";
+  } finally {
+    clearBusy(busy);
+  }
+}
+
 async function updateConsoleUser(user: ConsoleUser, patch: Partial<ConsoleUser> & { password?: string }) {
   setBusy(`auth:user:${user.userId}`);
   error.value = "";
@@ -10669,20 +10716,69 @@ function ensureKnowledgeTabState() {
   }
 }
 
+function isKnownKnowledgeRouteTab(value: string): value is KnowledgeTab {
+  return knowledgeTabs.some((tab) => tab.id === value);
+}
+
+function isKnownDebugRouteTab(value: string): value is DebugTab {
+  return debugTabs.some((tab) => tab.id === value);
+}
+
+function syncNavigationStateFromRoute(route: {
+  meta?: Record<string, unknown>;
+  params?: Record<string, unknown>;
+  path: string;
+}) {
+  const viewId = String(route.meta?.viewId ?? "");
+  if (viewId) {
+    currentView.value = viewId as AppView;
+  }
+
+  if (viewId === "admin") {
+    const metaAdminView = String(route.meta?.adminView ?? "");
+    const slug = String(route.params?.section ?? "") || route.path.split("/").at(-1) || "";
+    const nextAdminView = (metaAdminView || slugToAdminView(slug)) as AdminView;
+    if (nextAdminView) {
+      adminView.value = nextAdminView;
+    }
+  }
+
+  if (viewId === "knowledge") {
+    const tab = String(route.params?.tab ?? "");
+    if (isKnownKnowledgeRouteTab(tab)) {
+      knowledgeTab.value = tab;
+    }
+  }
+
+  if (viewId === "debug") {
+    const tab = String(route.params?.tab ?? "");
+    if (isKnownDebugRouteTab(tab)) {
+      debugTab.value = tab;
+    }
+  }
+}
+
+function closeSideNavOverlay() {
+  sideNavOpen.value = false;
+}
+
 function switchView(view: AppView) {
   if (view === "knowledge" && !hasFeature("knowledge-core")) {
     currentView.value = "dashboard";
     _appRouter?.push("/");
+    closeSideNavOverlay();
     return;
   }
   if (view === "intelligence" && !hasFeature("agent-exploration")) {
     currentView.value = "dashboard";
     _appRouter?.push("/");
+    closeSideNavOverlay();
     return;
   }
   if (view === "debug" && visibleDebugTabs.value.length === 0) {
     currentView.value = "dashboard";
     _appRouter?.push("/");
+    closeSideNavOverlay();
     return;
   }
   if (view === "debug" && !visibleDebugTabs.value.some((item) => item.id === debugTab.value)) {
@@ -10698,6 +10794,7 @@ function switchView(view: AppView) {
       adminSection: view === "admin" ? adminView.value : undefined,
     })
   );
+  closeSideNavOverlay();
   if (view === "dashboard") {
     void refreshDashboardAlertsSnapshot({ silent: true });
   }
@@ -10748,6 +10845,7 @@ function openDebugTab(tab: DebugTab) {
   debugTab.value = tab;
   currentView.value = "debug";
   _appRouter?.push(`/debug/${tab}`);
+  closeSideNavOverlay();
   void refreshKnowledgeConsole();
 }
 
@@ -10758,6 +10856,7 @@ function openKnowledgeTab(tab: KnowledgeTab) {
   knowledgeTab.value = tab;
   currentView.value = "knowledge";
   _appRouter?.push(`/knowledge/${tab}`);
+  closeSideNavOverlay();
   if (tab === "conflicts") {
     void refreshKnowledgeConflicts();
   }
@@ -10803,6 +10902,7 @@ function openAdmin(tab: AdminView) {
   adminView.value = tab;
   currentView.value = "admin";
   _appRouter?.push(`/admin/${adminSectionToSlug(tab)}`);
+  closeSideNavOverlay();
   void refreshAuthAdmin();
   if (tab === "tools" || tab === "agentPermissions") {
     void refreshToolManagement().then(() => {
@@ -11996,6 +12096,10 @@ function isAbortError(nextError: unknown) {
   );
 }
 
+function nextCursorFromProtocolEvents(events: ProtocolEvent[]) {
+  return events.reduce((cursor, event) => Math.max(cursor, event.offset + 1), 0);
+}
+
 function stopServerEventSubscription() {
   serverEventSubscriptionStopped = true;
   serverEventSubscriptionGeneration += 1;
@@ -12031,13 +12135,21 @@ async function runServerEventSubscription(generation = serverEventSubscriptionGe
     ) {
       return;
     }
-    const incomingEvents = [
-      ...(requestCursor === 0 ? response.snapshots || [] : []),
-      ...response.events,
-    ];
+    const snapshotEvents = requestCursor === 0 ? response.snapshots || [] : [];
+    const snapshotCursor = nextCursorFromProtocolEvents(snapshotEvents);
+    const liveEvents =
+      snapshotCursor > 0
+        ? response.events.filter((event) => event.offset >= snapshotCursor)
+        : response.events;
+    const incomingEvents = [...snapshotEvents, ...liveEvents];
     const hasUpdates = incomingEvents.length > 0;
     const handledUpdates = incomingEvents.filter(applyServerEvent).length;
-    serverEventCursor = Math.max(serverEventCursor, response.nextCursor || 0);
+    serverEventCursor = Math.max(
+      serverEventCursor,
+      response.nextCursor || 0,
+      snapshotCursor,
+      nextCursorFromProtocolEvents(liveEvents),
+    );
     if (hasUpdates && handledUpdates < incomingEvents.length) {
       await refreshState({ silent: true });
     }
@@ -13688,35 +13800,14 @@ const _route = useRoute();
 if (!_appRouter) {
   _appRouter = _router;
 }
+syncNavigationStateFromRoute(_router.currentRoute.value);
 
 // Sync URL → state: when the user navigates via back/forward or direct URL,
 // update the module-level navigation refs to match the route.
 watch(
-  _route,
-  (r) => {
-    const viewId = String(r.meta?.viewId ?? "");
-    if (viewId && viewId !== currentView.value) {
-      currentView.value = viewId as AppView;
-    }
-    if (viewId === "admin") {
-      const slug = (String(r.params.section ?? "") || r.path.split("/").at(-1)) ?? "";
-      const av = slugToAdminView(slug) as AdminView;
-      if (av && av !== adminView.value) {
-        adminView.value = av;
-      }
-    }
-    if (viewId === "knowledge" && r.params.tab) {
-      const tab = String(r.params.tab) as KnowledgeTab;
-      if (visibleKnowledgeTabs.value.some((t) => t.id === tab) && tab !== knowledgeTab.value) {
-        knowledgeTab.value = tab;
-      }
-    }
-    if (viewId === "debug" && r.params.tab) {
-      const tab = String(r.params.tab) as DebugTab;
-      if (visibleDebugTabs.value.some((t) => t.id === tab) && tab !== debugTab.value) {
-        debugTab.value = tab;
-      }
-    }
+  () => _route.fullPath,
+  () => {
+    syncNavigationStateFromRoute(_route);
   },
   { immediate: true },
 );
@@ -14293,6 +14384,9 @@ onUnmounted(() => {
     maintenanceFieldValue, 
     maintenanceJson, 
     maintenanceResultJson, 
+    mcpAuthorizationRequests,
+    mcpAuthorizationStatus,
+    mcpAuthorizationStatusOptionBarOptions,
     maintenanceTaskOptionBarOptions, 
     makeInfoFeedId, 
     markdownToSafeHtml, 
@@ -14495,6 +14589,7 @@ onUnmounted(() => {
     refreshKnowledgeSource, 
     refreshKnowledgeSources, 
     refreshMaintenanceAgent, 
+    refreshMcpAuthorizationRequests,
     refreshMonitorAlerts, 
     refreshServerPathBrowser, 
     refreshState, 
@@ -14503,6 +14598,7 @@ onUnmounted(() => {
     refreshWordCloud, 
     refreshWordCloudCorpusTerms, 
     reloadModules, 
+    resolveMcpAuthorizationRequest,
     remoteDraftEquals, 
     removeAgentPermissionGroup, 
     removeInfoFeedAttachment, 

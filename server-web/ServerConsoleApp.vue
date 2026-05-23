@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useConsole } from "./composables/useConsole";
 
 // ─── Theme toggle ────────────────────────────────────────────────────────────
@@ -27,17 +28,15 @@ onMounted(() => {
     if (saved === 'dark' || saved === 'light') themeMode.value = saved;
   } catch (e) {}
 });
-import {
-  AgentModelOptionBar,
-  BinaryCheckbox,
-  BrowseSelectButton,
-  ConfigFoldCard,
-  FeatureToggle,
-  HistorySessionPanel,
-  InfoFeedResultRow,
-  OptionBar,
-  StatusPill,
-} from "./components/common";
+import AgentModelOptionBar from "./components/AgentModelOptionBar.vue";
+import BinaryCheckbox from "./components/BinaryCheckbox.vue";
+import BrowseSelectButton from "./components/BrowseSelectButton.vue";
+import ConfigFoldCard from "./components/ConfigFoldCard.vue";
+import FeatureToggle from "./components/FeatureToggle.vue";
+import HistorySessionPanel from "./components/HistorySessionPanel.vue";
+import InfoFeedResultRow from "./components/InfoFeedResultRow.vue";
+import OptionBar from "./components/OptionBar.vue";
+import StatusPill from "./components/StatusPill.vue";
 
 const {
   adminView,
@@ -156,6 +155,12 @@ const {
   updateConsoleUser,
   updateConsoleUserRole,
 } = useConsole();
+
+const route = useRoute();
+const activeRouteView = computed(() => String(route.meta?.viewId || currentView.value));
+const activeRouteKnowledgeTab = computed(() => String(route.params.tab || knowledgeTab.value));
+const activeRouteDebugTab = computed(() => String(route.params.tab || debugTab.value));
+const activeRouteAdminView = computed(() => String(route.meta?.adminView || adminView.value));
 </script>
 
 <template>
@@ -183,7 +188,7 @@ const {
       <nav class="side-nav-links">
         <button
           class="side-link"
-          :class="{ active: currentView === 'dashboard' }"
+          :class="{ active: activeRouteView === 'dashboard' }"
           type="button"
           @click="switchView('dashboard')"
         >
@@ -192,7 +197,7 @@ const {
         </button>
         <button
           class="side-link"
-          :class="{ active: currentView === 'feed' }"
+          :class="{ active: activeRouteView === 'feed' }"
           type="button"
           @click="switchView('feed')"
         >
@@ -201,7 +206,7 @@ const {
         </button>
         <button
           class="side-link"
-          :class="{ active: currentView === 'sources' }"
+          :class="{ active: activeRouteView === 'sources' }"
           type="button"
           @click="switchView('sources')"
         >
@@ -211,9 +216,9 @@ const {
 
         <button
           class="side-link"
-          :class="{ active: currentView === 'workspaces' }"
+          :class="{ active: activeRouteView === 'workspaces' }"
           type="button"
-          @click="$router.push('/workspaces')"
+          @click="switchView('workspaces')"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
           工作空间
@@ -225,7 +230,7 @@ const {
             v-for="tab in visibleKnowledgeTabs"
             :key="tab.id"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'knowledge' && knowledgeTab === tab.id }"
+            :class="{ active: activeRouteView === 'knowledge' && activeRouteKnowledgeTab === tab.id }"
             type="button"
             @click="openKnowledgeTab(tab.id)"
           >
@@ -239,7 +244,7 @@ const {
             v-for="tab in visibleDebugTabs"
             :key="tab.id"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'debug' && debugTab === tab.id }"
+            :class="{ active: activeRouteView === 'debug' && activeRouteDebugTab === tab.id }"
             type="button"
             @click="openDebugTab(tab.id)"
           >
@@ -256,7 +261,7 @@ const {
           <button
             v-if="hasFeature('agent-exploration')"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'intelligence' }"
+            :class="{ active: activeRouteView === 'intelligence' }"
             type="button"
             @click="switchView('intelligence')"
           >
@@ -265,7 +270,7 @@ const {
           <button
             v-if="hasFeature('agent-management')"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'agentManagement' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentManagement' }"
             type="button"
             @click="openAdmin('agentManagement')"
           >
@@ -274,7 +279,7 @@ const {
           <button
             v-if="hasFeature('agent-gateway') || hasFeature('agent-management')"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'tools' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'tools' }"
             type="button"
             @click="openAdmin('tools')"
           >
@@ -283,7 +288,7 @@ const {
           <button
             v-if="hasFeature('agent-management')"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'agentPermissions' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentPermissions' }"
             type="button"
             @click="openAdmin('agentPermissions')"
           >
@@ -292,7 +297,7 @@ const {
           <button
             v-if="hasFeature('maintenance-agent-runbooks')"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'maintenanceAgent' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'maintenanceAgent' }"
             type="button"
             @click="openAdmin('maintenanceAgent')"
           >
@@ -301,7 +306,7 @@ const {
           <button
             v-if="hasFeature('agent-gateway')"
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'agentConfig' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentConfig' }"
             type="button"
             @click="openAdmin('agentConfig')"
           >
@@ -313,7 +318,7 @@ const {
           <p class="side-nav-section-title">客户端</p>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'clients' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'clients' }"
             type="button"
             @click="openAdmin('clients')"
           >
@@ -325,7 +330,7 @@ const {
           <p class="side-nav-section-title">系统状态</p>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'storage' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'storage' }"
             type="button"
             @click="openAdmin('storage')"
           >
@@ -333,7 +338,7 @@ const {
           </button>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'jobs' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'jobs' }"
             type="button"
             @click="openAdmin('jobs')"
           >
@@ -341,7 +346,7 @@ const {
           </button>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'opsMonitor' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'opsMonitor' }"
             type="button"
             @click="openAdmin('opsMonitor')"
           >
@@ -349,7 +354,7 @@ const {
           </button>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: currentView === 'admin' && adminView === 'logs' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'logs' }"
             type="button"
             @click="openAdmin('logs')"
           >
@@ -360,7 +365,7 @@ const {
       </nav>
 
       <div class="side-nav-footer">
-        <button class="side-cta" type="button" @click="openDrawer('discovery')">
+        <button class="side-cta" type="button" @click="sideNavOpen = false; openDrawer('discovery')">
           系统配置
         </button>
       </div>
