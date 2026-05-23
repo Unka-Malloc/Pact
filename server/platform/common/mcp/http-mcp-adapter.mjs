@@ -118,16 +118,349 @@ function parseRequestBody(requestBody) {
 }
 
 function publicMcpTool(tool) {
+  const inputSchema = publicMcpInputSchema(tool.inputSchema || { type: "object" });
+  const workspaceHint = schemaMentionsWorkspaceId(tool.inputSchema)
+    ? " MCP clients should use workspaceRef, workspaceIndex, or workspaceName instead of internal workspaceId."
+    : "";
   return {
     name: tool.id,
     title: tool.label || tool.id,
-    description: tool.description || tool.label || tool.id,
-    inputSchema: tool.inputSchema || { type: "object" },
+    description: `${tool.description || tool.label || tool.id}${workspaceHint}`,
+    inputSchema,
     annotations: {
       readOnlyHint: tool.readOnly !== false,
       destructiveHint: tool.destructive === true
     }
   };
+}
+
+function schemaMentionsWorkspaceId(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some(schemaMentionsWorkspaceId);
+  }
+  return Object.entries(value).some(([key, child]) =>
+    /workspaceId$/i.test(key) || schemaMentionsWorkspaceId(child)
+  );
+}
+
+function publicMcpInputSchema(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(publicMcpInputSchema);
+  }
+  const next = { ...value };
+  if (Array.isArray(next.required)) {
+    next.required = next.required.filter((item) => !/workspaceId$/i.test(String(item || "")));
+  }
+  if (next.properties && typeof next.properties === "object" && !Array.isArray(next.properties)) {
+    const properties = {};
+    for (const [key, child] of Object.entries(next.properties)) {
+      if (/workspaceId$/i.test(key)) {
+        const refKey = key.replace(/Id$/i, "Ref");
+        properties[refKey] = {
+          type: "string",
+          description: "Public Pact MCP workspace reference, for example 'workspace-1'. Discover it with operation 'pact.agentWorkspace.list'."
+        };
+        if (key === "workspaceId") {
+          properties.workspaceIndex = {
+            type: "integer",
+            description: "Public Pact MCP workspace index from operation 'pact.agentWorkspace.list', for example 1."
+          };
+          properties["workspace-index"] = {
+            type: "integer",
+            description: "Alias for workspaceIndex. Public Pact MCP workspace index from operation 'pact.agentWorkspace.list', for example 1."
+          };
+          properties.workspaceName = {
+            type: "string",
+            description: "Workspace title/name from operation 'pact.agentWorkspace.list'."
+          };
+          properties["workspace-name"] = {
+            type: "string",
+            description: "Alias for workspaceName. Workspace title/name from operation 'pact.agentWorkspace.list'."
+          };
+        }
+        continue;
+      }
+      properties[key] = publicMcpInputSchema(child);
+    }
+    next.properties = properties;
+  }
+  for (const key of ["items", "oneOf", "anyOf", "allOf"]) {
+    if (next[key]) {
+      next[key] = publicMcpInputSchema(next[key]);
+    }
+  }
+  return next;
+}
+
+function workspaceName(workspace = {}) {
+  return String(workspace.name || workspace.title || workspace.workspaceName || "").trim();
+}
+
+function publicWorkspaceRef(index) {
+  return `workspace-${index + 1}`;
+}
+
+function workspaceDirectoryFromWorkspaces(workspaces = []) {
+  const entries = [];
+  const byId = new Map();
+  const byRef = new Map();
+  const byName = new Map();
+  workspaces.forEach((workspace, index) => {
+    const id = String(workspace?.workspaceId || "").trim();
+    if (!id) {
+      return;
+    }
+    const entry = {
+      id,
+      ref: publicWorkspaceRef(index),
+      index: index + 1,
+      name: workspaceName(workspace)
+    };
+    entries.push(entry);
+    byId.set(id, entry);
+    byRef.set(entry.ref.toLowerCase(), entry);
+    byRef.set(String(entry.index), entry);
+    if (entry.name) {
+      byName.set(entry.name.toLowerCase(), entry);
+    }
+  });
+  return { entries, byId, byRef, byName };
+}
+
+function collectWorkspaces(value, output = []) {
+  if (!value || typeof value !== "object") {
+    return output;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectWorkspaces(item, output);
+    }
+    return output;
+  }
+  if (Array.isArray(value.workspaces)) {
+    output.push(...value.workspaces.filter((item) => item && typeof item === "object"));
+  }
+  for (const child of Object.values(value)) {
+    if (child && typeof child === "object") {
+      collectWorkspaces(child, output);
+    }
+  }
+  return output;
+}
+
+function executeToolPayload(result = {}) {
+  return result.payload?.result !== undefined ? result.payload.result : result.payload;
+}
+
+async function loadMcpWorkspaceDirectory({ toolManagementPlatform, request, context = {} }) {
+  const result = await toolManagementPlatform.runtime.executeTool({
+    toolId: "pact.agentWorkspace.list",
+    input: {},
+    request,
+    context: {
+      ...context,
+      transport: "mcp",
+      internalPurpose: "workspace-reference-resolution"
+    }
+  });
+  if (!result.ok) {
+    return workspaceDirectoryFromWorkspaces([]);
+  }
+  return workspaceDirectoryFromWorkspaces(collectWorkspaces(executeToolPayload(result)));
+}
+
+function resolveWorkspaceReference(directory, value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (directory.byId.has(raw)) {
+    return raw;
+  }
+  const byRef = directory.byRef.get(raw.toLowerCase());
+  if (byRef) {
+    return byRef.id;
+  }
+  const byName = directory.byName.get(raw.toLowerCase());
+  if (byName) {
+    return byName.id;
+  }
+  return "";
+}
+
+function inputMayNeedWorkspaceResolution(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some(inputMayNeedWorkspaceResolution);
+  }
+  return Object.entries(value).some(([key, child]) => {
+    if (/workspace(Ref|Refs|Index|Name)$/i.test(key) || /^workspace-(ref|refs|index|name)$/i.test(key)) {
+      return true;
+    }
+    if (/workspaceId$/i.test(key) && typeof child === "string" && !String(child).startsWith("workspace_")) {
+      return true;
+    }
+    return inputMayNeedWorkspaceResolution(child);
+  });
+}
+
+function resolveWorkspaceReferencesInInput(value, directory) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveWorkspaceReferencesInInput(item, directory));
+  }
+  const next = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (/workspaceRef$/i.test(key)) {
+      const idKey = key.replace(/Ref$/i, "Id");
+      const resolved = resolveWorkspaceReference(directory, child);
+      if (resolved) {
+        next[idKey] = resolved;
+      }
+      next[key] = child;
+      continue;
+    }
+    if (/workspaceRefs$/i.test(key) && Array.isArray(child)) {
+      const idKey = key.replace(/Refs$/i, "Ids");
+      const resolved = child.map((item) => resolveWorkspaceReference(directory, item)).filter(Boolean);
+      if (resolved.length) {
+        next[idKey] = resolved;
+      }
+      next[key] = child;
+      continue;
+    }
+    if (/workspaceIndex$/i.test(key) || /workspaceName$/i.test(key)) {
+      const resolved = resolveWorkspaceReference(directory, child);
+      if (resolved && !next.workspaceId) {
+        next.workspaceId = resolved;
+      }
+      next[key] = child;
+      continue;
+    }
+    if (/^workspace-(index|name)$/i.test(key)) {
+      const resolved = resolveWorkspaceReference(directory, child);
+      if (resolved && !next.workspaceId) {
+        next.workspaceId = resolved;
+      }
+      next[key] = child;
+      continue;
+    }
+    if (/workspaceId$/i.test(key) && typeof child === "string") {
+      next[key] = resolveWorkspaceReference(directory, child) || child;
+      continue;
+    }
+    next[key] = resolveWorkspaceReferencesInInput(child, directory);
+  }
+  return next;
+}
+
+async function resolveMcpWorkspaceInput({ input, toolManagementPlatform, request, context }) {
+  if (!inputMayNeedWorkspaceResolution(input)) {
+    return { input, workspaceDirectory: null };
+  }
+  const workspaceDirectory = await loadMcpWorkspaceDirectory({ toolManagementPlatform, request, context });
+  return {
+    input: resolveWorkspaceReferencesInInput(input, workspaceDirectory),
+    workspaceDirectory
+  };
+}
+
+function isInternalAbsolutePath(value) {
+  const text = String(value || "");
+  return (
+    /^\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\//.test(text) ||
+    /^[A-Za-z]:[\\/]/.test(text)
+  );
+}
+
+function valueContainsWorkspaceId(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some(valueContainsWorkspaceId);
+  }
+  return Object.entries(value).some(([key, child]) =>
+    /workspaceId$/i.test(key) || valueContainsWorkspaceId(child)
+  );
+}
+
+function sanitizeMcpOutputValue(value, directory = workspaceDirectoryFromWorkspaces([])) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeMcpOutputValue(item, directory));
+  }
+  if (!value || typeof value !== "object") {
+    return typeof value === "string" && isInternalAbsolutePath(value) ? "[server-internal-path]" : value;
+  }
+  const result = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (/^(fsPath|absolutePath|rootPath|databasePath|userDataPath)$/i.test(key)) {
+      continue;
+    }
+    if (/path$/i.test(key) && typeof child === "string" && isInternalAbsolutePath(child)) {
+      continue;
+    }
+    if (/ownerUserId$/i.test(key)) {
+      continue;
+    }
+    if (/workspaceIds$/i.test(key) && Array.isArray(child)) {
+      const refKey = key.replace(/Ids$/i, "Refs");
+      result[refKey] = child.map((item) => {
+        const entry = directory.byId.get(String(item || ""));
+        return entry?.ref || "workspace-hidden";
+      });
+      continue;
+    }
+    if (/workspaceId$/i.test(key)) {
+      const refKey = key.replace(/Id$/i, "Ref");
+      if (child === null || child === undefined || child === "") {
+        result[refKey] = null;
+        continue;
+      }
+      const entry = directory.byId.get(String(child || ""));
+      result[refKey] = entry?.ref || "workspace-hidden";
+      if (key === "workspaceId" && entry) {
+        result.workspaceIndex = entry.index;
+        result["workspace-index"] = entry.index;
+        result.workspaceName = entry.name;
+        result["workspace-name"] = entry.name;
+      }
+      continue;
+    }
+    result[key] = sanitizeMcpOutputValue(child, directory);
+  }
+  if (value.workspaceId && !result.workspaceRef) {
+    const entry = directory.byId.get(String(value.workspaceId || ""));
+    result.workspaceRef = entry?.ref || "workspace-hidden";
+    if (entry) {
+      result.workspaceIndex = entry.index;
+      result.workspaceName = entry.name;
+    }
+  }
+  if (value.title && !result.workspaceName && value.workspaceId) {
+    result.workspaceName = String(value.title || "");
+    result["workspace-name"] = String(value.title || "");
+  }
+  return result;
+}
+
+async function publicMcpToolPayload({ payload, workspaceDirectory, toolManagementPlatform, request, context }) {
+  const workspaces = collectWorkspaces(payload);
+  let directory = workspaces.length ? workspaceDirectoryFromWorkspaces(workspaces) : workspaceDirectory;
+  if (!directory && valueContainsWorkspaceId(payload)) {
+    directory = await loadMcpWorkspaceDirectory({ toolManagementPlatform, request, context });
+  }
+  return sanitizeMcpOutputValue(payload, directory || workspaceDirectoryFromWorkspaces([]));
 }
 
 function activeMcpTools(toolManagementPlatform) {
@@ -151,7 +484,7 @@ function pactCategorizedTools() {
       },
       operation: {
         type: "string",
-        description: "Operation id within this category."
+        description: "Concrete Pact operation id to execute, for example 'pact.knowledge.health'. Do not use the outlet tool name itself here, such as 'pact.knowledge'. If unsure, first call tool 'pact.help' with operation 'pact.capabilities.list' and then use one returned operations[].name value."
       },
       input: {
         type: "object",
@@ -177,7 +510,7 @@ function pactCategorizedTools() {
     {
       name: MCP_KNOWLEDGE_TOOL_NAME,
       title: "Pact Knowledge",
-      description: "Unified knowledge engine outlet. Supports knowledge distillation, collaborative knowledge sharing, evidence retrieval, and graph co-construction.",
+      description: "Knowledge outlet/router. Do not call operation='pact.knowledge'. First discover concrete operation ids by calling tool 'pact.help' with operation 'pact.capabilities.list'. Then call this outlet with one returned operations[].name, for example operation='pact.knowledge.health'.",
       inputSchema: commonSchema,
       annotations: { readOnlyHint: true, destructiveHint: false },
       _meta: toolMeta
@@ -185,7 +518,7 @@ function pactCategorizedTools() {
     {
       name: MCP_WORKSPACE_TOOL_NAME,
       title: "Pact Workspace",
-      description: "Shared agent workspace and collaborative environment outlet. Supports managing shared context, collaborative sessions, verifiable execution history, and workspace-level state orchestration.",
+      description: "Workspace outlet/router. Do not call operation='pact.workspace'. First discover concrete operation ids by calling tool 'pact.help' with operation 'pact.capabilities.list'. Then call this outlet with one returned workspace operation id, for example an operation beginning with 'pact.workspace.' or 'pact.agentWorkspace.'.",
       inputSchema: commonSchema,
       annotations: { readOnlyHint: false, destructiveHint: false },
       _meta: toolMeta
@@ -193,7 +526,7 @@ function pactCategorizedTools() {
     {
       name: MCP_LIST_TOOL_NAME,
       title: "Pact Resource Listing",
-      description: "Global resource discovery outlet. Provides unified listing for workspaces, background jobs, installed skill packages, and currently active tool catalogs.",
+      description: "Resource listing outlet/router. Do not call operation='pact.list'. First discover concrete operation ids by calling tool 'pact.help' with operation 'pact.capabilities.list'. Then call this outlet with one returned listing/read operation id.",
       inputSchema: commonSchema,
       annotations: { readOnlyHint: true, destructiveHint: false },
       _meta: toolMeta
@@ -201,7 +534,7 @@ function pactCategorizedTools() {
     {
       name: MCP_SKILL_TOOL_NAME,
       title: "Pact Skill & Tooling",
-      description: "Specialized capability execution and unified tool management outlet. Handles execution of high-level skills, agentic workflows, and external tool packages with cross-client grant management.",
+      description: "Skill and tooling outlet/router. Do not call operation='pact.skill'. First discover concrete operation ids by calling tool 'pact.help' with operation 'pact.capabilities.list'. Then call this outlet with one returned skill/tool operation id.",
       inputSchema: commonSchema,
       annotations: { readOnlyHint: false, destructiveHint: false },
       _meta: toolMeta
@@ -209,7 +542,7 @@ function pactCategorizedTools() {
     {
       name: MCP_HELP_TOOL_NAME,
       title: "Pact Help & Protocol",
-      description: "Protocol and diagnostic outlet. Supports system health checks, protocol version negotiation, and dynamic discovery of detailed capabilities within each functional category.",
+      description: "Start here. This help outlet discovers valid Pact operation ids. Call this tool with operation='pact.capabilities.list' and input={}. Then use one returned operations[].name as the operation value for pact.knowledge, pact.workspace, pact.list, pact.skill, or pact.help.",
       inputSchema: commonSchema,
       annotations: { readOnlyHint: true, destructiveHint: false },
       _meta: toolMeta
@@ -468,11 +801,20 @@ function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, dis
   const requestedScopes = normalizeGrantValues(body.scopes || body.scopeIds || body.scope || []);
   const toolAllow = normalizeGrantValues(body.toolAllow || body.tool_allow || []);
   const toolDeny = normalizeGrantValues(body.toolDeny || body.tool_deny || []);
+
+  const SAFE_SCOPES = new Set([
+    "knowledge:read",
+    "workspace:read",
+    "storage:read",
+    "runtime:read"
+  ]);
+  const safeRequestedScopes = requestedScopes.filter(s => SAFE_SCOPES.has(s));
+
   const resolved = toolManagementPlatform.registry.resolveToolset({
     toolsets: requestedToolsets,
     toolAllow,
     toolDeny,
-    scopes: requestedScopes
+    scopes: safeRequestedScopes
   });
   const label = String(body.label || `Pact MCP ${targets.join(", ") || "local agent"}`).trim();
   const result = toolManagementPlatform.store.createGrant({
@@ -743,15 +1085,40 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
     if (metaResult) {
       return jsonRpcResult(id, metaResult);
     }
+    if (CATEGORIZED_TOOL_NAMES.has(parsedCall.operation)) {
+      return {
+        httpStatus: 200,
+        body: jsonRpcError(id, -32602, `${parsedCall.operation} is an outlet tool name, not a concrete operation id. First call tool '${MCP_HELP_TOOL_NAME}' with operation 'pact.capabilities.list', then use one returned operations[].name as arguments.operation.`, {
+          code: "outlet_name_used_as_operation",
+          outlet: parsedCall.operation,
+          discoveryTool: MCP_HELP_TOOL_NAME,
+          discoveryOperation: "pact.capabilities.list",
+          example: {
+            name: MCP_HELP_TOOL_NAME,
+            arguments: {
+              operation: "pact.capabilities.list",
+              input: {}
+            }
+          }
+        })
+      };
+    }
     normalizeApiKeyHeader(request);
+    const mcpExecutionContext = {
+      transport: "mcp",
+      client: request?.headers?.["user-agent"] || ""
+    };
+    const resolvedWorkspaceInput = await resolveMcpWorkspaceInput({
+      input: parsedCall.input,
+      toolManagementPlatform,
+      request,
+      context: mcpExecutionContext
+    });
     const result = await toolManagementPlatform.runtime.executeTool({
       toolId: parsedCall.operation,
-      input: parsedCall.input,
+      input: resolvedWorkspaceInput.input,
       request,
-      context: {
-        transport: "mcp",
-        client: request?.headers?.["user-agent"] || ""
-      }
+      context: mcpExecutionContext
     });
     if (!result.ok) {
       const error = result.payload?.error || {};
@@ -766,11 +1133,18 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
         })
       };
     }
+    const publicPayload = await publicMcpToolPayload({
+      payload: executeToolPayload(result),
+      workspaceDirectory: resolvedWorkspaceInput.workspaceDirectory,
+      toolManagementPlatform,
+      request,
+      context: mcpExecutionContext
+    });
     return jsonRpcResult(id, mcpToolResult({
       result: {
         operation: parsedCall.operation,
         ...mcpVersionInfo(),
-        payload: result.payload?.result !== undefined ? result.payload.result : result.payload
+        payload: publicPayload
       }
     }));
   }

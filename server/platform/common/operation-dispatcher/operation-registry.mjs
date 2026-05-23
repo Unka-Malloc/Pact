@@ -1382,6 +1382,37 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["console:read"]
   },
   {
+    id: "tool_management.mcp.request_authorization",
+    feature: "tool_management",
+    label: "MCP 请求授权",
+    target: { controller: "system", method: "handleCreateMcpAuthorizationRequest" },
+    http: { method: "POST", path: "/api/mcp/authorization/request", localInForwardMode: true },
+    rpc: { method: "tool_management.mcp.request_authorization" },
+    cli: { command: ["mcp", "authorization", "request"], usage: "mcp authorization request --body payload.json" },
+    externalAuth: true
+  },
+  {
+    id: "tool_management.mcp.list_requests",
+    feature: "tool_management",
+    label: "MCP 授权请求列表",
+    target: { controller: "system", method: "handleListMcpAuthorizationRequests" },
+    http: { method: "GET", path: "/api/console/mcp/authorization/requests", localInForwardMode: true },
+    rpc: { method: "tool_management.mcp.list_requests" },
+    cli: { command: ["mcp", "authorization", "list"], usage: "mcp authorization list" },
+    requiredScopes: ["runtime:admin"]
+  },
+  {
+    id: "tool_management.mcp.resolve_request",
+    feature: "tool_management",
+    label: "处理 MCP 授权请求",
+    target: { controller: "system", method: "handleResolveMcpAuthorizationRequest" },
+    http: { method: "POST", path: "/api/console/mcp/authorization/requests/:requestId/resolve", localInForwardMode: true },
+    rpc: { method: "tool_management.mcp.resolve_request" },
+    cli: { command: ["mcp", "authorization", "resolve"], usage: "mcp authorization resolve --id REQUEST_ID --body payload.json" },
+    requiredScopes: ["runtime:admin"],
+    safety: { risk: "repair_write" }
+  },
+  {
     id: "email_rules.get",
     feature: "email_rules",
     label: "读取邮件规则",
@@ -1574,7 +1605,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       command: ["knowledge", "word-clouds", "save"],
       usage: "knowledge word-clouds save --body word-cloud.json"
     },
-    requiredScopes: ["knowledge:write"],
+    requiredScopes: ["workspace:write"],
     safety: { risk: "content_write" }
   },
   {
@@ -1885,7 +1916,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "GET", path: "/api/knowledge/console" },
     rpc: { method: "knowledge.console" },
     cli: { command: ["knowledge", "console"], usage: "knowledge console" },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "knowledge.sources.list",
@@ -1895,7 +1926,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "GET", path: "/api/knowledge/sources", localInForwardMode: true },
     rpc: { method: "knowledge.sources.list" },
     cli: { command: ["knowledge", "sources"], usage: "knowledge sources" },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "knowledge.sources.create",
@@ -1908,7 +1939,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       command: ["knowledge", "sources", "add"],
       usage: "knowledge sources add --body source.json"
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "knowledge.sources.update",
@@ -1984,7 +2015,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "GET", path: "/api/knowledge/config-schema" },
     rpc: { method: "knowledge.config_schema" },
     cli: { command: ["knowledge", "config-schema"], usage: "knowledge config-schema" },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "knowledge.capabilities",
@@ -1994,7 +2025,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "GET", path: "/api/knowledge/capabilities" },
     rpc: { method: "knowledge.capabilities" },
     cli: { command: ["knowledge", "capabilities"], usage: "knowledge capabilities" },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "knowledge.export_docx",
@@ -2105,7 +2136,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "GET", path: "/api/knowledge/health" },
     rpc: { method: "knowledge.health" },
     cli: { command: ["knowledge", "health"], usage: "knowledge health" },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "knowledge.maintenance.get",
@@ -2212,7 +2243,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "POST", path: "/api/knowledge/changes" },
     rpc: { method: "knowledge.changes", body: "params" },
     cli: { command: ["knowledge", "changes"], usage: "knowledge changes --body changes.json" },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "knowledge.review_items",
@@ -2266,7 +2297,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       command: ["knowledge", "feedback"],
       usage: "knowledge feedback --body feedback.json"
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "knowledge.suggestions",
@@ -3473,7 +3504,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions compare --id SESSION_ID --body compare.json",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:read"],
+    requiredScopes: ["workspace:read"],
     readOnly: true,
     concurrencySafe: true
   },
@@ -3497,7 +3528,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions merge-proposal --id SESSION_ID --body proposal.json",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "agent_sessions.archive",
@@ -3519,7 +3550,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions archive --id SESSION_ID --body archive.json",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "agent_workspaces.submissions.resolve",
@@ -3543,7 +3574,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
         submissionId: ["submission-id", "submissionId", "id"]
       }
     },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.issues.resolve",
@@ -3567,7 +3598,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
         issueId: ["issue-id", "issueId", "id"]
       }
     },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.locks.list",
@@ -3596,7 +3627,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces locks --workspace-id WORKSPACE_ID",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_workspaces.locks.write",
@@ -3614,7 +3645,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces lock --workspace-id WORKSPACE_ID --body lock.json",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "agent_workspaces.files.list",
@@ -3757,6 +3788,101 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     concurrencySafe: true,
     binary: true
   },
+  {
+    id: "agent_workspaces.file.write",
+    feature: "agent_workspace",
+    label: "覆写智能体共享工作空间文件内容",
+    target: { controller: "system", method: "handleWriteWorkspaceFile" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/files/write",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_workspaces.file.write",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "files", "write"],
+      usage: "agent-workspaces files write --workspace-id WORKSPACE_ID --body file.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["path"],
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" },
+        contentBase64: { type: "string" },
+        encoding: { type: "string" }
+      }
+    },
+    safety: { risk: "safe_write" }
+  },
+  {
+    id: "agent_workspaces.file.delete",
+    feature: "agent_workspace",
+    label: "删除智能体共享工作空间文件或文件夹",
+    target: { controller: "system", method: "handleDeleteWorkspaceFile" },
+    http: {
+      method: "DELETE",
+      path: "/api/agent-workspaces/:workspaceId/files",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "recursive", aliases: ["recursive"] }
+      ]
+    },
+    rpc: {
+      method: "agent_workspaces.file.delete",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "recursive", aliases: ["recursive"] }
+      ]
+    },
+    cli: {
+      command: ["agent-workspaces", "files", "delete"],
+      usage: "agent-workspaces files delete --workspace-id WORKSPACE_ID --path files/a.txt [--recursive]",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    safety: { risk: "safe_write", requiresConfirmation: true }
+  },
+  {
+    id: "agent_workspaces.file.move",
+    feature: "agent_workspace",
+    label: "移动/重命名智能体共享工作空间文件",
+    target: { controller: "system", method: "handleMoveWorkspaceFile" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/files/move",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "agent_workspaces.file.move",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "files", "move"],
+      usage: "agent-workspaces files move --workspace-id WORKSPACE_ID --body move.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["sourcePath", "targetPath"],
+      properties: {
+        sourcePath: { type: "string", aliases: ["from"] },
+        targetPath: { type: "string", aliases: ["to", "path"] },
+        overwrite: { type: "boolean" }
+      }
+    },
+    safety: { risk: "safe_write", requiresConfirmation: true }
+  },
 
   // ── Workspace inheritance, profile & sharing operations ─────────────────
   {
@@ -3775,7 +3901,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces context --workspace-id WORKSPACE_ID",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_workspaces.context_bundle.export",
@@ -3818,7 +3944,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces context-bundle --workspace-id WORKSPACE_ID [--format compressed]",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_workspaces.context_bundle.restore",
@@ -3840,7 +3966,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces context-bundle restore --workspace-id WORKSPACE_ID --body bundle.json",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.chain.get",
@@ -3858,7 +3984,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces chain --workspace-id WORKSPACE_ID",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_workspaces.parent.set",
@@ -3871,7 +3997,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
     },
     rpc: { method: "agent_workspaces.parent.set" },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.profile.hotswap",
@@ -3889,7 +4015,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-workspaces profile --workspace-id WORKSPACE_ID --body profile.json",
       pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
     },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.sources.set",
@@ -3902,7 +4028,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
     },
     rpc: { method: "agent_workspaces.sources.set" },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.share",
@@ -3915,7 +4041,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
     },
     rpc: { method: "agent_workspaces.share" },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
   {
     id: "agent_workspaces.unshare",
@@ -3928,7 +4054,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
     },
     rpc: { method: "agent_workspaces.unshare" },
-    requiredScopes: ["knowledge:maintain"]
+    requiredScopes: ["workspace:maintain"]
   },
 
   {

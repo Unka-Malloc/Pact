@@ -223,13 +223,48 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_tool_executions_tool ON tool_executions(tool_id);
     CREATE INDEX IF NOT EXISTS idx_tool_executions_status ON tool_executions(status);
     CREATE INDEX IF NOT EXISTS idx_tool_metric_events_created ON tool_metric_events(created_at);
+
+    CREATE TABLE IF NOT EXISTS mcp_authorization_requests (
+      request_id TEXT PRIMARY KEY,
+      client_name TEXT NOT NULL DEFAULT '',
+      requested_scopes_json TEXT NOT NULL DEFAULT '[]',
+      requested_tools_json TEXT NOT NULL DEFAULT '[]',
+      reason TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      source_ip TEXT NOT NULL DEFAULT '',
+      grant_id TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      resolved_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_mcp_auth_req_status ON mcp_authorization_requests(status);
   `);
 
   // Version-controlled migrations — add new steps here as the schema evolves.
   runMigrations(db, [
     // version 1: baseline — all tables above were created by the initial db.exec.
     // Reserve this slot so existing databases get user_version = 1 applied.
-    { version: 1, up: () => {} }
+    { version: 1, up: () => {} },
+    // version 2: add mcp_authorization_requests
+    {
+      version: 2,
+      up: (db) => {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS mcp_authorization_requests (
+            request_id TEXT PRIMARY KEY,
+            client_name TEXT NOT NULL DEFAULT '',
+            requested_scopes_json TEXT NOT NULL DEFAULT '[]',
+            requested_tools_json TEXT NOT NULL DEFAULT '[]',
+            reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            source_ip TEXT NOT NULL DEFAULT '',
+            grant_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            resolved_at TEXT NOT NULL DEFAULT ''
+          );
+          CREATE INDEX IF NOT EXISTS idx_mcp_auth_req_status ON mcp_authorization_requests(status);
+        `);
+      }
+    }
   ]);
 }
 
@@ -921,6 +956,59 @@ export function createToolManagementStore({ userDataPath }) {
     };
   }
 
+  function createMcpAuthorizationRequest(input = {}) {
+    const requestId = randomId("mcp_auth_req");
+    const sourceIp = sourceIpFromRequest(input.request);
+
+    db.prepare(`
+      INSERT INTO mcp_authorization_requests (
+        request_id, client_name, requested_scopes_json, requested_tools_json,
+        reason, status, source_ip, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      requestId,
+      String(input.clientName || ""),
+      stringifyJson(input.requestedScopes || []),
+      stringifyJson(input.requestedTools || []),
+      String(input.reason || ""),
+      "pending",
+      sourceIp,
+      nowIso()
+    );
+
+    return { requestId, status: "pending" };
+  }
+
+  function listMcpAuthorizationRequests({ status = "pending" } = {}) {
+    const rows = db.prepare("SELECT * FROM mcp_authorization_requests WHERE status = ? ORDER BY created_at DESC").all(status);
+    return rows.map(row => ({
+      requestId: row.request_id,
+      clientName: row.client_name,
+      requestedScopes: parseJson(row.requested_scopes_json, []),
+      requestedTools: parseJson(row.requested_tools_json, []),
+      reason: row.reason,
+      status: row.status,
+      sourceIp: row.source_ip,
+      grantId: row.grant_id,
+      createdAt: row.created_at,
+      resolvedAt: row.resolved_at
+    }));
+  }
+
+  function resolveMcpAuthorizationRequest({ requestId, resolution, grantId = "" }) {
+    if (!["approved", "rejected"].includes(resolution)) {
+      throw new Error("Invalid resolution status");
+    }
+
+    const info = db.prepare(`
+      UPDATE mcp_authorization_requests
+      SET status = ?, resolved_at = ?, grant_id = ?
+      WHERE request_id = ? AND status = 'pending'
+    `).run(resolution, nowIso(), String(grantId), String(requestId));
+
+    return info.changes > 0;
+  }
+
   return {
     db,
     rootPath,
@@ -941,6 +1029,9 @@ export function createToolManagementStore({ userDataPath }) {
     listAudit,
     getAudit,
     metricsSummary,
+    createMcpAuthorizationRequest,
+    listMcpAuthorizationRequests,
+    resolveMcpAuthorizationRequest,
     close() {
       try {
         db.pragma("wal_checkpoint(TRUNCATE)");

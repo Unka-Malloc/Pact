@@ -14,11 +14,21 @@ const DEFAULT_CODEX_BIN = "codex";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
+const DEFAULT_OPENCODE_BIN = "opencode";
 const DEFAULT_ORB_BIN = "orb";
 const DEFAULT_DOCKER_BIN = "docker";
 const DEFAULT_PODMAN_BIN = "podman";
+const DEFAULT_NERDCTL_BIN = "nerdctl";
 const DEFAULT_WSL_BIN = "wsl.exe";
+const DEFAULT_LIMA_BIN = "limactl";
+const DEFAULT_COLIMA_BIN = "colima";
+const DEFAULT_MULTIPASS_BIN = "multipass";
+const DEFAULT_LXC_BIN = "lxc";
+const DEFAULT_INCUS_BIN = "incus";
+const DEFAULT_VAGRANT_BIN = "vagrant";
+const DEFAULT_PARALLELS_BIN = "prlctl";
 const CLAW_COMPATIBLE_COMMANDS = ["openclaw", "ironclaw", "zeroclaw"];
+const HERMES_COMMAND_NAMES = ["hermes"];
 const AGENT_CLI_TARGETS = [
   {
     target: "codex",
@@ -43,6 +53,12 @@ const AGENT_CLI_TARGETS = [
     label: "Kilo Code",
     binOption: "kilo-bin",
     commandNames: ["kilo"]
+  },
+  {
+    target: "opencode",
+    label: "OpenCode",
+    binOption: "opencode-bin",
+    commandNames: ["opencode"]
   }
 ];
 const ORB_AGENT_CLI_TARGETS = AGENT_CLI_TARGETS.filter((descriptor) => descriptor.target !== "codex");
@@ -65,9 +81,9 @@ const APP_DISCOVERY_NAME_HINTS = [
   "hermes",
   "kilo",
   "openclaw",
+  "opencode",
   "qodo",
   "roo",
-  "serena",
   "tabnine",
   "trae",
   "windsurf",
@@ -88,7 +104,8 @@ const SUPPORTED_TARGETS = [
   "copilot",
   "openclaw",
   "hermes",
-  "antigravity"
+  "antigravity",
+  "opencode"
 ];
 const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
@@ -102,9 +119,8 @@ const TARGET_ALIASES = new Map([
   ["kilocode", "kilo-code"],
   ["kilo_code", "kilo-code"],
   ["github-copilot", "copilot"],
-  ["openclaw-kate", "openclaw"],
   ["hermes-agent", "hermes"],
-  ["hermes-serena", "hermes"]
+  ["open-code", "opencode"]
 ]);
 const TARGET_LABELS = {
   codex: "Codex",
@@ -113,7 +129,8 @@ const TARGET_LABELS = {
   copilot: "Copilot",
   openclaw: "OpenClaw",
   hermes: "Hermes Agent",
-  antigravity: "Antigravity"
+  antigravity: "Antigravity",
+  opencode: "OpenCode"
 };
 const TARGET_INSTALL_MODES = {
   codex: "codex-release-plugin-and-mcp-cli",
@@ -121,8 +138,9 @@ const TARGET_INSTALL_MODES = {
   "kilo-code": "kilo-release-global-kilo-json",
   copilot: "copilot-release-mcp-cli",
   openclaw: "openclaw-release-mcp-cli",
-  hermes: "hermes-release-mcp-cli",
-  antigravity: "antigravity-release-mcp-config"
+  hermes: "hermes-remote-mcp-cli",
+  antigravity: "antigravity-release-mcp-config",
+  opencode: "opencode-release-mcp-config"
 };
 const SCAN_COMMAND_TIMEOUT_MS = 3000;
 const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
@@ -138,6 +156,19 @@ const PACKAGE_SOURCE_KIND = Object.freeze({
   COMMAND_PATHS: "command-paths",
   COMMAND_PREFIX_DIRS: "command-prefix-dirs"
 });
+const GENERIC_REMOTE_CONTEXT_KINDS = [
+  "docker",
+  "podman",
+  "nerdctl",
+  "wsl",
+  "lima",
+  "colima",
+  "multipass",
+  "lxc",
+  "incus",
+  "vagrant",
+  "parallels"
+];
 
 function usage() {
   return [
@@ -174,10 +205,19 @@ function usage() {
     "  --gemini-bin COMMAND          Gemini CLI command or explicit path. Default: gemini.",
     "  --kilo-bin COMMAND            Kilo Code CLI command or explicit path. Default: kilo.",
     "  --copilot-bin COMMAND         Copilot CLI command or explicit path. Default: copilot.",
+    "  --opencode-bin COMMAND         OpenCode CLI command or explicit path. Default: opencode.",
     "  --orb-bin COMMAND             OrbStack CLI command or explicit path. Default: orb.",
     "  --docker-bin COMMAND          Docker CLI command or explicit path. Default: docker.",
     "  --podman-bin COMMAND          Podman CLI command or explicit path. Default: podman.",
+    "  --nerdctl-bin COMMAND         nerdctl CLI command or explicit path. Default: nerdctl.",
     "  --wsl-bin COMMAND             WSL CLI command or explicit path. Default: wsl.exe.",
+    "  --lima-bin COMMAND            Lima CLI command or explicit path. Default: limactl.",
+    "  --colima-bin COMMAND          Colima CLI command or explicit path. Default: colima.",
+    "  --multipass-bin COMMAND       Multipass CLI command or explicit path. Default: multipass.",
+    "  --lxc-bin COMMAND             LXD/LXC CLI command or explicit path. Default: lxc.",
+    "  --incus-bin COMMAND           Incus CLI command or explicit path. Default: incus.",
+    "  --vagrant-bin COMMAND         Vagrant CLI command or explicit path. Default: vagrant.",
+    "  --parallels-bin COMMAND       Parallels prlctl command or explicit path. Default: prlctl.",
     "  --vm NAME                     Shared OrbStack VM name for OpenClaw/Hermes.",
     "  --vm-user USER                Shared OrbStack VM user for OpenClaw/Hermes.",
     "  --openclaw-vm NAME            Explicit OrbStack VM for non-interactive OpenClaw install.",
@@ -1305,6 +1345,28 @@ async function installAntigravity({ baseUrl, token, configPath }) {
   };
 }
 
+async function installOpenCode({ baseUrl, token, configPath }) {
+  const config = await readJson(configPath, {});
+  const backupPath = await backupIfExists(configPath);
+  config.mcp = {
+    ...(config.mcp || {}),
+    [MCP_SERVER_NAME]: {
+      type: "remote",
+      url: `${baseUrl}/mcp`,
+      headers: {
+        "X-Pact-Api-Key": token
+      },
+      enabled: true
+    }
+  };
+  await writeJson(configPath, config);
+  return {
+    installMode: "opencode-release-mcp-config",
+    configPath,
+    backupPath
+  };
+}
+
 async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, openclawBin }) {
   if (!openclawBin) {
     throw new Error("OpenClaw install requires a discovered or explicit OpenClaw-like CLI path.");
@@ -1365,6 +1427,9 @@ async function installOpenClawRemote({ baseUrl, token, context, openclawBin }) {
 }
 
 async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin }) {
+  if (!vmName || !vmUser || !hermesBin) {
+    throw new Error("Hermes install requires a discovered or explicit OrbStack VM, user, and Hermes CLI path.");
+  }
   const url = `${vmBaseUrl(baseUrl)}/mcp`;
   const script = [
     "set -e",
@@ -1413,9 +1478,64 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
   const list = await run(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   return {
-    installMode: "hermes-release-mcp-cli",
+    installMode: "hermes-orbstack-mcp-cli",
     vm: vmName,
     vmUser,
+    url,
+    mcpListHasPact: listOutput.includes(MCP_SERVER_NAME),
+    mcpListEnabled: listOutput.includes("enabled")
+  };
+}
+
+async function installHermesRemote({ baseUrl, token, context, hermesBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !hermesBin) {
+    throw new Error("Hermes remote install requires a discovered remote context and Hermes CLI path.");
+  }
+  const url = `${await remoteClientBaseUrl(context, baseUrl)}/mcp`;
+  const script = [
+    "set -e",
+    "IFS= read -r token",
+    "export MCP_PACT_API_KEY=\"$token\"",
+    "if [ -d \"$HOME/.hermes/hermes-agent\" ]; then",
+    "  cd \"$HOME/.hermes/hermes-agent\"",
+    "  if [ -f venv/bin/activate ]; then . venv/bin/activate; fi",
+    "  python - <<'PY'",
+    "import os",
+    "from hermes_cli.config import save_env_value",
+    "save_env_value('MCP_PACT_API_KEY', os.environ['MCP_PACT_API_KEY'])",
+    "PY",
+    "fi",
+    "printf 'y\\n' | \"$HERMES_BIN\" mcp remove pact >/dev/null 2>&1 || true",
+    "printf 'y\\ny\\n' | \"$HERMES_BIN\" mcp add pact --url \"$PACT_URL\" --auth header"
+  ].join("\n");
+  const install = await remoteLinuxShellWithInput(context, script, `${token}\n`, {
+    HERMES_BIN: hermesBin,
+    PACT_URL: url
+  });
+  if (!install.ok) {
+    throw new Error(`Hermes remote install failed in ${remoteContextLabel(context)}: ${install.stderr || install.stdout}`);
+  }
+  const enableScript = [
+    "set -e",
+    "if [ -d \"$HOME/.hermes/hermes-agent\" ]; then",
+    "  cd \"$HOME/.hermes/hermes-agent\"",
+    "  if [ -f venv/bin/activate ]; then . venv/bin/activate; fi",
+    "  python - <<'PY'",
+    "from hermes_cli.config import load_config, save_config",
+    "cfg = load_config()",
+    "server = cfg.setdefault('mcp_servers', {}).setdefault('pact', {})",
+    "server['enabled'] = True",
+    "save_config(cfg)",
+    "PY",
+    "fi"
+  ].join("\n");
+  await remoteLinuxShell(context, enableScript, { timeoutMs: REMOTE_SCAN_COMMAND_TIMEOUT_MS });
+  await runRemoteLinuxCommand(context, [hermesBin, "mcp", "test", MCP_SERVER_NAME]);
+  const list = await runRemoteLinuxCommand(context, [hermesBin, "mcp", "list"]);
+  const listOutput = `${list.stdout}\n${list.stderr}`;
+  return {
+    installMode: `hermes-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
     url,
     mcpListHasPact: listOutput.includes(MCP_SERVER_NAME),
     mcpListEnabled: listOutput.includes("enabled")
@@ -1704,6 +1824,16 @@ async function uninstallAntigravity({ configPath }) {
   };
 }
 
+async function uninstallOpenCode({ configPath }) {
+  const removed = await removeNamedMcpEntry({ filePath: configPath, rootKey: "mcp" });
+  return {
+    uninstallMode: "opencode-release-mcp-config",
+    configPath,
+    backupPath: removed.backupPath,
+    removedConfigEntry: removed.removed
+  };
+}
+
 async function uninstallOpenClaw({ orbBin, vmName, vmUser, openclawBin }) {
   if (!openclawBin) {
     throw new Error("OpenClaw uninstall requires a discovered or explicit OpenClaw-like CLI path.");
@@ -1742,6 +1872,9 @@ async function uninstallOpenClawRemote({ context, openclawBin }) {
 }
 
 async function uninstallHermes({ orbBin, vmName, vmUser, hermesBin }) {
+  if (!vmName || !vmUser || !hermesBin) {
+    throw new Error("Hermes uninstall requires a discovered or explicit OrbStack VM, user, and Hermes CLI path.");
+  }
   const script = [
     "set -e",
     "printf 'y\\n' | \"$HERMES_BIN\" mcp remove pact >/dev/null 2>&1 || true",
@@ -1770,9 +1903,38 @@ async function uninstallHermes({ orbBin, vmName, vmUser, hermesBin }) {
   const list = await run(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "list"], { allowFailure: true });
   const listOutput = `${list.stdout}\n${list.stderr}`;
   return {
-    uninstallMode: "hermes-release-mcp-cli",
+    uninstallMode: "hermes-orbstack-mcp-cli",
     vm: vmName,
     vmUser,
+    removedMcp: remove.ok,
+    mcpListHasPact: listOutput.includes(MCP_SERVER_NAME)
+  };
+}
+
+async function uninstallHermesRemote({ context, hermesBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !hermesBin) {
+    throw new Error("Hermes remote uninstall requires a discovered remote context and Hermes CLI path.");
+  }
+  const script = [
+    "set -e",
+    "printf 'y\\n' | \"$HERMES_BIN\" mcp remove pact >/dev/null 2>&1 || true",
+    "if [ -d \"$HOME/.hermes/hermes-agent\" ]; then",
+    "  cd \"$HOME/.hermes/hermes-agent\"",
+    "  if [ -f venv/bin/activate ]; then . venv/bin/activate; fi",
+    "  python - <<'PY'",
+    "from hermes_cli.config import load_config, save_config",
+    "cfg = load_config()",
+    "cfg.get('mcp_servers', {}).pop('pact', None)",
+    "save_config(cfg)",
+    "PY",
+    "fi"
+  ].join("\n");
+  const remove = await remoteLinuxShellWithInput(context, script, "", { HERMES_BIN: hermesBin });
+  const list = await runRemoteLinuxCommand(context, [hermesBin, "mcp", "list"], { allowFailure: true });
+  const listOutput = `${list.stdout}\n${list.stderr}`;
+  return {
+    uninstallMode: `hermes-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
     removedMcp: remove.ok,
     mcpListHasPact: listOutput.includes(MCP_SERVER_NAME)
   };
@@ -2756,6 +2918,185 @@ async function detectDockerContainers(runtimeBin, kind) {
     .filter((item) => item.id);
 }
 
+function parseRunningTableRows(stdout, { skipHeaderPattern = /^NAME\s+/i } = {}) {
+  return outputLines(stdout)
+    .filter((line) => !skipHeaderPattern.test(line))
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function contextListDedup(contexts) {
+  const seen = new Set();
+  return contexts.filter((context) => {
+    const key = `${context.kind}:${context.id}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+async function detectLimaInstances(limactlBin) {
+  const formatted = await run(limactlBin, ["list", "--format", "{{.Name}}\t{{.Status}}"], {
+    allowFailure: true,
+    timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+  });
+  const rows = formatted.ok
+    ? outputLines(formatted.stdout)
+    : [];
+  const contexts = rows
+    .map((line) => {
+      const [name, status = ""] = line.split(/\t/);
+      return { name: String(name || "").trim(), status: String(status || "").trim() };
+    })
+    .filter((item) => item.name && /^running$/i.test(item.status))
+    .map((item) => ({ kind: "lima", id: item.name, name: item.name, bin: limactlBin }));
+  if (contexts.length > 0 || formatted.ok) {
+    return contexts;
+  }
+  const fallback = await run(limactlBin, ["list"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (!fallback.ok) {
+    return [];
+  }
+  return parseRunningTableRows(fallback.stdout)
+    .map((line) => line.split(/\s+/))
+    .filter((parts) => parts[0] && parts.some((part) => /^running$/i.test(part)))
+    .map((parts) => ({ kind: "lima", id: parts[0], name: parts[0], bin: limactlBin }));
+}
+
+async function detectColimaInstances(colimaBin) {
+  const json = await run(colimaBin, ["list", "--json"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (json.ok) {
+    try {
+      const payload = JSON.parse(json.stdout || "[]");
+      const profiles = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.profiles)
+        ? payload.profiles
+        : Object.values(payload?.profiles || payload || {});
+      return profiles
+        .map((profile) => ({
+          name: String(profile?.name || profile?.profile || "default"),
+          status: String(profile?.status || profile?.state || "")
+        }))
+        .filter((profile) => profile.name && /^running$/i.test(profile.status))
+        .map((profile) => ({ kind: "colima", id: profile.name, name: profile.name, bin: colimaBin }));
+    } catch {
+      // Fall through to the table parser below.
+    }
+  }
+  const table = await run(colimaBin, ["list"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (!table.ok) {
+    return [];
+  }
+  return parseRunningTableRows(table.stdout, { skipHeaderPattern: /^(PROFILE|NAME)\s+/i })
+    .map((line) => line.split(/\s+/))
+    .filter((parts) => parts[0] && parts.some((part) => /^running$/i.test(part)))
+    .map((parts) => ({ kind: "colima", id: parts[0], name: parts[0], bin: colimaBin }));
+}
+
+async function detectMultipassInstances(multipassBin) {
+  const json = await run(multipassBin, ["list", "--format", "json"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (json.ok) {
+    try {
+      const payload = JSON.parse(json.stdout || "{}");
+      const instances = Array.isArray(payload?.list) ? payload.list : [];
+      return instances
+        .map((item) => ({ name: String(item?.name || ""), state: String(item?.state || "") }))
+        .filter((item) => item.name && /^running$/i.test(item.state))
+        .map((item) => ({ kind: "multipass", id: item.name, name: item.name, bin: multipassBin }));
+    } catch {
+      // Fall through to the table parser below.
+    }
+  }
+  const table = await run(multipassBin, ["list"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (!table.ok) {
+    return [];
+  }
+  return parseRunningTableRows(table.stdout)
+    .map((line) => line.split(/\s+/))
+    .filter((parts) => parts[0] && parts.some((part) => /^running$/i.test(part)))
+    .map((parts) => ({ kind: "multipass", id: parts[0], name: parts[0], bin: multipassBin }));
+}
+
+async function detectLxdLikeInstances(runtimeBin, kind) {
+  const result = await run(runtimeBin, ["list", "--format", "csv", "-c", "ns"], {
+    allowFailure: true,
+    timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+  });
+  if (!result.ok) {
+    return [];
+  }
+  return outputLines(result.stdout)
+    .map((line) => line.split(",").map((part) => part.trim()))
+    .filter(([name, state]) => name && /^running$/i.test(state || ""))
+    .map(([name]) => ({ kind, id: name, name, bin: runtimeBin }));
+}
+
+async function detectVagrantInstances(vagrantBin) {
+  const result = await run(vagrantBin, ["global-status", "--prune"], {
+    allowFailure: true,
+    timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+  });
+  if (!result.ok) {
+    return [];
+  }
+  return outputLines(result.stdout)
+    .map((line) => line.trim())
+    .filter((line) => /^[0-9a-f]{7,}\s+/i.test(line))
+    .map((line) => line.split(/\s+/))
+    .filter((parts) => parts[0] && parts.some((part) => /^running$/i.test(part)))
+    .map((parts) => ({
+      kind: "vagrant",
+      id: parts[0],
+      name: parts[1] || parts[0],
+      bin: vagrantBin
+    }));
+}
+
+async function detectParallelsVms(prlctlBin) {
+  const json = await run(prlctlBin, ["list", "-a", "--json"], {
+    allowFailure: true,
+    timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+  });
+  if (json.ok) {
+    try {
+      const payload = JSON.parse(json.stdout || "[]");
+      const vms = Array.isArray(payload) ? payload : Object.values(payload || {});
+      return vms
+        .map((vm) => ({
+          id: String(vm?.ID || vm?.id || vm?.uuid || vm?.UUID || ""),
+          name: String(vm?.Name || vm?.name || ""),
+          status: String(vm?.Status || vm?.status || "")
+        }))
+        .filter((vm) => vm.id && /^running$/i.test(vm.status))
+        .map((vm) => ({ kind: "parallels", id: vm.id, name: vm.name || vm.id, bin: prlctlBin }));
+    } catch {
+      // Fall through to the table parser below.
+    }
+  }
+  const table = await run(prlctlBin, ["list", "-a", "-o", "uuid,name,status", "--no-header"], {
+    allowFailure: true,
+    timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+  });
+  if (!table.ok) {
+    return [];
+  }
+  return outputLines(table.stdout)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const status = parts[parts.length - 1] || "";
+      const id = parts[0] || "";
+      const name = parts.slice(1, -1).join(" ") || id;
+      return { id, name, status };
+    })
+    .filter((vm) => vm.id && /^running$/i.test(vm.status))
+    .map((vm) => ({ kind: "parallels", id: vm.id, name: vm.name, bin: prlctlBin }));
+}
+
 async function detectWslDistros(wslBin) {
   if (detectHostOs() !== "win32") {
     return [];
@@ -2771,33 +3112,79 @@ async function detectWslDistros(wslBin) {
 }
 
 async function remoteLinuxShell(context, script, options = {}) {
-  if (context.kind === "docker" || context.kind === "podman") {
+  if (["docker", "podman", "nerdctl"].includes(context.kind)) {
     return run(context.bin, ["exec", context.id, "sh", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
   }
   if (context.kind === "wsl") {
     return run(context.bin, ["-d", context.id, "--", "bash", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "lima") {
+    return run(context.bin, ["shell", context.id, "bash", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "colima") {
+    return run(context.bin, ["ssh", context.id, "--", "bash", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  if (["multipass", "lxc", "incus"].includes(context.kind)) {
+    return run(context.bin, ["exec", context.id, "--", "bash", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "vagrant") {
+    return run(context.bin, ["ssh", context.id, "-c", `bash -lc ${shellQuote(script)}`], { allowFailure: true, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "parallels") {
+    return run(context.bin, ["exec", context.id, "bash", "-lc", script], { allowFailure: true, timeoutMs: options.timeoutMs });
   }
   return { ok: false, stdout: "", stderr: `Unsupported remote context: ${context.kind}` };
 }
 
 async function remoteLinuxShellWithInput(context, script, input = "", env = {}) {
   const envArgs = Object.entries(env).map(([name, value]) => `${name}=${value}`);
-  if (context.kind === "docker" || context.kind === "podman") {
+  if (["docker", "podman", "nerdctl"].includes(context.kind)) {
     const runtimeEnvArgs = Object.entries(env).flatMap(([name, value]) => ["-e", `${name}=${value}`]);
     return runWithInput(context.bin, ["exec", "-i", ...runtimeEnvArgs, context.id, "sh", "-lc", script], input, { allowFailure: true });
   }
   if (context.kind === "wsl") {
     return runWithInput(context.bin, ["-d", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
   }
+  if (context.kind === "lima") {
+    return runWithInput(context.bin, ["shell", context.id, "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+  }
+  if (context.kind === "colima") {
+    return runWithInput(context.bin, ["ssh", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+  }
+  if (["multipass", "lxc", "incus"].includes(context.kind)) {
+    return runWithInput(context.bin, ["exec", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+  }
+  if (context.kind === "vagrant") {
+    const command = `env ${envArgs.map(shellQuote).join(" ")} bash -lc ${shellQuote(script)}`;
+    return runWithInput(context.bin, ["ssh", context.id, "-c", command], input, { allowFailure: true });
+  }
+  if (context.kind === "parallels") {
+    return runWithInput(context.bin, ["exec", context.id, "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+  }
   return { ok: false, stdout: "", stderr: `Unsupported remote context: ${context.kind}` };
 }
 
 async function runRemoteLinuxCommand(context, args = [], options = {}) {
-  if (context.kind === "docker" || context.kind === "podman") {
+  if (["docker", "podman", "nerdctl"].includes(context.kind)) {
     return run(context.bin, ["exec", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
   }
   if (context.kind === "wsl") {
     return run(context.bin, ["-d", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "lima") {
+    return run(context.bin, ["shell", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "colima") {
+    return run(context.bin, ["ssh", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  if (["multipass", "lxc", "incus"].includes(context.kind)) {
+    return run(context.bin, ["exec", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "vagrant") {
+    return run(context.bin, ["ssh", context.id, "-c", args.map(shellQuote).join(" ")], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+  }
+  if (context.kind === "parallels") {
+    return run(context.bin, ["exec", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
   }
   const message = `Unsupported remote context: ${context.kind}`;
   if (options.allowFailure) {
@@ -2837,7 +3224,7 @@ async function remoteClientBaseUrl(context, baseUrl) {
   if (context.kind === "podman") {
     return baseUrlWithHost(baseUrl, "host.containers.internal");
   }
-  if (context.kind === "docker") {
+  if (context.kind === "docker" || context.kind === "nerdctl") {
     if (detectHostOs() === "linux") {
       const gateway = await run(context.bin, [
         "inspect",
@@ -2852,9 +3239,17 @@ async function remoteClientBaseUrl(context, baseUrl) {
     }
     return baseUrlWithHost(baseUrl, "host.docker.internal");
   }
+  if (context.kind === "lima" || context.kind === "colima") {
+    return baseUrlWithHost(baseUrl, "host.lima.internal");
+  }
   if (context.kind === "wsl") {
     const nameserver = await remoteLinuxShell(context, "awk '/^nameserver / { print $2; exit }' /etc/resolv.conf 2>/dev/null", { timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
     const host = nameserver.stdout.trim().split(/\s+/).find(Boolean);
+    return host ? baseUrlWithHost(baseUrl, host) : baseUrl;
+  }
+  if (["multipass", "lxc", "incus", "vagrant", "parallels"].includes(context.kind)) {
+    const gateway = await remoteLinuxShell(context, "ip route show default 2>/dev/null | awk '{ print $3; exit }'", { timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    const host = gateway.stdout.trim().split(/\s+/).find(Boolean);
     return host ? baseUrlWithHost(baseUrl, host) : baseUrl;
   }
   return baseUrl;
@@ -2865,12 +3260,26 @@ function candidateLocation(candidate) {
 }
 
 function isGenericRemoteLocation(location) {
-  return ["docker", "podman", "wsl"].includes(location);
+  return GENERIC_REMOTE_CONTEXT_KINDS.includes(location);
 }
 
 function candidateIdentity(candidate) {
   const overrides = candidate.optionOverrides || {};
   const location = candidateLocation(candidate);
+  if (candidate?.target === "hermes") {
+    if (location === "orb") {
+      const vmName = String(overrides["hermes-vm"] || overrides["orb-vm"] || "").trim();
+      const vmUser = String(overrides["hermes-user"] || overrides["orb-user"] || "").trim();
+      const hermesBin = String(overrides["hermes-bin"] || "").trim();
+      return vmName && vmUser && hermesBin ? `hermes:orb:${vmName}:${vmUser}:${hermesBin}` : "";
+    }
+    if (isGenericRemoteLocation(location)) {
+      const remoteId = String(overrides["remote-id"] || "").trim();
+      const hermesBin = String(overrides["hermes-bin"] || "").trim();
+      return remoteId && hermesBin ? `hermes:${location}:${remoteId}:${hermesBin}` : "";
+    }
+    return "";
+  }
   if (candidate?.target === "openclaw") {
     if (location === "orb") {
       const vmName = String(overrides["orb-vm"] || overrides["openclaw-vm"] || "").trim();
@@ -2884,16 +3293,16 @@ function candidateIdentity(candidate) {
     const openclawBin = String(overrides["openclaw-bin"] || "").trim();
     return openclawBin ? `openclaw:local:${openclawBin}` : "";
   }
-  if (location === "orb" && ["gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
+  if (location === "orb" && ["gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
     const vmName = String(overrides["orb-vm"] || "").trim();
     const vmUser = String(overrides["orb-user"] || "").trim();
     return vmName && vmUser ? `${candidate.target}:orb:${vmName}:${vmUser}` : "";
   }
-  if (isGenericRemoteLocation(location) && ["gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
+  if (isGenericRemoteLocation(location) && ["gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
     const remoteId = String(overrides["remote-id"] || "").trim();
     return remoteId ? `${candidate.target}:${location}:${remoteId}` : "";
   }
-  if (location === "local" && ["codex", "gemini-cli", "copilot", "kilo-code"].includes(candidate?.target)) {
+  if (location === "local" && ["codex", "gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
     const descriptor = AGENT_CLI_TARGETS.find((item) => item.target === candidate.target);
     const binPath = descriptor ? String(overrides[descriptor.binOption] || "").trim() : "";
     return binPath ? `${candidate.target}:local:${binPath}` : "";
@@ -2971,6 +3380,165 @@ function mcpProbeSupported(result) {
   return positivePatterns.some((pattern) => pattern.test(normalized)) || Boolean(result.ok);
 }
 
+function mcpOutputHasPact(result) {
+  const output = `${result?.stdout || ""}\n${result?.stderr || ""}`;
+  return new RegExp(`(^|[^a-z0-9_-])${MCP_SERVER_NAME}([^a-z0-9_-]|$)`, "i").test(output);
+}
+
+function candidateBin(candidate, settings) {
+  const overrides = candidate.optionOverrides || {};
+  if (candidate.target === "codex") {
+    return String(overrides["codex-bin"] || settings.codexBin || "");
+  }
+  if (candidate.target === "gemini-cli") {
+    return String(overrides["gemini-bin"] || settings.geminiBin || "");
+  }
+  if (candidate.target === "kilo-code") {
+    return String(overrides["kilo-bin"] || settings.kiloBin || "");
+  }
+  if (candidate.target === "copilot") {
+    return String(overrides["copilot-bin"] || settings.copilotBin || "");
+  }
+  if (candidate.target === "opencode") {
+    return String(overrides["opencode-bin"] || settings.opencodeBin || "");
+  }
+  if (candidate.target === "openclaw") {
+    return String(overrides["openclaw-bin"] || settings.openclawBin || "");
+  }
+  if (candidate.target === "hermes") {
+    return String(overrides["hermes-bin"] || settings.hermesBin || "");
+  }
+  return "";
+}
+
+function candidateRemoteContext(candidate) {
+  const location = candidateLocation(candidate);
+  if (!isGenericRemoteLocation(location)) {
+    return null;
+  }
+  const overrides = candidate.optionOverrides || {};
+  return {
+    kind: location,
+    id: String(overrides["remote-id"] || ""),
+    name: String(overrides["remote-name"] || ""),
+    bin: String(overrides["remote-bin"] || "")
+  };
+}
+
+async function runCandidateClientCommand(settings, candidate, args = []) {
+  const command = candidateBin(candidate, settings);
+  if (!command) {
+    return { ok: false, stdout: "", stderr: "missing client command" };
+  }
+  const overrides = candidate.optionOverrides || {};
+  const location = candidateLocation(candidate);
+  if (location === "orb") {
+    const vmName = String(overrides["orb-vm"] || overrides["openclaw-vm"] || overrides["hermes-vm"] || settings.orbVm || "");
+    const vmUser = String(overrides["orb-user"] || overrides["openclaw-user"] || overrides["hermes-user"] || settings.orbUser || "");
+    if (!vmName || !vmUser) {
+      return { ok: false, stdout: "", stderr: "missing OrbStack VM or user" };
+    }
+    return run(settings.orbBin, ["-m", vmName, "-u", vmUser, command, ...args], {
+      allowFailure: true,
+      timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+    });
+  }
+  const remoteContext = candidateRemoteContext(candidate);
+  if (remoteContext) {
+    return runRemoteLinuxCommand(remoteContext, [command, ...args], {
+      allowFailure: true,
+      timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+    });
+  }
+  return run(command, args, { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+}
+
+function configHasPactMcp(config) {
+  return Boolean(
+    config?.mcp?.[MCP_SERVER_NAME] ||
+    config?.mcpServers?.[MCP_SERVER_NAME] ||
+    config?.servers?.[MCP_SERVER_NAME]
+  );
+}
+
+async function localJsonConfigHasPact(filePath) {
+  return configHasPactMcp(await readJson(filePath, {}));
+}
+
+async function remoteHomeConfigHasPact(settings, candidate, relativePath) {
+  const overrides = candidate.optionOverrides || {};
+  const location = candidateLocation(candidate);
+  const script = `test -f "$HOME/${relativePath}" && grep -q '"${MCP_SERVER_NAME}"' "$HOME/${relativePath}"`;
+  if (location === "orb") {
+    const vmName = String(overrides["orb-vm"] || settings.orbVm || "");
+    const vmUser = String(overrides["orb-user"] || settings.orbUser || "");
+    if (!vmName || !vmUser) {
+      return false;
+    }
+    const result = await run(settings.orbBin, ["-m", vmName, "-u", vmUser, "bash", "-lc", script], {
+      allowFailure: true,
+      timeoutMs: SCAN_COMMAND_TIMEOUT_MS
+    });
+    return result.ok;
+  }
+  const remoteContext = candidateRemoteContext(candidate);
+  if (remoteContext) {
+    const result = await remoteLinuxShell(remoteContext, script, { timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+    return result.ok;
+  }
+  return false;
+}
+
+async function candidateHasInstalledPactMcp(settings, candidate) {
+  if (candidate.target === "antigravity") {
+    return localJsonConfigHasPact(settings.antigravityConfigPath);
+  }
+  if (candidate.target === "opencode") {
+    return localJsonConfigHasPact(settings.opencodeConfigPath);
+  }
+  if (candidate.status !== "detected") {
+    return false;
+  }
+  if (candidate.target === "codex") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "get", MCP_SERVER_NAME]);
+    return result.ok && mcpOutputHasPact(result);
+  }
+  if (candidate.target === "gemini-cli") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "list"]);
+    return result.ok && mcpOutputHasPact(result);
+  }
+  if (candidate.target === "copilot") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "get", MCP_SERVER_NAME]);
+    return result.ok && mcpOutputHasPact(result);
+  }
+  if (candidate.target === "openclaw") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "show", MCP_SERVER_NAME]);
+    return result.ok && mcpOutputHasPact(result);
+  }
+  if (candidate.target === "hermes") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "list"]);
+    return result.ok && mcpOutputHasPact(result);
+  }
+  if (candidate.target === "kilo-code") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "list"]);
+    if (result.ok && mcpOutputHasPact(result)) {
+      return true;
+    }
+    if (candidateLocation(candidate) === "local") {
+      return localJsonConfigHasPact(settings.kiloConfigPath);
+    }
+    return remoteHomeConfigHasPact(settings, candidate, ".config/kilo/kilo.json");
+  }
+  return false;
+}
+
+async function annotateInstalledCandidates(settings, candidates) {
+  for (const candidate of candidates) {
+    candidate.installed = await candidateHasInstalledPactMcp(settings, candidate).catch(() => false);
+  }
+  return candidates;
+}
+
 async function commandSupportsMcp(command, argsPrefix = []) {
   const result = await run(command, [...argsPrefix, "mcp", "--help"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
   return mcpProbeSupported(result);
@@ -3039,12 +3607,33 @@ async function detectLocalAgentCliTargets() {
   return candidates;
 }
 
-function orbUserCandidates(settings, vmName) {
+function configuredOrbUserCandidates(settings, vmName) {
   return uniqueValues([
     settings.orbUser,
     settings.openclawVmUser,
     settings.hermesVmUser,
-    vmName
+    vmName,
+    "root"
+  ]);
+}
+
+async function detectOrbUserCandidates(settings, vmName) {
+  const fallback = configuredOrbUserCandidates(settings, vmName);
+  const script = [
+    "awk -F: '($3 >= 1000 || $1 == \"root\") && $6 != \"\" && $7 !~ /(false|nologin)$/ { print $1 }' /etc/passwd 2>/dev/null"
+  ].join("\n");
+  const result = await run(settings.orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    "root",
+    "bash",
+    "-lc",
+    script
+  ], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  return uniqueValues([
+    ...fallback,
+    ...(result.ok ? outputLines(result.stdout) : [])
   ]);
 }
 
@@ -3052,7 +3641,7 @@ async function detectOrbClawCompatibleTargets(settings, vmNames = null) {
   const names = vmNames || await detectOrbVms(settings.orbBin);
   const candidates = [];
   for (const vmName of names) {
-    const userCandidates = orbUserCandidates(settings, vmName);
+    const userCandidates = await detectOrbUserCandidates(settings, vmName);
     for (const vmUser of userCandidates) {
       for (const commandName of CLAW_COMPATIBLE_COMMANDS) {
         const paths = await detectOrbCommandPaths({
@@ -3091,7 +3680,7 @@ async function detectOrbAgentCliTargets(settings, vmNames = null) {
   const names = vmNames || await detectOrbVms(settings.orbBin);
   const candidates = [];
   for (const vmName of names) {
-    const userCandidates = orbUserCandidates(settings, vmName);
+    const userCandidates = await detectOrbUserCandidates(settings, vmName);
     for (const vmUser of userCandidates) {
       for (const descriptor of ORB_AGENT_CLI_TARGETS) {
         for (const commandName of descriptor.commandNames) {
@@ -3126,21 +3715,88 @@ async function detectOrbAgentCliTargets(settings, vmNames = null) {
   return candidates;
 }
 
+async function detectOrbHermesCommandPaths({ orbBin, vmName, vmUser, hermesBin = "" }) {
+  const paths = [];
+  if (hermesBin) {
+    paths.push(...await detectOrbCommandPaths({ orbBin, vmName, vmUser, command: hermesBin }));
+  }
+  for (const commandName of HERMES_COMMAND_NAMES) {
+    paths.push(...await detectOrbCommandPaths({ orbBin, vmName, vmUser, command: commandName }));
+  }
+  const script = [
+    "set +e",
+    "for candidate in \"$HOME/.hermes/hermes-agent/venv/bin/hermes\" \"$HOME/.local/bin/hermes\" \"$HOME/.hermes/bin/hermes\"; do",
+    "  [ -f \"$candidate\" ] || [ -L \"$candidate\" ] || continue",
+    "  printf '%s\\n' \"$candidate\"",
+    "done"
+  ].join("\n");
+  const result = await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    "bash",
+    "-lc",
+    script
+  ], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  if (result.ok) {
+    paths.push(...outputLines(result.stdout));
+  }
+  return uniqueValues(paths);
+}
+
+async function detectOrbHermesTargets(settings, vmNames = null) {
+  const names = vmNames || await detectOrbVms(settings.orbBin);
+  const candidates = [];
+  for (const vmName of names) {
+    const userCandidates = await detectOrbUserCandidates(settings, vmName);
+    for (const vmUser of userCandidates) {
+      const paths = await detectOrbHermesCommandPaths({
+        orbBin: settings.orbBin,
+        vmName,
+        vmUser,
+        hermesBin: settings.hermesBin
+      });
+      for (const detectedPath of paths) {
+        if (!await orbCommandSupportsMcp({ orbBin: settings.orbBin, vmName, vmUser, command: detectedPath })) {
+          continue;
+        }
+        candidates.push({
+          id: `hermes:orb:${vmName}:${vmUser}:${detectedPath}`,
+          target: "hermes",
+          label: `${targetLabel("hermes")} (${vmName})`,
+          status: "detected",
+          detail: `Hermes CLI at ${detectedPath}, user ${vmUser}`,
+          optionOverrides: {
+            "execution-location": "orb",
+            "orb-vm": vmName,
+            "orb-user": vmUser,
+            "hermes-vm": vmName,
+            "hermes-user": vmUser,
+            "hermes-bin": detectedPath
+          }
+        });
+      }
+    }
+  }
+  return candidates;
+}
+
 async function detectContainerVmContexts(settings) {
   const contexts = [
     ...await detectDockerContainers(settings.dockerBin, "docker"),
     ...await detectDockerContainers(settings.podmanBin, "podman"),
-    ...await detectWslDistros(settings.wslBin)
+    ...await detectDockerContainers(settings.nerdctlBin, "nerdctl"),
+    ...await detectWslDistros(settings.wslBin),
+    ...await detectLimaInstances(settings.limaBin),
+    ...await detectColimaInstances(settings.colimaBin),
+    ...await detectMultipassInstances(settings.multipassBin),
+    ...await detectLxdLikeInstances(settings.lxcBin, "lxc"),
+    ...await detectLxdLikeInstances(settings.incusBin, "incus"),
+    ...await detectVagrantInstances(settings.vagrantBin),
+    ...await detectParallelsVms(settings.parallelsBin)
   ];
-  const seen = new Set();
-  return contexts.filter((context) => {
-    const key = `${context.kind}:${context.id}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
+  return contextListDedup(contexts);
 }
 
 function remoteContextLabel(context) {
@@ -3210,6 +3866,48 @@ async function detectRemoteLinuxAgentCliTargets(contexts) {
   return candidates;
 }
 
+async function detectRemoteLinuxHermesCommandPaths(context) {
+  const paths = [];
+  for (const commandName of HERMES_COMMAND_NAMES) {
+    paths.push(...await detectRemoteLinuxCommandPaths(context, commandName));
+  }
+  const script = [
+    "set +e",
+    "for candidate in \"$HOME/.hermes/hermes-agent/venv/bin/hermes\" \"$HOME/.local/bin/hermes\" \"$HOME/.hermes/bin/hermes\"; do",
+    "  [ -f \"$candidate\" ] || [ -L \"$candidate\" ] || continue",
+    "  printf '%s\\n' \"$candidate\"",
+    "done"
+  ].join("\n");
+  const result = await remoteLinuxShell(context, script, { timeoutMs: REMOTE_SCAN_COMMAND_TIMEOUT_MS });
+  if (result.ok) {
+    paths.push(...outputLines(result.stdout));
+  }
+  return uniqueValues(paths);
+}
+
+async function detectRemoteLinuxHermesTargets(contexts) {
+  const candidates = [];
+  for (const context of contexts) {
+    const paths = await detectRemoteLinuxHermesCommandPaths(context);
+    for (const detectedPath of paths) {
+      if (!await remoteLinuxCommandSupportsMcp(context, detectedPath)) {
+        continue;
+      }
+      candidates.push({
+        id: `hermes:${context.kind}:${context.id}:${detectedPath}`,
+        target: "hermes",
+        label: `${targetLabel("hermes")} (${remoteContextLabel(context)})`,
+        status: "detected",
+        detail: `Hermes CLI at ${detectedPath}`,
+        optionOverrides: remoteContextOptionOverrides(context, {
+          "hermes-bin": detectedPath
+        })
+      });
+    }
+  }
+  return candidates;
+}
+
 async function scanInstallTargets(options = {}) {
   const settings = installerOptions(options);
   const candidates = [];
@@ -3221,8 +3919,10 @@ async function scanInstallTargets(options = {}) {
       ...await detectLocalClawCompatibleTargets(settings),
       ...await detectOrbClawCompatibleTargets(settings, vmNames),
       ...await detectOrbAgentCliTargets(settings, vmNames),
+      ...await detectOrbHermesTargets(settings, vmNames),
       ...await detectRemoteLinuxClawCompatibleTargets(remoteContexts),
-      ...await detectRemoteLinuxAgentCliTargets(remoteContexts)
+      ...await detectRemoteLinuxAgentCliTargets(remoteContexts),
+      ...await detectRemoteLinuxHermesTargets(remoteContexts)
     ];
     for (const candidate of discoveredCandidates) {
       mergeInstallCandidate(candidates, candidate);
@@ -3247,6 +3947,7 @@ async function scanInstallTargets(options = {}) {
     status: antigravityDetected ? "detected" : "not-detected",
     detail: antigravityDetected ? `config: ${settings.antigravityConfigPath}` : "Antigravity config path not found yet"
   });
+  await annotateInstalledCandidates(settings, candidates);
 
   return {
     ok: true,
@@ -3280,10 +3981,19 @@ function installerOptions(options) {
     geminiBin: String(option(options, "gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN)),
     kiloBin: String(option(options, "kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN)),
     copilotBin: String(option(options, "copilot-bin", process.env.COPILOT_CLI_PATH || DEFAULT_COPILOT_BIN)),
+    opencodeBin: String(option(options, "opencode-bin", process.env.OPENCODE_CLI_PATH || DEFAULT_OPENCODE_BIN)),
     orbBin: String(option(options, "orb-bin", process.env.ORB_CLI_PATH || DEFAULT_ORB_BIN)),
     dockerBin: String(option(options, "docker-bin", process.env.DOCKER_CLI_PATH || DEFAULT_DOCKER_BIN)),
     podmanBin: String(option(options, "podman-bin", process.env.PODMAN_CLI_PATH || DEFAULT_PODMAN_BIN)),
+    nerdctlBin: String(option(options, "nerdctl-bin", process.env.NERDCTL_CLI_PATH || DEFAULT_NERDCTL_BIN)),
     wslBin: String(option(options, "wsl-bin", process.env.WSL_CLI_PATH || DEFAULT_WSL_BIN)),
+    limaBin: String(option(options, "lima-bin", process.env.LIMA_CLI_PATH || DEFAULT_LIMA_BIN)),
+    colimaBin: String(option(options, "colima-bin", process.env.COLIMA_CLI_PATH || DEFAULT_COLIMA_BIN)),
+    multipassBin: String(option(options, "multipass-bin", process.env.MULTIPASS_CLI_PATH || DEFAULT_MULTIPASS_BIN)),
+    lxcBin: String(option(options, "lxc-bin", process.env.LXC_CLI_PATH || DEFAULT_LXC_BIN)),
+    incusBin: String(option(options, "incus-bin", process.env.INCUS_CLI_PATH || DEFAULT_INCUS_BIN)),
+    vagrantBin: String(option(options, "vagrant-bin", process.env.VAGRANT_CLI_PATH || DEFAULT_VAGRANT_BIN)),
+    parallelsBin: String(option(options, "parallels-bin", process.env.PARALLELS_CLI_PATH || DEFAULT_PARALLELS_BIN)),
     executionLocation: String(option(options, "execution-location", hasVmTarget ? "orb" : "local")),
     remoteKind: String(option(options, "remote-kind", "")),
     remoteId: String(option(options, "remote-id", "")),
@@ -3295,6 +4005,7 @@ function installerOptions(options) {
     geminiExtensionRoot: path.resolve(String(option(options, "gemini-extension-root", path.join(os.homedir(), ".pact", "gemini-extensions", PLUGIN_NAME)))),
     kiloConfigPath: path.resolve(String(option(options, "kilo-config", path.join(os.homedir(), ".config", "kilo", "kilo.json")))),
     antigravityConfigPath: path.resolve(String(option(options, "antigravity-config", path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json")))),
+    opencodeConfigPath: path.resolve(String(option(options, "opencode-config", path.join(os.homedir(), ".config", "opencode", "opencode.jsonc")))),
     openclawVm: String(option(options, "openclaw-vm", sharedVmName)),
     openclawVmUser: String(option(options, "openclaw-user", sharedVmUser)),
     openclawBin: String(option(options, "openclaw-bin", "")),
@@ -3348,7 +4059,8 @@ function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = 
       const pointer = candidateIndex === index ? ">" : " ";
       const selected = selectedIds.has(candidate.id);
       const label = `${candidate.label}`.padEnd(28, " ");
-      return `${pointer} [${selectionGlyph(selected)}] [${statusGlyph(candidate.status)}] ${label} ${candidate.detail || ""}`;
+      const installed = candidate.installed ? "[installed] " : "";
+      return `${pointer} [${selectionGlyph(selected)}] ${installed}${label} ${candidate.detail || ""}`;
     }),
     "",
     message
@@ -3756,8 +4468,22 @@ function remoteContextFromSettings(settings) {
   if (!isGenericRemoteLocation(kind)) {
     return null;
   }
+  const remoteBins = {
+    docker: settings.dockerBin,
+    podman: settings.podmanBin,
+    nerdctl: settings.nerdctlBin,
+    wsl: settings.wslBin,
+    lima: settings.limaBin,
+    colima: settings.colimaBin,
+    multipass: settings.multipassBin,
+    lxc: settings.lxcBin,
+    incus: settings.incusBin,
+    vagrant: settings.vagrantBin,
+    parallels: settings.parallelsBin
+  };
   const bin = settings.remoteBin
-    || (kind === "docker" ? settings.dockerBin : kind === "podman" ? settings.podmanBin : settings.wslBin);
+    || remoteBins[kind]
+    || "";
   if (!settings.remoteId || !bin) {
     throw new Error(`${kind} install requires a discovered remote context.`);
   }
@@ -3877,19 +4603,32 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
               openclawBin: settings.openclawBin
             });
       } else if (target === "hermes") {
-        clientResult = await installHermes({
-          baseUrl: settings.baseUrl,
-          token,
-          orbBin: settings.orbBin,
-          vmName: settings.hermesVm,
-          vmUser: settings.hermesVmUser,
-          hermesBin: settings.hermesBin
-        });
+        clientResult = remoteContext
+          ? await installHermesRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext,
+              hermesBin: settings.hermesBin
+            })
+          : await installHermes({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.hermesVm,
+              vmUser: settings.hermesVmUser,
+              hermesBin: settings.hermesBin
+            });
       } else if (target === "antigravity") {
         clientResult = await installAntigravity({
           baseUrl: settings.baseUrl,
           token,
           configPath: settings.antigravityConfigPath
+        });
+      } else if (target === "opencode") {
+        clientResult = await installOpenCode({
+          baseUrl: settings.baseUrl,
+          token,
+          configPath: settings.opencodeConfigPath
         });
       }
       const httpVerification = verify ? await verifyMcpTools({ baseUrl: settings.baseUrl, token }) : null;
@@ -4143,15 +4882,24 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
               openclawBin: settings.openclawBin
             });
       } else if (target === "hermes") {
-        uninstalled[target] = await uninstallHermes({
-          orbBin: settings.orbBin,
-          vmName: settings.hermesVm,
-          vmUser: settings.hermesVmUser,
-          hermesBin: settings.hermesBin
-        });
+        uninstalled[target] = remoteContext
+          ? await uninstallHermesRemote({
+              context: remoteContext,
+              hermesBin: settings.hermesBin
+            })
+          : await uninstallHermes({
+              orbBin: settings.orbBin,
+              vmName: settings.hermesVm,
+              vmUser: settings.hermesVmUser,
+              hermesBin: settings.hermesBin
+            });
       } else if (target === "antigravity") {
         uninstalled[target] = await uninstallAntigravity({
           configPath: settings.antigravityConfigPath
+        });
+      } else if (target === "opencode") {
+        uninstalled[target] = await uninstallOpenCode({
+          configPath: settings.opencodeConfigPath
         });
       }
       uninstalled[target] = {

@@ -2,8 +2,8 @@
   "id": "pact.agent.workspace",
   "label": "Agent workspace",
   "requiredScopes": [
-    "knowledge:read",
-    "knowledge:write"
+    "workspace:read",
+    "workspace:write"
   ],
   "maxRisk": "safe_write",
   "grantable": true,

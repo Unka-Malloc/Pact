@@ -558,7 +558,7 @@ function fileMetadataFromStat({ workspaceId, relativePath, absolutePath, stat, i
     relativePath,
     name: path.posix.basename(relativePath) || "",
     type: stat.isDirectory() ? "directory" : isFile ? "file" : "other",
-    sizeBytes: Number(stat.size || 0),
+    sizeBytes: stat.isDirectory() ? 0 : Number(stat.size || 0),
     createdAt: stat.birthtime?.toISOString?.() || "",
     updatedAt: stat.mtime?.toISOString?.() || "",
     contentSha256: ""
@@ -1070,6 +1070,7 @@ export function createAgentWorkspace({ userDataPath }) {
         return;
       }
       const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+        .filter((entry) => !entry.name.startsWith("."))
         .sort((left, right) => left.name.localeCompare(right.name));
       for (const entry of entries) {
         if (files.length >= limit) {
@@ -2027,6 +2028,10 @@ export function createAgentWorkspace({ userDataPath }) {
     if (!fileName && !explicitPath) {
       return { ok: false, status: 400, error: "fileName 不能为空。" };
     }
+    const resolvedName = explicitPath ? path.posix.basename(explicitPath) : fileName;
+    if (resolvedName.startsWith(".")) {
+      return { ok: false, status: 400, error: "不允许上传以 . 开头的文件。" };
+    }
     let contentBuffer;
     try {
       contentBuffer = decodeWorkspaceFileContent(input);
@@ -2126,6 +2131,153 @@ export function createAgentWorkspace({ userDataPath }) {
       encoding: "base64",
       contentBase64: content.toString("base64"),
       content: input.includeText === false ? undefined : content.toString(String(input.textEncoding || input.encoding || "utf8"))
+    };
+  }
+
+  function writeWorkspaceFile(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const explicitPath = String(input.path || input.relativePath || "").trim();
+    if (!explicitPath) {
+      return { ok: false, status: 400, error: "path 不能为空。" };
+    }
+    if (path.posix.basename(explicitPath).startsWith(".")) {
+      return { ok: false, status: 400, error: "不允许操作以 . 开头的文件。" };
+    }
+    let contentBuffer;
+    try {
+      contentBuffer = decodeWorkspaceFileContent(input);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    let resolved;
+    try {
+      resolved = resolveWorkspacePath(access.workspace, normalizeWorkspaceRelativePath(explicitPath, { allowEmpty: false }));
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (!fs.existsSync(resolved.absolutePath)) {
+      return { ok: false, status: 404, error: "文件不存在。" };
+    }
+    if (fs.statSync(resolved.absolutePath).isDirectory()) {
+      return { ok: false, status: 400, error: "目标路径是文件夹，不能写入。" };
+    }
+    fs.writeFileSync(resolved.absolutePath, contentBuffer);
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      overwritten: true,
+      file: fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        stat: fs.statSync(resolved.absolutePath),
+        includeHash: true
+      })
+    };
+  }
+
+  function deleteWorkspaceFile(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const explicitPath = String(input.path || input.relativePath || "").trim();
+    if (!explicitPath) {
+      return { ok: false, status: 400, error: "path 不能为空。" };
+    }
+    if (path.posix.basename(explicitPath).startsWith(".")) {
+      return { ok: false, status: 400, error: "不允许操作以 . 开头的文件。" };
+    }
+    let resolved;
+    try {
+      resolved = resolveWorkspacePath(access.workspace, normalizeWorkspaceRelativePath(explicitPath, { allowEmpty: false }));
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (!fs.existsSync(resolved.absolutePath)) {
+      return { ok: false, status: 404, error: "文件不存在。" };
+    }
+    const stat = fs.statSync(resolved.absolutePath);
+    const meta = fileMetadataFromStat({
+      workspaceId: access.workspace.workspaceId,
+      relativePath: resolved.relativePath,
+      absolutePath: resolved.absolutePath,
+      stat
+    });
+    if (stat.isDirectory()) {
+      if (!input.recursive) {
+        fs.rmdirSync(resolved.absolutePath);
+      } else {
+        fs.rmSync(resolved.absolutePath, { recursive: true, force: true });
+      }
+    } else {
+      fs.unlinkSync(resolved.absolutePath);
+    }
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      deleted: true,
+      file: meta
+    };
+  }
+
+  function moveWorkspaceFile(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const sourcePath = String(input.sourcePath || input.from || "").trim();
+    const targetPath = String(input.targetPath || input.to || input.path || "").trim();
+    if (!sourcePath) {
+      return { ok: false, status: 400, error: "sourcePath (from) 不能为空。" };
+    }
+    if (!targetPath) {
+      return { ok: false, status: 400, error: "targetPath (to) 不能为空。" };
+    }
+    if (path.posix.basename(sourcePath).startsWith(".") || path.posix.basename(targetPath).startsWith(".")) {
+      return { ok: false, status: 400, error: "不允许操作以 . 开头的文件。" };
+    }
+    let resolvedSource, resolvedTarget;
+    try {
+      resolvedSource = resolveWorkspacePath(access.workspace, normalizeWorkspaceRelativePath(sourcePath, { allowEmpty: false }));
+      resolvedTarget = resolveWorkspacePath(access.workspace, normalizeWorkspaceRelativePath(targetPath, { allowEmpty: false }));
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (!fs.existsSync(resolvedSource.absolutePath)) {
+      return { ok: false, status: 404, error: "源文件不存在。" };
+    }
+    if (fs.existsSync(resolvedTarget.absolutePath)) {
+      if (!input.overwrite) {
+        return { ok: false, status: 409, error: "目标路径已存在。设置 overwrite: true 以覆盖。" };
+      }
+      fs.rmSync(resolvedTarget.absolutePath, { recursive: true, force: true });
+    }
+    fs.mkdirSync(path.dirname(resolvedTarget.absolutePath), { recursive: true });
+    fs.renameSync(resolvedSource.absolutePath, resolvedTarget.absolutePath);
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const newStat = fs.statSync(resolvedTarget.absolutePath);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      moved: true,
+      sourcePath: resolvedSource.relativePath,
+      targetPath: resolvedTarget.relativePath,
+      file: fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolvedTarget.relativePath,
+        absolutePath: resolvedTarget.absolutePath,
+        stat: newStat,
+        includeHash: newStat.isFile()
+      })
     };
   }
 
@@ -3083,7 +3235,10 @@ export function createAgentWorkspace({ userDataPath }) {
     listWorkspaceFiles,
     workspaceFileMetadata,
     uploadWorkspaceFile,
+    writeWorkspaceFile,
     downloadWorkspaceFile,
+    deleteWorkspaceFile,
+    moveWorkspaceFile,
     updateArtifactsStatus,
     createIssue,
     updateIssue,

@@ -5803,6 +5803,60 @@ export function createSystemController({
       sendJson(response, result.ok ? 201 : result.status || 400, result);
     },
 
+    async handleWriteWorkspaceFile({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.writeWorkspaceFile !== "function") {
+        sendJson(response, 503, { error: "工作空间存储接口不可用。" });
+        return;
+      }
+      const payload = parseJsonBody(requestBody);
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+        sendJson(response, 400, { error: "请求体必须是 JSON 对象。" });
+        return;
+      }
+      const result = agentWorkspace.writeWorkspaceFile({
+        workspaceId,
+        ...payload,
+        createdBy: authSession?.user?.username || authSession?.user?.userId || payload.createdBy || "",
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 200 : result.status || 400, result);
+    },
+
+    async handleDeleteWorkspaceFile({ workspaceId, url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.deleteWorkspaceFile !== "function") {
+        sendJson(response, 503, { error: "工作空间存储接口不可用。" });
+        return;
+      }
+      const pathValue = String(url.searchParams.get("path") || url.searchParams.get("filePath") || "");
+      const recursive = url.searchParams.has("recursive");
+      const result = agentWorkspace.deleteWorkspaceFile({
+        workspaceId,
+        path: pathValue,
+        recursive,
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 200 : result.status || 400, result);
+    },
+
+    async handleMoveWorkspaceFile({ workspaceId, requestBody, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.moveWorkspaceFile !== "function") {
+        sendJson(response, 503, { error: "工作空间存储接口不可用。" });
+        return;
+      }
+      const payload = parseJsonBody(requestBody);
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+        sendJson(response, 400, { error: "请求体必须是 JSON 对象。" });
+        return;
+      }
+      const result = agentWorkspace.moveWorkspaceFile({
+        workspaceId,
+        ...payload,
+        createdBy: authSession?.user?.username || authSession?.user?.userId || payload.createdBy || "",
+        ...workspaceAccessOptions(authSession)
+      });
+      sendJson(response, result.ok ? 200 : result.status || 400, result);
+    },
+
     async handleKnowledgeSummarizationRun({ requestBody, response }) {
       if (!summarizationRuntime) {
         sendJson(response, 503, {
@@ -6099,6 +6153,69 @@ export function createSystemController({
           limit: Number(url.searchParams.get("limit") || 120)
         })
       );
+    },
+    async handleCreateMcpAuthorizationRequest({ request, requestBody, response }) {
+      const platform = getToolManagementPlatform();
+      if (!platform?.store?.createMcpAuthorizationRequest) {
+        sendJson(response, 503, { error: "MCP Authorization API is unavailable." });
+        return;
+      }
+      const payload = parseJsonBody(requestBody);
+      const result = platform.store.createMcpAuthorizationRequest({
+        request,
+        clientName: String(payload.clientName || payload.name || "").trim(),
+        requestedScopes: Array.isArray(payload.requestedScopes) ? payload.requestedScopes : [],
+        requestedTools: Array.isArray(payload.requestedTools) ? payload.requestedTools : [],
+        reason: String(payload.reason || "").trim()
+      });
+      sendJson(response, 200, result);
+    },
+    async handleListMcpAuthorizationRequests({ url, response }) {
+      const platform = getToolManagementPlatform();
+      if (!platform?.store?.listMcpAuthorizationRequests) {
+        sendJson(response, 503, { error: "MCP Authorization API is unavailable." });
+        return;
+      }
+      const status = url?.searchParams?.get("status") || "pending";
+      sendJson(response, 200, {
+        requests: platform.store.listMcpAuthorizationRequests({ status })
+      });
+    },
+    async handleResolveMcpAuthorizationRequest({ requestId, requestBody, response }) {
+      const platform = getToolManagementPlatform();
+      if (!platform?.store?.resolveMcpAuthorizationRequest) {
+        sendJson(response, 503, { error: "MCP Authorization API is unavailable." });
+        return;
+      }
+      const payload = parseJsonBody(requestBody);
+      const resolution = String(payload.resolution || "").trim(); // 'approved' or 'rejected'
+
+      let grantId = "";
+      if (resolution === "approved") {
+        const clientName = String(payload.clientName || "MCP Client");
+        const grantResult = platform.store.createGrant({
+          label: `${clientName} (MCP Client)`,
+          type: "mcp-client",
+          scopes: Array.isArray(payload.scopes) ? payload.scopes : [],
+          toolsets: Array.isArray(payload.toolsets) ? payload.toolsets : [],
+          toolAllow: Array.isArray(payload.toolAllow) ? payload.toolAllow : [],
+          enabled: true,
+          reason: `Approved MCP authorization request ${requestId}`
+        });
+        grantId = grantResult.grant.id;
+      }
+
+      const success = platform.store.resolveMcpAuthorizationRequest({
+        requestId,
+        resolution,
+        grantId
+      });
+
+      if (!success) {
+        sendJson(response, 404, { error: "Request not found or already resolved." });
+        return;
+      }
+      sendJson(response, 200, { ok: true, grantId });
     },
     async handleToolManagementPassthrough({ operation, request, requestBody, url, response }) {
       const platform = getToolManagementPlatform();

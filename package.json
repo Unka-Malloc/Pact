@@ -160,6 +160,8 @@
     "server:verify:production-health-console": "node server/scripts/verify-production-health-console.mjs",
     "server:verify:sample-business-pack": "node server/scripts/verify-sample-business-pack.mjs",
     "server:verify:business-scenarios": "node server/scripts/verify-business-scenarios.mjs",
+    "server:verify:mcp-opencode": "node server/scripts/verify-mcp-opencode.mjs",
+    "server:verify:mcp-opencode-install": "node server/scripts/verify-mcp-opencode-install.mjs",
     "server:pack:offline:linux:x64": "node server/scripts/pack-offline-server.mjs --target linux-x64",
     "server:pack:offline:linux:arm64": "node server/scripts/pack-offline-server.mjs --target linux-arm64",
     "feature:plan": "node server/scripts/feature-profiles.mjs plan",
@@ -199,7 +201,8 @@
     "test:client": "node tests/run.mjs --profile client",
     "test:changed": "node tests/run.mjs --profile changed",
     "test:regression": "node tests/run.mjs --profile standard",
-    "server:verify:state-coordination": "node server/scripts/verify-state-coordination.mjs"
+    "server:verify:state-coordination": "node server/scripts/verify-state-coordination.mjs",
+    "server:verify:workspace-file-ops": "node server/scripts/verify-workspace-file-ops.mjs"
   },
   "dependencies": {
     "@langchain/langgraph": "^1.2.9",

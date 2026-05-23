@@ -13,6 +13,7 @@ const DEFAULT_CODEX_BIN = "codex";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
+const DEFAULT_OPENCODE_BIN = "opencode";
 const DEFAULT_ORB_BIN = "orb";
 const PLUGIN_NAME = "pact-mcp";
 const MARKETPLACE_NAME = "pact-local";
@@ -28,7 +29,8 @@ const SUPPORTED_TARGETS = [
   "copilot",
   "openclaw",
   "hermes",
-  "antigravity"
+  "antigravity",
+  "opencode"
 ];
 const TARGET_ALIASES = new Map([
   ["gemini", "gemini-cli"],
@@ -39,7 +41,8 @@ const TARGET_ALIASES = new Map([
   ["github-copilot", "copilot"],
   ["openclaw-kate", "openclaw"],
   ["hermes-agent", "hermes"],
-  ["hermes-serena", "hermes"]
+  ["hermes-serena", "hermes"],
+  ["open-code", "opencode"]
 ]);
 
 function argValue(name, fallback = "") {
@@ -546,6 +549,28 @@ async function installAntigravity({ baseUrl, token, configPath }) {
   };
 }
 
+async function installOpenCode({ baseUrl, token, configPath }) {
+  const config = await readJson(configPath, {});
+  const backupPath = await backupIfExists(configPath);
+  config.mcp = {
+    ...(config.mcp || {}),
+    [MCP_SERVER_NAME]: {
+      type: "remote",
+      url: `${baseUrl}/mcp`,
+      headers: {
+        "X-Pact-Api-Key": token
+      },
+      enabled: true
+    }
+  };
+  await writeJson(configPath, config);
+  return {
+    installMode: "opencode-mcp-config",
+    configPath,
+    backupPath
+  };
+}
+
 async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, openclawBin }) {
   if (!vmName || !vmUser || !openclawBin) {
     throw new Error("OpenClaw install requires --openclaw-vm, --openclaw-user, and --openclaw-bin. No default OpenClaw path is assumed.");
@@ -698,6 +723,7 @@ const codexBin = argValue("--codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_C
 const geminiBin = argValue("--gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN);
 const kiloBin = argValue("--kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN);
 const copilotBin = argValue("--copilot-bin", process.env.COPILOT_CLI_PATH || DEFAULT_COPILOT_BIN);
+const opencodeBin = argValue("--opencode-bin", process.env.OPENCODE_CLI_PATH || DEFAULT_OPENCODE_BIN);
 const orbBin = argValue("--orb-bin", process.env.ORB_CLI_PATH || DEFAULT_ORB_BIN);
 const tokenEnv = argValue("--token-env", DEFAULT_TOKEN_ENV);
 const marketplaceRoot = path.resolve(argValue(
@@ -715,6 +741,10 @@ const kiloConfigPath = path.resolve(argValue(
 const antigravityConfigPath = path.resolve(argValue(
   "--antigravity-config",
   path.join(os.homedir(), ".gemini", "antigravity", "mcp_config.json")
+));
+const opencodeConfigPath = path.resolve(argValue(
+  "--opencode-config",
+  path.join(os.homedir(), ".config", "opencode", "opencode.jsonc")
 ));
 const sharedVmName = argValue("--vm", "");
 const sharedVmUser = argValue("--vm-user", "");
@@ -760,6 +790,8 @@ for (const target of targets) {
     });
   } else if (target === "antigravity") {
     clientResult = await installAntigravity({ baseUrl, token: grantResult.token, configPath: antigravityConfigPath });
+  } else if (target === "opencode") {
+    clientResult = await installOpenCode({ baseUrl, token: grantResult.token, configPath: opencodeConfigPath });
   }
   const httpVerification = verify
     ? await verifyMcpTools({ baseUrl, token: grantResult.token })

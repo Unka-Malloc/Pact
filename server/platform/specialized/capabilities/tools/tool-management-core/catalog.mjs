@@ -59,6 +59,21 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
     description: "Modify knowledge and context runtime settings."
   },
   {
+    id: "workspace:read",
+    label: "Read agent workspaces",
+    description: "List and read agent workspace metadata, sessions, context summaries, and workspace references."
+  },
+  {
+    id: "workspace:write",
+    label: "Write agent workspaces",
+    description: "Create workspaces and write non-admin workspace state such as locks and session events."
+  },
+  {
+    id: "workspace:maintain",
+    label: "Maintain agent workspaces",
+    description: "Manage workspace inheritance, sharing, profiles, reviews, and governance changes."
+  },
+  {
     id: "storage:read",
     label: "Read storage",
     description: "Read server storage summaries."
@@ -170,10 +185,26 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     defaultForAgents: false
   },
   {
+    id: "pact.agent.workspace.read",
+    label: "Agent workspace read",
+    requiredScopes: ["workspace:read"],
+    maxRisk: "read_only",
+    grantable: true,
+    defaultForAgents: true
+  },
+  {
     id: "pact.agent.workspace",
     label: "Agent workspace",
-    requiredScopes: ["knowledge:read", "knowledge:write"],
+    requiredScopes: ["workspace:read", "workspace:write"],
     maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.agent.workspace.maintain",
+    label: "Agent workspace maintain",
+    requiredScopes: ["workspace:read", "workspace:write", "workspace:maintain"],
+    maxRisk: "repair_write",
     grantable: true,
     defaultForAgents: false
   },
@@ -429,6 +460,9 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.file.upload": "pact.agentWorkspace.file.upload",
   "agent_workspaces.file.stat": "pact.agentWorkspace.file.stat",
   "agent_workspaces.file.download": "pact.agentWorkspace.file.download",
+  "agent_workspaces.file.write": "pact.agentWorkspace.file.write",
+  "agent_workspaces.file.delete": "pact.agentWorkspace.file.delete",
+  "agent_workspaces.file.move": "pact.agentWorkspace.file.move",
   "workspace_governance.describe": "pact.workspaceGovernance.describe",
   "workspace_governance.policy.set": "pact.workspaceGovernance.policy.set",
   "workspace_governance.evaluate": "pact.workspaceGovernance.evaluate",
@@ -477,7 +511,10 @@ const TOOL_ALIAS_IDS_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.files.list": ["pact.workspace.files.list"],
   "agent_workspaces.file.upload": ["pact.workspace.file.upload"],
   "agent_workspaces.file.stat": ["pact.workspace.file.stat"],
-  "agent_workspaces.file.download": ["pact.workspace.file.download"]
+  "agent_workspaces.file.download": ["pact.workspace.file.download"],
+  "agent_workspaces.file.write": ["pact.workspace.file.write"],
+  "agent_workspaces.file.delete": ["pact.workspace.file.delete"],
+  "agent_workspaces.file.move": ["pact.workspace.file.move"]
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
@@ -535,33 +572,36 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "context.profiles.set": "knowledge:admin",
   "context.session_memory.clear": "knowledge:admin",
   "client_runtime.profiles.set": "knowledge:admin",
-  "agent_workspaces.create": "knowledge:write",
-  "agent_workspaces.submissions.resolve": "knowledge:maintain",
-  "agent_workspaces.issues.resolve": "knowledge:maintain",
-  "agent_workspaces.context_bundle.restore": "knowledge:maintain",
-  "agent_workspaces.parent.set": "knowledge:maintain",
-  "agent_workspaces.profile.hotswap": "knowledge:maintain",
-  "agent_workspaces.sources.set": "knowledge:maintain",
-  "agent_workspaces.share": "knowledge:maintain",
-  "agent_workspaces.unshare": "knowledge:maintain",
+  "agent_workspaces.create": "workspace:write",
+  "agent_workspaces.submissions.resolve": "workspace:maintain",
+  "agent_workspaces.issues.resolve": "workspace:maintain",
+  "agent_workspaces.context_bundle.restore": "workspace:maintain",
+  "agent_workspaces.parent.set": "workspace:maintain",
+  "agent_workspaces.profile.hotswap": "workspace:maintain",
+  "agent_workspaces.sources.set": "workspace:maintain",
+  "agent_workspaces.share": "workspace:maintain",
+  "agent_workspaces.unshare": "workspace:maintain",
   "agent_workspaces.folder.create": "storage:write",
   "agent_workspaces.files.list": "storage:read",
   "agent_workspaces.file.upload": "storage:write",
   "agent_workspaces.file.stat": "storage:read",
   "agent_workspaces.file.download": "storage:read",
-  "workspace_governance.describe": "knowledge:read",
-  "workspace_governance.policy.set": "knowledge:admin",
-  "workspace_governance.evaluate": "knowledge:read",
-  "workspace_governance.share_grant": "knowledge:maintain",
+  "agent_workspaces.file.write": "storage:write",
+  "agent_workspaces.file.delete": "storage:write",
+  "agent_workspaces.file.move": "storage:write",
+  "workspace_governance.describe": "workspace:read",
+  "workspace_governance.policy.set": "workspace:maintain",
+  "workspace_governance.evaluate": "workspace:read",
+  "workspace_governance.share_grant": "workspace:maintain",
   "asset_lineage.describe": "knowledge:read",
   "asset_lineage.record": "knowledge:maintain",
   "asset_lineage.trace": "knowledge:read",
   "asset_lineage.reparse_plan": "knowledge:maintain",
-  "agent_workspaces.locks.write": "knowledge:write",
-  "agent_sessions.events.append": "knowledge:write",
-  "agent_sessions.fork": "knowledge:write",
-  "agent_sessions.merge_proposal": "knowledge:write",
-  "agent_sessions.archive": "knowledge:write",
+  "agent_workspaces.locks.write": "workspace:write",
+  "agent_sessions.events.append": "workspace:write",
+  "agent_sessions.fork": "workspace:write",
+  "agent_sessions.merge_proposal": "workspace:write",
+  "agent_sessions.archive": "workspace:write",
   "knowledge.summarization.runs.create": "knowledge:write",
   "knowledge.summarization.runs.approve": "knowledge:maintain",
   "agent_sync.publish": "agent_sync:publish",
@@ -581,6 +621,9 @@ const TOOLSET_BY_SCOPE = Object.freeze({
   "knowledge:write": "pact.knowledge.write",
   "knowledge:maintain": "pact.knowledge.maintain",
   "knowledge:admin": "pact.knowledge.admin",
+  "workspace:read": "pact.agent.workspace.read",
+  "workspace:write": "pact.agent.workspace",
+  "workspace:maintain": "pact.agent.workspace.maintain",
   "storage:read": "pact.storage.read",
   "storage:write": "pact.storage.write",
   "jobs:read": "pact.jobs.read",
@@ -630,7 +673,9 @@ function operationScope(operation) {
     operationId.startsWith("agent_workspaces.") ||
     operationId.startsWith("agent_sessions.")
   ) {
-    return "knowledge:read";
+    return operationId.startsWith("agent_workspaces.") || operationId.startsWith("agent_sessions.")
+      ? "workspace:read"
+      : "knowledge:read";
   }
   if (operationId.startsWith("jobs.")) {
     return "jobs:read";
