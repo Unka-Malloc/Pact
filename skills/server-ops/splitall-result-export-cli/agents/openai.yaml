@@ -1,0 +1,4 @@
+interface:
+  display_name: "SplitAll Result Export CLI"
+  short_description: "Help with SplitAll Result Export CLI tasks"
+  default_prompt: "Use $splitall-result-export-cli to handle this SplitAll platform task."

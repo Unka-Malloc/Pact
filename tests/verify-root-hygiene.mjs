@@ -73,6 +73,7 @@ const allowedRootNames = new Set([
   "package.json",
   "server",
   "server-web",
+  "skills",
   "pact-v1",
   "tests",
   "tsconfig.json",
@@ -86,6 +87,7 @@ const sourceRootsToScan = [
   "server-web",
   "client-cli",
   "client-gui",
+  "skills",
   "tests"
 ];
 
@@ -116,6 +118,9 @@ const forbiddenDataDirDefaultPatterns = [
   /path\.(?:join|resolve)\(\s*process\.cwd\(\)\s*,\s*["']\.pact-server-data["']\s*\)/u,
   /path\.(?:join|resolve)\(\s*repoRoot\(\)\s*,\s*["']\.pact-server-data["']\s*\)/u,
   /DATA_DIR=["']\$PROJECT_ROOT\/\.pact-server-data["']/u,
+  /path\.(?:join|resolve)\(\s*projectRoot\s*,\s*["']\.cache["']/u,
+  /userDataPath\s*\|\|\s*process\.cwd\(\)/u,
+  /options\.userDataPath\s*\|\|\s*process\.cwd\(\)/u,
   /default:\s*\.\/?\.pact-server-data/iu,
   /默认数据目录：\s*`?\.pact-server-data/u
 ];

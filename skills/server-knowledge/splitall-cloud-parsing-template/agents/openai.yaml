@@ -1,0 +1,4 @@
+interface:
+  display_name: "SplitAll Cloud Parsing Template"
+  short_description: "Help with SplitAll Cloud Parsing Template tasks"
+  default_prompt: "Use $splitall-cloud-parsing-template to handle this SplitAll platform task."
