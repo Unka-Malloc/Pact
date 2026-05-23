@@ -563,7 +563,7 @@ async function main() {
   const stat = await fs.stat(tarballPath);
   const checksum = await sha256(tarballPath);
   const portables = [];
-  const defaultTargets = ['darwin-arm64', 'linux-x64', 'linux-arm64', 'linux-x64-musl', 'linux-arm64-musl'];
+  const defaultTargets = ['darwin-arm64', 'linux-x64', 'linux-arm64', 'linux-x64-musl'];
   const targets = args.platforms ? String(args.platforms).split(',') : defaultTargets;
   for (const target of targets) {
     portables.push(await createPortableBundle({
