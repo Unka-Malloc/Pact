@@ -39,8 +39,10 @@ function xmlEscape(value) {
     .replace(/'/g, "&apos;");
 }
 
+import { DEFAULT_SERVER_PORT } from "../config/ServerEnv.mjs";
+
 function normalizePort(value) {
-  const port = Number(value || 7228);
+  const port = Number(value || DEFAULT_SERVER_PORT);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error(`无效端口号：${value}`);
   }
@@ -164,7 +166,7 @@ async function main() {
   const dataDir = path.resolve(
     String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || ServerConfig.getDataDir())
   );
-  const logsDir = path.join(projectRoot, "build", "logs");
+  const logsDir = path.join(dataDir, "logs", "launch-agents");
   const logPath = path.join(logsDir, `server-${port}.log`);
   const errorLogPath = path.join(logsDir, `server-${port}.err.log`);
   const supervisorLogPath = path.join(logsDir, "background-supervisor.log");

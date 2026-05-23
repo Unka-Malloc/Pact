@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../../../common/config/ServerConfig.mjs";
 
 export const CAPABILITY_PACKAGE_LIFECYCLE_PROTOCOL_VERSION = "pact.capability-package-lifecycle.v1";
 export const TOOL_PACKAGE_PROTOCOL_VERSION = "pact.tool-package.v1";
@@ -83,7 +84,7 @@ export function capabilityPackageDigest(manifest = {}) {
 }
 
 function registryPath(userDataPath = "") {
-  return path.join(userDataPath || process.cwd(), REGISTRY_FILE);
+  return path.join(userDataPath || ServerConfig.getDataDir(), REGISTRY_FILE);
 }
 
 async function readJson(filePath, fallback) {

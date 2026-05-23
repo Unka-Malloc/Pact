@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../config/ServerConfig.mjs";
 import { strToU8, zipSync } from "fflate";
 
 export const SAMPLE_BUSINESS_PACK_PROTOCOL_VERSION = "pact.sample-business-pack.v1";
@@ -396,7 +397,7 @@ function isInside(basePath, targetPath) {
 }
 
 function materializeRoot(input = {}, options = {}) {
-  const baseRoot = path.resolve(options.userDataPath || process.cwd(), SAMPLE_PACK_ROOT);
+  const baseRoot = path.resolve(options.userDataPath || ServerConfig.getDataDir(), SAMPLE_PACK_ROOT);
   const packId = slug(input.packId || DEFAULT_PACK_ID);
   const defaultRunId = `${packId}-${nowIso().replace(/[:.]/g, "-")}`;
   const requested = text(input.targetRoot || input.outputDirectory || "");

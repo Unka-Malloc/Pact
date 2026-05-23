@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../../../../common/config/ServerConfig.mjs";
 
 export const ASSET_LINEAGE_PROTOCOL_VERSION = "pact.asset-lineage.v1";
 
@@ -40,7 +41,7 @@ function hash(value, length = 20) {
 }
 
 function registryPath(userDataPath = "") {
-  return path.join(userDataPath || process.cwd(), REGISTRY_FILE);
+  return path.join(userDataPath || ServerConfig.getDataDir(), REGISTRY_FILE);
 }
 
 async function readJson(filePath, fallback) {

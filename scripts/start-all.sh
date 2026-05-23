@@ -108,21 +108,110 @@ fi
 
 SERVER_PID=""
 VITE_PID=""
+CLEANUP_STARTED=false
+
+is_alive() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+process_tree_pids() {
+  local root="${1:-}"
+  local child
+
+  if [[ -z "$root" ]]; then
+    return 0
+  fi
+
+  echo "$root"
+
+  if command -v pgrep >/dev/null 2>&1; then
+    while IFS= read -r child; do
+      if [[ -n "$child" ]]; then
+        process_tree_pids "$child"
+      fi
+    done < <(pgrep -P "$root" 2>/dev/null || true)
+  fi
+}
+
+signal_process_tree() {
+  local signal="$1"
+  local root="${2:-}"
+  local pids=()
+  local pid
+  local i
+
+  if ! is_alive "$root"; then
+    return 0
+  fi
+
+  while IFS= read -r pid; do
+    if [[ -n "$pid" ]]; then
+      pids+=("$pid")
+    fi
+  done < <(process_tree_pids "$root")
+
+  for ((i=${#pids[@]}-1; i>=0; i--)); do
+    kill "-$signal" "${pids[$i]}" 2>/dev/null || true
+  done
+}
+
+wait_for_exit() {
+  local pid
+  local i
+
+  for i in {1..25}; do
+    local any_alive=false
+    for pid in "$@"; do
+      if is_alive "$pid"; then
+        any_alive=true
+        break
+      fi
+    done
+    if [[ "$any_alive" == false ]]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  return 1
+}
 
 cleanup() {
+  if [[ "$CLEANUP_STARTED" == true ]]; then
+    return 0
+  fi
+  CLEANUP_STARTED=true
+  trap - EXIT INT TERM
+
   echo ""
   echo "[exit] 正在关闭进程..."
 
-  if [[ -n "$VITE_PID" ]] && kill -0 "$VITE_PID" 2>/dev/null; then
-    kill "$VITE_PID"
-  fi
-  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
-    kill "$SERVER_PID"
+  signal_process_tree TERM "$VITE_PID"
+  signal_process_tree TERM "$SERVER_PID"
+
+  if ! wait_for_exit "$VITE_PID" "$SERVER_PID"; then
+    echo "[exit] 进程未及时退出，强制终止残留进程..."
+    signal_process_tree KILL "$VITE_PID"
+    signal_process_tree KILL "$SERVER_PID"
   fi
 
-  wait 2>/dev/null || true
+  wait "$VITE_PID" "$SERVER_PID" 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+
+handle_int() {
+  cleanup
+  exit 130
+}
+
+handle_term() {
+  cleanup
+  exit 143
+}
+
+trap cleanup EXIT
+trap handle_int INT
+trap handle_term TERM
 
 wait_for_server() {
   local endpoint
@@ -147,12 +236,12 @@ wait_for_server() {
 
 if [[ "$MODE" == "console" ]]; then
   echo "[server] 启动控制台（默认模式）：server:console"
-  ARGS=(--port "$PORT" --profile "$PROFILE" --data-dir "$DATA_DIR")
+  ARGS=(--port "$PORT" --profile "$PROFILE" --data-dir "$DATA_DIR" --active-service-url "http://127.0.0.1:${PORT}" --advertised-base-url "http://127.0.0.1:${PORT}")
   npm run server:console -- "${ARGS[@]}" &
   SERVER_PID=$!
 else
   echo "[server] 启动开发模式：server:start + Vite"
-  ARGS=(--port "$PORT" --profile "$PROFILE" --data-dir "$DATA_DIR")
+  ARGS=(--port "$PORT" --profile "$PROFILE" --data-dir "$DATA_DIR" --active-service-url "http://127.0.0.1:${PORT}" --advertised-base-url "http://127.0.0.1:${PORT}")
   npm run server:start -- "${ARGS[@]}" &
   SERVER_PID=$!
 

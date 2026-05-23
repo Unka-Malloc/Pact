@@ -23,7 +23,7 @@ class ServerConfigManager {
   }
 
   getDataDir() {
-    return this.config.dataDir || path.join(os.homedir(), ".pact-server-data");
+    return process.env.PACT_SERVER_DATA_DIR || this.config.dataDir || path.join(os.homedir(), ".pact-server-data");
   }
 }
 

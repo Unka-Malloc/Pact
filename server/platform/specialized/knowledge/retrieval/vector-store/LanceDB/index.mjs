@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../../../../../common/config/ServerConfig.mjs";
 
 export const VECTOR_PROTOCOL_VERSION = "pact.vector.v1";
 export const LANCEDB_PROVIDER_ID = "lancedb";
@@ -107,7 +108,7 @@ function writeJsonArray(filePath, records) {
 }
 
 export function createLanceDbVectorStore(options = {}) {
-  const rootPath = path.join(options.userDataPath || process.cwd(), "lancedb-vector-store");
+  const rootPath = path.join(options.userDataPath || ServerConfig.getDataDir(), "lancedb-vector-store");
   const spoolPath = options.spoolPath || path.join(rootPath, "upserts.json");
   const providerId = String(options.providerId || LANCEDB_PROVIDER_ID);
   const uri = options.uri || options.settings?.uri || process.env.PACT_LANCEDB_URI || "";

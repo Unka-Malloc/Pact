@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pipeline } from "node:stream/promises";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 import {
   MCP_CONNECTOR_PACKAGE_NAME,
   MCP_CONNECTOR_VERSION,
@@ -109,7 +110,7 @@ function getNodeCacheDirectory() {
     return process.env.PACT_MCP_NODE_RUNTIME_CACHE_DIR.trim();
   }
 
-  return path.join(projectRoot, ".cache", "pact", "mcp-node-runtime");
+  return path.join(ServerConfig.getDataDir(), "cache", "mcp-node-runtime");
 }
 
 async function hasUsableCachedNodeArchive(archivePath) {
@@ -663,7 +664,8 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
         "copilot",
         "openclaw",
         "hermes",
-        "antigravity"
+        "antigravity",
+        "opencode"
       ]
     },
     bootstrap: {

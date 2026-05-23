@@ -184,6 +184,17 @@ try {
   assert.ok(ownerCsrf);
   await assert.rejects(fs.access(ownerCredentials.credentialsPath));
 
+  const ownerSession = await getJson(server.url, "/api/auth/session", {
+    cookie: ownerCookie
+  });
+  assert.equal(ownerSession.status, 200);
+  for (const scope of ["workspace:read", "workspace:write", "workspace:maintain", "storage:read", "storage:write"]) {
+    assert.ok(
+      ownerSession.payload.session.user.scopes.includes(scope),
+      `owner role should include ${scope}`
+    );
+  }
+
   const headerSessionBypass = await requestJson(`${server.url}/api/knowledge/console`, {
     headers: {
       "x-pact-console-session": sessionTokenFromCookie(ownerCookie)

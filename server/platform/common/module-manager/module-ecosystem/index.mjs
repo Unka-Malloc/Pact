@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../../config/ServerConfig.mjs";
 import { pathToFileURL } from "node:url";
 
 export const MODULE_ECOSYSTEM_PROTOCOL_VERSION = "pact.module-ecosystem.v1";
@@ -162,7 +163,7 @@ function normalizeScaffoldRequest(input = {}, { userDataPath = "" } = {}) {
   const selectedSafeName = safeName(source.safeName || moduleId);
   const targetDir = path.resolve(
     normalizeText(source.targetDir || source.outputDir || source.dir) ||
-      path.join(userDataPath || process.cwd(), "module-ecosystem", "scaffolds", selectedSafeName)
+      path.join(userDataPath || ServerConfig.getDataDir(), "module-ecosystem", "scaffolds", selectedSafeName)
   );
   return {
     protocolVersion: MODULE_ECOSYSTEM_PROTOCOL_VERSION,
@@ -651,7 +652,11 @@ export async function runModuleContractTest(input = {}, options = {}) {
   if (!modulePath) {
     throw new Error("modulePath is required.");
   }
-  const userDataPath = path.resolve(normalizeText(input.userDataPath || input.dataDir) || options.userDataPath || process.cwd());
+  const userDataPath = path.resolve(
+    normalizeText(input.userDataPath || input.dataDir) ||
+      options.userDataPath ||
+      ServerConfig.getDataDir()
+  );
   await fs.mkdir(userDataPath, { recursive: true });
   const mount = await loadMount({
     modulePath,

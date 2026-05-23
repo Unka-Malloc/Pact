@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../config/ServerConfig.mjs";
 
 export const BACKUP_RESTORE_PROTOCOL_VERSION = "pact.backup-restore.v1";
 
@@ -35,7 +36,7 @@ function safeRelativePath(relativePath = "") {
 }
 
 function backupRoot(userDataPath = "") {
-  return path.join(path.resolve(userDataPath || process.cwd()), BACKUP_ROOT_DIR);
+  return path.join(path.resolve(userDataPath || ServerConfig.getDataDir()), BACKUP_ROOT_DIR);
 }
 
 function backupPath(userDataPath = "", backupId = "") {
@@ -138,7 +139,7 @@ function summarizeEntries(entries = []) {
 }
 
 async function copyBackupFiles({ userDataPath, backupId, entries }) {
-  const rootPath = path.resolve(userDataPath || process.cwd());
+  const rootPath = path.resolve(userDataPath || ServerConfig.getDataDir());
   const filesRoot = backupFilesRoot(userDataPath, backupId);
   for (const entry of entries) {
     const relativePath = safeRelativePath(entry.relativePath);
@@ -160,7 +161,7 @@ async function loadBackupManifest({ userDataPath, backupId }) {
 }
 
 export async function createStorageBackup({ userDataPath, label = "" } = {}) {
-  const rootPath = path.resolve(userDataPath || process.cwd());
+  const rootPath = path.resolve(userDataPath || ServerConfig.getDataDir());
   await fs.mkdir(rootPath, { recursive: true });
   const entries = await collectFiles(rootPath);
   const backupId = backupIdFor(label);
@@ -287,7 +288,7 @@ export async function restoreStorageBackup({
   apply = false,
   includePaths = []
 } = {}) {
-  const rootPath = path.resolve(userDataPath || process.cwd());
+  const rootPath = path.resolve(userDataPath || ServerConfig.getDataDir());
   const manifest = await loadBackupManifest({ userDataPath: rootPath, backupId });
   const selectedEntries = filterEntries(manifest.files || [], includePaths);
   const filesRoot = backupFilesRoot(rootPath, manifest.backupId);

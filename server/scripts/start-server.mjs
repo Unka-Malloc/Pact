@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 
 import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
+import { DEFAULT_SERVER_PORT } from "../config/ServerEnv.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,17 +48,17 @@ function normalizePort(value, fallback) {
   return parsed;
 }
 
-function usage() {
+function printUsageAndExit(code = 0) {
   console.log(`Pact Server
 
 Usage:
-  node server/scripts/start-server.mjs [--host 0.0.0.0] [--port 7228] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default] [--edition community|pro|enterprise|custom]
+  node server/scripts/start-server.mjs [--host 0.0.0.0] [--port ${DEFAULT_SERVER_PORT}] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default] [--edition community|pro|enterprise|custom]
 
 Options:
   --host                    监听地址，默认读取 PACT_SERVER_HOST，否则使用 127.0.0.1
   --allow-public-console    允许监听非回环地址；等价于 PACT_ALLOW_PUBLIC_CONSOLE=1
-  --port                    监听端口，默认读取 PACT_SERVER_PORT，否则使用 7228
-  --data-dir                数据目录，默认 ~/.pact-server-data 或是通过 ~/.pact-server.json 配置
+  --port                    监听端口，默认读取 PACT_SERVER_PORT，否则使用 ${DEFAULT_SERVER_PORT}
+  --data-dir                数据目录，默认读取 PACT_SERVER_DATA_DIR，否则读取 ~/.pact-server.json，最后使用 ~/.pact-server-data
   --with-ui                 同时提供 build/dist 前端页面；build/dist 不存在时会报错
   --profile                 运行档位：default|minimal，默认 default
   --edition                 功能版本：community|pro|enterprise|custom
@@ -83,17 +84,17 @@ Options:
   --graph-store-module      图数据库挂载模块路径
   --help                    显示帮助
 `);
+  process.exit(code);
 }
 
 const args = parseArgs(process.argv.slice(2));
 
 if (args.help) {
-  usage();
-  process.exit(0);
+  printUsageAndExit(0);
 }
 
 const host = String(args.host || process.env.PACT_SERVER_HOST || "127.0.0.1").trim();
-const port = normalizePort(args.port || process.env.PACT_SERVER_PORT, 7228);
+const port = normalizePort(args.port || process.env.PACT_SERVER_PORT, DEFAULT_SERVER_PORT);
 const userDataPath = path.resolve(
   String(
     args["data-dir"] ||

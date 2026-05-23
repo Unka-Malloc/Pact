@@ -13,8 +13,13 @@ export const CONSOLE_CSRF_COOKIE = "pact_console_csrf";
 export const CONSOLE_SCOPES = [
   "console:read",
   "knowledge:read",
+  "workspace:read",
+  "storage:read",
   "knowledge:write",
+  "workspace:write",
+  "storage:write",
   "knowledge:maintain",
+  "workspace:maintain",
   "knowledge:admin",
   "jobs:read",
   "jobs:write",
@@ -38,8 +43,13 @@ export const CONSOLE_ROLES = {
     scopes: [
       "console:read",
       "knowledge:read",
+      "workspace:read",
+      "storage:read",
       "knowledge:write",
+      "workspace:write",
+      "storage:write",
       "knowledge:maintain",
+      "workspace:maintain",
       "knowledge:admin",
       "jobs:read",
       "jobs:write",
@@ -55,8 +65,13 @@ export const CONSOLE_ROLES = {
     scopes: [
       "console:read",
       "knowledge:read",
+      "workspace:read",
+      "storage:read",
       "knowledge:write",
+      "workspace:write",
+      "storage:write",
       "knowledge:maintain",
+      "workspace:maintain",
       "jobs:read",
       "jobs:write",
       "maintenance:read",
@@ -67,7 +82,7 @@ export const CONSOLE_ROLES = {
   viewer: {
     roleId: "viewer",
     label: "Viewer",
-    scopes: ["console:read", "knowledge:read", "jobs:read"]
+    scopes: ["console:read", "knowledge:read", "workspace:read", "storage:read", "jobs:read"]
   }
 };
 

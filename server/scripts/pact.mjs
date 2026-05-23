@@ -14,8 +14,9 @@ import {
   filterOperationsForFeatures,
   resolveFeatureRuntimeFromEnv
 } from "../platform/interactive/features/feature-manifest.mjs";
+import { getDefaultServerUrl, DEFAULT_SERVER_PORT } from "../config/ServerEnv.mjs";
 
-const DEFAULT_SERVER_URL = process.env.PACT_SERVER_URL || "http://127.0.0.1:7228";
+const DEFAULT_SERVER_URL = process.env.PACT_SERVER_URL || getDefaultServerUrl();
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
 
 function parseArgs(argv) {
@@ -66,7 +67,7 @@ function usage() {
     "Usage:",
     "  pact --file a.txt [--wait] [--output-result result.json]",
     "  pact --path ./local [--wait] [--output-result result.json]",
-    "  pact upload --path ./local --server-url http://127.0.0.1:7228",
+    `  pact upload --path ./local --server-url http://127.0.0.1:${DEFAULT_SERVER_PORT}`,
     "  pact rpc --method GET --path /api/healthz",
     "  pact rpc-call jobs.list --params '{\"limit\":20}'",
     "  pact interfaces --format markdown",
@@ -83,7 +84,8 @@ function usage() {
     "  pact tools policy preview --body preview.json",
     "",
     "Global options:",
-    "  --server-url URL        Defaults to PACT_SERVER_URL or http://127.0.0.1:7228",
+    "  --data-dir PATH         Directory for offline data resolution",
+    `  --server-url URL        Defaults to PACT_SERVER_URL or http://127.0.0.1:${DEFAULT_SERVER_PORT}`,
     "  --body JSON_OR_FILE     JSON string or path to a JSON file",
     "  --body-file FILE        JSON request body file",
     "  --params JSON_OR_FILE   JSON-RPC params string or path to a JSON file",

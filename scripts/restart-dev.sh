@@ -55,7 +55,17 @@ else
 fi
 
 echo "[restart] 停止旧的服务端进程..."
-bash scripts/clean-existing-service.sh --global --port "$PORT" --vite-port 5173 --data-dir "$DATA_DIR"
+bash scripts/clean-existing-service.sh \
+  --global \
+  --port "$PORT" \
+  --vite-port 5173 \
+  --data-dir "$DATA_DIR" \
+  --launch-label "dev.pact.server.${PORT}" \
+  --launch-label "dev.pact.background-supervisor" \
+  --launch-label "dev.pact.system-inspection" \
+  --launch-plist "$HOME/Library/LaunchAgents/dev.pact.server.${PORT}.plist" \
+  --launch-plist "$HOME/Library/LaunchAgents/dev.pact.background-supervisor.plist" \
+  --launch-plist "$HOME/Library/LaunchAgents/dev.pact.system-inspection.plist"
 
 echo "[restart] 启动开发环境..."
 exec bash scripts/start-all.sh --dev --port "$PORT" --data-dir "$DATA_DIR" --skip-clean "${EXTRA_ARGS[@]}"

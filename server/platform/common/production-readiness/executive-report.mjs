@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { buildProductionHealthReport } from "./report-reader.mjs";
+import { ServerConfig } from "../config/ServerConfig.mjs";
 
 export const EXECUTIVE_REPORT_PROTOCOL_VERSION = "pact.executive-report.v1";
 
@@ -56,7 +57,7 @@ async function writeJson(filePath, value) {
 }
 
 function storePath(userDataPath = "") {
-  return path.join(userDataPath || process.cwd(), STORE_FILE);
+  return path.join(userDataPath || ServerConfig.getDataDir(), STORE_FILE);
 }
 
 function normalizeContributionReport(report = {}) {

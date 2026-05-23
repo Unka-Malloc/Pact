@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ServerConfig } from "../../../../common/config/ServerConfig.mjs";
 
 export const MODEL_ROUTING_PROTOCOL_VERSION = "pact.model-routing.v1";
 
@@ -54,11 +55,11 @@ function normalizePositiveNumber(value, fallback = 0) {
 }
 
 function statePath(userDataPath = "") {
-  return path.join(userDataPath || process.cwd(), DEFAULT_STATE_FILE);
+  return path.join(userDataPath || ServerConfig.getDataDir(), DEFAULT_STATE_FILE);
 }
 
 function ledgerPath(userDataPath = "") {
-  return path.join(userDataPath || process.cwd(), DEFAULT_LEDGER_FILE);
+  return path.join(userDataPath || ServerConfig.getDataDir(), DEFAULT_LEDGER_FILE);
 }
 
 async function readJsonFile(filePath, fallback) {

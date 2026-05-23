@@ -14,6 +14,7 @@ import {
   resolveFeatureRuntime,
   writeFeaturePlanArtifacts
 } from "../platform/interactive/features/feature-manifest.mjs";
+import { DEFAULT_SERVER_PORT } from "../config/ServerEnv.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -857,7 +858,7 @@ async function writeLauncherScripts(stagingPath, targetKey, packagingPlan) {
     `export PACT_FEATURES="\${PACT_FEATURES:-${(packagingPlan.featureProfile?.activeFeatureIds || []).join(",")}}"`,
     'export PACT_SERVER_DATA_DIR="${PACT_SERVER_DATA_DIR:-$ROOT/data}"',
     'export PACT_SERVER_HOST="${PACT_SERVER_HOST:-0.0.0.0}"',
-    'export PACT_SERVER_PORT="${PACT_SERVER_PORT:-7228}"'
+    `export PACT_SERVER_PORT="\${PACT_SERVER_PORT:-${DEFAULT_SERVER_PORT}}"`
   ];
   if (packagingPlan.includeTika) {
     commonHeader.push(
@@ -940,7 +941,7 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       "```bash",
       "tar -xzf pact-server-*.tar.gz",
       "cd pact-server-*",
-      "./bin/start-server --host 0.0.0.0 --port 7228 --data-dir ./data",
+      `./bin/start-server --host 0.0.0.0 --port ${DEFAULT_SERVER_PORT} --data-dir ./data`,
       "```",
       "",
       "The server console is enabled by default and is served from the bundled `build/dist` directory.",
@@ -950,14 +951,14 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       "```bash",
       "./runtime/node/bin/node -v",
       packagingPlan.includeTika ? `./modules/jre/${targetKey}/bin/java -version` : "# Java/Tika omitted by this package plan.",
-      "./bin/pact health --server-url http://127.0.0.1:7228",
+      `./bin/pact health --server-url http://127.0.0.1:${DEFAULT_SERVER_PORT}`,
       "```",
       "",
       "## Important Environment Variables",
       "",
       "- `PACT_SERVER_DATA_DIR`: defaults to `<package>/data`",
       "- `PACT_SERVER_HOST`: defaults to `0.0.0.0`",
-      "- `PACT_SERVER_PORT`: defaults to `7228`",
+      `- \`PACT_SERVER_PORT\`: defaults to \`${DEFAULT_SERVER_PORT}\``,
       "- `PACT_SERVER_PROFILE`: defaults to `minimal` unless FileProcessor is included",
       packagingPlan.includeTika
         ? "- `PACT_JAVA_BIN_PATH`: defaults to bundled JRE"

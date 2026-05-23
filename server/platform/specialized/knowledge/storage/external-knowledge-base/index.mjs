@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { ServerConfig } from "../../../../common/config/ServerConfig.mjs";
 import Database from "better-sqlite3";
 import {
   KNOWLEDGE_PROTOCOL_VERSION,
@@ -1268,10 +1269,11 @@ function createExternalClient(config = {}) {
 }
 
 export async function createExternalKnowledgeBaseMount({ userDataPath, runtimeOptions = {} } = {}) {
-  const rootPath = path.join(userDataPath || process.cwd(), "external-knowledge-base");
+  const resolvedUserDataPath = userDataPath || ServerConfig.getDataDir();
+  const rootPath = path.join(resolvedUserDataPath, "external-knowledge-base");
   const store = createAdapterStore(rootPath);
   const embeddingRuntime = createEmbeddingRuntime({ settings: { dimension: DEFAULT_EXTERNAL_DIMENSION } });
-  const core = await createKnowledgeCoreMount({ userDataPath, outlineEnabled: true });
+  const core = await createKnowledgeCoreMount({ userDataPath: resolvedUserDataPath, outlineEnabled: true });
   let currentConfig = readRuntimeConfig({ runtimeOptions });
   let externalClient = createExternalClient(currentConfig);
 

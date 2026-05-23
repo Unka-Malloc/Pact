@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getTraceContext, traceDetails } from "./trace-context.mjs";
+import { ServerConfig } from "../config/ServerConfig.mjs";
 
 const DEFAULT_RETENTION_DAYS = 14;
 const DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
@@ -72,13 +73,7 @@ function resolveLogDirectory({ runtimeOptions = {}, userDataPath = "" } = {}) {
   if (dataRoot) {
     return path.join(path.resolve(dataRoot), "logs", "runtime");
   }
-  const workspaceRoot = path.resolve(
-    String(runtimeOptions.cwd || process.env.PACT_WORKSPACE_ROOT || process.cwd())
-  );
-  if (workspaceRoot) {
-    return path.join(workspaceRoot, "build", "logs", "runtime");
-  }
-  return path.join(path.resolve(userDataPath || "."), "logs", "runtime");
+  return path.join(path.resolve(ServerConfig.getDataDir()), "logs", "runtime");
 }
 
 function sanitizeString(value, maxPreview = MAX_STRING_PREVIEW) {
