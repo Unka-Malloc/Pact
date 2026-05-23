@@ -371,8 +371,8 @@ async function createPortableBundle({ outputDir, packageJson, target, bundledVer
     ""
   ].join("\n"));
 
-  const stat = await fs.stat(archivePath);
   await run("tar", ["-czf", archivePath, "-C", outputDir, rootName]);
+  const stat = await fs.stat(archivePath);
   let zipSha256 = null;
   let zipSizeBytes = null;
   if (zipArchivePath) {
