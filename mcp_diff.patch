@@ -83,9 +83,9 @@ index 2d1a7e8..7a277db 100644
 +  MCP_HELP_TOOL_NAME
 +]);
 +
- export const MCP_SERVER_VERSION = "0.0.2";
+ export const MCP_SERVER_VERSION = "0.0.1";
  export const MCP_CONNECTOR_PACKAGE_NAME = "pact-mcp-connector";
- export const MCP_CONNECTOR_VERSION = "0.0.2";
+ export const MCP_CONNECTOR_VERSION = "0.0.1";
 @@ -115,49 +129,84 @@ function activeMcpTools(toolManagementPlatform) {
      .map(publicMcpTool);
  }
@@ -499,7 +499,7 @@ index 0d71e7f..e15ed8f 100644
    assert.equal(discovery.payload.stableToolName, "pact.call");
    assert.equal(discovery.payload.interfaceVersion, "pact.mcp.v1");
 -  assert.equal(discovery.payload.serverVersion, "0.0.1");
-+  assert.equal(discovery.payload.serverVersion, "0.0.2");
++  assert.equal(discovery.payload.serverVersion, "0.0.1");
    assert.equal(discovery.payload.identity.algorithm, "Ed25519");
    assert.ok(discovery.payload.identity.keyId);
    assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
@@ -508,7 +508,7 @@ index 0d71e7f..e15ed8f 100644
    assert.equal(handshake.payload.payload.nonce, nonce);
    assert.equal(handshake.payload.payload.server.name, "Pact");
 -  assert.equal(handshake.payload.payload.server.serverVersion, "0.0.1");
-+  assert.equal(handshake.payload.payload.server.serverVersion, "0.0.2");
++  assert.equal(handshake.payload.payload.server.serverVersion, "0.0.1");
    assert.equal(handshake.payload.payload.identity.keyId, discovery.payload.identity.keyId);
    assert.equal(handshake.payload.payload.endpoints.mcpUrl, `${server.url}/mcp`);
    assert.equal(handshake.payload.signature.algorithm, "Ed25519");

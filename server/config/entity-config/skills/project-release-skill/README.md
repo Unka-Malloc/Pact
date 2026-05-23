@@ -9,13 +9,13 @@ It is explicitly prohibited from being exposed to downstream agents (`allowDowns
 
 ## Release Procedure
 
-When the user asks to release a new version (e.g. `v0.0.3`), the agent MUST follow these exact steps:
+When the user asks to release the current version (currently `v0.0.1`), the agent MUST follow these exact steps:
 
 1. **Verify the Release Build:**
    Run `npm run server:verify:mcp-release` locally to ensure the build works and tests pass.
 
 2. **Bump Versions in Code:**
-   Update the version string to the new version (e.g. `0.0.3`) in the following files:
+   Update the version string to the target version (currently `0.0.1`) in the following files:
    - `package.json` (the root project)
    - `mcp-connector/package.json`
    - `server/platform/common/mcp/http-mcp-adapter.mjs` (variables `MCP_SERVER_VERSION` and `MCP_CONNECTOR_VERSION`)

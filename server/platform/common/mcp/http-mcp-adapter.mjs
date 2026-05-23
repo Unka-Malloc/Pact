@@ -27,9 +27,9 @@ const CATEGORIZED_TOOL_NAMES = new Set([
 const activeSseConnections = new Set();
 
 export const MCP_SERVER_NAME = "pact-mcp-server";
-export const MCP_SERVER_VERSION = "0.0.4";
+export const MCP_SERVER_VERSION = "0.0.1";
 export const MCP_CONNECTOR_PACKAGE_NAME = "pact-mcp-connector";
-export const MCP_CONNECTOR_VERSION = "0.0.4";
+export const MCP_CONNECTOR_VERSION = "0.0.1";
 export const MCP_CONNECTOR_GITHUB_REPO = "Unka-Malloc/Pact";
 export const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
