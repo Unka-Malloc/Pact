@@ -3683,7 +3683,16 @@ async function installCommand(options) {
   if (canUseInstallTui(options)) {
     return installTuiCommand(resolvedOptions);
   }
-  const targets = parseTargets(option(resolvedOptions, "target", "codex"));
+  const targetOpt = option(resolvedOptions, "target", "");
+  if (!targetOpt) {
+    return {
+      ok: false,
+      packageName: packageJson.name,
+      packageVersion: packageJson.version,
+      error: "Interactive mode requires a TTY. Please specify --target <client> for non-interactive use."
+    };
+  }
+  const targets = parseTargets(targetOpt);
   const tokenInfo = await resolveInstallToken(resolvedOptions, { targets });
   return installTargets({
     options: resolvedOptions,
@@ -3947,7 +3956,16 @@ async function uninstallCommand(options) {
   if (canUseUninstallTui(options)) {
     return uninstallTuiCommand(resolvedOptions);
   }
-  const targets = parseTargets(option(resolvedOptions, "target", "codex"));
+  const targetOpt = option(resolvedOptions, "target", "");
+  if (!targetOpt) {
+    return {
+      ok: false,
+      packageName: packageJson.name,
+      packageVersion: packageJson.version,
+      error: "Interactive mode requires a TTY. Please specify --target <client> for non-interactive use."
+    };
+  }
+  const targets = parseTargets(targetOpt);
   return uninstallTargets({
     options: resolvedOptions,
     targets
@@ -4194,10 +4212,15 @@ function formatInstallResult(result) {
   }
   const lines = [
     result.ok ? "Pact MCP install completed." : "Pact MCP install completed with errors.",
-    "",
+    ""
+  ];
+  if (result.error) {
+    lines.push(`Reason: ${result.error}`, "");
+  }
+  lines.push(
     "Server:",
     `  MCP URL: ${result.baseUrl ? `${result.baseUrl}/mcp` : "unknown"}`
-  ];
+  );
   if (result.discoveryManifest) {
     lines.push(`  Local registry: ${result.discoveryManifest}`);
   }
@@ -4234,6 +4257,9 @@ function formatUninstallResult(result) {
     result.ok ? "Pact MCP uninstall completed." : "Pact MCP uninstall completed with errors.",
     ""
   ];
+  if (result.error) {
+    lines.push(`Reason: ${result.error}`, "");
+  }
   for (const target of result.targets || []) {
     const item = result.uninstalled?.[target] || {};
     const failed = item.status === "failed" || item.ok === false || Boolean(item.error);
