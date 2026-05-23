@@ -149,7 +149,7 @@ node server/scripts/start-server.mjs
 
 ## 4. 配置文件
 
-默认数据目录：`.pact-server-data/`
+默认数据目录由 `ServerConfig.getDataDir()` 统一解析：优先读取 `PACT_CONFIG_FILE` 指向的配置文件，否则读取 `~/.pact-server.json`，其中的 `dataDir` 生效；未配置时使用 `~/.pact-server-data`。开发者不得把管理脚本的默认数据目录写回项目自身目录，临时目录只能通过显式 `--data-dir` 传入。
 
 当前主要配置文件：
 

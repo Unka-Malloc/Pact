@@ -81,6 +81,7 @@ const allowedRootNames = new Set([
 
 const sourceRootsToScan = [
   "docs",
+  "scripts",
   "server",
   "server-web",
   "client-cli",
@@ -106,6 +107,18 @@ const forbiddenNestedPaths = new Set([
   "client-cli/communication",
   "tests/email-corpus"
 ]);
+const dataDirPolicyExcludedPaths = new Set([
+  "server/platform/common/config/ServerConfig.mjs",
+  "tests/verify-root-hygiene.mjs"
+]);
+const forbiddenDataDirDefaultPatterns = [
+  /path\.(?:join|resolve)\(\s*projectRoot\s*,\s*["']\.pact-server-data["']\s*\)/u,
+  /path\.(?:join|resolve)\(\s*process\.cwd\(\)\s*,\s*["']\.pact-server-data["']\s*\)/u,
+  /path\.(?:join|resolve)\(\s*repoRoot\(\)\s*,\s*["']\.pact-server-data["']\s*\)/u,
+  /DATA_DIR=["']\$PROJECT_ROOT\/\.pact-server-data["']/u,
+  /default:\s*\.\/?\.pact-server-data/iu,
+  /默认数据目录：\s*`?\.pact-server-data/u
+];
 
 function toPosix(relativePath) {
   return relativePath.split(path.sep).join("/");
@@ -165,6 +178,182 @@ async function scanNestedGeneratedArtifacts(directory, relativePath, generatedAr
   }
 }
 
+function findDuplicateJsonObjectKeys(source, relativePath) {
+  const duplicates = [];
+  const stack = [];
+  let index = 0;
+  let line = 1;
+
+  function currentObject() {
+    const current = stack[stack.length - 1];
+    return current?.type === "object" ? current : null;
+  }
+
+  function readString() {
+    const startLine = line;
+    let value = "";
+    index += 1;
+    while (index < source.length) {
+      const char = source[index];
+      if (char === "\\") {
+        value += char;
+        index += 2;
+        continue;
+      }
+      if (char === "\"") {
+        index += 1;
+        return { value, line: startLine };
+      }
+      if (char === "\n") {
+        line += 1;
+      }
+      value += char;
+      index += 1;
+    }
+    return { value, line: startLine };
+  }
+
+  while (index < source.length) {
+    const char = source[index];
+    if (char === "\n") {
+      line += 1;
+      index += 1;
+      continue;
+    }
+    if (/\s/u.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === "{") {
+      stack.push({ type: "object", keys: new Map(), expectingKey: true });
+      index += 1;
+      continue;
+    }
+    if (char === "}") {
+      stack.pop();
+      index += 1;
+      continue;
+    }
+    if (char === "[") {
+      stack.push({ type: "array" });
+      index += 1;
+      continue;
+    }
+    if (char === "]") {
+      stack.pop();
+      index += 1;
+      continue;
+    }
+    if (char === ",") {
+      const object = currentObject();
+      if (object) {
+        object.expectingKey = true;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === ":") {
+      const object = currentObject();
+      if (object) {
+        object.expectingKey = false;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "\"") {
+      const token = readString();
+      const object = currentObject();
+      if (object?.expectingKey) {
+        if (object.keys.has(token.value)) {
+          duplicates.push({
+            file: relativePath,
+            key: token.value,
+            firstLine: object.keys.get(token.value),
+            line: token.line
+          });
+        } else {
+          object.keys.set(token.value, token.line);
+        }
+        object.expectingKey = false;
+      }
+      continue;
+    }
+    index += 1;
+  }
+
+  return duplicates;
+}
+
+async function scanSourceFiles(directory, relativePath, visitor) {
+  let entriesForDirectory;
+  try {
+    entriesForDirectory = await fs.readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+
+  for (const entry of entriesForDirectory) {
+    const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+    const normalizedChildPath = toPosix(childRelativePath);
+    if (shouldSkipNestedScan(normalizedChildPath)) {
+      continue;
+    }
+    const childPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await scanSourceFiles(childPath, childRelativePath, visitor);
+      continue;
+    }
+    await visitor(childPath, normalizedChildPath);
+  }
+}
+
+async function assertPackageJsonHasNoDuplicateKeys() {
+  const relativePath = "package.json";
+  const source = await fs.readFile(path.join(root, relativePath), "utf8");
+  const duplicates = findDuplicateJsonObjectKeys(source, relativePath);
+  if (duplicates.length === 0) {
+    return;
+  }
+  const lines = ["Duplicate JSON object keys:"];
+  for (const duplicate of duplicates) {
+    lines.push(
+      `- ${duplicate.file}:${duplicate.line} duplicates "${duplicate.key}" first declared at line ${duplicate.firstLine}`
+    );
+  }
+  throw new Error(lines.join("\n"));
+}
+
+async function assertServerDataDirPolicy() {
+  const violations = [];
+  for (const scanRoot of ["docs", "scripts", "server", "tests"]) {
+    await scanSourceFiles(path.join(root, scanRoot), scanRoot, async (filePath, relativePath) => {
+      if (dataDirPolicyExcludedPaths.has(relativePath)) {
+        return;
+      }
+      const text = await fs.readFile(filePath, "utf8");
+      const lines = text.split(/\n/u);
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        if (forbiddenDataDirDefaultPatterns.some((pattern) => pattern.test(lines[lineIndex]))) {
+          violations.push(`${relativePath}:${lineIndex + 1}: ${lines[lineIndex].trim()}`);
+        }
+      }
+    });
+  }
+  if (violations.length === 0) {
+    return;
+  }
+  throw new Error(
+    [
+      "Server data dir defaults must resolve through ServerConfig.getDataDir().",
+      "Explicit --data-dir overrides are allowed; do not default to a project-local .pact-server-data.",
+      ...violations.map((violation) => `- ${violation}`)
+    ].join("\n")
+  );
+}
+
 const entries = await fs.readdir(root, { withFileTypes: true });
 const violations = [];
 const unknown = [];
@@ -213,5 +402,8 @@ if (violations.length > 0 || unknown.length > 0 || generatedArtifacts.size > 0) 
   process.stderr.write(`${lines.join("\n")}\n`);
   process.exit(1);
 }
+
+await assertPackageJsonHasNoDuplicateKeys();
+await assertServerDataDirPolicy();
 
 process.stdout.write("Root path hygiene passed.\n");

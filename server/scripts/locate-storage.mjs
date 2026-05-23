@@ -1,10 +1,11 @@
 import path from "node:path";
 import process from "node:process";
 import { locateStorageEntity } from "../platform/common/storage/ops-tools.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 function parseArgs(argv) {
   const args = {
-    userDataPath: path.resolve(process.cwd(), ".pact-server-data"),
+    userDataPath: path.resolve(ServerConfig.getDataDir()),
     jobId: "",
     batchId: "",
     objectId: ""

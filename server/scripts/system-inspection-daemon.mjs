@@ -6,6 +6,7 @@ import {
   runMonitorAlertCycle
 } from "../platform/common/devops/monitor-alert-core/monitor-alerts.mjs";
 import { inspectQueueMonitor } from "../services/client/work-queue-core/queue-monitor.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 function parseArgs(argv) {
   const args = {};
@@ -38,10 +39,9 @@ const args = parseArgs(process.argv.slice(2));
 const projectRoot =
   args.projectRoot ||
   path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const dataDir =
-  args.dataDir ||
-  process.env.PACT_SERVER_DATA_DIR ||
-  path.join(projectRoot, ".pact-server-data");
+const dataDir = path.resolve(
+  String(args.dataDir || process.env.PACT_SERVER_DATA_DIR || ServerConfig.getDataDir())
+);
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));

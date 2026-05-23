@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DATA_DIR="$PROJECT_ROOT/.pact-server-data"
+DATA_DIR=""
 PORTS=()
 LAUNCH_LABELS=()
 LAUNCH_PLISTS=()
@@ -72,6 +72,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "$DATA_DIR" ]]; then
+  DATA_DIR="$(node "$PROJECT_ROOT/server/scripts/resolve-server-data-dir.mjs" --data-dir "$DATA_DIR")"
+else
+  DATA_DIR="$(node "$PROJECT_ROOT/server/scripts/resolve-server-data-dir.mjs")"
+fi
 mkdir -p "$DATA_DIR"
 if command -v realpath >/dev/null 2>&1; then
   PROJECT_ROOT="$(realpath "$PROJECT_ROOT")"

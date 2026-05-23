@@ -1,10 +1,11 @@
 import path from "node:path";
 import process from "node:process";
 import { runStorageDoctor } from "../platform/common/storage/ops-tools.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 function parseArgs(argv) {
   const args = {
-    userDataPath: path.resolve(process.cwd(), ".pact-server-data")
+    userDataPath: path.resolve(ServerConfig.getDataDir())
   };
 
   for (let index = 0; index < argv.length; index += 1) {

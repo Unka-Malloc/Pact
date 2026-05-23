@@ -5,13 +5,14 @@ import process from "node:process";
 import { spawn } from "node:child_process";
 import { saveSettings } from "../platform/common/platform-core/settings.mjs";
 import { TIKA_VERSION } from "../platform/modules/knowledge/file-processor/FileNormalizer/Tika/tika.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const moduleResourceRoot = path.join(projectRoot, "server", "modules");
 const jreRoot = path.join(moduleResourceRoot, "jre");
 const tikaRoot = path.join(moduleResourceRoot, "tika");
 const platformKey = `${process.platform}-${process.arch}`;
-const userDataPath = path.join(projectRoot, ".pact-server-data");
+const userDataPath = path.resolve(ServerConfig.getDataDir());
 
 const JRE_DOWNLOADS = {
   "darwin-arm64": {

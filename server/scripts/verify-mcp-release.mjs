@@ -350,6 +350,50 @@ try {
     "exit 1",
     ""
   ].join("\n"), { mode: 0o755 });
+  const fakeVoltaBin = path.join(layeredHome, ".volta", "bin");
+  const fakeVoltaCopilot = path.join(fakeVoltaBin, process.platform === "win32" ? "copilot.cmd" : "copilot");
+  await fs.mkdir(fakeVoltaBin, { recursive: true });
+  if (process.platform === "win32") {
+    await fs.writeFile(fakeVoltaCopilot, [
+      "@echo off",
+      "echo Usage: copilot mcp add list remove",
+      "exit /b 0",
+      ""
+    ].join("\r\n"));
+  } else {
+    await fs.writeFile(fakeVoltaCopilot, [
+      "#!/bin/sh",
+      "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+      "  printf 'Usage: copilot mcp add list remove\\n'",
+      "  exit 0",
+      "fi",
+      "exit 1",
+      ""
+    ].join("\n"), { mode: 0o755 });
+  }
+  const fakeWorkspace = path.join(layeredHome, "workspace");
+  const fakeWorkspaceBin = path.join(fakeWorkspace, "node_modules", ".bin");
+  const fakeLocalCodex = path.join(fakeWorkspaceBin, process.platform === "win32" ? "codex.cmd" : "codex");
+  await fs.mkdir(fakeWorkspaceBin, { recursive: true });
+  await fs.writeFile(path.join(fakeWorkspace, "package.json"), JSON.stringify({ private: true }, null, 2));
+  if (process.platform === "win32") {
+    await fs.writeFile(fakeLocalCodex, [
+      "@echo off",
+      "echo Usage: codex mcp add list remove",
+      "exit /b 0",
+      ""
+    ].join("\r\n"));
+  } else {
+    await fs.writeFile(fakeLocalCodex, [
+      "#!/bin/sh",
+      "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+      "  printf 'Usage: codex mcp add list remove\\n'",
+      "  exit 0",
+      "fi",
+      "exit 1",
+      ""
+    ].join("\n"), { mode: 0o755 });
+  }
   const plainAppGemini = path.join(layeredHome, "Applications", "Plain.app", "Contents", "Resources", "gemini");
   const agentAppGemini = path.join(layeredHome, "Applications", "Gemini Agent.app", "Contents", "Resources", "gemini");
   for (const appGemini of [plainAppGemini, agentAppGemini]) {
@@ -382,19 +426,24 @@ try {
     env: {
       HOME: layeredHome,
       NVM_DIR: path.join(layeredHome, ".nvm"),
-      PATH: "/usr/bin:/bin"
+      PATH: [fakeWorkspaceBin, "/usr/bin", "/bin"].join(path.delimiter)
     }
   });
   const layeredScanPayload = JSON.parse(layeredScan.stdout);
   assert.ok(["darwin", "linux", "win32"].includes(layeredScanPayload.hostOs));
-  const layeredGemini = layeredScanPayload.candidates.find((candidate) =>
-    candidate.target === "gemini-cli" && candidate.optionOverrides?.["execution-location"] === "local"
-  );
-  assert.equal(layeredGemini?.optionOverrides?.["gemini-bin"], fakeGemini);
   const layeredGeminiBins = layeredScanPayload.candidates
     .filter((candidate) => candidate.target === "gemini-cli")
     .map((candidate) => candidate.optionOverrides?.["gemini-bin"] || "");
+  const layeredCodexBins = layeredScanPayload.candidates
+    .filter((candidate) => candidate.target === "codex")
+    .map((candidate) => candidate.optionOverrides?.["codex-bin"] || "");
+  const layeredCopilotBins = layeredScanPayload.candidates
+    .filter((candidate) => candidate.target === "copilot")
+    .map((candidate) => candidate.optionOverrides?.["copilot-bin"] || "");
+  assert.equal(layeredGeminiBins.includes(fakeGemini), true);
   assert.equal(layeredGeminiBins.includes(plainAppGemini), false);
+  assert.equal(layeredCodexBins.includes(fakeLocalCodex), false);
+  assert.equal(layeredCopilotBins.includes(fakeVoltaCopilot), true);
   if (process.platform === "darwin") {
     assert.equal(layeredGeminiBins.includes(agentAppGemini), true);
   }

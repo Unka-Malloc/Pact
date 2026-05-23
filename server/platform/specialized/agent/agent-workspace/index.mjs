@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import Database from "better-sqlite3";
+import { getRuntimeLogger } from "../../../common/observability/runtime-logger.mjs";
 
 export const AGENT_WORKSPACE_PROTOCOL_VERSION = "pact.agent-workspace.v1";
 export const AGENT_WORKSPACE_CONTEXT_BUNDLE_VERSION = "pact.workspace-context-bundle.v1";
@@ -2068,18 +2069,35 @@ export function createAgentWorkspace({ userDataPath }) {
         workspaceFilePath: resolved.relativePath
       }
     }).artifact;
+    const file = fileMetadataFromStat({
+      workspaceId: access.workspace.workspaceId,
+      relativePath: resolved.relativePath,
+      absolutePath: resolved.absolutePath,
+      stat: fs.statSync(resolved.absolutePath),
+      includeHash: true
+    });
+    try {
+      getRuntimeLogger().info("agent_workspace.file.upload.completed", {
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        absolutePathSha256: stableHash(resolved.absolutePath),
+        sizeBytes: contentBuffer.length,
+        contentSha256: crypto.createHash("sha256").update(contentBuffer).digest("hex"),
+        overwritten,
+        artifactId: artifact?.artifactId || "",
+        runId: String(input.runId || ""),
+        createdBy: String(input.createdBy || input.actorUserId || input.agentId || "")
+      });
+    } catch {
+      // Logging must not turn a completed upload into a failed tool call.
+    }
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       overwritten,
-      file: fileMetadataFromStat({
-        workspaceId: access.workspace.workspaceId,
-        relativePath: resolved.relativePath,
-        absolutePath: resolved.absolutePath,
-        stat: fs.statSync(resolved.absolutePath),
-        includeHash: true
-      }),
+      file,
       artifact
     };
   }

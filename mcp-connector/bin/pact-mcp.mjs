@@ -126,6 +126,18 @@ const TARGET_INSTALL_MODES = {
 };
 const SCAN_COMMAND_TIMEOUT_MS = 3000;
 const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
+const HOST_PLATFORM = Object.freeze({
+  MACOS: "darwin",
+  LINUX: "linux",
+  WINDOWS: "win32"
+});
+const PACKAGE_SOURCE_KIND = Object.freeze({
+  STATIC_DIRS: "static-dirs",
+  COMMAND_DIR: "command-dir",
+  VERSIONED_DIRS: "versioned-dirs",
+  COMMAND_PATHS: "command-paths",
+  COMMAND_PREFIX_DIRS: "command-prefix-dirs"
+});
 
 function usage() {
   return [
@@ -153,7 +165,8 @@ function usage() {
     "  --token-env NAME              Token environment variable. Default: PACT_MCP_TOKEN.",
     "  --no-auto-token               Require an explicit token instead of requesting a local grant.",
     "  --no-verify                   Skip post-install MCP HTTP verification.",
-    "  --json                        Emit compact JSON.",
+    "  --json                        Emit JSON.",
+    "  --pretty                      Pretty-print JSON output.",
     "  --no-env                      Do not publish launchctl environment variables during register.",
     "  --discovery-file PATH         Registry file used by register/discover-local. Default: ~/.pact/mcp/servers.json.",
     "  --auto-update                 Enable automatic push updates when installing (non-interactive mode).",
@@ -199,6 +212,7 @@ function parseArgs(argv) {
     if (
       key === "help" ||
       key === "json" ||
+      key === "pretty" ||
       key === "token-stdin" ||
       key === "no-verify" ||
       key === "no-auto-token" ||
@@ -2018,7 +2032,7 @@ async function pathExists(filePath) {
 }
 
 function detectHostOs() {
-  if (process.platform === "darwin" || process.platform === "linux" || process.platform === "win32") {
+  if (process.platform === HOST_PLATFORM.MACOS || process.platform === HOST_PLATFORM.LINUX || process.platform === HOST_PLATFORM.WINDOWS) {
     return process.platform;
   }
   return process.platform;
@@ -2042,6 +2056,35 @@ async function fileExists(filePath) {
   } catch {
     return false;
   }
+}
+
+function nodeModulesBinProjectRoot(candidatePath, platform = detectHostOs()) {
+  const normalized = String(candidatePath || "").replace(/\\/g, "/");
+  const comparable = platform === "win32" ? normalized.toLowerCase() : normalized;
+  const marker = "/node_modules/.bin/";
+  const index = comparable.lastIndexOf(marker);
+  if (index < 0) {
+    return "";
+  }
+  return normalized.slice(0, index);
+}
+
+async function isProjectLocalPackageExecutable(candidatePath, platform = detectHostOs()) {
+  const projectDir = nodeModulesBinProjectRoot(candidatePath, platform);
+  if (!projectDir) {
+    return false;
+  }
+  return fileExists(path.join(projectDir, "package.json"));
+}
+
+async function filterProjectLocalPackageExecutables(paths, platform = detectHostOs()) {
+  const filtered = [];
+  for (const item of paths) {
+    if (!await isProjectLocalPackageExecutable(item, platform)) {
+      filtered.push(item);
+    }
+  }
+  return filtered;
 }
 
 async function collectExecutablePathsFromDirs(dirs, command, platform = detectHostOs()) {
@@ -2077,7 +2120,7 @@ async function detectPathCommandPaths(command, platform = detectHostOs()) {
         paths.push(...result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
       }
     }
-    return uniqueResolvedLocalPaths(paths);
+    return uniqueResolvedLocalPaths(await filterProjectLocalPackageExecutables(paths, platform));
   }
   const result = await run("bash", [
     "-c",
@@ -2086,115 +2129,324 @@ async function detectPathCommandPaths(command, platform = detectHostOs()) {
   if (!result.ok) {
     return [];
   }
-  return uniqueResolvedLocalPaths(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const paths = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return uniqueResolvedLocalPaths(await filterProjectLocalPackageExecutables(paths, platform));
 }
 
-async function packageManagerExecutableDirs(platform = detectHostOs()) {
-  const dirs = [];
+function packageSourceContext(platform = detectHostOs()) {
   const home = os.homedir();
+  const userProfile = process.env.USERPROFILE || home;
+  const appData = process.env.APPDATA || path.join(userProfile, "AppData", "Roaming");
+  const localAppData = process.env.LOCALAPPDATA || path.join(userProfile, "AppData", "Local");
+  return {
+    platform,
+    home,
+    userProfile,
+    appData,
+    localAppData,
+    programData: process.env.ProgramData || "C:\\ProgramData"
+  };
+}
 
-  if (platform === "darwin" || platform === "linux") {
-    const brewPrefix = await run("brew", ["--prefix"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-    if (brewPrefix.ok && brewPrefix.stdout.trim()) {
-      dirs.push(path.join(brewPrefix.stdout.trim(), "bin"));
-      dirs.push(path.join(brewPrefix.stdout.trim(), "sbin"));
-    }
+function sourceValues(value, context) {
+  const resolved = typeof value === "function" ? value(context) : value;
+  if (Array.isArray(resolved)) {
+    return resolved.flatMap((item) => sourceValues(item, context));
+  }
+  return resolved ? [resolved] : [];
+}
 
-    const npmPrefix = await run("npm", ["prefix", "-g"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-    if (npmPrefix.ok && npmPrefix.stdout.trim()) {
-      dirs.push(path.join(npmPrefix.stdout.trim(), "bin"));
-    }
-    for (const command of [
-      ["pnpm", ["bin", "-g"]],
-      ["yarn", ["global", "bin"]],
-      ["bun", ["pm", "bin", "-g"]]
-    ]) {
-      const result = await run(command[0], command[1], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-      if (result.ok && result.stdout.trim()) {
-        dirs.push(result.stdout.trim().split(/\r?\n/).at(-1).trim());
-      }
-    }
+function outputLines(stdout) {
+  return String(stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
 
-    const nvmDir = process.env.NVM_DIR || path.join(home, ".nvm");
-    if (await directoryExists(path.join(nvmDir, "versions", "node"))) {
-      const versions = await fs.readdir(path.join(nvmDir, "versions", "node")).catch(() => []);
-      dirs.push(...versions.map((version) => path.join(nvmDir, "versions", "node", version, "bin")));
-    }
+function lastOutputLine(stdout) {
+  return outputLines(stdout).at(-1) || "";
+}
 
-    dirs.push(
+function packageSource(id, kind, options = {}) {
+  return { id, kind, ...options };
+}
+
+const POSIX_PACKAGE_DIR_SOURCES = [
+  packageSource("homebrew-prefix", PACKAGE_SOURCE_KIND.COMMAND_DIR, {
+    executable: "brew",
+    args: ["--prefix"],
+    mapOutput: (stdout) => {
+      const prefix = lastOutputLine(stdout);
+      return prefix ? [path.join(prefix, "bin"), path.join(prefix, "sbin")] : [];
+    }
+  }),
+  packageSource("posix-standard-dirs", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+    dirs: [
+      "/opt/homebrew/bin",
+      "/opt/homebrew/sbin",
+      "/usr/local/bin",
+      "/usr/local/sbin",
+      "/opt/local/bin",
+      "/opt/local/sbin",
+      "/opt/sw/bin"
+    ]
+  }),
+  packageSource("npm-prefix", PACKAGE_SOURCE_KIND.COMMAND_DIR, {
+    executable: "npm",
+    args: ["prefix", "-g"],
+    mapOutput: (stdout) => {
+      const prefix = lastOutputLine(stdout);
+      return prefix ? path.join(prefix, "bin") : "";
+    }
+  }),
+  packageSource("pnpm-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "pnpm", args: ["bin", "-g"] }),
+  packageSource("yarn-global-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "yarn", args: ["global", "bin"] }),
+  packageSource("bun-global-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "bun", args: ["pm", "bin", "-g"] }),
+  packageSource("uv-tool-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "uv", args: ["tool", "dir", "--bin"] }),
+  packageSource("pipx-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "pipx", args: ["environment", "--value", "PIPX_BIN_DIR"] }),
+  packageSource("nvm-node-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+    root: ({ home }) => path.join(process.env.NVM_DIR || path.join(home, ".nvm"), "versions", "node")
+  }),
+  packageSource("fnm-node-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+    root: ({ home }) => path.join(process.env.FNM_DIR || path.join(home, ".local", "share", "fnm"), "node-versions"),
+    toDir: (root, version) => path.join(root, version, "installation", "bin")
+  }),
+  packageSource("nodenv-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+    root: ({ home }) => path.join(home, ".nodenv", "versions")
+  }),
+  packageSource("asdf-nodejs-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+    root: ({ home }) => path.join(home, ".asdf", "installs", "nodejs")
+  }),
+  packageSource("mise-node-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+    root: ({ home }) => [
+      path.join(home, ".local", "share", "mise", "installs", "node"),
+      path.join(home, ".local", "share", "mise", "installs", "nodejs"),
+      path.join(home, ".mise", "installs", "node"),
+      path.join(home, ".mise", "installs", "nodejs")
+    ]
+  }),
+  packageSource("language-runtime-bins", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+    dirs: ({ home }) => [
+      path.join(process.env.VOLTA_HOME || path.join(home, ".volta"), "bin"),
       path.join(home, ".asdf", "shims"),
       path.join(home, ".local", "share", "mise", "shims"),
       path.join(home, ".mise", "shims"),
-      path.join(process.env.CARGO_HOME || path.join(home, ".cargo"), "bin")
-    );
+      path.join(home, ".nodenv", "shims"),
+      path.join(process.env.CARGO_HOME || path.join(home, ".cargo"), "bin"),
+      process.env.GOBIN || "",
+      path.join(process.env.GOPATH || path.join(home, "go"), "bin"),
+      path.join(process.env.DENO_INSTALL || path.join(home, ".deno"), "bin"),
+      path.join(home, ".pixi", "bin"),
+      path.join(home, ".pkgx", "bin"),
+      path.join(home, ".rye", "shims"),
+      path.join(home, "miniconda3", "bin"),
+      path.join(home, "anaconda3", "bin"),
+      path.join(home, ".conda", "bin"),
+      path.join(home, ".local", "bin")
+    ]
+  })
+];
 
-    const pipxEnv = await run("pipx", ["environment", "--value", "PIPX_BIN_DIR"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-    if (pipxEnv.ok && pipxEnv.stdout.trim()) {
-      dirs.push(pipxEnv.stdout.trim());
-    }
-    dirs.push(path.join(home, ".local", "bin"));
+const PLATFORM_PACKAGE_DIR_SOURCES = {
+  [HOST_PLATFORM.MACOS]: POSIX_PACKAGE_DIR_SOURCES,
+  [HOST_PLATFORM.LINUX]: [
+    ...POSIX_PACKAGE_DIR_SOURCES,
+    packageSource("linux-system-dirs", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+      dirs: [
+        "/usr/bin",
+        "/usr/sbin",
+        "/bin",
+        "/sbin",
+        "/opt/bin"
+      ]
+    }),
+    packageSource("linux-desktop-package-dirs", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+      dirs: ({ home }) => [
+        "/snap/bin",
+        "/var/lib/flatpak/exports/bin",
+        path.join(home, ".local", "share", "flatpak", "exports", "bin")
+      ]
+    })
+  ],
+  [HOST_PLATFORM.WINDOWS]: [
+    packageSource("npm-prefix", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "npm.cmd", args: ["prefix", "-g"] }),
+    packageSource("pnpm-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "pnpm.cmd", args: ["bin", "-g"] }),
+    packageSource("yarn-global-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "yarn.cmd", args: ["global", "bin"] }),
+    packageSource("bun-global-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "bun.exe", args: ["pm", "bin", "-g"] }),
+    packageSource("pipx-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "pipx.exe", args: ["environment", "--value", "PIPX_BIN_DIR"] }),
+    packageSource("uv-tool-bin", PACKAGE_SOURCE_KIND.COMMAND_DIR, { executable: "uv.exe", args: ["tool", "dir", "--bin"] }),
+    packageSource("windows-package-manager-dirs", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+      dirs: ({ appData, localAppData, programData, userProfile }) => [
+        path.join(userProfile, "scoop", "shims"),
+        path.join(programData, "scoop", "shims"),
+        process.env.SCOOP ? path.join(process.env.SCOOP, "shims") : "",
+        path.join(process.env.ChocolateyInstall || path.join(programData, "chocolatey"), "bin"),
+        path.join(localAppData, "Microsoft", "WinGet", "Links"),
+        path.join(appData, "npm"),
+        path.join(localAppData, "pnpm")
+      ]
+    }),
+    packageSource("windows-node-version-managers", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+      dirs: ({ appData, localAppData, userProfile }) => [
+        process.env.NVM_SYMLINK || "",
+        process.env.NVM_HOME || "",
+        path.join(process.env.VOLTA_HOME || path.join(localAppData, "Volta"), "bin"),
+        path.join(appData, "fnm"),
+        path.join(appData, "fnm", "aliases", "default"),
+        path.join(userProfile, ".nodenv", "shims"),
+        path.join(userProfile, ".asdf", "shims"),
+        path.join(localAppData, "mise", "shims"),
+        path.join(userProfile, ".local", "share", "mise", "shims"),
+        path.join(userProfile, ".mise", "shims")
+      ]
+    }),
+    packageSource("windows-language-runtime-bins", PACKAGE_SOURCE_KIND.STATIC_DIRS, {
+      dirs: ({ appData, localAppData, programData, userProfile }) => [
+        path.join(userProfile, ".cargo", "bin"),
+        process.env.GOBIN || "",
+        path.join(process.env.GOPATH || path.join(userProfile, "go"), "bin"),
+        path.join(process.env.DENO_INSTALL || path.join(userProfile, ".deno"), "bin"),
+        path.join(userProfile, ".local", "bin"),
+        path.join(userProfile, ".rye", "shims"),
+        path.join(userProfile, ".pixi", "bin"),
+        path.join(localAppData, "Programs", "Python", "Scripts"),
+        path.join(appData, "Python", "Scripts"),
+        path.join(programData, "chocolatey", "bin"),
+        "C:\\Program Files\\nodejs",
+        "C:\\Program Files (x86)\\Nodist\\bin"
+      ]
+    }),
+    packageSource("fnm-node-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+      root: ({ appData }) => path.join(process.env.FNM_DIR || path.join(appData, "fnm"), "node-versions"),
+      toDir: (root, version) => path.join(root, version, "installation")
+    }),
+    packageSource("nodenv-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+      root: ({ userProfile }) => path.join(userProfile, ".nodenv", "versions")
+    }),
+    packageSource("asdf-nodejs-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+      root: ({ userProfile }) => path.join(userProfile, ".asdf", "installs", "nodejs")
+    }),
+    packageSource("mise-node-versions", PACKAGE_SOURCE_KIND.VERSIONED_DIRS, {
+      root: ({ localAppData }) => [
+        path.join(localAppData, "mise", "installs", "node"),
+        path.join(localAppData, "mise", "installs", "nodejs")
+      ]
+    })
+  ]
+};
 
-    if (platform === "linux") {
-      dirs.push("/snap/bin");
-      dirs.push("/var/lib/flatpak/exports/bin");
-      dirs.push(path.join(home, ".local", "share", "flatpak", "exports", "bin"));
-    }
+const PLATFORM_PACKAGE_EXECUTABLE_PATH_SOURCES = {
+  [HOST_PLATFORM.MACOS]: [
+    packageSource("homebrew-package-prefix", PACKAGE_SOURCE_KIND.COMMAND_PREFIX_DIRS, {
+      executable: "brew",
+      argsForCommand: (command) => ["--prefix", command],
+      mapOutput: (stdout) => {
+        const prefix = lastOutputLine(stdout);
+        return prefix ? [path.join(prefix, "bin"), path.join(prefix, "sbin")] : [];
+      }
+    })
+  ],
+  [HOST_PLATFORM.LINUX]: [
+    packageSource("homebrew-package-prefix", PACKAGE_SOURCE_KIND.COMMAND_PREFIX_DIRS, {
+      executable: "brew",
+      argsForCommand: (command) => ["--prefix", command],
+      mapOutput: (stdout) => {
+        const prefix = lastOutputLine(stdout);
+        return prefix ? [path.join(prefix, "bin"), path.join(prefix, "sbin")] : [];
+      }
+    })
+  ],
+  [HOST_PLATFORM.WINDOWS]: [
+    packageSource("scoop-which", PACKAGE_SOURCE_KIND.COMMAND_PATHS, {
+      executables: ["scoop.cmd", "scoop"],
+      argsForCommand: (command) => ["which", command]
+    })
+  ]
+};
+
+async function scanStaticDirSource(source, context) {
+  return sourceValues(source.dirs, context);
+}
+
+async function scanCommandDirSource(source, context) {
+  const result = await run(source.executable, sourceValues(source.args, context), {
+    allowFailure: true,
+    timeoutMs: source.timeoutMs || SCAN_COMMAND_TIMEOUT_MS
+  });
+  if (!result.ok || !result.stdout.trim()) {
+    return [];
   }
+  if (source.mapOutput) {
+    return sourceValues(source.mapOutput(result.stdout, context), context);
+  }
+  return [lastOutputLine(result.stdout)].filter(Boolean);
+}
 
-  if (platform === "win32") {
-    const appData = process.env.APPDATA || "";
-    const localAppData = process.env.LOCALAPPDATA || "";
-    const programData = process.env.ProgramData || "C:\\ProgramData";
-    const userProfile = process.env.USERPROFILE || home;
-    const npmPrefix = await run("npm.cmd", ["prefix", "-g"], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-    if (npmPrefix.ok && npmPrefix.stdout.trim()) {
-      dirs.push(npmPrefix.stdout.trim());
+async function scanVersionedDirSource(source, context) {
+  const dirs = [];
+  const toDir = source.toDir || ((root, version) => path.join(root, version, "bin"));
+  for (const root of sourceValues(source.root, context)) {
+    if (!await directoryExists(root)) {
+      continue;
     }
-    for (const command of [
-      ["pnpm.cmd", ["bin", "-g"]],
-      ["yarn.cmd", ["global", "bin"]],
-      ["bun.exe", ["pm", "bin", "-g"]]
-    ]) {
-      const result = await run(command[0], command[1], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-      if (result.ok && result.stdout.trim()) {
-        dirs.push(result.stdout.trim().split(/\r?\n/).at(-1).trim());
+    const versions = await fs.readdir(root).catch(() => []);
+    dirs.push(...versions.map((version) => toDir(root, version, context)));
+  }
+  return dirs;
+}
+
+const PACKAGE_SOURCE_SCANNERS = {
+  [PACKAGE_SOURCE_KIND.STATIC_DIRS]: scanStaticDirSource,
+  [PACKAGE_SOURCE_KIND.COMMAND_DIR]: scanCommandDirSource,
+  [PACKAGE_SOURCE_KIND.VERSIONED_DIRS]: scanVersionedDirSource
+};
+
+async function scanPackageSourceDirs(source, context) {
+  const scanner = PACKAGE_SOURCE_SCANNERS[source.kind];
+  return scanner ? scanner(source, context) : [];
+}
+
+async function packageManagerExecutableDirs(platform = detectHostOs()) {
+  const context = packageSourceContext(platform);
+  const sources = PLATFORM_PACKAGE_DIR_SOURCES[platform] || [];
+  const dirs = [];
+  for (const source of sources) {
+    dirs.push(...await scanPackageSourceDirs(source, context));
+  }
+  return uniqueValues(dirs.filter(Boolean));
+}
+
+async function scanCommandSpecificPathSource(source, command, platform) {
+  if (source.kind === PACKAGE_SOURCE_KIND.COMMAND_PREFIX_DIRS) {
+    const result = await run(source.executable, sourceValues(source.argsForCommand(command), packageSourceContext(platform)), {
+      allowFailure: true,
+      timeoutMs: source.timeoutMs || SCAN_COMMAND_TIMEOUT_MS
+    });
+    if (!result.ok || !result.stdout.trim()) {
+      return [];
+    }
+    const dirs = source.mapOutput ? sourceValues(source.mapOutput(result.stdout, packageSourceContext(platform)), packageSourceContext(platform)) : [lastOutputLine(result.stdout)];
+    return collectExecutablePathsFromDirs(dirs, command, platform);
+  }
+  if (source.kind === PACKAGE_SOURCE_KIND.COMMAND_PATHS) {
+    const paths = [];
+    for (const executable of sourceValues(source.executables, packageSourceContext(platform))) {
+      const result = await run(executable, sourceValues(source.argsForCommand(command), packageSourceContext(platform)), {
+        allowFailure: true,
+        timeoutMs: source.timeoutMs || SCAN_COMMAND_TIMEOUT_MS
+      });
+      if (result.ok) {
+        paths.push(...outputLines(result.stdout));
       }
     }
-    dirs.push(
-      path.join(userProfile, "scoop", "shims"),
-      path.join(programData, "scoop", "shims"),
-      path.join(process.env.SCOOP || "", "shims"),
-      path.join(process.env.ChocolateyInstall || path.join(programData, "chocolatey"), "bin"),
-      path.join(localAppData, "Microsoft", "WinGet", "Links"),
-      path.join(appData, "npm"),
-      path.join(userProfile, ".cargo", "bin"),
-      path.join(userProfile, ".local", "bin")
-    );
+    return paths;
   }
-
-  return uniqueValues(dirs.filter(Boolean));
+  return [];
 }
 
 async function packageManagerExecutablePaths(command, platform = detectHostOs()) {
   const paths = await collectExecutablePathsFromDirs(await packageManagerExecutableDirs(platform), command, platform);
-  if (platform === "darwin" || platform === "linux") {
-    const brewPackagePrefix = await run("brew", ["--prefix", command], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-    if (brewPackagePrefix.ok && brewPackagePrefix.stdout.trim()) {
-      paths.push(...await collectExecutablePathsFromDirs([
-        path.join(brewPackagePrefix.stdout.trim(), "bin"),
-        path.join(brewPackagePrefix.stdout.trim(), "sbin")
-      ], command, platform));
-    }
+  for (const source of PLATFORM_PACKAGE_EXECUTABLE_PATH_SOURCES[platform] || []) {
+    paths.push(...await scanCommandSpecificPathSource(source, command, platform));
   }
-  if (platform === "win32") {
-    for (const scoopBin of ["scoop.cmd", "scoop"]) {
-      const scoopWhich = await run(scoopBin, ["which", command], { allowFailure: true, timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
-      if (scoopWhich.ok && scoopWhich.stdout.trim()) {
-        paths.push(...scoopWhich.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
-      }
-    }
-  }
-  return uniqueResolvedLocalPaths(paths);
+  return uniqueResolvedLocalPaths(await filterProjectLocalPackageExecutables(paths, platform));
 }
 
 function appNameLooksAgentRelated(name, command = "") {
@@ -2410,14 +2662,30 @@ function linuxExecutableScanScript(command) {
     "      esac",
     "    fi",
     "  done",
+    "  printf '%s\\n' \"/usr/local/bin/$command_name\" \"/usr/local/sbin/$command_name\" \"/usr/bin/$command_name\" \"/usr/sbin/$command_name\" \"/bin/$command_name\" \"/sbin/$command_name\" \"/opt/bin/$command_name\"",
+    "  printf '%s\\n' \"/opt/homebrew/bin/$command_name\" \"/opt/homebrew/sbin/$command_name\" \"/opt/local/bin/$command_name\" \"/opt/local/sbin/$command_name\" \"/opt/sw/bin/$command_name\"",
     "  nvm_dir=${NVM_DIR:-$HOME/.nvm}",
     "  [ -d \"$nvm_dir/versions/node\" ] && find \"$nvm_dir/versions/node\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
-    "  printf '%s\\n' \"$HOME/.asdf/shims/$command_name\" \"$HOME/.local/share/mise/shims/$command_name\" \"$HOME/.mise/shims/$command_name\"",
-    "  printf '%s\\n' \"${CARGO_HOME:-$HOME/.cargo}/bin/$command_name\" \"$HOME/.local/bin/$command_name\" \"/snap/bin/$command_name\"",
+    "  fnm_dir=${FNM_DIR:-$HOME/.local/share/fnm}",
+    "  [ -d \"$fnm_dir/node-versions\" ] && find \"$fnm_dir/node-versions\" -maxdepth 4 -type f -path \"*/installation/bin/$command_name\" 2>/dev/null",
+    "  [ -d \"$HOME/.nodenv/versions\" ] && find \"$HOME/.nodenv/versions\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  [ -d \"$HOME/.asdf/installs/nodejs\" ] && find \"$HOME/.asdf/installs/nodejs\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  [ -d \"$HOME/.local/share/mise/installs/node\" ] && find \"$HOME/.local/share/mise/installs/node\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  [ -d \"$HOME/.local/share/mise/installs/nodejs\" ] && find \"$HOME/.local/share/mise/installs/nodejs\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  [ -d \"$HOME/.mise/installs/node\" ] && find \"$HOME/.mise/installs/node\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  [ -d \"$HOME/.mise/installs/nodejs\" ] && find \"$HOME/.mise/installs/nodejs\" -maxdepth 3 -type f -path \"*/bin/$command_name\" 2>/dev/null",
+    "  printf '%s\\n' \"${VOLTA_HOME:-$HOME/.volta}/bin/$command_name\" \"$HOME/.asdf/shims/$command_name\" \"$HOME/.local/share/mise/shims/$command_name\" \"$HOME/.mise/shims/$command_name\" \"$HOME/.nodenv/shims/$command_name\"",
+    "  printf '%s\\n' \"${CARGO_HOME:-$HOME/.cargo}/bin/$command_name\" \"${GOPATH:-$HOME/go}/bin/$command_name\" \"${DENO_INSTALL:-$HOME/.deno}/bin/$command_name\"",
+    "  [ -n \"${GOBIN:-}\" ] && printf '%s\\n' \"$GOBIN/$command_name\"",
+    "  printf '%s\\n' \"$HOME/.local/bin/$command_name\" \"$HOME/.rye/shims/$command_name\" \"$HOME/.pixi/bin/$command_name\" \"$HOME/.pkgx/bin/$command_name\" \"$HOME/miniconda3/bin/$command_name\" \"$HOME/anaconda3/bin/$command_name\" \"$HOME/.conda/bin/$command_name\" \"/snap/bin/$command_name\"",
     "  printf '%s\\n' \"/var/lib/flatpak/exports/bin/$command_name\" \"$HOME/.local/share/flatpak/exports/bin/$command_name\"",
     "  if command -v pipx >/dev/null 2>&1; then",
     "    pipx_dir=$(pipx environment --value PIPX_BIN_DIR 2>/dev/null)",
     "    [ -n \"$pipx_dir\" ] && printf '%s\\n' \"$pipx_dir/$command_name\"",
+    "  fi",
+    "  if command -v uv >/dev/null 2>&1; then",
+    "    uv_dir=$(uv tool dir --bin 2>/dev/null)",
+    "    [ -n \"$uv_dir\" ] && printf '%s\\n' \"$uv_dir/$command_name\"",
     "  fi",
     "  for desktop_root in /usr/share/applications /usr/local/share/applications \"$HOME/.local/share/applications\" /var/lib/flatpak/exports/share/applications \"$HOME/.local/share/flatpak/exports/share/applications\"; do",
     "    [ -d \"$desktop_root\" ] || continue",
@@ -2433,6 +2701,9 @@ function linuxExecutableScanScript(command) {
     "candidate_rows | while IFS= read -r candidate; do",
     "  [ -n \"$candidate\" ] || continue",
     "  [ -f \"$candidate\" ] || [ -L \"$candidate\" ] || continue",
+    "  case \"$candidate\" in",
+    "    */node_modules/.bin/*) project_dir=${candidate%%/node_modules/.bin/*}; [ -f \"$project_dir/package.json\" ] && continue ;;",
+    "  esac",
     "  resolved=$(readlink -f \"$candidate\" 2>/dev/null || printf '%s' \"$candidate\")",
     "  printf '%s\\t%s\\n' \"$candidate\" \"$resolved\"",
     "done | awk -F '\\t' '!seen[$2]++ { print $1 }'"
@@ -2671,26 +2942,33 @@ function mergeInstallCandidate(candidates, candidate) {
 
 function mcpProbeSupported(result) {
   const output = `${result.stdout || ""}\n${result.stderr || ""}`.toLowerCase();
-  if (!output.includes("mcp")) {
+  const normalized = output.replace(/\s+/g, " ").trim();
+  const hasMcpSignal = /\bmcp\b/.test(normalized) || normalized.includes("model context protocol");
+  if (!hasMcpSignal) {
     return false;
   }
-  if (
-    output.includes("unknown command")
-    || output.includes("unknown subcommand")
-    || output.includes("unrecognized command")
-    || output.includes("no such command")
-    || output.includes("command not found")
-    || output.includes("not a recognized command")
-  ) {
+  const negativePatterns = [
+    /\bunknown (?:command|subcommand)\b/,
+    /\bunrecognized (?:command|subcommand)\b/,
+    /\bno such (?:command|subcommand)\b/,
+    /\bcommand not found\b/,
+    /\bnot (?:a )?recognized (?:as )?(?:a )?command\b/,
+    /\binvalid choice\b.*\bmcp\b/,
+    /\bno help topic\b.*\bmcp\b/,
+    /\bmcp\b.*\b(?:does not exist|not found|not supported|unsupported)\b/,
+    /\b(?:does not support|unsupported)\b.*\bmcp\b/
+  ];
+  if (negativePatterns.some((pattern) => pattern.test(normalized))) {
     return false;
   }
-  return result.ok
-    || output.includes("usage")
-    || output.includes("commands")
-    || output.includes(" add")
-    || output.includes(" remove")
-    || output.includes(" list")
-    || output.includes("server");
+  const positivePatterns = [
+    /\busage:\s*[^\r\n]*\bmcp\b/,
+    /\bcommands?:\b/,
+    /\bmcp\b.{0,120}\b(?:add|remove|list|get|enable|disable|login|logout|auth|server|configuration|protocol)\b/,
+    /\bmanage\b.{0,80}\bmcp\b/,
+    /\bmodel context protocol\b/
+  ];
+  return positivePatterns.some((pattern) => pattern.test(normalized)) || Boolean(result.ok);
 }
 
 async function commandSupportsMcp(command, argsPrefix = []) {
@@ -4422,7 +4700,7 @@ function formatHumanResult(command, result) {
 
 function emitResult(result, options, command = "") {
   if (options.json) {
-    console.log(JSON.stringify(result));
+    console.log(JSON.stringify(result, null, options.pretty ? 2 : 0));
   } else {
     console.log(formatHumanResult(command, result));
   }

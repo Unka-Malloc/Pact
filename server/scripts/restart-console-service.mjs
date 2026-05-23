@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,7 +162,7 @@ async function main() {
   const supervisorLabel = String(args["supervisor-label"] || "dev.pact.background-supervisor").trim();
   const inspectionLabel = String(args["inspection-label"] || "dev.pact.system-inspection").trim();
   const dataDir = path.resolve(
-    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || path.join(projectRoot, ".pact-server-data"))
+    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || ServerConfig.getDataDir())
   );
   const logsDir = path.join(projectRoot, "build", "logs");
   const logPath = path.join(logsDir, `server-${port}.log`);

@@ -744,18 +744,16 @@ async function assertFrontendCoverage() {
 }
 
 async function assertStandardDataDirectory() {
-  const files = [
-    ".gitignore",
-    "scripts/start-all.sh",
-    "scripts/clean-existing-service.sh",
-    "server/scripts/start-server.mjs",
-    "server/scripts/doctor.mjs",
-    "docs/SERVER.md"
-  ];
-  for (const file of files) {
-    const text = await read(file);
-    assertIncludes(text, ".pact-server-data", `${file} must use the standard server data directory`);
-    assert.equal(text.includes("build/server-data"), false, `${file} must not default to build/server-data`);
+  const startServer = await read("server/scripts/start-server.mjs");
+  const resolveDataDir = await read("server/scripts/resolve-server-data-dir.mjs");
+  const rootHygiene = await read("tests/verify-root-hygiene.mjs");
+  const docs = await read("docs/SERVER.md");
+  assertIncludes(startServer, "ServerConfig.getDataDir()", "start-server must use ServerConfig.getDataDir()");
+  assertIncludes(resolveDataDir, "ServerConfig.getDataDir()", "shell entrypoints must resolve data dir through ServerConfig");
+  assertIncludes(rootHygiene, "Server data dir defaults must resolve through ServerConfig.getDataDir()", "repo hygiene must enforce data-dir policy");
+  assertIncludes(docs, "ServerConfig.getDataDir()", "docs must document the standard data directory source");
+  for (const text of [startServer, resolveDataDir, rootHygiene, docs]) {
+    assert.equal(text.includes("build/server-data"), false, "server data dir policy must not mention build/server-data as a default");
   }
 }
 

@@ -14,6 +14,7 @@ import {
   summarizeError,
   summarizeForLog
 } from "../platform/common/observability/runtime-logger.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,7 +76,7 @@ const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
       process.env.PACT_SERVER_DATA_DIR ||
-      path.join(projectRoot, ".pact-server-data")
+      ServerConfig.getDataDir()
   )
 );
 const roles = normalizeBackgroundRoleList(args.roles || args.role);

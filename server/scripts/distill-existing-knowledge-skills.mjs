@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { createKnowledgeCoreMount } from "../platform/specialized/knowledge/storage/knowledge-core/index.mjs";
 import { createKnowledgeSkillRuntime } from "../platform/specialized/knowledge/invocation/knowledge-skill-runtime/index.mjs";
 import { loadBundledKnowledgeTaxonomy } from "../platform/specialized/knowledge/preprocessing/domain/knowledge-taxonomy/default-taxonomy.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -250,7 +251,7 @@ function rankCategories({ rows, taxonomy, minDocuments }) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const userDataPath = path.resolve(
-    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || path.join(projectRoot, ".pact-server-data"))
+    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || ServerConfig.getDataDir())
   );
   const maxDocuments = Math.floor(clampNumber(args["max-documents"], 20000, 1, 200000));
   const topicLimit = Math.floor(clampNumber(args.limit, 16, 1, 100));

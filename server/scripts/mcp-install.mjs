@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createToolManagementStore } from "../platform/specialized/capabilities/tools/tool-management-core/store.mjs";
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_BASE_URL = "";
@@ -692,7 +693,7 @@ const baseUrl = normalizeBaseUrl(argValue("--url", process.env.PACT_MCP_BASE_URL
 if (!baseUrl) {
   throw new Error("server:mcp:install requires --url or PACT_MCP_BASE_URL. End-user installs should use pact-mcp install, which discovers and verifies the server.");
 }
-const dataDir = path.resolve(argValue("--data-dir", path.join(repoRoot(), ".pact-server-data")));
+const dataDir = path.resolve(argValue("--data-dir", ServerConfig.getDataDir()));
 const codexBin = argValue("--codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_CODEX_BIN);
 const geminiBin = argValue("--gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN);
 const kiloBin = argValue("--kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN);

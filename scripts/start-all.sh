@@ -25,7 +25,7 @@ usage() {
 
 选项:
   --port <n>        服务端端口（默认: 7228）
-  --data-dir <path> 数据目录（默认: ~/.pact-server-data）
+  --data-dir <path> 数据目录（默认: ServerConfig.getDataDir()）
   --profile <name>  运行档位（默认: default）
   --dev             使用 Vite 开发模式启动前端（默认启动内置控制台）
   --skip-mcp-register  跳过 MCP Hub 注册（默认会自动执行）
@@ -78,17 +78,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$DATA_DIR" ]]; then
-  mkdir -p "$DATA_DIR"
-  if command -v realpath >/dev/null 2>&1; then
-    DATA_DIR="$(realpath "$DATA_DIR")"
-  else
-    DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
-  fi
+  DATA_DIR="$(node server/scripts/resolve-server-data-dir.mjs --data-dir "$DATA_DIR")"
+else
+  DATA_DIR="$(node server/scripts/resolve-server-data-dir.mjs)"
 fi
+mkdir -p "$DATA_DIR"
 
 if [[ "$SKIP_CLEAN" != true ]]; then
   CLEAN_ARGS=(
     --port "$PORT"
+    --data-dir "$DATA_DIR"
     --launch-label "dev.pact.server.${PORT}"
     --launch-label "dev.pact.background-supervisor"
     --launch-label "dev.pact.system-inspection"
@@ -96,9 +95,6 @@ if [[ "$SKIP_CLEAN" != true ]]; then
     --launch-plist "$HOME/Library/LaunchAgents/dev.pact.background-supervisor.plist"
     --launch-plist "$HOME/Library/LaunchAgents/dev.pact.system-inspection.plist"
   )
-  if [[ -n "$DATA_DIR" ]]; then
-    CLEAN_ARGS+=(--data-dir "$DATA_DIR")
-  fi
   if [[ "$MODE" == "dev" ]]; then
     CLEAN_ARGS+=(--vite-port "$VITE_PORT")
   fi
@@ -151,14 +147,12 @@ wait_for_server() {
 
 if [[ "$MODE" == "console" ]]; then
   echo "[server] 启动控制台（默认模式）：server:console"
-  ARGS=(--port "$PORT" --profile "$PROFILE")
-  if [[ -n "$DATA_DIR" ]]; then ARGS+=(--data-dir "$DATA_DIR"); fi
+  ARGS=(--port "$PORT" --profile "$PROFILE" --data-dir "$DATA_DIR")
   npm run server:console -- "${ARGS[@]}" &
   SERVER_PID=$!
 else
   echo "[server] 启动开发模式：server:start + Vite"
-  ARGS=(--port "$PORT" --profile "$PROFILE")
-  if [[ -n "$DATA_DIR" ]]; then ARGS+=(--data-dir "$DATA_DIR"); fi
+  ARGS=(--port "$PORT" --profile "$PROFILE" --data-dir "$DATA_DIR")
   npm run server:start -- "${ARGS[@]}" &
   SERVER_PID=$!
 

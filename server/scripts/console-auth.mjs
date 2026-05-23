@@ -1,12 +1,8 @@
 import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
-import { fileURLToPath } from "node:url";
 import { createConsoleAuth } from "../platform/common/security/auth/console-auth.mjs";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, "../..");
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 function parseArgs(argv) {
   const parsed = { _: [] };
@@ -40,7 +36,7 @@ Usage:
   npm run server:auth -- disable --username USER
 
 Options:
-  --data-dir PATH        Defaults to .pact-server-data
+  --data-dir PATH        Defaults to ServerConfig.getDataDir()
   --username USER
   --user-id USER_ID
   --display-name NAME
@@ -71,7 +67,7 @@ async function main() {
   }
 
   const userDataPath = path.resolve(
-    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || path.join(projectRoot, ".pact-server-data"))
+    String(args["data-dir"] || process.env.PACT_SERVER_DATA_DIR || ServerConfig.getDataDir())
   );
   const auth = createConsoleAuth({ userDataPath });
 
