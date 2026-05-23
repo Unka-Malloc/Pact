@@ -814,18 +814,19 @@ async function verifyMcpTools({ baseUrl, token }) {
     })
   });
   const tools = toolsList.payload?.result?.tools || [];
+  const hasStableOutlet = tools.some(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.help" || t.name === "pact.knowledge");
   if (
     !toolsList.ok
     || !health.ok
-    || tools.length !== 1
-    || tools[0]?.name !== MCP_STABLE_TOOL_NAME
+    || (tools.length !== 1 && tools.length !== 5)
+    || !hasStableOutlet
     || health.payload?.result?.structuredContent?.payload?.ok !== true
   ) {
     throw new Error("MCP HTTP verification failed.");
   }
   return {
     toolCount: tools.length,
-    stableToolName: tools[0]?.name || "",
+    stableToolName: tools.find(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.help")?.name || tools[0]?.name || "",
     systemHealthOk: health.payload?.result?.structuredContent?.payload?.ok === true
   };
 }
@@ -867,7 +868,7 @@ async function createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv }) {
         type: "http",
         url: `${baseUrl}/mcp`,
         bearer_token_env_var: tokenEnv,
-        note: "Pact HTTP MCP service. Token is provided through PACT_MCP_TOKEN by the connector installer."
+        note: "Pact Unified Agent Workspace MCP. Provides five specialized outlets for Knowledge (Distillation/Sharing/Graph), Workspace (Shared Space), Resource Listing, Skill & Tooling, and Protocol Help. Token is provided through PACT_MCP_TOKEN by the connector installer."
       }
     }
   });
@@ -964,7 +965,7 @@ async function installGemini({ baseUrl, token, geminiBin, extensionRoot }) {
     String(HTTP_TIMEOUT_MS),
     "--trust",
     "--description",
-    "Pact HTTP MCP service.",
+    "Pact Unified Agent Workspace MCP. Provides five specialized outlets for Knowledge (Distillation/Sharing/Graph), Workspace (Shared Space), Resource Listing, Skill & Tooling, and Protocol Help.",
     MCP_SERVER_NAME,
     `${baseUrl}/mcp`
   ]);
@@ -1004,7 +1005,7 @@ async function installGeminiOrb({ baseUrl, token, orbBin, vmName, vmUser, gemini
     String(HTTP_TIMEOUT_MS),
     "--trust",
     "--description",
-    "Pact HTTP MCP service.",
+    "Pact Unified Agent Workspace MCP. Provides five specialized outlets for Knowledge (Distillation/Sharing/Graph), Workspace (Shared Space), Resource Listing, Skill & Tooling, and Protocol Help.",
     MCP_SERVER_NAME,
     url
   ]);
@@ -1042,7 +1043,7 @@ async function installGeminiRemote({ baseUrl, token, context, geminiBin }) {
     String(HTTP_TIMEOUT_MS),
     "--trust",
     "--description",
-    "Pact HTTP MCP service.",
+    "Pact Unified Agent Workspace MCP. Provides five specialized outlets for Knowledge (Distillation/Sharing/Graph), Workspace (Shared Space), Resource Listing, Skill & Tooling, and Protocol Help.",
     MCP_SERVER_NAME,
     url
   ]);

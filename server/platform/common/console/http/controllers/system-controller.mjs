@@ -5555,6 +5555,26 @@ export function createSystemController({
       }
       sendJson(response, 201, result);
     },
+    async handleDeleteAgentWorkspace({ workspaceId, url, response, authSession }) {
+      if (!agentWorkspace || typeof agentWorkspace.deleteWorkspace !== "function") {
+        sendJson(response, 503, {
+          error: "智能体工作空间删除不可用。"
+        });
+        return;
+      }
+      const deleteFolder = parseBooleanFlag(url.searchParams.get("deleteFolder") || url.searchParams.get("delete-folder") || "");
+      const result = agentWorkspace.deleteWorkspace(workspaceId, {
+        deleteFolder,
+        ...workspaceAccessOptions(authSession)
+      });
+      if (!result?.ok) {
+        sendJson(response, 404, {
+          error: result?.error || "工作空间不存在或无权限。"
+        });
+        return;
+      }
+      sendJson(response, 200, result);
+    },
 
     async handleAgentWorkspaceLocks({ workspaceId, url, response, authSession }) {
       if (!agentWorkspace) {

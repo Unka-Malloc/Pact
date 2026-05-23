@@ -4,6 +4,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 
+import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../..");
@@ -55,7 +57,7 @@ Options:
   --host                    监听地址，默认读取 PACT_SERVER_HOST，否则使用 127.0.0.1
   --allow-public-console    允许监听非回环地址；等价于 PACT_ALLOW_PUBLIC_CONSOLE=1
   --port                    监听端口，默认读取 PACT_SERVER_PORT，否则使用 8787
-  --data-dir                数据目录，默认 .pact-server-data/
+  --data-dir                数据目录，默认 ~/.pact-server-data 或是通过 ~/.pact-server.json 配置
   --with-ui                 同时提供 build/dist 前端页面；build/dist 不存在时会报错
   --profile                 运行档位：default|minimal，默认 default
   --edition                 功能版本：community|pro|enterprise|custom
@@ -96,7 +98,7 @@ const userDataPath = path.resolve(
   String(
     args["data-dir"] ||
       process.env.PACT_SERVER_DATA_DIR ||
-      path.join(projectRoot, ".pact-server-data")
+      ServerConfig.getDataDir()
   )
 );
 const withUi =

@@ -40,6 +40,7 @@ interface WsWorkspace {
     openIssueCount: number;
     sessionCount?: number;
   };
+  fsPath: string;
 }
 
 interface WsChainItem { workspaceId: string; title: string }
@@ -111,6 +112,9 @@ const createForm = reactive({ title: '', objective: '', parentWorkspaceId: '' })
 const profileForm = reactive({ contextProfileId: '', toolGrantId: '', modelAlias: '', includeSourceIds: '', excludeSourceIds: '', ownedSourceIds: '' });
 const parentForm  = reactive({ parentWorkspaceId: '' });
 const shareForm   = reactive({ targetWorkspaceId: '', action: 'share' as 'share' | 'unshare' });
+
+const showDeleteModal = ref(false);
+const deleteFolderChecked = ref(false);
 
 // ─── Derived ─────────────────────────────────────────────────────────────────
 
@@ -253,6 +257,22 @@ async function createWorkspace() {
   finally { clearBusy(); }
 }
 
+async function deleteWorkspace() {
+  if (!selectedId.value) return;
+  setBusy('ws:delete');
+  localError.value = '';
+  try {
+    const url = `/api/agent-workspaces/${selectedId.value}` + (deleteFolderChecked.value ? '?deleteFolder=true' : '');
+    await apiFetch(url, { method: 'DELETE' });
+    showDeleteModal.value = false;
+    deleteFolderChecked.value = false;
+    selectedId.value = '';
+    panel.value = 'list';
+    await load();
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
 async function setParent() {
   if (!selectedId.value) return;
   setBusy('ws:parent');
@@ -334,6 +354,37 @@ function openParent(ws: WsWorkspace) {
 // busyKey helpers (work on the existing string-compat ref)
 function setBusy(k: string)  { localBusyKey.value = k; }
 function clearBusy()         { localBusyKey.value = ''; }
+
+async function copyToClipboard(event: MouseEvent, text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    const target = (event.currentTarget || event.target) as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const bubble = document.createElement('div');
+    bubble.textContent = '已复制';
+    bubble.className = 'pact-copy-bubble';
+    bubble.style.left = `${rect.left + rect.width / 2}px`;
+    bubble.style.top = `${rect.top}px`;
+    document.body.appendChild(bubble);
+
+    // Force a reflow so the transition works
+    void bubble.offsetWidth;
+
+    requestAnimationFrame(() => {
+      bubble.style.transform = 'translate(-50%, -30px) scale(1.1)';
+      bubble.style.opacity = '1';
+    });
+
+    setTimeout(() => {
+      bubble.style.opacity = '0';
+      bubble.style.transform = 'translate(-50%, -40px) scale(0.9)';
+      setTimeout(() => bubble.remove(), 200);
+    }, 600);
+  } catch (err) {
+    console.error('Failed to copy: ', err);
+  }
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 load();
@@ -541,18 +592,35 @@ load();
                 <h3>{{ selected.title }}</h3>
                 <p v-if="selected.objective" class="module-note">{{ selected.objective }}</p>
               </div>
-              <StatusPill :tone="statusTone(selected.status)" :label="selected.status" />
+              <div style="display: flex; gap: var(--space-2); align-items: center;">
+                <StatusPill :tone="statusTone(selected.status)" :label="selected.status" />
+              </div>
             </div>
 
             <dl class="meta-list">
-              <div><dt>工作空间 ID</dt><dd><code>{{ selected.workspaceId }}</code></dd></div>
+              <div>
+                <dt>工作空间 ID</dt>
+                <dd>
+                  <div class="copyable-wrapper" :data-pact-tooltip="selected.workspaceId" @click="copyToClipboard($event, selected.workspaceId)">
+                    <code class="copyable-code">{{ selected.workspaceId }}</code>
+                  </div>
+                </dd>
+              </div>
               <div><dt>当前代次</dt><dd>Generation {{ selected.currentGeneration }}</dd></div>
               <div><dt>父工作空间</dt><dd>{{ selected.parentWorkspaceId || '（根，无继承）' }}</dd></div>
+              <div v-if="selected.fsPath">
+                <dt>物理路径</dt>
+                <dd>
+                  <div class="copyable-wrapper" :data-pact-tooltip="selected.fsPath" @click="copyToClipboard($event, selected.fsPath)">
+                    <code class="copyable-code">{{ selected.fsPath }}</code>
+                  </div>
+                </dd>
+              </div>
               <div><dt>更新时间</dt><dd>{{ formatCompactDate(selected.updatedAt) }}</dd></div>
             </dl>
 
             <!-- Inheritance chain -->
-            <section v-if="chainData" class="module-panel">
+            <section v-if="chainData" class="module-panel" style="margin: var(--space-4) 0;">
               <div class="module-panel-heading">
                 <strong>继承链</strong>
                 <span>{{ chainData.chain.length }} 级</span>
@@ -615,12 +683,44 @@ load();
             <ConfigFoldCard v-if="chainData" title="解析后的合并 Profile（含继承链）">
               <pre class="config-json-preview">{{ JSON.stringify(chainData.resolvedProfile, null, 2) }}</pre>
             </ConfigFoldCard>
+
+            <div style="margin-top: var(--space-4); border-top: 1px solid var(--border-subtle); padding-top: var(--space-4); display: flex; justify-content: flex-end;">
+              <button class="tool-button" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; gap: 6px; padding: 6px 12px; transition: all 0.2s;" @mouseover="$event.currentTarget.style.background='rgba(239, 68, 68, 0.2)'" @mouseleave="$event.currentTarget.style.background='rgba(239, 68, 68, 0.1)'" @click="showDeleteModal = true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"></path>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+                删除
+              </button>
+            </div>
           </div>
         </template>
 
         <div v-else class="empty-state">
           <strong>从左侧选择一个工作空间</strong>
           <span>或点击"新建工作空间"。</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Delete Confirmation Modal ─────────────────────────────── -->
+    <div v-if="showDeleteModal" class="pact-modal-overlay">
+      <div class="pact-modal">
+        <h3>移除工作空间</h3>
+        <p style="margin-top: var(--space-2); font-size: 0.9rem; color: var(--text-secondary);">
+          确定要移除工作空间 <strong>{{ selected?.title }}</strong> 吗？
+          此操作将解除该空间在系统中的注册。
+        </p>
+        <label style="display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); font-size: 0.9rem; cursor: pointer;">
+          <input type="checkbox" v-model="deleteFolderChecked" />
+          <span>同时从文件系统中彻底删除物理文件夹及所有快照数据</span>
+        </label>
+
+        <div style="display: flex; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-4);">
+          <button class="tool-button tool-button-ghost" @click="showDeleteModal = false">取消</button>
+          <button class="tool-button" style="background: var(--status-error); color: var(--bg-surface); border-color: transparent;" @click="deleteWorkspace">确认移除</button>
         </div>
       </div>
     </div>
@@ -708,5 +808,128 @@ load();
   font-size: 0.78rem; line-height: 1.5; background: var(--bg-subtle);
   border: 1px solid var(--border-subtle); border-radius: var(--radius-s);
   padding: var(--space-3); overflow: auto; max-height: 240px; white-space: pre; margin: 0;
+}
+
+.pact-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+  animation: fade-in 0.2s ease-out;
+}
+.pact-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-l);
+  padding: var(--space-4);
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  animation: slide-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.copyable-wrapper {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  cursor: pointer;
+}
+.copyable-wrapper::after {
+  content: attr(data-pact-tooltip);
+  position: absolute;
+  top: -28px;
+  left: 0;
+  background: var(--pact-copy-popover-bg);
+  color: var(--pact-copy-popover-fg);
+  border: 1px solid var(--pact-copy-popover-border);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.1s ease-out, transform 0.1s ease-out;
+  z-index: 100;
+  box-shadow: var(--pact-copy-popover-shadow);
+}
+.copyable-wrapper:hover::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.copyable-code {
+  user-select: all;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+.copyable-wrapper:active .copyable-code {
+  background: var(--accent);
+  color: var(--bg-surface);
+}
+</style>
+
+<style>
+:root {
+  --pact-copy-popover-bg: color-mix(in srgb, var(--bg-surface) 92%, var(--brand-subtle) 8%);
+  --pact-copy-popover-fg: var(--text-primary);
+  --pact-copy-popover-border: color-mix(in srgb, var(--border-subtle) 82%, var(--brand) 18%);
+  --pact-copy-popover-shadow: var(--shadow-md);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.theme-light) {
+    --pact-copy-popover-bg: color-mix(in srgb, var(--bg-subtle) 86%, var(--brand-subtle) 14%);
+    --pact-copy-popover-fg: var(--text-primary);
+    --pact-copy-popover-border: color-mix(in srgb, var(--border-strong) 76%, var(--brand) 24%);
+    --pact-copy-popover-shadow: var(--shadow-md), inset 0 0 0 1px rgba(255,255,255,0.035);
+  }
+}
+
+html.theme-dark {
+  --pact-copy-popover-bg: color-mix(in srgb, var(--bg-subtle) 86%, var(--brand-subtle) 14%);
+  --pact-copy-popover-fg: var(--text-primary);
+  --pact-copy-popover-border: color-mix(in srgb, var(--border-strong) 76%, var(--brand) 24%);
+  --pact-copy-popover-shadow: var(--shadow-md), inset 0 0 0 1px rgba(255,255,255,0.035);
+}
+
+html.theme-light {
+  --pact-copy-popover-bg: color-mix(in srgb, var(--bg-surface) 92%, var(--brand-subtle) 8%);
+  --pact-copy-popover-fg: var(--text-primary);
+  --pact-copy-popover-border: color-mix(in srgb, var(--border-subtle) 82%, var(--brand) 18%);
+  --pact-copy-popover-shadow: var(--shadow-md);
+}
+
+.pact-copy-bubble {
+  position: fixed;
+  background: var(--pact-copy-popover-bg);
+  color: var(--pact-copy-popover-fg);
+  border: 1px solid var(--pact-copy-popover-border);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0;
+  transform: translate(-50%, -10px);
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease-out;
+  box-shadow: var(--pact-copy-popover-shadow);
 }
 </style>

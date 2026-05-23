@@ -82,7 +82,7 @@
       "回答时先给可读结论，再列证据来源；不能把 evidenceId 之外的内容说成事实。"
     ],
     "honestBoundaries": [
-      "当前 Skill 由 {{evidenceCount}} 条证据蒸馏，覆盖范围受这些证据限制。",
+      "当前 Skill 由 {{evidenceCount}} 条证据蒸馏，可结合这些证据为您提供精准的专属分析能力。",
       "{{hierarchyStatus}}"
     ],
     "hierarchyStatus": {

@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
+const pkgStr = await fs.readFile(path.join(projectRoot, "mcp-connector", "package.json"), "utf8");
+const expectedVersion = JSON.parse(pkgStr).version;
 
 async function run(command, args = [], options = {}) {
   const result = await execFileAsync(command, args, {
@@ -36,12 +38,14 @@ try {
     "server/scripts/mcp-release.mjs",
     "--output-dir",
     tempDir,
+    "--platforms",
+    "darwin-arm64",
     "--json"
   ]);
   const result = JSON.parse(release.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.packageName, "pact-mcp-connector");
-  assert.equal(result.packageVersion, "0.0.1");
+  assert.equal(result.packageVersion, expectedVersion);
 
   const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
   const manifestText = JSON.stringify(manifest);
@@ -56,9 +60,9 @@ try {
   assert.equal(manifest.portable.requiresInstalledNode, false);
   assert.equal(manifest.portable.includesNodeRuntime ?? true, true);
   assert.equal(manifest.portable.preferredArchive, "zip");
-  assert.equal(manifest.portable.sha256, await sha256(result.portableTarballPath));
-  assert.equal(manifest.portable.zipSha256, await sha256(result.portableZipPath));
-  assert.equal(result.portableZipSha256, await sha256(result.portableZipPath));
+  assert.equal(manifest.portable.sha256, await sha256(result.portableTarballs[0]));
+  assert.equal(manifest.portable.zipSha256, await sha256(result.portableZips[0]));
+  assert.equal(result.portableZipSha256[0], await sha256(result.portableZips[0]));
   assert.ok(manifest.install.registryCommand.includes("npx pact-mcp-connector@latest register"));
   assert.ok(manifest.install.githubOneLineCommand.includes("pact-mcp-install.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
@@ -79,7 +83,7 @@ try {
   assert.equal(manifest.bootstrap.supportsMultiSelect, true);
   assert.equal(manifest.bootstrap.strategy, "installed-node-source-tarball-with-portable-runtime-fallback");
   assert.equal(manifest.bootstrap.preferredDownload, path.basename(result.tarballPath));
-  assert.equal(manifest.bootstrap.fallbackDownload, path.basename(result.portableZipPath));
+  assert.equal(manifest.bootstrap.fallbackDownload, path.basename(result.portableZips[0]));
   assert.equal(manifest.bootstrap.sourceSizeBytes, manifest.connector.sizeBytes);
   assert.equal(manifest.bootstrap.fallbackSizeBytes, manifest.portable.zipSizeBytes);
   assert.equal(manifest.bootstrap.sha256, await sha256(result.bootstrapInstallerPath));
@@ -116,7 +120,7 @@ try {
   assert.match(list.stdout, /package\/package\.json/);
   assert.doesNotMatch(list.stdout, /package\/server\//);
 
-  const portableList = await run("tar", ["-tzf", result.portableTarballPath]);
+  const portableList = await run("tar", ["-tzf", result.portableTarballs[0]]);
   assert.match(portableList.stdout, /pact-mcp$/m);
   assert.match(portableList.stdout, /runtime\/node/m);
   assert.match(portableList.stdout, /app\/bin\/pact-mcp\.mjs/m);
@@ -124,7 +128,7 @@ try {
   assert.match(portableList.stdout, /uninstall\.command/m);
   assert.doesNotMatch(portableList.stdout, /server\//);
 
-  const zipList = await run("unzip", ["-l", result.portableZipPath]);
+  const zipList = await run("unzip", ["-l", result.portableZips[0]]);
   assert.match(zipList.stdout, /pact-mcp$/m);
   assert.match(zipList.stdout, /runtime\/node/m);
   assert.match(zipList.stdout, /app\/bin\/pact-mcp\.mjs/m);
@@ -138,7 +142,7 @@ try {
   const version = await run("node", [path.join(extractDir, "package", "bin", "pact-mcp.mjs"), "version", "--json"]);
   const versionPayload = JSON.parse(version.stdout);
   assert.equal(versionPayload.packageName, "pact-mcp-connector");
-  assert.equal(versionPayload.packageVersion, "0.0.1");
+  assert.equal(versionPayload.packageVersion, expectedVersion);
   assert.equal(versionPayload.stableToolName, "pact.call");
   const help = await run("node", [path.join(extractDir, "package", "bin", "pact-mcp.mjs"), "help"]);
   assert.match(help.stdout, /pact-mcp register/);
@@ -425,11 +429,11 @@ try {
 
   const portableExtractDir = path.join(tempDir, "portable");
   await fs.mkdir(portableExtractDir, { recursive: true });
-  await run("tar", ["-xzf", result.portableTarballPath, "-C", portableExtractDir]);
+  await run("tar", ["-xzf", result.portableTarballs[0], "-C", portableExtractDir]);
   const portableVersion = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "pact-mcp"), ["version", "--json"]);
   const portablePayload = JSON.parse(portableVersion.stdout);
   assert.equal(portablePayload.packageName, "pact-mcp-connector");
-  assert.equal(portablePayload.packageVersion, "0.0.1");
+  assert.equal(portablePayload.packageVersion, expectedVersion);
   const portableReset = await run(path.join(portableExtractDir, manifest.portable.tarball.replace(/\.tar\.gz$/, ""), "pact-mcp"), [
     "server-config",
     "--reset",
@@ -445,12 +449,12 @@ try {
 
   const portableZipExtractDir = path.join(tempDir, "portable-zip");
   await fs.mkdir(portableZipExtractDir, { recursive: true });
-  await run("unzip", ["-q", result.portableZipPath, "-d", portableZipExtractDir]);
+  await run("unzip", ["-q", result.portableZips[0], "-d", portableZipExtractDir]);
   const zipRoot = path.join(portableZipExtractDir, manifest.portable.zipArchive.replace(/\.zip$/, ""));
   const portableZipVersion = await run(path.join(zipRoot, "pact-mcp"), ["version", "--json"]);
   const portableZipPayload = JSON.parse(portableZipVersion.stdout);
   assert.equal(portableZipPayload.packageName, "pact-mcp-connector");
-  assert.equal(portableZipPayload.packageVersion, "0.0.1");
+  assert.equal(portableZipPayload.packageVersion, expectedVersion);
   assert.equal(await fs.access(path.join(zipRoot, "install.command")).then(() => true), true);
   assert.equal(await fs.access(path.join(zipRoot, "uninstall.command")).then(() => true), true);
 

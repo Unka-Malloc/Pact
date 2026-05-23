@@ -13333,7 +13333,7 @@ collectSystemStatusLogRows = () => {
 
   const toolAuditRows = toolManagementAuditItems.value.map((item): KnowledgeLogRow => ({
     logId: `tool-audit:${item.toolExecutionId}`,
-    kindLabel: "工具审计",
+    kindLabel: "调用记录",
     displayId: shortId(item.toolExecutionId),
     target: item.toolId || item.operationId || item.toolExecutionId,
     status: item.status,
@@ -13361,7 +13361,7 @@ collectSystemStatusLogRows = () => {
     const isAuthOperation = operationId.startsWith("auth.");
     return {
       logId: `operation-audit:${item.auditId}`,
-      kindLabel: isAuthOperation ? "认证审计" : "操作审计",
+      kindLabel: isAuthOperation ? "认证日志" : "操作日志",
       displayId: shortId(item.auditId),
       target: compactLogDetail([
         String(item.username || actor.username || actor.userId || item.userId || "anonymous"),

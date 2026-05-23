@@ -59,7 +59,7 @@ try {
   assert.equal(discovery.payload.mcpServers.pact.httpUrl, `${server.url}/mcp`);
   assert.equal(discovery.payload.stableToolName, "pact.call");
   assert.equal(discovery.payload.interfaceVersion, "pact.mcp.v1");
-  assert.equal(discovery.payload.serverVersion, "0.0.1");
+  assert.equal(discovery.payload.serverVersion, "0.0.3");
   assert.equal(discovery.payload.identity.algorithm, "Ed25519");
   assert.ok(discovery.payload.identity.keyId);
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
@@ -95,7 +95,7 @@ try {
   assert.equal(handshake.payload.ok, true);
   assert.equal(handshake.payload.payload.nonce, nonce);
   assert.equal(handshake.payload.payload.server.name, "Pact");
-  assert.equal(handshake.payload.payload.server.serverVersion, "0.0.1");
+  assert.equal(handshake.payload.payload.server.serverVersion, "0.0.3");
   assert.equal(handshake.payload.payload.identity.keyId, discovery.payload.identity.keyId);
   assert.equal(handshake.payload.payload.endpoints.mcpUrl, `${server.url}/mcp`);
   assert.equal(handshake.payload.signature.algorithm, "Ed25519");
@@ -108,11 +108,31 @@ try {
     true
   );
 
-  const getMcp = await fetchText(`${server.url}/mcp`, {
-    headers: { Accept: "text/event-stream" }
-  });
-  assert.equal(getMcp.status, 200);
-  assert.match(getMcp.text, /notifications\/tools\/list_changed/);
+  const abortController = new AbortController();
+  let getMcpStatus = 500;
+  let getMcpText = "";
+  try {
+    const res = await fetch(`${server.url}/mcp`, {
+      headers: { Accept: "text/event-stream" },
+      signal: abortController.signal
+    });
+    getMcpStatus = res.status;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (value) getMcpText += decoder.decode(value);
+      if (getMcpText.includes("list_changed") || done) {
+        abortController.abort();
+        break;
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') throw e;
+  }
+  
+  assert.equal(getMcpStatus, 200);
+  assert.match(getMcpText, /notifications\/tools\/list_changed/);
 
   const initialize = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
@@ -152,13 +172,18 @@ try {
   assert.deepEqual(localGrant.payload.targets, ["codex"]);
   assert.equal(localGrant.payload.toolsets.includes("pact.knowledge.read"), true);
 
+  const expectedTools = ["pact.knowledge", "pact.workspace", "pact.list", "pact.skill", "pact.help"];
+
   const localGrantList = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
     headers: apiKeyHeaders(localGrant.payload.token),
     body: JSON.stringify(mcpRequest("tools/list", {}, 30))
   });
   assert.equal(localGrantList.status, 200);
-  assert.equal(localGrantList.payload.result.tools[0].name, "pact.call");
+  assert.equal(localGrantList.payload.result.tools.length, 5);
+  for (const name of expectedTools) {
+    assert.ok(localGrantList.payload.result.tools.some(t => t.name === name));
+  }
 
   const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
@@ -177,8 +202,10 @@ try {
     body: JSON.stringify(mcpRequest("tools/list", {}, 3))
   });
   assert.equal(list.status, 200);
-  assert.equal(list.payload.result.tools.length, 1);
-  assert.equal(list.payload.result.tools[0].name, "pact.call");
+  assert.equal(list.payload.result.tools.length, 5);
+  for (const name of expectedTools) {
+    assert.ok(list.payload.result.tools.some(t => t.name === name));
+  }
   assert.equal(list.payload.result._meta.stableToolName, "pact.call");
 
   const health = await fetchJson(`${server.url}/mcp`, {
@@ -221,6 +248,7 @@ try {
   });
   assert.equal(unsupportedDirectCall.status, 200);
   assert.equal(unsupportedDirectCall.payload.error.data.stableToolName, "pact.call");
+  assert.ok(unsupportedDirectCall.payload.error.data.categorizedOutlets.includes("pact.knowledge"));
 
   console.log("mcp-http verification passed");
 } finally {

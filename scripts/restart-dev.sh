@@ -10,7 +10,7 @@ cd "$PROJECT_ROOT"
 PORT="${1:-8787}"
 
 echo "[restart] 停止旧的服务端进程..."
-bash scripts/clean-existing-service.sh --port "$PORT" --vite-port 5173 --data-dir "$PROJECT_ROOT/build/server-data"
+bash scripts/clean-existing-service.sh --port "$PORT" --vite-port 5173
 
 echo "[restart] 启动开发环境..."
 exec bash scripts/start-all.sh --dev --port "$PORT" --skip-clean

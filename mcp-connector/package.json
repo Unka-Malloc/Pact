@@ -1,6 +1,6 @@
 {
   "name": "pact-mcp-connector",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Installer for connecting local AI agents to an Pact MCP HTTP endpoint.",
   "type": "module",
   "license": "GPL-3.0-or-later",

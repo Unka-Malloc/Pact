@@ -11,7 +11,7 @@ cd "$PROJECT_ROOT"
 
 PORT=8787
 VITE_PORT=5173
-DATA_DIR="$PROJECT_ROOT/build/server-data"
+DATA_DIR=""
 PROFILE="default"
 OPEN_BROWSER=true
 MODE="console"
@@ -24,7 +24,7 @@ usage() {
 
 选项:
   --port <n>        服务端端口（默认: 8787）
-  --data-dir <path> 数据目录（默认: build/server-data）
+  --data-dir <path> 数据目录（默认: ~/.pact-server-data）
   --profile <name>  运行档位（默认: default）
   --dev             使用 Vite 开发模式启动前端（默认启动内置控制台）
   --no-open         不自动打开浏览器
@@ -71,17 +71,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-mkdir -p "$DATA_DIR"
-if command -v realpath >/dev/null 2>&1; then
-  DATA_DIR="$(realpath "$DATA_DIR")"
-else
-  DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
+if [[ -n "$DATA_DIR" ]]; then
+  mkdir -p "$DATA_DIR"
+  if command -v realpath >/dev/null 2>&1; then
+    DATA_DIR="$(realpath "$DATA_DIR")"
+  else
+    DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
+  fi
 fi
 
 if [[ "$SKIP_CLEAN" != true ]]; then
   CLEAN_ARGS=(
     --port "$PORT"
-    --data-dir "$DATA_DIR"
     --launch-label "dev.pact.server.${PORT}"
     --launch-label "dev.pact.background-supervisor"
     --launch-label "dev.pact.system-inspection"
@@ -89,6 +90,9 @@ if [[ "$SKIP_CLEAN" != true ]]; then
     --launch-plist "$HOME/Library/LaunchAgents/dev.pact.background-supervisor.plist"
     --launch-plist "$HOME/Library/LaunchAgents/dev.pact.system-inspection.plist"
   )
+  if [[ -n "$DATA_DIR" ]]; then
+    CLEAN_ARGS+=(--data-dir "$DATA_DIR")
+  fi
   if [[ "$MODE" == "dev" ]]; then
     CLEAN_ARGS+=(--vite-port "$VITE_PORT")
   fi
@@ -141,11 +145,15 @@ wait_for_server() {
 
 if [[ "$MODE" == "console" ]]; then
   echo "[server] 启动控制台（默认模式）：server:console"
-  npm run server:console -- --port "$PORT" --data-dir "$DATA_DIR" --profile "$PROFILE" &
+  ARGS=(--port "$PORT" --profile "$PROFILE")
+  if [[ -n "$DATA_DIR" ]]; then ARGS+=(--data-dir "$DATA_DIR"); fi
+  npm run server:console -- "${ARGS[@]}" &
   SERVER_PID=$!
 else
   echo "[server] 启动开发模式：server:start + Vite"
-  npm run server:start -- --port "$PORT" --data-dir "$DATA_DIR" --profile "$PROFILE" &
+  ARGS=(--port "$PORT" --profile "$PROFILE")
+  if [[ -n "$DATA_DIR" ]]; then ARGS+=(--data-dir "$DATA_DIR"); fi
+  npm run server:start -- "${ARGS[@]}" &
   SERVER_PID=$!
 
   if wait_for_server; then

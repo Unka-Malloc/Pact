@@ -37,6 +37,12 @@ const suites = [
     "integration",
     "regression"
   ]),
+  suite("server.mcp-http", "MCP HTTP single-entry-point rule and integrations", npm("run", "server:verify:mcp-http"), [
+    "server",
+    "mcp",
+    "integration",
+    "regression"
+  ]),
   suite("server.continuity", "Transaction continuity", npm("run", "server:verify:continuity"), [
     "server",
     "integration",
@@ -299,6 +305,7 @@ const profileSuites = {
     "security.npm-audit",
     "server.web.build",
     "server.headless",
+    "server.mcp-http",
     "server.continuity",
     "server.checkpoints",
     "server.rebuild",
@@ -340,6 +347,7 @@ const profileSuites = {
     "security.secret-hygiene",
     "security.npm-audit",
     "server.headless",
+    "server.mcp-http",
     "server.operation-policy",
     "server.dispatcher-unified",
     "server.trace-context",
@@ -365,6 +373,7 @@ const profileSuites = {
     "security.secret-hygiene",
     "server.web.build",
     "server.headless",
+    "server.mcp-http",
     "server.continuity",
     "server.checkpoints",
     "server.rebuild",
@@ -415,6 +424,7 @@ const profileSuites = {
     "security.npm-audit",
     "server.web.build",
     "server.headless",
+    "server.mcp-http",
     "server.continuity",
     "server.checkpoints",
     "server.rebuild",
@@ -468,6 +478,7 @@ const profileSuites = {
     "security.npm-audit",
     "server.web.build",
     "server.headless",
+    "server.mcp-http",
     "server.continuity",
     "server.checkpoints",
     "server.rebuild",
@@ -707,12 +718,14 @@ function changedSuiteIds(baseRef) {
       selected.add("client.native.test");
       selected.add("client.flutter.test");
       selected.add("server.headless");
+      selected.add("server.mcp-http");
       selected.add("smoke.server.lifecycle");
       selected.add("smoke.memory.source-evidence");
       selected.add("smoke.client.cli");
     }
     if (file.startsWith("server/")) {
       selected.add("server.headless");
+      selected.add("server.mcp-http");
       selected.add("server.continuity");
       selected.add("server.checkpoints");
       selected.add("server.rebuild");

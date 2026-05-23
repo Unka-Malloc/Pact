@@ -221,8 +221,8 @@ rankScoreV0 =
 - 设备级发现统一封装为 `pact-mcp discover-local`，它只维护 canonical registry `~/.pact/mcp/servers.json`，并由 `/.well-known/pact/mcp.json` 和 `/api/mcp/discovery` 暴露当前 HTTP endpoint、VM endpoint、connector release 包和安装状态；不得通过写多个本机发现文件来兼容不同客户端。
 - 客户端安装器必须通过 `pact-mcp-connector` release 包发布；终端用户不得为了安装 MCP 拉取完整服务端仓库。release manifest 必须包含 package version、npm tarball sha256、portable zip sha256、portable tarball sha256、GitHub 一行安装命令、Hub 注册命令、本机发现命令、多选交互式安装命令、单客户端脚本化连接命令、卸载命令、doctor 命令和支持的 target 列表。一行安装脚本优先使用已有 Node.js 20+ 下载小体积 source tarball；没有 Node.js / npm / npx 的机器必须能 fallback 到自带 Node runtime 的 portable zip 包安装。
 - 每个智能体使用独立 grant/token，不复用控制台 cookie / CSRF；grant 记录目标客户端、默认 agent toolset、scope 和审计时间。预签发自定义 grant 仍可通过 `--token-stdin` 安装。
-- 最小 MCP JSON-RPC：`initialize`、`tools/list`、`tools/call`、标准错误、工具 schema；`tools/list` 对外只返回稳定工具 `pact.call`。
-- `pact.call` 使用 `apiVersion`、`operation` 和 `input` 三段式参数，内部 operation 仍通过 Tool Management / Operation Registry 路由和审计；高风险 restore/delete/reindex、auth、settings、runtime mounts 和 grant 管理必须通过显式 grant 扩展，不能作为独立 MCP tool 展开。
+- 最小 MCP JSON-RPC：`initialize`、`tools/list`、`tools/call`、标准错误、工具 schema；**严守语义分类出口设计：`tools/list` 对外必须且只能返回以下五个功能大类入口：`pact.knowledge` (知识蒸馏/共享/图谱)、`pact.workspace` (共享空间与协作环境)、`pact.list` (全局资源清单)、`pact.skill` (技能执行与统一工具管理) 以及 `pact.help` (协议与元发现)**。绝不允许直接暴露内部庞杂的基础工具列表，通过语义分类在保护 Context Window 的同时为智能体建立清晰的职能心理模型，统一由服务端处理版本分发和权限收敛。
+- 所有的分类入口（以及保留兼容的 `pact.call`）均使用 `apiVersion`、`operation` 和 `input` 三段式参数，内部 operation 仍通过 Tool Management / Operation Registry 路由和审计；高风险 restore/delete/reindex、auth、settings、runtime mounts 和 grant 管理必须通过显式 grant 扩展，不能作为独立 MCP tool 展开。
 - 版本升级推送：`initialize` 声明 `tools.listChanged=true`，服务端在 discovery / initialize / `pact.mcp.version` 暴露 `interfaceVersion` 和 `toolsetVersion`，并在 `GET /mcp` SSE 上发送 `notifications/tools/list_changed`。
 - 安装器必须覆盖 `codex`、`gemini-cli`、`kilo-code`、`copilot`、`openclaw --vm kate`、`hermes --vm serena` 和 `antigravity`：无 `--target` 的 `pact-mcp install` 必须启动 TUI 菜单，扫描可用客户端和 OrbStack 中的 claw-compatible 衍生体；能调用标准 CLI 的目标必须调用标准 CLI；无非交互 CLI 的目标按官方配置格式结构化写入、先备份、只替换 `pact` 条目，不覆盖其它 agent 配置。
 

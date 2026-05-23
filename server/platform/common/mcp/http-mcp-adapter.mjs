@@ -10,9 +10,25 @@ export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MCP_INTERFACE_VERSION = "pact.mcp.v1";
 export const MCP_TOOLSET_VERSION = "2026-05-22.1";
 export const MCP_STABLE_TOOL_NAME = "pact.call";
-export const MCP_SERVER_VERSION = "0.0.2";
+export const MCP_KNOWLEDGE_TOOL_NAME = "pact.knowledge";
+export const MCP_WORKSPACE_TOOL_NAME = "pact.workspace";
+export const MCP_LIST_TOOL_NAME = "pact.list";
+export const MCP_SKILL_TOOL_NAME = "pact.skill";
+export const MCP_HELP_TOOL_NAME = "pact.help";
+
+const CATEGORIZED_TOOL_NAMES = new Set([
+  MCP_KNOWLEDGE_TOOL_NAME,
+  MCP_WORKSPACE_TOOL_NAME,
+  MCP_LIST_TOOL_NAME,
+  MCP_SKILL_TOOL_NAME,
+  MCP_HELP_TOOL_NAME
+]);
+
+const activeSseConnections = new Set();
+
+export const MCP_SERVER_VERSION = "0.0.3";
 export const MCP_CONNECTOR_PACKAGE_NAME = "pact-mcp-connector";
-export const MCP_CONNECTOR_VERSION = "0.0.2";
+export const MCP_CONNECTOR_VERSION = "0.0.3";
 export const MCP_CONNECTOR_GITHUB_REPO = "Unka-Malloc/Pact";
 export const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
@@ -115,49 +131,84 @@ function activeMcpTools(toolManagementPlatform) {
     .map(publicMcpTool);
 }
 
-function pactCallTool() {
-  return {
-    name: MCP_STABLE_TOOL_NAME,
-    title: "Pact Call",
-    description: "Stable Pact MCP entrypoint. Pass an Pact operation id and input; Pact handles routing, authorization, versioning, and audit.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["operation"],
-      properties: {
-        apiVersion: {
-          type: "string",
-          description: "Pact MCP interface version expected by the caller.",
-          default: MCP_INTERFACE_VERSION,
-          enum: [MCP_INTERFACE_VERSION]
-        },
-        operation: {
-          type: "string",
-          description: "Internal Pact operation id, for example system.health or pact.knowledge.search."
-        },
-        input: {
-          type: "object",
-          description: "Operation input payload.",
-          additionalProperties: true,
-          default: {}
-        },
-        clientVersion: {
-          type: "string",
-          description: "Optional client-side integration version for diagnostics."
-        }
+function pactCategorizedTools() {
+  const commonSchema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["operation"],
+    properties: {
+      apiVersion: {
+        type: "string",
+        description: "Pact MCP interface version expected by the caller.",
+        default: MCP_INTERFACE_VERSION,
+        enum: [MCP_INTERFACE_VERSION]
+      },
+      operation: {
+        type: "string",
+        description: "Operation id within this category."
+      },
+      input: {
+        type: "object",
+        description: "Operation input payload.",
+        additionalProperties: true,
+        default: {}
+      },
+      clientVersion: {
+        type: "string",
+        description: "Optional client-side integration version for diagnostics."
       }
-    },
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false
-    },
-    _meta: {
-      interfaceVersion: MCP_INTERFACE_VERSION,
-      toolsetVersion: MCP_TOOLSET_VERSION,
-      stableTool: true,
-      upgradeNotification: "notifications/tools/list_changed"
     }
   };
+
+  const toolMeta = {
+    interfaceVersion: MCP_INTERFACE_VERSION,
+    toolsetVersion: MCP_TOOLSET_VERSION,
+    stableTool: true,
+    upgradeNotification: "notifications/tools/list_changed"
+  };
+
+  return [
+    {
+      name: MCP_KNOWLEDGE_TOOL_NAME,
+      title: "Pact Knowledge",
+      description: "Unified knowledge engine outlet. Supports knowledge distillation, collaborative knowledge sharing, evidence retrieval, and graph co-construction.",
+      inputSchema: commonSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false },
+      _meta: toolMeta
+    },
+    {
+      name: MCP_WORKSPACE_TOOL_NAME,
+      title: "Pact Workspace",
+      description: "Shared agent workspace and collaborative environment outlet. Supports managing shared context, collaborative sessions, verifiable execution history, and workspace-level state orchestration.",
+      inputSchema: commonSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      _meta: toolMeta
+    },
+    {
+      name: MCP_LIST_TOOL_NAME,
+      title: "Pact Resource Listing",
+      description: "Global resource discovery outlet. Provides unified listing for workspaces, background jobs, installed skill packages, and currently active tool catalogs.",
+      inputSchema: commonSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false },
+      _meta: toolMeta
+    },
+    {
+      name: MCP_SKILL_TOOL_NAME,
+      title: "Pact Skill & Tooling",
+      description: "Specialized capability execution and unified tool management outlet. Handles execution of high-level skills, agentic workflows, and external tool packages with cross-client grant management.",
+      inputSchema: commonSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      _meta: toolMeta
+    },
+    {
+      name: MCP_HELP_TOOL_NAME,
+      title: "Pact Help & Protocol",
+      description: "Protocol and diagnostic outlet. Supports system health checks, protocol version negotiation, and dynamic discovery of detailed capabilities within each functional category.",
+      inputSchema: commonSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false },
+      _meta: toolMeta
+    }
+  ];
 }
 
 function mcpVersionInfo() {
@@ -166,6 +217,8 @@ function mcpVersionInfo() {
     toolsetVersion: MCP_TOOLSET_VERSION,
     serverVersion: MCP_SERVER_VERSION,
     stableToolName: MCP_STABLE_TOOL_NAME,
+    categorizedOutlets: Array.from(CATEGORIZED_TOOL_NAMES),
+    capabilitiesSummary: "Pact Unified Agent Workspace MCP. Outlets: Knowledge (Distillation/Sharing/Graph), Workspace (Shared Space), List (Resources), Skill (Skills & Tool Management), and Help (Protocol/Discovery).",
     listChanged: true,
     upgradeNotification: "notifications/tools/list_changed",
     connector: {
@@ -200,6 +253,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   return {
     schemaVersion: 1,
     name: "Pact",
+    description: "Pact Unified Agent Workspace MCP. Provides five specialized outlets for Knowledge (Distillation/Sharing/Graph), Workspace (Shared Space), Resource Listing, Skill & Tooling, and Protocol Help.",
     interfaceVersion: MCP_INTERFACE_VERSION,
     toolsetVersion: MCP_TOOLSET_VERSION,
     serverVersion: MCP_SERVER_VERSION,
@@ -503,7 +557,7 @@ function validatePactCallInput(input) {
   };
 }
 
-function pactMetaResult({ operation, toolManagementPlatform }) {
+function pactMetaResult({ operation, input, toolManagementPlatform }) {
   if (operation === "pact.mcp.version" || operation === "pact.version") {
     return mcpToolResult({
       result: mcpVersionInfo()
@@ -514,6 +568,39 @@ function pactMetaResult({ operation, toolManagementPlatform }) {
       result: {
         ...mcpVersionInfo(),
         operations: activeMcpTools(toolManagementPlatform)
+      }
+    });
+  }
+  if (operation === "pact.update") {
+    const clientVersion = input?.clientVersion || "0.0.0";
+    const serverVersion = MCP_SERVER_VERSION;
+    
+    // 简单的版本差异检查作为触发更新的依据
+    const updateAvailable = clientVersion !== serverVersion;
+    
+    if (updateAvailable) {
+      const updatePayload = jsonRpcNotification("notifications/pact/update_available", {
+        clientVersion,
+        serverVersion,
+        message: `An update to Pact MCP server is available (${serverVersion}).`
+      });
+      
+      for (const res of activeSseConnections) {
+        try {
+          res.write(`event: message\n`);
+          res.write(`data: ${JSON.stringify(updatePayload)}\n\n`);
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+    
+    return mcpToolResult({
+      result: {
+        clientVersion,
+        serverVersion,
+        updatePushed: updateAvailable,
+        message: updateAvailable ? "Update notification pushed to clients." : "Server is up-to-date with client."
       }
     });
   }
@@ -537,11 +624,14 @@ function sendMcpSseVersionEvent(request, response) {
   response.write(`event: message\n`);
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
 
+  activeSseConnections.add(response);
+
   const heartbeat = setInterval(() => {
     response.write(`:\n\n`);
   }, 15000);
 
   request.on('close', () => {
+    activeSseConnections.delete(response);
     clearInterval(heartbeat);
     response.end();
   });
@@ -579,7 +669,7 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
       };
     }
     return jsonRpcResult(id, {
-      tools: [pactCallTool(), ...activeMcpTools(toolManagementPlatform)],
+      tools: pactCategorizedTools(),
       _meta: mcpVersionInfo()
     });
   }
@@ -591,19 +681,19 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
     }
     
     let parsedCall;
-    if (toolName === MCP_STABLE_TOOL_NAME) {
-      parsedCall = validatePactCallInput(params.arguments);
-      if (!parsedCall.ok) {
-        const error = parsedCall.error;
-        error.id = id;
-        return error;
-      }
-    } else {
-      parsedCall = {
-        ok: true,
-        operation: toolName,
-        input: params.arguments || {}
-      };
+    if (toolName !== MCP_STABLE_TOOL_NAME && !CATEGORIZED_TOOL_NAMES.has(toolName)) {
+      return jsonRpcError(id, -32601, `Method not found. Please use the categorized outlets (e.g., '${MCP_KNOWLEDGE_TOOL_NAME}') for all operations.`, {
+        code: "method_not_found",
+        stableToolName: MCP_STABLE_TOOL_NAME,
+        categorizedOutlets: Array.from(CATEGORIZED_TOOL_NAMES)
+      });
+    }
+
+    parsedCall = validatePactCallInput(params.arguments);
+    if (!parsedCall.ok) {
+      const error = parsedCall.error;
+      error.id = id;
+      return error;
     }
 
     const authorization = authorizeMcpRequest({ request, toolManagementPlatform });
@@ -617,6 +707,7 @@ async function handleMcpMessage({ message, request, toolManagementPlatform }) {
     }
     const metaResult = pactMetaResult({
       operation: parsedCall.operation,
+      input: parsedCall.input,
       toolManagementPlatform
     });
     if (metaResult) {

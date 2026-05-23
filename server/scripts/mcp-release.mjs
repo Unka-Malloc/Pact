@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { pipeline } from "node:stream/promises";
 import {
   MCP_CONNECTOR_PACKAGE_NAME,
   MCP_CONNECTOR_VERSION,
@@ -22,6 +23,7 @@ function parseArgs(argv) {
   const args = {
     "output-dir": path.join(projectRoot, "build", "release", "mcp"),
     channel: "stable",
+    platforms: null,
     json: false,
     publish: false
   };
@@ -102,14 +104,43 @@ async function writeExecutable(filePath, content) {
   }
 }
 
-async function createPortableBundle({ outputDir, packageJson }) {
-  const platform = currentPlatformKey();
+
+async function downloadNodeBinary(version, target, outputDir) {
+  const isMusl = target.includes("-musl");
+  const baseUrl = isMusl 
+    ? "https://unofficial-builds.nodejs.org/download/release" 
+    : "https://nodejs.org/dist";
+  
+  const parts = target.split('-');
+  const os = parts[0];
+  const arch = parts[1];
+  const filename = isMusl ? `node-${version}-${os}-${arch}-musl.tar.gz` : `node-${version}-${os}-${arch}.tar.gz`;
+  const downloadUrl = `${baseUrl}/${version}/${filename}`;
+  const archivePath = path.join(outputDir, filename);
+
+  console.error(`Downloading ${downloadUrl}...`);
+  const res = await fetch(downloadUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to download Node binary from ${downloadUrl}: ${res.statusText}`);
+  }
+  
+  const fileStream = (await import("node:fs")).createWriteStream(archivePath);
+  await pipeline(res.body, fileStream);
+
+  const extractDir = path.join(outputDir, `extracted-${target}`);
+  await fs.mkdir(extractDir, { recursive: true });
+  await run("tar", ["-xzf", archivePath, "-C", extractDir, "--strip-components=1"]);
+  
+  return path.join(extractDir, "bin", "node");
+}
+
+async function createPortableBundle({ outputDir, packageJson, target }) {
+  const platform = target;
   const rootName = `${packageJson.name}-${packageJson.version}-${platform}`;
   const stagingRoot = path.join(outputDir, rootName);
   const appRoot = path.join(stagingRoot, "app");
   const runtimeRoot = path.join(stagingRoot, "runtime");
-  const runtimeBinary = process.platform === "win32" ? "node.exe" : "node";
-  const runtimePath = path.join(runtimeRoot, runtimeBinary);
+  const runtimePath = path.join(runtimeRoot, "node");
   const archiveName = `${rootName}.tar.gz`;
   const archivePath = path.join(outputDir, archiveName);
   const zipArchiveName = `${rootName}.zip`;
@@ -120,10 +151,10 @@ async function createPortableBundle({ outputDir, packageJson }) {
   await fs.rm(zipArchivePath, { force: true });
   await fs.mkdir(path.join(appRoot, "bin"), { recursive: true });
   await fs.mkdir(runtimeRoot, { recursive: true });
-  await fs.copyFile(process.execPath, runtimePath);
-  if (process.platform !== "win32") {
-    await fs.chmod(runtimePath, 0o755);
-  }
+  const bundledVersion = "v20.12.2";
+  const downloadedNodeBin = await downloadNodeBinary(bundledVersion, target, outputDir);
+  await fs.copyFile(downloadedNodeBin, runtimePath);
+  await fs.chmod(runtimePath, 0o755);
   await fs.copyFile(path.join(connectorRoot, "package.json"), path.join(appRoot, "package.json"));
   await fs.copyFile(path.join(connectorRoot, "README.md"), path.join(appRoot, "README.md"));
   await fs.copyFile(
@@ -225,7 +256,7 @@ async function createPortableBundle({ outputDir, packageJson }) {
     rootName,
     executable: unixExecutableName("pact-mcp"),
     includesNodeRuntime: true,
-    bundledNodeVersion: process.version
+    bundledNodeVersion: bundledVersion
   };
 }
 
@@ -235,7 +266,7 @@ function githubOwnerRepo(packageJson) {
   return match?.[1] || "Unka-Malloc/Pact";
 }
 
-async function createBootstrapInstaller({ outputDir, packageJson, tarballName, tarballSha256, portable }) {
+async function createBootstrapInstaller({ outputDir, packageJson, tarballName, tarballSha256, portables }) {
   const scriptName = "pact-mcp-install.sh";
   const scriptPath = path.join(outputDir, scriptName);
   const uninstallScriptName = "pact-mcp-uninstall.sh";
@@ -326,17 +357,29 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     "  exec node \"$target_dir/bin/pact-mcp.mjs\" install \"$@\"",
     "}",
     "",
+    "is_musl=0",
+    "if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -q musl; then",
+    "  is_musl=1",
+    "elif [ -f /etc/alpine-release ]; then",
+    "  is_musl=1",
+    "fi",
+    "if [ \"$is_musl\" = \"1\" ] && [ \"$os_name\" = \"linux\" ]; then",
+    "  platform=\"${platform}-musl\"",
+    "fi",
+    "",
     "install_from_portable_zip() {",
     "  require_command unzip",
     "  case \"$platform\" in",
-    `    ${portable.platform})`,
-    `      archive=${JSON.stringify(portable.zipArchiveName)}`,
-    `      archive_sha256=${JSON.stringify(portable.zipSha256)}`,
-    `      archive_root=${JSON.stringify(portable.rootName)}`,
-    "      ;;",
+    ...portables.flatMap(p => [
+      `    ${p.platform})`,
+      `      archive=${JSON.stringify(p.zipArchiveName)}`,
+      `      archive_sha256=${JSON.stringify(p.zipSha256)}`,
+      `      archive_root=${JSON.stringify(p.rootName)}`,
+      "      ;;"
+    ]),
     "    *)",
     "      echo \"No usable Node.js runtime was found and this release has no portable zip for: $platform\" >&2",
-    `      echo "This release contains ${portable.platform}. Build and upload the matching portable zip for this platform." >&2`,
+    `      echo "This release contains ${portables.map(p => p.platform).join(', ')}. Build and upload the matching portable zip for this platform." >&2`,
     "      exit 1",
     "      ;;",
     "  esac",
@@ -393,7 +436,8 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
   };
 }
 
-function releaseManifest({ channel, packageJson, tarballName, tarballPath, checksum, sizeBytes, portable, bootstrap }) {
+function releaseManifest({ channel, packageJson, tarballName, tarballPath, checksum, sizeBytes, portables, bootstrap }) {
+  const portable = portables[0];
   return {
     schemaVersion: 1,
     packageType: "pact.mcp-connector-release.v1",
@@ -479,8 +523,8 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       npmCommand: `npm publish ${path.relative(projectRoot, tarballPath)} --access public --tag ${channel}`,
       releaseFiles: [
         tarballName,
-        portable.archiveName,
-        portable.zipArchiveName,
+        ...portables.map(p => p.archiveName),
+        ...portables.map(p => p.zipArchiveName),
         bootstrap.scriptName,
         bootstrap.uninstallScriptName,
         "pact-mcp-release.json",
@@ -498,6 +542,7 @@ async function main() {
   assert.equal(packageJson.name, MCP_CONNECTOR_PACKAGE_NAME);
   assert.equal(packageJson.version, MCP_CONNECTOR_VERSION);
 
+  await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(outputDir, { recursive: true });
   const pack = await run("npm", ["pack", "--json", "--pack-destination", outputDir], {
     cwd: connectorRoot
@@ -509,16 +554,22 @@ async function main() {
   const tarballPath = path.join(outputDir, packResult.filename);
   const stat = await fs.stat(tarballPath);
   const checksum = await sha256(tarballPath);
-  const portable = await createPortableBundle({
-    outputDir,
-    packageJson
-  });
+  const portables = [];
+  const defaultTargets = ['darwin-arm64', 'linux-x64', 'linux-arm64', 'linux-x64-musl', 'linux-arm64-musl'];
+  const targets = args.platforms ? String(args.platforms).split(',') : defaultTargets;
+  for (const target of targets) {
+    portables.push(await createPortableBundle({
+      outputDir,
+      packageJson,
+      target
+    }));
+  }
   const bootstrap = await createBootstrapInstaller({
     outputDir,
     packageJson,
     tarballName: packResult.filename,
     tarballSha256: checksum,
-    portable
+    portables
   });
   const manifest = releaseManifest({
     channel,
@@ -527,7 +578,7 @@ async function main() {
     tarballPath,
     checksum,
     sizeBytes: stat.size,
-    portable,
+    portables,
     bootstrap
   });
   const manifestPath = path.join(outputDir, "pact-mcp-release.json");
@@ -545,13 +596,13 @@ async function main() {
     latestPath,
     bootstrapInstallerPath: bootstrap.scriptPath,
     tarballPath,
-    portableTarballPath: portable.archivePath,
-    portableZipPath: portable.zipArchivePath,
+    portableTarballs: portables.map(p => p.archivePath),
+    portableZips: portables.map(p => p.zipArchivePath),
     packageName: packageJson.name,
     packageVersion: packageJson.version,
     sha256: checksum,
-    portableSha256: portable.sha256,
-    portableZipSha256: portable.zipSha256,
+    portableSha256: portables.map(p => p.sha256),
+    portableZipSha256: portables.map(p => p.zipSha256),
     bootstrapInstallerSha256: bootstrap.sha256,
     bootstrapUninstallerPath: bootstrap.uninstallScriptPath,
     bootstrapUninstallerSha256: bootstrap.uninstallSha256,

@@ -153,7 +153,7 @@ async function proxyApiRequest({
               aborted = true;
               upstreamResponse.destroy();
               reject(new Error(
-                `上游响应体超过最大限制 ${MAX_PROXY_BYTES / 1024 / 1024} MB。`
+                `为保障系统最佳体验，上游响应体目前支持最大 ${MAX_PROXY_BYTES / 1024 / 1024} MB 的数据流转。`
               ));
               return;
             }

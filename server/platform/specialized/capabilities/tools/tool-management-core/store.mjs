@@ -598,7 +598,7 @@ export function createToolManagementStore({ userDataPath }) {
       return {
         ok: false,
         status: 403,
-        error: "工具授权不允许当前请求来源。",
+        error: "当前请求来源暂未匹配到该工具的可用授权，请核实授权配置以启用该能力。",
         reasonCode: "origin_not_allowed",
         grant: publicGrant(grant)
       };
@@ -608,7 +608,7 @@ export function createToolManagementStore({ userDataPath }) {
       return {
         ok: false,
         status: 403,
-        error: "工具授权不允许当前来源地址。",
+        error: "当前网络来源暂未开通访问权限，如需调用请调整授权清单。",
         reasonCode: "cidr_not_allowed",
         grant: publicGrant(grant)
       };

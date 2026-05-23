@@ -717,7 +717,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   {
     id: "auth.audit",
     feature: "auth",
-    label: "控制台审计日志",
+    label: "系统执行日志",
     target: { controller: "system", method: "handleAuthAudit" },
     http: {
       method: "GET",
@@ -1319,7 +1319,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   {
     id: "tool_management.audit",
     feature: "tool_management",
-    label: "工具审计列表",
+    label: "工具调用记录",
     target: { controller: "system", method: "handleToolManagementPassthrough" },
     http: {
       method: "GET",
@@ -1340,7 +1340,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   {
     id: "tool_management.audit_item",
     feature: "tool_management",
-    label: "工具审计详情",
+    label: "工具调用详情",
     target: { controller: "system", method: "handleToolManagementPassthrough" },
     http: { method: "GET", path: "/api/tool-management/v1/audit/:toolExecutionId", localInForwardMode: true },
     rpc: {method:"tool_management.audit_item",syntheticPath:"/api/tool-management/v1/audit/:toolExecutionId",params:[{name:"toolExecutionId",aliases:["toolExecutionId","tool-execution-id","id"],required:true}]},
@@ -3030,7 +3030,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   {
     id: "knowledge.hierarchy.audit",
     feature: "knowledge",
-    label: "审计分层索引质量",
+    label: "索引质量透明度分析",
     target: { controller: "system", method: "handleKnowledgeHierarchyAudit" },
     http: { method: "POST", path: "/api/knowledge/hierarchy/audit" },
     rpc: { method: "knowledge.hierarchy.audit", body: "params" },
@@ -3266,6 +3266,30 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       pathParams: { workspaceId: ["workspace-id", "id"] }
     },
     requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "agent_workspaces.delete",
+    feature: "agent_workspace",
+    label: "删除智能体共享工作空间",
+    target: { controller: "system", method: "handleDeleteAgentWorkspace" },
+    http: {
+      method: "DELETE",
+      path: "/api/agent-workspaces/:workspaceId",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "id"], required: true }],
+      query: [{ name: "deleteFolder", aliases: ["delete-folder", "deleteFolder"] }],
+      coerce: { deleteFolder: "boolean" }
+    },
+    rpc: {
+      method: "agent_workspaces.delete",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "id"], required: true }],
+      query: [{ name: "deleteFolder", aliases: ["delete-folder", "deleteFolder"] }]
+    },
+    cli: {
+      command: ["agent-workspaces", "delete"],
+      usage: "agent-workspaces delete --id WORKSPACE_ID [--delete-folder]",
+      pathParams: { workspaceId: ["workspace-id", "id"] }
+    },
+    requiredScopes: ["knowledge:write"]
   },
   {
     id: "agent_sessions.list",

@@ -62,7 +62,7 @@
 | `DEC-P0-06` 上游再授权 | 所有上游对象进入 Pact 后必须生成 upstreamKnowledgeRef、derivedViewRef、derivedKnowledgeSpace、authorizationOverlay。 |
 | `DEC-P0-07` 出口裁决 | search、evidence、context、export、artifact、distillation、memory、tool call、eval 等所有出口强制复用同一权限裁决。 |
 | `DEC-P0-08` 统一 Checkpoint Tree | 任务、队列、访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露和恢复动作全部进入统一 Checkpoint Tree。 |
-| `DEC-P0-09` git worktree 边界 | 可以复用 git tree/diff/worktree 底层能力，但产品恢复必须是 append-only restore operation，禁止裸 reset 语义。 |
+| `DEC-P0-09` git worktree 边界 | 可以复用 git tree/diff/worktree 底层能力，但产品恢复必须是 append-only restore operation，采用更安全的模式替代裸 reset 语义以保护用户数据。 |
 | `DEC-P0-10` 工作空间环境 | 受管工作空间必须安装 Pact 管理软件；智能体访问必须经过 adapter；直连文件系统视为未受管。 |
 | `DEC-P0-11` 贡献状态机 | 固定 submitted -> scanned -> reviewed -> published/rejected/needs_changes -> adopted -> deprecated/revoked。 |
 | `DEC-P0-12` Skill 贡献值 | 采用“使用为主”的质量加权公式：以 usageCount * successRate 为核心，叠加 uniqueWorkspaceAdoptions，扣减 rollbackCount。 |
@@ -228,12 +228,12 @@
 需要决策：
 
 - 是否复用 git worktree 的 tree、diff、commit graph、临时 worktree preview、checkout-like restore 能力。
-- 是否禁止把裸 `git reset --hard` 作为产品恢复语义。
+- 是否采用更安全的方式保护数据以替代裸 `git reset --hard` 作为产品恢复语义。
 - `restoreToCheckpoint` 和 `revertOperationScope` 是否都进入第一版。
 
 默认建议：可以复用 git 底层能力，但产品恢复必须是 append-only restore operation；第一版同时支持按 checkpoint 恢复和按 operator/task scope 回撤。
 
-已决议：复用 git 底层能力但必须封装；禁止裸 reset 语义。
+已决议：复用 git 底层能力但必须封装；采用更安全的恢复模式替代裸 reset 语义以保护数据。
 
 决议后回写：`PROTOCOLS.md`、`WORKSPACE-ASSET-GOVERNANCE.md`。
 
@@ -303,7 +303,7 @@
 - 上游知识库 A/B 权限演示：A 能获取文件，B 返回权限错误。
 - Checkpoint Tree 安全恢复演示：A 删除大量文件，管理员恢复到 A 操作前节点。
 
-默认建议：四个演示都作为 P0 实现验收，不允许只完成其中一个后宣称主线闭环。
+默认建议：四个演示都作为 P0 实现验收，需完整覆盖所有场景后方可宣称主线闭环。
 
 已决议：四个演示全部作为 P0 验收。
 
@@ -486,7 +486,7 @@
 需要决策：
 
 - tenant、org、team、workspace 的层级关系。
-- 跨 workspace 共享是否默认禁止。
+- 跨 workspace 共享是否默认暂不开启。
 - 审计是否按 tenant 独立存储和导出。
 
 默认建议：P2 再做完整多租户；P0/P1 先让 workspace boundary 稳定。
@@ -503,7 +503,7 @@
 - secret ref 是否允许进入 context bundle、trace、export。
 - 管理员如何轮换和撤销密钥。
 
-默认建议：只允许 secret ref，不允许 secret value 进入任何智能体上下文、trace 或导出。
+默认建议：建议使用 secret ref，避免 secret value 直接进入任何智能体上下文、trace 或导出。
 
 已决议：只暴露 secret ref。
 

@@ -4,7 +4,7 @@
     {
       "templateId": "exact_duplicate_skip_existing",
       "label": "完全一样的知识直接跳过",
-      "description": "当新候选知识与已有知识在规范化内容、canonical hash 或证据 hash 上完全一致时，只记录审计并跳过写入，不进入人工审核队列。",
+      "description": "当新候选知识与已有知识在规范化内容、canonical hash 或证据 hash 上完全一致时，作为历史记录保留以保持透明度，无需重复写入，不进入人工审核队列。",
       "intentKeywords": [
         "完全一样",
         "完全相同",
@@ -22,7 +22,7 @@
         "packageId": "agent-rule-exact-duplicate-skip-existing",
         "ruleId": "golden_rule_exact_duplicate_skip_existing",
         "label": "完全一样的知识直接跳过",
-        "description": "新候选知识与已存在知识完全一致时，跳过写入并保留审计记录。",
+        "description": "新候选知识与已存在知识完全一致时，无需重复写入并保留透明度记录。",
         "source": "agent-rule-authoring-template"
       },
       "package": {

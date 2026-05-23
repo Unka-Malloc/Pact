@@ -181,7 +181,7 @@ const {
                             :disabled="busyKey === `grant:${grant.id}`"
                             @click="setGrantToolRule(grant, selectedToolManagementTool.id, 'deny')"
                           >
-                            禁止
+                            未启用
                           </button>
                         </div>
                       </article>
@@ -426,7 +426,7 @@ const {
             <article class="surface-card">
               <div class="section-header">
                 <div>
-                  <h3>审计 / 指标</h3>
+                  <h3>调用记录 / 指标</h3>
                 </div>
                 <div class="section-tags">
                   <span v-for="row in toolManagementStatusRows" :key="`status:${row.label}`">{{ row.label }} {{ row.value }}</span>
@@ -455,7 +455,7 @@ const {
                 </div>
               </div>
               <div v-if="toolManagementAuditItems.length === 0" class="empty-state">
-                <strong>暂无工具调用审计</strong>
+                <strong>暂无工具调用记录</strong>
               </div>
             </article>
           </section>

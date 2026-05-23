@@ -1,6 +1,6 @@
 {
   "name": "pact",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "可控的智能体协作空间。",
   "author": "Unka Y.Y.",
   "license": "GPL-3.0-or-later",
@@ -51,6 +51,7 @@
     "server:background:worker": "node server/scripts/background-worker.mjs",
     "server:auth": "node server/scripts/console-auth.mjs",
     "auth:rotate": "node server/scripts/console-auth.mjs set-password --username owner --generate-password",
+    "metadata:bump": "node scripts/bump-project-metadata.mjs",
     "server:start": "node server/scripts/start-server.mjs",
     "server:start:minimal": "node server/scripts/start-server.mjs --profile minimal",
     "server:start:public": "node server/scripts/start-server.mjs --host 0.0.0.0 --port 8787 --allow-public-console",

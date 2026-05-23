@@ -187,6 +187,7 @@ const {
           type="button"
           @click="switchView('dashboard')"
         >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
           工作台
         </button>
         <button
@@ -195,6 +196,7 @@ const {
           type="button"
           @click="switchView('feed')"
         >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m3 15 2 2 4-4"/></svg>
           信息流
         </button>
         <button
@@ -203,6 +205,7 @@ const {
           type="button"
           @click="switchView('sources')"
         >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
           数据源
         </button>
 
@@ -212,6 +215,7 @@ const {
           type="button"
           @click="$router.push('/workspaces')"
         >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
           工作空间
         </button>
 
@@ -647,7 +651,7 @@ const {
 
         <section v-else-if="drawerTab === 'users'" class="drawer-panel">
           <div class="panel-header">
-            <h4>用户与审计</h4>
+            <h4>用户与执行日志</h4>
             <p>用户创建和密码修改仅允许在服务端命令行执行。</p>
           </div>
 
@@ -736,8 +740,8 @@ const {
 
             <section class="module-panel">
               <div class="module-panel-heading">
-                <strong>会话与审计</strong>
-                <span>{{ authSessions.length }} 个会话 / {{ authAudit.length }} 条审计</span>
+                <strong>会话与操作记录</strong>
+                <span>{{ authSessions.length }} 个会话 / {{ authAudit.length }} 条记录</span>
               </div>
               <div class="job-table compact-job-table drawer-auth-table">
                 <div class="job-table-header">
@@ -775,7 +779,7 @@ const {
 
           <div v-else class="empty-state">
             <strong>权限不足</strong>
-            <span>需要 auth:admin 权限才能管理用户、OIDC、会话和审计。</span>
+            <span>需要 auth:admin 权限才能管理用户、OIDC、会话和操作记录。</span>
           </div>
         </section>
 

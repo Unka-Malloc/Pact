@@ -30,10 +30,11 @@ When the user asks to release a new version (e.g. `v0.0.3`), the agent MUST foll
    ```
 
 4. **Generate Release Assets:**
-   Run the release packaging script to generate the portable bundles and tarballs:
+   Run the release packaging script to generate the portable bundles and tarballs. By default, this will download `v20.12.2` Node.js binaries for 5 target platforms (`darwin-arm64`, `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`) which may take a minute or two:
    ```bash
    npm run server:mcp:release
    ```
+   *Note: If you only need specific platforms, you can pass `-- --platforms=linux-x64,darwin-arm64`.*
    This will output files to `build/release/mcp/`.
 
 5. **Upload Assets to GitHub Release:**

@@ -44,7 +44,7 @@ const STAGE_DEFINITIONS = [
     title: "项目级语料串联",
     actionLabel: "生成项目 Dossier",
     description:
-      "把同一项目下的多份文档按目录、时间和文件顺序粗串联成一个可审计的大文档。"
+      "把同一项目下的多份文档按目录、时间和文件顺序粗串联成一个支持透明溯源的结构化长文档。"
   },
   {
     stageId: "knowledge-index",

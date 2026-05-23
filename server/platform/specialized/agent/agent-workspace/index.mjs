@@ -336,6 +336,7 @@ function hydrateWorkspace(row) {
     ownedSourceIds: parseJson(row.owned_source_ids_json, []),
     accessibleWorkspaceIds: parseJson(row.accessible_workspace_ids_json, []),
     currentGeneration: Number(row.current_generation || 1),
+    fsPath: row.fs_path || "",
   };
 }
 
@@ -732,6 +733,7 @@ export function createAgentWorkspace({ userDataPath }) {
     ["accessible_workspace_ids_json","TEXT NOT NULL DEFAULT '[]'"],
     ["current_generation",           "INTEGER NOT NULL DEFAULT 1"],
     ["owner_user_id",                "TEXT NOT NULL DEFAULT ''"],
+    ["fs_path",                      "TEXT NOT NULL DEFAULT ''"],
   ].forEach(([col, def]) => {
     const exists = db.prepare(`PRAGMA table_info(aw_workspaces)`).all().some((c) => c.name === col);
     if (!exists) db.exec(`ALTER TABLE aw_workspaces ADD COLUMN ${col} ${def}`);
@@ -742,8 +744,8 @@ export function createAgentWorkspace({ userDataPath }) {
 
   const insertWorkspaceStmt = db.prepare(`
     INSERT OR REPLACE INTO aw_workspaces (
-      workspace_id, title, objective, status, owner_user_id, metadata_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      workspace_id, title, objective, status, owner_user_id, metadata_json, created_at, updated_at, fs_path
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const selectWorkspaceStmt = db.prepare("SELECT * FROM aw_workspaces WHERE workspace_id = ?");
   const listWorkspacesStmt = db.prepare("SELECT * FROM aw_workspaces ORDER BY updated_at DESC LIMIT ?");
@@ -1484,6 +1486,8 @@ export function createAgentWorkspace({ userDataPath }) {
     const workspaceId =
       String(input.workspaceId || "").trim() ||
       stableId("workspace", input.title || "", input.objective || "", timestamp);
+    const fsPath = path.join(rootPath, "folders", workspaceId);
+    fs.mkdirSync(fsPath, { recursive: true });
     const workspace = {
       workspaceId,
       title: normalizeText(input.title || "Knowledge Agent Workspace") || "Knowledge Agent Workspace",
@@ -1492,7 +1496,8 @@ export function createAgentWorkspace({ userDataPath }) {
       ownerUserId: String(input.ownerUserId || input.owner_user_id || input.userId || "").trim(),
       metadata: asObject(input.metadata),
       createdAt: input.createdAt || timestamp,
-      updatedAt: timestamp
+      updatedAt: timestamp,
+      fsPath
     };
     insertWorkspaceStmt.run(
       workspace.workspaceId,
@@ -1502,7 +1507,8 @@ export function createAgentWorkspace({ userDataPath }) {
       workspace.ownerUserId,
       stringifyJson(workspace.metadata),
       workspace.createdAt,
-      workspace.updatedAt
+      workspace.updatedAt,
+      workspace.fsPath
     );
     // Re-read from DB to capture new columns (profile, ownedSourceIds, etc.)
     const persisted = hydrateWorkspace(selectWorkspaceStmt.get(workspace.workspaceId)) || workspace;
@@ -2640,10 +2646,42 @@ export function createAgentWorkspace({ userDataPath }) {
     return { ok: true, workspace: hydrateWorkspace(selectWorkspaceRawStmt.get(targetId)), wasShared: true };
   }
 
+  function deleteWorkspace(workspaceId, options = {}) {
+    const ws = getWorkspace({ workspaceId, ...options });
+    if (!ws) return { ok: false, error: "工作空间不存在或无权限" };
+    const fsPath = ws.workspace.fsPath;
+
+    db.transaction(() => {
+      db.prepare("DELETE FROM aw_session_events WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_sessions WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_locks WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_decisions WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_issues WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_artifacts WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_submissions WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_private_state WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_runs WHERE workspace_id = ?").run(workspaceId);
+      db.prepare("DELETE FROM aw_workspaces WHERE workspace_id = ?").run(workspaceId);
+    })();
+
+    if (options.deleteFolder && fsPath) {
+      try {
+        if (fs.existsSync(fsPath)) {
+          fs.rmSync(fsPath, { recursive: true, force: true });
+        }
+      } catch (e) {
+        console.error(`[AgentWorkspace] Failed to delete folder ${fsPath}:`, e);
+      }
+    }
+    
+    return { ok: true, deleted: true };
+  }
+
   return {
     protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
     rootPath,
     createWorkspace,
+    deleteWorkspace,
     listWorkspaces,
     getWorkspace,
     createSession,
