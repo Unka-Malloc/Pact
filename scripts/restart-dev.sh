@@ -55,7 +55,7 @@ else
 fi
 
 echo "[restart] 停止旧的服务端进程..."
-bash scripts/clean-existing-service.sh --port "$PORT" --vite-port 5173 --data-dir "$DATA_DIR"
+bash scripts/clean-existing-service.sh --global --port "$PORT" --vite-port 5173 --data-dir "$DATA_DIR"
 
 echo "[restart] 启动开发环境..."
 exec bash scripts/start-all.sh --dev --port "$PORT" --data-dir "$DATA_DIR" --skip-clean "${EXTRA_ARGS[@]}"

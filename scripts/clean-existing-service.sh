@@ -10,6 +10,7 @@ PORTS=()
 LAUNCH_LABELS=()
 LAUNCH_PLISTS=()
 QUIET=false
+GLOBAL_CLEAN=false
 
 usage() {
   cat <<'EOF'
@@ -23,6 +24,7 @@ Options:
   --project-root <path> Project root used for command-line matching.
   --launch-label <name> Best-effort launchctl bootout for a user service label.
   --launch-plist <path> Best-effort launchctl bootout for a LaunchAgent plist.
+  --global              Kill any Pact process matching the project root, regardless of data-dir.
   --quiet               Reduce informational output.
   --help                Show help.
 EOF
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
     --launch-plist)
       LAUNCH_PLISTS+=("$2")
       shift 2
+      ;;
+    --global)
+      GLOBAL_CLEAN=true
+      shift
       ;;
     --quiet)
       QUIET=true
@@ -142,14 +148,14 @@ pid_is_pact_owned() {
   fi
 
   if command_has_pact_entrypoint "$command_line"; then
-    if [[ "$cwd" == "$PROJECT_ROOT" ]] || command_has_data_dir "$command_line"; then
+    if [[ "$GLOBAL_CLEAN" == true ]] || [[ "$cwd" == "$PROJECT_ROOT" ]] || command_has_data_dir "$command_line"; then
       return 0
     fi
   fi
 
   case "$command_line" in
     *"/node_modules/.bin/vite"*|*" node_modules/vite/"*|*" vite "*|*" vite")
-      if [[ "$cwd" == "$PROJECT_ROOT" ]]; then
+      if [[ "$GLOBAL_CLEAN" == true ]] || [[ "$cwd" == "$PROJECT_ROOT" ]]; then
         return 0
       fi
       ;;
@@ -277,39 +283,31 @@ bootout_launch_plist() {
 }
 
 find_stale_pact_pids() {
-  ps -Ao pid=,command= |
-    awk -v root="$PROJECT_ROOT" -v data_dir="$DATA_DIR" -v self="$$" '
+  local candidates
+  local pid
+
+  candidates="$(ps -Ao pid=,command= |
+    awk -v self="$$" '
       {
         pid = $1;
         cmd = $0;
-        sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", cmd);
+        if (pid == self) next;
 
-        if (pid == self) {
-          next;
-        }
-
-        if (!(index(cmd, root "/server/scripts/start-server.mjs") > 0 ||
-          index(cmd, "server/scripts/start-server.mjs") > 0 ||
-          index(cmd, root "/server/scripts/start-console.mjs") > 0 ||
-          index(cmd, "server/scripts/start-console.mjs") > 0 ||
-          index(cmd, root "/server/scripts/background-supervisor.mjs") > 0 ||
-          index(cmd, "server/scripts/background-supervisor.mjs") > 0 ||
-          index(cmd, root "/server/scripts/system-inspection-daemon.mjs") > 0 ||
-          index(cmd, "server/scripts/system-inspection-daemon.mjs") > 0)) {
-          next;
-        }
-
-        if (!(index(cmd, "--data-dir " data_dir) > 0 ||
-          index(cmd, "--data-dir=" data_dir) > 0 ||
-          index(cmd, "PACT_SERVER_DATA_DIR=" data_dir) > 0)) {
-          next;
-        }
-
-        {
+        if (index(cmd, "start-server.mjs") > 0 ||
+            index(cmd, "start-console.mjs") > 0 ||
+            index(cmd, "background-supervisor.mjs") > 0 ||
+            index(cmd, "system-inspection-daemon.mjs") > 0 ||
+            index(cmd, "/vite") > 0 || index(cmd, " vite") > 0) {
           print pid;
         }
-      }' |
-    sort -u
+      }'
+  )"
+
+  for pid in $candidates; do
+    if pid_is_pact_owned "$pid"; then
+      echo "$pid"
+    fi
+  done | sort -u
 }
 
 kill_stale_pact_processes() {
