@@ -3859,11 +3859,65 @@ async function uninstallSelectedCandidates({ options, selected }) {
   };
 }
 
+async function waitAnyKey(promptText) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return;
+  }
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    const cleanup = () => {
+      stdin.off("data", onData);
+      if (stdin.setRawMode) {
+        stdin.setRawMode(Boolean(wasRaw));
+      }
+      stdin.pause();
+      process.stdout.write("\n");
+      resolve();
+    };
+    const onData = () => cleanup();
+    process.stdout.write(promptText);
+    stdin.setEncoding("utf8");
+    if (stdin.setRawMode) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.on("data", onData);
+  });
+}
+
 async function uninstallTuiCommand(options) {
   const settings = installerOptions(options);
   const scan = await scanInstallTargets(options);
+  
+  const manifestPath = discoveryRegistryPath(options);
+  const manifest = await readJson(manifestPath, null);
+  let installedTargets = [];
+  if (manifest) {
+    const server = manifest.servers?.[MCP_SERVER_NAME] || {};
+    installedTargets = Object.entries(server.targets || {})
+      .filter(([, status]) => status?.status === "installed")
+      .map(([target]) => target);
+  }
+  
+  const filteredCandidates = scan.candidates.filter(c => installedTargets.includes(c.target));
+  
+  if (filteredCandidates.length === 0) {
+    console.log(`\x1b[2J\x1b[HPact MCP uninstall\n`);
+    console.log(`Scanned ${scan.candidates.length} supported MCP clients.`);
+    console.log("None of these clients currently have Pact MCP installed.");
+    await waitAnyKey("\nPress any key to escape...");
+    return {
+      ok: true,
+      cancelled: true,
+      packageName: packageJson.name,
+      packageVersion: packageJson.version,
+      reason: "No installed Pact MCP clients found to uninstall."
+    };
+  }
+
   const selected = await chooseUninstallCandidates({
-    candidates: scan.candidates,
+    candidates: filteredCandidates,
     baseUrl: settings.baseUrl
   });
   if (!selected || selected.length === 0) {
