@@ -26,14 +26,14 @@ const rootNodes = computed(() => {
   const root: TreeNode = { relativePath: '', name: '', type: 'directory', sizeBytes: 0, depth: -1, children: [] };
   const map = new Map<string, TreeNode>();
   map.set('', root);
-  
+
   const sortedFiles = [...props.files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-  
+
   for (const file of sortedFiles) {
     const parts = file.relativePath.split('/');
     const name = parts.pop()!;
     const parentPath = parts.join('/');
-    
+
     let parent = map.get(parentPath);
     if (!parent) {
       parent = root;
@@ -50,12 +50,12 @@ const rootNodes = computed(() => {
         parent = p;
       }
     }
-    
+
     const node: TreeNode = { ...file, depth: parts.length, children: [] };
     map.set(file.relativePath, node);
     parent.children.push(node);
   }
-  
+
   // Sort children: directories first, then files
   const sortChildren = (node: TreeNode) => {
     node.children.sort((a, b) => {
@@ -66,7 +66,7 @@ const rootNodes = computed(() => {
     node.children.forEach(sortChildren);
   };
   sortChildren(root);
-  
+
   return root.children;
 });
 
@@ -107,8 +107,8 @@ const toggleExpand = (node: TreeNode) => {
 <template>
   <div class="workspace-file-tree">
     <template v-if="flatNodes.length">
-      <div 
-        v-for="node in flatNodes" 
+      <div
+        v-for="node in flatNodes"
         :key="node.relativePath"
         class="tree-node"
         :class="{ 'is-dir': node.type === 'directory' }"
