@@ -51,12 +51,12 @@ function usage() {
   console.log(`Pact Server
 
 Usage:
-  node server/scripts/start-server.mjs [--host 0.0.0.0] [--port 8787] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default] [--edition community|pro|enterprise|custom]
+  node server/scripts/start-server.mjs [--host 0.0.0.0] [--port 7228] [--data-dir /path/to/data] [--with-ui] [--profile minimal|default] [--edition community|pro|enterprise|custom]
 
 Options:
   --host                    监听地址，默认读取 PACT_SERVER_HOST，否则使用 127.0.0.1
   --allow-public-console    允许监听非回环地址；等价于 PACT_ALLOW_PUBLIC_CONSOLE=1
-  --port                    监听端口，默认读取 PACT_SERVER_PORT，否则使用 8787
+  --port                    监听端口，默认读取 PACT_SERVER_PORT，否则使用 7228
   --data-dir                数据目录，默认 ~/.pact-server-data 或是通过 ~/.pact-server.json 配置
   --with-ui                 同时提供 build/dist 前端页面；build/dist 不存在时会报错
   --profile                 运行档位：default|minimal，默认 default
@@ -93,7 +93,7 @@ if (args.help) {
 }
 
 const host = String(args.host || process.env.PACT_SERVER_HOST || "127.0.0.1").trim();
-const port = normalizePort(args.port || process.env.PACT_SERVER_PORT, 8787);
+const port = normalizePort(args.port || process.env.PACT_SERVER_PORT, 7228);
 const userDataPath = path.resolve(
   String(
     args["data-dir"] ||

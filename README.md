@@ -105,7 +105,7 @@ npm run start:all
 
 *(For development with Vite HMR, append the `-- --dev` flag)*
 
-Once mounted, access the management console at `http://127.0.0.1:8787` or connect your local agents to the MCP Service endpoint.
+Once mounted, access the management console at `http://127.0.0.1:7228` or connect your local agents to the MCP Service endpoint.
 
 ### Docker
 
@@ -113,7 +113,7 @@ Once mounted, access the management console at `http://127.0.0.1:8787` or connec
 # Build and run with Docker Compose
 docker compose up -d
 
-# The server will be available at http://127.0.0.1:8787
+# The server will be available at http://127.0.0.1:7228
 ```
 
 ### CLI Interactions

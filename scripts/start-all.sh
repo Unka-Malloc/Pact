@@ -9,12 +9,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-PORT=8787
+PORT=7228
 VITE_PORT=5173
 DATA_DIR=""
 PROFILE="default"
 OPEN_BROWSER=true
 MODE="console"
+REGISTER_MCP=true
 SKIP_CLEAN=false
 
 usage() {
@@ -23,10 +24,11 @@ usage() {
   bash scripts/start-all.sh [选项]
 
 选项:
-  --port <n>        服务端端口（默认: 8787）
+  --port <n>        服务端端口（默认: 7228）
   --data-dir <path> 数据目录（默认: ~/.pact-server-data）
   --profile <name>  运行档位（默认: default）
   --dev             使用 Vite 开发模式启动前端（默认启动内置控制台）
+  --skip-mcp-register  跳过 MCP Hub 注册（默认会自动执行）
   --no-open         不自动打开浏览器
   --skip-clean      跳过启动前清理（内部脚本调用使用）
   --help            显示帮助
@@ -57,6 +59,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-clean)
       SKIP_CLEAN=true
+      shift
+      ;;
+    --skip-mcp-register)
+      REGISTER_MCP=false
       shift
       ;;
     --help)
@@ -173,6 +179,15 @@ if wait_for_server; then
 else
   echo "[error] 后端未在预期时间内就绪，请检查端口 ${PORT} 或日志。"
   exit 1
+fi
+
+if [[ "$REGISTER_MCP" == true ]]; then
+  echo "[mcp] 注册本地 MCP Hub：server:mcp:register"
+  if npm run server:mcp:register -- --url "http://127.0.0.1:${PORT}"; then
+    echo "[ok] MCP Hub 注册完成。"
+  else
+    echo "[warn] MCP Hub 注册失败，不影响服务端启动。"
+  fi
 fi
 
 if [[ "$OPEN_BROWSER" == true ]]; then

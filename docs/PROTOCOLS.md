@@ -435,7 +435,7 @@ HTTP MCP 是权威服务入口：
 <discovered-orbstack-host-url>/mcp
 ```
 
-connector 不把 `127.0.0.1:8787` 作为默认事实写入客户端。安装开始时必须扫描本机 Pact 候选服务、读取本机 registry，并通过 `/api/mcp/handshake` 校验服务端 Ed25519 签名；只有签名握手通过后，才把 discovery 返回的 HTTP MCP URL 写入目标客户端。OrbStack VM 内访问宿主机的 URL 也来自 discovery 的 advertised endpoint。
+connector 不把 `127.0.0.1:7228` 作为默认事实写入客户端。安装开始时必须扫描本机 Pact 候选服务、读取本机 registry，并通过 `/api/mcp/handshake` 校验服务端 Ed25519 签名；只有签名握手通过后，才把 discovery 返回的 HTTP MCP URL 写入目标客户端。OrbStack VM 内访问宿主机的 URL 也来自 discovery 的 advertised endpoint。
 
 HTTP endpoint 必须遵守 MCP Streamable HTTP 的最小要求：
 

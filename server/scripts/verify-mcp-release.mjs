@@ -218,12 +218,13 @@ try {
   assert.match(bootstrapScript, /install_from_portable_archive/);
   assert.match(bootstrapScript, /SOURCE_TARBALL=/);
   assert.match(bootstrapScript, /archive_sha256=/);
-  assert.doesNotMatch(bootstrapScript, /127\.0\.0\.1:8787/);
+  assert.doesNotMatch(bootstrapScript, /(?:https?:\/\/)?(?:127\.0\.0\.1|localhost):\d{1,5}\b/);
   assert.doesNotMatch(bootstrapScript, /register --url/);
   assert.doesNotMatch(bootstrapScript, /install --url/);
   assert.doesNotMatch(bootstrapScript, /register >\/dev\/null/);
   assert.match(bootstrapScript, /pact-mcp" install/);
   assert.match(bootstrapScript, /node "\$target_dir\/bin\/pact-mcp\.mjs" install/);
+  assert.doesNotMatch(bootstrapUninstallScript, /(?:https?:\/\/)?(?:127\.0\.0\.1|localhost):\d{1,5}\b/);
   assert.match(bootstrapUninstallScript, /pact-mcp" uninstall/);
   assert.match(bootstrapUninstallScript, /node "\$target_dir\/bin\/pact-mcp\.mjs" uninstall/);
   assert.match(bootstrapUninstallScript, /client removal selector/);

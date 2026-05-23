@@ -94,7 +94,7 @@ const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
 const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
 const DEFAULT_DISCOVERY_REGISTRY = path.join(os.homedir(), ".pact", "mcp", "servers.json");
-const DEFAULT_SCAN_PORTS = [8787, 8788, 8789, 8790, 8791, 8792, 8793, 8794, 8795, 8796, 8797];
+const DEFAULT_SCAN_PORTS = [7228, 7229, 7230, 7231, 7232, 7233, 7234, 7235, 7236, 7237];
 const TARGET_ALIASES = new Map([
   ["gemini", "gemini-cli"],
   ["gemini_cli", "gemini-cli"],
@@ -147,7 +147,7 @@ function usage() {
     "Options:",
     "  --target LIST                 Comma-separated targets for non-interactive install. Default: codex.",
     "  --url URL                     Explicit Pact base URL. Still requires signed MCP handshake.",
-    "  --scan-ports LIST            Local ports to scan when --url is omitted. Default: 8787-8797.",
+    "  --scan-ports LIST            Local ports to scan when --url is omitted. Default: 7228-7237.",
     "  --token TOKEN                 Pact MCP token. Prefer --token-stdin or --token-env.",
     "  --token-stdin                 Read token from stdin.",
     "  --token-env NAME              Token environment variable. Default: PACT_MCP_TOKEN.",
@@ -156,6 +156,7 @@ function usage() {
     "  --json                        Emit compact JSON.",
     "  --no-env                      Do not publish launchctl environment variables during register.",
     "  --discovery-file PATH         Registry file used by register/discover-local. Default: ~/.pact/mcp/servers.json.",
+    "  --auto-update                 Enable automatic push updates when installing (non-interactive mode).",
     "  --codex-bin COMMAND           Codex CLI command or explicit path. Default: codex.",
     "  --gemini-bin COMMAND          Gemini CLI command or explicit path. Default: gemini.",
     "  --kilo-bin COMMAND            Kilo Code CLI command or explicit path. Default: kilo.",
@@ -3076,6 +3077,72 @@ function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = 
   ];
   process.stdout.write(rows.join("\n"));
 }
+function renderAutoUpdateMenu({ enabled }) {
+  const rows = [
+    "\x1b[2J\x1b[H",
+    "Pact MCP Auto-Update Preference",
+    "",
+    "Do you want to enable automatic push updates?",
+    "If enabled, your local AI agent will automatically download and install updates when the server pushes them.",
+    "(This is disabled by default for security).",
+    "",
+    `  [${enabled ? "x" : " "}] Enable automatic push updates`,
+    `> [${enabled ? " " : "x"}] Disable automatic push updates (Recommended)`,
+    "",
+    "Use Up/Down to toggle, Enter to confirm."
+  ];
+  if (enabled) {
+    rows[7] = `> [x] Enable automatic push updates`;
+    rows[8] = `  [ ] Disable automatic push updates (Recommended)`;
+  }
+  process.stdout.write(rows.join("\n") + "\n");
+}
+
+async function chooseAutoUpdate() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return false;
+  }
+  let enabled = false;
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    const cleanup = () => {
+      stdin.off("data", onData);
+      if (stdin.setRawMode) {
+        stdin.setRawMode(Boolean(wasRaw));
+      }
+      stdin.pause();
+      process.stdout.write("\x1b[?25h\n");
+    };
+    
+    renderAutoUpdateMenu({ enabled });
+    
+    const onData = (chunk) => {
+      const key = chunk.toString("utf8");
+      if (key === "\u0003") {
+        cleanup();
+        reject(new Error("Interactive install cancelled."));
+        return;
+      }
+      if (key === "\r" || key === "\n") {
+        cleanup();
+        resolve(enabled);
+        return;
+      }
+      if (key === "\u001b[A" || key === "k" || key === "K" || key === "\u001b[B" || key === "j" || key === "J" || key === " ") {
+        enabled = !enabled;
+        renderAutoUpdateMenu({ enabled });
+      }
+    };
+    
+    if (stdin.setRawMode) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.on("data", onData);
+    process.stdout.write("\x1b[?25l");
+  });
+}
 
 async function chooseInstallCandidates({ candidates, baseUrl }) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -3312,7 +3379,7 @@ async function resolveInteractiveToken(options) {
   return entered;
 }
 
-async function requestLocalMcpGrant(options, { targets = [] } = {}) {
+async function requestLocalMcpGrant(options, { targets = [], autoUpdate = false } = {}) {
   const settings = installerOptions(options);
   const targetList = [...new Set(targets.map(normalizeTarget).filter(Boolean))];
   const response = await fetchJson(`${settings.baseUrl}/api/mcp/local-grant`, {
@@ -3324,7 +3391,8 @@ async function requestLocalMcpGrant(options, { targets = [] } = {}) {
     body: JSON.stringify({
       targets: targetList,
       label: `Pact MCP ${targetList.length ? targetList.map(targetLabel).join(", ") : "local agent"}`,
-      connectorVersion: packageJson.version
+      connectorVersion: packageJson.version,
+      autoUpdate
     })
   });
   if (!response.ok || !response.payload?.token) {
@@ -3341,7 +3409,7 @@ async function requestLocalMcpGrant(options, { targets = [] } = {}) {
   };
 }
 
-async function resolveInstallToken(options, { targets = [] } = {}) {
+async function resolveInstallToken(options, { targets = [], autoUpdate = false } = {}) {
   const explicit = await resolveToken(options, { required: false });
   if (explicit) {
     return {
@@ -3354,7 +3422,7 @@ async function resolveInstallToken(options, { targets = [] } = {}) {
     const tokenEnv = String(option(options, "token-env", DEFAULT_TOKEN_ENV));
     throw new Error(`Missing token. Provide --token-stdin, --token, or ${tokenEnv}.`);
   }
-  return requestLocalMcpGrant(options, { targets });
+  return requestLocalMcpGrant(options, { targets, autoUpdate });
 }
 
 async function resolveHubForInstall(options) {
@@ -3611,7 +3679,9 @@ async function installTuiCommand(options) {
     };
   }
   const selectedTargets = [...new Set(selected.map((candidate) => candidate.target))];
-  const tokenInfo = await resolveInstallToken(options, { targets: selectedTargets });
+  const autoUpdate = await chooseAutoUpdate();
+  options.__pactAutoUpdate = autoUpdate;
+  const tokenInfo = await resolveInstallToken(options, { targets: selectedTargets, autoUpdate });
   const hasPerCandidateOverrides = selected.some((candidate) =>
     Object.keys(candidate.optionOverrides || {}).length > 0
   );
@@ -3695,7 +3765,9 @@ async function installCommand(options) {
     };
   }
   const targets = parseTargets(targetOpt);
-  const tokenInfo = await resolveInstallToken(resolvedOptions, { targets });
+  const autoUpdate = Boolean(resolvedOptions["auto-update"]);
+  resolvedOptions.__pactAutoUpdate = autoUpdate;
+  const tokenInfo = await resolveInstallToken(resolvedOptions, { targets, autoUpdate });
   return installTargets({
     options: resolvedOptions,
     targets,

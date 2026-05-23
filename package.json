@@ -54,7 +54,7 @@
     "metadata:bump": "node scripts/bump-project-metadata.mjs",
     "server:start": "node server/scripts/start-server.mjs",
     "server:start:minimal": "node server/scripts/start-server.mjs --profile minimal",
-    "server:start:public": "node server/scripts/start-server.mjs --host 0.0.0.0 --port 8787 --allow-public-console",
+    "server:start:public": "node server/scripts/start-server.mjs --host 0.0.0.0 --port 7228 --allow-public-console",
     "server:rebuild-metadata": "node server/scripts/rebuild-metadata.mjs",
     "server:migrate-embeddings": "node server/scripts/migrate-embeddings.mjs",
     "server:doctor": "node server/scripts/doctor.mjs",

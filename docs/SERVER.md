@@ -766,7 +766,7 @@ node server/scripts/verify-knowledge-license-manifest.mjs --temp-manifest
 ```bash
 tar -xzf pact-server-linux-x64.tar.gz
 cd pact-server-linux-x64
-./bin/start-server --host 0.0.0.0 --port 8787 --data-dir ./data
+./bin/start-server --host 0.0.0.0 --port 7228 --data-dir ./data
 ```
 
 包内脚本默认开启控制台 UI，并默认使用包内 `server/platform/modules/knowledge/runtime/jre` 和 `server/platform/modules/knowledge/tika`。目标机仍需要 Linux 内核和兼容 glibc，这是原生 Linux 程序的系统边界；但不需要预装 Node.js、npm、Java、Tika、Python 或通过 apt 安装任何应用运行时。

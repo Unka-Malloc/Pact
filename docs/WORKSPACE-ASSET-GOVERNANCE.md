@@ -360,7 +360,7 @@ Agent 安装策略：
 - Gemini CLI：通过 `gemini mcp add --transport http --header X-Pact-Api-Key` 安装，同时生成并校验 Stitch extension 同构 manifest。
 - Kilo Code：按 Kilo 标准 `~/.config/kilo/kilo.json` 的 remote MCP 配置格式结构化写入。
 - Copilot：通过 `copilot mcp add --transport http --header X-Pact-Api-Key` 安装。
-- OpenClaw（OrbStack Kate）：通过 VM 内 `openclaw mcp set` 配置 `http://host.orb.internal:8787/mcp`。
+- OpenClaw（OrbStack Kate）：通过 VM 内 `openclaw mcp set` 配置 `http://host.orb.internal:7228/mcp`。
 - Hermes Agent（OrbStack Serena）：通过 VM 内 `hermes mcp add --url --auth header` 安装，安装器随后用 Hermes config helper 启用并执行 `hermes mcp test`。
 - Antigravity：按官方 `~/.gemini/antigravity/mcp_config.json` 的 `serverUrl` + `headers` 格式结构化写入。
 - 所有 installer 修改前必须备份目标配置，只追加或替换 `pact` 条目，不打印完整 agent config，避免泄漏现有 token、API key 或 bot token。
