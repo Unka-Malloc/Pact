@@ -34,6 +34,8 @@
 - [代码分层](#代码分层)
 - [公共状态模型](#公共状态模型)
 - [写入路径](#写入路径)
+- [客户端运行时与上传传输设计](#客户端运行时与上传传输设计)
+- [代码贡献双路线：Workspace 与 Gerrit](#代码贡献双路线workspace-与-gerrit)
 - [知识位置](#知识位置)
 - [智能体接入边界](#智能体接入边界)
 - [上游和后端定位](#上游和后端定位)
@@ -121,6 +123,7 @@ Pact 不做另一个智能体平台，不做完整 A2A Gateway，也不把自己
 - 面向 OpenClaw、Hermes Agent、Codex、Claude Code、Cursor Agent、脚本和人工终端的 MCP / Workspace API 接入。
 - 面向外部知识库、本地文件、智能体上传、人工整理和网站订阅的统一信息源收纳。
 - 面向知识、文件、Skills、工具、脚本、黄金规则、专家意见和任务产物的 workspace asset model。
+- 面向源代码、补丁、仓库变更和代码文件上传的 Gerrit code review route，并与 Workspace route 并行存在。
 - 面向读、写、下载、导出、上下文注入、借阅、安装、执行和恢复的权限裁决。
 - 面向访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露和恢复动作的统一 Checkpoint Tree。
 - 面向管理者的资产贡献统计报表和贡献排行榜。
@@ -132,6 +135,8 @@ Pact 不做另一个智能体平台，不做完整 A2A Gateway，也不把自己
 - 不把 Pact 暴露成一个需要其它 Agent 调度的 Agent。
 - 不做外部知识库同型复制或裸代理。
 - 不把 git 仓库本身暴露为产品恢复接口。
+- 不把 Gerrit 替换为公共 workspace，也不把 workspace 文件树替换为 Gerrit 仓库。
+- 不把代码变更作为普通文件上传的默认路径；需要提交、评审或合并的代码必须优先进入 Gerrit route。
 - 不承诺所有 SDK、CLI、OpenAPI 与 MCP 同级长期稳定；长期事实源是 Workspace API，智能体首选接入面是 MCP service。
 
 ### 用户和执行者
@@ -196,7 +201,7 @@ upstream knowledge base
 
 系统必须允许本地智能体、脚本、人工终端向公共工作空间提交贡献资产：
 
-- 贡献类型：`knowledge`、`skill`、`tool`、`script`、`file`、`goldenRule`、`expertOpinion`。
+- 贡献类型：`knowledge`、`skill`、`tool`、`script`、`file`、`sourceCode`、`codeChange`、`goldenRule`、`expertOpinion`。
 - 固定位置：`workspace/skills/`、`workspace/tools/`、`workspace/scripts/`、`workspace/files/`、`workspace/knowledge/`、`workspace/rules/`、`workspace/expert-opinions/`。
 - 状态机：`submitted -> scanned -> reviewed -> published | rejected | needs_changes -> adopted -> deprecated | revoked`。
 - 下载、安装、执行、复制到上下文、跨 workspace 使用都必须写 usage event、loan record 和 audit。
@@ -225,6 +230,8 @@ rankScoreV0 =
 - 所有的分类入口（以及保留兼容的 `pact.call`）均使用 `apiVersion`、`operation` 和 `input` 三段式参数，内部 operation 仍通过 Tool Management / Operation Registry 路由和审计；高风险 restore/delete/reindex、auth、settings、runtime mounts 和 grant 管理必须通过显式 grant 扩展，不能作为独立 MCP tool 展开。
 - 版本升级推送：`initialize` 声明 `tools.listChanged=true`，服务端在 discovery / initialize / `pact.mcp.version` 暴露 `interfaceVersion` 和 `toolsetVersion`，并在 `GET /mcp` SSE 上发送 `notifications/tools/list_changed`。
 - 安装器必须覆盖 `codex`、`gemini-cli`、`kilo-code`、`copilot`、`openclaw --vm kate`、`hermes --vm serena` 和 `antigravity`：无 `--target` 的 `pact-mcp install` 必须启动 TUI 菜单，扫描可用客户端和 OrbStack 中的 claw-compatible 衍生体；能调用标准 CLI 的目标必须调用标准 CLI；无非交互 CLI 的目标按官方配置格式结构化写入、先备份、只替换 `pact` 条目，不覆盖其它 agent 配置。
+- MCP 上传大文件或目录时，MCP service 只承担控制面和权限面，数据面优先交给本机 Pact client runtime。支持本地 sidecar / stdio bridge 复用 `pact-client upload enqueue`、后台队列、upload session、checkpoint 和断点续传；纯 HTTP MCP 的 inline/base64 上传只作为小文本兼容路径。
+- Pact client runtime 必须支持客户端主动 bootstrap：客户端声明平台、可用命令、需要模块和上传规模，服务端返回裁剪后的 `pact-client-cli`、`clientd`、upload queue、MCP local bridge、connector/cache 和 transport adapter 计划。服务端不得仅凭 Linux 平台假设 `rsync` 可用，native transport 只能在客户端命令和服务端能力同时声明后启用。
 
 MCP handler 不能直接改文件夹或数据库，必须落到 Workspace API、Policy Engine、Operation Ledger、Checkpoint Tree 和 storage metadata。
 
@@ -235,19 +242,36 @@ MCP handler 不能直接改文件夹或数据库，必须落到 Workspace API、
 - 访问请求：workspace info/list、catalog discover、metadata read、permission check、search、evidence read、asset list/read/download、skill list/download、receipt list、audit query、operation history、checkpoint tree list、restore preview、context bundle、export、checkout、memory write。
 - 文件变动：create、update、move、delete、archive、restore。
 - 知识贡献：submit、scan、review、publish、adopt、revoke。
+- 代码贡献：target evaluate、prepare local worktree、upload Gerrit change、link existing change、sync review status、fallback proposal。
 - 技能调用：list、download、install、execute、usage report、revoke。
 - 权限裁决：grant、deny、permission request、authorizationOverlay change。
 - 恢复动作：restore preview、restore、revert operation scope、branch、merge。
 
 恢复必须是 append-only restore operation。可以复用 git tree、diff、commit graph、临时 worktree 和 checkout-like restore 能力，但不能把裸 `git reset` 作为产品语义。
 
-#### FR-7 管控台
+#### FR-7 代码贡献双路线
+
+系统必须把普通 workspace 资产路线和 Gerrit 代码评审路线并行保留：
+
+- Workspace route：治理知识、文件、Skill、工具、脚本、报告、上下文材料、运行时资产和非代码交付物。
+- Gerrit route：治理需要进入代码仓库、形成补丁、提交评审、关联 Change-Id 或最终合并的源代码变更。
+
+客户端提出“上传代码文件”“提交 patch”“同步仓库改动”“创建代码修改”这类意图时，Pact 必须优先引导到 Gerrit route。Workspace route 只能作为以下情况的 fallback：
+
+- 代码片段只是知识材料、证据、教程、设计草稿或报告附件。
+- 目标仓库未登记、用户无 Gerrit 权限、策略禁止直接发起 review，或需要先形成人审 proposal。
+- 上传内容不是可应用到仓库的变更，例如孤立片段、日志、构建输出或临时分析材料。
+
+Gerrit route 不替代 Workspace API。Pact 仍负责 identity resolution、policy evaluation、target compatibility、Operation Ledger、Checkpoint Tree、audit、贡献统计和状态同步；Gerrit 负责代码 diff、review、submit、merge 和仓库级权限。
+
+#### FR-8 管控台
 
 管控台第一版必须覆盖完整闭环：
 
 - Workspace asset browser。
 - AgentLibrary 权限和上游再授权配置。
 - 贡献资产、Skills、排行榜和资产贡献统计报表。
+- Gerrit code review route 的目标仓库、待提交变更、Change-Id、review URL、状态同步和 fallback 原因。
 - 访问 receipt、loan record、denied request audit。
 - Operation history 和 Checkpoint Tree。
 - Restore preview 和恢复到此节点。
@@ -399,7 +423,7 @@ Asset {
 }
 ```
 
-`assetType` 至少覆盖 `rawAsset`、`derivedAsset`、`knowledge`、`file`、`skill`、`tool`、`script`、`goldenRule`、`expertOpinion`、`artifact`。
+`assetType` 至少覆盖 `rawAsset`、`derivedAsset`、`knowledge`、`file`、`sourceCode`、`codeChange`、`skill`、`tool`、`script`、`goldenRule`、`expertOpinion`、`artifact`。
 
 #### Knowledge Evidence
 
@@ -541,6 +565,7 @@ Workspace API 是协议事实源。第一版必须覆盖：
 
 - workspace info、list、context、context bundle。
 - asset upload、list、read、download、policy set、permission check。
+- code target evaluate、change prepare、change upload、change link、status sync。
 - file read、write、patch、delete、restore。
 - contribution submit、review、publish、adopt、revoke。
 - checkpoint tree list、restore preview、restore。
@@ -583,6 +608,10 @@ workspace.skill.download
 workspace.skill.usage.report
 workspace.asset.policy.set
 workspace.asset.permission.check
+workspace.code.target.evaluate
+workspace.code.change.prepare
+workspace.code.change.upload
+workspace.code.change.status.sync
 workspace.audit.query
 workspace.operation.history
 workspace.checkpoint.tree.list
@@ -621,6 +650,42 @@ Agent A upload file
 ```
 
 验收要求：A 不需要知道 B，B 不直接访问 A 的本地文件系统；双方只通过公共 workspace asset 互通。
+
+#### MCP 大文件上传流程
+
+```text
+Agent calls MCP workspace.file.upload
+  -> MCP adapter classifies payload and local file intent
+  -> client runtime bootstrap plan if local runtime is missing or stale
+  -> MCP local bridge invokes pact-client upload enqueue
+  -> transport negotiation
+  -> upload session/checkpoint or native transport
+  -> server validates manifest/digest/policy
+  -> asset object write
+  -> Operation Ledger append
+  -> checkpoint node
+  -> audit event
+```
+
+验收要求：小文本可以通过 MCP inline 兼容上传；大文件、目录和可恢复上传必须复用 client-cli 的后台队列、checkpoint 和 upload session，不把大 payload 塞进 JSON-RPC。
+
+#### 代码贡献流程
+
+```text
+Client upload code intent
+  -> target compatibility evaluate
+  -> policy evaluation
+  -> local git worktree / patch prepare
+  -> Gerrit Change-Id ensure
+  -> git push refs/for/<branch>
+  -> Gerrit change link
+  -> Operation Ledger append
+  -> checkpoint node
+  -> audit event
+  -> workspace codeChange projection sync
+```
+
+验收要求：代码文件、patch 或仓库变更默认进入 Gerrit review；Workspace 只保存 `codeChange` 治理记录、review reference、hash、状态、权限裁决和 fallback 原因。需要评审和合并的代码不得默认沉淀为普通 `file` 资产。
 
 #### 知识再授权流程
 
@@ -886,9 +951,11 @@ Pact 提供的是公共可编辑工作空间：
 
 ### 终端贡献是第二信息源
 
-信息源不必然是上游知识库。很多高价值信息来自终端贡献：本地智能体、脚本、人工操作者或团队成员把已经过滤、验证、精加工的信息上传到公共工作空间。这些贡献可能是知识，也可能是 Skills、工具、脚本、文件、规则、专家意见或黄金规则。
+信息源不必然是上游知识库。很多高价值信息来自终端贡献：本地智能体、脚本、人工操作者或团队成员把已经过滤、验证、精加工的信息上传到公共工作空间。这些贡献可能是知识，也可能是 Skills、工具、脚本、文件、代码变更、规则、专家意见或黄金规则。
 
 终端贡献型资产治理是 Workspace Asset Governance 的核心功能。下游智能体在自己可访问的一个或多个 workspace 中提交资产；每个 workspace 都有固定位置存放 `skills`、`tools`、`scripts`、`files`、`knowledge`、`rules` 和 `expert-opinions`。贡献默认进入 review / permission / publish 流程，而不是直接成为公共事实或公共工具。
+
+代码贡献是特殊终端贡献：如果它需要进入仓库评审或合并，默认走 Gerrit route；如果它只是知识材料或报告附件，才作为 `sourceCode` workspace asset 进入普通贡献流程。
 
 Pact 必须提供贡献排行榜和统计面板：
 
@@ -1007,6 +1074,7 @@ Workspace state 由以下对象构成：
 - `assets`：原始资产、派生产物、外部引用、版本。
 - `evidence`：可引用证据包、来源、定位、置信度、权限范围。
 - `artifacts`：智能体或人工操作产生的文件、报告、patch、导出物。
+- `codeChanges`：Gerrit change、patch set、review URL、local git worktree、submit status 和 fallback reason 的治理记录。
 - `observations`：operator 声称观察到的事实，不自动成为 canonical fact。
 - `proposals`：对公共状态的修改建议。
 - `decisions`：经策略、人审或授权流程确认的团队事实。
@@ -1047,6 +1115,7 @@ Checkpoint Tree 必须升级为统一 Checkpoint Tree，而不是只服务任务
 - 所有访问请求：workspace info/list、catalog discover、metadata read、permission check、search、evidence read、asset list/read/download、skill list/download、receipt list、audit query、operation history、checkpoint tree list、restore preview、context bundle、export、checkout、memory write。
 - 所有文件变动：create、update、move、delete、archive、restore。
 - 所有知识贡献：submit、scan、review、publish、adopt、revoke。
+- 所有代码贡献：target evaluate、prepare local worktree、upload Gerrit change、link existing change、sync review status、fallback proposal。
 - 所有技能调用：list、download、install、execute、usage report、revoke。
 - 所有权限裁决：grant、deny、permission request、authorizationOverlay change。
 - 所有恢复动作：restore preview、restore、revert operation scope、branch、merge。
@@ -1077,6 +1146,178 @@ Checkpoint Tree 必须升级为统一 Checkpoint Tree，而不是只服务任务
 安全恢复演示必须证明：即使 A 把工作空间里的很多文件逐个删除，团队也不需要慌。A 的每次删除都只是一个带 `preSnapshot` / `postSnapshot` 的 workspace commit，所有 commit 形成 Checkpoint Tree。管理员在管控台打开 Checkpoint Tree 历史，下滑找到 A 操作之前的节点，点击“恢复到此节点”，系统创建一次新的 restore operation，把 workspace 回到该节点对应的状态，同时保留 A 的删除历史、恢复记录和审计链。
 
 这个模型可以复用 git worktree 的思想和部分系统能力：tree object、diff、commit graph、checkout-like restore、临时 worktree 预览和 merge / branch 语义都很适合。但 Pact 的权威状态不只是文件树，还包含权限、知识 evidence、贡献记录、借阅记录、operation ledger 和审计，因此恢复入口必须是 Pact 的 Checkpoint Tree / Operation Ledger，而不是让智能体直接操作裸 git 仓库。
+
+## 客户端运行时与上传传输设计
+
+Pact 的智能体接入面是 MCP service，但文件上传的数据面不能长期依赖 MCP JSON-RPC 的 `contentBase64` 或 inline text。MCP 适合作为控制面：认证、授权、目标 workspace、操作意图、审计和错误语义；本机文件读取、目录遍历、断点续传、增量同步和长任务队列必须由运行在文件所在机器上的 Pact client runtime 执行。
+
+### 目标架构
+
+```text
+Agent MCP client
+  -> HTTP MCP endpoint or stdio MCP bridge
+  -> MCP control operation
+  -> local Pact client runtime
+  -> pact-client upload enqueue
+  -> transport adapter
+  -> server upload/session/workspace API
+```
+
+`pact-client-cli` 是上传执行层事实源。MCP plugin、GUI、脚本和人工 CLI 都不应该各自实现一套分块、重试、checkpoint 和 digest 逻辑；它们应该复用同一个后台上传队列。MCP local bridge 的职责是把智能体给出的本地路径、workspace 目标和元数据转换成 `pact-client upload enqueue` 请求，然后把 job id、进度、失败原因和最终 asset refs 回传给 MCP 调用方。
+
+### Client Runtime Bootstrap
+
+客户端首次连接或能力过期时，主动向服务端请求运行时计划：
+
+```text
+client bootstrap request
+  -> clientUid
+  -> os / arch / libc
+  -> availableCommands: rsync, ssh, scp, sftp
+  -> requested modules: upload, mcp-local-bridge, connectors, cache
+  -> transfer profile: bytes, file count, directory, incremental
+  -> server returns trimmed module plan and transport plan
+```
+
+服务端返回的是裁剪后的模块 manifest，而不是要求终端用户拉完整服务端仓库。模块分层为：
+
+| 模块 | 职责 |
+| --- | --- |
+| runtime framework | 模块安装、签名校验、版本协商和自更新框架 |
+| pact-client-cli | CLI、配置、RPC、upload session 和基础命令 |
+| clientd | 后台队列 worker、进度事件、重试和暂停恢复 |
+| upload queue | `enqueue`、checkpoint、manifest digest、job polling |
+| mcp-local-bridge | stdio/local bridge，把 MCP 文件意图转成本机队列任务 |
+| transport adapters | local-copy、rsync、scp、sftp、HTTP upload session、MCP inline |
+| connector/cache modules | 邮件、本地知识缓存、外部 connector 等按需下发能力 |
+
+动态裁剪规则是：框架和 `pact-client-cli` 必选；上传能力请求会带上 `clientd`、`upload queue` 和 `checkpoint-http-upload`；MCP 本地文件上传请求会带上 `mcp-local-bridge`；connector、mail、cache 等能力只在客户端声明需要时加入。
+
+所有下载模块必须由服务端发布 manifest 提供 artifact id、版本、digest、签名和下载 URL。客户端必须先校验签名和 digest，再启用模块。bootstrap 接口可以先返回 manifest-only 计划，实际二进制发布由 release 或 capability package lifecycle 填充。
+
+### Transport 降级顺序
+
+上传 transport 是数据面优化，不是权限绕行。所有 transport 最终都必须回到 Workspace API 的资产登记、策略裁决、Operation Ledger、Checkpoint Tree 和 audit。
+
+候选顺序：
+
+1. `local-copy`：客户端和服务端声明共享文件系统时使用，适合本机同进程或受控挂载目录。
+2. `rsync-over-ssh`：客户端存在 `rsync` 和 `ssh`，服务端声明 `rsync` 和 `ssh` 可用时启用，适合目录、增量、大文件和失败重试。
+3. 小文件 `scp`：客户端存在 `scp` 和 `ssh`，服务端声明 `scp` 和 `ssh` 可用，且是小的单文件时启用。
+4. `sftp`：客户端存在 `sftp` 和 `ssh`，服务端声明 `sftp` 和 `ssh` 可用时启用，适合没有 rsync 但需要稳定传输的文件。
+5. `pact-http-upload-session`：标准兜底，使用 Pact 现有 upload session、分块、checkpoint、offset realignment、manifest digest 和后台队列。
+6. `mcp-inline-content`：只用于极小文本或少量小文件兼容场景，不能作为目录或大文件上传方案。
+
+不能写成“Linux 默认有 rsync”。`rsync`、`scp`、`sftp` 都必须由客户端运行时探测并声明，同时服务端也必须声明相应能力。任一侧缺失时，计划中必须给出 blocked reason，并退回下一个候选。
+
+### 安全边界
+
+- MCP grant 只表达调用者能发起什么操作；native transport 还必须经过 workspace policy 和 storage policy。
+- 本机 bridge 不接受任意 shell 字符串，只接受结构化任务：本地路径、目标 workspace、目标目录、元数据、传输偏好和幂等 key。
+- `rsync/scp/sftp` 命令必须由 adapter 以参数数组构造，禁止拼接 shell。
+- 远端落点必须是服务端分配的 staging area，不能让客户端写任意服务端路径。
+- 服务端必须校验 manifest、文件大小、digest、路径归一化结果、quota、policy 和最终 asset metadata。
+- upload job、transport decision、checkpoint id、native command adapter、失败原因和 retry 结果必须写 audit。
+
+### 状态和幂等
+
+客户端上传队列至少持有：
+
+- `checkpointId`
+- `uploadSessionId`
+- `workspaceId`
+- `sourceManifestDigest`
+- `transportPlanId`
+- `selectedTransport`
+- `fallbackOrder`
+- `bytesTransferred`
+- `offset`
+- `fileDigests`
+- `jobStatus`
+- `lastError`
+
+服务端 upload session 是可恢复上传事实源。native transport 只负责把字节移动到受控 staging area；最终提交仍必须通过同一个 manifest validate/commit 流程，避免 `rsync` 成为绕过权限、审计或去重的隐形写入口。
+
+### 分阶段验收
+
+第一阶段只落设计和协议：明确 bootstrap 请求/响应、模块目录、transport 降级规则、安全边界和验收脚本。
+
+第二阶段落服务端 bootstrap plan：提供 HTTP/RPC/MCP tool 入口，返回裁剪模块计划、transport candidates、blocked reason 和 manifest-only artifact refs。
+
+第三阶段落 MCP local bridge：bridge 调用 `pact-client upload enqueue`，复用已有后台队列和 upload session checkpoint，MCP 只返回 job handle 和进度查询入口。
+
+第四阶段落 native transport adapters：先 `rsync-over-ssh`，再小文件 `scp` 和 `sftp`，每个 adapter 必须能降级到 `pact-http-upload-session`。
+
+第五阶段落发布链路：release/capability package 产生带签名和 digest 的 runtime modules，客户端按需拉取、校验和启用。
+
+## 代码贡献双路线：Workspace 与 Gerrit
+
+Pact 的 workspace 能力必须保留，Gerrit 能力也必须保留。它们不是互相替换的模式，而是两条由同一个控制面治理的路线：
+
+| 路线 | 适用对象 | 权威状态 | Pact 职责 |
+| --- | --- | --- | --- |
+| Workspace route | 文档、知识、Skill、工具、脚本、报告、上下文材料、样例文件、非合并目标资产 | Workspace Asset、Operation Ledger、Checkpoint Tree | 资产治理、权限、快照、贡献统计、上下文暴露和恢复 |
+| Gerrit route | 源代码、patch、仓库变更、需要 review/submit/merge 的代码文件 | Git repository + Gerrit change | 路由决策、策略裁决、Change 关联、审计、状态同步和 fallback 治理 |
+
+客户端接口不能只暴露“上传文件到 workspace”这一种目标。上传目标必须先经过 target compatibility：
+
+```text
+client intent
+  -> classify payload kind
+  -> resolve target compatibility list
+  -> policy decision
+  -> choose Gerrit route for code change
+  -> choose Workspace route for governed asset
+  -> record route decision and fallback reason
+```
+
+兼容目标至少包括：
+
+- `workspaceAsset`：普通工作空间资产。
+- `workspaceContribution`：知识、Skill、工具、脚本、文件、规则、专家意见等贡献资产。
+- `gerritChange`：需要进入代码评审的仓库变更。
+- `localGitWorktree`：Gerrit push 前的本地准备区，用于 apply patch、格式化、测试、生成 commit 和 Change-Id。
+- `externalVcsRef`：外部仓库、上游镜像或只读代码引用。
+
+路由规则：
+
+- 当 `payloadKind=sourceCode | patch | gitDiff | repositoryChange`，并且目标仓库已登记、主体具备上传权限、分支策略允许 review 时，默认进入 Gerrit route。
+- 当代码内容只是知识证据、教程片段、错误日志、报告附件或临时分析材料时，可以进入 Workspace route，但必须标注为 `sourceCode` 或 `file` 的非合并资产。
+- 当 Gerrit 不可用、仓库未登记、权限不足或策略要求人审时，系统生成 `codeChange.fallback`，把 patch/diff 作为受控 proposal 或 artifact 暂存到 workspace，不直接发布为可合并资产。
+- 当同一次任务同时包含代码和文档时，代码部分进入 Gerrit route，设计说明、测试报告、截图和运行记录进入 Workspace route，并通过同一个 `operationScope` 关联。
+
+Gerrit route 的最小状态模型：
+
+```text
+CodeChange {
+  codeChangeId
+  workspaceId
+  repositoryId
+  branch
+  localWorktreeRef
+  commitRefs
+  changeId
+  gerritChangeUrl
+  patchSetRefs
+  reviewStatus
+  submitStatus
+  routeDecision
+  fallbackReason
+  auditId
+  createdAt
+  updatedAt
+}
+```
+
+Gerrit route 必须遵守这些边界：
+
+- Gerrit 保存代码 diff 和 review 历史；Pact 保存治理元数据、引用、hash、权限裁决、审计和 checkpoint。
+- Pact 可以调用本地 git 工具准备 commit、检查 diff、生成 Change-Id、执行测试和 push `refs/for/<branch>`，但不能把裸 git push 暴露给任意智能体。
+- Gerrit change 状态必须同步回 Workspace projection，让控制台能按 workspace、任务、主体、仓库、分支和 review 状态过滤。
+- Gerrit 的 review comment、submit、abandon、rebase 和 merge 结果都要形成 Operation Ledger event 和 checkpoint node。
+- 代码 review 失败、push 失败或策略拒绝时，系统必须留下可解释的 `fallbackReason`、`policyDecision` 和 `auditId`。
+
+这个设计的核心是：代码走专业代码评审系统，workspace 继续承担公共资产治理。客户端需要上传代码时，默认被引导到 Gerrit；但所有路线选择、权限、审计、状态同步和跨资产关联仍由 Pact 控制。
 
 ## 知识位置
 

@@ -260,6 +260,8 @@ KnowledgeCore 是独立知识库协议实现，不是 HTTP 控制器或 applicat
 
 `ClientRuntimeAllocator` 负责按客户端维度动态分配模型、上下文和工作空间。服务端读取 `client-runtime/client-runtime-allocator.json`，只用标准字段 `clientUid + taskType` 匹配 profile，并把缺省的 `modelAlias`、`contextProfileId`、`retrievalProfileId/profileKey`、`workspaceId/sessionId` 和 `toolGrantId` 注入标准调用；调用方显式参数不会被覆盖。调用方显式选择已有 `workspaceId` 时，workspace 热切换后的 `modelAlias`、`contextProfileId`、`toolGrantId` 和 `knowledgeSourceIds` 优先于 allocator 注入默认值。运行使用率写入 `client-runtime/client-runtime-usage.json`，由 `coolingPolicy.strategy = lru-lfu-v1` 按最近窗口、频次和访问时间形成冷却状态，低频客户端可以被切到冷上下文 profile，把预算留给高频连接。管理接口：HTTP `GET|POST /api/client-runtime/profiles`、`POST /api/client-runtime/resolve`、`GET /api/client-runtime/status`；RPC `client_runtime.profiles.get|set`、`client_runtime.resolve`、`client_runtime.status`；CLI `client-runtime profiles`、`client-runtime profiles set --body profiles.json`、`client-runtime resolve --client-uid CLIENT_UID`、`client-runtime status`。控制台“系统状态 / 运维监控”热力图来自 `/api/client-runtime/status`。`clientId` 不参与用户空间识别；它只属于检索灰度、服务发现等明确声明的其他协议。
 
+客户端运行时 bootstrap 使用 `pact.client-runtime-bootstrap.v1`。客户端通过 HTTP `POST /api/client-runtime/bootstrap/plan` 或 RPC `client_runtime.bootstrap.plan` 主动声明 `os/arch/libc`、可用命令（如 `rsync`、`ssh`、`scp`、`sftp`）、需要的模块和上传规模；服务端返回裁剪后的框架模块、功能模块和 transport 降级计划。native transport 只在客户端命令和服务端能力同时声明时可选：优先 `local-copy`，再 `rsync-over-ssh`、小文件 `scp`、`sftp`，最后总是落回 `pact-http-upload-session`；极小文本可以列出 `mcp-inline-content` 作为最后的 MCP 兼容兜底。当前接口只返回签名模块 manifest 计划，二进制下载 URL 由发布/能力包流程填充。
+
 ### 5.5 多智能体知识总结
 
 服务端内置海量文档总结增强链路：
