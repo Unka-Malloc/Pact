@@ -8,7 +8,7 @@ import {
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MCP_INTERFACE_VERSION = "pact.mcp.v1";
-export const MCP_TOOLSET_VERSION = "2026-05-23.1";
+export const MCP_TOOLSET_VERSION = "2026-05-24.3";
 export const MCP_STABLE_TOOL_NAME = "pact.call";
 export const MCP_KNOWLEDGE_TOOL_NAME = "pact.knowledge";
 export const MCP_WORKSPACE_TOOL_NAME = "pact.workspace";
@@ -25,6 +25,13 @@ const CATEGORIZED_TOOL_NAMES = new Set([
 ]);
 
 const activeSseConnections = new Set();
+
+const LOCAL_GRANT_RISK_RANK = Object.freeze({
+  read_only: 0,
+  safe_write: 1,
+  repair_write: 2,
+  destructive: 3
+});
 
 export const MCP_SERVER_NAME = "pact-mcp-server";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -108,6 +115,19 @@ function normalizeGrantTargets(value) {
 function normalizeGrantValues(value, limit = 64) {
   const items = Array.isArray(value) ? value : String(value || "").split(",");
   return [...new Set(items.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, limit);
+}
+
+function hasSafetyConfirm(request = null) {
+  const value = String(
+    request?.headers?.["x-pact-safety-confirm"] ||
+      request?.headers?.["x-pact-confirm"] ||
+      ""
+  ).toLowerCase();
+  return ["1", "true", "yes"].includes(value);
+}
+
+function localGrantRiskRank(risk = "read_only") {
+  return LOCAL_GRANT_RISK_RANK[String(risk || "read_only")] ?? 0;
 }
 
 function parseRequestBody(requestBody) {
@@ -782,7 +802,92 @@ function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
   };
 }
 
-function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, discoveryState = null }) {
+function requestedLocalGrantMaxRisk(body = {}, resolved = {}) {
+  const requested = String(body.maxRisk || body.max_risk || "").trim();
+  if (LOCAL_GRANT_RISK_RANK[requested] !== undefined) {
+    return requested;
+  }
+  const grantMode = String(body.grantMode || body.grant_mode || body.mode || "").trim();
+  if (["maintain", "admin", "repair"].includes(grantMode)) {
+    return "repair_write";
+  }
+  if (["write", "safe_write"].includes(grantMode)) {
+    return "safe_write";
+  }
+  if (localGrantRiskRank(resolved.maxRisk) >= localGrantRiskRank("repair_write")) {
+    return "safe_write";
+  }
+  return resolved.maxRisk || "read_only";
+}
+
+function denyLocalGrant(status, code, message, details = {}) {
+  return {
+    status,
+    body: {
+      ok: false,
+      error: {
+        code,
+        message,
+        details
+      }
+    }
+  };
+}
+
+async function authorizeLocalGrantElevation({
+  request,
+  url,
+  consoleAuth = null,
+  resolved,
+  requestedMaxRisk
+}) {
+  const resolvedRisk = String(resolved.maxRisk || "read_only");
+  if (localGrantRiskRank(resolvedRisk) <= localGrantRiskRank("read_only")) {
+    return null;
+  }
+  if (!hasSafetyConfirm(request)) {
+    return denyLocalGrant(
+      403,
+      "confirmation_required",
+      "Write-capable MCP local grants require x-pact-safety-confirm: true.",
+      { maxRisk: resolvedRisk }
+    );
+  }
+  if (localGrantRiskRank(resolvedRisk) >= localGrantRiskRank("repair_write")) {
+    if (localGrantRiskRank(requestedMaxRisk) < localGrantRiskRank("repair_write")) {
+      return denyLocalGrant(
+        403,
+        "repair_grant_mode_required",
+        "Repair-capable MCP local grants require grantMode=maintain or maxRisk=repair_write.",
+        { maxRisk: resolvedRisk }
+      );
+    }
+  }
+  if (!consoleAuth || typeof consoleAuth.authorizeOperation !== "function") {
+    return null;
+  }
+  const authorization = await consoleAuth.authorizeOperation({
+    request,
+    method: "POST",
+    url,
+    operation: {
+      id: "mcp.local_grant",
+      requiredScopes: ["runtime:admin"],
+      skipCsrf: false
+    }
+  });
+  if (!authorization.ok) {
+    return denyLocalGrant(
+      authorization.status || 403,
+      authorization.status === 401 ? "console_unauthenticated" : "console_forbidden",
+      authorization.error || "Write-capable MCP local grants require an authenticated console session.",
+      { maxRisk: resolvedRisk }
+    );
+  }
+  return null;
+}
+
+async function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, discoveryState = null, consoleAuth = null, url = null }) {
   if (!isLocalMcpPairingRequest(request)) {
     return {
       status: 403,
@@ -802,20 +907,30 @@ function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, dis
   const toolAllow = normalizeGrantValues(body.toolAllow || body.tool_allow || []);
   const toolDeny = normalizeGrantValues(body.toolDeny || body.tool_deny || []);
 
-  const SAFE_SCOPES = new Set([
-    "knowledge:read",
-    "workspace:read",
-    "storage:read",
-    "runtime:read"
-  ]);
-  const safeRequestedScopes = requestedScopes.filter(s => SAFE_SCOPES.has(s));
-
   const resolved = toolManagementPlatform.registry.resolveToolset({
     toolsets: requestedToolsets,
     toolAllow,
     toolDeny,
-    scopes: safeRequestedScopes
+    scopes: requestedScopes
   });
+  const toolsetsById = new Map(toolManagementPlatform.registry.listToolsets().map((toolset) => [toolset.id, toolset]));
+  const blockedToolsets = resolved.toolsets.filter((toolsetId) => toolsetsById.get(toolsetId)?.grantable === false);
+  if (blockedToolsets.length > 0) {
+    return denyLocalGrant(403, "toolset_not_grantable", "Requested MCP toolset is not grantable.", {
+      toolsets: blockedToolsets
+    });
+  }
+  const requestedMaxRisk = requestedLocalGrantMaxRisk(body, resolved);
+  const elevationDenied = await authorizeLocalGrantElevation({
+    request,
+    url,
+    consoleAuth,
+    resolved,
+    requestedMaxRisk
+  });
+  if (elevationDenied) {
+    return elevationDenied;
+  }
   const label = String(body.label || `Pact MCP ${targets.join(", ") || "local agent"}`).trim();
   const result = toolManagementPlatform.store.createGrant({
     label,
@@ -829,7 +944,8 @@ function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, dis
       autoUpdate: Boolean(body.autoUpdate),
       targets,
       serverId: discoveryState?.serverId || "",
-      identityKeyId: discoveryState?.mcpIdentity?.keyId || ""
+      identityKeyId: discoveryState?.mcpIdentity?.keyId || "",
+      maxRisk: resolved.maxRisk || "read_only"
     },
     reason: "Issued by local Pact MCP connector pairing."
   });
@@ -1161,6 +1277,7 @@ export async function handlePactMcpHttpRequest({
   toolManagementPlatform,
   listenUrl = "",
   discoveryState = null,
+  consoleAuth = null,
   logger = null
 }) {
   if (url.pathname === "/.well-known/pact/mcp.json" || url.pathname === "/api/mcp/discovery") {
@@ -1202,9 +1319,12 @@ export async function handlePactMcpHttpRequest({
         request,
         requestBody,
         toolManagementPlatform,
-        discoveryState
+        discoveryState,
+        consoleAuth,
+        url
       });
-      sendJson(response, result.status, result.body);
+      const awaitedResult = typeof result?.then === "function" ? await result : result;
+      sendJson(response, awaitedResult.status, awaitedResult.body);
     } catch (error) {
       logger?.warn?.("mcp.local_grant.failed", {
         requestId: request?.__pactRequestId || "",

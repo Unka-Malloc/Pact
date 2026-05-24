@@ -255,6 +255,9 @@ export function defineOperation(definition, ...decorators) {
 }
 
 function inferOperationRisk(operation) {
+  if (operation.readOnly === true) {
+    return "read_only";
+  }
   if (READ_ONLY_POST_OPERATION_IDS.has(operation.id)) {
     return "read_only";
   }

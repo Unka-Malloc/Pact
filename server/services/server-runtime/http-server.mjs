@@ -675,6 +675,7 @@ export async function startHttpServer({
           toolManagementPlatform,
           listenUrl,
           discoveryState,
+          consoleAuth,
           logger: runtimeLogger
         })
       ) {

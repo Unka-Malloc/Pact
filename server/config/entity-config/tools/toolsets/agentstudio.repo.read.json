@@ -1,0 +1,10 @@
+{
+  "id": "pact.repo.read",
+  "label": "Repository read",
+  "requiredScopes": [
+    "repo:read"
+  ],
+  "maxRisk": "read_only",
+  "grantable": true,
+  "defaultForAgents": true
+}

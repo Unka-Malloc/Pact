@@ -74,6 +74,36 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
     description: "Manage workspace inheritance, sharing, profiles, reviews, and governance changes."
   },
   {
+    id: "repo:read",
+    label: "Read repositories",
+    description: "Read repository status, files, trees, diffs, commits, review targets, and change metadata."
+  },
+  {
+    id: "repo:write",
+    label: "Write repositories",
+    description: "Write repository files, branches, commits, pushes, and review proposals."
+  },
+  {
+    id: "repo:review",
+    label: "Review repositories",
+    description: "Comment on code review targets and request changes."
+  },
+  {
+    id: "repo:approve",
+    label: "Approve repositories",
+    description: "Approve code review targets without merging or submitting them."
+  },
+  {
+    id: "repo:maintain",
+    label: "Maintain repositories",
+    description: "Merge, submit, rebase, revert, close, abandon, or force-update repository review targets."
+  },
+  {
+    id: "repo:admin",
+    label: "Administer repositories",
+    description: "Manage repository protection rules, webhooks, and member permissions."
+  },
+  {
     id: "storage:read",
     label: "Read storage",
     description: "Read server storage summaries."
@@ -204,6 +234,54 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     id: "pact.agent.workspace.maintain",
     label: "Agent workspace maintain",
     requiredScopes: ["workspace:read", "workspace:write", "workspace:maintain"],
+    maxRisk: "repair_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.repo.read",
+    label: "Repository read",
+    requiredScopes: ["repo:read"],
+    maxRisk: "read_only",
+    grantable: true,
+    defaultForAgents: true
+  },
+  {
+    id: "pact.repo.write",
+    label: "Repository write",
+    requiredScopes: ["repo:read", "repo:write"],
+    maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.repo.review",
+    label: "Repository review",
+    requiredScopes: ["repo:read", "repo:review"],
+    maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.repo.approve",
+    label: "Repository approve",
+    requiredScopes: ["repo:read", "repo:review", "repo:approve"],
+    maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.repo.maintain",
+    label: "Repository maintain",
+    requiredScopes: ["repo:read", "repo:write", "repo:review", "repo:approve", "repo:maintain"],
+    maxRisk: "repair_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.repo.admin",
+    label: "Repository admin",
+    requiredScopes: ["repo:read", "repo:write", "repo:review", "repo:approve", "repo:maintain", "repo:admin"],
     maxRisk: "repair_write",
     grantable: true,
     defaultForAgents: false
@@ -442,6 +520,7 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "client_runtime.profiles.get": "pact.clientRuntime.profiles",
   "client_runtime.profiles.set": "pact.clientRuntime.profiles.set",
   "client_runtime.resolve": "pact.clientRuntime.resolve",
+  "client_runtime.bootstrap.plan": "pact.clientRuntime.bootstrapPlan",
   "client_runtime.status": "pact.clientRuntime.status",
   "agent_workspaces.create": "pact.agentWorkspace.create",
   "agent_workspaces.list": "pact.agentWorkspace.list",
@@ -467,6 +546,36 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "workspace_governance.policy.set": "pact.workspaceGovernance.policy.set",
   "workspace_governance.evaluate": "pact.workspaceGovernance.evaluate",
   "workspace_governance.share_grant": "pact.workspaceGovernance.shareGrant",
+  "repo.status": "pact.repo.status",
+  "repo.file.read": "pact.repo.file.read",
+  "repo.tree.list": "pact.repo.tree.list",
+  "repo.diff.read": "pact.repo.diff.read",
+  "repo.commit.read": "pact.repo.commit.read",
+  "repo.file.create": "pact.repo.file.create",
+  "repo.file.update": "pact.repo.file.update",
+  "repo.file.delete": "pact.repo.file.delete",
+  "repo.file.move": "pact.repo.file.move",
+  "repo.branch.create": "pact.repo.branch.create",
+  "repo.branch.checkout": "pact.repo.branch.checkout",
+  "repo.commit.create": "pact.repo.commit.create",
+  "repo.push": "pact.repo.push",
+  "repo.proposal.create": "pact.repo.proposal.create",
+  "repo.review.comment": "pact.repo.review.comment",
+  "repo.review.requestChanges": "pact.repo.review.requestChanges",
+  "repo.review.approve": "pact.repo.review.approve",
+  "repo.merge": "pact.repo.merge",
+  "repo.submit": "pact.repo.submit",
+  "repo.rebase": "pact.repo.rebase",
+  "repo.revert": "pact.repo.revert",
+  "repo.proposal.close": "pact.repo.proposal.close",
+  "repo.change.abandon": "pact.repo.change.abandon",
+  "repo.protection.set": "pact.repo.protection.set",
+  "repo.webhook.set": "pact.repo.webhook.set",
+  "repo.member.set": "pact.repo.member.set",
+  "gerrit.read": "pact.gerrit.read",
+  "gerrit.write": "pact.gerrit.write",
+  "gerrit.maintain": "pact.gerrit.maintain",
+  "gerrit.git_upload": "pact.gerrit.gitUpload",
   "asset_lineage.describe": "pact.assetLineage.describe",
   "asset_lineage.record": "pact.assetLineage.record",
   "asset_lineage.trace": "pact.assetLineage.trace",
@@ -572,6 +681,7 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "context.profiles.set": "knowledge:admin",
   "context.session_memory.clear": "knowledge:admin",
   "client_runtime.profiles.set": "knowledge:admin",
+  "client_runtime.bootstrap.plan": "knowledge:read",
   "agent_workspaces.create": "workspace:write",
   "agent_workspaces.submissions.resolve": "workspace:maintain",
   "agent_workspaces.issues.resolve": "workspace:maintain",
@@ -593,6 +703,36 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "workspace_governance.policy.set": "workspace:maintain",
   "workspace_governance.evaluate": "workspace:read",
   "workspace_governance.share_grant": "workspace:maintain",
+  "repo.status": "repo:read",
+  "repo.file.read": "repo:read",
+  "repo.tree.list": "repo:read",
+  "repo.diff.read": "repo:read",
+  "repo.commit.read": "repo:read",
+  "repo.file.create": "repo:write",
+  "repo.file.update": "repo:write",
+  "repo.file.delete": "repo:write",
+  "repo.file.move": "repo:write",
+  "repo.branch.create": "repo:write",
+  "repo.branch.checkout": "repo:write",
+  "repo.commit.create": "repo:write",
+  "repo.push": "repo:write",
+  "repo.proposal.create": "repo:write",
+  "repo.review.comment": "repo:review",
+  "repo.review.requestChanges": "repo:review",
+  "repo.review.approve": "repo:approve",
+  "repo.merge": "repo:maintain",
+  "repo.submit": "repo:maintain",
+  "repo.rebase": "repo:maintain",
+  "repo.revert": "repo:maintain",
+  "repo.proposal.close": "repo:maintain",
+  "repo.change.abandon": "repo:maintain",
+  "repo.protection.set": "repo:admin",
+  "repo.webhook.set": "repo:admin",
+  "repo.member.set": "repo:admin",
+  "gerrit.read": "repo:read",
+  "gerrit.write": "repo:write",
+  "gerrit.maintain": "repo:maintain",
+  "gerrit.git_upload": "repo:maintain",
   "asset_lineage.describe": "knowledge:read",
   "asset_lineage.record": "knowledge:maintain",
   "asset_lineage.trace": "knowledge:read",
@@ -624,6 +764,12 @@ const TOOLSET_BY_SCOPE = Object.freeze({
   "workspace:read": "pact.agent.workspace.read",
   "workspace:write": "pact.agent.workspace",
   "workspace:maintain": "pact.agent.workspace.maintain",
+  "repo:read": "pact.repo.read",
+  "repo:write": "pact.repo.write",
+  "repo:review": "pact.repo.review",
+  "repo:approve": "pact.repo.approve",
+  "repo:maintain": "pact.repo.maintain",
+  "repo:admin": "pact.repo.admin",
   "storage:read": "pact.storage.read",
   "storage:write": "pact.storage.write",
   "jobs:read": "pact.jobs.read",
@@ -636,6 +782,17 @@ const RISK_RANK = Object.freeze({
   repair_write: 2,
   destructive: 3
 });
+
+const TOOLSET_BY_ID = new Map(TOOL_MANAGEMENT_TOOLSETS.map((toolset) => [toolset.id, toolset]));
+
+function riskRank(risk = "read_only") {
+  return RISK_RANK[String(risk || "read_only")] ?? RISK_RANK.read_only;
+}
+
+function toolsetAllowsRisk(toolsetId, risk = "read_only") {
+  const declaredRisk = TOOLSET_BY_ID.get(toolsetId)?.maxRisk || "read_only";
+  return riskRank(risk) <= riskRank(declaredRisk);
+}
 
 function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
@@ -694,7 +851,7 @@ function normalizeRisk(operation = {}) {
   return operation.readOnly === false ? "safe_write" : "read_only";
 }
 
-function inferToolsets(operation, scopes = [], toolId = "") {
+function inferToolsets(operation, scopes = [], toolId = "", risk = "read_only") {
   const toolsets = new Set(scopes.map((scope) => TOOLSET_BY_SCOPE[scope]).filter(Boolean));
   if (toolId.startsWith("pact.runtime.")) {
     if (operation.id === "runtime.info" || operation.id === "runtime.mounts") {
@@ -743,7 +900,7 @@ function inferToolsets(operation, scopes = [], toolId = "") {
   if (operation.id === "agent_sync.publish") {
     toolsets.add("pact.agent.sync.publish");
   }
-  return [...toolsets];
+  return [...toolsets].filter((toolsetId) => toolsetAllowsRisk(toolsetId, risk));
 }
 
 function normalizeHttpEndpoint(operation = {}) {
@@ -946,12 +1103,12 @@ function validateToolDefinitions(tools = [], operationsById = new Map()) {
     if (!tool.toolsets?.length) {
       throw new Error(`Tool ${tool.id} must belong to at least one toolset.`);
     }
-    const toolsetCoversRisk = (tool.toolsets || []).some((toolset) => {
+    const unsafeToolsets = (tool.toolsets || []).filter((toolset) => {
       const declaredRisk = toolsetById.get(toolset)?.maxRisk || "read_only";
-      return RISK_RANK[tool.risk] <= RISK_RANK[declaredRisk];
+      return riskRank(tool.risk) > riskRank(declaredRisk);
     });
-    if (!toolsetCoversRisk) {
-      throw new Error(`Tool ${tool.id} risk ${tool.risk} exceeds declared toolset risk.`);
+    if (unsafeToolsets.length > 0) {
+      throw new Error(`Tool ${tool.id} risk ${tool.risk} exceeds declared toolset risk for ${unsafeToolsets.join(", ")}.`);
     }
     if (tool.readOnly === false && tool.auditPolicy?.enabled !== true) {
       throw new Error(`Write-capable tool ${tool.id} must enable audit.`);
@@ -1012,7 +1169,7 @@ export function createToolCatalog({ operations = [], activeFeatureIds = null } =
         cli: operation.cli || null,
         binary: operation.binary === true
       },
-      toolsets: inferToolsets(operation, requiredScopes, toolId),
+      toolsets: inferToolsets(operation, requiredScopes, toolId, risk),
       requiredScopes,
       inputSchema: operation.inputSchema || { type: "object" },
       outputSchema: operation.binary ? { type: "binary" } : { type: "object" },
@@ -1131,8 +1288,11 @@ export function createToolCatalogRegistry({ operations = [], activeFeatureIds = 
       toolsets: [...selected],
       tools,
       toolIds: tools.map((tool) => tool.id),
-      requiredScopes: uniqueStrings(tools.flatMap((tool) => tool.requiredScopes)),
-      maxRisk: tools.reduce((max, tool) => (RISK_RANK[tool.risk] > RISK_RANK[max] ? tool.risk : max), "read_only")
+      requiredScopes: uniqueStrings([
+        ...toolsetsToScopes([...selected]),
+        ...tools.flatMap((tool) => tool.requiredScopes)
+      ]),
+      maxRisk: tools.reduce((max, tool) => (riskRank(tool.risk) > riskRank(max) ? tool.risk : max), "read_only")
     };
   }
 

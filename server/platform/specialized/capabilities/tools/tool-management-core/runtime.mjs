@@ -101,7 +101,12 @@ function sourceIpFromRequest(request) {
 }
 
 function buildDirectOperationRequest({ operation, input = {} }) {
-  const body = input.body !== undefined ? input.body : input;
+  const explicitBody =
+    input.body !== undefined &&
+    input.body &&
+    typeof input.body === "object" &&
+    !Array.isArray(input.body);
+  const body = explicitBody ? input.body : input;
   const params = {
     ...(input.params && typeof input.params === "object" && !Array.isArray(input.params) ? input.params : {})
   };
