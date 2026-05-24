@@ -58,6 +58,13 @@
     "server:rebuild-metadata": "node server/scripts/rebuild-metadata.mjs",
     "server:migrate-embeddings": "node server/scripts/migrate-embeddings.mjs",
     "server:doctor": "node server/scripts/doctor.mjs",
+    "server:gerrit:doctor": "node server/scripts/gerrit-local.mjs doctor",
+    "server:gerrit:download": "node server/scripts/gerrit-local.mjs download",
+    "server:gerrit:start": "node server/scripts/gerrit-local.mjs start",
+    "server:gerrit:stop": "node server/scripts/gerrit-local.mjs stop",
+    "server:gerrit:smoke": "node server/scripts/gerrit-local.mjs smoke",
+    "server:verify:resource-operations": "node server/scripts/verify-resource-operations.mjs",
+    "server:verify:gerrit-mcp": "node server/scripts/verify-gerrit-mcp.mjs",
     "server:mcp:install": "node server/scripts/mcp-install.mjs",
     "server:mcp:register": "node mcp-connector/bin/pact-mcp.mjs register",
     "server:mcp:uninstall": "node mcp-connector/bin/pact-mcp.mjs uninstall",
@@ -80,7 +87,7 @@
     "pact:create-module": "node server/scripts/pact-create-module.mjs",
     "server:module:contract-test": "node server/scripts/pact-module-contract-test.mjs",
     "server:verify:production-readiness": "node server/scripts/production-readiness-gate.mjs",
-    "server:verify": "npm run server:verify:language-policy && npm run server:verify:import-file-types && npm run server:verify:entity-config-layout && npm run server:verify:platform-layout && npm run server:verify:module-ecosystem && npm run server:verify:architecture-patterns && npm run server:verify:architecture-live-map && npm run server:verify:knowledge-architecture-governance && npm run server:verify:agent-library-access && npm run server:verify:workspace-contribution-governance && npm run server:verify:workspace-governance && npm run server:verify:executive-report && npm run server:verify:external-knowledge-base && npm run server:verify:knowledge-markdown-chunking && npm run server:verify:dynamic-document-parsing && npm run server:verify:document-preview-consistency && npm run server:verify:document-parser-dry-run && npm run server:verify:knowledge-docx-export && npm run server:verify:asset-lineage && npm run server:verify:singleton-boundaries && npm run server:verify:headless && npm run server:verify:state-coordination && npm run server:verify:dispatcher-unified && npm run server:verify:trace-context && npm run server:verify:state-mutations && npm run server:verify:runtime-logging && npm run server:verify:continuity && npm run server:verify:checkpoints && npm run server:verify:backup-restore && npm run server:verify:rebuild && npm run server:verify:ops && npm run server:verify:knowledge && npm run server:verify:knowledge-multimodal && npm run server:verify:knowledge-maintenance && npm run server:verify:knowledge-learning && npm run server:verify:knowledge-evolution && npm run server:verify:knowledge-evolution-loop && npm run server:verify:knowledge-distillation-optimization && npm run server:verify:knowledge-skillization && npm run server:verify:knowledge-golden-distillation && npm run server:verify:knowledge-distillation-workbench && npm run server:verify:knowledge-industrial-distillation && npm run server:verify:knowledge-rule-authoring && npm run server:verify:knowledge-hierarchy && npm run server:verify:knowledge-retrieval-quality && npm run server:verify:knowledge-outline && npm run server:verify:agent-workspace && npm run server:verify:agent-session-governance && npm run server:verify:agent-memory && npm run server:verify:context-runtime && npm run server:verify:client-runtime-allocator && npm run server:verify:context-compaction && npm run server:verify:agent-exploration && npm run server:verify:multi-agent-summarization && npm run server:verify:agent-gateway && npm run server:verify:model-routing && npm run server:verify:agent-gateway-compaction && npm run server:verify:agent-sync && npm run server:verify:agent-knowledge-tools && npm run server:verify:tool-management && npm run server:verify:capability-package-lifecycle && npm run server:verify:console-auth && npm run server:verify:knowledge-console && npm run server:verify:source-evidence && npm run server:verify:multi-source-connectors && npm run server:verify:data-connector-governance && npm run server:verify:performance-capacity && npm run server:verify:operation-policy && npm run server:verify:unified-registration && npm run server:verify:monitor-alerts && npm run server:verify:maintenance-agent && npm run server:verify:maintenance-agent-compaction && npm run server:verify:feature-profiles && npm run server:verify:frontend-feature-registry && npm run server:verify:production-health-console && npm run server:verify:sample-business-pack && npm run server:verify:business-scenarios",
+    "server:verify": "npm run server:verify:language-policy && npm run server:verify:import-file-types && npm run server:verify:entity-config-layout && npm run server:verify:platform-layout && npm run server:verify:module-ecosystem && npm run server:verify:architecture-patterns && npm run server:verify:architecture-live-map && npm run server:verify:knowledge-architecture-governance && npm run server:verify:agent-library-access && npm run server:verify:workspace-contribution-governance && npm run server:verify:workspace-governance && npm run server:verify:executive-report && npm run server:verify:external-knowledge-base && npm run server:verify:knowledge-markdown-chunking && npm run server:verify:dynamic-document-parsing && npm run server:verify:document-preview-consistency && npm run server:verify:document-parser-dry-run && npm run server:verify:knowledge-docx-export && npm run server:verify:asset-lineage && npm run server:verify:singleton-boundaries && npm run server:verify:headless && npm run server:verify:state-coordination && npm run server:verify:dispatcher-unified && npm run server:verify:trace-context && npm run server:verify:state-mutations && npm run server:verify:runtime-logging && npm run server:verify:continuity && npm run server:verify:checkpoints && npm run server:verify:backup-restore && npm run server:verify:rebuild && npm run server:verify:ops && npm run server:verify:knowledge && npm run server:verify:knowledge-multimodal && npm run server:verify:knowledge-maintenance && npm run server:verify:knowledge-learning && npm run server:verify:knowledge-evolution && npm run server:verify:knowledge-evolution-loop && npm run server:verify:knowledge-distillation-optimization && npm run server:verify:knowledge-skillization && npm run server:verify:knowledge-golden-distillation && npm run server:verify:knowledge-distillation-workbench && npm run server:verify:knowledge-industrial-distillation && npm run server:verify:knowledge-rule-authoring && npm run server:verify:knowledge-hierarchy && npm run server:verify:knowledge-retrieval-quality && npm run server:verify:knowledge-outline && npm run server:verify:agent-workspace && npm run server:verify:agent-session-governance && npm run server:verify:agent-memory && npm run server:verify:context-runtime && npm run server:verify:client-runtime-allocator && npm run server:verify:client-runtime-bootstrap && npm run server:verify:context-compaction && npm run server:verify:agent-exploration && npm run server:verify:multi-agent-summarization && npm run server:verify:agent-gateway && npm run server:verify:model-routing && npm run server:verify:agent-gateway-compaction && npm run server:verify:agent-sync && npm run server:verify:agent-knowledge-tools && npm run server:verify:tool-management && npm run server:verify:capability-package-lifecycle && npm run server:verify:console-auth && npm run server:verify:knowledge-console && npm run server:verify:source-evidence && npm run server:verify:multi-source-connectors && npm run server:verify:data-connector-governance && npm run server:verify:performance-capacity && npm run server:verify:operation-policy && npm run server:verify:unified-registration && npm run server:verify:monitor-alerts && npm run server:verify:maintenance-agent && npm run server:verify:maintenance-agent-compaction && npm run server:verify:feature-profiles && npm run server:verify:frontend-feature-registry && npm run server:verify:production-health-console && npm run server:verify:sample-business-pack && npm run server:verify:business-scenarios",
     "server:verify:language-policy": "node server/scripts/verify-language-policy.mjs",
     "server:verify:import-file-types": "node server/scripts/verify-import-file-types.mjs",
     "server:verify:entity-config-layout": "node server/scripts/verify-entity-config-layout.mjs",
@@ -131,6 +138,7 @@
     "server:verify:agent-memory": "node server/scripts/verify-agent-memory.mjs",
     "server:verify:context-runtime": "node server/scripts/verify-context-runtime.mjs",
     "server:verify:client-runtime-allocator": "node server/scripts/verify-client-runtime-allocator.mjs",
+    "server:verify:client-runtime-bootstrap": "node server/scripts/verify-client-runtime-bootstrap.mjs",
     "server:verify:context-compaction": "node server/scripts/verify-context-compaction.mjs",
     "server:verify:agent-exploration": "node server/scripts/verify-agent-exploration.mjs",
     "server:verify:multi-agent-summarization": "node server/scripts/verify-multi-agent-summarization.mjs",
@@ -217,6 +225,17 @@
     "sqlite-vec": "^0.1.7-alpha.2",
     "vue": "^3.5.32",
     "vue-router": "^4.6.4"
+  },
+  "overrides": {
+    "@langchain/langgraph": {
+      "@langchain/langgraph-sdk": {
+        "uuid": "^13.0.0"
+      },
+      "uuid": "11.1.1"
+    },
+    "@langchain/langgraph-checkpoint": {
+      "uuid": "11.1.1"
+    }
   },
   "devDependencies": {
     "@types/node": "^24.0.10",

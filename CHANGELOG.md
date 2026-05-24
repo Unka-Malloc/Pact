@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Upcoming changes will be documented here._
+### Added
+
+- Added Gerrit MCP support for agent-facing read, write, maintenance, and audited Git review upload operations.
+- Added repository-scoped Tool Management grants for `repo:read`, `repo:write`, `repo:review`, `repo:approve`, `repo:maintain`, and `repo:admin`.
+
+### Security
+
+- Hardened MCP local grants with catalog-driven risk elevation, explicit repair-mode confirmation, per-grant `maxRisk`, and toolset `maxRisk` enforcement.
+- Overrode vulnerable transitive `uuid` versions used through LangGraph packages to audited fixed versions.
 
 ---
 

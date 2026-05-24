@@ -186,6 +186,18 @@ try {
   assert.equal(legacyScopeGrant.payload.scopes.includes("storage:write"), true);
   assert.equal(legacyScopeGrant.payload.toolsets.includes("pact.storage.write"), true);
 
+  const unconfirmedWriteGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-pact-safety-confirm": "false" },
+    body: JSON.stringify({
+      targets: ["codex"],
+      label: "verify-mcp-local-grant-unconfirmed-write-scope",
+      scope: "storage:write"
+    })
+  });
+  assert.equal(unconfirmedWriteGrant.status, 403);
+  assert.equal(unconfirmedWriteGrant.payload.error.code, "confirmation_required");
+
   const legacyToolsetGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
