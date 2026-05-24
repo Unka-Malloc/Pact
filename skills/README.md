@@ -8,7 +8,7 @@
 
 - `server-ops`: 服务端运行、配置、存储、上传、checkpoint、回归检查、导出和运行环境诊断。
 - `server-knowledge`: 知识库、解析器、OCR、邮件规则、向量/图存储、分析模块和知识技能维护。
-- `server-mcp`: MCP Hub、工具平台、授权、上传审计和连接器相关维护。
+- `server-mcp`: MCP Hub、工具平台、授权、上传审计、Gerrit 代码评审兼容和连接器相关维护。
 - `server-web`: 管理控制台和 Web UI 相关维护。
 - `client`: 客户端配置、便携数据布局和客户端/服务端契约维护。
 - `project-history`: 项目历史、开发记录、迁移来源和代理会话归档。

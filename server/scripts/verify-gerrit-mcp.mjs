@@ -302,6 +302,43 @@ function assertTool(toolsById, id, expected) {
   return tool;
 }
 
+async function readJson(relativePath) {
+  return JSON.parse(await fs.readFile(path.join(repoRoot, relativePath), "utf8"));
+}
+
+async function verifyMaintenanceArtifacts() {
+  const skillPath = "skills/server-mcp/pact-gerrit-mcp-maintainer/SKILL.md";
+  const skill = await fs.readFile(path.join(repoRoot, skillPath), "utf8");
+  assert.match(skill, /name: pact-gerrit-mcp-maintainer/);
+  assert.match(skill, /server:verify:gerrit-mcp/);
+  assert.match(skill, /server:gerrit:smoke/);
+  assert.match(skill, /未发现已知高风险问题/);
+
+  const gerritManifestPath = "server/platform/specialized/capabilities/code-review/gerrit/module.json";
+  const gerritManifest = await readJson(gerritManifestPath);
+  assert.equal(gerritManifest.category, "compatibility");
+  assert.equal(gerritManifest.protocol, "pact.code-review.v1");
+  assert.equal(gerritManifest.maintenanceSkill, skillPath);
+  assert.deepEqual(gerritManifest.components.gerritMcpRoute.operations, [
+    "gerrit.read",
+    "gerrit.write",
+    "gerrit.maintain",
+    "gerrit.git_upload"
+  ]);
+  assert.equal(gerritManifest.components.gerritMcpRoute.auditRequired, true);
+  assert.equal(gerritManifest.runtime.localTestServer.gerritVersion, "3.14.0");
+  assert.ok(gerritManifest.verification.includes("PACT_VERIFY_GERRIT_LIVE=1 npm run server:verify:gerrit-mcp --silent"));
+
+  const repoManifest = await readJson("server/platform/specialized/capabilities/code-repository/repo-operations/module.json");
+  assert.equal(repoManifest.category, "compatibility");
+  assert.equal(repoManifest.protocol, "pact.resource-operation.v1");
+  assert.equal(repoManifest.maintenanceSkill, skillPath);
+  assert.equal(repoManifest.components.repoOperationRoute.operations.includes("repo.proposal.create"), true);
+  assert.equal(repoManifest.components.repoOperationRoute.operations.includes("repo.change.abandon"), true);
+  assert.equal(repoManifest.components.repoOperationRoute.auditRequired, true);
+  assert.equal(repoManifest.providers.includes("gerrit"), true);
+}
+
 async function liveGerritVersion({ required }) {
   try {
     const result = await executeGerritCommonOperation({
@@ -321,6 +358,8 @@ async function liveGerritVersion({ required }) {
   }
   return "";
 }
+
+await verifyMaintenanceArtifacts();
 
 assert.equal(GERRIT_ACTIONS.read.includes("server.version"), true);
 assert.equal(GERRIT_ACTIONS.read.includes("changes.query"), true);
