@@ -197,6 +197,157 @@ export async function buildKnowledgeConsoleSummary(runtime, jobManager) {
   };
 }
 
+const PACT_CLIENT_CONNECTION = {
+  kind: "pact-client",
+  method: "pact-client 封装",
+  state: "active",
+  statusLabel: ""
+};
+
+const MCP_PLUGIN_CONNECTION = {
+  kind: "mcp-plugin",
+  method: "MCP 插件连接"
+};
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function compactText(value) {
+  return String(value || "").trim();
+}
+
+function slugText(value, fallback = "target") {
+  const normalized = compactText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
+function isMcpPluginGrant(grant) {
+  const metadata = asObject(grant?.metadata);
+  return (
+    compactText(grant?.type) === "mcp-client" ||
+    compactText(metadata.issuedBy) === "pact-mcp-local-pairing"
+  );
+}
+
+function mcpGrantTargets(grant) {
+  const metadata = asObject(grant?.metadata);
+  const targets = asArray(metadata.targets).map(compactText).filter(Boolean);
+  if (targets.length > 0) {
+    return targets;
+  }
+  const label = compactText(grant?.label).replace(/\s*\(MCP Client\)\s*$/i, "");
+  return [label || compactText(grant?.id) || "MCP 插件"];
+}
+
+function mcpGrantConnectionState(grant) {
+  if (compactText(grant?.revokedAt)) {
+    return { state: "revoked", label: "已撤销", migrationState: "offline" };
+  }
+  if (grant?.enabled === false) {
+    return { state: "disabled", label: "停用", migrationState: "offline" };
+  }
+  if (compactText(grant?.lastUsedAt)) {
+    return { state: "connected", label: "已连接", migrationState: "unknown" };
+  }
+  return { state: "paired", label: "已配对", migrationState: "unknown" };
+}
+
+function mcpGrantRows(toolManagementPlatform) {
+  const listGrants = toolManagementPlatform?.store?.listGrants;
+  if (typeof listGrants !== "function") {
+    return [];
+  }
+
+  try {
+    return listGrants.call(toolManagementPlatform.store)
+      .filter(isMcpPluginGrant)
+      .flatMap((grant) => {
+        const connection = mcpGrantConnectionState(grant);
+        const metadata = asObject(grant.metadata);
+        const targets = mcpGrantTargets(grant);
+        return targets.map((target, index) => {
+          const targetKey = targets.length > 1 ? `${slugText(target)}-${index + 1}` : slugText(target);
+          const lastSeenAt = compactText(grant.lastUsedAt || grant.updatedAt || grant.createdAt);
+          return {
+            clientId: `mcp:${grant.id}:${targetKey}`,
+            clientLabel: target || grant.label || grant.id,
+            appVersion: compactText(metadata.connectorVersion),
+            platform: "MCP 插件",
+            hostname: target || "",
+            bootstrapUrl: "",
+            currentServiceUrl: "",
+            desiredServiceUrl: "",
+            currentJobServiceUrl: "",
+            configVersion: "",
+            migrationState: connection.migrationState,
+            connectionKind: MCP_PLUGIN_CONNECTION.kind,
+            connectionMethod: MCP_PLUGIN_CONNECTION.method,
+            connectionState: connection.state,
+            connectionStatusLabel: connection.label,
+            connectionDetail: "Tool Management 授权",
+            supportsMigration: false,
+            sourceGrantId: grant.id,
+            busy: false,
+            lastJobId: "",
+            lastError: "",
+            firstSeenAt: compactText(grant.createdAt),
+            lastSeenAt,
+            lastSeenServerId: compactText(metadata.serverId)
+          };
+        });
+      });
+  } catch {
+    return [];
+  }
+}
+
+function normalizePactClientRow(item) {
+  const migrationState = compactText(item.migrationState) || "unknown";
+  return {
+    ...item,
+    connectionKind: compactText(item.connectionKind) || PACT_CLIENT_CONNECTION.kind,
+    connectionMethod: compactText(item.connectionMethod) || PACT_CLIENT_CONNECTION.method,
+    connectionState: compactText(item.connectionState) || (migrationState === "offline" ? "offline" : PACT_CLIENT_CONNECTION.state),
+    connectionStatusLabel: compactText(item.connectionStatusLabel) || PACT_CLIENT_CONNECTION.statusLabel,
+    supportsMigration: item.supportsMigration !== false
+  };
+}
+
+function buildClientConnectionSummary(items) {
+  return {
+    totalCount: items.length,
+    alignedCount: items.filter((item) => item.migrationState === "aligned").length,
+    outdatedCount: items.filter((item) => item.migrationState === "outdated").length,
+    drainingCount: items.filter((item) => item.migrationState === "draining").length,
+    bootstrapOnlyCount: items.filter((item) => item.migrationState === "bootstrap-only").length,
+    offlineCount: items.filter((item) => item.migrationState === "offline").length,
+    unknownCount: items.filter((item) => item.migrationState === "unknown").length,
+    pactClientCount: items.filter((item) => item.connectionKind === PACT_CLIENT_CONNECTION.kind).length,
+    mcpPluginCount: items.filter((item) => item.connectionKind === MCP_PLUGIN_CONNECTION.kind).length,
+    migratableCount: items.filter((item) => item.supportsMigration !== false).length
+  };
+}
+
+export function buildClientConnectionList(clientRegistrations, toolManagementPlatform = null) {
+  const pactClientRows = asArray(clientRegistrations?.items).map(normalizePactClientRow);
+  const mcpRows = mcpGrantRows(toolManagementPlatform);
+  const items = [...pactClientRows, ...mcpRows].sort((left, right) =>
+    compactText(right.lastSeenAt).localeCompare(compactText(left.lastSeenAt))
+  );
+  return {
+    summary: buildClientConnectionSummary(items),
+    items
+  };
+}
+
 export async function buildConsoleState({
   userDataPath,
   distPath,
@@ -208,7 +359,8 @@ export async function buildConsoleState({
   consoleAuth = null,
   maintenanceAgent = null,
   clientRuntimeAllocator = null,
-  features = null
+  features = null,
+  toolManagementPlatform = null
 }) {
   const [
     settings,
@@ -229,9 +381,12 @@ export async function buildConsoleState({
     getKnowledgeGuidanceSummary(userDataPath),
     jobManager.listJobs({ limit: 50 }),
     Promise.resolve(
-      metadataStore.listClientRegistrations({
-        offlineAfterSeconds: discoveryState.offlineAfterSeconds
-      })
+      buildClientConnectionList(
+        metadataStore.listClientRegistrations({
+          offlineAfterSeconds: discoveryState.offlineAfterSeconds
+        }),
+        toolManagementPlatform
+      )
     ),
     loadMountConfig(userDataPath)
   ]);

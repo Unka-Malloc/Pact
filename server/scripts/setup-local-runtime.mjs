@@ -8,8 +8,8 @@ import { TIKA_VERSION } from "../platform/modules/knowledge/file-processor/FileN
 import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
-const moduleResourceRoot = path.join(projectRoot, "server", "modules");
-const jreRoot = path.join(moduleResourceRoot, "jre");
+const moduleResourceRoot = path.join(projectRoot, "server", "platform", "modules", "knowledge");
+const jreRoot = path.join(moduleResourceRoot, "runtime", "jre");
 const tikaRoot = path.join(moduleResourceRoot, "tika");
 const platformKey = `${process.platform}-${process.arch}`;
 const userDataPath = path.resolve(ServerConfig.getDataDir());
@@ -25,6 +25,13 @@ const TIKA_DOWNLOAD = {
   fileName: `tika-app-${TIKA_VERSION}.jar`,
   url: `https://repo.maven.apache.org/maven2/org/apache/tika/tika-app/${TIKA_VERSION}/tika-app-${TIKA_VERSION}.jar`
 };
+
+function getJreCacheDirectory() {
+  if (process.env.PACT_JRE_RUNTIME_CACHE_DIR && process.env.PACT_JRE_RUNTIME_CACHE_DIR.trim()) {
+    return path.resolve(process.env.PACT_JRE_RUNTIME_CACHE_DIR.trim());
+  }
+  return path.join(userDataPath, "cache", "jre-runtime");
+}
 
 async function ensureDirectory(targetPath) {
   await fs.mkdir(targetPath, { recursive: true });
@@ -64,6 +71,15 @@ async function downloadFile(url, targetPath) {
   });
 
   await fs.rename(tempPath, targetPath);
+}
+
+async function copyFileIfPresent(sourcePath, targetPath) {
+  if (!(await fileExists(sourcePath))) {
+    return false;
+  }
+  await ensureDirectory(path.dirname(targetPath));
+  await fs.copyFile(sourcePath, targetPath);
+  return true;
 }
 
 async function listDirectoryEntries(targetPath) {
@@ -122,19 +138,24 @@ async function setupModuleJre() {
 
   const runtimeRoot = path.join(jreRoot, platformKey);
   const javaPath = getExpectedJavaPath(runtimeRoot);
+  const archivePath = path.join(getJreCacheDirectory(), jreDownload.fileName);
+  const legacyArchivePath = path.join(jreRoot, "downloads", jreDownload.fileName);
+  if (!(await fileExists(archivePath))) {
+    if (await copyFileIfPresent(legacyArchivePath, archivePath)) {
+      console.log(`Using cached legacy JRE archive: ${legacyArchivePath}`);
+    } else {
+      console.log(`Downloading JRE: ${jreDownload.url}`);
+      await downloadFile(jreDownload.url, archivePath);
+    }
+  }
+
   if (await fileExists(javaPath)) {
     return {
       runtimeRoot,
       javaPath,
+      archivePath,
       downloaded: false
     };
-  }
-
-  const archiveDir = path.join(jreRoot, "downloads");
-  const archivePath = path.join(archiveDir, jreDownload.fileName);
-  if (!(await fileExists(archivePath))) {
-    console.log(`Downloading JRE: ${jreDownload.url}`);
-    await downloadFile(jreDownload.url, archivePath);
   }
 
   console.log(`Extracting JRE to ${runtimeRoot}`);
@@ -147,6 +168,7 @@ async function setupModuleJre() {
   return {
     runtimeRoot,
     javaPath,
+    archivePath,
     downloaded: true
   };
 }
@@ -179,6 +201,8 @@ async function main() {
       {
         platform: platformKey,
         moduleResourceRoot,
+        jreCacheRoot: getJreCacheDirectory(),
+        jreArchivePath: jre.archivePath,
         javaBinPath: saved.javaBinPath,
         tikaJarPath: saved.tikaJarPath
       },

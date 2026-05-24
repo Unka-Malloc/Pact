@@ -56,6 +56,7 @@ import {
   saveMountConfig
 } from "../../../module-manager/mount-config.mjs";
 import {
+  buildClientConnectionList,
   buildConsoleState,
   buildKnowledgeConsoleSummary,
   buildRuntimeInfo
@@ -91,7 +92,14 @@ import {
 import { createWorkspaceGovernanceRegistry } from "../../../../specialized/agent/workspace-governance/index.mjs";
 import { createCapabilityPackageRegistry } from "../../../../specialized/capabilities/package-lifecycle/index.mjs";
 import { createAssetLineageRegistry } from "../../../../specialized/knowledge/assets/asset-lineage/index.mjs";
+import {
+  GERRIT_ACTIONS,
+  executeGerritCommonOperation,
+  uploadGerritGitChange
+} from "../../../../specialized/capabilities/code-review/gerrit/index.mjs";
+import { executeRepoOperation } from "../../../../specialized/capabilities/code-repository/repo-operations/index.mjs";
 import { createDataConnectorGovernance } from "../../../../specialized/knowledge/connectors/data-connector-governance/index.mjs";
+import { buildClientRuntimeBootstrapPlan } from "../../../../../services/client/client-runtime-core/client-runtime-bootstrap.mjs";
 import {
   listCapacityBenchmarkTargets,
   runPerformanceCapacityBenchmark
@@ -2335,9 +2343,12 @@ export function createSystemController({
       sendJson(
         response,
         200,
-        metadataStore.listClientRegistrations({
-          offlineAfterSeconds: getDiscoveryState().offlineAfterSeconds
-        })
+        buildClientConnectionList(
+          metadataStore.listClientRegistrations({
+            offlineAfterSeconds: getDiscoveryState().offlineAfterSeconds
+          }),
+          getToolManagementPlatform()
+        )
       );
     },
     async handleRequestClientMigration({ clientId, requestBody, response, authSession }) {
@@ -2650,7 +2661,8 @@ export function createSystemController({
           consoleAuth,
           maintenanceAgent,
           clientRuntimeAllocator,
-          features: getFeatureEntries ? getFeatureEntries() : null
+          features: getFeatureEntries ? getFeatureEntries() : null,
+          toolManagementPlatform: getToolManagementPlatform()
         })
       );
     },
@@ -5227,6 +5239,10 @@ export function createSystemController({
       }
       sendJson(response, 200, await clientRuntimeAllocator.resolve(parseJsonBody(requestBody)));
     },
+    async handleClientRuntimeBootstrapPlan({ requestBody, response }) {
+      const payload = parseJsonBody(requestBody);
+      sendJson(response, 200, buildClientRuntimeBootstrapPlan(payload));
+    },
     async handleClientRuntimeStatus({ response }) {
       if (!clientRuntimeAllocator || typeof clientRuntimeAllocator.getStatus !== "function") {
         sendJson(response, 503, {
@@ -6378,6 +6394,92 @@ export function createSystemController({
         sendJson(response, 400, {
           ok: false,
           error: error instanceof Error ? error.message : "Workspace governance share grant failed."
+        });
+      }
+    },
+    async handleGerritRead({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        const result = await executeGerritCommonOperation({ mode: "read", input: payload });
+        const { result: data, ...rest } = result;
+        sendJson(response, result.ok ? 200 : result.status || 400, {
+          ...rest,
+          data,
+          allowedActions: GERRIT_ACTIONS.read
+        });
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Gerrit read operation failed.",
+          allowedActions: GERRIT_ACTIONS.read
+        });
+      }
+    },
+    async handleGerritWrite({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        const result = await executeGerritCommonOperation({ mode: "write", input: payload });
+        const { result: data, ...rest } = result;
+        sendJson(response, result.ok ? 200 : result.status || 400, {
+          ...rest,
+          data,
+          allowedActions: GERRIT_ACTIONS.write
+        });
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Gerrit write operation failed.",
+          allowedActions: GERRIT_ACTIONS.write
+        });
+      }
+    },
+    async handleGerritMaintain({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        const result = await executeGerritCommonOperation({ mode: "maintain", input: payload });
+        const { result: data, ...rest } = result;
+        sendJson(response, result.ok ? 200 : result.status || 400, {
+          ...rest,
+          data,
+          allowedActions: GERRIT_ACTIONS.maintain
+        });
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Gerrit maintain operation failed.",
+          allowedActions: GERRIT_ACTIONS.maintain
+        });
+      }
+    },
+    async handleGerritGitUpload({ requestBody, response }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        const result = await uploadGerritGitChange(payload);
+        sendJson(response, result.ok ? 200 : result.status || 400, result);
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Gerrit git upload failed."
+        });
+      }
+    },
+    async handleRepoOperation({ operation, requestBody, response, authSession }) {
+      try {
+        const payload = parseJsonBody(requestBody);
+        const result = await executeRepoOperation({
+          operationId: operation?.id,
+          input: payload,
+          authSession
+        });
+        sendJson(response, result.ok ? 200 : result.status || 400, result);
+      } catch (error) {
+        sendJson(response, 400, {
+          ok: false,
+          operationId: operation?.id || "",
+          error: {
+            code: "repo_operation_failed",
+            message: error instanceof Error ? error.message : "Repo operation failed."
+          }
         });
       }
     },

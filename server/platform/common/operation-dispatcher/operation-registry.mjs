@@ -3,6 +3,96 @@ import {
   serializableOperationSafety
 } from "./operation-decorators.mjs";
 
+const REPO_OPERATION_SPECS = Object.freeze([
+  ["repo.status", "repo:read", "查看代码库对象状态", ["repoId", "targetType"], "read_only", true],
+  ["repo.file.read", "repo:read", "读取代码库文件", ["repoId", "path"], "read_only", true],
+  ["repo.tree.list", "repo:read", "列出代码库目录树", ["repoId"], "read_only", true],
+  ["repo.diff.read", "repo:read", "读取代码库 diff", ["repoId", "baseRef", "headRef"], "read_only", true],
+  ["repo.commit.read", "repo:read", "读取代码库 commit", ["repoId", "commitRef"], "read_only", true],
+  ["repo.file.create", "repo:write", "创建代码库文件", ["repoId", "path", "content"], "safe_write", false],
+  ["repo.file.update", "repo:write", "更新代码库文件", ["repoId", "path", "content"], "safe_write", false],
+  ["repo.file.delete", "repo:write", "删除代码库文件", ["repoId", "path"], "safe_write", false],
+  ["repo.file.move", "repo:write", "移动代码库文件", ["repoId", "fromPath", "toPath"], "safe_write", false],
+  ["repo.branch.create", "repo:write", "创建代码库分支", ["repoId", "branchName", "baseRef"], "safe_write", false],
+  ["repo.branch.checkout", "repo:write", "切换代码库分支", ["repoId", "branchName"], "safe_write", false],
+  ["repo.commit.create", "repo:write", "创建代码库 commit", ["repoId", "branch", "message"], "safe_write", false],
+  ["repo.push", "repo:write", "推送代码库 ref", ["repoId", "remote", "sourceRef", "targetRef"], "safe_write", false],
+  ["repo.proposal.create", "repo:write", "创建代码评审提案", ["repoId", "sourceRef", "targetRef", "title"], "safe_write", false],
+  ["repo.review.comment", "repo:review", "提交代码评审评论", ["repoId", "reviewTarget", "body"], "safe_write", false],
+  ["repo.review.requestChanges", "repo:review", "请求代码评审修改", ["repoId", "reviewTarget", "body"], "safe_write", false],
+  ["repo.review.approve", "repo:approve", "批准代码评审", ["repoId", "reviewTarget"], "safe_write", false],
+  ["repo.merge", "repo:maintain", "合并代码评审或分支", ["repoId", "reviewTarget", "confirm"], "repair_write", false],
+  ["repo.submit", "repo:maintain", "提交 Gerrit change", ["repoId", "changeId", "confirm"], "repair_write", false],
+  ["repo.rebase", "repo:maintain", "变基代码库 ref 或 change", ["repoId", "targetRef", "baseRef", "confirm"], "repair_write", false],
+  ["repo.revert", "repo:maintain", "回滚代码库 ref 或 change", ["repoId", "targetRef", "confirm"], "repair_write", false],
+  ["repo.proposal.close", "repo:maintain", "关闭代码评审提案", ["repoId", "reviewTarget", "confirm"], "repair_write", false],
+  ["repo.change.abandon", "repo:maintain", "Abandon Gerrit change", ["repoId", "changeId", "confirm"], "repair_write", false],
+  ["repo.protection.set", "repo:admin", "设置代码库保护规则", ["repoId", "branchPattern", "rules", "confirm"], "repair_write", false],
+  ["repo.webhook.set", "repo:admin", "设置代码库 webhook", ["repoId", "payload", "confirm"], "repair_write", false],
+  ["repo.member.set", "repo:admin", "设置代码库成员权限", ["repoId", "subjectId", "role", "confirm"], "repair_write", false]
+]);
+
+function repoInputSchema(required = []) {
+  const properties = {
+    repoId: { type: "string" },
+    targetType: { type: "string" },
+    targetId: { type: "string" },
+    ref: { type: "string" },
+    path: { type: "string" },
+    fromPath: { type: "string" },
+    toPath: { type: "string" },
+    content: { type: "string" },
+    branch: { type: "string" },
+    branchName: { type: "string" },
+    baseRef: { type: "string" },
+    headRef: { type: "string" },
+    commitRef: { type: "string" },
+    message: { type: "string" },
+    remote: { type: "string" },
+    sourceRef: { type: "string" },
+    targetRef: { type: "string" },
+    force: { type: "boolean" },
+    title: { type: "string" },
+    body: { type: "string" },
+    reviewTarget: { type: "string" },
+    changeId: { type: "string" },
+    confirm: { type: "boolean" },
+    subjectId: { type: "string" },
+    role: { type: "string" },
+    branchPattern: { type: "string" },
+    rules: { type: "object" },
+    payload: { type: "object" },
+    dryRun: { type: "boolean" }
+  };
+  return { type: "object", required, properties };
+}
+
+function repoOperationDefinition([id, scope, label, required, risk, readOnly]) {
+  const command = id.split(".");
+  return {
+    id,
+    feature: "agent_workspace",
+    label,
+    description: `Agent-facing resource operation for ${id}.`,
+    target: { controller: "system", method: "handleRepoOperation" },
+    http: { method: "POST", path: `/api/${command.join("/")}`, localInForwardMode: true },
+    rpc: { method: id, syntheticPath: `/api/${command.join("/")}`, body: "params" },
+    cli: { command, usage: `${command.join(" ")} --body request.json` },
+    requiredScopes: [scope],
+    readOnly,
+    concurrencySafe: readOnly,
+    aspects: ["resource-operation", "repo", "mcp"],
+    inputSchema: repoInputSchema(required),
+    safety: {
+      risk,
+      requiresConfirmation: risk === "repair_write",
+      approvalScope: risk === "repair_write" ? scope : undefined
+    }
+  };
+}
+
+const REPO_OPERATION_DEFINITIONS = REPO_OPERATION_SPECS.map(repoOperationDefinition);
+
 const SERVER_API_OPERATION_DEFINITIONS = [
   {
     id: "system.health",
@@ -234,6 +324,104 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["runtime:admin"],
     aspects: ["workspace-governance", "organization-policy"],
     safety: { risk: "safe_write", requiresConfirmation: true, approvalScope: "runtime:admin" }
+  },
+  ...REPO_OPERATION_DEFINITIONS,
+  {
+    id: "gerrit.read",
+    feature: "agent_workspace",
+    label: "Gerrit 常见读取操作",
+    description: "Agent-facing Gerrit read operations: server status, projects, branches, changes, reviewers, comments, files, diffs, and related changes.",
+    target: { controller: "system", method: "handleGerritRead" },
+    http: { method: "POST", path: "/api/gerrit/read", localInForwardMode: true },
+    rpc: { method: "gerrit.read", syntheticPath: "/api/gerrit/read", body: "params" },
+    cli: { command: ["gerrit", "read"], usage: "gerrit read --body action.json" },
+    requiredScopes: ["repo:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["code-review", "gerrit", "mcp"],
+    inputSchema: {
+      type: "object",
+      required: ["action"],
+      properties: {
+        action: { type: "string" },
+        baseUrl: { type: "string" }
+      }
+    },
+    safety: { risk: "read_only", requiresConfirmation: false }
+  },
+  {
+    id: "gerrit.write",
+    feature: "agent_workspace",
+    label: "Gerrit 常见写入操作",
+    description: "Agent-facing Gerrit write operations: create changes, set topics/WIP/private state, reviewers, review labels/comments, drafts, and change edits.",
+    target: { controller: "system", method: "handleGerritWrite" },
+    http: { method: "POST", path: "/api/gerrit/write", localInForwardMode: true },
+    rpc: { method: "gerrit.write", syntheticPath: "/api/gerrit/write", body: "params" },
+    cli: { command: ["gerrit", "write"], usage: "gerrit write --body action.json" },
+    requiredScopes: ["repo:write"],
+    readOnly: false,
+    concurrencySafe: false,
+    aspects: ["code-review", "gerrit", "mcp"],
+    inputSchema: {
+      type: "object",
+      required: ["action"],
+      properties: {
+        action: { type: "string" },
+        baseUrl: { type: "string" }
+      }
+    },
+    safety: { risk: "safe_write", requiresConfirmation: false }
+  },
+  {
+    id: "gerrit.maintain",
+    feature: "agent_workspace",
+    label: "Gerrit 维护级操作",
+    description: "Agent-facing Gerrit maintain operations: create projects/branches, submit, abandon, restore, rebase, move, revert, delete changes, and cherry-pick revisions.",
+    target: { controller: "system", method: "handleGerritMaintain" },
+    http: { method: "POST", path: "/api/gerrit/maintain", localInForwardMode: true },
+    rpc: { method: "gerrit.maintain", syntheticPath: "/api/gerrit/maintain", body: "params" },
+    cli: { command: ["gerrit", "maintain"], usage: "gerrit maintain --body action.json" },
+    requiredScopes: ["repo:maintain"],
+    readOnly: false,
+    concurrencySafe: false,
+    aspects: ["code-review", "gerrit", "mcp"],
+    inputSchema: {
+      type: "object",
+      required: ["action"],
+      properties: {
+        action: { type: "string" },
+        baseUrl: { type: "string" },
+        confirm: { type: "boolean" }
+      }
+    },
+    safety: { risk: "repair_write", requiresConfirmation: true, approvalScope: "repo:maintain" }
+  },
+  {
+    id: "gerrit.git_upload",
+    feature: "agent_workspace",
+    label: "Gerrit Git review 上传",
+    description: "Push the current local git HEAD to refs/for/<branch> for Gerrit review through an audited MCP operation.",
+    target: { controller: "system", method: "handleGerritGitUpload" },
+    http: { method: "POST", path: "/api/gerrit/git-upload", localInForwardMode: true },
+    rpc: { method: "gerrit.git_upload", syntheticPath: "/api/gerrit/git-upload", body: "params" },
+    cli: { command: ["gerrit", "git-upload"], usage: "gerrit git-upload --body upload.json" },
+    requiredScopes: ["repo:maintain"],
+    readOnly: false,
+    concurrencySafe: false,
+    aspects: ["code-review", "gerrit", "mcp", "git"],
+    inputSchema: {
+      type: "object",
+      required: ["worktreePath", "branch"],
+      properties: {
+        worktreePath: { type: "string" },
+        remote: { type: "string" },
+        branch: { type: "string" },
+        topic: { type: "string" },
+        confirm: { type: "boolean" },
+        dryRun: { type: "boolean" }
+      }
+    },
+    safety: { risk: "repair_write", requiresConfirmation: true, approvalScope: "repo:maintain" }
   },
   {
     id: "asset_lineage.describe",
@@ -4117,6 +4305,23 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       ]
     },
     requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "client_runtime.bootstrap.plan",
+    feature: "client_runtime_allocator",
+    label: "规划客户端运行时 bootstrap 裁剪包",
+    target: { controller: "system", method: "handleClientRuntimeBootstrapPlan" },
+    http: { method: "POST", path: "/api/client-runtime/bootstrap/plan" },
+    rpc: { method: "client_runtime.bootstrap.plan", body: "params" },
+    cli: {
+      command: ["client-runtime", "bootstrap", "plan"],
+      usage: "client-runtime bootstrap plan --body client-runtime-bootstrap.json"
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    safety: { risk: "read_only" },
+    aspects: ["client-runtime", "bootstrap", "module-trimming", "transport-negotiation"]
   },
   {
     id: "client_runtime.status",

@@ -125,6 +125,11 @@ export function createClientRegistryService({ db }) {
       return {
         clientId,
         migrationState,
+        connectionKind: "pact-client",
+        connectionMethod: "pact-client 封装",
+        connectionState: migrationState === "offline" ? "offline" : "active",
+        connectionStatusLabel: "",
+        supportsMigration: true,
         firstSeenAt,
         lastSeenAt: now
       };
@@ -153,6 +158,11 @@ export function createClientRegistryService({ db }) {
           currentJobServiceUrl: row.current_job_service_url || "",
           configVersion: row.config_version || "",
           migrationState,
+          connectionKind: "pact-client",
+          connectionMethod: "pact-client 封装",
+          connectionState: migrationState === "offline" ? "offline" : "active",
+          connectionStatusLabel: "",
+          supportsMigration: true,
           busy: Boolean(row.busy),
           lastJobId: row.last_job_id || "",
           lastError: row.last_error || "",
@@ -170,7 +180,10 @@ export function createClientRegistryService({ db }) {
         bootstrapOnlyCount: items.filter((item) => item.migrationState === "bootstrap-only")
           .length,
         offlineCount: items.filter((item) => item.migrationState === "offline").length,
-        unknownCount: items.filter((item) => item.migrationState === "unknown").length
+        unknownCount: items.filter((item) => item.migrationState === "unknown").length,
+        pactClientCount: items.length,
+        mcpPluginCount: 0,
+        migratableCount: items.length
       };
 
       return {
