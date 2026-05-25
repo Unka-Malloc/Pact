@@ -100,6 +100,10 @@ function actorFrom(authSession = null, input = {}) {
   return authSession?.user?.username || authSession?.userId || input.actor || "console";
 }
 
+function plainObject(value, fallback = {}) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
+}
+
 function parseBooleanFlag(value, fallback = false) {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value === "boolean") return value;
@@ -447,6 +451,82 @@ function workspaceAccessOptions(authSession = null) {
     canAccessAll: true,
     sharingMode: "team-shared"
   };
+}
+
+function objectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function workspaceFileSnapshotFromCheckpointPlan(plan = {}, input = {}) {
+  const target = objectOrNull(plan.target) || {};
+  const metadata = objectOrNull(target.metadata) || {};
+  const workspaceMetadata = objectOrNull(metadata.workspace) || {};
+  const snapshot =
+    objectOrNull(input.workspaceFileSnapshot) ||
+    objectOrNull(input.fileSnapshot) ||
+    objectOrNull(input.snapshot) ||
+    objectOrNull(metadata.workspaceFileSnapshot) ||
+    objectOrNull(metadata.fileSnapshot) ||
+    objectOrNull(workspaceMetadata.fileSnapshot) ||
+    null;
+  if (!snapshot) {
+    return null;
+  }
+  const files = Array.isArray(snapshot.files)
+    ? snapshot.files
+    : Array.isArray(snapshot.entries)
+      ? snapshot.entries
+      : Array.isArray(input.files)
+        ? input.files
+        : [];
+  if (files.length === 0) {
+    return null;
+  }
+  return {
+    workspaceId: String(
+      input.workspaceId ||
+        input.workspace ||
+        snapshot.workspaceId ||
+        snapshot.workspace ||
+        metadata.workspaceId ||
+        workspaceMetadata.workspaceId ||
+        ""
+    ).trim(),
+    snapshot: {
+      ...snapshot,
+      files,
+      basePath: snapshot.basePath || snapshot.rootPath || input.basePath || "",
+      deleteExtraneous: snapshot.deleteExtraneous === true || input.deleteExtraneous === true
+    }
+  };
+}
+
+function runCheckpointWorkspaceFileRestore({ plan, input = {}, context = {}, dryRun }) {
+  const restoreTarget = workspaceFileSnapshotFromCheckpointPlan(plan, input);
+  if (!restoreTarget) {
+    return null;
+  }
+  if (!restoreTarget.workspaceId) {
+    return result(400, { error: "checkpoint 文件快照缺少 workspaceId。" });
+  }
+  const { method, error } = requireAgentWorkspaceMethod(
+    context.agentWorkspace,
+    "restoreWorkspaceFiles",
+    "工作空间文件恢复接口不可用。"
+  );
+  if (error) {
+    return error;
+  }
+  const operationResult = method({
+    ...input,
+    workspaceId: restoreTarget.workspaceId,
+    snapshot: restoreTarget.snapshot,
+    dryRun,
+    reason: input.reason || "",
+    actor: actorFrom(context.authSession, input),
+    ...workspaceAccessOptions(context.authSession)
+  });
+  return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
 }
 
 function applyWorkspaceRuntimeContext(payload = {}, agentWorkspace = null, options = {}) {
@@ -2140,7 +2220,11 @@ async function executeSystemObservationOperation({ operationId, input = {}, cont
     "system.checkpoint_trees.list",
     "system.checkpoint_trees.get",
     "workspace.checkpoint.tree.list",
-    "workspace.checkpoint.node.get"
+    "workspace.checkpoint.node.get",
+    "workspace.checkpoint.diff",
+    "workspace.checkpoint.restore.preview",
+    "workspace.checkpoint.restore",
+    "workspace.checkpoint.scope.query"
   ]);
   if (!handledOperations.has(id)) {
     return null;
@@ -2179,6 +2263,127 @@ async function executeSystemObservationOperation({ operationId, input = {}, cont
       });
     }
     return result(200, tree);
+  }
+  if (id === "workspace.checkpoint.diff") {
+    if (typeof checkpointTreeApi.diffCheckpointTree !== "function") {
+      return result(503, { error: "checkpoint diff 接口不可用。" });
+    }
+    try {
+      return result(200, protocolPayload(await checkpointTreeApi.diffCheckpointTree({
+        userDataPath: context.userDataPath,
+        treeId: input.treeId || input["tree-id"] || input.id || "",
+        fromTreeId: input.fromTreeId || input["from-tree-id"] || "",
+        toTreeId: input.toTreeId || input["to-tree-id"] || "",
+        fromNodeId: input.fromNodeId || input["from-node-id"] || "",
+        toNodeId: input.toNodeId || input["to-node-id"] || ""
+      })));
+    } catch (error) {
+      return result(404, errorPayload(error, "checkpoint diff 失败。"));
+    }
+  }
+  if (id === "workspace.checkpoint.scope.query") {
+    if (typeof checkpointTreeApi.queryCheckpointScope !== "function") {
+      return result(503, { error: "checkpoint scope 接口不可用。" });
+    }
+    try {
+      return result(200, protocolPayload(await checkpointTreeApi.queryCheckpointScope({
+        userDataPath: context.userDataPath,
+        treeId: input.treeId || input["tree-id"] || input.id || "",
+        nodeId: input.nodeId || input["node-id"] || input.checkpointNodeId || ""
+      })));
+    } catch (error) {
+      return result(404, errorPayload(error, "checkpoint scope 查询失败。"));
+    }
+  }
+  if (id === "workspace.checkpoint.restore.preview") {
+    if (typeof checkpointTreeApi.previewCheckpointRestore !== "function") {
+      return result(503, { error: "checkpoint restore preview 接口不可用。" });
+    }
+    try {
+      const restorePlan = await checkpointTreeApi.previewCheckpointRestore({
+        userDataPath: context.userDataPath,
+        treeId: input.treeId || input["tree-id"] || input.id || "",
+        nodeId: input.nodeId || input["node-id"] || input.checkpointNodeId || "",
+        mode: input.mode || "",
+        reason: input.reason || ""
+      });
+      const fileRestore = runCheckpointWorkspaceFileRestore({
+        plan: restorePlan,
+        input,
+        context,
+        dryRun: true
+      });
+      if (fileRestore && fileRestore.payload?.ok !== true) {
+        return fileRestore;
+      }
+      return result(200, protocolPayload({
+        ...restorePlan,
+        actions: fileRestore
+          ? [
+              ...restorePlan.actions,
+              {
+                action: "restore_workspace_files",
+                workspaceId: fileRestore.payload.workspaceId,
+                dryRun: true
+              }
+            ]
+          : restorePlan.actions,
+        workspaceFileRestore: fileRestore?.payload
+      }));
+    } catch (error) {
+      return result(404, errorPayload(error, "checkpoint restore preview 失败。"));
+    }
+  }
+  if (id === "workspace.checkpoint.restore") {
+    if (typeof checkpointTreeApi.restoreCheckpointTree !== "function") {
+      return result(503, { error: "checkpoint restore 接口不可用。" });
+    }
+    try {
+      const restorePlan = typeof checkpointTreeApi.previewCheckpointRestore === "function"
+        ? await checkpointTreeApi.previewCheckpointRestore({
+            userDataPath: context.userDataPath,
+            treeId: input.treeId || input["tree-id"] || input.id || "",
+            nodeId: input.nodeId || input["node-id"] || input.checkpointNodeId || "",
+            mode: input.mode || "",
+            reason: input.reason || ""
+          })
+        : null;
+      const fileRestore = restorePlan
+        ? runCheckpointWorkspaceFileRestore({
+            plan: restorePlan,
+            input,
+            context,
+            dryRun: false
+          })
+        : null;
+      if (fileRestore && fileRestore.payload?.ok !== true) {
+        return fileRestore;
+      }
+      const markerRestore = await checkpointTreeApi.restoreCheckpointTree({
+        userDataPath: context.userDataPath,
+        treeId: input.treeId || input["tree-id"] || input.id || "",
+        nodeId: input.nodeId || input["node-id"] || input.checkpointNodeId || "",
+        actor: actorFrom(context.authSession, input),
+        mode: input.mode || "",
+        reason: input.reason || ""
+      });
+      return result(200, protocolPayload({
+        ...markerRestore,
+        actions: fileRestore
+          ? [
+              ...markerRestore.actions,
+              {
+                action: "restore_workspace_files",
+                workspaceId: fileRestore.payload.workspaceId,
+                dryRun: false
+              }
+            ]
+          : markerRestore.actions,
+        workspaceFileRestore: fileRestore?.payload
+      }));
+    } catch (error) {
+      return result(404, errorPayload(error, "checkpoint restore 失败。"));
+    }
   }
 
   return null;
@@ -3281,7 +3486,7 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
 
 async function executeWorkspaceAuditOperation({ operationId, input = {}, context }) {
   const id = String(operationId || "");
-  if (!["workspace.audit.query", "workspace.operation.history"].includes(id)) {
+  if (!["workspace.audit.query", "workspace.operation.history", "workspace.operation.revert.scope"].includes(id)) {
     return null;
   }
 
@@ -3292,6 +3497,41 @@ async function executeWorkspaceAuditOperation({ operationId, input = {}, context
         status: input.status || ""
       })
     : [];
+  if (id === "workspace.operation.revert.scope") {
+    const auditId = String(input.auditId || input["audit-id"] || "").trim();
+    const selectedItems = auditId
+      ? items.filter((item) => item.auditId === auditId)
+      : items.slice(0, Math.max(1, Math.min(Number(input.limit || 20), 100)));
+    const reversibleItems = selectedItems.filter((item) =>
+      item.readOnly !== true &&
+      !["denied", "failed", "error"].includes(String(item.status || "").toLowerCase())
+    );
+    return result(200, protocolPayload({
+      protocolVersion: "pact.workspace-operation-revert-scope.v1",
+      requestedAuditId: auditId,
+      operationId: input.operationId || input["operation-id"] || "",
+      candidateCount: selectedItems.length,
+      reversibleCount: reversibleItems.length,
+      canApply: reversibleItems.length > 0,
+      mode: "preview",
+      scope: reversibleItems.map((item) => ({
+        auditId: item.auditId,
+        operationId: item.operationId,
+        transport: item.transport,
+        risk: item.risk,
+        status: item.status,
+        createdAt: item.createdAt,
+        inputHash: item.inputHash,
+        actor: item.actor || {}
+      })),
+      actions: reversibleItems.map((item) => ({
+        action: "manual_revert_required",
+        auditId: item.auditId,
+        operationId: item.operationId,
+        reason: "Operation audit log records scope and input hash, but domain-specific rollback must execute through the owning protocol."
+      }))
+    }));
+  }
   return result(200, protocolPayload({ items, count: items.length }));
 }
 
@@ -5172,13 +5412,16 @@ async function executeAgentWorkspaceManagementOperation({ operationId, input, co
     "agent_workspaces.profile.hotswap",
     "agent_workspaces.sources.set",
     "agent_workspaces.share",
-    "agent_workspaces.unshare"
+    "agent_workspaces.unshare",
+    "workspace.proposal.create",
+    "workspace.proposal.apply"
   ]);
   if (!handledOperations.has(id)) {
     return null;
   }
   const agentWorkspace = context.agentWorkspace;
   const access = workspaceAccessOptions(context.authSession);
+  const actorId = actorFrom(context.authSession, input);
   const workspaceId = workspaceIdFrom(input);
   const sessionId = String(input.sessionId || input["session-id"] || input.id || "").trim();
 
@@ -5418,6 +5661,97 @@ async function executeAgentWorkspaceManagementOperation({ operationId, input, co
     return operationResult?.ok === false
       ? result(operationResult.error === "lock_held" ? 409 : 400, operationResult)
       : result(200, operationResult);
+  }
+
+  if (id === "workspace.proposal.create") {
+    const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "submit", "workspace 提案接口不可用。");
+    if (error) return error;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      return result(400, { error: "请求体必须是 JSON 对象。" });
+    }
+    const proposalPayload = plainObject(input.proposal || input.payload, {});
+    const title = String(input.title || proposalPayload.title || proposalPayload.summary || "").trim();
+    if (!workspaceId) {
+      return result(400, { error: "workspaceId 不能为空。" });
+    }
+    if (!title) {
+      return result(400, { error: "title 不能为空。" });
+    }
+    const operationResult = method({
+      workspaceId,
+      runId: input.runId || input["run-id"] || proposalPayload.runId || "",
+      agentId: actorId || input.agentId || input["agent-id"] || "workspace-proposal",
+      type: "decisionProposal",
+      confidence: input.confidence ?? proposalPayload.confidence ?? 0.8,
+      evidenceRefs: input.evidenceRefs || proposalPayload.evidenceRefs || [],
+      writePolicy: input.writePolicy || {},
+      payload: {
+        ...proposalPayload,
+        proposalId: input.proposalId || input["proposal-id"] || proposalPayload.proposalId || "",
+        title,
+        summary: String(input.summary || proposalPayload.summary || "").trim(),
+        proposedAction: input.proposedAction || input["proposed-action"] || proposalPayload.proposedAction || ""
+      }
+    });
+    return result(201, protocolPayload({
+      protocolVersion: "pact.workspace-proposal.v1",
+      created: true,
+      proposal: operationResult.submission,
+      submission: operationResult.submission
+    }));
+  }
+
+  if (id === "workspace.proposal.apply") {
+    const resolveSubmission = requireAgentWorkspaceMethod(agentWorkspace, "resolveSubmission", "workspace 提案审核接口不可用。");
+    if (resolveSubmission.error) return resolveSubmission.error;
+    const createDecision = requireAgentWorkspaceMethod(agentWorkspace, "createDecision", "workspace decision 接口不可用。");
+    if (createDecision.error) return createDecision.error;
+    const proposalId = String(input.proposalId || input["proposal-id"] || input.submissionId || input["submission-id"] || input.id || "").trim();
+    if (!workspaceId) {
+      return result(400, { error: "workspaceId 不能为空。" });
+    }
+    if (!proposalId) {
+      return result(400, { error: "proposalId 不能为空。" });
+    }
+    const resolutionResult = resolveSubmission.method({
+      workspaceId,
+      submissionId: proposalId,
+      resolution: input.resolution || input.action || "accept",
+      reviewerId: actorId || input.reviewerId || input["reviewer-id"] || "",
+      note: input.note || input.reason || "",
+      ...access
+    });
+    if (!resolutionResult?.submission) {
+      return result(404, { error: "workspace 提案不存在。" });
+    }
+    const proposal = resolutionResult.submission;
+    const accepted = proposal.status === "accepted";
+    let decision = null;
+    if (accepted) {
+      const proposalPayload = plainObject(proposal.payload, {});
+      const decisionPayload = {
+        ...proposalPayload,
+        ...plainObject(input.decision || input.decisionPayload || input["decision-payload"], {}),
+        sourceProposalId: proposal.submissionId
+      };
+      const decisionResult = createDecision.method({
+        workspaceId,
+        runId: proposal.runId || input.runId || input["run-id"] || "",
+        title: input.title || decisionPayload.title || decisionPayload.summary || "Workspace proposal decision",
+        status: input.decisionStatus || input["decision-status"] || "accepted",
+        payload: decisionPayload,
+        createdBy: actorId || input.reviewerId || input["reviewer-id"] || ""
+      });
+      decision = decisionResult.decision;
+    }
+    return result(200, protocolPayload({
+      protocolVersion: "pact.workspace-proposal.v1",
+      applied: accepted,
+      status: proposal.status,
+      proposal,
+      submission: proposal,
+      decision
+    }));
   }
 
   if (id === "agent_workspaces.context.get") {
@@ -5668,11 +6002,6 @@ async function executeWorkspaceGovernanceOperation({ operationId, input, context
 async function executeProtocolFacadeOperation({ operationId, input = {} }) {
   const id = String(operationId || "");
   const notImplementedBackends = {
-    "workspace.checkpoint.diff": "checkpointTreeApi.diff",
-    "workspace.checkpoint.restore.preview": "checkpointTreeApi.restorePreview",
-    "workspace.checkpoint.restore": "checkpointTreeApi.restore",
-    "workspace.checkpoint.scope.query": "checkpointTreeApi.scopeQuery",
-    "workspace.operation.revert.scope": "operationLedger.revertScope",
     "raw-corpus.format.convert": "rawCorpus.formatConverter",
     "knowledge.dossier.export": "knowledgeDossierExporter",
     "knowledge.distillation.export": "knowledgeDistillationExporter"

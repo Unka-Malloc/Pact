@@ -255,6 +255,11 @@ intent
 
 智能体提交的写入默认只能成为 `observation`、`artifact` 或 `proposal`。只有经过策略、人审或授权 agent 审核后，才允许形成 `decision` 或 canonical state。
 
+Proposal 最小协议入口：
+
+- `workspace.proposal.create`：创建受控 `decisionProposal` submission。
+- `workspace.proposal.apply`：审核 proposal；通过后生成 `decision`，但不能直接改写任意 canonical state。
+
 ### Unified Checkpoint Tree Protocol
 
 `pact.checkpoint-tree.v1` 管理统一 Checkpoint Tree。它不是单独的任务队列树，也不是单纯的文件树，而是公共空间所有可治理影响的状态图。
@@ -923,7 +928,7 @@ pact.skillHub({ "apiVersion": "pact.mcp.v1", "operation": "workspace.audit.query
 pact.discovery({ "apiVersion": "pact.mcp.v1", "operation": "pact.capabilities.list", "input": {} })
 ```
 
-工具命名要对智能体稳定。内部可以把 operation `workspace.file.upload` 映射为 `workspace.contribution.submit(type=file)`，把 operation `workspace.file.list/download` 映射为 `workspace.asset.list/download`，但 MCP 对外工具名只能是五个语义入口，不能在演示过程中漂移。
+工具命名要对智能体稳定。内部可以把 operation `workspace.file.upload` 映射为 `workspace.contribution.submit(type=file)`，把 `workspace.file.list/download` 的结果投影成 asset 视图，但 MCP 对外工具名只能是五个语义入口，不能在演示过程中漂移。
 
 Checkpoint 使用现有协议正名：`workspace.checkpoint.tree.list`、`workspace.checkpoint.restore.preview`、`workspace.checkpoint.restore`。这些是 operation id，不是公开 MCP tool name；实施讨论里的 `workspace.checkpoint.list/preview/restore` 只作为简称。
 
@@ -932,8 +937,8 @@ OpenClaw 文档互通演示：
 1. OpenClaw A 调用 `workspace.contribution.submit`，把本地文档提交为 `knowledge` 或 `file` 资产。
 2. Pact 在真实内容到达服务器并完成最小留档后生成 `contribution.submitted`、`contribution.previewed`、`asset.preview`、`snapshot.created` 和 `auditId`。
 3. 资产通过权限、风险、许可、重复性和审核策略后进入 `contribution.published`。
-4. OpenClaw B 调用 `workspace.asset.list` 或 `knowledge.search` 查找目标 workspace 中可见的文档。
-5. B 调用 `workspace.asset.download`；策略通过后返回下载状态报文、`loanRecord`、`knowledgeAccessReceipt` 和 transfer id。只有内容真实传完并完成校验后，才记录 `asset.downloaded`。
+4. OpenClaw B 调用 `workspace.file.list` 或带 `workspaceId` 的 `knowledge.search` 查找目标 workspace 中可见的文档。
+5. B 调用 `workspace.file.download`；策略通过后返回下载状态报文、`loanRecord`、`knowledgeAccessReceipt` 和 transfer id。只有内容真实传完并完成校验后，才记录 `asset.downloaded`。
 
 Skill 贡献排行榜演示：
 

@@ -42,6 +42,30 @@ function asPlainObject(value) {
   return value;
 }
 
+function stableJson(value) {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function clonePlain(value, fallback = {}) {
+  try {
+    return JSON.parse(JSON.stringify(value ?? fallback));
+  } catch {
+    return fallback;
+  }
+}
+
 function checkpointTreeRoot(userDataPath) {
   return resolveWithin(userDataPath, "checkpoint-trees");
 }
@@ -211,6 +235,319 @@ export async function listCheckpointTrees({ userDataPath, ownerId = "", kind = "
   return trees
     .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
     .slice(0, Math.max(1, Math.min(500, Number(limit || 100))));
+}
+
+function nodeFor(tree, nodeId = "") {
+  const nodes = asPlainObject(tree?.nodes);
+  const normalizedNodeId = normalizeNodeId(nodeId || tree?.rootNodeId || "root");
+  return nodes[normalizedNodeId] || null;
+}
+
+function nodeChildren(tree, nodeId = "") {
+  const normalizedNodeId = normalizeNodeId(nodeId || tree?.rootNodeId || "root");
+  return Object.values(asPlainObject(tree?.nodes))
+    .filter((node) => {
+      const parentId = String(node?.parentId || "").trim();
+      return parentId ? normalizeNodeId(parentId) === normalizedNodeId : false;
+    })
+    .sort((left, right) => String(left?.createdAt || "").localeCompare(String(right?.createdAt || "")));
+}
+
+function nodePath(tree, nodeId = "") {
+  const nodes = asPlainObject(tree?.nodes);
+  const pathItems = [];
+  let cursor = normalizeNodeId(nodeId || tree?.rootNodeId || "root");
+  const seen = new Set();
+  while (cursor && nodes[cursor] && !seen.has(cursor)) {
+    seen.add(cursor);
+    pathItems.unshift({
+      nodeId: cursor,
+      label: nodes[cursor].label || cursor,
+      status: nodes[cursor].status || ""
+    });
+    cursor = normalizeNodeId(nodes[cursor].parentId || "");
+  }
+  return pathItems;
+}
+
+function collectNodeScope(tree, nodeId = "") {
+  const normalizedNodeId = normalizeNodeId(nodeId || tree?.rootNodeId || "root");
+  const nodes = asPlainObject(tree?.nodes);
+  if (!nodes[normalizedNodeId]) {
+    throw new Error("checkpoint node 不存在。");
+  }
+  const output = [];
+  const stack = [normalizedNodeId];
+  const seen = new Set();
+  while (stack.length > 0) {
+    const currentId = stack.shift();
+    if (seen.has(currentId)) {
+      continue;
+    }
+    seen.add(currentId);
+    const node = nodes[currentId];
+    if (!node) {
+      continue;
+    }
+    output.push(node);
+    for (const child of nodeChildren(tree, currentId)) {
+      stack.push(child.nodeId);
+    }
+  }
+  return output;
+}
+
+function countByStatus(nodes = []) {
+  const byStatus = {};
+  for (const node of nodes) {
+    const status = String(node?.status || "pending");
+    byStatus[status] = Number(byStatus[status] || 0) + 1;
+  }
+  return byStatus;
+}
+
+function comparableNode(node = null) {
+  if (!node) {
+    return {};
+  }
+  return {
+    parentId: node.parentId || "",
+    label: node.label || "",
+    status: node.status || "",
+    cursor: asPlainObject(node.cursor),
+    totals: asPlainObject(node.totals),
+    metadata: asPlainObject(node.metadata),
+    error: node.error || ""
+  };
+}
+
+function compareNodeSnapshots(left = {}, right = {}) {
+  const fields = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+  return fields
+    .filter((field) => stableJson(left[field]) !== stableJson(right[field]))
+    .map((field) => ({
+      field,
+      before: clonePlain(left[field], null),
+      after: clonePlain(right[field], null)
+    }));
+}
+
+async function requireCheckpointTree({ userDataPath, treeId }) {
+  const tree = await loadCheckpointTree({ userDataPath, treeId });
+  if (!tree) {
+    throw new Error("checkpoint tree 不存在。");
+  }
+  return tree;
+}
+
+export async function diffCheckpointTree({
+  userDataPath,
+  treeId = "",
+  fromTreeId = "",
+  toTreeId = "",
+  fromNodeId = "",
+  toNodeId = ""
+} = {}) {
+  const leftTreeId = String(fromTreeId || treeId || "").trim();
+  const rightTreeId = String(toTreeId || treeId || "").trim();
+  const leftTree = await requireCheckpointTree({ userDataPath, treeId: leftTreeId });
+  const rightTree = await requireCheckpointTree({ userDataPath, treeId: rightTreeId });
+  const leftNodeId = normalizeNodeId(fromNodeId || leftTree.rootNodeId || "root");
+  const rightNodeId = normalizeNodeId(
+    (toNodeId || toTreeId)
+      ? toNodeId || rightTree.rootNodeId || "root"
+      : fromNodeId || rightTree.rootNodeId || "root"
+  );
+  const leftNode = nodeFor(leftTree, leftNodeId);
+  const rightNode = nodeFor(rightTree, rightNodeId);
+  if (!leftNode || !rightNode) {
+    throw new Error("checkpoint diff 节点不存在。");
+  }
+  const leftScope = collectNodeScope(leftTree, leftNodeId);
+  const rightScope = collectNodeScope(rightTree, rightNodeId);
+  const changes = compareNodeSnapshots(comparableNode(leftNode), comparableNode(rightNode));
+  return {
+    protocolVersion: "pact.workspace-checkpoint.v1",
+    treeId: rightTree.treeId,
+    from: {
+      treeId: leftTree.treeId,
+      nodeId: leftNodeId,
+      path: nodePath(leftTree, leftNodeId),
+      status: leftNode.status || "",
+      affectedNodeCount: leftScope.length,
+      byStatus: countByStatus(leftScope)
+    },
+    to: {
+      treeId: rightTree.treeId,
+      nodeId: rightNodeId,
+      path: nodePath(rightTree, rightNodeId),
+      status: rightNode.status || "",
+      affectedNodeCount: rightScope.length,
+      byStatus: countByStatus(rightScope)
+    },
+    changes,
+    changed: changes.length > 0 || leftScope.length !== rightScope.length,
+    summary: {
+      fieldChangeCount: changes.length,
+      affectedNodeDelta: rightScope.length - leftScope.length
+    }
+  };
+}
+
+export async function queryCheckpointScope({ userDataPath, treeId = "", nodeId = "" } = {}) {
+  const tree = await requireCheckpointTree({ userDataPath, treeId: String(treeId || "").trim() });
+  const resolvedNodeId = normalizeNodeId(nodeId || tree.rootNodeId || "root");
+  const scopeNodes = collectNodeScope(tree, resolvedNodeId);
+  const eventItems = (Array.isArray(tree.events) ? tree.events : [])
+    .filter((event) => !event.nodeId || scopeNodes.some((node) => node.nodeId === event.nodeId))
+    .slice(-50);
+  return {
+    protocolVersion: "pact.workspace-checkpoint.v1",
+    treeId: tree.treeId,
+    nodeId: resolvedNodeId,
+    path: nodePath(tree, resolvedNodeId),
+    affectedNodeCount: scopeNodes.length,
+    byStatus: countByStatus(scopeNodes),
+    nodes: scopeNodes.map((node) => ({
+      nodeId: node.nodeId,
+      parentId: node.parentId || "",
+      label: node.label || "",
+      status: node.status || "",
+      updatedAt: node.updatedAt || "",
+      cursor: clonePlain(node.cursor),
+      totals: clonePlain(node.totals),
+      metadata: clonePlain(node.metadata)
+    })),
+    events: eventItems,
+    resumePolicy: clonePlain(tree.resumePolicy),
+    canRestore: true
+  };
+}
+
+function checkpointRestorePlan(tree, nodeId = "", input = {}) {
+  const resolvedNodeId = normalizeNodeId(nodeId || tree.rootNodeId || "root");
+  const scopeNodes = collectNodeScope(tree, resolvedNodeId);
+  const target = nodeFor(tree, resolvedNodeId);
+  return {
+    protocolVersion: "pact.workspace-checkpoint.v1",
+    treeId: tree.treeId,
+    nodeId: resolvedNodeId,
+    mode: String(input.mode || "restore-marker"),
+    reason: String(input.reason || ""),
+    target: {
+      nodeId: target.nodeId,
+      label: target.label || "",
+      status: target.status || "",
+      cursor: clonePlain(target.cursor),
+      totals: clonePlain(target.totals),
+      metadata: clonePlain(target.metadata)
+    },
+    scope: {
+      affectedNodeCount: scopeNodes.length,
+      byStatus: countByStatus(scopeNodes),
+      nodeIds: scopeNodes.map((node) => node.nodeId)
+    },
+    actions: [
+      {
+        action: "record_restore_marker",
+        nodeId: resolvedNodeId
+      },
+      {
+        action: "emit_checkpoint_restored_event",
+        eventType: "checkpoint.restored"
+      }
+    ],
+    canApply: true
+  };
+}
+
+export async function previewCheckpointRestore({ userDataPath, treeId = "", nodeId = "", ...input } = {}) {
+  const tree = await requireCheckpointTree({ userDataPath, treeId: String(treeId || "").trim() });
+  return {
+    ...checkpointRestorePlan(tree, nodeId, input),
+    dryRun: true,
+    applied: false
+  };
+}
+
+export async function restoreCheckpointTree({
+  userDataPath,
+  treeId = "",
+  nodeId = "",
+  actor = "",
+  reason = "",
+  mode = "restore-marker"
+} = {}) {
+  const normalizedTreeId = String(treeId || "").trim();
+  assertServerToken(normalizedTreeId, "checkpoint_tree");
+  return withTreeLock(normalizedTreeId, async () => {
+    const filePath = checkpointTreePath(userDataPath, normalizedTreeId);
+    const tree = await readJson(filePath);
+    if (!tree || tree.schemaVersion !== CHECKPOINT_TREE_SCHEMA_VERSION) {
+      throw new Error("checkpoint tree 不存在。");
+    }
+    const plan = checkpointRestorePlan(tree, nodeId, { reason, mode });
+    const timestamp = nowIso();
+    const restoreId = `checkpoint_restore_${randomUUID()}`;
+    const target = nodeFor(tree, plan.nodeId);
+    const markerNodeId = normalizeNodeId(`restore:${plan.nodeId}:${restoreId}`);
+    tree.nodes = asPlainObject(tree.nodes);
+    tree.nodes[markerNodeId] = {
+      nodeId: markerNodeId,
+      parentId: plan.nodeId,
+      label: "Checkpoint restore marker",
+      status: "completed",
+      cursor: clonePlain(target.cursor),
+      totals: clonePlain(target.totals),
+      metadata: {
+        restoreId,
+        restoredFromNodeId: plan.nodeId,
+        mode,
+        reason: String(reason || ""),
+        actor: String(actor || "")
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      startedAt: timestamp,
+      completedAt: timestamp,
+      error: ""
+    };
+    tree.metadata = {
+      ...asPlainObject(tree.metadata),
+      lastRestore: {
+        restoreId,
+        restoredAt: timestamp,
+        nodeId: plan.nodeId,
+        markerNodeId,
+        mode,
+        reason: String(reason || ""),
+        actor: String(actor || "")
+      }
+    };
+    appendTreeEvent(tree, {
+      type: "checkpoint.restored",
+      nodeId: plan.nodeId,
+      message: "Checkpoint restore marker recorded.",
+      data: {
+        restoreId,
+        markerNodeId,
+        mode,
+        reason: String(reason || ""),
+        actor: String(actor || "")
+      }
+    });
+    tree.updatedAt = timestamp;
+    await writeJsonAtomic(filePath, tree);
+    return {
+      ...plan,
+      dryRun: false,
+      applied: true,
+      restoreId,
+      markerNodeId,
+      restoredAt: timestamp,
+      summary: checkpointTreeSummary(tree)
+    };
+  });
 }
 
 export async function startCheckpointTree({

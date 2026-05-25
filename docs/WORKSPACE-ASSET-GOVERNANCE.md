@@ -279,7 +279,7 @@ assetContributionReportV0 =
 1. A 端 OpenClaw 选择一个本地文档，调用 `workspace.contribution.submit`，贡献类型为 `knowledge` 或 `file`。
 2. Pact 在真实内容到达服务器并完成最小留档后创建上传记录、内容对象、资产快照、`contribution.submitted`、`contribution.previewed` 和 `auditId`，资产状态进入 `preview`。
 3. 策略引擎检查敏感度、许可、重复资产和默认授权范围；审核通过后进入 `contribution.published`，并按权限进入 `workspace/knowledge/` 或 `workspace/files/` 的可见集合。
-4. B 端 OpenClaw 调用 `workspace.asset.list` 或 `workspace.evidence.search` 查找这个 workspace 中可见的文档。
+4. B 端 OpenClaw 调用 `workspace.file.list` 或带 `workspaceId` 的 `knowledge.search` 查找这个 workspace 中可见的文档。
 5. B 请求下载时，Pact 校验 B 是否具备 `export` 或 `checkout` 权限；通过后生成 `knowledgeAccessReceipt`、`loanRecord`、transfer id 和 `auditId`。只有内容真实传完并校验成功后，才生成 `asset.downloaded`。
 
 闭环标准：
@@ -776,7 +776,7 @@ Snapshot 必须能支持：
 3. 多次删除形成一棵 Checkpoint Tree，而不是覆盖式最终状态。
 4. 管控台展示 Checkpoint Tree 历史，管理员下滑找到 A 操作之前的节点。
 5. 管理员点击“恢复到此节点”。
-6. Pact 执行 `workspace.checkpoint.restore`，创建新的 restore operation，把当前 workspace 状态恢复为目标 checkpoint 的文件树、资产引用和权限视图。
+6. Pact 执行 `workspace.checkpoint.restore`，在 checkpoint tree 中追加 restore marker、`checkpoint.restored` event 和审计范围；如果 checkpoint node 携带 `workspaceFileSnapshot`，文件树 dry-run 与实际恢复由共享空间 `restoreWorkspaceFiles` provider 执行，资产引用或权限视图的回滚继续由对应 owning protocol 执行。
 7. A 的误删历史不被删除；恢复本身也作为新 commit 进入 Checkpoint Tree。
 
 闭环标准：
@@ -843,27 +843,29 @@ Context Compiler 输入：
 
 本地智能体是 workspace operator。它可以是 OpenClaw、Codex、Claude Code、Cursor Agent、脚本型 agent 或人工 CLI。
 
-允许动作：
+允许动作使用当前 operation id：
 
-- `workspace.context.get`
-- `workspace.context.compile`
-- `workspace.task.claim`
-- `workspace.task.update`
-- `workspace.observation.append`
-- `workspace.artifact.upload`
+- `agent_workspaces.context.get`
+- `agent_workspaces.context_bundle.export`
+- `agent_sessions.events.append`
+- `workspace.contribution.submit`
+- `workspace.file.upload`
+- `workspace.file.write`
+- `workspace.file.patch`
 - `workspace.proposal.create`
-- `workspace.permission.request`
-- `workspace.evidence.search`
+- `workspace.contribution.permission.request`
+- `knowledge.search`（带 `workspaceId`）
 - `workspace.audit.query`
 
-高风险动作：
+高风险动作使用当前 operation id：
 
 - `workspace.proposal.apply`
-- `workspace.asset.delete`
-- `workspace.snapshot.restore`
+- `agent_workspaces.file.delete`
+- `workspace.checkpoint.restore.preview`
+- `workspace.checkpoint.restore`
 - `knowledge.reindex`
-- `externalKnowledge.sync`
-- `artifact.publish`
+- `knowledge.sync`
+- `workspace.code.change.upload`
 
 高风险动作必须要求更高权限、confirm、snapshot 和审计。
 

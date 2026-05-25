@@ -337,6 +337,43 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
   }),
 
   protocolOperation({
+    id: "workspace.proposal.create",
+    feature: "agent_workspace",
+    label: "创建 workspace 提案",
+    targetMethod: "handleWorkspaceProposalCreate",
+    path: "/api/workspace/proposals/create",
+    scopes: ["workspace:write"],
+    risk: "safe_write",
+    inputSchema: schema(["workspaceId", "title"], {
+      workspaceId: { type: "string" },
+      runId: { type: "string" },
+      title: { type: "string" },
+      summary: { type: "string" },
+      proposal: { type: "object" },
+      evidenceRefs: { type: "array" }
+    })
+  }),
+  protocolOperation({
+    id: "workspace.proposal.apply",
+    feature: "agent_workspace",
+    label: "审核并应用 workspace 提案",
+    targetMethod: "handleWorkspaceProposalApply",
+    path: "/api/workspace/proposals/apply",
+    scopes: ["workspace:maintain"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "workspace:maintain",
+    inputSchema: schema(["workspaceId", "proposalId"], {
+      workspaceId: { type: "string" },
+      proposalId: { type: "string" },
+      submissionId: { type: "string" },
+      resolution: { type: "string" },
+      note: { type: "string" },
+      decision: { type: "object" }
+    })
+  }),
+
+  protocolOperation({
     id: "knowledge.access.evaluate",
     feature: "knowledge",
     label: "AgentLibrary 知识访问裁决",

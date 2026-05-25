@@ -1169,6 +1169,7 @@ export function createAgentWorkspace({ userDataPath }) {
     }
     const includeDirectories = input.includeDirectories !== false;
     const includeFiles = input.includeFiles !== false;
+    const includeHash = input.includeHash === true;
     const recursive = input.recursive !== false;
     const limit = boundedInteger(input.limit, 500, 1, 5000);
     const files = [];
@@ -1191,7 +1192,8 @@ export function createAgentWorkspace({ userDataPath }) {
             workspaceId: access.workspace.workspaceId,
             relativePath,
             absolutePath,
-            stat
+            stat,
+            includeHash
           }));
         }
         if (entry.isDirectory() && recursive) {
@@ -1207,7 +1209,8 @@ export function createAgentWorkspace({ userDataPath }) {
         workspaceId: access.workspace.workspaceId,
         relativePath: base.relativePath,
         absolutePath: base.absolutePath,
-        stat: baseStat
+        stat: baseStat,
+        includeHash
       }));
     }
     return {
@@ -2462,6 +2465,165 @@ export function createAgentWorkspace({ userDataPath }) {
     };
   }
 
+  function normalizeWorkspaceFileSnapshot(input = {}) {
+    const snapshot = asObject(input.snapshot || input.workspaceFileSnapshot || input.fileSnapshot || input);
+    const basePath = normalizeWorkspaceRelativePath(snapshot.basePath || snapshot.rootPath || input.basePath || "", { allowEmpty: true });
+    const rawFiles = asArray(snapshot.files || snapshot.entries || input.files);
+    return {
+      basePath,
+      deleteExtraneous: snapshot.deleteExtraneous === true || input.deleteExtraneous === true,
+      files: rawFiles.map((entry) => {
+        const rawRelativePath = normalizeWorkspaceRelativePath(
+          entry.path || entry.relativePath || entry.filePath || entry.name || "",
+          { allowEmpty: false }
+        );
+        const relativePath = basePath && rawRelativePath !== basePath && !rawRelativePath.startsWith(`${basePath}/`)
+          ? joinWorkspaceRelativePath(basePath, rawRelativePath)
+          : rawRelativePath;
+        if (path.posix.basename(relativePath).startsWith(".")) {
+          throw new Error("不允许恢复以 . 开头的文件。");
+        }
+        const exists = entry.exists !== false && entry.deleted !== true && entry.tombstone !== true;
+        const content = exists ? decodeWorkspaceFileContent(entry) : Buffer.alloc(0);
+        const contentSha256 = exists ? sha256Buffer(content) : "";
+        const expectedSha256 = String(entry.contentSha256 || entry.sha256 || entry.expectedSha256 || "").trim();
+        if (expectedSha256 && expectedSha256 !== contentSha256) {
+          throw new Error(`文件快照 hash 不匹配：${relativePath}`);
+        }
+        return {
+          relativePath,
+          exists,
+          content,
+          contentSha256,
+          encoding: String(entry.encoding || "base64")
+        };
+      })
+    };
+  }
+
+  function restoreWorkspaceFiles(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    let snapshot;
+    try {
+      snapshot = normalizeWorkspaceFileSnapshot(input);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    const dryRun = input.dryRun === true || input.preview === true;
+    const requestedBy = String(input.createdBy || input.actorUserId || input.agentId || "").trim();
+    const desiredByPath = new Map(snapshot.files.map((entry) => [entry.relativePath, entry]));
+    const existing = listWorkspaceFiles({
+      ...input,
+      workspaceId: access.workspace.workspaceId,
+      path: snapshot.basePath,
+      folderPath: snapshot.basePath,
+      recursive: true,
+      includeDirectories: false,
+      includeFiles: true,
+      includeHash: true,
+      limit: input.limit || 5000,
+    });
+    if (!existing.ok) {
+      return existing;
+    }
+    const existingByPath = new Map(existing.files.map((file) => [file.relativePath, file]));
+    const actions = [];
+    for (const entry of snapshot.files) {
+      const current = existingByPath.get(entry.relativePath);
+      if (!entry.exists) {
+        actions.push({
+          action: current ? "delete" : "noop",
+          path: entry.relativePath,
+          currentSha256: current?.contentSha256 || ""
+        });
+        continue;
+      }
+      const action = !current
+        ? "create"
+        : current.contentSha256 === entry.contentSha256
+          ? "noop"
+          : "write";
+      actions.push({
+        action,
+        path: entry.relativePath,
+        expectedSha256: entry.contentSha256,
+        currentSha256: current?.contentSha256 || ""
+      });
+    }
+    if (snapshot.deleteExtraneous) {
+      for (const current of existing.files) {
+        if (!desiredByPath.has(current.relativePath)) {
+          actions.push({
+            action: "delete",
+            path: current.relativePath,
+            currentSha256: current.contentSha256 || "",
+            extraneous: true
+          });
+        }
+      }
+    }
+    const applied = [];
+    if (!dryRun) {
+      for (const action of actions) {
+        if (action.action === "noop") {
+          continue;
+        }
+        const entry = desiredByPath.get(action.path);
+        let resolved;
+        try {
+          resolved = resolveWorkspacePath(access.workspace, action.path);
+        } catch (error) {
+          return { ok: false, status: 400, error: error.message };
+        }
+        if (action.action === "delete") {
+          if (fs.existsSync(resolved.absolutePath)) {
+            fs.rmSync(resolved.absolutePath, { recursive: true, force: true });
+          }
+          applied.push(action);
+          continue;
+        }
+        fs.mkdirSync(path.dirname(resolved.absolutePath), { recursive: true });
+        fs.writeFileSync(resolved.absolutePath, entry.content);
+        applied.push(action);
+      }
+      if (applied.length > 0) {
+        updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+      }
+      try {
+        getRuntimeLogger().info("agent_workspace.files.restore.completed", {
+          workspaceId: access.workspace.workspaceId,
+          fileCount: snapshot.files.length,
+          appliedCount: applied.length,
+          dryRun,
+          requestedBy
+        });
+      } catch {
+        // Logging must not turn a completed restore into a failed operation.
+      }
+    }
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      dryRun,
+      basePath: snapshot.basePath,
+      deleteExtraneous: snapshot.deleteExtraneous,
+      fileCount: snapshot.files.length,
+      actions,
+      appliedActions: dryRun ? [] : applied,
+      summary: {
+        create: actions.filter((action) => action.action === "create").length,
+        write: actions.filter((action) => action.action === "write").length,
+        delete: actions.filter((action) => action.action === "delete").length,
+        noop: actions.filter((action) => action.action === "noop").length,
+        applied: dryRun ? 0 : applied.length
+      }
+    };
+  }
+
   function updateArtifactsStatus(runId, status) {
     const timestamp = nowIso();
     db.prepare("UPDATE aw_artifacts SET status = ?, updated_at = ? WHERE run_id = ?").run(
@@ -3421,6 +3583,7 @@ export function createAgentWorkspace({ userDataPath }) {
     downloadWorkspaceFile,
     deleteWorkspaceFile,
     moveWorkspaceFile,
+    restoreWorkspaceFiles,
     updateArtifactsStatus,
     createIssue,
     updateIssue,

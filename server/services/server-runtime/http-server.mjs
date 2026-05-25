@@ -14,8 +14,12 @@ import {
 } from "../client/client-runtime-core/client-runtime-bootstrap.mjs";
 import {
   checkpointTreeSummary,
+  diffCheckpointTree,
   listCheckpointTrees,
-  loadCheckpointTree
+  loadCheckpointTree,
+  previewCheckpointRestore,
+  queryCheckpointScope,
+  restoreCheckpointTree
 } from "../../platform/common/data-structure/checkpoint-tree-store.mjs";
 import {
   acknowledgeQueueMonitorAlert,
@@ -528,8 +532,12 @@ export async function startHttpServer({
     queueMonitor: queueMonitorAdapter,
     checkpointTreeApi: {
       checkpointTreeSummary,
+      diffCheckpointTree,
       listCheckpointTrees,
-      loadCheckpointTree
+      loadCheckpointTree,
+      previewCheckpointRestore,
+      queryCheckpointScope,
+      restoreCheckpointTree
     },
     monitorAlertApi: {
       getState: () => getMonitorAlertState(userDataPath, { queueMonitor: queueMonitorAdapter }),

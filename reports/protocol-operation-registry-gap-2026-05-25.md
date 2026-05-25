@@ -7,15 +7,15 @@
 - `server/platform/common/operation-dispatcher/protocol-operation-definitions.mjs`
 - `server/platform/specialized/console/console-domain-operation-executor.mjs`
 - `npm run server:verify:protocol-operations`
-- staged-tree 全量 `npm run server:verify`
+- `npm run server:verify:workspace-checkpoints`
 
 ## 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 协议操作定义 | 50 | 全部追加进 `SERVER_API_OPERATIONS`。 |
-| 已注册并可发现 | 50 | 已通过 HTTP/RPC/Tool Management/MCP 发现验证。 |
-| 明确空后端 | 8 | 运行时返回 `not_implemented`，只能算 `contract_registered`。 |
+| 协议操作定义 | 52 | 全部追加进 `SERVER_API_OPERATIONS`。 |
+| 已注册并可发现 | 52 | 已通过 HTTP/RPC/Tool Management/MCP 发现验证。 |
+| 明确空后端 | 3 | 运行时返回 `not_implemented`，只能算 `contract_registered`。 |
 | P0 旧“零实现”模块 | 0 | workspace contribution 与 knowledge access 已有执行器；code review 已有 Gerrit upload route，但仍有轻量占位操作。 |
 
 ## 按子系统统计
@@ -27,7 +27,8 @@
 | knowledge-access | 4 | 0 | 已接入 `evaluateKnowledgeAccess` 和 authorization store receipt/loan/denied list。 |
 | code-management | 5 | 0 | `workspace.code.change.upload` 已走 Gerrit upload；target/prepare/link/status 仍偏轻量占位，未形成完整 Codespace 持久化。 |
 | workspace-file | 6 | 0 | upload/list/download/read/write/patch 已接入 agent workspace file backend。 |
-| checkpoint | 7 | 5 | diff/restore/scope/revert 仍缺 workspace checkpoint backend。 |
+| checkpoint | 7 | 0 | tree/node/diff/scope/restore preview/restore 已接入 checkpoint tree backend；operation revert scope 已接入 operation audit store。 |
+| workspace-proposal | 2 | 0 | create/apply 已接入 agent workspace submission/decision 后端，proposal 必须先审核再形成 decision。 |
 | knowledge-export/evidence | 3 | 2 | evidence get 已接线；dossier/export 与 distillation/export 仍缺后端。 |
 | raw-corpus | 1 | 1 | format convert 仍缺 raw corpus converter。 |
 | workspace-asset-policy | 2 | 0 | 已进入 authorization facade。 |
@@ -40,14 +41,11 @@
 
 | 操作 ID | 所属模块 | 期望后端 | 优先级 |
 | --- | --- | --- | --- |
-| `workspace.checkpoint.diff` | 共享空间 / Checkpoint | `checkpointTreeApi.diff` | P1 |
-| `workspace.checkpoint.restore.preview` | 共享空间 / Checkpoint | `checkpointTreeApi.restorePreview` | P1 |
-| `workspace.checkpoint.restore` | 共享空间 / Checkpoint | `checkpointTreeApi.restore` | P1 |
-| `workspace.checkpoint.scope.query` | 共享空间 / Checkpoint | `checkpointTreeApi.scopeQuery` | P1 |
-| `workspace.operation.revert.scope` | 共享空间 / Operation Ledger | `operationLedger.revertScope` | P1 |
 | `raw-corpus.format.convert` | 知识转化 / 原始语料 | `rawCorpus.formatConverter` | P1 |
 | `knowledge.dossier.export` | 知识转化 / Dossier | `knowledgeDossierExporter` | P1 |
 | `knowledge.distillation.export` | 知识转化 / 蒸馏导出 | `knowledgeDistillationExporter` | P1 |
+
+Checkpoint 注意事项：`workspace.checkpoint.restore` 仍由通用 checkpoint tree 负责 restore marker、`checkpoint.restored` event 和审计范围记录；当 checkpoint node 携带 `workspaceFileSnapshot` 时，文件树 dry-run 和实际恢复会委托给共享空间 `restoreWorkspaceFiles` provider。其他业务状态回滚仍必须由各自 owning protocol 提供。
 
 ## P0 旧结论复核
 
@@ -59,7 +57,7 @@
 
 ## 下一步顺序
 
-1. 共享空间优先：补 checkpoint diff/restore/scope/revert，目标是把共享空间从部分协议化推进到可恢复、可审计、可回滚。
+1. 代码管理继续：共享空间 checkpoint/proposal/file/contribution 已完成后端和验证闭环；下一步优先补 Codespace 持久化、review target registry、状态同步后端和验收脚本。
 2. 知识转化其次：补 `raw-corpus.format.convert`、`knowledge.dossier.export`、`knowledge.distillation.export`，避免知识协议只完成检索/访问而缺少转换和导出闭环。
 3. 代码管理第三：把 target/prepare/link/status 从轻量 facade 升级为 Codespace 持久化和 Gerrit 状态同步后端。
 4. 每补一个子系统，必须同步更新 `docs/SUBSYSTEM-REFACTOR-CHECKLIST.md`，并增加或扩展 `server:verify:*` 覆盖。

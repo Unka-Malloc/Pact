@@ -2,7 +2,8 @@ export function createSystemControllerWorkspaceProtocolHandlers({
   sendConsoleDomainOperation,
   protocolPayload,
   operationAuditStore,
-  checkpointTreeApi
+  checkpointTreeApi,
+  agentWorkspace
 }) {
   return {
     async handleWorkspaceAuditQuery({ operation, url, response }) {
@@ -46,22 +47,25 @@ export function createSystemControllerWorkspaceProtocolHandlers({
         operationId: operation?.id || "workspace.checkpoint.diff",
         input: protocolPayload(requestBody),
         response,
+        context: { checkpointTreeApi },
         errorMessage: "生成 workspace checkpoint diff 失败。"
       });
     },
-    async handleWorkspaceCheckpointRestorePreview({ operation, requestBody, response }) {
+    async handleWorkspaceCheckpointRestorePreview({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.checkpoint.restore.preview",
         input: protocolPayload(requestBody),
         response,
+        context: { checkpointTreeApi, agentWorkspace, authSession },
         errorMessage: "预览 workspace checkpoint 恢复失败。"
       });
     },
-    async handleWorkspaceCheckpointRestore({ operation, requestBody, response }) {
+    async handleWorkspaceCheckpointRestore({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.checkpoint.restore",
         input: protocolPayload(requestBody),
         response,
+        context: { checkpointTreeApi, agentWorkspace, authSession },
         errorMessage: "恢复 workspace checkpoint 失败。"
       });
     },
@@ -70,15 +74,35 @@ export function createSystemControllerWorkspaceProtocolHandlers({
         operationId: operation?.id || "workspace.checkpoint.scope.query",
         input: protocolPayload(requestBody),
         response,
+        context: { checkpointTreeApi },
         errorMessage: "查询 workspace checkpoint 影响范围失败。"
       });
     },
-    async handleWorkspaceOperationRevertScope({ operation, requestBody, response }) {
+    async handleWorkspaceOperationRevertScope({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.operation.revert.scope",
         input: protocolPayload(requestBody),
         response,
+        context: { operationAuditStore, authSession },
         errorMessage: "预览 workspace 操作回滚范围失败。"
+      });
+    },
+    async handleWorkspaceProposalCreate({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.proposal.create",
+        input: protocolPayload(requestBody),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "创建 workspace 提案失败。"
+      });
+    },
+    async handleWorkspaceProposalApply({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.proposal.apply",
+        input: protocolPayload(requestBody),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "审核并应用 workspace 提案失败。"
       });
     },
     async handleWorkspaceCodeTargetEvaluate({ operation, requestBody, response }) {
