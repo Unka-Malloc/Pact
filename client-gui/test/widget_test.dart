@@ -16,6 +16,7 @@ void main() {
     expect(AppSection.values, [
       AppSection.console,
       AppSection.queue,
+      AppSection.agents,
       AppSection.server,
       AppSection.modules,
       AppSection.dataConnectors,

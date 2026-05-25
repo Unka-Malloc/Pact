@@ -19,6 +19,7 @@ import '../services/daemon_services.dart';
 import '../services/knowledge_graph_service.dart';
 import '../services/macos_mail_importer.dart';
 import '../services/runtime_services.dart';
+import '../services/agent_service.dart';
 
 class _MailKnowledgeGraphPreloadRequest {
   const _MailKnowledgeGraphPreloadRequest({
@@ -194,6 +195,55 @@ Future<List<MailKnowledgeDocument>> _loadMailKnowledgeDocumentsForPreload(
 }
 
 class AppController extends ChangeNotifier {
+  final AgentService agentService = AgentService();
+  List<TargetCandidate> scannedTargets = [];
+  Map<String, dynamic>? targetInspection;
+  Map<String, dynamic>? targetConfigPlan;
+  bool isScanningTargets = false;
+
+  Future<void> scanTargets() async {
+    if (isScanningTargets) return;
+    isScanningTargets = true;
+    notifyListeners();
+    try {
+      scannedTargets = await agentService.scanTargets();
+      statusMessage = '已扫描 ${scannedTargets.length} 个目标适配器。';
+      statusCaption = 'Targets';
+    } catch (e) {
+      debugPrint('Failed to scan targets: $e');
+      lastError = e.toString();
+    } finally {
+      isScanningTargets = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> inspectTarget(String target) async {
+    try {
+      targetInspection = await agentService.inspectTarget(target);
+      statusMessage = '已读取 $target 目标适配器。';
+      statusCaption = 'Target inspect';
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to inspect target: $e');
+      lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> planTargetConfig(String target) async {
+    try {
+      targetConfigPlan = await agentService.planTargetConfig(target);
+      statusMessage = '已生成 $target MCP 配置计划。';
+      statusCaption = 'MCP config plan';
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to plan target config: $e');
+      lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
   AppController({
     required PortableStorage storage,
     ClientBackendApi? backendApi,

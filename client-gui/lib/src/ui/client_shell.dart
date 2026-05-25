@@ -14,6 +14,7 @@ import '../models/transfer_models.dart';
 import '../services/knowledge_graph_service.dart';
 import '../services/macos_mail_importer.dart';
 import 'theme.dart';
+import 'agents_canvas.dart';
 
 class ClientShell extends StatefulWidget {
   const ClientShell({super.key, required this.controller});
@@ -164,6 +165,7 @@ class _ClientShellState extends State<ClientShell> {
   Widget _buildSidebar(BuildContext context) {
     final items = [
       (AppSection.console, '输入', Icons.terminal_outlined),
+      (AppSection.agents, 'Agents', Icons.smart_toy_outlined),
       (AppSection.server, '服务', Icons.dns_outlined),
       (AppSection.modules, '模块', Icons.extension_outlined),
       (AppSection.dataConnectors, '数据源', Icons.hub_outlined),
@@ -218,6 +220,7 @@ class _ClientShellState extends State<ClientShell> {
     final (title, subtitle) = switch (controller.currentSection) {
       AppSection.console => ('输入', '当前任务输入、执行状态与结果摘要'),
       AppSection.queue => ('输入', '当前任务输入、执行状态与结果摘要'),
+      AppSection.agents => ('Agents', 'Manage local IDE agents and AI tools'),
       AppSection.server => ('服务', '服务端接口、运行时、知识库和智能体能力'),
       AppSection.modules => ('模块', '本地能力开关与平台模块状态'),
       AppSection.dataConnectors => ('数据源', '跨应用本地镜像、授权和同步状态'),
@@ -352,6 +355,7 @@ class _ClientShellState extends State<ClientShell> {
     return switch (controller.currentSection) {
       AppSection.console => _buildDashboardCanvas(context, width),
       AppSection.queue => _buildDashboardCanvas(context, width),
+      AppSection.agents => AgentsCanvas(controller: controller, width: width),
       AppSection.server => _buildServerCanvas(context, width),
       AppSection.modules => _buildModulesCanvas(context, width),
       AppSection.dataConnectors => _buildDataConnectorsCanvas(context, width),

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use serde_json::{Value, json};
-use pact_client_native::backend_core::{Backend, load_rpc_endpoint_from_portable_data};
+use pact_client_native::backend_core::{load_rpc_endpoint_from_portable_data, Backend};
+use serde_json::{json, Value};
 use std::env;
 use std::path::Path;
 
@@ -447,6 +447,40 @@ fn main() -> Result<()> {
             print_json(&backend.execute_method("agents.list", json!({}), None)?);
             Ok(())
         }
+        [scope, action] if scope == "targets" && action == "scan" => {
+            print_json(&pact_client_native::targets::scan_targets()?);
+            Ok(())
+        }
+        [scope, action, rest @ ..] if scope == "targets" && action == "add" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::targets::add_target(&params)?);
+            Ok(())
+        }
+        [scope, action, target] if scope == "targets" && action == "inspect" => {
+            print_json(&pact_client_native::targets::inspect_target(target)?);
+            Ok(())
+        }
+        [scope, area, action, rest @ ..]
+            if scope == "mcp" && area == "config" && action == "plan" =>
+        {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::targets::mcp_config_plan(&params)?);
+            Ok(())
+        }
+        [scope, area, action, rest @ ..]
+            if scope == "mcp" && area == "config" && action == "apply" =>
+        {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::targets::mcp_config_apply(&params)?);
+            Ok(())
+        }
+        [scope, area, action, rest @ ..]
+            if scope == "mcp" && area == "config" && action == "rollback" =>
+        {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::targets::mcp_config_rollback(&params)?);
+            Ok(())
+        }
         [scope, action, rest @ ..] if scope == "agents" && action == "sync" => {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method("agents.sync", agent_sync_params(rest), None)?);
@@ -535,6 +569,55 @@ fn parse_json_arg(value: &str) -> Value {
     serde_json::from_str(value).unwrap_or_else(|_| json!({}))
 }
 
+fn cli_params(args: &[String]) -> Value {
+    let mut params = serde_json::Map::new();
+    let mut positionals = Vec::<Value>::new();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if let Some(raw_key) = arg.strip_prefix("--") {
+            let key = cli_param_key(raw_key);
+            if let Some(value) = args.get(index + 1).filter(|value| !value.starts_with("--")) {
+                params.insert(key, json!(value));
+                index += 2;
+            } else {
+                params.insert(key, json!(true));
+                index += 1;
+            }
+            continue;
+        }
+        positionals.push(json!(arg));
+        index += 1;
+    }
+    if !positionals.is_empty() {
+        if !params.contains_key("target") {
+            if let Some(target) = positionals.first().and_then(Value::as_str) {
+                params.insert("target".to_string(), json!(target));
+            }
+        }
+        params.insert("positionals".to_string(), Value::Array(positionals));
+    }
+    Value::Object(params)
+}
+
+fn cli_param_key(raw: &str) -> String {
+    let mut out = String::new();
+    let mut uppercase_next = false;
+    for ch in raw.chars() {
+        if ch == '-' || ch == '_' {
+            uppercase_next = true;
+            continue;
+        }
+        if uppercase_next {
+            out.extend(ch.to_uppercase());
+            uppercase_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 fn print_usage() {
     eprintln!(
         "Usage:
@@ -575,6 +658,12 @@ fn print_usage() {
   pact-client agent invoke [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <question>
   pact-client agents sync [--service-url URL]
   pact-client agents list
+  pact-client targets scan
+  pact-client targets add --target <target> [--config-path PATH] [--binary-path PATH]
+  pact-client targets inspect <target>
+  pact-client mcp config plan --target <target> [--config-path PATH]
+  pact-client mcp config apply --target <target> [--config-path PATH]
+  pact-client mcp config rollback --target <target> [--snapshot-id ID]
   pact-client context compaction run|preview <json-or-question>
   pact-client context compaction records
   pact-client context session-memory get|clear [json-or-session-id]
