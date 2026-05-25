@@ -741,6 +741,7 @@ function gateSubmission({ existingDuplicate = null, submission, writePolicy = {}
 export function createAgentWorkspace({ userDataPath, merkleState = null, checkpointTreeApi = null }) {
   const rootPath = path.join(userDataPath, "agent-workspaces");
   fs.mkdirSync(rootPath, { recursive: true });
+  const localDirectoryMountConfigPath = path.join(rootPath, "local-directory-mounts.json");
   const db = new Database(path.join(rootPath, "agent-workspace.sqlite"));
   db.pragma("journal_mode = WAL");
   db.exec(`
@@ -1096,6 +1097,350 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       return { ok: false, status: 403, error: "工作空间不可访问。" };
     }
     return { ok: true, workspace };
+  }
+
+  function createAccessReceipt({ workspaceId = "", operationId = "", path: receiptPath = "", action = "read" } = {}) {
+    const createdAt = nowIso();
+    const eventHash = stableHash("access-receipt", workspaceId, operationId, receiptPath, action, createdAt);
+    return {
+      protocolVersion: "pact.sharedspace.access-receipt.v1",
+      receiptId: stableId("access_receipt", workspaceId, operationId, receiptPath, action, createdAt),
+      operationId,
+      workspaceId,
+      path: receiptPath,
+      action,
+      state: "cached",
+      eventHash,
+      createdAt
+    };
+  }
+
+  function defaultLocalDirectoryMountConfig() {
+    return {
+      schemaVersion: 1,
+      configPath: localDirectoryMountConfigPath,
+      mounts: []
+    };
+  }
+
+  function readLocalDirectoryMountConfig() {
+    if (!fs.existsSync(localDirectoryMountConfigPath)) {
+      return defaultLocalDirectoryMountConfig();
+    }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(localDirectoryMountConfigPath, "utf8"));
+      return {
+        schemaVersion: 1,
+        configPath: localDirectoryMountConfigPath,
+        ...asObject(parsed),
+        mounts: asArray(parsed.mounts)
+      };
+    } catch {
+      return defaultLocalDirectoryMountConfig();
+    }
+  }
+
+  function writeLocalDirectoryMountConfig(config = {}) {
+    const next = {
+      schemaVersion: 1,
+      configPath: localDirectoryMountConfigPath,
+      mounts: asArray(config.mounts)
+    };
+    fs.mkdirSync(path.dirname(localDirectoryMountConfigPath), { recursive: true });
+    const tmpPath = `${localDirectoryMountConfigPath}.tmp`;
+    fs.writeFileSync(tmpPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    fs.renameSync(tmpPath, localDirectoryMountConfigPath);
+    return next;
+  }
+
+  function validateLocalDirectoryRoot(sourcePath) {
+    const rawPath = String(sourcePath || "").trim();
+    if (!rawPath) {
+      throw new Error("sourcePath 不能为空。");
+    }
+    const absolutePath = path.resolve(rawPath);
+    const root = path.parse(absolutePath).root;
+    if (absolutePath === root) {
+      throw new Error("不能把文件系统根目录作为受控本机目录。");
+    }
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error("本机目录不存在。");
+    }
+    const stat = fs.lstatSync(absolutePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error("不允许连接符号链接目录。");
+    }
+    if (!stat.isDirectory()) {
+      throw new Error("sourcePath 必须是本机目录。");
+    }
+    return {
+      absolutePath,
+      realPath: fs.realpathSync.native(absolutePath),
+      stat
+    };
+  }
+
+  function publicLocalDirectoryMount(mount = {}, { includeSourcePath = false } = {}) {
+    const output = {
+      mountRef: String(mount.mountRef || ""),
+      workspaceId: String(mount.workspaceId || ""),
+      sourceRootName: String(mount.sourceRootName || ""),
+      sourceRootHash: String(mount.sourceRootHash || ""),
+      targetPath: String(mount.targetPath || ""),
+      status: String(mount.status || "active"),
+      symlinkPolicy: "reject",
+      stateSemantics: {
+        source: "localDir",
+        sourceState: "staged",
+        canonicalState: "archived_after_cas_state_commit"
+      },
+      createdAt: String(mount.createdAt || ""),
+      updatedAt: String(mount.updatedAt || "")
+    };
+    if (includeSourcePath) {
+      output.sourcePath = String(mount.sourcePath || "");
+      output.configPath = localDirectoryMountConfigPath;
+    }
+    return output;
+  }
+
+  function resolveLocalDirectorySource(input = {}, workspace) {
+    const mountRef = String(
+      input.mountRef ||
+        input.mountId ||
+        input.localDirMountRef ||
+        input.localDirectoryMountRef ||
+        ""
+    ).trim();
+    if (mountRef) {
+      const config = readLocalDirectoryMountConfig();
+      const mount = asArray(config.mounts).find((item) =>
+        String(item.mountRef || "") === mountRef &&
+        String(item.workspaceId || "") === String(workspace.workspaceId || "")
+      );
+      if (!mount) {
+        throw new Error("本机目录 mount 不存在或不属于当前工作空间。");
+      }
+      if (String(mount.status || "active") !== "active") {
+        throw new Error("本机目录 mount 未启用。");
+      }
+      const root = validateLocalDirectoryRoot(mount.sourcePath);
+      return {
+        sourcePath: root.realPath,
+        mount
+      };
+    }
+    const sourcePath = String(input.sourcePath || input.localPath || input.dirPath || "").trim();
+    const root = validateLocalDirectoryRoot(sourcePath);
+    return {
+      sourcePath: root.realPath,
+      mount: null
+    };
+  }
+
+  function connectLocalDirectory(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    let targetPath;
+    try {
+      targetPath = normalizeWorkspaceRelativePath(input.targetPath || input.path || "", { allowEmpty: true });
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    let root;
+    try {
+      root = validateLocalDirectoryRoot(input.sourcePath || input.localPath || input.dirPath);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    const validationPlan = localDirectorySyncPlan({
+      ...input,
+      workspaceId: access.workspace.workspaceId,
+      sourcePath: root.realPath,
+      targetPath,
+      maxFiles: input.maxFiles || 2000
+    });
+    if (!validationPlan.ok) {
+      return validationPlan;
+    }
+    const timestamp = nowIso();
+    const mountRef = String(input.mountRef || "").trim() ||
+      stableId("local_dir_mount", access.workspace.workspaceId, root.realPath, targetPath);
+    const mount = {
+      mountRef,
+      workspaceId: access.workspace.workspaceId,
+      sourcePath: root.realPath,
+      sourceRootName: path.basename(root.realPath),
+      sourceRootHash: stableHash(root.realPath),
+      targetPath,
+      status: input.enabled === false ? "disabled" : "active",
+      symlinkPolicy: "reject",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      connectedBy: String(input.createdBy || input.actorUserId || input.agentId || "")
+    };
+    const config = readLocalDirectoryMountConfig();
+    const existingIndex = config.mounts.findIndex((item) => String(item.mountRef || "") === mountRef);
+    if (existingIndex >= 0) {
+      mount.createdAt = config.mounts[existingIndex].createdAt || timestamp;
+      config.mounts[existingIndex] = mount;
+    } else {
+      config.mounts.push(mount);
+    }
+    writeLocalDirectoryMountConfig(config);
+    updateWorkspaceTimeStmt.run(timestamp, access.workspace.workspaceId);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      configPath: localDirectoryMountConfigPath,
+      mount: publicLocalDirectoryMount(mount, { includeSourcePath: true }),
+      syncPreview: {
+        dryRun: true,
+        summary: validationPlan.summary,
+        sourceFileCount: validationPlan.sourceFileCount,
+        targetFileCount: validationPlan.targetFileCount
+      }
+    };
+  }
+
+  function listLocalDirectoryMounts(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const config = readLocalDirectoryMountConfig();
+    const mounts = config.mounts
+      .filter((item) => String(item.workspaceId || "") === access.workspace.workspaceId)
+      .map((item) => publicLocalDirectoryMount(item, { includeSourcePath: true }));
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      configPath: localDirectoryMountConfigPath,
+      mounts,
+      count: mounts.length
+    };
+  }
+
+  function listLocalDirectoryItems(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    let source;
+    try {
+      source = resolveLocalDirectorySource(input, access.workspace);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    let basePath;
+    try {
+      basePath = normalizeWorkspaceRelativePath(input.path || input.relativePath || "", { allowEmpty: true });
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    const root = source.sourcePath;
+    const target = basePath ? path.resolve(root, ...basePath.split("/")) : root;
+    if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+      return { ok: false, status: 400, error: "路径不能跳出本机目录 mount。" };
+    }
+    if (!fs.existsSync(target)) {
+      return {
+        protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+        ok: true,
+        workspaceId: access.workspace.workspaceId,
+        mode: "localDir",
+        mount: source.mount ? publicLocalDirectoryMount(source.mount) : null,
+        basePath,
+        exists: false,
+        paths: [],
+        items: [],
+        count: 0,
+        accessReceipt: createAccessReceipt({
+          workspaceId: access.workspace.workspaceId,
+          operationId: input.operationId || "sharedspace.item.list",
+          path: basePath || "/",
+          action: "localDir.list"
+        })
+      };
+    }
+    const rootStat = fs.lstatSync(target);
+    if (rootStat.isSymbolicLink()) {
+      return { ok: false, status: 400, error: "不允许列出符号链接对象。" };
+    }
+    const includeDirectories = input.includeDirectories !== false;
+    const includeFiles = input.includeFiles !== false;
+    const includeHash = input.includeHash === true;
+    const recursive = input.recursive === true;
+    const limit = boundedInteger(input.limit, 200, 1, 2000);
+    const items = [];
+    const toItem = (absolutePath, relativePath, stat) => ({
+      name: path.basename(absolutePath),
+      sourceRelativePath: relativePath,
+      type: stat.isDirectory() ? "directory" : stat.isFile() ? "file" : "special",
+      state: "staged",
+      archived: false,
+      sizeBytes: Number(stat.size || 0),
+      mtimeMs: Number(stat.mtimeMs || 0),
+      contentSha256: includeHash && stat.isFile() ? sha256Buffer(fs.readFileSync(absolutePath)) : undefined
+    });
+    const visit = (absoluteDir, relativeDir) => {
+      if (items.length >= limit) {
+        return;
+      }
+      const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
+        if (items.length >= limit) {
+          return;
+        }
+        if (entry.name.startsWith(".")) {
+          throw new Error(`不允许列出以 . 开头的路径：${relativeDir ? `${relativeDir}/` : ""}${entry.name}`);
+        }
+        const childAbsolutePath = path.join(absoluteDir, entry.name);
+        const childRelativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+        const stat = fs.lstatSync(childAbsolutePath);
+        if (stat.isSymbolicLink()) {
+          throw new Error(`不允许列出符号链接：${childRelativePath}`);
+        }
+        if ((stat.isDirectory() && includeDirectories) || (stat.isFile() && includeFiles) || (!stat.isDirectory() && !stat.isFile())) {
+          items.push(toItem(childAbsolutePath, childRelativePath, stat));
+        }
+        if (stat.isDirectory() && recursive) {
+          visit(childAbsolutePath, childRelativePath);
+        }
+      }
+    };
+    try {
+      if (rootStat.isDirectory()) {
+        visit(target, basePath);
+      } else if (includeFiles) {
+        items.push(toItem(target, basePath, rootStat));
+      }
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      mode: "localDir",
+      mount: source.mount ? publicLocalDirectoryMount(source.mount) : null,
+      basePath,
+      exists: true,
+      paths: items.map((item) => item.sourceRelativePath),
+      items,
+      count: items.length,
+      accessReceipt: createAccessReceipt({
+        workspaceId: access.workspace.workspaceId,
+        operationId: input.operationId || "sharedspace.item.list",
+        path: basePath || "/",
+        action: "localDir.list"
+      })
+    };
   }
 
   function decodeWorkspaceFileContent(input = {}) {
@@ -1597,6 +1942,12 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
         basePath: base.relativePath,
         exists: false,
         cacheReceipt: await workspaceListCacheReceipt(access.workspace, base.relativePath),
+        accessReceipt: createAccessReceipt({
+          workspaceId: access.workspace.workspaceId,
+          operationId: input.operationId || "agent_workspaces.files.list",
+          path: base.relativePath || "/",
+          action: "workspace.list"
+        }),
         paths: [],
         files: []
       };
@@ -1654,6 +2005,12 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       basePath: base.relativePath,
       exists: true,
       cacheReceipt: await workspaceListCacheReceipt(access.workspace, base.relativePath),
+      accessReceipt: createAccessReceipt({
+        workspaceId: access.workspace.workspaceId,
+        operationId: input.operationId || "agent_workspaces.files.list",
+        path: base.relativePath || "/",
+        action: "workspace.list"
+      }),
       paths: files.map((file) => file.relativePath),
       files,
       count: files.length
@@ -2727,6 +3084,12 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       workspaceId: access.workspace.workspaceId,
       file: statResult.file,
       cacheReceipt,
+      accessReceipt: createAccessReceipt({
+        workspaceId: access.workspace.workspaceId,
+        operationId: input.operationId || "workspace.file.read",
+        path: statResult.file.relativePath,
+        action: "workspace.read"
+      }),
       encoding: "base64",
       contentBase64: content.toString("base64"),
       content: input.includeText === false ? undefined : content.toString(String(input.textEncoding || input.encoding || "utf8"))
@@ -3202,10 +3565,13 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     if (!access.ok) {
       return access;
     }
-    const sourcePath = String(input.sourcePath || input.localPath || input.dirPath || "").trim();
-    if (!sourcePath) {
-      return { ok: false, status: 400, error: "sourcePath 不能为空。" };
+    let source;
+    try {
+      source = resolveLocalDirectorySource(input, access.workspace);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
     }
+    const sourcePath = source.sourcePath;
     let targetPath;
     try {
       targetPath = normalizeWorkspaceRelativePath(input.targetPath || input.path || "", { allowEmpty: true });
@@ -3258,6 +3624,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       dryRun: true,
       workspaceId: access.workspace.workspaceId,
       targetPath,
+      mountRef: source.mount?.mountRef || "",
       sourceRootName: path.basename(path.resolve(sourcePath)),
       sourceRootHash: stableHash(path.resolve(sourcePath)),
       deleteExtraneous,
@@ -3286,7 +3653,13 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     if (input.dryRun === true) {
       return plan;
     }
-    const sourcePath = String(input.sourcePath || input.localPath || input.dirPath || "").trim();
+    let source;
+    try {
+      source = resolveLocalDirectorySource(input, access.workspace);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    const sourcePath = source.sourcePath;
     const sourceFiles = scanDirectoryForWorkspaceSync(sourcePath, {
       rootRelativePath: plan.targetPath,
       maxFiles: Math.max(1, Math.min(Number(input.maxFiles || input.limit || 2000), 10000))
@@ -4554,6 +4927,9 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     downloadWorkspaceFile,
     deleteWorkspaceFile,
     moveWorkspaceFile,
+    connectLocalDirectory,
+    listLocalDirectoryMounts,
+    listLocalDirectoryItems,
     localDirectorySyncPlan,
     applyLocalDirectorySync,
     restoreWorkspaceFiles,

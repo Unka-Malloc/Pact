@@ -138,6 +138,7 @@ const selectedSession   = ref<WsSessionDetail | null>(null);
 const chainData         = ref<any>(null);
 const contextData       = ref<any>(null);
 const workspaceFilesData = ref<any>(null);
+const localDirMountData = ref<any>(null);
 const workspaceCheckpointTrees = ref<WsCheckpointTreeSummary[]>([]);
 const workspaceCheckpointDetail = ref<WsCheckpointTreeDetail | null>(null);
 const workspaceCheckpointPreview = ref<any>(null);
@@ -146,12 +147,13 @@ const selectedCheckpointTreeId = ref('');
 const selectedCheckpointNodeId = ref('');
 const sessionContextData = ref<WsSessionContext | null>(null);
 const localError        = ref('');
-const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share'>('list');
+const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share' | 'localDir'>('list');
 
 const createForm = reactive({ title: '', objective: '', parentWorkspaceId: '' });
 const profileForm = reactive({ contextProfileId: '', toolGrantId: '', modelAlias: '', includeSourceIds: '', excludeSourceIds: '', ownedSourceIds: '' });
 const parentForm  = reactive({ parentWorkspaceId: '' });
 const shareForm   = reactive({ targetWorkspaceId: '', action: 'share' as 'share' | 'unshare' });
+const localDirForm = reactive({ sourcePath: '', targetPath: 'mirror', deleteExtraneous: true, maxFiles: 2000 });
 
 const showDeleteModal = ref(false);
 const deleteFolderChecked = ref(false);
@@ -254,7 +256,7 @@ async function load() {
 }
 
 async function loadChain(id: string) {
-  chainData.value = null; contextData.value = null; workspaceFilesData.value = null;
+  chainData.value = null; contextData.value = null; workspaceFilesData.value = null; localDirMountData.value = null;
   workspaceCheckpointTrees.value = [];
   workspaceCheckpointDetail.value = null;
   workspaceCheckpointPreview.value = null;
@@ -262,14 +264,16 @@ async function loadChain(id: string) {
   selectedCheckpointTreeId.value = '';
   selectedCheckpointNodeId.value = '';
   try {
-    const [c, ctx, files] = await Promise.all([
+    const [c, ctx, files, localDirs] = await Promise.all([
       apiFetch(`/api/agent-workspaces/${id}/chain`),
       apiFetch(`/api/agent-workspaces/${id}/context`),
       apiFetch(`/api/agent-workspaces/${id}/files?recursive=true`).catch(() => ({ files: [] })),
+      apiFetch(`/api/agent-workspaces/${id}/local-dir/mounts`).catch(() => ({ mounts: [], count: 0 })),
     ]);
     chainData.value = c;
     contextData.value = ctx;
     workspaceFilesData.value = files;
+    localDirMountData.value = localDirs;
     await loadWorkspaceCheckpoints(id);
   } catch (e: any) { localError.value = e.message; }
 }
@@ -483,6 +487,45 @@ async function shareOrUnshare() {
   finally { clearBusy(); }
 }
 
+async function connectLocalDirectory() {
+  if (!selectedId.value || !localDirForm.sourcePath.trim()) return;
+  setBusy('ws:local-dir-connect');
+  localError.value = '';
+  try {
+    await apiFetch(`/api/agent-workspaces/${selectedId.value}/local-dir/connect`, {
+      method: 'POST',
+      body: JSON.stringify({
+        sourcePath: localDirForm.sourcePath,
+        targetPath: localDirForm.targetPath || '',
+        deleteExtraneous: localDirForm.deleteExtraneous,
+        maxFiles: localDirForm.maxFiles,
+      }),
+    });
+    localDirForm.sourcePath = '';
+    await loadChain(selectedId.value);
+    panel.value = 'list';
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function syncLocalDirectory(mount: any) {
+  if (!selectedId.value || !mount?.mountRef) return;
+  setBusy(`ws:local-dir-sync:${mount.mountRef}`);
+  localError.value = '';
+  try {
+    await apiFetch(`/api/agent-workspaces/${selectedId.value}/local-dir/sync/apply`, {
+      method: 'POST',
+      body: JSON.stringify({
+        mountRef: mount.mountRef,
+        targetPath: mount.targetPath || '',
+        deleteExtraneous: true,
+      }),
+    });
+    await loadChain(selectedId.value);
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
 function openProfile(ws: WsWorkspace) {
   const scope = ws.profile?.knowledgeScope ?? {};
   Object.assign(profileForm, {
@@ -499,6 +542,14 @@ function openProfile(ws: WsWorkspace) {
 function openParent(ws: WsWorkspace) {
   parentForm.parentWorkspaceId = ws.parentWorkspaceId ?? '';
   panel.value = 'parent';
+}
+
+function openLocalDir() {
+  localDirForm.sourcePath = '';
+  localDirForm.targetPath = 'mirror';
+  localDirForm.deleteExtraneous = true;
+  localDirForm.maxFiles = 2000;
+  panel.value = 'localDir';
 }
 
 // busyKey helpers (work on the existing string-compat ref)
@@ -600,6 +651,7 @@ load();
           <div class="ws-card-actions">
             <button class="table-action" type="button" @click.stop="openProfile(ws)">配置 Profile</button>
             <button class="table-action" type="button" @click.stop="openParent(ws)">设置继承</button>
+            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openLocalDir()">本机目录</button>
             <button class="table-action" type="button" @click.stop="panel = 'share'; shareForm.action = 'share'">共享</button>
           </div>
         </article>
@@ -734,6 +786,42 @@ load();
           </div>
         </template>
 
+        <template v-else-if="panel === 'localDir' && selected">
+          <div class="surface-card drawer-panel">
+            <div class="panel-header">
+              <h4>本机目录 — {{ selected.title }}</h4>
+              <p>连接后配置写入服务端数据目录，后续同步通过 mountRef 执行。</p>
+            </div>
+            <div class="form-grid">
+              <label><span>本机目录路径 *</span><input v-model="localDirForm.sourcePath" autocomplete="off" placeholder="/Users/example/Documents/project" /></label>
+              <label><span>工作空间目标路径</span><input v-model="localDirForm.targetPath" autocomplete="off" placeholder="mirror" /></label>
+              <label><span>文件上限</span><input v-model.number="localDirForm.maxFiles" type="number" min="1" max="10000" /></label>
+              <BinaryCheckbox v-model="localDirForm.deleteExtraneous" label="同步时清理目标中的多余文件" />
+            </div>
+            <div class="module-actions">
+              <button class="tool-button" type="button" :disabled="!localDirForm.sourcePath.trim() || !!busyKey" @click="connectLocalDirectory">
+                {{ busyKey === 'ws:local-dir-connect' ? '连接中…' : '连接目录' }}
+              </button>
+              <button class="tool-button tool-button-ghost" type="button" @click="panel = 'list'">取消</button>
+            </div>
+            <div v-if="localDirMountData?.mounts?.length" class="module-panel" style="margin-top: var(--space-4);">
+              <div class="module-panel-heading">
+                <strong>已连接 mount</strong>
+                <span>{{ localDirMountData.mounts.length }} 个</span>
+              </div>
+              <div class="ws-id-list">
+                <div v-for="mount in localDirMountData.mounts" :key="mount.mountRef" class="ws-chain-item" style="justify-content: space-between;">
+                  <code>{{ mount.mountRef.slice(0, 22) }}</code>
+                  <span>{{ mount.sourceRootName }} -> {{ mount.targetPath || '根目录' }}</span>
+                  <button class="table-action" type="button" :disabled="!!busyKey" @click="syncLocalDirectory(mount)">
+                    {{ busyKey === `ws:local-dir-sync:${mount.mountRef}` ? '同步中…' : '同步' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
         <!-- ── Detail view (default) ────────────────────────────────── -->
         <template v-else-if="selected">
           <div class="surface-card">
@@ -831,6 +919,27 @@ load();
 
             <ConfigFoldCard v-if="workspaceFilesData?.files" title="工作空间文件树（物理文件）">
               <WorkspaceFileTree :files="workspaceFilesData.files" />
+            </ConfigFoldCard>
+
+            <ConfigFoldCard title="本机目录 mount（v0.0.1）">
+              <div class="checkpoint-toolbar">
+                <div>
+                  <strong>{{ localDirMountData?.count ?? 0 }} 个受控目录</strong>
+                  <span v-if="localDirMountData?.configPath">配置：{{ localDirMountData.configPath }}</span>
+                </div>
+                <button class="table-action" type="button" :disabled="!!busyKey" @click="openLocalDir">连接目录</button>
+              </div>
+              <div v-if="localDirMountData?.mounts?.length" class="ws-id-list" style="margin-top: var(--space-3);">
+                <div v-for="mount in localDirMountData.mounts" :key="mount.mountRef" class="ws-chain-item" style="justify-content: space-between;">
+                  <code>{{ mount.mountRef.slice(0, 22) }}</code>
+                  <span>{{ mount.sourceRootName }} -> {{ mount.targetPath || '根目录' }}</span>
+                  <StatusPill :tone="mount.status === 'active' ? 'success' : 'neutral'" :label="mount.status" />
+                  <button class="table-action" type="button" :disabled="!!busyKey" @click="syncLocalDirectory(mount)">
+                    {{ busyKey === `ws:local-dir-sync:${mount.mountRef}` ? '同步中…' : '同步' }}
+                  </button>
+                </div>
+              </div>
+              <div v-else class="checkpoint-empty">当前工作空间还没有连接本机目录。</div>
             </ConfigFoldCard>
 
             <ConfigFoldCard title="文件回退点（管控台）">

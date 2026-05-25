@@ -34,20 +34,20 @@ function mcpRequest(method, params = {}, id = 1) {
 
 let mcpId = 100;
 
-async function callMcp(baseUrl, token, operation, input = {}) {
+async function callMcp(baseUrl, token, operation, input = {}, toolName = "pact.sharedspace") {
   mcpId += 1;
-  const response = await callMcpRaw(baseUrl, token, operation, input, mcpId);
+  const response = await callMcpRaw(baseUrl, token, operation, input, mcpId, toolName);
   assert.equal(response.status, 200);
   assert.equal(response.payload.error, undefined, JSON.stringify(response.payload.error || {}, null, 2));
   return response.payload.result.structuredContent.payload;
 }
 
-async function callMcpRaw(baseUrl, token, operation, input = {}, id = 1) {
+async function callMcpRaw(baseUrl, token, operation, input = {}, id = 1, toolName = "pact.sharedspace") {
   return fetchJson(`${baseUrl}/mcp`, {
     method: "POST",
     headers: apiKeyHeaders(token),
     body: JSON.stringify(mcpRequest("tools/call", {
-      name: "pact.sharedspace",
+      name: toolName,
       arguments: {
         apiVersion: "pact.mcp.v1",
         operation,
@@ -85,8 +85,12 @@ function assertAuditTrail(payload, operationId, { label, minCount, readOnly, sou
   assert.ok(item.actor?.userId, `${label} should store the MCP grant actor`);
   const redactedInputText = JSON.stringify(item.redactedInput || {});
   if (expectInputScope) {
+    const targetValues = [
+      ...valuesForKey(item.redactedInput, "targetPath"),
+      ...valuesForKey(item.redactedInput, "path")
+    ];
     assert.ok(
-      valuesForKey(item.redactedInput, "targetPath").includes(targetPath),
+      targetValues.includes(targetPath),
       `${label} should preserve workspace target scope: ${redactedInputText}`
     );
     assert.ok(
@@ -141,9 +145,57 @@ try {
   const workspaceId = created.workspace.workspaceRef || created.workspace.workspaceId;
   assert.ok(workspaceId);
 
-  const firstPlan = await callMcp(server.url, grant.payload.token, "pact.sharedspace.sync.plan", {
+  const capabilities = await callMcpRaw(server.url, grant.payload.token, "pact.capabilities.list", {}, "capabilities", "pact.discovery");
+  assert.equal(capabilities.status, 200);
+  const operationNames = new Set((capabilities.payload.result.structuredContent.operations || []).map((tool) => tool.name));
+  for (const operationName of [
+    "pact.sharedspace.localDir.connect",
+    "pact.sharedspace.localDir.list",
+    "pact.sharedspace.item.list",
+    "pact.sharedspace.file.read",
+    "pact.sharedspace.file.write",
+    "pact.sharedspace.item.delete",
+    "pact.sharedspace.sync.plan",
+    "pact.sharedspace.sync.apply"
+  ]) {
+    assert.equal(operationNames.has(operationName), true, `${operationName} should be discoverable`);
+  }
+
+  const connected = await callMcp(server.url, grant.payload.token, "pact.sharedspace.localDir.connect", {
     workspaceId,
     sourcePath: sourceDir,
+    targetPath: "mirror",
+    deleteExtraneous: true
+  });
+  assert.equal(connected.ok, true);
+  assert.ok(connected.mount?.mountRef, "connect should return a mount ref");
+  assert.equal(connected.mount.sourceRootName, path.basename(await fs.realpath(sourceDir)));
+  assert.equal(Object.hasOwn(connected.mount, "sourcePath"), false, "MCP connect payload must not expose absolute sourcePath");
+  const mountRef = connected.mount.mountRef;
+
+  const mounts = await callMcp(server.url, grant.payload.token, "pact.sharedspace.localDir.list", {
+    workspaceId
+  });
+  assert.equal(mounts.ok, true);
+  assert.equal(mounts.count, 1);
+  assert.equal(mounts.mounts[0].mountRef, mountRef);
+
+  const sourceItems = await callMcp(server.url, grant.payload.token, "pact.sharedspace.item.list", {
+    workspaceId,
+    mountRef,
+    recursive: true,
+    includeHash: true
+  });
+  assert.equal(sourceItems.ok, true);
+  assert.equal(sourceItems.mode, "localDir");
+  assert.ok(sourceItems.accessReceipt?.receiptId, "local directory list should return an access receipt");
+  assert.ok(sourceItems.paths.includes("one.txt"));
+  assert.ok(sourceItems.paths.includes("nested/two.txt"));
+  assert.equal(JSON.stringify(sourceItems).includes(sourceDir), false, "local directory list must not leak sourcePath");
+
+  const firstPlan = await callMcp(server.url, grant.payload.token, "pact.sharedspace.sync.plan", {
+    workspaceId,
+    mountRef,
     targetPath: "mirror",
     deleteExtraneous: true
   });
@@ -155,7 +207,7 @@ try {
 
   const firstApply = await callMcp(server.url, grant.payload.token, "pact.sharedspace.sync.apply", {
     workspaceId,
-    sourcePath: sourceDir,
+    mountRef,
     targetPath: "mirror",
     deleteExtraneous: true
   });
@@ -177,13 +229,48 @@ try {
   assert.equal(firstDownload.cacheReceipt?.hit, true);
   assert.ok(firstDownload.cacheReceipt?.proofHash);
 
+  const sharedspaceList = await callMcp(server.url, grant.payload.token, "pact.sharedspace.item.list", {
+    workspaceId,
+    path: "mirror",
+    recursive: true
+  });
+  assert.equal(sharedspaceList.ok, true);
+  assert.equal(sharedspaceList.mode, undefined);
+  assert.ok(sharedspaceList.accessReceipt?.receiptId, "sharedspace workspace list should return an access receipt");
+  assert.ok(sharedspaceList.paths.includes("mirror/nested/two.txt"));
+
+  const sharedspaceRead = await callMcp(server.url, grant.payload.token, "pact.sharedspace.file.read", {
+    workspaceId,
+    path: "mirror/nested/two.txt"
+  });
+  assert.equal(sharedspaceRead.ok, true);
+  assert.equal(sharedspaceRead.content, "local two\n");
+  assert.ok(sharedspaceRead.accessReceipt?.receiptId, "sharedspace read should return an access receipt");
+
+  const sharedspaceWrite = await callMcp(server.url, grant.payload.token, "pact.sharedspace.file.write", {
+    workspaceId,
+    path: "mirror/written.txt",
+    content: "written through sharedspace\n"
+  });
+  assert.equal(sharedspaceWrite.ok, true);
+  assert.ok(sharedspaceWrite.stateCommit?.commitId, "sharedspace write should return a state commit");
+  assert.ok(sharedspaceWrite.checkpoint?.nodeId, "sharedspace write should create a checkpoint");
+
+  const sharedspaceDelete = await callMcp(server.url, grant.payload.token, "pact.sharedspace.item.delete", {
+    workspaceId,
+    path: "mirror/written.txt"
+  });
+  assert.equal(sharedspaceDelete.ok, true);
+  assert.ok(sharedspaceDelete.stateCommit?.commitId, "sharedspace delete should return a state commit");
+  assert.ok(sharedspaceDelete.checkpoint?.nodeId, "sharedspace delete should create a checkpoint");
+
   await fs.writeFile(path.join(sourceDir, "one.txt"), "local one changed\n", "utf8");
   await fs.rm(path.join(sourceDir, "nested", "two.txt"));
   await fs.writeFile(path.join(sourceDir, "three.txt"), "local three\n", "utf8");
 
   const secondPlan = await callMcp(server.url, grant.payload.token, "pact.sharedspace.sync.plan", {
     workspaceId,
-    sourcePath: sourceDir,
+    mountRef,
     targetPath: "mirror",
     deleteExtraneous: true
   });
@@ -195,7 +282,7 @@ try {
 
   const secondApply = await callMcp(server.url, grant.payload.token, "pact.sharedspace.sync.apply", {
     workspaceId,
-    sourcePath: sourceDir,
+    mountRef,
     targetPath: "mirror",
     deleteExtraneous: true
   });
@@ -253,6 +340,27 @@ try {
     sourcePath: sourceDir,
     targetPath: "mirror"
   });
+
+  for (const operationId of [
+    "sharedspace.localDir.connect",
+    "sharedspace.item.list",
+    "sharedspace.file.read",
+    "sharedspace.file.write",
+    "sharedspace.item.delete"
+  ]) {
+    const audit = await callMcp(server.url, grant.payload.token, "pact.workspace.audit.query", {
+      operationId,
+      limit: 20
+    });
+    assertAuditTrail(audit, operationId, {
+      label: `${operationId} audit query`,
+      minCount: 1,
+      readOnly: operationId === "sharedspace.item.list" || operationId === "sharedspace.file.read",
+      sourcePath: sourceDir,
+      targetPath: operationId === "sharedspace.localDir.connect" ? "mirror" : "mirror/written.txt",
+      expectInputScope: operationId !== "sharedspace.item.list" && operationId !== "sharedspace.file.read"
+    });
+  }
 
   const revertScope = await callMcp(server.url, grant.payload.token, "pact.workspace.operation.revert.scope", {
     operationId: "sharedspace.sync.apply",

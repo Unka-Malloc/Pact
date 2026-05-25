@@ -4096,6 +4096,206 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     safety: { risk: "safe_write", requiresConfirmation: true }
   },
   {
+    id: "sharedspace.localDir.connect",
+    feature: "agent_workspace",
+    label: "连接受控本机目录",
+    target: { controller: "system", method: "handleConnectWorkspaceLocalDirectory" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/local-dir/connect",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "sharedspace.localDir.connect",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["sharedspace", "local-dir", "connect"],
+      usage: "sharedspace local-dir connect --workspace-id WORKSPACE_ID --body local-dir.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["workspaceId", "sourcePath"],
+      properties: {
+        workspaceId: { type: "string" },
+        sourcePath: { type: "string" },
+        targetPath: { type: "string" },
+        deleteExtraneous: { type: "boolean" },
+        maxFiles: { type: "number" }
+      }
+    },
+    safety: { risk: "safe_write" }
+  },
+  {
+    id: "sharedspace.localDir.list",
+    feature: "agent_workspace",
+    label: "列出受控本机目录 mount",
+    target: { controller: "system", method: "handleListWorkspaceLocalDirectories" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/local-dir/mounts",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "sharedspace.localDir.list",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["sharedspace", "local-dir", "mounts"],
+      usage: "sharedspace local-dir mounts --workspace-id WORKSPACE_ID",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    readOnly: true,
+    concurrencySafe: true
+  },
+  {
+    id: "sharedspace.item.list",
+    feature: "agent_workspace",
+    label: "列出共享空间条目",
+    target: { controller: "system", method: "handleListWorkspaceFiles" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/sharedspace/items",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "folderPath", "folder-path"] },
+        { name: "mountRef", aliases: ["mount-ref", "mountRef", "mountId"] },
+        { name: "recursive", aliases: ["recursive"] },
+        { name: "includeDirectories", aliases: ["include-directories", "includeDirectories"] },
+        { name: "includeFiles", aliases: ["include-files", "includeFiles"] },
+        { name: "includeHash", aliases: ["include-hash", "includeHash"] },
+        { name: "limit", aliases: ["limit"] }
+      ],
+      coerce: { recursive: "boolean", includeDirectories: "boolean", includeFiles: "boolean", includeHash: "boolean", limit: "number" }
+    },
+    rpc: {
+      method: "sharedspace.item.list",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "folderPath", "folder-path"] },
+        { name: "mountRef", aliases: ["mount-ref", "mountRef", "mountId"] },
+        { name: "recursive", aliases: ["recursive"] },
+        { name: "includeDirectories", aliases: ["include-directories", "includeDirectories"] },
+        { name: "includeFiles", aliases: ["include-files", "includeFiles"] },
+        { name: "includeHash", aliases: ["include-hash", "includeHash"] },
+        { name: "limit", aliases: ["limit"] }
+      ]
+    },
+    cli: {
+      command: ["sharedspace", "items", "list"],
+      usage: "sharedspace items list --workspace-id WORKSPACE_ID [--path files] [--mount-ref MOUNT_REF]",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    readOnly: true,
+    concurrencySafe: true
+  },
+  {
+    id: "sharedspace.file.read",
+    feature: "agent_workspace",
+    label: "读取共享空间文件",
+    target: { controller: "system", method: "handleDownloadWorkspaceFile" },
+    http: {
+      method: "GET",
+      path: "/api/agent-workspaces/:workspaceId/sharedspace/files/read",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "includeText", aliases: ["include-text", "includeText"] },
+        { name: "encoding", aliases: ["encoding"] }
+      ],
+      coerce: { includeText: "boolean" }
+    },
+    rpc: {
+      method: "sharedspace.file.read",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "includeText", aliases: ["include-text", "includeText"] },
+        { name: "encoding", aliases: ["encoding"] }
+      ]
+    },
+    cli: {
+      command: ["sharedspace", "files", "read"],
+      usage: "sharedspace files read --workspace-id WORKSPACE_ID --path files/a.txt",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    binary: true
+  },
+  {
+    id: "sharedspace.file.write",
+    feature: "agent_workspace",
+    label: "写入共享空间文件",
+    target: { controller: "system", method: "handleWriteWorkspaceFile" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/sharedspace/files/write",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "sharedspace.file.write",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["sharedspace", "files", "write"],
+      usage: "sharedspace files write --workspace-id WORKSPACE_ID --body file.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["workspaceId", "path"],
+      properties: {
+        workspaceId: { type: "string" },
+        path: { type: "string" },
+        content: { type: "string" },
+        contentBase64: { type: "string" },
+        encoding: { type: "string" },
+        overwrite: { type: "boolean" }
+      }
+    },
+    safety: { risk: "safe_write" }
+  },
+  {
+    id: "sharedspace.item.delete",
+    feature: "agent_workspace",
+    label: "删除共享空间条目",
+    target: { controller: "system", method: "handleDeleteWorkspaceFile" },
+    http: {
+      method: "DELETE",
+      path: "/api/agent-workspaces/:workspaceId/sharedspace/items",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "recursive", aliases: ["recursive"] }
+      ],
+      coerce: { recursive: "boolean" }
+    },
+    rpc: {
+      method: "sharedspace.item.delete",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }],
+      query: [
+        { name: "path", aliases: ["path", "filePath", "file-path"] },
+        { name: "recursive", aliases: ["recursive"] }
+      ]
+    },
+    cli: {
+      command: ["sharedspace", "items", "delete"],
+      usage: "sharedspace items delete --workspace-id WORKSPACE_ID --path files/a.txt [--recursive]",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    safety: { risk: "safe_write", requiresConfirmation: true }
+  },
+  {
     id: "agent_workspaces.file.move",
     feature: "agent_workspace",
     label: "移动/重命名智能体共享工作空间文件",
@@ -4150,10 +4350,11 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["storage:read"],
     inputSchema: {
       type: "object",
-      required: ["workspaceId", "sourcePath"],
+      required: ["workspaceId"],
       properties: {
         workspaceId: { type: "string" },
         sourcePath: { type: "string" },
+        mountRef: { type: "string" },
         targetPath: { type: "string" },
         deleteExtraneous: { type: "boolean" },
         maxFiles: { type: "number" }
@@ -4185,10 +4386,11 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["storage:write"],
     inputSchema: {
       type: "object",
-      required: ["workspaceId", "sourcePath"],
+      required: ["workspaceId"],
       properties: {
         workspaceId: { type: "string" },
         sourcePath: { type: "string" },
+        mountRef: { type: "string" },
         targetPath: { type: "string" },
         deleteExtraneous: { type: "boolean" },
         maxFiles: { type: "number" },

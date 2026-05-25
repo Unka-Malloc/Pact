@@ -570,6 +570,12 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.file.write": "pact.agentWorkspace.file.write",
   "agent_workspaces.file.delete": "pact.agentWorkspace.file.delete",
   "agent_workspaces.file.move": "pact.agentWorkspace.file.move",
+  "sharedspace.localDir.connect": "pact.sharedspace.localDir.connect",
+  "sharedspace.localDir.list": "pact.sharedspace.localDir.list",
+  "sharedspace.item.list": "pact.sharedspace.item.list",
+  "sharedspace.file.read": "pact.sharedspace.file.read",
+  "sharedspace.file.write": "pact.sharedspace.file.write",
+  "sharedspace.item.delete": "pact.sharedspace.item.delete",
   "sharedspace.sync.plan": "pact.sharedspace.sync.plan",
   "sharedspace.sync.apply": "pact.sharedspace.sync.apply",
   "workspace.proposal.create": "pact.workspace.proposal.create",
@@ -782,6 +788,12 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "agent_workspaces.file.write": "storage:write",
   "agent_workspaces.file.delete": "storage:write",
   "agent_workspaces.file.move": "storage:write",
+  "sharedspace.localDir.connect": "storage:write",
+  "sharedspace.localDir.list": "storage:read",
+  "sharedspace.item.list": "storage:read",
+  "sharedspace.file.read": "storage:read",
+  "sharedspace.file.write": "storage:write",
+  "sharedspace.item.delete": "storage:write",
   "sharedspace.sync.plan": "storage:read",
   "sharedspace.sync.apply": "storage:write",
   "workspace_governance.describe": "workspace:read",
@@ -1019,6 +1031,7 @@ function inferToolsets(operation, scopes = [], toolId = "", risk = "read_only") 
   if (
     toolId.startsWith("pact.agentWorkspace.") ||
     toolId.startsWith("pact.workspace.") ||
+    toolId.startsWith("pact.sharedspace.") ||
     toolId.startsWith("pact.agentSession.") ||
     toolId.startsWith("pact.workspaceGovernance.")
   ) {

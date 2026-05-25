@@ -505,6 +505,30 @@ export function createSystemControllerWorkspaceRuntimeHandlers({
         errorMessage: "删除工作空间文件失败。"
       });
     },
+    async handleConnectWorkspaceLocalDirectory({ operation, workspaceId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.localDir.connect",
+        input: {
+          ...parseJsonBody(requestBody),
+          workspaceId
+        },
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "连接本机目录失败。"
+      });
+    },
+    async handleListWorkspaceLocalDirectories({ operation, workspaceId, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.localDir.list",
+        input: {
+          ...protocolPayload(Buffer.alloc(0), url),
+          workspaceId
+        },
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "列出本机目录 mount 失败。"
+      });
+    },
     async handleMoveWorkspaceFile({ operation, workspaceId, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "agent_workspaces.file.move",

@@ -5164,6 +5164,12 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     "agent_workspaces.file.write",
     "agent_workspaces.file.delete",
     "agent_workspaces.file.move",
+    "sharedspace.localDir.connect",
+    "sharedspace.localDir.list",
+    "sharedspace.item.list",
+    "sharedspace.file.read",
+    "sharedspace.file.write",
+    "sharedspace.item.delete",
     "sharedspace.sync.plan",
     "sharedspace.sync.apply",
     "workspace.file.upload",
@@ -5180,6 +5186,32 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   const workspaceId = workspaceIdFrom(input);
   const access = workspaceAccessOptions(context.authSession);
   const actorId = context.authSession?.user?.username || context.authSession?.user?.userId || "";
+  if (id === "sharedspace.localDir.connect") {
+    const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "connectLocalDirectory", "本机目录连接接口不可用。");
+    if (error) return error;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      return result(400, { error: "请求体必须是 JSON 对象。" });
+    }
+    const operationResult = method({
+      workspaceId,
+      ...input,
+      operationId: id,
+      createdBy: actorId || input.createdBy || "",
+      ...access
+    });
+    return result(operationResult.ok ? 201 : operationResult.status || 400, operationResult);
+  }
+  if (id === "sharedspace.localDir.list") {
+    const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "listLocalDirectoryMounts", "本机目录 mount 列表接口不可用。");
+    if (error) return error;
+    const operationResult = method({
+      workspaceId,
+      ...input,
+      operationId: id,
+      ...access
+    });
+    return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
+  }
   if (id === "agent_workspaces.folder.create") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "createWorkspaceFolder", "工作空间文件夹接口不可用。");
     if (error) return error;
@@ -5191,7 +5223,23 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     });
     return result(operationResult.ok ? 201 : operationResult.status || 400, operationResult);
   }
-  if (id === "agent_workspaces.files.list" || id === "workspace.file.list") {
+  if (id === "agent_workspaces.files.list" || id === "workspace.file.list" || id === "sharedspace.item.list") {
+    if (id === "sharedspace.item.list" && (input.mountRef || input.mountId || input.localDirMountRef || input.sourcePath)) {
+      const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "listLocalDirectoryItems", "本机目录条目列表接口不可用。");
+      if (error) return error;
+      const operationResult = method({
+        workspaceId,
+        ...input,
+        operationId: id,
+        recursive: ["1", "true", "yes"].includes(String(input.recursive ?? "false").toLowerCase()),
+        includeDirectories: !["0", "false", "no"].includes(String(input.includeDirectories ?? input["include-directories"] ?? "true").toLowerCase()),
+        includeFiles: !["0", "false", "no"].includes(String(input.includeFiles ?? input["include-files"] ?? "true").toLowerCase()),
+        includeHash: ["1", "true", "yes"].includes(String(input.includeHash ?? input["include-hash"] ?? "false").toLowerCase()),
+        limit: Number(input.limit || 200),
+        ...access
+      });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
+    }
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "listWorkspaceFiles", "工作空间文件列表接口不可用。");
     if (error) return error;
     const operationResult = await method({
@@ -5202,6 +5250,7 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
       includeDirectories: !["0", "false", "no"].includes(String(input.includeDirectories ?? input["include-directories"] ?? "true").toLowerCase()),
       includeFiles: !["0", "false", "no"].includes(String(input.includeFiles ?? input["include-files"] ?? "true").toLowerCase()),
       limit: Number(input.limit || 500),
+      operationId: id,
       ...access
     });
     return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
@@ -5217,7 +5266,7 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     });
     return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
   }
-  if (id === "agent_workspaces.file.download" || id === "workspace.file.download" || id === "workspace.file.read") {
+  if (id === "agent_workspaces.file.download" || id === "workspace.file.download" || id === "workspace.file.read" || id === "sharedspace.file.read") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "downloadWorkspaceFile", "工作空间文件下载接口不可用。");
     if (error) return error;
     const operationResult = await method({
@@ -5225,11 +5274,12 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
       path: input.path || input.filePath || input["file-path"] || "",
       includeText: !["0", "false", "no"].includes(String(input.includeText ?? input["include-text"] ?? "true").toLowerCase()),
       encoding: input.encoding || "utf8",
+      operationId: id,
       ...access
     });
     return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
   }
-  if (id === "agent_workspaces.file.upload" || id === "workspace.file.upload") {
+  if (id === "agent_workspaces.file.upload" || id === "workspace.file.upload" || id === "sharedspace.file.write") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "uploadWorkspaceFile", "工作空间存储接口不可用。");
     if (error) return error;
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -5274,7 +5324,7 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     });
     return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
   }
-  if (id === "agent_workspaces.file.delete") {
+  if (id === "agent_workspaces.file.delete" || id === "sharedspace.item.delete") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "deleteWorkspaceFile", "工作空间存储接口不可用。");
     if (error) return error;
     const operationResult = await method({
