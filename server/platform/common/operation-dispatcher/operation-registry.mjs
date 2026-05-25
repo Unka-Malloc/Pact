@@ -4535,6 +4535,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       ],
       coerce: { limit: "number", learningEnabled: "boolean", hierarchyReasoning: "boolean", modelEnabled: "boolean", explain: "boolean" }
     },
+    rpc: { method: "knowledge.search.get", syntheticPath: "/api/knowledge/search", body: "params" },
     requiredScopes: ["knowledge:read"]
   },
   {

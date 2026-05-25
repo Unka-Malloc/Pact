@@ -63,6 +63,7 @@ export {
   resolveDiscoveryState,
   saveDiscoveryConfig
 } from "../common/platform-core/discovery/config.mjs";
+export { createCorePlatformProvider } from "../common/platform-core/core-platform-provider.mjs";
 export {
   createTraceContext,
   setTraceContextOnRequest,

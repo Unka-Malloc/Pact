@@ -27,6 +27,7 @@ const allowedServerDirectories = new Set([
 
 const requiredPaths = [
   "server/platform/common/platform-core",
+  "server/platform/common/platform-core/core-platform-provider.mjs",
   "server/platform/common/platform-core/settings.mjs",
   "server/platform/common/security",
   "server/platform/common/security/register.mjs",
@@ -268,10 +269,12 @@ async function assertInteractiveRegistrations() {
   for (const id of [
     "security.auth.console",
     "security.audit.operations",
+    "core.provider",
     "core.events.protocol",
     "core.logging.runtime",
     "core.features.runtime",
     "core.operations.concurrencyScope",
+    "core.operations.registry",
     "data-structure.provider",
     "data-structure.checkpointTree",
     "storage.provider",

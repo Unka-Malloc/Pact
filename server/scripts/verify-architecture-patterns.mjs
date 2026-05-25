@@ -52,8 +52,8 @@ async function assertHttpServerUsesCompositionRoot() {
   );
   assertTextIncludes(
     text,
-    "dispatchInternalOperation",
-    "server/services/server-runtime/http-server.mjs must publish internal snapshots through registered operations"
+    "registeredCoreProvider.dispatchInternalOperation",
+    "server/services/server-runtime/http-server.mjs must publish internal snapshots through the core provider"
   );
   for (const needle of [
     "dispatchStartupSnapshot(\"system.interfaces\")",
@@ -95,6 +95,8 @@ async function assertHttpServerUsesCompositionRoot() {
       "createToolManagementPlatform",
       "tool-management-core/index.mjs",
       "monitor-alert-core/monitor-alerts.mjs",
+      "operation-dispatcher/operation-dispatcher.mjs",
+      "operation-dispatcher/operation-registry.mjs",
       "buildConsoleState",
       "loadSettings(userDataPath)",
       "loadAgentSyncConfig(userDataPath)",
@@ -119,6 +121,7 @@ async function assertCompositionRootOwnsAssembly() {
     "registerStoragePlatformServices",
     "createStorageProvider",
     "registerDevopsPlatformServices",
+    "createCorePlatformProvider",
     "createDevopsProvider",
     "createConsoleAuth",
     "createSecurityPermissionsProvider",
@@ -177,6 +180,34 @@ async function assertDataStructureProviderOwnsPorts() {
   ]) {
     assertTextIncludes(text, needle, `${file} must own data structure provider port ${needle}`);
   }
+}
+
+async function assertCorePlatformProviderOwnsPorts() {
+  const file = "server/platform/common/platform-core/core-platform-provider.mjs";
+  const text = await read(file);
+  for (const needle of [
+    "pact.core-platform.v1",
+    "createCorePlatformProvider",
+    "dispatchRegisteredHttpOperation",
+    "dispatchRpcOperation",
+    "dispatchInternalOperation",
+    "shouldProxyRegisteredApiRequest",
+    "describeOperationRegistry",
+    "buildSystemInterfaces",
+    "registered",
+    "wired",
+    "implemented",
+    "verified",
+    "listCapabilities"
+  ]) {
+    assertTextIncludes(text, needle, `${file} must own core platform provider port ${needle}`);
+  }
+  const executor = await read("server/platform/specialized/console/console-domain-operation-executor.mjs");
+  assertTextIncludes(
+    executor,
+    "context.coreProvider.buildSystemInterfaces",
+    "system.interfaces must be built through core provider"
+  );
 }
 
 async function assertStorageProviderOwnsPorts() {
@@ -1837,6 +1868,7 @@ async function main() {
   await assertHttpServerUsesCompositionRoot();
   await assertCompositionRootOwnsAssembly();
   await assertRuntimeProvidersOwnProviderImports();
+  await assertCorePlatformProviderOwnsPorts();
   await assertDataStructureProviderOwnsPorts();
   await assertStorageProviderOwnsPorts();
   await assertDevopsProviderOwnsPorts();

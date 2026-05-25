@@ -2491,6 +2491,12 @@ async function executeSystemInterfaceOperation({ operationId, context }) {
   if (operationId !== "system.interfaces") {
     return null;
   }
+  if (context.coreProvider && typeof context.coreProvider.buildSystemInterfaces === "function") {
+    return result(200, context.coreProvider.buildSystemInterfaces({
+      controllers: typeof context.getControllers === "function" ? context.getControllers() : null,
+      features: typeof context.getFeatureEntries === "function" ? context.getFeatureEntries() : null
+    }));
+  }
   const getFeatureEntries = typeof context.getFeatureEntries === "function"
     ? context.getFeatureEntries
     : null;

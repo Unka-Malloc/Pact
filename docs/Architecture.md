@@ -407,6 +407,7 @@ common platform contracts
 
 | 基础能力 | 高内聚边界 | 允许依赖 | 禁止依赖 |
 | --- | --- | --- | --- |
+| 核心能力 | `server/platform/common/platform-core` 与 `server/platform/common/operation-dispatcher` 统一 `pact.core-platform.v1` provider、Operation Dispatcher、operation registry、接口目录、服务发现快照、状态协调和启动期内部调度。 | operation metadata、controller method existence、platform registry、protocol event bus、runtime logger、feature runtime、组合根注入的 core provider。 | 服务入口直接 import Operation Dispatcher 或手工拼接口目录；`system.interfaces` 绕过 core provider 输出；operation registry 只声明接口但不输出 `registered/wired/implemented/verified` 生命周期；核心层反向读取具体业务 runtime 状态。 |
 | 安全和权限管理 | `server/platform/common/security` 统一认证、CSRF、`pact.security-permissions.v1` provider、subject resolution、authorization decision、grant/token 裁决、toolset maxRisk 约束、workspace asset policy 和 denied audit。 | operation metadata、tool catalog metadata、独立 authorization store、组合根注入的 console auth 实现。 | 直接读取 knowledge、workspace、tool runtime 的内部状态；让接口层或应用层直接持有 `consoleAuth`、`authorizationEngine` 或 `authorizationStore` 执行权限裁决；为某个业务模块硬编码权限分支；把高风险 operation 挂入低风险 toolset。 |
 | 模块管理 | `server/platform/common/module-manager` 统一 mount 合同、模块发现、加载、热重载、合同测试和 capability package 生命周期入口。 | mount manifest、module descriptor、runtime provider interface。 | 在模块管理器里直接实现知识、OCR、向量库或业务处理逻辑。 |
 | 算法和数据结构 | `server/platform/common/data-structure` 承载 Checkpoint Tree、共享图结构、排序/合并/差异算法和状态协调原语。 | 纯数据模型、序列化合同、无副作用算法。 | HTTP controller、UI 状态、业务 runtime、裸数据库细节。 |

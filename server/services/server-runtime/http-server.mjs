@@ -44,13 +44,6 @@ import {
   runWithTraceContext,
   setTraceContextOnRequest
 } from "../../platform/common/observability/trace-context.mjs";
-import {
-  dispatchInternalOperation,
-  dispatchRegisteredHttpOperation,
-  dispatchRpcOperation,
-  shouldProxyRegisteredApiRequest
-} from "../../platform/common/operation-dispatcher/operation-dispatcher.mjs";
-import { listInterfaceCatalog } from "../../platform/common/operation-dispatcher/operation-registry.mjs";
 import { handlePactMcpHttpRequest } from "../../platform/common/mcp/http-mcp-adapter.mjs";
 import { loadOrCreateMcpIdentity } from "../../platform/common/mcp/identity.mjs";
 import { createJobsController } from "../../platform/common/console/http/controllers/jobs-controller.mjs";
@@ -355,6 +348,7 @@ export async function startHttpServer({
     isFeatureActive,
     isAnyFeatureActive,
     platformRegistry,
+    coreProvider,
     runtime,
     moduleManagement,
     dataStructures,
@@ -416,6 +410,7 @@ export async function startHttpServer({
     });
   const ownsJobManager = !incomingJobManager;
   const registeredMetadataStore = requirePlatformInterface(platformRegistry, "storage.metadataStore").value;
+  const registeredCoreProvider = requirePlatformInterface(platformRegistry, "core.provider").value || coreProvider;
   const registeredStorageProvider = requirePlatformInterface(platformRegistry, "storage.provider").value || storageProvider;
   const registeredDevopsProvider = requirePlatformInterface(platformRegistry, "devops.provider").value || devopsProvider;
   const deletionCoordinator = createBatchDeletionCoordinator({
@@ -499,7 +494,8 @@ export async function startHttpServer({
       discoveryState = value;
     },
     getListenUrl: () => listenUrl,
-    getInterfaceCatalog: () => listInterfaceCatalog(activeApiOperations),
+    coreProvider: registeredCoreProvider,
+    getControllers: () => controllersRef,
     getFeatureEntries: publicFeatures,
     protocolEventBus,
     consoleAuth,
@@ -661,7 +657,7 @@ export async function startHttpServer({
       }
 
       if (method === "POST" && url.pathname === "/api/rpc") {
-        await dispatchRpcOperation({
+        await registeredCoreProvider.dispatchRpcOperation({
           operations: activeApiOperations,
           controllers,
           request,
@@ -678,7 +674,7 @@ export async function startHttpServer({
       }
 
       if (
-        shouldProxyRegisteredApiRequest({
+        registeredCoreProvider.shouldProxyRegisteredApiRequest({
           pathname: url.pathname,
           discoveryState,
           operations: activeApiOperations
@@ -695,7 +691,7 @@ export async function startHttpServer({
         return;
       }
 
-      const handled = await dispatchRegisteredHttpOperation({
+      const handled = await registeredCoreProvider.dispatchRegisteredHttpOperation({
         operations: activeApiOperations,
         controllers,
         method,
@@ -818,7 +814,7 @@ export async function startHttpServer({
     payloadFromResult = (result) => result.payload,
     errorMessage = `Failed to build ${operationId} startup snapshot.`
   } = {}) {
-    const snapshot = await dispatchInternalOperation({
+    const snapshot = await registeredCoreProvider.dispatchInternalOperation({
       operations: activeApiOperations,
       controllers,
       operationId,

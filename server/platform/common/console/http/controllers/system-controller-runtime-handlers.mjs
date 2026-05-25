@@ -4,7 +4,8 @@ export function createSystemControllerRuntimeHandlers({
   queryPayload,
   isFeatureActive,
   knowledgeWorkflowContext,
-  getInterfaceCatalog,
+  coreProvider,
+  getControllers,
   getFeatureEntries,
   protocolEventBus,
   getDiscoveryState,
@@ -46,7 +47,7 @@ export function createSystemControllerRuntimeHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "system.interfaces",
         response,
-        context: { getInterfaceCatalog, getFeatureEntries },
+        context: { coreProvider, getControllers, getFeatureEntries },
         errorMessage: "读取接口注册表失败。"
       });
     },

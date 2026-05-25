@@ -1,6 +1,7 @@
 import path from "node:path";
 import { resolveFeatureRuntimeFromEnv, filterOperationsForFeatures, publicFeatureRuntime } from "./features/feature-manifest.mjs";
 import { createProtocolEventBus } from "../../protocols/pubsub/event-bus.mjs";
+import { createCorePlatformProvider } from "../common/platform-core/core-platform-provider.mjs";
 import { registerCorePlatformServices } from "../common/platform-core/register.mjs";
 import { createDataStructureProvider } from "../common/data-structure/data-structure-provider.mjs";
 import { registerDataStructurePlatformServices } from "../common/data-structure/register.mjs";
@@ -61,6 +62,13 @@ export async function createServerCompositionRoot({
   const operationAuditStore = createOperationAuditStore({ userDataPath });
   const operationConcurrencyScope = path.resolve(userDataPath);
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
+  const coreProvider = createCorePlatformProvider({
+    operations: activeApiOperations,
+    protocolEventBus,
+    runtimeLogger,
+    featureRuntime,
+    operationConcurrencyScope
+  });
   const consoleDomainServices = createConsoleDomainServices();
   const storageProvider = createStorageProvider({
     userDataPath,
@@ -72,7 +80,8 @@ export async function createServerCompositionRoot({
     protocolEventBus,
     runtimeLogger,
     featureRuntime,
-    operationConcurrencyScope
+    operationConcurrencyScope,
+    coreProvider
   });
   registerSecurityPlatformServices(platformRegistry, {
     securityPermissions,
@@ -105,6 +114,7 @@ export async function createServerCompositionRoot({
     isFeatureActive,
     isAnyFeatureActive,
     platformRegistry,
+    coreProvider,
     runtime,
     moduleManagement,
     dataStructures,
