@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "kind": "model-list",
-  "updatedAt": "2024-01-01T00:00:00.000Z",
-  "entries": []
+  "updatedAt": "2026-05-23T18:18:08.846Z",
+  "entries": [
+    {
+      "id": "model_2906cc846d873e11",
+      "file": "model_2906cc846d873e11.json",
+      "label": "deepseek deepseek-v4-flash",
+      "enabled": true
+    }
+  ]
 }

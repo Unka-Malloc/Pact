@@ -97,7 +97,7 @@ Pact is built on a **zero-trust architecture** where agents are treated as untru
 - **Every state change** (writes, exports, permission requests) must pass through the strict Policy Engine
 - **Every operation** is recorded in the immutable Operation Ledger — no exceptions
 - **Agent permissions** are scoped, time-limited, and auditable
-- **Knowledge egress** is controlled through hyper-granular access modes (`readInPlace`, `copyToContext`, `checkoutAllowed`)
+- **Knowledge egress** is controlled through hyper-granular access modes (`controlledView`, `copyToContext`, `checkoutAllowed`)
 - **Checkpoint Tree** provides append-only integrity guarantees with full replayability
 
 For a deeper understanding of our security architecture, refer to:

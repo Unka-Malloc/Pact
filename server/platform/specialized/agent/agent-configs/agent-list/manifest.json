@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "kind": "agent-list",
-  "updatedAt": "2024-01-01T00:00:00.000Z",
-  "entries": []
+  "updatedAt": "2026-05-23T18:18:08.846Z",
+  "entries": [
+    {
+      "id": "agent_d8d9176a38ca35c1",
+      "file": "agent_d8d9176a38ca35c1.json",
+      "label": "通用智能体",
+      "enabled": true
+    }
+  ]
 }

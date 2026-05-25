@@ -35,7 +35,7 @@ The inaugural release of **Pact** — a controllable agent collaboration platfor
 #### AgentLibrary / 智能体知识库
 - Built the AgentLibrary governed knowledge system with **8-level access mode** hierarchy
 - Upstream knowledge dynamic slicing and re-authorization upon ingestion
-- Hyper-granular egress controls: `readInPlace`, `copyToContext`, `checkoutAllowed`, and more
+- Hyper-granular egress controls: `controlledView`, `copyToContext`, `checkoutAllowed`, and more
 
 #### Unified Checkpoint Tree / 统一检查点树
 - Implemented the Unified Checkpoint Tree for 100% auditability

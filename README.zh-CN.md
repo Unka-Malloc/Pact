@@ -70,7 +70,7 @@ graph TB
 ## ✨ 核心特性
 
 - 🛡️ **"零信任"智能体治理 (Zero Trust)**：智能体只是外部操作员。系统的每一次状态变更（写入、导出），必须经过极度严格的 Policy Engine 和 Operation Ledger 裁决。
-- 📚 **AgentLibrary (受控图书馆)**：颠覆传统的"知识库代理"。上游知识进入系统后会被重新切分与实时再授权。支持 `readInPlace`, `copyToContext`, `checkoutAllowed` 等极细粒度的出馆限制。
+- 📚 **AgentLibrary (受控图书馆)**：颠覆传统的"知识库代理"。上游知识进入系统后会被重新切分与实时再授权。支持 `controlledView`, `copyToContext`, `checkoutAllowed` 等极细粒度的出馆限制。
 - 🌳 **统一 Checkpoint Tree (100% 审计)**：每一次文件修改、权限请求，甚至是**每一次的知识检索和被拒绝的访问**，都会生成不可篡改的 Checkpoint 节点，支持类似 Git 的 Append-only 安全恢复。
 - 🔌 **全生态协议兼容 (MCP Native)**：无缝接入 OpenClaw、Cursor Agent、Claude Code 等任何智能体。全面拥抱 Model Context Protocol (MCP) 标准暴露工作空间能力。
 - 📊 **资产贡献量化面板**：不仅消耗算力，更沉淀数字资产。系统内置贡献排行榜，量化评估哪个智能体或成员贡献了最具复用价值的知识、规则 (Rules) 和技能 (Skills)。
