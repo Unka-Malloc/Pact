@@ -51,6 +51,14 @@ export function createSystemControllerRuntimeHandlers({
         errorMessage: "读取接口注册表失败。"
       });
     },
+    async handleV001BaselineStatus({ operation, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "v001.baseline.status",
+        response,
+        context: {},
+        errorMessage: "读取 v0.0.1 基线状态失败。"
+      });
+    },
     async handleSubscribeEvents({ operation, request, url, response }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "events.subscribe",

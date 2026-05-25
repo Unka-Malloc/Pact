@@ -40,6 +40,7 @@ import {
   buildConsoleState,
   buildRuntimeInfo
 } from "../../common/console/http/api-facade.mjs";
+import { createV001BaselineProvider } from "../../common/v001/baseline-provider.mjs";
 import { hashClientString, serverToken } from "../../common/security/client-strings.mjs";
 import {
   loadSettings,
@@ -2458,6 +2459,11 @@ async function executeSystemCoreOperation({ operationId, context }) {
 }
 
 async function executeConsoleStateOperation({ operationId, context }) {
+  if (operationId === "v001.baseline.status") {
+    const provider = createV001BaselineProvider({ userDataPath: context.userDataPath });
+    return result(200, await provider.status());
+  }
+
   if (operationId === "runtime.info") {
     return result(200, await buildRuntimeInfo({
       userDataPath: context.userDataPath,

@@ -1,5 +1,6 @@
 import os from "node:os";
 import { buildBootstrapPayload, getDiscoveryConfigPath } from "../../platform-core/discovery/config.mjs";
+import { createV001BaselineProvider } from "../../v001/baseline-provider.mjs";
 export { buildClientConnectionList } from "./client-connection-list.mjs";
 
 function emptyAgentSettingsProjection() {
@@ -191,6 +192,7 @@ export async function buildConsoleState({
       ? await domainServices.buildKnowledgeConsoleSummary(runtime, jobWorkflowProvider)
       : null,
     storage: storageSummaryFrom(storageProvider),
+    v001Baseline: await createV001BaselineProvider({ userDataPath }).status(),
     jobs,
     clients,
     clientRuntime: clientRuntimeSummary,
@@ -233,6 +235,7 @@ export async function buildRuntimeInfo({
       ? securityPermissions.getConsoleSummary(request)
       : null,
     storage: storageSummaryFrom(storageProvider),
+    v001Baseline: await createV001BaselineProvider({ userDataPath }).status(),
     discovery: buildBootstrapPayload(discoveryState),
     features
   };

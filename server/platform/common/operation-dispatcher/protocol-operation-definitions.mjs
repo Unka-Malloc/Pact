@@ -76,6 +76,19 @@ const FILE_QUERY = [
 
 export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
   protocolOperation({
+    id: "v001.baseline.status",
+    feature: "system",
+    label: "v0.0.1 基线状态",
+    targetMethod: "handleV001BaselineStatus",
+    method: "GET",
+    path: "/api/v001/baseline/status",
+    scopes: ["console:read"],
+    readOnly: true,
+    inputSchema: schema([], {
+      includePorts: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
     id: "authorization.subject.resolve",
     feature: "auth",
     label: "解析授权主体",

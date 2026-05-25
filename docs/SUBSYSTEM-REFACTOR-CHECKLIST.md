@@ -85,6 +85,7 @@
 | 8 | 清理 `PROTOCOLS.md` | 全部 | `[x]` | 已补齐 `pact.agent-runtime.v1`、`pact.tool-skill-management.v1` 和 `pact.job-workflow.v1` 协议口径；旧 `/api/workspaces/`、旧 MCP alias 和内部 operation 展开为 MCP tool name 的内容仅作为否定/兼容说明保留。 |
 | 9 | 清理 `PRODUCTION-CAPABILITY-GAP.md` | 全部 | `[x]` | 已增加 2026-05-25 协议化重构校准，生产缺口改用 `verified-complete` / `implemented-needs-production-evidence` / `planned-contract` / `not-started` 四级完成度，避免把已完成协议化的子系统继续列为未实现。 |
 | 10 | 补架构门禁 | 全部 | `[x]` | `server:verify:architecture-patterns`、`server:verify:protocol-operations`、`server:verify:platform-boundaries` 已覆盖本轮 provider/operation/domain service 边界，并由全量 `npm run server:verify` 验证。 |
+| 11 | 补 v0.0.1 Phase 0 基线门禁 | 核心能力、工具管理、存储、算法和数据结构、管理层 | `[x]` | 已新增 `v001.baseline.status` API/RPC/MCP operation、控制台生产健康页基线状态卡、`server:verify:v001-baseline` 和全量 `server:verify` 集成，覆盖本地 ConfigRegistryPort、MetadataStorePort、CachePort、QueuePort、ArtifactStorePort、contract-mode SecretStorePort、五类 MCP 出口和真实存储语义。 |
 
 ## 更新规则
 

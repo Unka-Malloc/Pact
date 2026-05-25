@@ -54,6 +54,7 @@ const allowedRootNames = new Set([
   "AGENT.md",
   "CHANGELOG.md",
   "CONTRIBUTING.md",
+  "Design.md",
   "Dockerfile",
   "LICENSE",
   "README.md",

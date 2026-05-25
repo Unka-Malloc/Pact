@@ -66,7 +66,8 @@ import type {
   ToolManagementGrantIssue,
   ToolManagementGrantsResponse,
   ToolManagementMetricsResponse,
-  UploadSessionResponse
+  UploadSessionResponse,
+  V001BaselineStatus
 } from "./types";
 
 type Bridge = {
@@ -161,6 +162,7 @@ type Bridge = {
   getClientRuntimeStatus: () => Promise<ClientRuntimeStatus>;
   getMonitorAlerts: () => Promise<MonitorAlertState>;
   getProductionHealth: () => Promise<ProductionHealthResponse>;
+  getV001BaselineStatus: () => Promise<V001BaselineStatus>;
   saveMonitorAlertConfig: (config: MonitorAlertConfig) => Promise<MonitorAlertState>;
   acknowledgeMonitorAlert: (alertId: string) => Promise<MonitorAlertState>;
   subscribeEvents: (params?: {
@@ -679,6 +681,7 @@ const browserBridge: Bridge = {
   getMonitorAlerts: () =>
     getJson<MonitorAlertState>("/api/system/monitor-alerts"),
   getProductionHealth: () => getJson<ProductionHealthResponse>("/api/production/health"),
+  getV001BaselineStatus: () => getJson<V001BaselineStatus>("/api/v001/baseline/status"),
   saveMonitorAlertConfig: (config) =>
     postJson<MonitorAlertState>(
       "/api/system/monitor-alerts/config",

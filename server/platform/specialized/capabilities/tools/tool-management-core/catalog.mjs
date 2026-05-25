@@ -119,6 +119,11 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
     description: "Read job lists and job details."
   },
   {
+    id: "console:read",
+    label: "Read console status",
+    description: "Read console-facing status, interface, and release baseline summaries."
+  },
+  {
     id: "agent_sync:publish",
     label: "Publish agent sync",
     description: "Publish policy-filtered agent sync events."
@@ -186,6 +191,14 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     maxRisk: "read_only",
     grantable: true,
     defaultForAgents: true
+  },
+  {
+    id: "pact.console.read",
+    label: "Console read",
+    requiredScopes: ["console:read"],
+    maxRisk: "read_only",
+    grantable: true,
+    defaultForAgents: false
   },
   {
     id: "pact.document.parse",
@@ -446,6 +459,7 @@ export const TOOL_MANAGEMENT_PROFILES = Object.freeze(
 );
 
 const TOOL_ID_BY_OPERATION_ID = Object.freeze({
+  "v001.baseline.status": "pact.v001.baseline.status",
   "system.health": "system.health",
   "runtime.info": "pact.runtime.info",
   "runtime.mounts": "pact.runtime.mounts",
@@ -692,6 +706,7 @@ const TOOL_ALIAS_IDS_BY_OPERATION_ID = Object.freeze({
 });
 
 const SCOPE_BY_OPERATION_ID = Object.freeze({
+  "v001.baseline.status": "console:read",
   "system.health": "storage:read",
   "runtime.info": "storage:read",
   "runtime.mounts": "storage:read",
@@ -893,6 +908,7 @@ const TOOLSET_BY_SCOPE = Object.freeze({
   "storage:read": "pact.storage.read",
   "storage:write": "pact.storage.write",
   "jobs:read": "pact.jobs.read",
+  "console:read": "pact.console.read",
   "agent_sync:publish": "pact.agent.sync.publish",
   "auth:admin": "pact.authorization.admin"
 });

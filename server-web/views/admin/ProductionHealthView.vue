@@ -2,11 +2,13 @@
 import { computed, onMounted, ref } from "vue";
 import StatusPill from "../../components/StatusPill.vue";
 import { bridge } from "../../lib/bridge";
-import type { ProductionHealthGate, ProductionHealthResponse } from "../../lib/types";
+import type { ProductionHealthGate, ProductionHealthResponse, V001BaselineStatus } from "../../lib/types";
 
 const health = ref<ProductionHealthResponse | null>(null);
+const baseline = ref<V001BaselineStatus | null>(null);
 const loading = ref(false);
 const loadError = ref("");
+const baselineError = ref("");
 
 const statusLabels: Record<string, string> = {
   pass: "通过",
@@ -26,6 +28,11 @@ const latestCommit = computed(() => {
   return commit ? commit.slice(0, 12) : "unknown";
 });
 const failedGates = computed(() => (health.value?.gates || []).filter((gate) => gate.status !== "pass"));
+const baselinePortLabels = computed(() => (baseline.value?.ports || []).map((port) => ({
+  id: port.port,
+  label: port.port,
+  value: port.verificationMode || port.implementation
+})));
 
 function statusLabel(status: string) {
   return statusLabels[status] || status || "未知";
@@ -61,10 +68,21 @@ function elapsedText(gate: ProductionHealthGate) {
 async function refreshProductionHealth() {
   loading.value = true;
   loadError.value = "";
+  baselineError.value = "";
   try {
-    health.value = await bridge.getProductionHealth();
+    const [healthState, baselineState] = await Promise.all([
+      bridge.getProductionHealth(),
+      bridge.getV001BaselineStatus()
+    ]);
+    health.value = healthState;
+    baseline.value = baselineState;
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : String(error);
+    try {
+      baseline.value = await bridge.getV001BaselineStatus();
+    } catch (baselineLoadError) {
+      baselineError.value = baselineLoadError instanceof Error ? baselineLoadError.message : String(baselineLoadError);
+    }
   } finally {
     loading.value = false;
   }
@@ -141,6 +159,58 @@ onMounted(() => {
         <div>
           <dt>脏文件</dt>
           <dd>{{ health?.latestReport?.git.dirtyFileCount ?? 0 }}</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="surface-card">
+      <div class="section-header">
+        <div>
+          <h3>v0.0.1 基线</h3>
+          <p>展示单机运行基线、五类 MCP 出口和本地通用切面状态。</p>
+        </div>
+        <div class="section-tags">
+          <StatusPill :tone="statusTone(baseline?.status === 'ready' ? 'pass' : 'missing')" :label="baseline?.status || '未读取'" />
+          <span>{{ baseline?.protocolVersion || "pact.v001.baseline.v1" }}</span>
+          <span>{{ baseline?.verificationMode || "unknown" }}</span>
+        </div>
+      </div>
+      <div v-if="baselineError" class="status-strip danger">
+        <strong>读取失败</strong>
+        <span>{{ baselineError }}</span>
+      </div>
+      <div class="detail-metrics production-health-metrics">
+        <div>
+          <span>MCP 出口</span>
+          <strong>{{ baseline?.mcpOutlets.length || 0 }}</strong>
+        </div>
+        <div>
+          <span>通用切面</span>
+          <strong>{{ baseline?.ports.length || 0 }}</strong>
+        </div>
+        <div>
+          <span>状态语义</span>
+          <strong>{{ baseline?.storageStates.length || 0 }}</strong>
+        </div>
+        <div>
+          <span>Secret 模式</span>
+          <strong>{{ baseline?.ports.find((port) => port.port === 'SecretStorePort')?.verificationMode || "unknown" }}</strong>
+        </div>
+      </div>
+      <div class="production-token-list">
+        <span v-for="outlet in baseline?.mcpOutlets || []" :key="outlet">{{ outlet }}</span>
+      </div>
+      <div class="production-token-list">
+        <span v-for="port in baselinePortLabels" :key="port.id">{{ port.label }} · {{ port.value }}</span>
+      </div>
+      <dl class="module-status-list production-health-meta">
+        <div>
+          <dt>运行配置</dt>
+          <dd>{{ baseline?.rootPath || "ServerConfig.getDataDir()/v001-baseline" }}</dd>
+        </div>
+        <div>
+          <dt>外部状态</dt>
+          <dd>{{ baseline?.boundaries.externalState || "contract-mode adapters" }}</dd>
         </div>
       </dl>
     </article>

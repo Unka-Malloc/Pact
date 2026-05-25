@@ -2567,6 +2567,36 @@ export type ProductionHealthResponse = {
   }>;
 };
 
+export type V001BaselinePortSummary = {
+  port: string;
+  implementation: string;
+  path?: string;
+  configRoot?: string;
+  artifactRoot?: string;
+  registryPath?: string;
+  auditPath?: string;
+  verificationMode?: string;
+  recordCount?: number;
+  entryCount?: number;
+  taskCount?: number;
+  queuedCount?: number;
+  artifactCount?: number;
+  secretRefCount?: number;
+  counts?: Record<string, number>;
+};
+
+export type V001BaselineStatus = {
+  schemaVersion: number;
+  protocolVersion: string;
+  status: string;
+  verificationMode: string;
+  rootPath: string;
+  boundaries: Record<string, string>;
+  mcpOutlets: string[];
+  storageStates: string[];
+  ports: V001BaselinePortSummary[];
+};
+
 export type ServerConsoleState = {
   server: RuntimeInfoResponse["server"];
   runtime: RuntimeInfoResponse["runtime"];
@@ -2584,6 +2614,7 @@ export type ServerConsoleState = {
   maintenanceAgent?: MaintenanceAgentSummary | null;
   knowledgeConsole?: KnowledgeConsoleState | null;
   storage: RuntimeInfoResponse["storage"];
+  v001Baseline?: V001BaselineStatus | null;
   jobs: SplitJobListResponse;
   clients: DiscoveryClientsResponse;
   clientRuntime?: ClientRuntimeStatus | null;
