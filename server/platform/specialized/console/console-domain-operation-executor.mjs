@@ -659,10 +659,14 @@ function contributionRegistryFor(input = {}, context = {}) {
     },
     context.contributionRegistryWorkspaceId || "default"
   );
-  if (!contributionRegistries.has(registryWorkspaceId)) {
-    contributionRegistries.set(registryWorkspaceId, createContributionRegistry({ workspaceId: registryWorkspaceId }));
+  const registryKey = `${context.userDataPath || "runtime"}::${registryWorkspaceId}`;
+  if (!contributionRegistries.has(registryKey)) {
+    contributionRegistries.set(registryKey, createContributionRegistry({
+      workspaceId: registryWorkspaceId,
+      userDataPath: context.userDataPath || ""
+    }));
   }
-  return contributionRegistries.get(registryWorkspaceId);
+  return contributionRegistries.get(registryKey);
 }
 
 function codespaceRegistryFor(context = {}) {
@@ -1334,6 +1338,9 @@ async function executeWorkspaceContributionOperation({ operationId, input, conte
       const items = filterContributionsForWorkspace(registry.listContributions(), input);
       return result(200, protocolPayload({ items, count: items.length }));
     }
+    if (operationId === "workspace.contribution.assets.list") {
+      return result(200, protocolPayload(registry.listWorkspaceAssets(input)));
+    }
     if (operationId === "workspace.contribution.leaderboard") {
       const items = filterContributionsForWorkspace(registry.getLeaderboard(), input);
       return result(200, protocolPayload({ items, count: items.length }));
@@ -1358,6 +1365,55 @@ async function executeWorkspaceContributionOperation({ operationId, input, conte
       });
       appendAuthorizationArtifact(securityPermissions, "appendLoanRecord", resultPayload.loanRecord);
       return result(200, protocolPayload(resultPayload));
+    }
+    if (operationId === "workspace.contribution.scan") {
+      return result(200, protocolPayload(registry.scanContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.review") {
+      return result(200, protocolPayload(registry.reviewContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username,
+        reviewerId: input.reviewerId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.preview") {
+      return result(200, protocolPayload(registry.previewContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.publish") {
+      return result(200, protocolPayload(registry.publishContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.adopt") {
+      return result(200, protocolPayload(registry.adoptContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.reject") {
+      return result(200, protocolPayload(registry.rejectContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.request_changes") {
+      return result(200, protocolPayload(registry.requestChanges(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
+    }
+    if (operationId === "workspace.contribution.revoke") {
+      return result(200, protocolPayload(registry.revokeContribution(context.contributionId || input.contributionId, {
+        ...input,
+        actorId: input.actorId || subject.subjectId || subject.username
+      })));
     }
     if (operationId === "workspace.skill.upload") {
       const resultPayload = registry.submitContribution({
@@ -3329,8 +3385,13 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
     "auth.oidc.get",
     "auth.oidc.set",
     "auth.audit",
+    "auth.audit.export",
+    "auth.audit.retention.get",
+    "auth.audit.retention.set",
+    "auth.audit.prune",
     "auth.sessions",
-    "auth.sessions.revoke"
+    "auth.sessions.revoke",
+    "observability.trace.get"
   ]);
   if (!handledOperations.has(id)) {
     return null;
@@ -3495,7 +3556,11 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
       limit: Number(input.limit || 100),
       operationId: input.operationId || input["operation-id"] || "",
       userId: input.userId || input["user-id"] || "",
-      status: input.status || ""
+      status: input.status || "",
+      traceId: input.traceId || input["trace-id"] || "",
+      tenantId: input.tenantId || input["tenant-id"] || "",
+      createdFrom: input.createdFrom || input["created-from"] || "",
+      createdTo: input.createdTo || input["created-to"] || ""
     };
     if (context.operationAuditStore) {
       return result(200, {
@@ -3508,6 +3573,103 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
         userId: query.userId,
         status: query.status
       })
+    });
+  }
+  if (id === "auth.audit.export") {
+    if (!context.operationAuditStore?.exportRedacted) {
+      return result(503, { error: "系统审计导出接口不可用。" });
+    }
+    const exportResult = context.operationAuditStore.exportRedacted({
+      limit: Number(input.limit || 100),
+      operationId: input.operationId || input["operation-id"] || "",
+      userId: input.userId || input["user-id"] || "",
+      status: input.status || "",
+      traceId: input.traceId || input["trace-id"] || "",
+      tenantId: input.tenantId || input["tenant-id"] || "",
+      createdFrom: input.createdFrom || input["created-from"] || "",
+      createdTo: input.createdTo || input["created-to"] || ""
+    });
+    authProvider.audit({
+      user: authSession?.user,
+      operationId: "auth.audit.export",
+      action: "export-audit",
+      method: "GET",
+      path: "/api/auth/audit/export",
+      status: "ok",
+      target: exportResult.manifest
+    });
+    return result(200, {
+      export: {
+        manifest: exportResult.manifest,
+        items: exportResult.items,
+        jsonl: exportResult.jsonl
+      }
+    });
+  }
+  if (id === "auth.audit.retention.get") {
+    if (!context.operationAuditStore?.getRetentionPolicy) {
+      return result(503, { error: "系统审计保留策略接口不可用。" });
+    }
+    return result(200, { policy: context.operationAuditStore.getRetentionPolicy() });
+  }
+  if (id === "auth.audit.retention.set") {
+    if (!context.operationAuditStore?.setRetentionPolicy) {
+      return result(503, { error: "系统审计保留策略接口不可用。" });
+    }
+    const policy = context.operationAuditStore.setRetentionPolicy({
+      retentionDays: input.retentionDays || input["retention-days"],
+      maxExportItems: input.maxExportItems || input["max-export-items"],
+      updatedBy: authSession?.user || {}
+    });
+    authProvider.audit({
+      user: authSession?.user,
+      operationId: "auth.audit.retention.set",
+      action: "set-audit-retention",
+      method: "POST",
+      path: "/api/auth/audit/retention",
+      status: "ok",
+      target: policy
+    });
+    return result(200, { policy });
+  }
+  if (id === "auth.audit.prune") {
+    if (!context.operationAuditStore?.pruneExpired) {
+      return result(503, { error: "系统审计清理接口不可用。" });
+    }
+    const prune = context.operationAuditStore.pruneExpired({
+      retentionDays: input.retentionDays || input["retention-days"]
+    });
+    authProvider.audit({
+      user: authSession?.user,
+      operationId: "auth.audit.prune",
+      action: "prune-audit",
+      method: "POST",
+      path: "/api/auth/audit/prune",
+      status: "ok",
+      target: prune
+    });
+    return result(200, { prune });
+  }
+  if (id === "observability.trace.get") {
+    if (!context.operationAuditStore?.getTrace) {
+      return result(503, { error: "trace 查询接口不可用。" });
+    }
+    const traceId = String(input.traceId || input["trace-id"] || input.id || "").trim();
+    const trace = context.operationAuditStore.getTrace(traceId, {
+      limit: Number(input.limit || 200),
+      tenantId: input.tenantId || input["tenant-id"] || ""
+    });
+    const authorizationDecisions = authProvider.listDecisions
+      ? authProvider.listDecisions({
+          traceId,
+          limit: Number(input.limit || 200),
+          tenantId: input.tenantId || input["tenant-id"] || ""
+        })
+      : [];
+    return result(200, {
+      ...trace,
+      authorizationDecisions,
+      authorizationDecisionCount: authorizationDecisions.length
     });
   }
   if (id === "auth.sessions") {

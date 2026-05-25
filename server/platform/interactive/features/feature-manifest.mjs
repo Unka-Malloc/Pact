@@ -168,7 +168,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         includePaths: ["server/platform/common/security"],
         excludePaths: []
       },
-      tests: { suites: ["server:verify:console-auth", "server:verify:operation-policy"] }
+      tests: { suites: ["server:verify:console-auth", "server:verify:security-hardening", "server:verify:operation-policy"] }
     },
     {
       featureId: "operation-dispatcher",

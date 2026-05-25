@@ -234,7 +234,9 @@
 
 - `server/platform/common/observability/trace-context.mjs` 提供 `traceId/spanId/parentSpanId/operationId/actor` 上下文，并由 operation dispatcher、HTTP 请求和审计链路继承。
 - `server/platform/common/observability/runtime-logger.mjs` 提供 JSONL 运行日志、trace 字段、敏感字段脱敏、路径脱敏和日志保留策略。
+- `/api/observability/traces/:traceId`、`observability.trace.get` 和 `auth audit export --trace-id` 提供基于 operation audit 与 authorization decisions 的 trace drill-down；导出内容默认只包含脱敏输入、输出摘要和引用字段。
 - `server/scripts/verify-trace-context.mjs` 验证 HTTP header、operation audit、runtime log 和事件流都携带同一 trace。
+- `server/scripts/verify-security-hardening.mjs` 验证真实启动后的 trace drill-down API、脱敏审计导出和 trace 过滤。
 - `server/scripts/verify-runtime-logging.mjs` 验证日志文件生成、字段摘要和 token/secret 不落盘。
 - `npm run server:verify:production-readiness` 已把 `trace-observability` 纳入 P0 门禁。
 
@@ -353,7 +355,7 @@
 
 ### P0-07 安全、租户、权限和密钥边界未达到生产审计标准
 
-当前差距：已有 console auth、CSRF、Tool Management grant、scope、policy，但生产还需要更完整的 tenant model、secret management、审计保留、敏感信息脱敏、工具沙箱、外部连接器 OAuth、RBAC/ABAC、数据导出权限、token rotation。
+当前差距：已有 console auth、CSRF、Tool Management grant、scope、policy、tenant/resource ABAC 基础裁决、审计保留和脱敏导出，但生产还需要更完整的 secret management、工具沙箱、外部连接器真实 OAuth、企业级 token rotation、OTel 导出和跨真实外部系统的权限证据。
 
 对标依据：OpenTelemetry 和 Phoenix 都强调 trace/评估中的输入输出可见性，但这也要求敏感信息治理；企业生产中工具调用和知识检索必须能证明谁在何时访问了哪些数据、通过哪个 grant、输出给了谁。
 
@@ -372,11 +374,14 @@
 当前实现入口：
 
 - `server/platform/common/security/auth/console-auth.mjs` 和 `server/scripts/console-auth.mjs` 提供 owner/admin/operator/viewer、登录、session、token rotation、审计和初始凭据治理。
+- `server/platform/common/security/authorization/authorization-engine.mjs` 支持 subject/tool grant 的 `tenantId`、workspace allowlist、dataClass allowlist 和 egress allowlist；tenant mismatch、workspace/dataClass/egress 越界会写入 authorization decision 与 denied request audit。
+- `server/platform/common/security/operation-audit.mjs` 支持 tenant/trace 查询、审计保留策略、过期清理和脱敏 JSONL 导出，导出前统一调用 redaction policy，避免 secret、token、cookie、API key 和本机绝对路径进入审计包。
+- `/api/auth/audit/export`、`/api/auth/audit/retention`、`/api/auth/audit/prune` 和 `/api/observability/traces/:traceId` 提供 API/RPC/CLI 可达的内审、保留和 trace drill-down 路径。
 - `server/platform/specialized/capabilities/tools/tool-management-core/catalog.mjs` 与 Tool Management runtime 提供 tool catalog、scope、toolset、grant、policy preview/evaluate、execute、audit 和 metrics。
 - `server/platform/common/operation-dispatcher/operation-decorators.mjs`、operation policy 和 safety-confirm 约束写操作、风险等级、CSRF 和审批边界。
 - `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 提供 source-level knowledge access、checkoutPolicy、receipt、loanRecord、export/context injection 裁决。
 - `server/platform/common/observability/runtime-logger.mjs` 对 token、password、secret、API key、cookie 和绝对路径做摘要/脱敏。
-- `server/scripts/verify-console-auth.mjs`、`verify-tool-management-platform.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、知识权限、CSRF/safety 和 secret leak。
+- `server/scripts/verify-console-auth.mjs`、`verify-security-hardening.mjs`、`verify-tool-management-platform.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、知识权限、tenant/ABAC、审计脱敏导出、trace drill-down、CSRF/safety 和 secret leak。
 - `npm run server:verify:production-readiness` 已把 `tool-permission`、`agent-library-access` 和 `trace-observability` 纳入 P0 门禁。
 
 补全效果：能面向企业内审、安全团队和运维团队说明权限共享的边界；团队共享不是无审计共享。
