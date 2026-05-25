@@ -296,6 +296,9 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const workspaceRuntimeHandlersFile = "server/platform/common/console/http/controllers/system-controller-workspace-runtime-handlers.mjs";
   const executorFile = "server/platform/specialized/console/console-domain-operation-executor.mjs";
   const providerFile = "server/platform/specialized/console/console-domain-services.mjs";
+  const clientConnectionListFile = "server/platform/common/console/http/client-connection-list.mjs";
+  const consoleStateProjectionFile = "server/platform/specialized/console/console-state-projections.mjs";
+  const jobWorkflowProviderFile = "server/platform/specialized/console/job-workflow-provider.mjs";
   const knowledgeConsoleSummaryFile = "server/platform/specialized/console/knowledge-console-summary.mjs";
   const runtimeConsoleSummaryFile = "server/platform/specialized/console/runtime-console-summary.mjs";
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
@@ -323,6 +326,9 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const workspaceRuntimeHandlers = await read(workspaceRuntimeHandlersFile);
   const executor = await read(executorFile);
   const provider = await read(providerFile);
+  const clientConnectionList = await read(clientConnectionListFile);
+  const consoleStateProjection = await read(consoleStateProjectionFile);
+  const jobWorkflowProvider = await read(jobWorkflowProviderFile);
   const knowledgeConsoleSummary = await read(knowledgeConsoleSummaryFile);
   const runtimeConsoleSummary = await read(runtimeConsoleSummaryFile);
   const toolManagementConnections = await read(toolManagementConnectionsFile);
@@ -349,6 +355,11 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   );
   assertTextIncludes(
     jobsController,
+    "jobWorkflowProvider",
+    `${jobsControllerFile} must receive job workflow protocol functions through an injected provider`
+  );
+  assertTextIncludes(
+    jobsController,
     "uploadSessionStore",
     `${jobsControllerFile} must receive checkpoint upload session protocol functions through injected domain services`
   );
@@ -362,9 +373,40 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     [
       "upload-session-store.mjs",
       "resolveStoredObjectPath",
-      "metadataStore."
+      "metadataStore.",
+      "jobManager."
     ],
     jobsControllerFile
+  );
+  assertTextIncludes(
+    apiFacade,
+    "buildAgentSettingsConsoleProjection",
+    `${apiFacadeFile} must get settings and agent selector projections through domain services`
+  );
+  assertTextIncludes(
+    apiFacade,
+    "buildConsoleJobsSummary",
+    `${apiFacadeFile} must get job summaries through the job workflow provider projection`
+  );
+  assertTextIncludes(
+    apiFacade,
+    "buildConsoleClientConnections",
+    `${apiFacadeFile} must get client connection projections through domain services`
+  );
+  assertTextIncludes(
+    apiFacade,
+    "buildMaintenanceAgentConsoleSummary",
+    `${apiFacadeFile} must get maintenance summaries through domain services`
+  );
+  assertTextIncludes(
+    apiFacade,
+    "buildClientRuntimeConsoleSummary",
+    `${apiFacadeFile} must get client runtime status through domain services`
+  );
+  assertTextIncludes(
+    apiFacade,
+    "buildRuntimeInfoSettings",
+    `${apiFacadeFile} must get runtime info settings through domain services`
   );
   assertTextIncludes(
     apiFacade,
@@ -402,10 +444,49 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "getMountConfigPaths",
       "loadMountConfig(userDataPath)",
       "metadataStore.",
-      "getStorageSummary(),"
+      "getStorageSummary(),",
+      "loadSettings(userDataPath",
+      "getSettingsPath(userDataPath",
+      "getAgentConfigRegistry",
+      "buildAgentSelector",
+      "agentSelectorStatus",
+      "jobManager.listJobs({",
+      "maintenanceAgent.getConsoleSummary",
+      "clientRuntimeAllocator.getStatus",
+      "listClientRegistrations("
     ],
     apiFacadeFile
   );
+  for (const needle of [
+    "buildClientConnectionList",
+    "normalizePactClientRow",
+    "buildClientConnectionSummary"
+  ]) {
+    assertTextIncludes(clientConnectionList, needle, `${clientConnectionListFile} must own client connection list projection ${needle}`);
+  }
+  for (const needle of [
+    "buildAgentSettingsConsoleProjection",
+    "buildConsoleJobsSummary",
+    "buildConsoleClientConnections",
+    "buildMaintenanceAgentConsoleSummary",
+    "buildClientRuntimeConsoleSummary",
+    "buildRuntimeInfoSettings"
+  ]) {
+    assertTextIncludes(consoleStateProjection, needle, `${consoleStateProjectionFile} must own console state projection ${needle}`);
+    assertTextIncludes(provider, needle, `${providerFile} must expose console state projection ${needle}`);
+  }
+  for (const needle of [
+    "pact.job-workflow.v1",
+    "createJobWorkflowProvider",
+    "createJob",
+    "getJob",
+    "getJobByCheckpointId",
+    "getJobResult",
+    "listJobs",
+    "reparseJob"
+  ]) {
+    assertTextIncludes(jobWorkflowProvider, needle, `${jobWorkflowProviderFile} must own job workflow provider port ${needle}`);
+  }
   assertTextIncludes(
     controller,
     "createSystemControllerFoundationHandlers",

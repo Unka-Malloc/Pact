@@ -1,33 +1,31 @@
 import os from "node:os";
-import { getSettingsPath, loadSettings } from "../../platform-core/settings.mjs";
 import { buildBootstrapPayload, getDiscoveryConfigPath } from "../../platform-core/discovery/config.mjs";
+export { buildClientConnectionList } from "./client-connection-list.mjs";
 
-function createFallbackAgentConfigRegistry() {
+function emptyAgentSettingsProjection() {
   return {
-    async refresh() {
-      return {
-        rootPath: "",
-        modelListPath: "",
-        agentListPath: "",
-        modelManifest: {},
-        agentManifest: {}
-      };
+    settings: {
+      path: "",
+      value: {}
     },
-    getModelLibraryEntries() {
-      return [];
+    agentSelector: {
+      schemaVersion: 1,
+      source: "agent-configs",
+      updatedAt: new Date().toISOString(),
+      options: []
     },
-    getModelLibraryAgents() {
-      return [];
+    agentConfigs: {
+      rootPath: "",
+      modelListPath: "",
+      agentListPath: "",
+      modelManifest: {},
+      agentManifest: {}
     }
   };
 }
 
 function normalizeConsoleDomainServices(services = {}) {
   return {
-    getAgentConfigRegistry:
-      typeof services.getAgentConfigRegistry === "function"
-        ? services.getAgentConfigRegistry
-        : createFallbackAgentConfigRegistry,
     listAvailableAnalysisModules:
       typeof services.listAvailableAnalysisModules === "function"
         ? services.listAvailableAnalysisModules
@@ -52,6 +50,30 @@ function normalizeConsoleDomainServices(services = {}) {
       typeof services.buildToolManagementClientConnectionRows === "function"
         ? services.buildToolManagementClientConnectionRows
         : () => [],
+    buildAgentSettingsConsoleProjection:
+      typeof services.buildAgentSettingsConsoleProjection === "function"
+        ? services.buildAgentSettingsConsoleProjection
+        : async () => emptyAgentSettingsProjection(),
+    buildConsoleJobsSummary:
+      typeof services.buildConsoleJobsSummary === "function"
+        ? services.buildConsoleJobsSummary
+        : async () => ({ summary: {}, items: [] }),
+    buildConsoleClientConnections:
+      typeof services.buildConsoleClientConnections === "function"
+        ? services.buildConsoleClientConnections
+        : async () => ({ summary: {}, items: [] }),
+    buildMaintenanceAgentConsoleSummary:
+      typeof services.buildMaintenanceAgentConsoleSummary === "function"
+        ? services.buildMaintenanceAgentConsoleSummary
+        : async () => null,
+    buildClientRuntimeConsoleSummary:
+      typeof services.buildClientRuntimeConsoleSummary === "function"
+        ? services.buildClientRuntimeConsoleSummary
+        : async () => null,
+    buildRuntimeInfoSettings:
+      typeof services.buildRuntimeInfoSettings === "function"
+        ? services.buildRuntimeInfoSettings
+        : async () => ({}),
     buildKnowledgeConsoleSummary:
       typeof services.buildKnowledgeConsoleSummary === "function"
         ? services.buildKnowledgeConsoleSummary
@@ -68,194 +90,10 @@ function featureEnabled(features, featureId) {
   return active.length === 0 || active.includes(featureId);
 }
 
-const AGENT_SELECTOR_SUPPORTED_PROVIDERS = new Set([
-  "deepseek",
-  "openrouter",
-  "copilot",
-  "custom-http",
-  "local-model"
-]);
-
-function stringValue(value) {
-  return String(value || "").trim();
-}
-
-function agentSelectorUid(entry = {}) {
-  return stringValue(entry.uid || entry.instanceId || entry.alias);
-}
-
-function agentSelectorLabel(entry = {}, agentUid = "") {
-  const name = stringValue(entry.label || entry.agentName || entry.alias || agentUid);
-  const model = stringValue(entry.model || entry.engine);
-  return model && model !== name ? `${name} · ${model}` : name;
-}
-
-function agentSelectorModuleIds(entry = {}) {
-  const access = entry?.moduleAccess && typeof entry.moduleAccess === "object"
-    ? entry.moduleAccess
-    : {};
-  if (access.mode !== "selected") {
-    return ["*"];
-  }
-  return Array.isArray(access.moduleIds)
-    ? access.moduleIds.map((item) => stringValue(item)).filter(Boolean)
-    : [];
-}
-
-function agentSelectorStatus(settings = {}, entry = {}) {
-  const provider = stringValue(entry.provider);
-  const model = stringValue(entry.model || entry.engine);
-  const hasModel = Boolean(model);
-  if (!AGENT_SELECTOR_SUPPORTED_PROVIDERS.has(provider)) {
-    return {
-      status: "unsupported",
-      selectable: false,
-      reason: "该智能体来源尚未接入服务端调用链路。"
-    };
-  }
-  if (provider === "custom-http") {
-    const hasUrl = Boolean(stringValue(entry.url || entry.baseUrl || settings.customHttpAdapter?.url));
-    const hasToken = Boolean(entry.tokenConfigured || entry.apiKeyConfigured || stringValue(entry.token || entry.apiKey));
-    if (!hasUrl || !hasToken) {
-      return {
-        status: "unconfigured",
-        selectable: false,
-        reason: "缺少调用地址或凭据。"
-      };
-    }
-    return { status: "available", selectable: true, reason: "" };
-  }
-  if (provider === "local-model") {
-    const hasUrl = Boolean(stringValue(entry.url || entry.baseUrl || settings.localModelEndpoint));
-    if (!hasModel || !hasUrl) {
-      return {
-        status: "unconfigured",
-        selectable: false,
-        reason: "缺少本地模型名称或调用地址。"
-      };
-    }
-    return { status: "available", selectable: true, reason: "" };
-  }
-  const providerCredentialConfigured =
-    provider === "deepseek"
-      ? Boolean(settings.deepSeekApiKeyConfigured || stringValue(settings.deepSeekApiKey) || entry.apiKeyConfigured || stringValue(entry.apiKey))
-      : provider === "openrouter"
-        ? Boolean(settings.openRouterApiKeyConfigured || stringValue(settings.openRouterApiKey) || entry.apiKeyConfigured || stringValue(entry.apiKey))
-        : provider === "copilot"
-          ? Boolean(settings.copilotApiKeyConfigured || stringValue(settings.copilotApiKey) || entry.apiKeyConfigured || stringValue(entry.apiKey))
-          : Boolean(entry.apiKeyConfigured || stringValue(entry.apiKey || entry.token));
-  if (!hasModel || !providerCredentialConfigured) {
-    return {
-      status: "unconfigured",
-      selectable: false,
-      reason: "缺少模型或凭据。"
-    };
-  }
-  return { status: "available", selectable: true, reason: "" };
-}
-
-function buildAgentSelector(settings = {}) {
-  const options = [];
-  const seen = new Set();
-  for (const entry of Array.isArray(settings.modelLibraryAgents) ? settings.modelLibraryAgents : []) {
-    const agentUid = agentSelectorUid(entry);
-    if (!agentUid || seen.has(agentUid)) {
-      continue;
-    }
-    seen.add(agentUid);
-    const state = agentSelectorStatus(settings, entry);
-    options.push({
-      agentUid,
-      value: agentUid,
-      label: agentSelectorLabel(entry, agentUid),
-      provider: stringValue(entry.provider),
-      model: stringValue(entry.model || entry.engine),
-      permissionGroupId: stringValue(entry.permissionGroupId),
-      moduleIds: agentSelectorModuleIds(entry),
-      capabilities: state.selectable
-        ? ["agent.invoke", "knowledge.agent.answer"]
-        : [],
-      status: state.status,
-      selectable: state.selectable,
-      reason: state.reason
-    });
-  }
-  return {
-    schemaVersion: 1,
-    source: "agent-configs",
-    updatedAt: new Date().toISOString(),
-    options
-  };
-}
-
-const PACT_CLIENT_CONNECTION = {
-  kind: "pact-client",
-  method: "pact-client 封装",
-  state: "active",
-  statusLabel: ""
-};
-
-const MCP_PLUGIN_CONNECTION = {
-  kind: "mcp-plugin"
-};
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function compactText(value) {
-  return String(value || "").trim();
-}
-
-function normalizePactClientRow(item) {
-  const migrationState = compactText(item.migrationState) || "unknown";
-  return {
-    ...item,
-    connectionKind: compactText(item.connectionKind) || PACT_CLIENT_CONNECTION.kind,
-    connectionMethod: compactText(item.connectionMethod) || PACT_CLIENT_CONNECTION.method,
-    connectionState: compactText(item.connectionState) || (migrationState === "offline" ? "offline" : PACT_CLIENT_CONNECTION.state),
-    connectionStatusLabel: compactText(item.connectionStatusLabel) || PACT_CLIENT_CONNECTION.statusLabel,
-    supportsMigration: item.supportsMigration !== false
-  };
-}
-
-function buildClientConnectionSummary(items) {
-  return {
-    totalCount: items.length,
-    alignedCount: items.filter((item) => item.migrationState === "aligned").length,
-    outdatedCount: items.filter((item) => item.migrationState === "outdated").length,
-    drainingCount: items.filter((item) => item.migrationState === "draining").length,
-    bootstrapOnlyCount: items.filter((item) => item.migrationState === "bootstrap-only").length,
-    offlineCount: items.filter((item) => item.migrationState === "offline").length,
-    unknownCount: items.filter((item) => item.migrationState === "unknown").length,
-    pactClientCount: items.filter((item) => item.connectionKind === PACT_CLIENT_CONNECTION.kind).length,
-    mcpPluginCount: items.filter((item) => item.connectionKind === MCP_PLUGIN_CONNECTION.kind).length,
-    migratableCount: items.filter((item) => item.supportsMigration !== false).length
-  };
-}
-
-export function buildClientConnectionList(clientRegistrations, additionalConnectionRows = []) {
-  const pactClientRows = asArray(clientRegistrations?.items).map(normalizePactClientRow);
-  const mcpRows = asArray(additionalConnectionRows);
-  const items = [...pactClientRows, ...mcpRows].sort((left, right) =>
-    compactText(right.lastSeenAt).localeCompare(compactText(left.lastSeenAt))
-  );
-  return {
-    summary: buildClientConnectionSummary(items),
-    items
-  };
-}
-
 function storageSummaryFrom(storageProvider = null) {
   return typeof storageProvider?.getStorageSummary === "function"
     ? storageProvider.getStorageSummary()
     : null;
-}
-
-function clientRegistrationsFrom(storageProvider = null, input = {}) {
-  return typeof storageProvider?.listClientRegistrations === "function"
-    ? storageProvider.listClientRegistrations(input)
-    : { summary: {}, items: [] };
 }
 
 export async function buildConsoleState({
@@ -264,7 +102,7 @@ export async function buildConsoleState({
   runtime,
   moduleManagement = null,
   discoveryState,
-  jobManager,
+  jobWorkflowProvider = null,
   storageProvider = null,
   serverUrl,
   securityPermissions = null,
@@ -277,41 +115,35 @@ export async function buildConsoleState({
 }) {
   const domainServices = normalizeConsoleDomainServices(consoleDomainServices);
   const [
-    settings,
-    rawSettings,
+    agentSettingsProjection,
     rules,
     expertVocabulary,
     knowledgeTaxonomy,
     knowledgeGuidance,
     jobs,
-    clients
+    clients,
+    maintenanceAgentSummary,
+    clientRuntimeSummary
   ] = await Promise.all([
-    loadSettings(userDataPath, { redactSecrets: true }),
-    loadSettings(userDataPath),
+    domainServices.buildAgentSettingsConsoleProjection({ userDataPath }),
     domainServices.loadEmailRules(userDataPath),
     domainServices.loadExpertVocabulary(userDataPath),
     domainServices.loadKnowledgeTaxonomy(userDataPath),
     domainServices.getKnowledgeGuidanceSummary(userDataPath),
-    jobManager.listJobs({ limit: 50 }),
-    Promise.resolve(clientRegistrationsFrom(storageProvider, {
-      offlineAfterSeconds: discoveryState.offlineAfterSeconds
-    })).then(async (clientRegistrations) =>
-      buildClientConnectionList(
-        clientRegistrations,
-        await domainServices.buildToolManagementClientConnectionRows(toolSkillManagementProvider, {
-          offlineAfterSeconds: discoveryState.offlineAfterSeconds
-        })
-      )
-    )
+    domainServices.buildConsoleJobsSummary({
+      jobWorkflowProvider,
+      limit: 50
+    }),
+    domainServices.buildConsoleClientConnections({
+      storageProvider,
+      offlineAfterSeconds: discoveryState.offlineAfterSeconds,
+      toolSkillManagementProvider,
+      buildToolManagementClientConnectionRows: domainServices.buildToolManagementClientConnectionRows
+    }),
+    domainServices.buildMaintenanceAgentConsoleSummary({ maintenanceAgent }),
+    domainServices.buildClientRuntimeConsoleSummary({ clientRuntimeAllocator })
   ]);
-  const agentConfigRegistry = domainServices.getAgentConfigRegistry();
-  const agentConfigState = await agentConfigRegistry.refresh({ settingsFallback: rawSettings });
-  const projectedSettings = {
-    ...settings,
-    modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries(),
-    modelLibraryAgentIds: agentConfigRegistry.getModelLibraryAgents().map((agent) => agent.uid).filter(Boolean),
-    modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents({ redactSecrets: true })
-  };
+  const projectedSettings = agentSettingsProjection.settings.value;
   const knowledgeCoreEnabled = featureEnabled(features, "knowledge-core");
   const runtimeSummary = await domainServices.buildRuntimeConsoleSummary({
     userDataPath,
@@ -330,18 +162,9 @@ export async function buildConsoleState({
       hostname: os.hostname()
     },
     runtime: runtimeSummary,
-    settings: {
-      path: getSettingsPath(userDataPath),
-      value: projectedSettings
-    },
-    agentSelector: buildAgentSelector(projectedSettings),
-    agentConfigs: {
-      rootPath: agentConfigState.rootPath,
-      modelListPath: agentConfigState.modelListPath,
-      agentListPath: agentConfigState.agentListPath,
-      modelManifest: agentConfigState.modelManifest,
-      agentManifest: agentConfigState.agentManifest
-    },
+    settings: agentSettingsProjection.settings,
+    agentSelector: agentSettingsProjection.agentSelector,
+    agentConfigs: agentSettingsProjection.agentConfigs,
     discovery: {
       path: getDiscoveryConfigPath(userDataPath),
       value: discoveryState,
@@ -363,18 +186,14 @@ export async function buildConsoleState({
     auth: securityPermissions?.getConsoleSummary
       ? securityPermissions.getConsoleSummary(request)
       : null,
-    maintenanceAgent: maintenanceAgent
-      ? await maintenanceAgent.getConsoleSummary()
-      : null,
+    maintenanceAgent: maintenanceAgentSummary,
     knowledgeConsole: knowledgeCoreEnabled
-      ? await domainServices.buildKnowledgeConsoleSummary(runtime, jobManager)
+      ? await domainServices.buildKnowledgeConsoleSummary(runtime, jobWorkflowProvider)
       : null,
     storage: storageSummaryFrom(storageProvider),
     jobs,
     clients,
-    clientRuntime: clientRuntimeAllocator && typeof clientRuntimeAllocator.getStatus === "function"
-      ? await clientRuntimeAllocator.getStatus()
-      : null,
+    clientRuntime: clientRuntimeSummary,
     features
   };
 }
@@ -393,7 +212,7 @@ export async function buildRuntimeInfo({
   consoleDomainServices = null
 }) {
   const domainServices = normalizeConsoleDomainServices(consoleDomainServices);
-  const settings = await loadSettings(userDataPath, { redactSecrets: true });
+  const settings = await domainServices.buildRuntimeInfoSettings({ userDataPath });
   const runtimeSummary = await domainServices.buildRuntimeConsoleSummary({
     userDataPath,
     runtime,

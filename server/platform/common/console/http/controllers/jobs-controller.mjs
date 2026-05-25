@@ -133,6 +133,22 @@ function requireStorageProvider(provider = null) {
   return provider;
 }
 
+function requireJobWorkflowProvider(provider = null) {
+  const required = [
+    "createJob",
+    "getJob",
+    "getJobByCheckpointId",
+    "getJobResult",
+    "listJobs",
+    "reparseJob"
+  ];
+  const missing = required.filter((name) => typeof provider?.[name] !== "function");
+  if (missing.length > 0) {
+    throw new Error(`jobWorkflowProvider is not configured: ${missing.join(", ")}`);
+  }
+  return provider;
+}
+
 function bufferStartsWith(buffer, bytes) {
   return bytes.every((byte, index) => buffer[index] === byte);
 }
@@ -345,7 +361,7 @@ function verifyUploadedFiles(payload = {}, { resolveArchiveBatchIdentity = defau
 
 export function createJobsController({
   userDataPath,
-  jobManager,
+  jobWorkflowProvider = null,
   storageProvider = null,
   deletionCoordinator,
   getDiscoveryState,
@@ -356,6 +372,7 @@ export function createJobsController({
   resolveArchiveBatchIdentity = defaultArchiveBatchResolver
 }) {
   const checkpointUploadSessionStore = requireUploadSessionStore(uploadSessionStore);
+  const jobWorkflow = requireJobWorkflowProvider(jobWorkflowProvider);
   const jobStorageProvider = requireStorageProvider(storageProvider);
   const loadNormalizedDocumentStoreRuntime =
     typeof loadNormalizedDocumentStore === "function"
@@ -654,7 +671,7 @@ export function createJobsController({
         verifiedUpload = verifyUploadedFiles(payload, { resolveArchiveBatchIdentity });
       }
       const checkpointReceipt = verifiedUpload.receipt;
-      const existingCheckpointJob = await jobManager.getJobByCheckpointId(checkpointReceipt.checkpointId);
+      const existingCheckpointJob = await jobWorkflow.getJobByCheckpointId(checkpointReceipt.checkpointId);
       if (!forceNewVersion && existingCheckpointJob) {
         await publishProtocolEvent(
           protocolEventBus,
@@ -704,7 +721,7 @@ export function createJobsController({
         settings: payload.settings || {},
         checkpointReceipt
       };
-      const job = await jobManager.createJob(jobPayload);
+      const job = await jobWorkflow.createJob(jobPayload);
       if (uploadTrace) {
         await uploadTrace({
           functionName: "handleCreateJob",
@@ -719,10 +736,10 @@ export function createJobsController({
       sendJson(response, 202, job);
     },
     async handleListJobs({ limit, response }) {
-      sendJson(response, 200, await jobManager.listJobs({ limit }));
+      sendJson(response, 200, await jobWorkflow.listJobs({ limit }));
     },
     async handleGetJob({ request, requestBody, jobId, response }) {
-      const job = await jobManager.getJob(jobId);
+      const job = await jobWorkflow.getJob(jobId);
 
       if (job) {
         sendJson(response, 200, job);
@@ -767,7 +784,7 @@ export function createJobsController({
         return;
       }
 
-      const job = await jobManager.reparseJob(jobId, {
+      const job = await jobWorkflow.reparseJob(jobId, {
         documentParsing: payload?.documentParsing,
         settings: payload?.settings
       });
@@ -814,7 +831,7 @@ export function createJobsController({
       });
     },
     async handleGetJobResult({ request, requestBody, jobId, response }) {
-      const job = await jobManager.getJob(jobId);
+      const job = await jobWorkflow.getJob(jobId);
 
       if (job) {
         if (job.status !== "completed") {
@@ -824,7 +841,7 @@ export function createJobsController({
           return;
         }
 
-        const result = await jobManager.getJobResult(jobId);
+        const result = await jobWorkflow.getJobResult(jobId);
         sendJson(response, 200, result);
         return;
       }
@@ -850,7 +867,7 @@ export function createJobsController({
       });
     },
     async handleListNormalizedDocuments({ request, requestBody, jobId, response }) {
-      const job = await jobManager.getJob(jobId);
+      const job = await jobWorkflow.getJob(jobId);
 
       if (job) {
         if (job.status !== "completed") {
@@ -896,7 +913,7 @@ export function createJobsController({
       });
     },
     async handleGetNormalizedDocument({ request, requestBody, jobId, documentId, response }) {
-      const job = await jobManager.getJob(jobId);
+      const job = await jobWorkflow.getJob(jobId);
 
       if (job) {
         if (job.status !== "completed") {

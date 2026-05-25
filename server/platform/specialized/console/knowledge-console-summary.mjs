@@ -20,7 +20,7 @@ function redactModulePaths(value) {
   return clone;
 }
 
-export async function buildKnowledgeConsoleSummary(runtime, jobManager) {
+export async function buildKnowledgeConsoleSummary(runtime, jobWorkflowProvider) {
   const knowledgeBase = runtime?.mounts?.knowledgeBase;
   const [health, capabilities, maintenance, jobs] = await Promise.all([
     typeof knowledgeBase?.health === "function" ? Promise.resolve(knowledgeBase.health()) : Promise.resolve(null),
@@ -30,7 +30,9 @@ export async function buildKnowledgeConsoleSummary(runtime, jobManager) {
     typeof knowledgeBase?.getMaintenance === "function"
       ? Promise.resolve(knowledgeBase.getMaintenance())
       : Promise.resolve(null),
-    jobManager.listJobs({ limit: 8 })
+    typeof jobWorkflowProvider?.listJobs === "function"
+      ? jobWorkflowProvider.listJobs({ limit: 8 })
+      : Promise.resolve({ items: [] })
   ]);
   return {
     available: Boolean(knowledgeBase && knowledgeBase.enabled !== false),

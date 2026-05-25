@@ -700,7 +700,7 @@ function getKnowledgeDistillationWorkbench(context = {}) {
       key,
       context.createKnowledgeDistillationWorkbench({
         userDataPath: context.userDataPath,
-        jobManager: context.jobManager,
+        jobManager: context.jobWorkflowProvider,
         knowledgeDistillationRuntime: context.knowledgeDistillationRuntime,
         queueMonitor: context.queueMonitor
       })
@@ -2000,7 +2000,7 @@ async function executeKnowledgeSourceOperation({ operationId, input = {}, contex
     if (typeof context.consoleDomainServices?.buildKnowledgeConsoleSummary !== "function") {
       return result(503, { error: "知识库控制台摘要 provider 未配置。" });
     }
-    const summary = await context.consoleDomainServices.buildKnowledgeConsoleSummary(context.runtime, context.jobManager);
+    const summary = await context.consoleDomainServices.buildKnowledgeConsoleSummary(context.runtime, context.jobWorkflowProvider);
     if (!context.knowledgeSourceService) {
       return result(200, summary);
     }
@@ -2388,11 +2388,11 @@ async function executeJobObservationOperation({ operationId, input = {}, context
   if (id !== "jobs.failed_review") {
     return null;
   }
-  const jobManager = context.jobManager;
-  if (!jobManager || typeof jobManager.listJobs !== "function") {
-    return result(503, { error: "任务管理器不可用。" });
+  const jobWorkflowProvider = context.jobWorkflowProvider;
+  if (!jobWorkflowProvider || typeof jobWorkflowProvider.listJobs !== "function") {
+    return result(503, { error: "任务工作流 provider 不可用。" });
   }
-  const jobs = await jobManager.listJobs({
+  const jobs = await jobWorkflowProvider.listJobs({
     limit: Number(input.limit || 50)
   });
   const failed = (jobs.items || []).filter((job) => job.status === "failed");
@@ -2478,7 +2478,7 @@ async function executeConsoleStateOperation({ operationId, context }) {
       runtime: context.runtime,
       moduleManagement: context.moduleManagement,
       discoveryState: context.discoveryState,
-      jobManager: context.jobManager,
+      jobWorkflowProvider: context.jobWorkflowProvider,
       storageProvider: context.storageProvider,
       serverUrl: context.serverUrl,
       securityPermissions: context.securityPermissions,

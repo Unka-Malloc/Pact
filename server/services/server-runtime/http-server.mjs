@@ -35,6 +35,7 @@ import {
   saveDiscoveryConfig
 } from "../../platform/common/platform-core/discovery/config.mjs";
 import { createJobManager } from "../client/work-queue-core/jobs/job-manager.mjs";
+import { createJobWorkflowProvider } from "../../platform/specialized/console/job-workflow-provider.mjs";
 import {
   createRuntimeLogger,
   setRuntimeLogger,
@@ -420,6 +421,7 @@ export async function startHttpServer({
     metadataStore: registeredMetadataStore,
     runtime
   });
+  const jobWorkflowProvider = createJobWorkflowProvider({ jobManager });
   const queueMonitorAdapter = {
     registerStarted: (input) => registerQueueStarted(userDataPath, input),
     registerHeartbeat: (input) => registerQueueHeartbeat(userDataPath, input),
@@ -475,7 +477,7 @@ export async function startHttpServer({
 
   const jobsController = createJobsController({
     userDataPath,
-    jobManager,
+    jobWorkflowProvider,
     storageProvider: registeredStorageProvider,
     deletionCoordinator,
     getDiscoveryState: () => discoveryState,
@@ -490,7 +492,7 @@ export async function startHttpServer({
     distPath,
     runtime,
     moduleManagement,
-    jobManager,
+    jobWorkflowProvider,
     metadataStore,
     storageProvider: registeredStorageProvider,
     serverLabel,

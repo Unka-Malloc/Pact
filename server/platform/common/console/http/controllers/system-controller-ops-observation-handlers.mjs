@@ -1,7 +1,7 @@
 export function createSystemControllerOpsObservationHandlers({
   sendConsoleDomainOperation,
   parseJsonBody,
-  jobManager,
+  jobWorkflowProvider,
   checkpointTreeApi,
   queueMonitor,
   devopsProvider
@@ -12,7 +12,7 @@ export function createSystemControllerOpsObservationHandlers({
         operationId: operation?.id || "jobs.failed_review",
         input: { limit },
         response,
-        context: { jobManager },
+        context: { jobWorkflowProvider },
         errorMessage: "生成失败任务复盘失败。"
       });
     },

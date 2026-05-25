@@ -6,7 +6,7 @@ export function createSystemControllerKnowledgeRuntimeHandlers({
   knowledgeDomainContext,
   knowledgeWorkflowContext,
   runtime,
-  jobManager,
+  jobWorkflowProvider,
   knowledgeSourceService,
   metadataStore,
   clientRuntimeAllocator,
@@ -20,7 +20,7 @@ export function createSystemControllerKnowledgeRuntimeHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "knowledge.console",
         response,
-        context: { runtime, jobManager, knowledgeSourceService, consoleDomainServices },
+        context: { runtime, jobWorkflowProvider, knowledgeSourceService, consoleDomainServices },
         errorMessage: "读取知识库控制台状态失败。"
       });
     },

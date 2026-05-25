@@ -437,7 +437,11 @@ Tool Management runtime 也归交互层 provider 装配。`server/services/serve
 
 Checkpoint upload session 属于协议工作流实现，不属于 `common/console` 的稳定基础能力。`server/platform/common/console/http/controllers/jobs-controller.mjs` 和 `system-controller-contexts.mjs` 不能直接 import `protocols/checkpoint/upload-session-store.mjs`；它们只能通过 `server/platform/specialized/console/console-domain-services.mjs` 注入的 `uploadSessionStore` provider 调用创建/查询/追加 chunk、receipt 构建、文件解析和清理能力。
 
-Tool Management grant 到客户端连接列表的投影属于 Tool Management 领域语义，也不属于 `common/console`。`server/platform/common/console/http/api-facade.mjs` 不能直接读取 `toolManagementPlatform.store.listGrants()`、不能理解 MCP grant metadata 或拼装 MCP 插件连接行；只能调用 `console-domain-services.mjs` 暴露的 `buildToolManagementClientConnectionRows(...)`，再与 Pact client registration rows 做通用列表合并。
+Job workflow 属于任务工作流 provider，不属于 `common/console` 的直接依赖。`jobs-controller.mjs`、runtime/system handler、knowledge console handler 和 failed-jobs observation handler 只能接收 `pact.job-workflow.v1` provider，不能直接持有或查询 `jobManager`；`server/platform/specialized/console/job-workflow-provider.mjs` 负责把任务创建、查询、checkpoint lookup、结果读取和重跑能力封装成协议端口。
+
+Console state projection 也不属于 `api-facade`。`server/platform/common/console/http/api-facade.mjs` 不能直接调用 `loadSettings()`、agent config registry、job manager、client runtime allocator、maintenance agent summary 或 storage client registration；settings/agent selector、jobs、client connection、maintenance summary、client runtime status 和 runtime info settings 只能通过 `console-domain-services.mjs` 暴露的 projection provider 进入，由 `server/platform/specialized/console/console-state-projections.mjs` 统一完成。
+
+Tool Management grant 到客户端连接列表的投影属于 Tool Management 领域语义，也不属于 `common/console`。`server/platform/common/console/http/api-facade.mjs` 不能直接读取 `toolManagementPlatform.store.listGrants()`、不能理解 MCP grant metadata 或拼装 MCP 插件连接行；只能调用 `console-domain-services.mjs` 暴露的 `buildConsoleClientConnections(...)`，由 specialized console projection 调用 `buildToolManagementClientConnectionRows(...)` 并与 Pact client registration rows 做通用列表合并。
 
 Knowledge console summary 属于知识运行时领域语义，不属于 `common/console`。`server/platform/common/console/http/api-facade.mjs` 不能直接访问 `runtime.mounts.knowledgeBase`、调用 knowledgeBase health/capabilities/maintenance 或维护知识模块路径脱敏逻辑；只能调用 `console-domain-services.mjs` 暴露的 `buildKnowledgeConsoleSummary(...)`，由 `server/platform/specialized/console/knowledge-console-summary.mjs` 负责知识运行时摘要投影。
 

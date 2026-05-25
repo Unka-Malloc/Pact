@@ -27,6 +27,14 @@ import {
 import { enhanceAffairTaxonomy } from "../knowledge/preprocessing/domain/knowledge-taxonomy/service.mjs";
 import { createKnowledgeDistillationWorkbench } from "../knowledge/invocation/knowledge-distillation-workbench/index.mjs";
 import { executeConsoleDomainOperation } from "./console-domain-operation-executor.mjs";
+import {
+  buildAgentSettingsConsoleProjection as buildAgentSettingsConsoleProjectionBase,
+  buildClientRuntimeConsoleSummary,
+  buildConsoleClientConnections,
+  buildConsoleJobsSummary,
+  buildMaintenanceAgentConsoleSummary,
+  buildRuntimeInfoSettings
+} from "./console-state-projections.mjs";
 import { buildKnowledgeConsoleSummary } from "./knowledge-console-summary.mjs";
 import { resumeKnowledgeWordCloudClassificationTasks } from "./knowledge-word-cloud-operation-executor.mjs";
 import { buildRuntimeConsoleSummary } from "./runtime-console-summary.mjs";
@@ -83,6 +91,16 @@ export function createConsoleDomainServices() {
     toPublicDocumentParsingResult,
     enhanceAffairTaxonomy,
     createKnowledgeDistillationWorkbench,
+    buildAgentSettingsConsoleProjection: (input = {}) =>
+      buildAgentSettingsConsoleProjectionBase({
+        ...input,
+        getAgentConfigRegistry
+      }),
+    buildClientRuntimeConsoleSummary,
+    buildConsoleClientConnections,
+    buildConsoleJobsSummary,
+    buildMaintenanceAgentConsoleSummary,
+    buildRuntimeInfoSettings,
     buildKnowledgeConsoleSummary,
     buildRuntimeConsoleSummary,
     executeConsoleDomainOperation,
