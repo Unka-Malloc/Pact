@@ -3,7 +3,8 @@ export function createSystemControllerOpsObservationHandlers({
   parseJsonBody,
   jobManager,
   checkpointTreeApi,
-  monitorAlertApi
+  queueMonitor,
+  devopsProvider
 }) {
   return {
     async handleFailedJobsReview({ operation, limit, response }) {
@@ -19,6 +20,7 @@ export function createSystemControllerOpsObservationHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "system.background_processes",
         response,
+        context: { devopsProvider },
         errorMessage: "读取后台进程状态失败。"
       });
     },
@@ -51,7 +53,7 @@ export function createSystemControllerOpsObservationHandlers({
           : "system.monitor_alerts.get"),
         input: requestBody.length > 0 ? parseJsonBody(requestBody) : {},
         response,
-        context: { monitorAlertApi },
+        context: { devopsProvider, queueMonitor },
         errorMessage: "监控报警操作失败。"
       });
     },
@@ -60,7 +62,7 @@ export function createSystemControllerOpsObservationHandlers({
         operationId: operation?.id || "system.monitor_alerts.ack",
         input: { alertId },
         response,
-        context: { monitorAlertApi },
+        context: { devopsProvider, queueMonitor },
         errorMessage: "确认监控报警失败。"
       });
     }

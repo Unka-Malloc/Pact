@@ -94,6 +94,7 @@ async function assertHttpServerUsesCompositionRoot() {
       "agent-gateway/index.mjs",
       "createToolManagementPlatform",
       "tool-management-core/index.mjs",
+      "monitor-alert-core/monitor-alerts.mjs",
       "buildConsoleState",
       "loadSettings(userDataPath)",
       "loadAgentSyncConfig(userDataPath)",
@@ -118,6 +119,7 @@ async function assertCompositionRootOwnsAssembly() {
     "registerStoragePlatformServices",
     "createStorageProvider",
     "registerDevopsPlatformServices",
+    "createDevopsProvider",
     "createConsoleAuth",
     "createSecurityPermissionsProvider",
     "createModuleManagementProvider",
@@ -202,6 +204,44 @@ async function assertStorageProviderOwnsPorts() {
   ]) {
     assertTextIncludes(text, needle, `${file} must own storage provider port ${needle}`);
   }
+}
+
+async function assertDevopsProviderOwnsPorts() {
+  const file = "server/platform/common/devops/devops-provider.mjs";
+  const text = await read(file);
+  for (const needle of [
+    "pact.devops.v1",
+    "createDevopsProvider",
+    "getBackgroundProcessStatus",
+    "getMonitorAlertState",
+    "saveMonitorAlertConfig",
+    "runMonitorAlertCycle",
+    "acknowledgeMonitorAlert",
+    "createMonitorAlertApi",
+    "normalizeUnifiedRegistration",
+    "composeUnifiedSystemStatus",
+    "listCapabilities"
+  ]) {
+    assertTextIncludes(text, needle, `${file} must own devops provider port ${needle}`);
+  }
+  const httpServer = await read("server/services/server-runtime/http-server.mjs");
+  const executor = await read("server/platform/specialized/console/console-domain-operation-executor.mjs");
+  assertTextExcludes(
+    httpServer,
+    [
+      "monitor-alert-core/monitor-alerts.mjs"
+    ],
+    "server/services/server-runtime/http-server.mjs"
+  );
+  assertTextExcludes(
+    executor,
+    [
+      "process-status/background-process-status.mjs",
+      "await getBackgroundProcessStatus(",
+      "monitorAlertApi."
+    ],
+    "server/platform/specialized/console/console-domain-operation-executor.mjs"
+  );
 }
 
 async function assertCommonConsoleDelegatesSpecializedOperations() {
@@ -523,6 +563,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "monitorAlertApi.getState",
       "monitorAlertApi.saveConfig",
       "monitorAlertApi.acknowledge",
+      "getBackgroundProcessStatus(",
       "consoleAuth.getSummary",
       "consoleAuth.login",
       "consoleAuth.logout",
@@ -571,7 +612,6 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "maintenanceAgent.getRun",
       "maintenanceAgent.approveRun",
       "maintenanceAgent.cancelRun",
-      "getBackgroundProcessStatus(",
       "checkpointTreeApi.listCheckpointTrees",
       "checkpointTreeApi.checkpointTreeSummary",
       "checkpointTreeApi.loadCheckpointTree",
@@ -1799,6 +1839,7 @@ async function main() {
   await assertRuntimeProvidersOwnProviderImports();
   await assertDataStructureProviderOwnsPorts();
   await assertStorageProviderOwnsPorts();
+  await assertDevopsProviderOwnsPorts();
   await assertCommonConsoleDelegatesSpecializedOperations();
   await assertCoreArchitectureDocsCoverMainline();
 }

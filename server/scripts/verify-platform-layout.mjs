@@ -12,6 +12,7 @@ import { createModuleManagementProvider } from "../platform/common/module-manage
 import { registerModuleManagementPlatformServices } from "../platform/common/module-manager/register.mjs";
 import { registerStoragePlatformServices } from "../platform/common/storage/register.mjs";
 import { createStorageProvider } from "../platform/common/storage/storage-provider.mjs";
+import { createDevopsProvider } from "../platform/common/devops/devops-provider.mjs";
 import { registerDevopsPlatformServices } from "../platform/common/devops/register.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -258,7 +259,10 @@ async function assertInteractiveRegistrations() {
   registerDataStructurePlatformServices(registry, {
     dataStructures: createDataStructureProvider({ userDataPath: "verify-data" })
   });
-  registerDevopsPlatformServices(registry, { userDataPath: "verify-data" });
+  registerDevopsPlatformServices(registry, {
+    userDataPath: "verify-data",
+    devopsProvider: createDevopsProvider({ userDataPath: "verify-data" })
+  });
 
   const registeredIds = new Set(registry.list().map((entry) => entry.id));
   for (const id of [
@@ -275,8 +279,12 @@ async function assertInteractiveRegistrations() {
     "module-management.provider",
     "module-management.serverRuntime",
     "module-management.mounts",
+    "devops.provider",
     "devops.processStatus.get",
     "devops.monitorAlerts.state",
+    "devops.monitorAlerts.saveConfig",
+    "devops.monitorAlerts.runCycle",
+    "devops.monitorAlerts.acknowledge",
     "devops.unifiedRegistration.normalize"
   ]) {
     assert.equal(registeredIds.has(id), true, `bottom platform interface must be registered: ${id}`);

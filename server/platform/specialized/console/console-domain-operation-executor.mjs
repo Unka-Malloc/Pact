@@ -51,7 +51,6 @@ import {
   getDiscoveryConfigPath,
   saveDiscoveryConfig
 } from "../../common/platform-core/discovery/config.mjs";
-import { getBackgroundProcessStatus } from "../../common/devops/process-status/background-process-status.mjs";
 import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorization/authorization-engine.mjs";
 
 const contributionRegistries = new Map();
@@ -75,6 +74,13 @@ function requireStorageProvider(context = {}) {
     return { error: result(503, { error: "存储 provider 不可用。" }) };
   }
   return { storageProvider: context.storageProvider };
+}
+
+function requireDevopsProvider(context = {}) {
+  if (!context.devopsProvider) {
+    return { error: result(503, { error: "运维 provider 不可用。" }) };
+  }
+  return { devopsProvider: context.devopsProvider };
 }
 
 function protocolPayload(payload = {}) {
@@ -2158,33 +2164,33 @@ async function executeMonitorAlertOperation({ operationId, input = {}, context }
     return null;
   }
 
-  const monitorAlertApi = context.monitorAlertApi;
-  if (!monitorAlertApi) {
-    return result(503, { error: "监控报警接口未注册。" });
+  const { devopsProvider, error } = requireDevopsProvider(context);
+  if (error) {
+    return error;
   }
   if (id === "system.monitor_alerts.get") {
-    if (typeof monitorAlertApi.getState !== "function") {
+    if (typeof devopsProvider.getMonitorAlertState !== "function") {
       return result(503, { error: "监控报警状态接口不可用。" });
     }
-    return result(200, await monitorAlertApi.getState());
+    return result(200, await devopsProvider.getMonitorAlertState({ ...(input || {}), queueMonitor: context.queueMonitor }));
   }
   if (id === "system.monitor_alerts.set") {
-    if (typeof monitorAlertApi.saveConfig !== "function" || typeof monitorAlertApi.getState !== "function") {
+    if (typeof devopsProvider.saveMonitorAlertConfig !== "function" || typeof devopsProvider.getMonitorAlertState !== "function") {
       return result(503, { error: "监控报警配置接口不可用。" });
     }
-    const config = await monitorAlertApi.saveConfig(input.config || input);
-    const state = await monitorAlertApi.getState();
+    const config = await devopsProvider.saveMonitorAlertConfig(input.config || input);
+    const state = await devopsProvider.getMonitorAlertState({ ...(input || {}), queueMonitor: context.queueMonitor });
     return result(200, {
       ...state,
       config
     });
   }
   if (id === "system.monitor_alerts.ack") {
-    if (typeof monitorAlertApi.acknowledge !== "function") {
+    if (typeof devopsProvider.acknowledgeMonitorAlert !== "function") {
       return result(503, { error: "监控报警确认接口不可用。" });
     }
     const alertId = String(input.alertId || input["alert-id"] || input.id || "").trim();
-    return result(200, await monitorAlertApi.acknowledge(alertId));
+    return result(200, await devopsProvider.acknowledgeMonitorAlert({ ...input, alertId, queueMonitor: context.queueMonitor }));
   }
 
   return null;
@@ -2208,7 +2214,11 @@ async function executeSystemObservationOperation({ operationId, input = {}, cont
   }
 
   if (id === "system.background_processes") {
-    return result(200, await getBackgroundProcessStatus(context.userDataPath));
+    const { devopsProvider, error } = requireDevopsProvider(context);
+    if (error) {
+      return error;
+    }
+    return result(200, await devopsProvider.getBackgroundProcessStatus({ userDataPath: context.userDataPath }));
   }
 
   const checkpointTreeApi = context.checkpointTreeApi;

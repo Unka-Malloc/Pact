@@ -64,7 +64,7 @@ export function createSystemController({
   clientRuntimeBootstrap = null,
   checkpointTreeApi = null,
   queueMonitor = null,
-  monitorAlertApi = null,
+  devopsProvider = null,
   getFeatureEntries = () => null,
   getToolManagementPlatform = () => null,
   consoleDomainServices = null
@@ -268,7 +268,8 @@ export function createSystemController({
       parseJsonBody,
       jobManager,
       checkpointTreeApi,
-      monitorAlertApi
+      queueMonitor,
+      devopsProvider
     }),
     ...createSystemControllerKnowledgeRuntimeHandlers({
       sendConsoleDomainOperation,

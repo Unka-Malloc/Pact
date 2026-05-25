@@ -45,11 +45,6 @@ import {
   setTraceContextOnRequest
 } from "../../platform/common/observability/trace-context.mjs";
 import {
-  acknowledgeMonitorAlert,
-  getMonitorAlertState,
-  saveMonitorAlertConfig
-} from "../../platform/common/devops/monitor-alert-core/monitor-alerts.mjs";
-import {
   dispatchInternalOperation,
   dispatchRegisteredHttpOperation,
   dispatchRpcOperation,
@@ -370,6 +365,7 @@ export async function startHttpServer({
     protocolEventBus,
     consoleDomainServices,
     storageProvider,
+    devopsProvider,
     metadataStore
   } = compositionRoot;
   runtimeLogger.info("features.resolved", {
@@ -421,6 +417,7 @@ export async function startHttpServer({
   const ownsJobManager = !incomingJobManager;
   const registeredMetadataStore = requirePlatformInterface(platformRegistry, "storage.metadataStore").value;
   const registeredStorageProvider = requirePlatformInterface(platformRegistry, "storage.provider").value || storageProvider;
+  const registeredDevopsProvider = requirePlatformInterface(platformRegistry, "devops.provider").value || devopsProvider;
   const deletionCoordinator = createBatchDeletionCoordinator({
     userDataPath,
     jobManager,
@@ -530,11 +527,7 @@ export async function startHttpServer({
     },
     queueMonitor: queueMonitorAdapter,
     checkpointTreeApi: dataStructures.checkpointTree,
-    monitorAlertApi: {
-      getState: () => getMonitorAlertState(userDataPath, { queueMonitor: queueMonitorAdapter }),
-      saveConfig: (input) => saveMonitorAlertConfig(userDataPath, input),
-      acknowledge: (alertId) => acknowledgeMonitorAlert(userDataPath, alertId, { queueMonitor: queueMonitorAdapter })
-    },
+    devopsProvider: registeredDevopsProvider,
     getToolManagementPlatform: () => toolManagementPlatformRef,
     consoleDomainServices
   });

@@ -1,24 +1,37 @@
 import { registerPlatformService } from "../../interactive/platform-registry.mjs";
-import { getBackgroundProcessStatus } from "./process-status/background-process-status.mjs";
-import {
-  acknowledgeMonitorAlert,
-  getMonitorAlertState,
-  runMonitorAlertCycle
-} from "./monitor-alert-core/monitor-alerts.mjs";
+import { createDevopsProvider } from "./devops-provider.mjs";
 import {
   composeUnifiedSystemStatus,
   normalizeUnifiedRegistration
 } from "./unified-registration-core/unified-registration.mjs";
 
-export function registerDevopsPlatformServices(registry, { userDataPath = "" } = {}) {
+export function registerDevopsPlatformServices(registry, {
+  userDataPath = "",
+  devopsProvider = null
+} = {}) {
+  const effectiveDevopsProvider = devopsProvider || createDevopsProvider({ userDataPath });
   return [
+    registerPlatformService(registry, {
+      id: "devops.provider",
+      platform: "devops",
+      label: "DevOps provider",
+      kind: "provider",
+      ownerFeatureId: "devops-core",
+      value: effectiveDevopsProvider,
+      metadata: {
+        protocolVersion: effectiveDevopsProvider?.protocolVersion || "",
+        capabilityIds: effectiveDevopsProvider?.listCapabilities
+          ? effectiveDevopsProvider.listCapabilities().capabilities.map((capability) => capability.id)
+          : []
+      }
+    }),
     registerPlatformService(registry, {
       id: "devops.processStatus.get",
       platform: "devops",
       label: "Background process status",
       kind: "process-status",
       ownerFeatureId: "monitor-alert-core",
-      value: (input = {}) => getBackgroundProcessStatus(input.userDataPath || userDataPath)
+      value: (input = {}) => effectiveDevopsProvider.getBackgroundProcessStatus(input)
     }),
     registerPlatformService(registry, {
       id: "devops.monitorAlerts.state",
@@ -26,7 +39,15 @@ export function registerDevopsPlatformServices(registry, { userDataPath = "" } =
       label: "Monitor alert state",
       kind: "alerts",
       ownerFeatureId: "monitor-alert-core",
-      value: (input = {}) => getMonitorAlertState(input.userDataPath || userDataPath, input)
+      value: (input = {}) => effectiveDevopsProvider.getMonitorAlertState(input)
+    }),
+    registerPlatformService(registry, {
+      id: "devops.monitorAlerts.saveConfig",
+      platform: "devops",
+      label: "Monitor alert config",
+      kind: "alerts",
+      ownerFeatureId: "monitor-alert-core",
+      value: (input = {}) => effectiveDevopsProvider.saveMonitorAlertConfig(input)
     }),
     registerPlatformService(registry, {
       id: "devops.monitorAlerts.runCycle",
@@ -34,7 +55,7 @@ export function registerDevopsPlatformServices(registry, { userDataPath = "" } =
       label: "Monitor alert cycle",
       kind: "alerts",
       ownerFeatureId: "monitor-alert-core",
-      value: (input = {}) => runMonitorAlertCycle(input.userDataPath || userDataPath, input)
+      value: (input = {}) => effectiveDevopsProvider.runMonitorAlertCycle(input)
     }),
     registerPlatformService(registry, {
       id: "devops.monitorAlerts.acknowledge",
@@ -42,8 +63,7 @@ export function registerDevopsPlatformServices(registry, { userDataPath = "" } =
       label: "Monitor alert acknowledge",
       kind: "alerts",
       ownerFeatureId: "monitor-alert-core",
-      value: (input = {}) =>
-        acknowledgeMonitorAlert(input.userDataPath || userDataPath, input.alertId, input)
+      value: (input = {}) => effectiveDevopsProvider.acknowledgeMonitorAlert(input)
     }),
     registerPlatformService(registry, {
       id: "devops.unifiedRegistration.normalize",

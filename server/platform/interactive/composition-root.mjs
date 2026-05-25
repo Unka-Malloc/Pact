@@ -15,6 +15,7 @@ import { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-
 import { loadSettings } from "../common/platform-core/settings.mjs";
 import { registerStoragePlatformServices } from "../common/storage/register.mjs";
 import { createStorageProvider } from "../common/storage/storage-provider.mjs";
+import { createDevopsProvider } from "../common/devops/devops-provider.mjs";
 import { registerDevopsPlatformServices } from "../common/devops/register.mjs";
 import { getAgentConfigRegistry } from "../specialized/agent/agent-configs/config-registry.mjs";
 import { createConsoleDomainServices } from "../specialized/console/console-domain-services.mjs";
@@ -65,6 +66,7 @@ export async function createServerCompositionRoot({
     userDataPath,
     metadataStore: runtime.metadataStore
   });
+  const devopsProvider = createDevopsProvider({ userDataPath });
 
   registerCorePlatformServices(platformRegistry, {
     protocolEventBus,
@@ -83,7 +85,7 @@ export async function createServerCompositionRoot({
     runtimeOptions: runtimeOptionsWithFeatures
   });
   registerDataStructurePlatformServices(platformRegistry, { dataStructures });
-  registerDevopsPlatformServices(platformRegistry, { userDataPath });
+  registerDevopsPlatformServices(platformRegistry, { userDataPath, devopsProvider });
   registerStoragePlatformServices(platformRegistry, {
     storageProvider,
     metadataStore: runtime.metadataStore,
@@ -113,6 +115,7 @@ export async function createServerCompositionRoot({
     protocolEventBus,
     consoleDomainServices,
     storageProvider,
+    devopsProvider,
     metadataStore: runtime.metadataStore
   });
 }
