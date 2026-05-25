@@ -26,10 +26,6 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 toml = "0.8"
 
 [[bin]]
-name = "pact-clientd"
-path = "src/bin/pact-clientd.rs"
-
-[[bin]]
 name = "pact-client"
 path = "src/bin/pact-client.rs"
 

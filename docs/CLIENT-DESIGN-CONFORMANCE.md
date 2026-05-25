@@ -7,7 +7,8 @@
 This document is the working conformance matrix for the destructive Pact desktop
 client refactor. `docs/CLIENT_ARCHITECTURE.md` and
 `docs/CLIENT-IMPLEMENTATION-PLAN.md` are the only product targets. Existing code
-is retained only when it clearly serves the new six-module client.
+is retained only when it clearly serves the new six-module client. The old
+client is not a compatibility target.
 
 Decision values:
 

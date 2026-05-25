@@ -208,6 +208,9 @@ Rules:
 - The client does not copy Skills into an agent workspace.
 - The client does not manage remote `scp`, container transfer, workspace
   copying, or directory permissions.
+- Until the Skill Hub, server Skill Registry, and MCP Skill Hub protocol is
+  designed, protocol-dependent operations must return `protocol_deferred`
+  instead of pretending the three-party protocol is complete.
 
 Agents may copy, execute, or move a Skill after they retrieve it. That is outside
 the client boundary.

@@ -1,6 +1,6 @@
-use anyhow::{Result, anyhow};
-use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Value, json};
+use anyhow::{anyhow, Result};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -1140,10 +1140,7 @@ fn invoke_connector_process(
     let mut child = Command::new(&command_path)
         .args(connector_process_args(manifest))
         .current_dir(&module_dir)
-        .env(
-            "PACT_CONNECTOR_PROTOCOL",
-            "pact.data-connector.process.v1",
-        )
+        .env("PACT_CONNECTOR_PROTOCOL", "pact.data-connector.process.v1")
         .env("PACT_CONNECTOR_OPERATION", operation)
         .env("PACT_CONNECTOR_PROVIDER_ID", &provider_id)
         .env("PACT_CONNECTOR_DATA_DIR", data_dir.as_os_str())

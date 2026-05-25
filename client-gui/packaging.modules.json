@@ -106,8 +106,7 @@
       "enabled": false,
       "required": false,
       "platforms": ["macos", "linux", "windows"],
-      "packaging": "sidecar-binary",
-      "cargoBin": "pact-clientd"
+      "packaging": "reference-only"
     },
     "local-rpc": {
       "label": "Legacy GUI to daemon command/RPC bridge",

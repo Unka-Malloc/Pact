@@ -252,7 +252,7 @@ local Skill。服务端协议是 schema 事实源，客户端不发明私有 man
 | CLI | `pact-client skill pin set` | 新增 | agent/skill/version | 设置版本 pin |
 | CLI | `pact-client skill versions <id>` | 新增 | multi-version | 列出版本和完整性 |
 | CLI | `pact-client skill delete <id>[@version]` | 新增 | local repository | 删除前检查 pin |
-| Verification | `client:verify:skill-integrity` | 新增 | Phase 4 | 云端校验、本地变更、多版本/pin 通过 |
+| Verification | `client:verify:skill-integrity` | deferred | Phase 4 | 等 Skill Hub、服务端 Skill Registry、MCP Skill Hub 三方协议完成后再实现；本轮不得伪造通过 |
 
 ### 7.3 检查点
 
@@ -265,7 +265,7 @@ local Skill。服务端协议是 schema 事实源，客户端不发明私有 man
 | CP4.5 Pin | agent 可 pin 指定版本 | `skill get` 按 pin 返回 |
 | CP4.6 删除保护 | 删除被 pin 版本前提示/阻断 | 用户确认后记录 activity |
 | CP4.7 UI 展示 | Skill Hub 显示来源、版本、校验、可见性 | 不展示假权限标签 |
-| CP4.8 Phase 4 验证 | Skill 同步和版本闭环通过 | `npm run client:verify:skill-integrity --silent` 通过 |
+| CP4.8 Phase 4 验证 | Skill 同步和版本闭环通过 | deferred：三方协议完成后再启用 `npm run client:verify:skill-integrity --silent` |
 
 ## 8. Phase 5: MCP 插件生命周期与薄转发
 

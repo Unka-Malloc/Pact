@@ -1,4 +1,4 @@
-use crate::backend_core::portable_data_dir;
+use crate::paths::portable_data_dir;
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

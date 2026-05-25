@@ -1,13 +1,13 @@
 use crate::connectors;
 use crate::upload_queue::{self, UploadQueueFile, UploadQueueState, UploadQueueTask};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use base64::Engine;
 use fs2::FileExt;
-use interprocess::local_socket::{GenericFilePath, GenericNamespaced, ListenerOptions, prelude::*};
+use interprocess::local_socket::{prelude::*, GenericFilePath, GenericNamespaced, ListenerOptions};
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -3920,10 +3920,7 @@ fn start_local_socket_rpc(
     running: Arc<AtomicBool>,
 ) -> Result<String> {
     let print_name = if GenericNamespaced::is_supported() {
-        format!(
-            "pact-clientd-{}.sock",
-            workspace_token(&backend.data_dir)
-        )
+        format!("pact-clientd-{}.sock", workspace_token(&backend.data_dir))
     } else {
         backend
             .backend_dir()
@@ -7934,10 +7931,7 @@ mod tests {
                             "ok": true,
                             "csrfToken": "csrf_test"
                         }),
-                        &[(
-                            "Set-Cookie",
-                            "pact_console_session=session_test; Path=/",
-                        )],
+                        &[("Set-Cookie", "pact_console_session=session_test; Path=/")],
                     );
                 } else {
                     write_test_json_response(
@@ -8205,24 +8199,18 @@ mod tests {
         backend.initialize_shared_files().unwrap();
 
         assert!(backend.command_inbox_dir().join("retry-me.json").exists());
-        assert!(
-            backend
-                .command_done_dir()
-                .join("already-finished.json")
-                .exists()
-        );
-        assert!(
-            !backend
-                .command_processing_dir()
-                .join("retry-me.json")
-                .exists()
-        );
-        assert!(
-            !backend
-                .command_processing_dir()
-                .join("already-finished.json")
-                .exists()
-        );
+        assert!(backend
+            .command_done_dir()
+            .join("already-finished.json")
+            .exists());
+        assert!(!backend
+            .command_processing_dir()
+            .join("retry-me.json")
+            .exists());
+        assert!(!backend
+            .command_processing_dir()
+            .join("already-finished.json")
+            .exists());
         cleanup(&dir);
     }
 
@@ -8251,12 +8239,10 @@ mod tests {
         assert_eq!(updated["nested"]["keep"], "me");
         assert_eq!(updated["lastExpertVocabularyVersion"], 7);
         assert_eq!(updated["lastExpertVocabularyChecksum"], "checksum-settings");
-        assert!(
-            updated["lastExpertVocabularyPulledAt"]
-                .as_str()
-                .unwrap()
-                .starts_with("unix:")
-        );
+        assert!(updated["lastExpertVocabularyPulledAt"]
+            .as_str()
+            .unwrap()
+            .starts_with("unix:"));
         cleanup(&dir);
     }
 
@@ -8701,11 +8687,9 @@ mod tests {
                 .unwrap()
                 >= 1
         );
-        assert!(
-            fs::read_to_string(backend.docs_tsv_path())
-                .unwrap()
-                .contains("专家/合同")
-        );
+        assert!(fs::read_to_string(backend.docs_tsv_path())
+            .unwrap()
+            .contains("专家/合同"));
         cleanup(&dir);
     }
 
@@ -8748,12 +8732,10 @@ mod tests {
 
         assert_eq!(value["cancelled"], true);
         assert!(backend.is_task_cancelled("unsafe/../task"));
-        assert!(
-            backend
-                .cancelled_tasks_dir()
-                .join("unsafe..task.cancel")
-                .exists()
-        );
+        assert!(backend
+            .cancelled_tasks_dir()
+            .join("unsafe..task.cancel")
+            .exists());
         cleanup(&dir);
     }
 
@@ -8976,13 +8958,11 @@ mod tests {
         let subscribed = backend
             .read_events_since(0, Duration::from_millis(0))
             .unwrap();
-        assert!(
-            subscribed["events"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|event| event["type"] == "upload.queue.file.progress")
-        );
+        assert!(subscribed["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["type"] == "upload.queue.file.progress"));
         cleanup(&dir);
     }
 
@@ -9016,13 +8996,11 @@ mod tests {
         let listed = backend
             .upload_queue_list(json!({ "includeEvents": true, "offset": 0 }))
             .unwrap();
-        assert!(
-            listed["events"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|event| event["type"] == "upload.queue.deferred")
-        );
+        assert!(listed["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["type"] == "upload.queue.deferred"));
         cleanup(&dir);
     }
 
@@ -9147,12 +9125,10 @@ mod tests {
             .unwrap();
         assert_eq!(result["protocolVersion"], "pact.context.compaction.v1");
         assert_eq!(result["compacted"], true);
-        assert!(
-            result["summary"]
-                .as_str()
-                .unwrap()
-                .contains("client-evidence-42")
-        );
+        assert!(result["summary"]
+            .as_str()
+            .unwrap()
+            .contains("client-evidence-42"));
         assert!(backend.context_compaction_records_path().exists());
         assert!(backend.context_session_memory_path().exists());
 
@@ -9186,11 +9162,9 @@ mod tests {
         let (dir, backend) = make_backend("shutdown");
         backend.request_shutdown().unwrap();
         assert!(backend.shutdown_path().exists());
-        assert!(
-            fs::read_to_string(backend.shutdown_path())
-                .unwrap()
-                .starts_with("unix:")
-        );
+        assert!(fs::read_to_string(backend.shutdown_path())
+            .unwrap()
+            .starts_with("unix:"));
         cleanup(&dir);
     }
 
