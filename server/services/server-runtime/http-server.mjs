@@ -430,6 +430,7 @@ export async function startHttpServer({
   let discoveryState = await loadDiscoveryConfig(userDataPath);
   let listenUrl = "";
   let controllersRef = null;
+  let toolManagementPlatformRef = null;
   const runtimeProviders = await createServerRuntimeProviders({
     userDataPath,
     runtime,
@@ -444,6 +445,7 @@ export async function startHttpServer({
     queueMonitor: queueMonitorAdapter,
     runtimeLogger,
     clientRuntimeAllocator,
+    getToolManagementPlatform: () => toolManagementPlatformRef,
     isFeatureActive,
     isAnyFeatureActive
   });
@@ -452,6 +454,7 @@ export async function startHttpServer({
     maintenanceAgent,
     knowledgeSourceService,
     agentWorkspace,
+    strategyManagementProvider,
     modelDecisionRuntime,
     evidenceSufficiencyGate,
     knowledgeAgentSkill,
@@ -464,7 +467,6 @@ export async function startHttpServer({
     summarizationRuntime,
     agentExplorationRuntime
   } = runtimeProviders;
-  let toolManagementPlatformRef = null;
   const exposedMaintenanceAgent = maintenanceAgent;
   const exposedKnowledgeSourceService = knowledgeSourceService;
 
@@ -513,6 +515,7 @@ export async function startHttpServer({
     knowledgeDistillationRuntime,
     agentEvaluationRuntime,
     modelDecisionRuntime,
+    strategyManagementProvider,
     knowledgeEvolutionRuntime,
     summarizationRuntime,
     agentExplorationRuntime,
@@ -542,6 +545,7 @@ export async function startHttpServer({
     protocolEventBus,
     consoleAuth,
     securityPermissions,
+    strategyManagementProvider,
     logger: runtimeLogger
   });
   toolManagementPlatformRef = toolManagementPlatform;

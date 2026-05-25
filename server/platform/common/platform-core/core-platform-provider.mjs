@@ -44,6 +44,9 @@ function verificationCommandsForOperation(operation = {}) {
   if (feature === "tool_management" || aspects.has("tool-management")) {
     commands.add("npm run server:verify:tool-management");
   }
+  if (feature === "strategy_management" || aspects.has("strategy-management")) {
+    commands.add("npm run server:verify:strategy-management");
+  }
   if (feature === "agent_workspace" || id.startsWith("workspace.")) {
     commands.add("npm run server:verify:agent-workspace");
   }

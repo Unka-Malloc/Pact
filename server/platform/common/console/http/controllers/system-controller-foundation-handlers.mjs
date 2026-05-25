@@ -5,6 +5,7 @@ export function createSystemControllerFoundationHandlers({
   authorizationFacadeContext,
   accessControlContext,
   getToolManagementPlatform,
+  getStrategyManagementProvider = () => null,
   agentWorkspace,
   runtime
 }) {
@@ -112,6 +113,7 @@ export function createSystemControllerFoundationHandlers({
         response,
         context: {
           toolManagementPlatform: getToolManagementPlatform(),
+          strategyManagementProvider: getStrategyManagementProvider(),
           request,
           response,
           requestBody,

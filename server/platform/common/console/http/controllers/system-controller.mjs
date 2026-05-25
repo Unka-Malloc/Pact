@@ -58,6 +58,7 @@ export function createSystemController({
   knowledgeDistillationRuntime = null,
   agentEvaluationRuntime = null,
   modelDecisionRuntime = null,
+  strategyManagementProvider = null,
   knowledgeEvolutionRuntime = null,
   summarizationRuntime = null,
   agentExplorationRuntime = null,
@@ -103,6 +104,7 @@ export function createSystemController({
     knowledgeDistillationRuntime,
     agentEvaluationRuntime,
     modelDecisionRuntime,
+    strategyManagementProvider,
     knowledgeEvolutionRuntime,
     summarizationRuntime,
     agentExplorationRuntime,
@@ -211,6 +213,7 @@ export function createSystemController({
       authorizationFacadeContext,
       accessControlContext,
       getToolManagementPlatform,
+      getStrategyManagementProvider: () => strategyManagementProvider,
       agentWorkspace,
       runtime
     }),
@@ -256,7 +259,9 @@ export function createSystemController({
     ...createSystemControllerCapabilityEcosystemHandlers({
       sendConsoleDomainOperation,
       parseJsonBody,
-      moduleManagement
+      moduleManagement,
+      getToolManagementPlatform,
+      getStrategyManagementProvider: () => strategyManagementProvider
     }),
     ...createSystemControllerKnowledgeOperationsHandlers({
       sendConsoleDomainOperation,
@@ -287,6 +292,7 @@ export function createSystemController({
       storageProvider,
       clientRuntimeAllocator,
       modelDecisionRuntime,
+      strategyManagementProvider,
       agentWorkspace,
       consoleDomainServices
     }),

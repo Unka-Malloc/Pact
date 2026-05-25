@@ -1,4 +1,5 @@
 import { loadSettings } from "../common/platform-core/settings.mjs";
+import { createStrategyManagementProvider } from "../specialized/capabilities/strategy-management/strategy-management-provider.mjs";
 import { createToolManagementPlatform } from "../specialized/capabilities/tools/tool-management-core/index.mjs";
 import { createToolManagementStore } from "../specialized/capabilities/tools/tool-management-core/store.mjs";
 
@@ -24,6 +25,7 @@ export function createServerToolManagementPlatform({
   protocolEventBus,
   consoleAuth,
   securityPermissions,
+  strategyManagementProvider = null,
   logger
 }) {
   return createToolManagementPlatform({
@@ -36,6 +38,7 @@ export function createServerToolManagementPlatform({
     protocolEventBus,
     consoleAuth,
     securityPermissions,
+    strategyManagementProvider,
     logger
   });
 }
@@ -54,9 +57,11 @@ export async function createServerRuntimeProviders({
   queueMonitor,
   runtimeLogger,
   clientRuntimeAllocator,
+  getToolManagementPlatform = () => null,
   isFeatureActive,
   isAnyFeatureActive
 }) {
+  let strategyManagementProvider = null;
   const agentMemory = await createProvider(
     true,
     "../specialized/agent/agent-memory/index.mjs",
@@ -72,7 +77,8 @@ export async function createServerRuntimeProviders({
       ...options,
       input,
       userDataPath,
-      clientRuntimeAllocator
+      clientRuntimeAllocator,
+      strategyProvider: strategyManagementProvider
     });
   };
   const contextRuntime = await createProvider(
@@ -127,7 +133,7 @@ export async function createServerRuntimeProviders({
     "createAgentWorkspace",
     [{ userDataPath }]
   );
-  const modelDecisionRuntime = await createProvider(
+  const baseModelDecisionRuntime = await createProvider(
     isAnyFeatureActive("knowledge-distillation", "knowledge-evolution", "knowledge-outline-reasoning", "agent-exploration"),
     "../specialized/agent/agent-gateway/model-decision-runtime/index.mjs",
     "createModelDecisionRuntime",
@@ -139,6 +145,12 @@ export async function createServerRuntimeProviders({
       })
     }]
   );
+  strategyManagementProvider = createStrategyManagementProvider({
+    userDataPath,
+    modelDecisionRuntime: baseModelDecisionRuntime,
+    getToolManagementPlatform
+  });
+  const modelDecisionRuntime = strategyManagementProvider.createModelDecisionRuntimePort();
   const evidenceSufficiencyGate = await createProvider(
     isFeatureActive("knowledge-distillation"),
     "../specialized/knowledge/retrieval/evidence-sufficiency-gate/index.mjs",
@@ -259,6 +271,7 @@ export async function createServerRuntimeProviders({
     maintenanceAgent,
     knowledgeSourceService,
     agentWorkspace,
+    strategyManagementProvider,
     modelDecisionRuntime,
     evidenceSufficiencyGate,
     knowledgeAgentSkill,

@@ -148,6 +148,9 @@ async function assertRuntimeProvidersOwnProviderImports() {
     "createServerRuntimeProviders",
     "createServerToolManagementPlatform",
     "securityPermissions",
+    "createStrategyManagementProvider",
+    "strategyManagementProvider",
+    "createModelDecisionRuntimePort",
     "createAgentMemory",
     "createContextRuntime",
     "callAgentGatewayIfAvailable",
@@ -301,6 +304,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const wordCloudFile = "server/platform/specialized/console/knowledge-word-cloud-operation-executor.mjs";
   const codespaceModuleFile = "server/platform/specialized/capabilities/code-management/codespace/module.json";
   const knowledgeTransformationModuleFile = "server/platform/specialized/knowledge/transformation/module.json";
+  const strategyManagementProviderFile = "server/platform/specialized/capabilities/strategy-management/strategy-management-provider.mjs";
   const dispatcher = await read(dispatcherFile);
   const apiFacade = await read(apiFacadeFile);
   const jobsController = await read(jobsControllerFile);
@@ -326,6 +330,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const wordCloud = await read(wordCloudFile);
   const codespaceModule = await read(codespaceModuleFile);
   const knowledgeTransformationModule = await read(knowledgeTransformationModuleFile);
+  const strategyManagementProvider = await read(strategyManagementProviderFile);
 
   for (const needle of [
     "dispatchInternalOperation",
@@ -1024,6 +1029,11 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "module_ecosystem.plan",
     "module_ecosystem.scaffold",
     "module_ecosystem.contract_test",
+    "strategy.describe",
+    "strategy.workflow_policy.evaluate",
+    "strategy.agent_policy.evaluate",
+    "strategy.tool_policy.preview",
+    "async handleStrategyManagement",
     "workspace_governance.describe",
     "workspace_governance.policy.set",
     "workspace_governance.evaluate",
@@ -1489,6 +1499,12 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "tool_management.http.passthrough",
       "handleToolManagementHttpRequest",
       "__responseHandled",
+      "executeStrategyManagementOperation",
+      "strategy.describe",
+      "strategy.workflow_policy.evaluate",
+      "strategy.agent_policy.evaluate",
+      "strategy.tool_policy.preview",
+      "strategyManagementProvider.createModelDecisionRuntimePort",
       "executeCodeManagementOperation",
       "createKnowledgeTransformationProvider",
       "executeKnowledgeTransformationOperation",
@@ -1538,6 +1554,22 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       securityPermissionsProvider,
       needle,
       `${securityPermissionsProviderFile} must declare the unified security permissions provider ${needle}`
+    );
+  }
+  for (const needle of [
+    "pact.strategy-management.v1",
+    "createStrategyManagementProvider",
+    "evaluateWorkflowPolicy",
+    "evaluateAgentPolicy",
+    "createModelDecisionRuntimePort",
+    "runModelRouting",
+    "evaluateToolPolicy",
+    "strategy_management"
+  ]) {
+    assertTextIncludes(
+      strategyManagementProvider,
+      needle,
+      `${strategyManagementProviderFile} must own strategy management provider contract ${needle}`
     );
   }
   for (const needle of [

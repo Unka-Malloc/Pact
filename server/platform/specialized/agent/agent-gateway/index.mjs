@@ -2003,7 +2003,8 @@ export async function callAgentGateway({
   userDataPath = "",
   contextRuntime = null,
   contextCompactionSource = "agent-gateway",
-  clientRuntimeAllocator = null
+  clientRuntimeAllocator = null,
+  strategyProvider = null
 } = {}) {
   const allocationResult = typeof clientRuntimeAllocator?.apply === "function"
     ? await clientRuntimeAllocator.apply(input, {
@@ -2026,7 +2027,7 @@ export async function callAgentGateway({
     return contextCompaction ? { ...withAllocation, contextCompaction } : withAllocation;
   };
   if (shouldUseModelRouting(effectiveInput, settings)) {
-    const routed = await runModelRouting({
+    const routingInput = {
       settings,
       input: effectiveInput,
       userDataPath,
@@ -2039,7 +2040,13 @@ export async function callAgentGateway({
           userDataPath,
           dryRun
         })
-    });
+    };
+    const routed = typeof strategyProvider?.runModelRouting === "function"
+      ? await strategyProvider.runModelRouting({
+          ...routingInput,
+          baseRunModelRouting: runModelRouting
+        })
+      : await runModelRouting(routingInput);
     return withRuntimeMetadata({
       ...routed.result,
       modelRouting: routed.routing

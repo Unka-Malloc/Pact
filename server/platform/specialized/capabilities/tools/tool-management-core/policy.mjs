@@ -6,8 +6,13 @@ function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
-export function createToolPolicyEngine({ registry, store, securityPermissions = null }) {
-  function evaluate({
+export function createToolPolicyEngine({
+  registry,
+  store,
+  securityPermissions = null,
+  strategyManagementProvider = null
+}) {
+  function evaluateLocal({
     tool,
     grant = null,
     profile = null,
@@ -71,6 +76,19 @@ export function createToolPolicyEngine({ registry, store, securityPermissions = 
       store.appendPolicyDecision(decision);
     }
     return decision;
+  }
+
+  function evaluate(input = {}) {
+    if (strategyManagementProvider && typeof strategyManagementProvider.evaluateToolPolicy === "function") {
+      return strategyManagementProvider.evaluateToolPolicy({
+        ...input,
+        registry,
+        store,
+        securityPermissions,
+        baseEvaluate: evaluateLocal
+      });
+    }
+    return evaluateLocal(input);
   }
 
   function preview(input = {}) {

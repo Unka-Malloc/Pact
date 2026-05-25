@@ -83,6 +83,13 @@ function requireDevopsProvider(context = {}) {
   return { devopsProvider: context.devopsProvider };
 }
 
+function requireStrategyManagementProvider(context = {}) {
+  if (!context.strategyManagementProvider) {
+    return { error: result(503, { error: "策略管理 provider 不可用。" }) };
+  }
+  return { strategyManagementProvider: context.strategyManagementProvider };
+}
+
 function protocolPayload(payload = {}) {
   return {
     schemaVersion: 1,
@@ -3926,6 +3933,42 @@ async function executeToolManagementPassthroughOperation({ operationId, context 
   return result(200, { __responseHandled: true });
 }
 
+async function executeStrategyManagementOperation({ operationId, input = {}, context }) {
+  const id = String(operationId || "");
+  const handledOperations = new Set([
+    "strategy.describe",
+    "strategy.workflow_policy.evaluate",
+    "strategy.agent_policy.evaluate",
+    "strategy.tool_policy.preview"
+  ]);
+  if (!handledOperations.has(id)) {
+    return null;
+  }
+  const { strategyManagementProvider, error } = requireStrategyManagementProvider(context);
+  if (error) {
+    return error;
+  }
+  if (id === "strategy.describe") {
+    return result(200, strategyManagementProvider.describe());
+  }
+  if (id === "strategy.workflow_policy.evaluate") {
+    return result(200, strategyManagementProvider.evaluateWorkflowPolicy(input));
+  }
+  if (id === "strategy.agent_policy.evaluate") {
+    return result(200, strategyManagementProvider.evaluateAgentPolicy(input));
+  }
+  if (id === "strategy.tool_policy.preview") {
+    return result(200, {
+      schemaVersion: 1,
+      decision: strategyManagementProvider.evaluateToolPolicy({
+        ...input,
+        toolManagementPlatform: context.toolManagementPlatform
+      })
+    });
+  }
+  return null;
+}
+
 async function executeKnowledgeGraphOperation({ operationId, input = {}, context }) {
   if (operationId !== "knowledge.graph") {
     return null;
@@ -4597,7 +4640,9 @@ async function executeKnowledgeEvaluationOperation({ operationId, input, context
   }
 
   if (id === "knowledge.model_roles" || id === "knowledge.model_decision") {
-    const runtime = context.modelDecisionRuntime;
+    const runtime = typeof context.strategyManagementProvider?.createModelDecisionRuntimePort === "function"
+      ? context.strategyManagementProvider.createModelDecisionRuntimePort()
+      : context.modelDecisionRuntime;
     if (!runtime) {
       return result(503, { error: "模型决策运行时不可用。" });
     }
@@ -6191,6 +6236,7 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeWorkspaceAuditOperation,
     executeAgentSyncOperation,
     executeToolManagementAuthorizationOperation,
+    executeStrategyManagementOperation,
     executeToolManagementPassthroughOperation,
     executeRuntimeMountOperation,
     executeDiscoveryOperation,

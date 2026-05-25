@@ -350,10 +350,11 @@ Local agents / humans / scripts
 
 - `knowledge`：三层知识模型、KnowledgeCore、外部知识库 adapter、document export、retrieval、preprocessing。
 - `agent`：agent workspace、agent context、agent memory、agent gateway。
+- `capabilities/strategy-management`：`pact.strategy-management.v1` provider，统一处理 workflow policy、agent policy、模型路由策略包装和工具调用策略预览。
 - `capabilities/tools`：Tool Management、catalog、grant、policy、execute 和 audit。
 - `capabilities/skills`：SkillLibrary、skill registry、skill bundle 和 skill 使用事件。
 
-这些模块可以拥有各自 runtime，但不能绕过 Workspace API 改写公共状态。
+这些模块可以拥有各自 runtime，但不能绕过 Workspace API 改写公共状态。策略管理只决定流程、调用和门禁策略；真实认证、授权、grant、scope 和 denied audit 仍归 `pact.security-permissions.v1`，应用层不能把安全权限裁决重新硬编码到策略模块里。
 
 #### Governance Layer
 

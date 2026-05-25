@@ -1,8 +1,24 @@
 export function createSystemControllerCapabilityEcosystemHandlers({
   sendConsoleDomainOperation,
   parseJsonBody,
-  moduleManagement = null
+  moduleManagement = null,
+  getToolManagementPlatform = () => null,
+  getStrategyManagementProvider = () => null
 }) {
+  const strategyOperationIds = new Set([
+    "strategy.describe",
+    "strategy.workflow_policy.evaluate",
+    "strategy.agent_policy.evaluate",
+    "strategy.tool_policy.preview"
+  ]);
+
+  function operationInput(requestBody, url = null) {
+    if (requestBody?.length > 0) {
+      return parseJsonBody(requestBody);
+    }
+    return url ? Object.fromEntries(url.searchParams.entries()) : {};
+  }
+
   return {
     async handleCapabilityPackagePlan({ requestBody, response }) {
       await sendConsoleDomainOperation({
@@ -152,6 +168,29 @@ export function createSystemControllerCapabilityEcosystemHandlers({
         response,
         context: { moduleManagement },
         errorMessage: "Module contract test failed."
+      });
+    },
+    async handleStrategyManagement({ operation, requestBody, url, response, authSession }) {
+      const operationId = operation?.id || "strategy.describe";
+      if (!strategyOperationIds.has(operationId)) {
+        await sendConsoleDomainOperation({
+          operationId,
+          input: operationInput(requestBody, url),
+          response,
+          errorMessage: "未知策略管理操作。"
+        });
+        return;
+      }
+      await sendConsoleDomainOperation({
+        operationId,
+        input: operationInput(requestBody, url),
+        response,
+        context: {
+          authSession,
+          strategyManagementProvider: getStrategyManagementProvider(),
+          toolManagementPlatform: getToolManagementPlatform()
+        },
+        errorMessage: "策略管理操作失败。"
       });
     },
     async handleWorkspaceGovernance({ response }) {

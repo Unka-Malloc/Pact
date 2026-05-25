@@ -233,17 +233,15 @@
     .specialized-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-areas:
-        "knowledge agent"
-        "sharedspace codespace"
-        "policy tools";
       align-items: stretch;
       gap: 10px;
       padding: 14px;
     }
 
     .application-column {
-      display: contents;
+      display: grid;
+      grid-template-rows: repeat(3, minmax(0, auto));
+      gap: 10px;
     }
 
     .subnode {
@@ -261,32 +259,26 @@
     }
 
     .subnode.knowledge {
-      grid-area: knowledge;
       border-left: 5px solid var(--green);
     }
 
     .subnode.agent {
-      grid-area: agent;
       border-left: 5px solid var(--purple);
     }
 
     .subnode.sharedspace {
-      grid-area: sharedspace;
       border-left: 5px solid var(--brown);
     }
 
     .subnode.codespace {
-      grid-area: codespace;
       border-left: 5px solid var(--blue);
     }
 
     .subnode.policy {
-      grid-area: policy;
       border-left: 5px solid var(--red);
     }
 
     .subnode.tools {
-      grid-area: tools;
       border-left: 5px solid var(--brown);
     }
 
@@ -505,17 +497,6 @@
         min-width: 0;
       }
 
-      .specialized-grid {
-        grid-template-areas:
-          "knowledge"
-          "sharedspace"
-          "policy"
-          "agent"
-          "codespace"
-          "tools";
-        gap: 10px;
-      }
-
       .injection-card::before {
         display: none;
       }
@@ -535,7 +516,7 @@
       </div>
       <div class="meta">
         <span>历史基线：2026-05-19</span>
-        <span>状态：工作稿</span>
+        <span>状态：应用层 2 x 3 口径已固化</span>
         <span>范围：Pact 内部结构</span>
       </div>
     </header>

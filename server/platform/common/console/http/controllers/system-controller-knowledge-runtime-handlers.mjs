@@ -11,6 +11,7 @@ export function createSystemControllerKnowledgeRuntimeHandlers({
   metadataStore,
   clientRuntimeAllocator,
   modelDecisionRuntime,
+  strategyManagementProvider = null,
   agentWorkspace,
   consoleDomainServices
 }) {
@@ -783,6 +784,7 @@ export function createSystemControllerKnowledgeRuntimeHandlers({
           metadataStore,
           clientRuntimeAllocator,
           modelDecisionRuntime,
+          strategyManagementProvider,
           agentWorkspace,
           authSession
         },

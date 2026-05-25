@@ -52,6 +52,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       includes: Object.freeze([
         "core-platform",
         "tool-management-core",
+        "strategy-management",
         "work-queue-core",
         "client-runtime-core",
         "agent-memory",
@@ -65,6 +66,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       includes: Object.freeze([
         "core-platform",
         "tool-management-core",
+        "strategy-management",
         "work-queue-core",
         "client-runtime-core",
         "agent-memory",
@@ -84,6 +86,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       includes: Object.freeze([
         "core-platform",
         "tool-management-core",
+        "strategy-management",
         "work-queue-core",
         "client-runtime-core",
         "agent-memory",
@@ -263,6 +266,24 @@ export const FEATURE_MANIFEST = Object.freeze({
         excludePaths: []
       },
       tests: { suites: ["server:verify:tool-management"] }
+    },
+    {
+      featureId: "strategy-management",
+      label: "Workflow and agent invocation strategy management",
+      group: "capabilities",
+      dependsOn: ["tool-management-core"],
+      defaultEnabled: true,
+      server: {
+        operationFeatures: ["strategy_management"],
+        operationPrefixes: ["strategy."],
+        modules: ["StrategyManagementProvider"],
+        webPanels: ["strategy-management"]
+      },
+      package: {
+        includePaths: ["server/platform/specialized/capabilities/strategy-management", "docs/PROTOCOLS.md"],
+        excludePaths: []
+      },
+      tests: { suites: ["server:verify:strategy-management"] }
     },
     {
       featureId: "work-queue-core",
@@ -1106,6 +1127,7 @@ export function operationFeatureId(operation = {}) {
     jobs: "work-queue-core",
     uploads: "work-queue-core",
     tool_management: "tool-management-core",
+    strategy_management: "strategy-management",
     agent_memory: "agent-memory",
     client_runtime_allocator: "client-runtime-core",
     context_runtime: "client-runtime-core",

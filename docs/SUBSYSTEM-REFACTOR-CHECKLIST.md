@@ -21,7 +21,7 @@
 | 2 | 共享空间 | 代码管理 |
 | 3 | 策略管理 | 通用工具与技能 |
 
-架构图已用 `specialized-grid` 的 `grid-template-areas` 显式固化为 `2 x 3` 应用层矩阵：桌面端严格保持左列三个、右列三个，并让同一行的左右模块共享网格行约束；移动端退化为单列时先展示左列三个，再展示右列三个，但模块归属口径不变。
+架构图已用 `specialized-grid` 两列容器和两个 `application-column` 三行容器显式固化为应用层左右两列：桌面端严格保持左列三个、右列三个；移动端退化为单列时先展示左列三个，再展示右列三个，但模块归属口径不变。
 
 进度百分比表示“协议化/解耦完成度”，不是产品功能完成度，也不是生产可用性评分。启动装配是侧边组合边界，不属于服务层、应用层或基建层；协议注册表、权限迁移、API Facade 拆分、Jobs Controller 拆分、MCP Adapter 拆分属于横切治理任务，不能再作为独立架构层统计。
 
@@ -44,7 +44,7 @@
 应用层架构图验收还额外检查：
 
 1. HTML 结构中仍保留左列和右列语义分组，便于按模块归属维护。
-2. CSS 使用 `grid-template-areas` 固定六个应用模块的位置，不能只依赖 DOM 顺序自然流式排列。
+2. CSS 必须保留 `specialized-grid` 两列和 `application-column` 三行结构，不能把六个应用模块混成一个自然流式列表。
 3. 移动端单列顺序必须是知识转化、共享空间、策略管理、智能体、代码管理、通用工具与技能。
 
 ## 架构图节点进度
@@ -58,7 +58,7 @@
 | 应用层 | 智能体 | `[~]` | 65% | agent context、agent memory、Agent Gateway、agent-configs 已从服务入口迁入 runtime provider 或 composition root；context preview/compaction/session memory 相关 handler 已拆分。 | handler context 仍有 runtime/store/service 直传；settings、agent selector、model routing 仍有部分聚合留在接口层。 | context/memory/gateway/config 均只通过 agent provider/operation 暴露，接口层不直接操作 runtime。 |
 | 应用层 | 共享空间 | `[x]` | 100% | 架构图将 `agent-workspace` 提升为应用层一等子系统，定位为受控文件空间、StateCommit、issue/proposal、锁和继承治理；workspace handler 已拆分；`workspace-contribution`、workspace file upload/list/download/read/write/patch、checkpoint diff/scope/restore preview/restore、proposal create/apply 均已接入 operation/provider 后端；workspace runtime、issue resolve、lock、inheritance/share/profile/source 已通过 `agent_workspaces.*` registry 暴露；checkpoint restore 在通用 checkpoint tree 记录 marker/event/audit，同时把文件树 dry-run 和实际恢复委托给共享空间 `restoreWorkspaceFiles` provider。 | 已完成。本子系统后续只允许维护性变更；proposal apply 按设计只把审核后的 proposal 转为 decision，不直接改写任意 canonical state。 | 已通过 `npm run server:verify:workspace-checkpoints`、`npm run server:verify:workspace-proposals`、`npm run server:verify:workspace-governance`、`npm run server:verify:workspace-contribution-governance` 和 `npm run server:verify:agent-workspace`。 |
 | 应用层 | 代码管理 / Codespace | `[x]` | 100% | 架构图新增 `pact.codespace` 和 `pact.code-review.v1` 应用能力；Codespace 已有持久化 registry，保存 target evaluation、CodeChange、changeSet、review target link、status sync、upload receipt 和 append-only event；`workspace.code.*` 已从轻量 facade 迁入 `createCodespaceRegistry` provider；Gerrit upload route 仍负责真实 code-review 外部系统确认。 | 已完成。本子系统后续只允许维护性变更；安全授权迁移仍作为横切任务处理，不计入代码管理子系统本身。 | 已通过 `npm run server:verify:codespace`、`npm run server:verify:gerrit-mcp`、`npm run server:verify:protocol-operations`、`npm run server:verify:architecture-patterns` 和 `npm run server:verify:platform-boundaries`。 |
-| 应用层 | 策略管理 | `[ ]` | 20% | 架构图新增策略管理应用模块，专门承载处理流程策略和智能体调用策略；现有相关规则仍散落在 model routing、tool grant、workspace governance、workflow config 等路径。 | 需要定义 workflow-policy / agent-policy 的协议入口、策略注册表、策略评估 provider 和审计输出；同时明确它与基建层安全权限的边界。 | 处理流程选择、模型路由、工具调用约束、人工确认门禁都通过策略管理 provider/operation 评估；安全授权仍只由安全权限层裁决。 |
+| 应用层 | 策略管理 | `[x]` | 100% | 已落地 `pact.strategy-management.v1` provider 和 `strategy.*` operation；workflow policy、agent policy、模型路由包装、model decision port 和 Tool Management policy preview 已统一经策略管理 provider 输出 `strategyPolicyDecision` / `strategyProtocolVersion`。 | 已完成。本子系统后续只允许维护性变更；认证、授权、grant、scope 和 denied audit 继续归 `pact.security-permissions.v1`，不能回流到策略管理硬编码。 | 已通过 `npm run server:verify:strategy-management`、`npm run server:verify:architecture-patterns`、`npm run server:verify:feature-profiles`、`npm run server:verify:core-platform` 和全量 `npm run server:verify`。 |
 | 应用层 | 通用工具与技能 | `[~]` | 65% | Tool Management 客户端连接投影已从 `api-facade` 迁入 specialized provider；runtime 创建已迁出 `http-server`；Tool HTTP、Tool policy、Tool runtime denial audit 和 MCP local grant 授权已统一经 `securityPermissions` provider；技能管理定位为 skill registry 和 profile 配置。 | tool exposure 与 MCP adapter 语义入口仍需继续瘦身；skill registry、profile 配置、workspace skill 与 agent skill planning 需要统一协议化验收。 | Tool/Skill 能力注册、授权、profile 应用和调用均走 operation/provider，MCP adapter 不直接依赖 Tool Management platform。 |
 | 基建层 | 核心能力 | `[x]` | 100% | 已落地 `pact.core-platform.v1` provider，统一封装 Operation Dispatcher、HTTP/RPC/internal operation 调度、forward proxy 判定、接口目录和 operation registry 生命周期治理；`system.interfaces` 现在输出 `registered/wired/implemented/verified` 分级摘要，`http-server` 不再直接 import Operation Dispatcher 或手工拼接口目录。 | 已完成。本子系统后续只允许维护性变更；具体业务 operation 的执行质量归各自应用模块，核心能力只治理注册、路由、实现绑定和验证绑定。 | 已通过 `npm run server:verify:core-platform`、`npm run server:verify:architecture-patterns`、`npm run server:verify:platform-layout`、`npm run server:verify:dispatcher-unified`、`npm run server:verify:protocol-operations` 和全量 `npm run server:verify`。 |
 | 基建层 | 安全权限 | `[x]` | 100% | 已落地 `pact.security-permissions.v1` provider，统一封装 console auth、operation authorization、authorization policy、authorization audit artifact、workspace asset policy、Tool policy/runtime denial audit 和 MCP local grant 授权；接口层、console executor、Tool Management 和 MCP adapter 不再直接调用 `consoleAuth.authorizeOperation`、裸 `authorizationEngine` 或裸 `authorizationStore` 做权限裁决。 | 已完成。本子系统后续只允许维护性变更；策略编排类能力继续归入应用层“策略管理”，不能回流到安全权限层硬编码业务流程。 | 已通过 `npm run server:verify:authorization-migration`、`npm run server:verify:console-auth`、`npm run server:verify:tool-management`、`npm run server:verify:architecture-patterns`，并通过直接调用扫描确认目标路径无权限直连。 |

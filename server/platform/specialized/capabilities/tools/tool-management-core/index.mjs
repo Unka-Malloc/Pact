@@ -27,6 +27,7 @@ export function createToolManagementPlatform({
   protocolEventBus = null,
   consoleAuth = null,
   securityPermissions = null,
+  strategyManagementProvider = null,
   featureRuntime = null,
   logger = getRuntimeLogger()
 }) {
@@ -42,7 +43,8 @@ export function createToolManagementPlatform({
   const policyEngine = createToolPolicyEngine({
     registry,
     store,
-    securityPermissions: effectiveSecurityPermissions
+    securityPermissions: effectiveSecurityPermissions,
+    strategyManagementProvider
   });
   const runtime = createToolExecutionRuntime({
     registry,
