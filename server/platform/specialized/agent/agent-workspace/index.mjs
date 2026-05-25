@@ -121,6 +121,10 @@ function sha256Buffer(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+function normalizeSha256(value = "") {
+  return String(value || "").replace(/^sha256:/, "").trim();
+}
+
 function splitPatchTextLines(text) {
   const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const finalNewline = normalized.endsWith("\n");
@@ -734,7 +738,7 @@ function gateSubmission({ existingDuplicate = null, submission, writePolicy = {}
   };
 }
 
-export function createAgentWorkspace({ userDataPath, merkleState = null }) {
+export function createAgentWorkspace({ userDataPath, merkleState = null, checkpointTreeApi = null }) {
   const rootPath = path.join(userDataPath, "agent-workspaces");
   fs.mkdirSync(rootPath, { recursive: true });
   const db = new Database(path.join(rootPath, "agent-workspace.sqlite"));
@@ -1112,6 +1116,12 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
     return `workspace:${workspace.workspaceId}`;
   }
 
+  function workspaceCheckpointTreeId(workspace) {
+    return checkpointTreeApi?.checkpointTreeId
+      ? checkpointTreeApi.checkpointTreeId("workspace-files", workspace.workspaceId)
+      : "";
+  }
+
   function compactStateCommit(commit = null) {
     return commit
       ? {
@@ -1256,6 +1266,126 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
     }));
   }
 
+  async function buildWorkspaceFileSnapshot(workspace, { basePath = "", deleteExtraneous = true } = {}) {
+    if (!merkleState) {
+      return null;
+    }
+    const listed = listWorkspaceFiles({
+      workspaceId: workspace.workspaceId,
+      path: basePath,
+      folderPath: basePath,
+      recursive: true,
+      includeDirectories: false,
+      includeFiles: true,
+      includeHash: true,
+      limit: 5000,
+      actorUserId: workspace.ownerUserId || "",
+      adminUserIds: [workspace.ownerUserId].filter(Boolean)
+    });
+    if (!listed.ok) {
+      return null;
+    }
+    const files = [];
+    for (const file of listed.files) {
+      const resolved = resolveWorkspacePath(workspace, file.relativePath);
+      const content = fs.readFileSync(resolved.absolutePath);
+      const block = await merkleState.cas.putBlock(content, {
+        codec: "raw",
+        metadata: {
+          workspaceId: workspace.workspaceId,
+          relativePath: file.relativePath,
+          snapshot: true
+        }
+      });
+      files.push({
+        path: file.relativePath,
+        exists: true,
+        contentCid: block.cid,
+        contentSha256: normalizeSha256(block.payloadHash),
+        byteLength: block.byteLength,
+        encoding: "base64"
+      });
+    }
+    return {
+      workspaceId: workspace.workspaceId,
+      basePath: normalizeWorkspaceRelativePath(basePath, { allowEmpty: true }),
+      deleteExtraneous,
+      files
+    };
+  }
+
+  async function recordWorkspaceFileCheckpoint({
+    workspace,
+    operationId,
+    stateCommit,
+    action,
+    path: relativePath
+  } = {}) {
+    if (!checkpointTreeApi || !stateCommit?.commitId) {
+      return null;
+    }
+    const treeId = workspaceCheckpointTreeId(workspace);
+    if (!treeId) {
+      return null;
+    }
+    const snapshot = await buildWorkspaceFileSnapshot(workspace, {
+      basePath: "",
+      deleteExtraneous: true
+    });
+    if (!snapshot) {
+      return null;
+    }
+    const existingTree = typeof checkpointTreeApi.loadCheckpointTree === "function"
+      ? await checkpointTreeApi.loadCheckpointTree({ treeId })
+      : null;
+    if (!existingTree && typeof checkpointTreeApi.startCheckpointTree === "function") {
+      await checkpointTreeApi.startCheckpointTree({
+        treeId,
+        kind: "workspace_files",
+        ownerId: workspace.workspaceId,
+        rootNodeId: "root",
+        rootLabel: `Workspace files: ${workspace.title || workspace.workspaceId}`,
+        resumePolicy: {
+          mode: "append-only-workspace-file-restore",
+          idempotencyKey: "treeId+nodeId"
+        }
+      });
+    }
+    if (typeof checkpointTreeApi.upsertCheckpointNode !== "function") {
+      return null;
+    }
+    const nodeId = `commit:${stateCommit.commitId}`;
+    await checkpointTreeApi.upsertCheckpointNode({
+      treeId,
+      nodeId,
+      parentId: "root",
+      label: `${action || operationId}: ${relativePath || workspace.workspaceId}`,
+      status: "completed",
+      cursor: {
+        commitId: stateCommit.commitId,
+        afterRoot: stateCommit.afterRoot
+      },
+      totals: {
+        files: snapshot.files.length,
+        contentRefs: stateCommit.contentRefs.length
+      },
+      metadata: {
+        workspaceId: workspace.workspaceId,
+        operationId,
+        action,
+        path: relativePath || "",
+        stateCommit,
+        workspaceFileSnapshot: snapshot
+      },
+      eventType: "workspace.file.checkpointed"
+    });
+    return {
+      treeId,
+      nodeId,
+      snapshotFileCount: snapshot.files.length
+    };
+  }
+
   async function createWorkspaceFolder(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
@@ -1296,11 +1426,19 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
         path: resolved.relativePath
       }
     });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "agent_workspaces.folder.create",
+      stateCommit,
+      action: "folder.create",
+      path: resolved.relativePath
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       stateCommit,
+      checkpoint,
       folder: fileMetadataFromStat({
         workspaceId: access.workspace.workspaceId,
         relativePath: resolved.relativePath,
@@ -2383,6 +2521,13 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
         contentSha256: file.contentSha256 || ""
       }
     });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "workspace.file.upload",
+      stateCommit,
+      action: "file.upload",
+      path: resolved.relativePath
+    });
     try {
       getRuntimeLogger().info("agent_workspace.file.upload.completed", {
         workspaceId: access.workspace.workspaceId,
@@ -2405,6 +2550,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
       workspaceId: access.workspace.workspaceId,
       overwritten,
       stateCommit,
+      checkpoint,
       file,
       artifact
     };
@@ -2498,12 +2644,20 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
         contentSha256: file.contentSha256 || ""
       }
     });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "workspace.file.write",
+      stateCommit,
+      action: "file.write",
+      path: resolved.relativePath
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       overwritten: true,
       stateCommit,
+      checkpoint,
       file
     };
   }
@@ -2594,6 +2748,13 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
         afterSha256
       }
     });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "workspace.file.patch",
+      stateCommit,
+      action: "file.patch",
+      path: resolved.relativePath
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
@@ -2602,6 +2763,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
       beforeSha256,
       afterSha256,
       stateCommit,
+      checkpoint,
       file
     };
   }
@@ -2676,12 +2838,20 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
         deletedPathCount: deletedPaths.length
       }
     });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "agent_workspaces.file.delete",
+      stateCommit,
+      action: "file.delete",
+      path: resolved.relativePath
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       deleted: true,
       stateCommit,
+      checkpoint,
       file: meta
     };
   }
@@ -2757,6 +2927,13 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
         overwrite: input.overwrite === true
       }
     });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "agent_workspaces.file.move",
+      stateCommit,
+      action: "file.move",
+      path: resolvedTarget.relativePath
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
@@ -2765,18 +2942,33 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
       sourcePath: resolvedSource.relativePath,
       targetPath: resolvedTarget.relativePath,
       stateCommit,
+      checkpoint,
       file
     };
   }
 
-  function normalizeWorkspaceFileSnapshot(input = {}) {
+  async function decodeWorkspaceSnapshotContent(entry = {}) {
+    if (entry.contentCid || entry.cid) {
+      if (!merkleState) {
+        throw new Error("文件快照引用 CAS contentCid，但 Merkle State 基座不可用。");
+      }
+      const block = await merkleState.cas.getBlock(String(entry.contentCid || entry.cid));
+      if (!block) {
+        throw new Error(`文件快照内容块不存在：${entry.contentCid || entry.cid}`);
+      }
+      return block.bytes;
+    }
+    return decodeWorkspaceFileContent(entry);
+  }
+
+  async function normalizeWorkspaceFileSnapshot(input = {}) {
     const snapshot = asObject(input.snapshot || input.workspaceFileSnapshot || input.fileSnapshot || input);
     const basePath = normalizeWorkspaceRelativePath(snapshot.basePath || snapshot.rootPath || input.basePath || "", { allowEmpty: true });
     const rawFiles = asArray(snapshot.files || snapshot.entries || input.files);
     return {
       basePath,
       deleteExtraneous: snapshot.deleteExtraneous === true || input.deleteExtraneous === true,
-      files: rawFiles.map((entry) => {
+      files: await Promise.all(rawFiles.map(async (entry) => {
         const rawRelativePath = normalizeWorkspaceRelativePath(
           entry.path || entry.relativePath || entry.filePath || entry.name || "",
           { allowEmpty: false }
@@ -2788,9 +2980,9 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
           throw new Error("不允许恢复以 . 开头的文件。");
         }
         const exists = entry.exists !== false && entry.deleted !== true && entry.tombstone !== true;
-        const content = exists ? decodeWorkspaceFileContent(entry) : Buffer.alloc(0);
+        const content = exists ? await decodeWorkspaceSnapshotContent(entry) : Buffer.alloc(0);
         const contentSha256 = exists ? sha256Buffer(content) : "";
-        const expectedSha256 = String(entry.contentSha256 || entry.sha256 || entry.expectedSha256 || "").trim();
+        const expectedSha256 = normalizeSha256(entry.contentSha256 || entry.sha256 || entry.expectedSha256 || "");
         if (expectedSha256 && expectedSha256 !== contentSha256) {
           throw new Error(`文件快照 hash 不匹配：${relativePath}`);
         }
@@ -2801,7 +2993,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
           contentSha256,
           encoding: String(entry.encoding || "base64")
         };
-      })
+      }))
     };
   }
 
@@ -2812,7 +3004,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
     }
     let snapshot;
     try {
-      snapshot = normalizeWorkspaceFileSnapshot(input);
+      snapshot = await normalizeWorkspaceFileSnapshot(input);
     } catch (error) {
       return { ok: false, status: 400, error: error.message };
     }
@@ -2947,12 +3139,22 @@ export function createAgentWorkspace({ userDataPath, merkleState = null }) {
           }
         })
       : null;
+    const checkpoint = !dryRun && stateCommit
+      ? await recordWorkspaceFileCheckpoint({
+          workspace: access.workspace,
+          operationId: input.operationId || "workspace.checkpoint.restore",
+          stateCommit,
+          action: "files.restore",
+          path: snapshot.basePath
+        })
+      : null;
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       dryRun,
       stateCommit,
+      checkpoint,
       basePath: snapshot.basePath,
       deleteExtraneous: snapshot.deleteExtraneous,
       fileCount: snapshot.files.length,

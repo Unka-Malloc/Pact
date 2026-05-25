@@ -92,11 +92,14 @@ try {
     objective: "Verify checkpoint restore can delegate file rollback to shared-space provider"
   });
   const workspaceId = createdWorkspace.workspace.workspaceId;
-  await rpc(server, auth, "agent_workspaces.file.upload", {
+  const initialUpload = await rpc(server, auth, "agent_workspaces.file.upload", {
     workspaceId,
     path: "docs/state.txt",
     content: "OpenClaw line"
   });
+  assert.ok(initialUpload.stateCommit?.commitId);
+  assert.ok(initialUpload.checkpoint?.treeId);
+  assert.ok(initialUpload.checkpoint?.nodeId);
 
   const diff = await rpc(server, auth, "workspace.checkpoint.diff", {
     treeId,
@@ -163,6 +166,49 @@ try {
       }
     }
   });
+  await rpc(server, auth, "agent_workspaces.file.write", {
+    workspaceId,
+    path: "docs/state.txt",
+    content: "OpenClaw line\nHermes line"
+  });
+  await rpc(server, auth, "agent_workspaces.file.upload", {
+    workspaceId,
+    path: "docs/extra.txt",
+    content: "remove me"
+  });
+
+  const autoPreview = await rpc(server, auth, "workspace.checkpoint.restore.preview", {
+    treeId: initialUpload.checkpoint.treeId,
+    nodeId: initialUpload.checkpoint.nodeId,
+    workspaceId,
+    reason: "verify automatic file checkpoint restore preview"
+  });
+  assert.equal(autoPreview.ok, true);
+  assert.equal(autoPreview.workspaceFileRestore.ok, true);
+  assert.ok(autoPreview.workspaceFileRestore.actions.some((item) => item.action === "write" && item.path === "docs/state.txt"));
+  assert.ok(autoPreview.workspaceFileRestore.actions.some((item) => item.action === "delete" && item.path === "docs/extra.txt"));
+
+  const autoRestore = await rpc(server, auth, "workspace.checkpoint.restore", {
+    treeId: initialUpload.checkpoint.treeId,
+    nodeId: initialUpload.checkpoint.nodeId,
+    workspaceId,
+    reason: "verify automatic file checkpoint restore"
+  });
+  assert.equal(autoRestore.ok, true);
+  assert.equal(autoRestore.workspaceFileRestore.ok, true);
+  assert.ok(autoRestore.workspaceFileRestore.stateCommit?.commitId);
+
+  const autoRestoredFile = await rpc(server, auth, "agent_workspaces.file.download", {
+    workspaceId,
+    path: "docs/state.txt"
+  });
+  assert.equal(autoRestoredFile.content, "OpenClaw line");
+  const autoRemovedFile = await rpc(server, auth, "agent_workspaces.file.stat", {
+    workspaceId,
+    path: "docs/extra.txt"
+  });
+  assert.equal(autoRemovedFile.exists, false);
+
   await rpc(server, auth, "agent_workspaces.file.write", {
     workspaceId,
     path: "docs/state.txt",

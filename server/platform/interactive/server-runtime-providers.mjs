@@ -145,7 +145,11 @@ export async function createServerRuntimeProviders({
     isAnyFeatureActive("agent-exploration", "knowledge-distillation"),
     "../specialized/agent/agent-workspace/index.mjs",
     "createAgentWorkspace",
-    [{ userDataPath, merkleState: dataStructures?.merkleState || null }]
+    [{
+      userDataPath,
+      merkleState: dataStructures?.merkleState || null,
+      checkpointTreeApi: dataStructures?.checkpointTree || null
+    }]
   );
   const baseModelDecisionRuntime = await createProvider(
     isAnyFeatureActive("knowledge-distillation", "knowledge-evolution", "knowledge-outline-reasoning", "agent-exploration"),
