@@ -99,6 +99,35 @@ interface WsSessionContext extends WsContext {
   sessionAppendOnly: boolean;
 }
 
+interface WsCheckpointTreeSummary {
+  treeId: string;
+  kind: string;
+  ownerId: string;
+  status: string;
+  nodeCount: number;
+  byStatus: Record<string, number>;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+interface WsCheckpointNode {
+  nodeId: string;
+  parentId: string;
+  label: string;
+  status: string;
+  metadata?: Record<string, any>;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+}
+
+interface WsCheckpointTreeDetail extends WsCheckpointTreeSummary {
+  rootNodeId?: string;
+  nodes?: Record<string, WsCheckpointNode>;
+  metadata?: Record<string, any>;
+  events?: any[];
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const workspaces        = ref<WsWorkspace[]>([]);
@@ -109,6 +138,12 @@ const selectedSession   = ref<WsSessionDetail | null>(null);
 const chainData         = ref<any>(null);
 const contextData       = ref<any>(null);
 const workspaceFilesData = ref<any>(null);
+const workspaceCheckpointTrees = ref<WsCheckpointTreeSummary[]>([]);
+const workspaceCheckpointDetail = ref<WsCheckpointTreeDetail | null>(null);
+const workspaceCheckpointPreview = ref<any>(null);
+const workspaceCheckpointError = ref('');
+const selectedCheckpointTreeId = ref('');
+const selectedCheckpointNodeId = ref('');
 const sessionContextData = ref<WsSessionContext | null>(null);
 const localError        = ref('');
 const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share'>('list');
@@ -124,6 +159,15 @@ const deleteFolderChecked = ref(false);
 // ─── Derived ─────────────────────────────────────────────────────────────────
 
 const selected = computed(() => workspaces.value.find(w => w.workspaceId === selectedId.value) ?? null);
+
+const workspaceCheckpointNodes = computed<WsCheckpointNode[]>(() => {
+  const nodes = Object.values(workspaceCheckpointDetail.value?.nodes ?? {});
+  return nodes
+    .filter(node => !!node?.metadata?.workspaceFileSnapshot)
+    .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+});
+
+const workspaceCheckpointPreviewRestore = computed(() => workspaceCheckpointPreview.value?.workspaceFileRestore ?? null);
 
 const workspaceOptions = computed(() =>
   workspaces.value.map(w => ({ value: w.workspaceId, label: w.title || w.workspaceId.slice(0, 12) }))
@@ -149,6 +193,15 @@ const sessionItems = computed<HistorySessionPanelItem[]>(() =>
 
 function statusTone(status: string) {
   return status === 'active' ? 'success' : status === 'archived' ? 'neutral' : 'info';
+}
+
+function checkpointNodeFileCount(node: WsCheckpointNode) {
+  const files = node.metadata?.workspaceFileSnapshot?.files;
+  return Array.isArray(files) ? files.length : 0;
+}
+
+function checkpointNodeBasePath(node: WsCheckpointNode) {
+  return String(node.metadata?.workspaceFileSnapshot?.basePath || '根目录');
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -202,6 +255,12 @@ async function load() {
 
 async function loadChain(id: string) {
   chainData.value = null; contextData.value = null; workspaceFilesData.value = null;
+  workspaceCheckpointTrees.value = [];
+  workspaceCheckpointDetail.value = null;
+  workspaceCheckpointPreview.value = null;
+  workspaceCheckpointError.value = '';
+  selectedCheckpointTreeId.value = '';
+  selectedCheckpointNodeId.value = '';
   try {
     const [c, ctx, files] = await Promise.all([
       apiFetch(`/api/agent-workspaces/${id}/chain`),
@@ -211,10 +270,94 @@ async function loadChain(id: string) {
     chainData.value = c;
     contextData.value = ctx;
     workspaceFilesData.value = files;
+    await loadWorkspaceCheckpoints(id);
   } catch (e: any) { localError.value = e.message; }
 }
 
 watch(selectedId, (id) => { if (id) loadChain(id); });
+
+async function loadWorkspaceCheckpoints(id: string) {
+  workspaceCheckpointError.value = '';
+  workspaceCheckpointPreview.value = null;
+  workspaceCheckpointDetail.value = null;
+  selectedCheckpointTreeId.value = '';
+  selectedCheckpointNodeId.value = '';
+  try {
+    const data = await apiFetch(`/api/workspace/checkpoints/trees?ownerId=${encodeURIComponent(id)}&kind=workspace_files&limit=20`);
+    workspaceCheckpointTrees.value = data.items ?? [];
+    const firstTreeId = workspaceCheckpointTrees.value[0]?.treeId || '';
+    if (firstTreeId) {
+      await loadWorkspaceCheckpointTree(firstTreeId);
+    }
+  } catch (e: any) {
+    workspaceCheckpointTrees.value = [];
+    workspaceCheckpointError.value = e.message || '读取文件回退点失败。';
+  }
+}
+
+async function loadWorkspaceCheckpointTree(treeId: string) {
+  if (!treeId) return;
+  workspaceCheckpointError.value = '';
+  workspaceCheckpointPreview.value = null;
+  selectedCheckpointTreeId.value = treeId;
+  selectedCheckpointNodeId.value = '';
+  try {
+    const tree = await apiFetch(`/api/workspace/checkpoints/nodes/${encodeURIComponent(treeId)}`);
+    workspaceCheckpointDetail.value = tree;
+    const nodes = Object.values((tree?.nodes ?? {}) as Record<string, WsCheckpointNode>)
+      .filter(node => !!node?.metadata?.workspaceFileSnapshot)
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+    selectedCheckpointNodeId.value = nodes[0]?.nodeId || '';
+  } catch (e: any) {
+    workspaceCheckpointDetail.value = null;
+    workspaceCheckpointError.value = e.message || '读取 checkpoint tree 失败。';
+  }
+}
+
+async function previewWorkspaceCheckpointRestore(nodeId = selectedCheckpointNodeId.value) {
+  if (!selectedId.value || !selectedCheckpointTreeId.value || !nodeId) return;
+  setBusy('ws:checkpoint-preview');
+  localError.value = '';
+  workspaceCheckpointError.value = '';
+  try {
+    selectedCheckpointNodeId.value = nodeId;
+    workspaceCheckpointPreview.value = await apiFetch('/api/workspace/checkpoints/restore/preview', {
+      method: 'POST',
+      body: JSON.stringify({
+        treeId: selectedCheckpointTreeId.value,
+        nodeId,
+        workspaceId: selectedId.value,
+        reason: 'console workspace file rollback preview',
+      }),
+    });
+  } catch (e: any) { workspaceCheckpointError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function restoreWorkspaceCheckpoint(nodeId = selectedCheckpointNodeId.value) {
+  if (!selectedId.value || !selectedCheckpointTreeId.value || !nodeId) return;
+  const ok = window.confirm('确认将该工作空间的物理文件夹回退到所选 checkpoint？当前文件差异会被 checkpoint restore 覆盖。');
+  if (!ok) return;
+  setBusy('ws:checkpoint-restore');
+  localError.value = '';
+  workspaceCheckpointError.value = '';
+  try {
+    selectedCheckpointNodeId.value = nodeId;
+    const restored = await apiFetch('/api/workspace/checkpoints/restore', {
+      method: 'POST',
+      body: JSON.stringify({
+        treeId: selectedCheckpointTreeId.value,
+        nodeId,
+        workspaceId: selectedId.value,
+        reason: 'console workspace file rollback',
+      }),
+    });
+    await loadChain(selectedId.value);
+    workspaceCheckpointPreview.value = restored;
+    selectedCheckpointNodeId.value = nodeId;
+  } catch (e: any) { workspaceCheckpointError.value = e.message; }
+  finally { clearBusy(); }
+}
 
 async function selectSession(id: string) {
   if (!id) return;
@@ -690,6 +833,79 @@ load();
               <WorkspaceFileTree :files="workspaceFilesData.files" />
             </ConfigFoldCard>
 
+            <ConfigFoldCard title="文件回退点（管控台）">
+              <div class="checkpoint-panel">
+                <div class="checkpoint-toolbar">
+                  <div>
+                    <strong>{{ workspaceCheckpointTrees.length }} 个文件 checkpoint tree</strong>
+                    <span>来源：workspace_files 快照；用于管理员手动预览和回退本机共享文件夹。</span>
+                  </div>
+                  <button class="table-action" type="button" :disabled="!!busyKey" @click="selectedId && loadWorkspaceCheckpoints(selectedId)">
+                    刷新回退点
+                  </button>
+                </div>
+
+                <p v-if="workspaceCheckpointError" class="checkpoint-error">{{ workspaceCheckpointError }}</p>
+
+                <div v-if="workspaceCheckpointTrees.length" class="checkpoint-grid">
+                  <aside class="checkpoint-tree-list">
+                    <button
+                      v-for="tree in workspaceCheckpointTrees"
+                      :key="tree.treeId"
+                      type="button"
+                      class="checkpoint-tree-item"
+                      :class="{ selected: selectedCheckpointTreeId === tree.treeId }"
+                      :disabled="!!busyKey"
+                      @click="loadWorkspaceCheckpointTree(tree.treeId)"
+                    >
+                      <strong>{{ tree.treeId.slice(0, 18) }}</strong>
+                      <span>{{ tree.status }} · {{ tree.nodeCount }} 节点 · {{ formatCompactDate(tree.updatedAt) }}</span>
+                    </button>
+                  </aside>
+
+                  <div class="checkpoint-node-list">
+                    <template v-if="workspaceCheckpointNodes.length">
+                      <article
+                        v-for="node in workspaceCheckpointNodes"
+                        :key="node.nodeId"
+                        class="checkpoint-node-card"
+                        :class="{ selected: selectedCheckpointNodeId === node.nodeId }"
+                      >
+                        <div class="checkpoint-node-main">
+                          <strong>{{ node.label || node.nodeId }}</strong>
+                          <span>{{ node.nodeId }} · {{ checkpointNodeFileCount(node) }} 个文件 · {{ checkpointNodeBasePath(node) }}</span>
+                          <small>{{ formatCompactDate(node.updatedAt || node.createdAt || '') }}</small>
+                        </div>
+                        <div class="checkpoint-node-actions">
+                          <button class="table-action" type="button" :disabled="!!busyKey" @click="previewWorkspaceCheckpointRestore(node.nodeId)">
+                            {{ busyKey === 'ws:checkpoint-preview' && selectedCheckpointNodeId === node.nodeId ? '预览中…' : '预览' }}
+                          </button>
+                          <button class="table-action danger-link" type="button" :disabled="!!busyKey" @click="restoreWorkspaceCheckpoint(node.nodeId)">
+                            {{ busyKey === 'ws:checkpoint-restore' && selectedCheckpointNodeId === node.nodeId ? '回退中…' : '回退到此处' }}
+                          </button>
+                        </div>
+                      </article>
+                    </template>
+                    <div v-else class="checkpoint-empty">当前 checkpoint tree 没有可直接回退的文件快照节点。</div>
+                  </div>
+                </div>
+                <div v-else-if="!workspaceCheckpointError" class="checkpoint-empty">
+                  当前工作空间还没有文件 checkpoint。写入、上传或删除文件后会自动出现回退点。
+                </div>
+
+                <div v-if="workspaceCheckpointPreview" class="checkpoint-preview">
+                  <strong>{{ workspaceCheckpointPreview.applied ? '已执行回退' : '回退预览' }}</strong>
+                  <span v-if="workspaceCheckpointPreviewRestore">
+                    {{ workspaceCheckpointPreviewRestore.dryRun ? '预览' : '执行' }}
+                    {{ workspaceCheckpointPreviewRestore.actions?.length ?? workspaceCheckpointPreviewRestore.appliedActions?.length ?? 0 }}
+                    个文件动作
+                  </span>
+                  <span v-if="workspaceCheckpointPreview.restoreId">restoreId: {{ workspaceCheckpointPreview.restoreId }}</span>
+                  <pre class="config-json-preview">{{ JSON.stringify(workspaceCheckpointPreview.workspaceFileRestore || workspaceCheckpointPreview, null, 2) }}</pre>
+                </div>
+              </div>
+            </ConfigFoldCard>
+
             <!-- Resolved profile (inherited) -->
             <ConfigFoldCard v-if="chainData" title="解析后的合并 Profile（含继承链）">
               <pre class="config-json-preview">{{ JSON.stringify(chainData.resolvedProfile, null, 2) }}</pre>
@@ -816,6 +1032,127 @@ load();
 .ws-id-list { list-style: none; padding: 0; margin: var(--space-1) 0; font-size: 0.8rem; display: flex; flex-direction: column; gap: var(--space-1); }
 .ws-id-list li { display: flex; align-items: center; gap: var(--space-2); }
 .ws-id-list code { background: var(--bg-subtle); padding: 1px 6px; border-radius: 4px; }
+
+.checkpoint-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.checkpoint-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.checkpoint-toolbar > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkpoint-toolbar span,
+.checkpoint-node-main span,
+.checkpoint-node-main small,
+.checkpoint-tree-item span {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.checkpoint-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: var(--space-3);
+}
+
+@media (max-width: 720px) { .checkpoint-grid { grid-template-columns: 1fr; } }
+
+.checkpoint-tree-list,
+.checkpoint-node-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.checkpoint-tree-item,
+.checkpoint-node-card,
+.checkpoint-preview,
+.checkpoint-empty {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+}
+
+.checkpoint-tree-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkpoint-tree-item:hover,
+.checkpoint-tree-item.selected,
+.checkpoint-node-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-surface);
+}
+
+.checkpoint-node-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2);
+}
+
+@media (max-width: 640px) { .checkpoint-node-card { grid-template-columns: 1fr; } }
+
+.checkpoint-node-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checkpoint-node-main strong,
+.checkpoint-node-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-node-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.danger-link {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.checkpoint-preview,
+.checkpoint-empty {
+  padding: var(--space-3);
+}
+
+.checkpoint-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.checkpoint-error {
+  color: #ef4444;
+  margin: 0;
+  font-size: var(--text-sm);
+}
 
 .config-json-preview {
   font-size: 0.78rem; line-height: 1.5; background: var(--bg-subtle);
