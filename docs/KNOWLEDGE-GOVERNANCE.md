@@ -184,6 +184,8 @@ live proxy 允许用于受控 `controlledView` 和即时查看，但它不是 Pa
 - `raw-corpus.format.convert`
 - 参数使用 `targetFormat`
 
+该导出由 `pact.knowledge-transformation.v1` provider 执行，返回 portable export package，并在导出前写入 AgentLibrary access receipt/loan 或 denied request。
+
 ### 2. Knowledge Index Construction
 
 `knowledge-index-construction` 负责 canonical evidence/index：
@@ -216,6 +218,8 @@ live proxy 允许用于受控 `controlledView` 和即时查看，但它不是 Pa
 
 `knowledge.export.docx` 是第二层 canonical knowledge 的 DOCX 语料导出，不能替代 raw format convert、dossier export 或 distillation export。
 
+`knowledge.dossier.export` 由 `pact.knowledge-transformation.v1` provider 把 evidence/search/request 文档汇总成 unified dossier，再按目标格式渲染为 portable export package；导出前必须经 AgentLibrary access decision 裁决。
+
 ### 3. Knowledge Distillation
 
 `knowledge-distillation` 负责有损知识蒸馏：
@@ -230,6 +234,8 @@ live proxy 允许用于受控 `controlledView` 和即时查看，但它不是 Pa
 
 - `knowledge.distillation.export`
 - 参数使用 `outputFormat`
+
+`knowledge.distillation.export` 由 `pact.knowledge-transformation.v1` provider 读取蒸馏 run、candidate 或 portable document，渲染为 portable export package；导出前必须经 AgentLibrary access decision 裁决。
 
 portable 输出协议：
 

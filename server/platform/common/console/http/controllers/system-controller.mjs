@@ -237,7 +237,9 @@ export function createSystemController({
       protocolPayload,
       operationAuditStore,
       checkpointTreeApi,
-      agentWorkspace
+      agentWorkspace,
+      knowledgeWorkflowContext,
+      accessControlContext
     }),
     ...createSystemControllerCapabilityEcosystemHandlers({
       sendConsoleDomainOperation,

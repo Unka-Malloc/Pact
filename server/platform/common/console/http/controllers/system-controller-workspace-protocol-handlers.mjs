@@ -3,8 +3,17 @@ export function createSystemControllerWorkspaceProtocolHandlers({
   protocolPayload,
   operationAuditStore,
   checkpointTreeApi,
-  agentWorkspace
+  agentWorkspace,
+  knowledgeWorkflowContext = () => ({}),
+  accessControlContext = () => ({})
 }) {
+  function knowledgeTransformationContext(authSession = null) {
+    return {
+      ...knowledgeWorkflowContext(authSession),
+      ...accessControlContext(authSession)
+    };
+  }
+
   return {
     async handleWorkspaceAuditQuery({ operation, url, response }) {
       await sendConsoleDomainOperation({
@@ -150,27 +159,30 @@ export function createSystemControllerWorkspaceProtocolHandlers({
         errorMessage: "同步代码评审状态失败。"
       });
     },
-    async handleRawCorpusFormatConvert({ operation, requestBody, response }) {
+    async handleRawCorpusFormatConvert({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "raw-corpus.format.convert",
         input: protocolPayload(requestBody),
         response,
+        context: knowledgeTransformationContext(authSession),
         errorMessage: "转换原始语料格式失败。"
       });
     },
-    async handleKnowledgeDossierExport({ operation, requestBody, response }) {
+    async handleKnowledgeDossierExport({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "knowledge.dossier.export",
         input: protocolPayload(requestBody),
         response,
+        context: knowledgeTransformationContext(authSession),
         errorMessage: "导出统一事项 dossier 失败。"
       });
     },
-    async handleKnowledgeDistillationExport({ operation, requestBody, response }) {
+    async handleKnowledgeDistillationExport({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "knowledge.distillation.export",
         input: protocolPayload(requestBody),
         response,
+        context: knowledgeTransformationContext(authSession),
         errorMessage: "导出知识蒸馏结果失败。"
       });
     }

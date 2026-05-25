@@ -175,6 +175,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
   const wordCloudFile = "server/platform/specialized/console/knowledge-word-cloud-operation-executor.mjs";
   const codespaceModuleFile = "server/platform/specialized/capabilities/code-management/codespace/module.json";
+  const knowledgeTransformationModuleFile = "server/platform/specialized/knowledge/transformation/module.json";
   const dispatcher = await read(dispatcherFile);
   const apiFacade = await read(apiFacadeFile);
   const jobsController = await read(jobsControllerFile);
@@ -197,6 +198,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const toolManagementConnections = await read(toolManagementConnectionsFile);
   const wordCloud = await read(wordCloudFile);
   const codespaceModule = await read(codespaceModuleFile);
+  const knowledgeTransformationModule = await read(knowledgeTransformationModuleFile);
 
   for (const needle of [
     "dispatchInternalOperation",
@@ -1086,6 +1088,9 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "workspace.code.change.upload",
     "workspace.code.change.link",
     "workspace.code.change.status.sync",
+    "knowledgeTransformationContext",
+    "knowledgeWorkflowContext",
+    "accessControlContext",
     "raw-corpus.format.convert",
     "knowledge.dossier.export",
     "knowledge.distillation.export"
@@ -1351,6 +1356,9 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "handleToolManagementHttpRequest",
       "__responseHandled",
       "executeCodeManagementOperation",
+      "createKnowledgeTransformationProvider",
+      "executeKnowledgeTransformationOperation",
+      "appendKnowledgeAccessDecisionArtifacts",
       "executeProtocolFacadeOperation",
       "workspace.file.patch",
       "workspace.checkpoint.diff",
@@ -1367,8 +1375,6 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "raw-corpus.format.convert",
       "knowledge.dossier.export",
       "knowledge.distillation.export",
-      "contractRegisteredNotImplemented",
-      "not_implemented",
       "executeConsoleAuthOperation",
     "auth.login",
     "auth.users.update",
@@ -1390,6 +1396,20 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "code-management/codespace-registry.json"
   ]) {
     assertTextIncludes(codespaceModule, needle, `${codespaceModuleFile} must declare the Codespace provider contract ${needle}`);
+  }
+  for (const needle of [
+    "KnowledgeTransformation",
+    "pact.knowledge-transformation.v1",
+    "createKnowledgeTransformationProvider",
+    "raw-corpus.format.convert",
+    "knowledge.dossier.export",
+    "knowledge.distillation.export"
+  ]) {
+    assertTextIncludes(
+      knowledgeTransformationModule,
+      needle,
+      `${knowledgeTransformationModuleFile} must declare the Knowledge Transformation provider contract ${needle}`
+    );
   }
   for (const needle of [
     "executeKnowledgeWordCloudOperation",

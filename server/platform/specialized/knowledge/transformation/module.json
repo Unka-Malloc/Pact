@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "KnowledgeTransformation",
+  "version": 1,
+  "category": "application-capability",
+  "applicationSubsystem": "knowledge-transformation",
+  "description": "Built-in pact.knowledge-transformation.v1 provider for raw corpus conversion, unified dossier export, and knowledge distillation export with AgentLibrary access decisions.",
+  "defaultLoaded": true,
+  "protocol": "pact.knowledge-transformation.v1",
+  "components": {
+    "knowledgeTransformationProvider": {
+      "path": "./knowledge-transformation-provider.mjs",
+      "factory": "createKnowledgeTransformationProvider",
+      "exports": [
+        "KNOWLEDGE_TRANSFORMATION_PROTOCOL_VERSION",
+        "createKnowledgeTransformationProvider"
+      ],
+      "operations": [
+        "raw-corpus.format.convert",
+        "knowledge.dossier.export",
+        "knowledge.distillation.export"
+      ],
+      "requiredScopes": [
+        "knowledge:read",
+        "knowledge:write"
+      ],
+      "maxRisk": "safe_write",
+      "auditRequired": true
+    }
+  },
+  "dependsOn": [
+    "pact.knowledge.v1",
+    "pact.knowledge-access.v1",
+    "pact.knowledge-distillation.v1"
+  ],
+  "verification": [
+    "npm run server:verify:knowledge-transformation --silent",
+    "npm run server:verify:agent-library-access --silent",
+    "npm run server:verify:protocol-operations --silent"
+  ]
+}

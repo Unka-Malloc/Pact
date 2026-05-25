@@ -1087,6 +1087,8 @@ Legal hold 必须阻断 delete/purge/expire/retention.dispose 等破坏性动作
 - `knowledge.dossier.export`，输出同一事项的 unified dossier，使用 `outputFormat`
 - `knowledge.distillation.export`，使用 `outputFormat`
 
+`raw-corpus.format.convert`、`knowledge.dossier.export` 和 `knowledge.distillation.export` 由 `pact.knowledge-transformation.v1` provider 执行。返回值统一为 portable export package：包含 `contentType`、`fileName`、`byteSize`、文本 `content`（适用时）、`contentBase64`、`manifest`、`documentCount` 和 `knowledgeAccessDecision`。导出前必须经 AgentLibrary access decision 裁决，并把 receipt/loan/denied request 写入 authorization store。
+
 知识分三层：
 
 1. `raw-corpus-construction`：原始语料、format-conversion-only、normalized documents、sourceRange、DOCX/YAML sidecar；所有受支持原始输入格式都必须能以 DOCX 作为目标格式导出。

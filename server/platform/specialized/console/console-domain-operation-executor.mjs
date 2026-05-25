@@ -25,6 +25,7 @@ import {
   isSourceEvidenceId,
   searchSourceFiles
 } from "../knowledge/retrieval/source-file-search-service.mjs";
+import { createKnowledgeTransformationProvider } from "../knowledge/transformation/knowledge-transformation-provider.mjs";
 import { executeKnowledgeWordCloudOperation } from "./knowledge-word-cloud-operation-executor.mjs";
 import { getCodexOAuthStatus, startCodexDeviceLogin } from "../../common/security/auth/codex-oauth-service.mjs";
 import { buildProductionHealthReport } from "../../common/production-readiness/report-reader.mjs";
@@ -777,22 +778,6 @@ function errorPayload(error, fallbackMessage, extra = {}) {
   };
 }
 
-function contractRegisteredNotImplemented(operationId, details = {}) {
-  return result(501, {
-    schemaVersion: 1,
-    ok: false,
-    error: {
-      code: "not_implemented",
-      message: "该协议操作已注册，当前运行时尚未绑定完整执行器。",
-      details: {
-        operationId: operationId || "",
-        implementationStatus: "contract_registered",
-        ...details
-      }
-    }
-  });
-}
-
 function loginInputSummary(input = {}, request = null) {
   const username = String(input.username || "").trim().toLowerCase();
   return {
@@ -1291,7 +1276,15 @@ async function executeWorkspaceContributionOperation({ operationId, input, conte
     return null;
   }
   const registry = contributionRegistryFor(input, context);
-  const subject = subjectFromAuthSession(context.authSession);
+  const authSubject = subjectFromAuthSession(context.authSession);
+  const runtimeSubject = objectOrNull(context.subject) || {};
+  const subject = {
+    ...authSubject,
+    ...runtimeSubject,
+    subjectId: runtimeSubject.subjectId || runtimeSubject.id || authSubject.subjectId || "",
+    username: runtimeSubject.username || authSubject.username || runtimeSubject.label || "",
+    scopes: Array.isArray(runtimeSubject.scopes) ? runtimeSubject.scopes : authSubject.scopes
+  };
   const authorizationStore = context.authorizationStore;
   try {
     if (operationId === "workspace.contribution.submit" || operationId === "knowledge.contribution.submit") {
@@ -6064,20 +6057,70 @@ async function executeCodeManagementOperation({ operationId, input = {}, context
   return null;
 }
 
-async function executeProtocolFacadeOperation({ operationId, input = {} }) {
-  const id = String(operationId || "");
-  const notImplementedBackends = {
-    "raw-corpus.format.convert": "rawCorpus.formatConverter",
-    "knowledge.dossier.export": "knowledgeDossierExporter",
-    "knowledge.distillation.export": "knowledgeDistillationExporter"
-  };
-
-  if (Object.prototype.hasOwnProperty.call(notImplementedBackends, id)) {
-    return contractRegisteredNotImplemented(id, {
-      expectedBackend: notImplementedBackends[id]
+function appendKnowledgeAccessDecisionArtifacts(context = {}, decision = null, operationId = "") {
+  const authorizationStore = context.authorizationStore;
+  if (!decision || !authorizationStore) {
+    return;
+  }
+  const subjectId =
+    decision.knowledgeAccessReceipt?.subject?.subjectId ||
+    decision.loanRecord?.subject?.subjectId ||
+    decision.knowledgeAccessReceipt?.subjectId ||
+    decision.loanRecord?.subjectId ||
+    "";
+  appendAuthorizationArtifact(authorizationStore, "appendReceipt", decision.knowledgeAccessReceipt, {
+    decisionId: decision.decisionId,
+    subjectId
+  });
+  appendAuthorizationArtifact(authorizationStore, "appendLoanRecord", decision.loanRecord, {
+    decisionId: decision.decisionId,
+    subjectId
+  });
+  if (decision.deniedRequestAudit && typeof authorizationStore.appendDeniedRequest === "function") {
+    authorizationStore.appendDeniedRequest({
+      decisionId: decision.decisionId,
+      subjectId,
+      operationId,
+      reasonCode: decision.filteredReason || "knowledge_access_denied",
+      deniedRequest: decision.deniedRequestAudit
     });
   }
+}
 
+async function executeKnowledgeTransformationOperation({ operationId, input = {}, context }) {
+  const id = String(operationId || "");
+  const handledOperations = new Set([
+    "raw-corpus.format.convert",
+    "knowledge.dossier.export",
+    "knowledge.distillation.export"
+  ]);
+  if (!handledOperations.has(id)) {
+    return null;
+  }
+  const provider = createKnowledgeTransformationProvider({
+    knowledgeCore: getKnowledgeCore(context.runtime),
+    metadataStore: context.metadataStore,
+    knowledgeDistillationRuntime: context.knowledgeDistillationRuntime
+  });
+  const subject = subjectFromAuthSession(context.authSession);
+  try {
+    const providerContext = { subject };
+    const operationResult = id === "raw-corpus.format.convert"
+      ? await provider.convertRawCorpus(input, providerContext)
+      : id === "knowledge.dossier.export"
+        ? await provider.exportDossier(input, providerContext)
+        : await provider.exportDistillation(input, providerContext);
+    appendKnowledgeAccessDecisionArtifacts(context, operationResult.knowledgeAccessDecision, id);
+    return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+  } catch (error) {
+    return result(400, errorPayload(error, "Knowledge transformation operation failed."));
+  }
+}
+
+async function executeProtocolFacadeOperation({ operationId, input = {} }) {
+  const id = String(operationId || "");
+  void input;
+  void id;
   return null;
 }
 
@@ -6269,6 +6312,7 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeCapabilityPackageOperation,
     executeWorkspaceGovernanceOperation,
     executeCodeManagementOperation,
+    executeKnowledgeTransformationOperation,
     executeProtocolFacadeOperation,
     executeGerritOperation,
     executeRepoDomainOperation,

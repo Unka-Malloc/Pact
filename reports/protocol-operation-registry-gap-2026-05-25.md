@@ -8,6 +8,7 @@
 - `server/platform/specialized/console/console-domain-operation-executor.mjs`
 - `npm run server:verify:protocol-operations`
 - `npm run server:verify:workspace-checkpoints`
+- `npm run server:verify:knowledge-transformation`
 
 ## 总览
 
@@ -15,8 +16,8 @@
 | --- | ---: | --- |
 | 协议操作定义 | 52 | 全部追加进 `SERVER_API_OPERATIONS`。 |
 | 已注册并可发现 | 52 | 已通过 HTTP/RPC/Tool Management/MCP 发现验证。 |
-| 明确空后端 | 3 | 运行时返回 `not_implemented`，只能算 `contract_registered`。 |
-| P0 旧“零实现”模块 | 0 | workspace contribution、knowledge access 和 code management 均已有执行器/provider 后端；剩余空后端集中在知识导出与原始语料转换。 |
+| 明确空后端 | 0 | 协议操作均已绑定执行器/provider 后端；不再存在 `contract_registered` 空实现。 |
+| P0 旧“零实现”模块 | 0 | workspace contribution、knowledge access、code management 和 knowledge transformation 均已有执行器/provider 后端。 |
 
 ## 按子系统统计
 
@@ -29,21 +30,15 @@
 | workspace-file | 6 | 0 | upload/list/download/read/write/patch 已接入 agent workspace file backend。 |
 | checkpoint | 7 | 0 | tree/node/diff/scope/restore preview/restore 已接入 checkpoint tree backend；operation revert scope 已接入 operation audit store。 |
 | workspace-proposal | 2 | 0 | create/apply 已接入 agent workspace submission/decision 后端，proposal 必须先审核再形成 decision。 |
-| knowledge-export/evidence | 3 | 2 | evidence get 已接线；dossier/export 与 distillation/export 仍缺后端。 |
-| raw-corpus | 1 | 1 | format convert 仍缺 raw corpus converter。 |
+| knowledge-export/evidence | 3 | 0 | evidence get 已接线；dossier export 与 distillation export 已接入 `KnowledgeTransformation` provider，并统一写入 AgentLibrary access receipt/loan。 |
+| raw-corpus | 1 | 0 | format convert 已接入 `KnowledgeTransformation` provider，支持 Markdown/HTML/JSON/DOCX/text portable export package。 |
 | workspace-asset-policy | 2 | 0 | 已进入 authorization facade。 |
 | workspace-audit | 2 | 0 | 已接入 operation audit store。 |
 | workspace-skill | 4 | 0 | 已复用 contribution registry。 |
 
 ## 明确空后端清单
 
-这些操作已经注册、可被发现、具备 scope/safety/HTTP/RPC/MCP 形态，但执行时仍由 `contractRegisteredNotImplemented()` 返回 `not_implemented`。
-
-| 操作 ID | 所属模块 | 期望后端 | 优先级 |
-| --- | --- | --- | --- |
-| `raw-corpus.format.convert` | 知识转化 / 原始语料 | `rawCorpus.formatConverter` | P1 |
-| `knowledge.dossier.export` | 知识转化 / Dossier | `knowledgeDossierExporter` | P1 |
-| `knowledge.distillation.export` | 知识转化 / 蒸馏导出 | `knowledgeDistillationExporter` | P1 |
+当前无明确空后端。`raw-corpus.format.convert`、`knowledge.dossier.export` 和 `knowledge.distillation.export` 已由 `pact.knowledge-transformation.v1` provider 执行，MCP/HTTP/RPC 路径通过专项验证。
 
 Checkpoint 注意事项：`workspace.checkpoint.restore` 仍由通用 checkpoint tree 负责 restore marker、`checkpoint.restored` event 和审计范围记录；当 checkpoint node 携带 `workspaceFileSnapshot` 时，文件树 dry-run 和实际恢复会委托给共享空间 `restoreWorkspaceFiles` provider。其他业务状态回滚仍必须由各自 owning protocol 提供。
 
@@ -52,12 +47,12 @@ Checkpoint 注意事项：`workspace.checkpoint.restore` 仍由通用 checkpoint
 | 模块 | 旧结论 | 当前结论 | 剩余风险 |
 | --- | --- | --- | --- |
 | `pact.workspace-contribution.v1` | 有协议、零实现 | 已有 operation registry、system handler、console domain executor 和 contribution registry 后端 | 仍需更完整的资产持久化、权限生命周期验证和 workspace 视角 E2E。 |
-| `pact.knowledge-access.v1` | 有协议、零实现 | 已有 evaluate/receipt/loan/denied request 操作，并写入 authorization store | 仍需把 evidence/export/context injection 全链路纳入同一源头权限裁决。 |
+| `pact.knowledge-access.v1` | 有协议、零实现 | 已有 evaluate/receipt/loan/denied request 操作，并写入 authorization store；知识转化 export 已纳入同一 AgentLibrary 裁决链。 | 后续风险转为更复杂业务流的 E2E 覆盖，不再是协议后端缺口。 |
 | `pact.code-review.v1` | 有协议、零实现 | 已有 Codespace registry/provider 与 Gerrit upload route；target/prepare/link/status 不再是轻量 facade | 后续风险转为真实组织策略、更多 review provider 和权限迁移，不再是 P0 注册/后端缺口。 |
 
 ## 下一步顺序
 
-1. 知识转化继续：补 `raw-corpus.format.convert`、`knowledge.dossier.export`、`knowledge.distillation.export`，避免知识协议只完成检索/访问而缺少转换和导出闭环。
-2. 安全权限迁移：console/auth/tool/workspace/codespace 权限统一进入 authorization engine / policy provider。
-3. 接口封装层继续：`api-facade`、`jobs-controller` 和 MCP adapter 按 Checklist 横切任务拆分。
+1. 安全权限迁移：console/auth/tool/workspace/codespace 权限统一进入 authorization engine / policy provider。
+2. 接口封装层继续：`api-facade`、`jobs-controller` 和 MCP adapter 按 Checklist 横切任务拆分。
+3. 策略管理补齐：定义 workflow-policy / agent-policy 协议入口、策略注册表、评估 provider 和审计输出。
 4. 每补一个子系统，必须同步更新 `docs/SUBSYSTEM-REFACTOR-CHECKLIST.md`，并增加或扩展 `server:verify:*` 覆盖。
