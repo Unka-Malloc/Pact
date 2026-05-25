@@ -7,6 +7,7 @@ import { createConsoleAuth } from "../common/security/auth/console-auth.mjs";
 import { createOperationAuditStore } from "../common/security/operation-audit.mjs";
 import { registerSecurityPlatformServices } from "../common/security/register.mjs";
 import { createSecurityPermissionsProvider } from "../common/security/security-permissions-provider.mjs";
+import { createModuleManagementProvider } from "../common/module-manager/module-management-provider.mjs";
 import { createServerRuntime } from "../common/module-manager/server-runtime.mjs";
 import { registerModuleManagementPlatformServices } from "../common/module-manager/register.mjs";
 import { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-registry.mjs";
@@ -52,6 +53,7 @@ export async function createServerCompositionRoot({
   });
   const consoleAuth = createConsoleAuth({ userDataPath });
   const securityPermissions = createSecurityPermissionsProvider({ consoleAuth });
+  const moduleManagement = createModuleManagementProvider({ runtime, userDataPath });
   const operationAuditStore = createOperationAuditStore({ userDataPath });
   const operationConcurrencyScope = path.resolve(userDataPath);
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
@@ -69,6 +71,7 @@ export async function createServerCompositionRoot({
     operationAuditStore
   });
   registerModuleManagementPlatformServices(platformRegistry, {
+    moduleManagement,
     runtime,
     runtimeOptions: runtimeOptionsWithFeatures
   });
@@ -93,6 +96,7 @@ export async function createServerCompositionRoot({
     isAnyFeatureActive,
     platformRegistry,
     runtime,
+    moduleManagement,
     consoleAuth,
     securityPermissions,
     operationAuditStore,

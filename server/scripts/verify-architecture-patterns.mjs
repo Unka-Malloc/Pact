@@ -117,6 +117,7 @@ async function assertCompositionRootOwnsAssembly() {
     "registerDevopsPlatformServices",
     "createConsoleAuth",
     "createSecurityPermissionsProvider",
+    "createModuleManagementProvider",
     "createOperationAuditStore",
     "createServerRuntime",
     "createProtocolEventBus",
@@ -176,6 +177,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const runtimeConsoleSummaryFile = "server/platform/specialized/console/runtime-console-summary.mjs";
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
   const securityPermissionsProviderFile = "server/platform/common/security/security-permissions-provider.mjs";
+  const moduleManagementProviderFile = "server/platform/common/module-manager/module-management-provider.mjs";
   const wordCloudFile = "server/platform/specialized/console/knowledge-word-cloud-operation-executor.mjs";
   const codespaceModuleFile = "server/platform/specialized/capabilities/code-management/codespace/module.json";
   const knowledgeTransformationModuleFile = "server/platform/specialized/knowledge/transformation/module.json";
@@ -200,6 +202,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const runtimeConsoleSummary = await read(runtimeConsoleSummaryFile);
   const toolManagementConnections = await read(toolManagementConnectionsFile);
   const securityPermissionsProvider = await read(securityPermissionsProviderFile);
+  const moduleManagementProvider = await read(moduleManagementProviderFile);
   const wordCloud = await read(wordCloudFile);
   const codespaceModule = await read(codespaceModuleFile);
   const knowledgeTransformationModule = await read(knowledgeTransformationModuleFile);
@@ -486,11 +489,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "buildExecutiveReport(",
       "buildArchitectureLiveMap(",
       "createSampleBusinessPackStore(",
-      "listModuleTemplates(",
-      "planModuleScaffold(",
-      "scaffoldModule(",
-      "runModuleContractTest(",
-      "validateCapabilityPackageScaffoldManifest(",
+      "../../common/module-manager/module-ecosystem/index.mjs",
       "loadAgentSyncPolicy",
       "protocolEventBus.subscribe({",
       "requireToolManagementScope",
@@ -1260,7 +1259,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "runtime.mounts",
     "runtime.set_mounts",
     "runtime.reload_mounts",
-    "runtime.applyMountConfig",
+    "moduleManagement.setMounts",
     "executeDiscoveryOperation",
     "discovery.check_in",
     "discovery.clients",
@@ -1322,7 +1321,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "agents.create",
       "agents.update",
       "agents.delete",
-      "runtime.refreshMounts",
+      "moduleManagement.refreshMounts",
       "probeModelConnection",
       "publicAgentGatewayRegistry",
       "executeWorkspaceAuditOperation",
@@ -1485,18 +1484,44 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   }
   for (const needle of [
     "buildRuntimeConsoleSummary",
-    "runtime.runtimeOptions.profile",
-    "runtime.runtimeOptions.mountModules",
-    "runtime.mounts ||",
-    "summarizeMount",
-    "getMountConfigPath",
-    "getMountConfigPaths",
-    "loadMountConfig(userDataPath)"
+    "moduleManagement.buildRuntimeConsoleSummary"
   ]) {
     assertTextIncludes(
       runtimeConsoleSummary,
       needle,
-      `${runtimeConsoleSummaryFile} must own runtime console summary projection ${needle}`
+      `${runtimeConsoleSummaryFile} must delegate runtime console summary projection through module management ${needle}`
+    );
+  }
+  assertTextExcludes(
+    runtimeConsoleSummary,
+    [
+      "runtime.runtimeOptions",
+      "runtime.mounts ||",
+      "getMountConfigPath",
+      "getMountConfigPaths",
+      "loadMountConfig(userDataPath)"
+    ],
+    runtimeConsoleSummaryFile
+  );
+  for (const needle of [
+    "pact.module-management.v1",
+    "createModuleManagementProvider",
+    "buildRuntimeConsoleSummary",
+    "getMountsSnapshot",
+    "setMounts",
+    "reloadMounts",
+    "refreshMounts",
+    "listModuleTemplates",
+    "planModuleScaffold",
+    "scaffoldModule",
+    "runModuleContractTest",
+    "validateCapabilityPackageScaffoldManifest",
+    "runtime.applyMountConfig"
+  ]) {
+    assertTextIncludes(
+      moduleManagementProvider,
+      needle,
+      `${moduleManagementProviderFile} must own module management provider contract ${needle}`
     );
   }
   for (const needle of [

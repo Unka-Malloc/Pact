@@ -1,6 +1,7 @@
 export function createSystemControllerCapabilityEcosystemHandlers({
   sendConsoleDomainOperation,
-  parseJsonBody
+  parseJsonBody,
+  moduleManagement = null
 }) {
   return {
     async handleCapabilityPackagePlan({ requestBody, response }) {
@@ -122,6 +123,7 @@ export function createSystemControllerCapabilityEcosystemHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "module_ecosystem.templates",
         response,
+        context: { moduleManagement },
         errorMessage: "读取模块生态模板失败。"
       });
     },
@@ -130,6 +132,7 @@ export function createSystemControllerCapabilityEcosystemHandlers({
         operationId: operation?.id || "module_ecosystem.plan",
         input: parseJsonBody(requestBody),
         response,
+        context: { moduleManagement },
         errorMessage: "Module scaffold plan failed."
       });
     },
@@ -138,6 +141,7 @@ export function createSystemControllerCapabilityEcosystemHandlers({
         operationId: operation?.id || "module_ecosystem.scaffold",
         input: parseJsonBody(requestBody),
         response,
+        context: { moduleManagement },
         errorMessage: "Module scaffold failed."
       });
     },
@@ -146,6 +150,7 @@ export function createSystemControllerCapabilityEcosystemHandlers({
         operationId: operation?.id || "module_ecosystem.contract_test",
         input: parseJsonBody(requestBody),
         response,
+        context: { moduleManagement },
         errorMessage: "Module contract test failed."
       });
     },

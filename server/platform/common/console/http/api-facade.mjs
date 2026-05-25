@@ -250,6 +250,7 @@ export async function buildConsoleState({
   userDataPath,
   distPath,
   runtime,
+  moduleManagement = null,
   discoveryState,
   jobManager,
   metadataStore,
@@ -303,6 +304,7 @@ export async function buildConsoleState({
   const runtimeSummary = await domainServices.buildRuntimeConsoleSummary({
     userDataPath,
     runtime,
+    moduleManagement,
     settings: projectedSettings,
     features,
     listAvailableAnalysisModules: domainServices.listAvailableAnalysisModules
@@ -369,6 +371,7 @@ export async function buildRuntimeInfo({
   userDataPath,
   distPath,
   runtime,
+  moduleManagement = null,
   discoveryState,
   metadataStore,
   serverUrl,
@@ -382,6 +385,7 @@ export async function buildRuntimeInfo({
   const runtimeSummary = await domainServices.buildRuntimeConsoleSummary({
     userDataPath,
     runtime,
+    moduleManagement,
     settings,
     features,
     listAvailableAnalysisModules: domainServices.listAvailableAnalysisModules

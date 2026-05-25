@@ -21,7 +21,7 @@
 | 2 | 共享空间 | 代码管理 |
 | 3 | 策略管理 | 通用工具与技能 |
 
-架构图已用 `specialized-grid` 的 `grid-template-areas` 固化为 2 x 3 矩阵：桌面端严格保持左列三个、右列三个；移动端退化为单列时先展示左列三个，再展示右列三个，但模块归属口径不变。
+架构图已用 `specialized-grid` + 两个 `application-column` 显式固化为左右两列，每列三个模块：桌面端严格保持左列三个、右列三个；移动端退化为单列时先展示左列三个，再展示右列三个，但模块归属口径不变。
 
 进度百分比表示“协议化/解耦完成度”，不是产品功能完成度，也不是生产可用性评分。启动装配是侧边组合边界，不属于服务层、应用层或基建层；协议注册表、权限迁移、API Facade 拆分、Jobs Controller 拆分、MCP Adapter 拆分属于横切治理任务，不能再作为独立架构层统计。
 
@@ -56,7 +56,7 @@
 | 应用层 | 通用工具与技能 | `[~]` | 65% | Tool Management 客户端连接投影已从 `api-facade` 迁入 specialized provider；runtime 创建已迁出 `http-server`；Tool HTTP、Tool policy、Tool runtime denial audit 和 MCP local grant 授权已统一经 `securityPermissions` provider；技能管理定位为 skill registry 和 profile 配置。 | tool exposure 与 MCP adapter 语义入口仍需继续瘦身；skill registry、profile 配置、workspace skill 与 agent skill planning 需要统一协议化验收。 | Tool/Skill 能力注册、授权、profile 应用和调用均走 operation/provider，MCP adapter 不直接依赖 Tool Management platform。 |
 | 基建层 | 核心能力 | `[~]` | 65% | 服务发现、状态协调、通用调度方向与 `dispatchInternalOperation`、system interfaces/discovery snapshots 一致。 | operation registry 完成度还需要按 `registered/wired/implemented/verified` 分级治理。 | system/discovery/operation registry 有一致注册表和 verify 输出。 |
 | 基建层 | 安全权限 | `[x]` | 100% | 已落地 `pact.security-permissions.v1` provider，统一封装 console auth、operation authorization、authorization policy、authorization audit artifact、workspace asset policy、Tool policy/runtime denial audit 和 MCP local grant 授权；接口层、console executor、Tool Management 和 MCP adapter 不再直接调用 `consoleAuth.authorizeOperation`、裸 `authorizationEngine` 或裸 `authorizationStore` 做权限裁决。 | 已完成。本子系统后续只允许维护性变更；策略编排类能力继续归入应用层“策略管理”，不能回流到安全权限层硬编码业务流程。 | 已通过 `npm run server:verify:authorization-migration`、`npm run server:verify:console-auth`、`npm run server:verify:tool-management`、`npm run server:verify:architecture-patterns`，并通过直接调用扫描确认目标路径无权限直连。 |
-| 基建层 | 模块管理 | `[~]` | 55% | mount 注册、能力声明方向明确；Runtime summary 已抽离；Tool Management 投影已隔离。 | MCP adapter 和模块暴露路径仍有 runtime/platform 直接依赖；热加载和能力声明需要独立 contract test。 | module-management 只识别 mount contract/module descriptor/provider interface，不了解业务实现。 |
+| 基建层 | 模块管理 | `[x]` | 100% | 已落地 `pact.module-management.v1` provider，统一封装 runtime mount snapshot、mount config 持久化、热加载、runtime summary、模块模板、脚手架和 contract test；接口层、Console executor、Runtime summary 和模块生态 HTTP handler 不再直接读取 `runtime.runtimeOptions`、`runtime.mounts` 或 `mount-config` 文件。 | 已完成。本子系统后续只允许维护性变更；业务模块的具体 mount 实现和知识类 runtime 质量不计入模块管理边界。 | 已通过 `npm run server:verify:module-ecosystem`、`npm run server:verify:architecture-patterns` 和 `npm run server:verify:platform-layout`；架构守卫已禁止上层回退到 mount-config/module-ecosystem 直连。 |
 | 基建层 | 算法和数据结构 | `[~]` | 40% | analysis/mount 摘要已抽离；架构图中的 Merkle Index、Prefix/Range Index、Checkpoint Projection 是基建能力边界。 | 算法模块注册、选择、调用和能力声明还没有统一协议入口；checkpoint projection 需要与 storage/jobs 解耦验收。 | 数据结构层保持无副作用工具/索引/projection，不引入 HTTP/UI/业务 runtime。 |
 | 基建层 | 存储 | `[~]` | 45% | upload session 已通过 provider 边界隔离；启动期 storage summary 已走 internal operation。 | `jobs-controller` 仍直接处理 metadataStore、raw object、路径解析；`api-facade` 还有 storage summary 直接聚合。 | LSM ingest、CAS block、Merkle DAG、任务持久化只通过 storage provider/repository contract 暴露。 |
 | 基建层 | 运维基础 | `[~]` | 60% | ops observation handler 已拆分；架构守卫脚本已覆盖多条边界。 | 运维动作与业务变更边界还需继续收口；最新改动需全量 verify。 | 运维层只做日志、健康状态、监控告警、诊断和 runbook 调度；业务变更必须走 operation。 |

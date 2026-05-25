@@ -1,20 +1,51 @@
 import { registerPlatformService } from "../../interactive/platform-registry.mjs";
 
 export function registerModuleManagementPlatformServices(registry, {
+  moduleManagement = null,
   runtime = null,
   runtimeOptions = {}
 } = {}) {
+  const runtimeState = moduleManagement?.getRuntimeState
+    ? moduleManagement.getRuntimeState()
+    : {
+        profile: runtimeOptions?.profile || "",
+        mountNames: Object.keys(runtime?.mounts || {})
+      };
+  const mountList = moduleManagement?.listMounts
+    ? moduleManagement.listMounts()
+    : Object.entries(runtime?.mounts || {}).map(([name, mount]) => ({
+        name,
+        id: mount?.id || "",
+        kind: mount?.kind || name,
+        enabled: mount?.enabled !== false,
+        reason: mount?.reason || ""
+      }));
+  const mountNames = mountList.map((mount) => mount.name).filter(Boolean);
   return [
+    registerPlatformService(registry, {
+      id: "module-management.provider",
+      platform: "module-management",
+      label: "Module management provider",
+      kind: "provider",
+      ownerFeatureId: "module-management-core",
+      value: moduleManagement,
+      metadata: {
+        protocolVersion: moduleManagement?.protocolVersion || "",
+        profile: runtimeState.profile || "",
+        mountNames
+      }
+    }),
     registerPlatformService(registry, {
       id: "module-management.serverRuntime",
       platform: "module-management",
-      label: "Server runtime and mount manager",
-      kind: "runtime",
+      label: "Module management runtime port",
+      kind: "provider",
       ownerFeatureId: "module-management-core",
-      value: runtime,
+      value: moduleManagement || runtime,
       metadata: {
-        profile: runtimeOptions?.profile || "",
-        mountNames: Object.keys(runtime?.mounts || {})
+        protocolVersion: moduleManagement?.protocolVersion || "",
+        profile: runtimeState.profile || "",
+        mountNames
       }
     }),
     registerPlatformService(registry, {
@@ -23,9 +54,10 @@ export function registerModuleManagementPlatformServices(registry, {
       label: "Active mounts",
       kind: "mounts",
       ownerFeatureId: "module-management-core",
-      value: runtime?.mounts || {},
+      value: mountList,
       metadata: {
-        mountNames: Object.keys(runtime?.mounts || {})
+        protocolVersion: moduleManagement?.protocolVersion || "",
+        mountNames
       }
     })
   ];

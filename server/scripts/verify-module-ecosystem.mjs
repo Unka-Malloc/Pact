@@ -14,6 +14,10 @@ import {
   scaffoldModule,
   validateCapabilityPackageScaffoldManifest
 } from "../platform/common/module-manager/module-ecosystem/index.mjs";
+import {
+  createModuleManagementProvider,
+  MODULE_MANAGEMENT_PROTOCOL_VERSION
+} from "../platform/common/module-manager/module-management-provider.mjs";
 import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -123,6 +127,75 @@ function verifyOperationsAndTools() {
   assert.equal(scaffoldTool.requiresApproval, true);
 }
 
+async function verifyModuleManagementProvider(tempRoot) {
+  let runtimeOptions = {
+    profile: "verify",
+    cwd: tempRoot,
+    mountModules: {},
+    mountRouting: {}
+  };
+  let mountGeneration = 0;
+  const runtime = {
+    get runtimeOptions() {
+      return runtimeOptions;
+    },
+    get mountGeneration() {
+      return mountGeneration;
+    },
+    get mounts() {
+      return {
+        documentParser: {
+          id: "verify/document-parser",
+          kind: "documentParser",
+          enabled: true,
+          async extractDocument() {
+            return { text: "ok", metadata: {}, embeddedDocuments: [] };
+          }
+        }
+      };
+    },
+    createExecutionView() {
+      return { mounts: this.mounts, runtimeOptions };
+    },
+    async applyMountConfig(config = {}) {
+      runtimeOptions = {
+        ...runtimeOptions,
+        mountModules: config.mountModules || {},
+        mountRouting: config.mountRouting || {}
+      };
+      mountGeneration += 1;
+      return this.createExecutionView();
+    },
+    async refreshMounts() {
+      mountGeneration += 1;
+      return this.createExecutionView();
+    }
+  };
+  const provider = createModuleManagementProvider({
+    runtime,
+    userDataPath: path.join(tempRoot, "provider-data")
+  });
+
+  assert.equal(provider.protocolVersion, MODULE_MANAGEMENT_PROTOCOL_VERSION);
+  assert.equal(provider.listModuleTemplates().protocolVersion, MODULE_ECOSYSTEM_PROTOCOL_VERSION);
+  assert.equal(provider.listMounts()[0].supportsStructuredDocument, true);
+
+  const snapshot = await provider.getMountsSnapshot();
+  assert.equal(snapshot.runtime.mounts[0].id, "verify/document-parser");
+
+  const updated = await provider.setMounts({
+    mountModules: {
+      documentParser: "./custom-document-parser.mjs"
+    }
+  });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.runtime.mountModules.documentParser, "./custom-document-parser.mjs");
+
+  const reloaded = await provider.reloadMounts();
+  assert.equal(reloaded.ok, true);
+  assert.equal(provider.getMountState().mountModules.documentParser, "./custom-document-parser.mjs");
+}
+
 async function main() {
   const templates = listModuleTemplates();
   assert.equal(templates.protocolVersion, MODULE_ECOSYSTEM_PROTOCOL_VERSION);
@@ -134,6 +207,7 @@ async function main() {
   try {
     await verifyMountScaffold(tempRoot);
     await verifyPackageScaffold(tempRoot);
+    await verifyModuleManagementProvider(tempRoot);
     verifyOperationsAndTools();
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });

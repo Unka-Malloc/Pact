@@ -7,6 +7,7 @@ import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
 export function createSystemControllerContexts({
   userDataPath,
   runtime,
+  moduleManagement = null,
   jobManager,
   metadataStore,
   protocolEventBus = null,
@@ -179,6 +180,7 @@ export function createSystemControllerContexts({
   function settingsAgentGatewayContext(authSession = null, extra = {}) {
     return {
       runtime,
+      moduleManagement,
       protocolEventBus,
       contextRuntime,
       agentWorkspace,

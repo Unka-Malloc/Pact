@@ -32,6 +32,7 @@ export function createSystemController({
   userDataPath,
   distPath,
   runtime,
+  moduleManagement,
   jobManager,
   metadataStore,
   serverLabel,
@@ -83,6 +84,7 @@ export function createSystemController({
   } = createSystemControllerContexts({
     userDataPath,
     runtime,
+    moduleManagement,
     jobManager,
     metadataStore,
     protocolEventBus,
@@ -224,6 +226,7 @@ export function createSystemController({
       serverLabel,
       distPath,
       runtime,
+      moduleManagement,
       jobManager,
       metadataStore,
       securityPermissions: effectiveSecurityPermissions,
@@ -248,7 +251,8 @@ export function createSystemController({
     }),
     ...createSystemControllerCapabilityEcosystemHandlers({
       sendConsoleDomainOperation,
-      parseJsonBody
+      parseJsonBody,
+      moduleManagement
     }),
     ...createSystemControllerKnowledgeOperationsHandlers({
       sendConsoleDomainOperation,

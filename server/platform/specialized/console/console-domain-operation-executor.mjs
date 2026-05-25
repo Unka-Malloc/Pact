@@ -42,20 +42,6 @@ import {
 } from "../../common/console/http/api-facade.mjs";
 import { hashClientString, serverToken } from "../../common/security/client-strings.mjs";
 import {
-  getMountConfigPath,
-  getMountConfigPaths,
-  loadMountConfig,
-  mergeMountRouting,
-  saveMountConfig
-} from "../../common/module-manager/mount-config.mjs";
-import {
-  listModuleTemplates,
-  planModuleScaffold,
-  runModuleContractTest,
-  scaffoldModule,
-  validateCapabilityPackageScaffoldManifest
-} from "../../common/module-manager/module-ecosystem/index.mjs";
-import {
   loadSettings,
   normalizeSettings,
   saveSettings
@@ -2472,6 +2458,7 @@ async function executeConsoleStateOperation({ operationId, context }) {
       userDataPath: context.userDataPath,
       distPath: context.distPath,
       runtime: context.runtime,
+      moduleManagement: context.moduleManagement,
       discoveryState: context.discoveryState,
       metadataStore: context.metadataStore,
       serverUrl: context.serverUrl,
@@ -2487,6 +2474,7 @@ async function executeConsoleStateOperation({ operationId, context }) {
       userDataPath: context.userDataPath,
       distPath: context.distPath,
       runtime: context.runtime,
+      moduleManagement: context.moduleManagement,
       discoveryState: context.discoveryState,
       jobManager: context.jobManager,
       metadataStore: context.metadataStore,
@@ -2618,12 +2606,17 @@ async function executeModuleEcosystemOperation({ operationId, input = {}, contex
     return null;
   }
 
+  const moduleManagement = context.moduleManagement;
+  if (!moduleManagement) {
+    return result(503, { error: "模块管理 provider 不可用。" });
+  }
+
   if (id === "module_ecosystem.templates") {
-    return result(200, listModuleTemplates());
+    return result(200, moduleManagement.listModuleTemplates());
   }
   if (id === "module_ecosystem.plan") {
     try {
-      return result(200, await planModuleScaffold(input, { userDataPath: context.userDataPath }));
+      return result(200, await moduleManagement.planModuleScaffold(input));
     } catch (error) {
       return result(400, errorPayload(error, "Module scaffold plan failed.", {
         details: error?.details || []
@@ -2632,7 +2625,7 @@ async function executeModuleEcosystemOperation({ operationId, input = {}, contex
   }
   if (id === "module_ecosystem.scaffold") {
     try {
-      return result(200, await scaffoldModule(input, { userDataPath: context.userDataPath }));
+      return result(200, await moduleManagement.scaffoldModule(input));
     } catch (error) {
       return result(400, errorPayload(error, "Module scaffold failed.", {
         details: error?.details || []
@@ -2642,8 +2635,8 @@ async function executeModuleEcosystemOperation({ operationId, input = {}, contex
   if (id === "module_ecosystem.contract_test") {
     try {
       const contractResult = input.manifest
-        ? validateCapabilityPackageScaffoldManifest(input)
-        : await runModuleContractTest(input, { userDataPath: context.userDataPath });
+        ? moduleManagement.validateCapabilityPackageScaffoldManifest(input)
+        : await moduleManagement.runModuleContractTest(input);
       return result(contractResult.ok === false ? 422 : 200, contractResult);
     } catch (error) {
       return result(400, errorPayload(error, "Module contract test failed."));
@@ -2753,8 +2746,8 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
           modelLibraryEntries: registry.getModelLibraryEntries()
         }
       : saved;
-    if (typeof context.runtime?.refreshMounts === "function") {
-      await context.runtime.refreshMounts({ settings: runtimeSettings });
+    if (typeof context.moduleManagement?.refreshMounts === "function") {
+      await context.moduleManagement.refreshMounts({ settings: runtimeSettings });
     }
     const redactedSettings = await loadAgentRuntimeSettings(context, { redactSecrets: true });
     await publishProtocolEvent(
@@ -3946,14 +3939,6 @@ async function executeKnowledgeGraphOperation({ operationId, input = {}, context
   }));
 }
 
-function runtimeMountState(runtime) {
-  return {
-    mountGeneration: runtime.mountGeneration || 0,
-    mountModules: runtime.runtimeOptions.mountModules,
-    mountRouting: runtime.runtimeOptions.mountRouting
-  };
-}
-
 async function executeRuntimeMountOperation({ operationId, input = {}, context }) {
   const id = String(operationId || "");
   const handledOperations = new Set([
@@ -3965,93 +3950,24 @@ async function executeRuntimeMountOperation({ operationId, input = {}, context }
     return null;
   }
 
-  const runtime = context.runtime;
-  if (!runtime) {
-    return result(503, { error: "运行时不可用。" });
+  const moduleManagement = context.moduleManagement;
+  if (!moduleManagement) {
+    return result(503, { error: "模块管理 provider 不可用。" });
   }
-  const userDataPath = context.userDataPath;
 
   if (id === "runtime.mounts") {
-    const settings = await loadSettings(userDataPath, { redactSecrets: true });
-    const savedConfig = await loadMountConfig(userDataPath);
-    const runtimeInfo = await buildRuntimeInfo({
-      userDataPath,
-      distPath: context.distPath,
-      runtime,
-      discoveryState: context.discoveryState,
-      metadataStore: context.metadataStore,
-      serverUrl: context.serverUrl,
-      securityPermissions: context.securityPermissions,
-      request: context.request,
+    return result(200, await moduleManagement.getMountsSnapshot({
       features: context.features,
-      consoleDomainServices: context.consoleDomainServices
-    });
-    return result(200, {
-      path: getMountConfigPath(userDataPath),
-      paths: getMountConfigPaths(userDataPath),
-      value: savedConfig,
-      runtime: {
-        ...runtimeMountState(runtime),
-        mounts: Object.entries(runtime.mounts || {}).map(([name, mount]) => ({
-          name,
-          id: mount?.id || "",
-          kind: mount?.kind || name,
-          enabled: mount?.enabled !== false,
-          reason: mount?.reason || ""
-        }))
-      },
-      analysisModules: runtimeInfo.runtime.analysisModules,
-      currentAnalysisModuleId: settings.analysisModuleId
-    });
+      listAvailableAnalysisModules: context.consoleDomainServices?.listAvailableAnalysisModules
+    }));
   }
 
   if (id === "runtime.set_mounts") {
-    const value = input?.value || input;
-    const currentSavedConfig = await loadMountConfig(userDataPath);
-    const incomingMountModules =
-      value?.mountModules && typeof value.mountModules === "object" && !Array.isArray(value.mountModules)
-        ? value.mountModules
-        : {};
-    const candidateConfig = {
-      mountModules: {
-        ...(runtime.runtimeOptions.mountModules || {}),
-        ...incomingMountModules
-      },
-      mountRouting: {
-        ...mergeMountRouting(runtime.runtimeOptions.mountRouting || {}, (value && value.mountRouting) || {})
-      }
-    };
-    const settings = await loadSettings(userDataPath);
-    try {
-      await runtime.applyMountConfig(candidateConfig, { settings });
-    } catch (error) {
-      return result(400, {
-        ok: false,
-        error: error instanceof Error ? error.message : "挂载配置不可用。",
-        value: currentSavedConfig,
-        runtime: runtimeMountState(runtime)
-      });
+    const operationResult = await moduleManagement.setMounts(input?.value || input);
+    if (operationResult.ok === false) {
+      const { statusCode = 400, ...payload } = operationResult;
+      return result(statusCode, payload);
     }
-
-    let savedConfig;
-    try {
-      savedConfig = await saveMountConfig(userDataPath, candidateConfig);
-    } catch (error) {
-      await runtime.applyMountConfig(currentSavedConfig, { settings }).catch(() => {});
-      return result(500, {
-        ok: false,
-        error: error instanceof Error ? error.message : "挂载配置持久化失败，运行态已回滚。",
-        value: currentSavedConfig,
-        runtime: runtimeMountState(runtime)
-      });
-    }
-
-    const operationResult = {
-      path: getMountConfigPath(userDataPath),
-      paths: getMountConfigPaths(userDataPath),
-      value: savedConfig,
-      runtime: runtimeMountState(runtime)
-    };
     await publishProtocolEvent(
       context.protocolEventBus,
       "runtime.mounts",
@@ -4062,30 +3978,11 @@ async function executeRuntimeMountOperation({ operationId, input = {}, context }
   }
 
   if (id === "runtime.reload_mounts") {
-    const settings = input?.settings
-      ? await saveSettings(userDataPath, input.settings, { redactSecrets: false })
-      : await loadSettings(userDataPath);
-    const savedConfig = await loadMountConfig(userDataPath);
-    try {
-      await runtime.applyMountConfig(savedConfig, { settings });
-    } catch (error) {
-      return result(400, {
-        ok: false,
-        error: error instanceof Error ? error.message : "挂载配置不可用。",
-        value: savedConfig,
-        ...runtimeMountState(runtime),
-        runtime: runtimeMountState(runtime)
-      });
+    const operationResult = await moduleManagement.reloadMounts(input);
+    if (operationResult.ok === false) {
+      const { statusCode = 400, ...payload } = operationResult;
+      return result(statusCode, payload);
     }
-
-    const operationResult = {
-      ok: true,
-      path: getMountConfigPath(userDataPath),
-      paths: getMountConfigPaths(userDataPath),
-      value: savedConfig,
-      ...runtimeMountState(runtime),
-      runtime: runtimeMountState(runtime)
-    };
     await publishProtocolEvent(
       context.protocolEventBus,
       "runtime.mounts",

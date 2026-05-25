@@ -7,6 +7,7 @@ import { createPlatformRegistry } from "../platform/interactive/platform-registr
 import { registerCorePlatformServices } from "../platform/common/platform-core/register.mjs";
 import { registerSecurityPlatformServices } from "../platform/common/security/register.mjs";
 import { registerDataStructurePlatformServices } from "../platform/common/data-structure/register.mjs";
+import { createModuleManagementProvider } from "../platform/common/module-manager/module-management-provider.mjs";
 import { registerModuleManagementPlatformServices } from "../platform/common/module-manager/register.mjs";
 import { registerStoragePlatformServices } from "../platform/common/storage/register.mjs";
 import { registerDevopsPlatformServices } from "../platform/common/devops/register.mjs";
@@ -203,16 +204,39 @@ async function assertInteractiveRegistrations() {
     },
     userDataPath: "verify-data"
   });
-  registerModuleManagementPlatformServices(registry, {
+  const moduleManagement = createModuleManagementProvider({
+    userDataPath: "verify-data",
     runtime: {
-      mounts: {
-        documentParser: {},
-        knowledgeBase: {}
+      get runtimeOptions() {
+        return {
+          profile: "verify",
+          cwd: "verify",
+          mountModules: {},
+          mountRouting: {}
+        };
+      },
+      get mountGeneration() {
+        return 1;
+      },
+      get mounts() {
+        return {
+          documentParser: {},
+          knowledgeBase: {}
+        };
+      },
+      createExecutionView() {
+        return {};
+      },
+      async applyMountConfig() {
+        return {};
+      },
+      async refreshMounts() {
+        return {};
       }
-    },
-    runtimeOptions: {
-      profile: "verify"
     }
+  });
+  registerModuleManagementPlatformServices(registry, {
+    moduleManagement
   });
   registerSecurityPlatformServices(registry, {
     consoleAuth: {},
@@ -231,6 +255,7 @@ async function assertInteractiveRegistrations() {
     "core.operations.concurrencyScope",
     "data-structure.checkpointTree",
     "storage.metadataStore",
+    "module-management.provider",
     "module-management.serverRuntime",
     "module-management.mounts",
     "devops.processStatus.get",

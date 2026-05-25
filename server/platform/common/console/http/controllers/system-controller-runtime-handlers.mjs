@@ -13,6 +13,7 @@ export function createSystemControllerRuntimeHandlers({
   serverLabel,
   distPath,
   runtime,
+  moduleManagement,
   jobManager,
   metadataStore,
   securityPermissions,
@@ -175,6 +176,7 @@ export function createSystemControllerRuntimeHandlers({
         context: {
           distPath,
           runtime,
+          moduleManagement,
           discoveryState: getDiscoveryState(),
           metadataStore,
           serverUrl: getListenUrl(),
@@ -200,7 +202,7 @@ export function createSystemControllerRuntimeHandlers({
         operationId: operation?.id || "runtime.mounts",
         response,
         context: {
-          runtime,
+          moduleManagement,
           distPath,
           discoveryState: getDiscoveryState(),
           metadataStore,
@@ -218,7 +220,7 @@ export function createSystemControllerRuntimeHandlers({
         operationId: operation?.id || "runtime.set_mounts",
         input: parseJsonBody(requestBody),
         response,
-        context: { runtime, protocolEventBus },
+        context: { moduleManagement, protocolEventBus },
         errorMessage: "保存挂载配置失败。"
       });
     },
@@ -227,7 +229,7 @@ export function createSystemControllerRuntimeHandlers({
         operationId: operation?.id || "runtime.reload_mounts",
         input: parseJsonBody(requestBody),
         response,
-        context: { runtime, protocolEventBus },
+        context: { moduleManagement, protocolEventBus },
         errorMessage: "重载挂载配置失败。"
       });
     },
@@ -238,6 +240,7 @@ export function createSystemControllerRuntimeHandlers({
         context: {
           distPath,
           runtime,
+          moduleManagement,
           discoveryState: getDiscoveryState(),
           jobManager,
           metadataStore,
