@@ -352,7 +352,7 @@ Local agents / humans / scripts
 - `agent`：agent workspace、agent context、agent memory、agent gateway。
 - `capabilities/strategy-management`：`pact.strategy-management.v1` provider，统一处理 workflow policy、agent policy、模型路由策略包装和工具调用策略预览。
 - `capabilities/tools`：Tool Management、catalog、grant、policy、execute 和 audit。
-- `capabilities/skills`：SkillLibrary、skill registry、skill bundle 和 skill 使用事件。
+- `capabilities/skills`：`pact.tool-skill-management.v1` provider、SkillLibrary、skill registry、skill bundle、MCP Skill Hub 语义入口和 skill 使用事件。MCP adapter、console grant / authorization / passthrough、client connection projection 只能通过该 provider 访问 Tool/Skill 能力，不能直接持有 Tool Management `registry/store/runtime/router`。
 
 这些模块可以拥有各自 runtime，但不能绕过 Workspace API 改写公共状态。策略管理只决定流程、调用和门禁策略；真实认证、授权、grant、scope 和 denied audit 仍归 `pact.security-permissions.v1`，应用层不能把安全权限裁决重新硬编码到策略模块里。
 
@@ -656,7 +656,7 @@ pact.codespace
 pact.skillHub
 ```
 
-v0.0.1 不保留旧入口 alias。`tools/list` 的产品口径是五个语义入口，不再把内部 operation 展开为 20+ 个扁平 MCP tools。
+v0.0.1 不保留旧入口 alias。`tools/list` 的产品口径是五个语义入口，不再把内部 operation 展开为 20+ 个扁平 MCP tools。MCP adapter 只负责 JSON-RPC / SSE / handshake / envelope 转换；Tool/Skill 能力发现、授权、调用、local grant、workspace ref 解析和返回脱敏必须下沉到 `pact.tool-skill-management.v1` provider。
 
 `workspace.info`、`workspace.file.upload`、`knowledge.search`、`workspace.checkpoint.restore.preview` 等名称是 Operation Registry / Tool Management 的 operation id，只能作为分类入口的 `operation` 参数出现，不能被写成 MCP tool name。公开 checkpoint operation id 使用 `workspace.checkpoint.tree.list`、`workspace.checkpoint.restore.preview` 和 `workspace.checkpoint.restore`。
 
@@ -1105,7 +1105,7 @@ Storage and Indexes
 - `server/platform/interactive`
   - 服务层装配：composition root、provider registry、feature profile、runtime providers、public call surface。
 - `server/platform/specialized`
-  - 应用能力层：knowledge、agent workspace/context/memory、capabilities/tools、capabilities/skills。
+  - 应用能力层：knowledge、agent workspace/context/memory、capabilities/tools、capabilities/skills，其中通用工具与技能通过 `pact.tool-skill-management.v1` provider 聚合对外访问。
 - `server/platform/modules`
   - 外置模块和本地运行时资源，例如 Tika、OCR、document parser、可替换 mount runtime。
 - `server/services`

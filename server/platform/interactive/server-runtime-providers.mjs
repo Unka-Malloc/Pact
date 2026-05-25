@@ -1,5 +1,6 @@
 import { loadSettings } from "../common/platform-core/settings.mjs";
 import { createStrategyManagementProvider } from "../specialized/capabilities/strategy-management/strategy-management-provider.mjs";
+import { createToolSkillManagementProvider } from "../specialized/capabilities/skills/tool-skill-management-provider.mjs";
 import { createToolManagementPlatform } from "../specialized/capabilities/tools/tool-management-core/index.mjs";
 import { createToolManagementStore } from "../specialized/capabilities/tools/tool-management-core/store.mjs";
 
@@ -39,6 +40,18 @@ export function createServerToolManagementPlatform({
     consoleAuth,
     securityPermissions,
     strategyManagementProvider,
+    logger
+  });
+}
+
+export function createServerToolSkillManagementProvider({
+  toolManagementPlatform,
+  securityPermissions,
+  logger
+}) {
+  return createToolSkillManagementProvider({
+    toolManagementPlatform,
+    securityPermissions,
     logger
   });
 }

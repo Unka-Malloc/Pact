@@ -20,7 +20,7 @@ export function createSystemControllerRuntimeHandlers({
   securityPermissions,
   maintenanceAgent,
   clientRuntimeAllocator,
-  getToolManagementPlatform,
+  getToolSkillManagementProvider = () => null,
   consoleDomainServices
 }) {
   return {
@@ -84,7 +84,7 @@ export function createSystemControllerRuntimeHandlers({
         response,
         context: {
           protocolEventBus,
-          toolManagementPlatform: getToolManagementPlatform(),
+          toolSkillManagementProvider: getToolSkillManagementProvider(),
           request,
           agentSyncFeatureActive: isFeatureActive("agent-gateway")
         },
@@ -125,7 +125,7 @@ export function createSystemControllerRuntimeHandlers({
         context: {
           storageProvider,
           discoveryState: getDiscoveryState(),
-          toolManagementPlatform: getToolManagementPlatform(),
+          toolSkillManagementProvider: getToolSkillManagementProvider(),
           consoleDomainServices
         },
         errorMessage: "读取 discovery client 列表失败。"
@@ -251,7 +251,7 @@ export function createSystemControllerRuntimeHandlers({
           maintenanceAgent,
           clientRuntimeAllocator,
           features: getFeatureEntries ? getFeatureEntries() : null,
-          toolManagementPlatform: getToolManagementPlatform(),
+          toolSkillManagementProvider: getToolSkillManagementProvider(),
           consoleDomainServices
         },
         errorMessage: "读取控制台状态失败。"

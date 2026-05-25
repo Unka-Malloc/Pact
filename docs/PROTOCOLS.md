@@ -817,7 +817,7 @@ v0.0.1 硬切新五类入口，不保留 `pact.workspace`、`pact.list`、`pact.
 }
 ```
 
-`operation` 是 Pact 内部 Operation Registry / Tool Management 的操作 id。外部智能体不直接看到 100+ 个内部 operation，也不把内部 operation 展开成 MCP tool name。需要发现内部能力时，调用 `pact.discovery`：
+`operation` 是 Pact 内部 Operation Registry / Tool Management 的操作 id。外部智能体不直接看到 100+ 个内部 operation，也不把内部 operation 展开成 MCP tool name。MCP adapter 只能把 JSON-RPC 请求转换成 Intent Operation envelope；能力发现、grant 校验、可见 operation 过滤、local grant、workspace ref 解析、工具执行和输出脱敏必须进入 `pact.tool-skill-management.v1` provider。需要发现内部能力时，调用 `pact.discovery`：
 
 ```text
 pact.discovery({ "apiVersion": "pact.mcp.v1", "operation": "pact.capabilities.list", "input": {} })
@@ -918,7 +918,7 @@ npm run server:verify:mcp-http
 
 #### Implementation boundary
 
-MCP handler 不能直接读写文件夹或知识库内部实现。所有 `tools/call` 都必须先进入五个语义入口或兼容入口 `pact.call`，再落到现有 Operation Registry、Tool Management、Workspace API、Policy Engine、Operation Ledger、Checkpoint Tree 和 storage metadata。MCP adapter 只做协议转换、身份注入、版本协商、错误规范化和 streaming / stdio transport 兼容。
+MCP handler 不能直接读写文件夹、知识库内部实现或 Tool Management platform internals。所有 `tools/call` 都必须先进入五个语义入口或兼容入口 `pact.call`，再通过 `pact.tool-skill-management.v1` provider 落到现有 Operation Registry、Tool Management、Workspace API、Policy Engine、Operation Ledger、Checkpoint Tree 和 storage metadata。MCP adapter 只做协议转换、身份注入、版本协商、错误规范化和 streaming / stdio transport 兼容。
 
 本机五阶段演示使用的是内部 operation id，不是 MCP tool name。调用方式固定为通过语义入口传递 `operation`：
 
@@ -950,6 +950,18 @@ Skill 贡献排行榜演示：
 3. OpenClaw B 通过面板或 `workspace.skill.list` 看到该 Skill。
 4. B 调用 `workspace.skill.download` 或安装后上报 `workspace.skill.usage.report`。
 5. Pact 只在 Skill 文件真实传完并校验成功后记录 `skill.downloaded`；安装完成后记录 `skill.installed`；实际调用完成后记录 `skill.used` 并执行 `usageCount += 1`。成功使用会提高 `successRate`，跨 workspace 采用会提高 `uniqueWorkspaceAdoptions`，随后刷新 `rankScoreV0`。
+
+## Tool/Skill Management Provider Protocol
+
+`pact.tool-skill-management.v1` 是通用工具与技能的应用层 provider 协议。它聚合 Tool Management catalog/grant/runtime、Skill Hub 语义出口、MCP local grant、workspace ref 公共映射、MCP 输出脱敏和 MCP client connection projection。
+
+服务层和 MCP adapter 的约束：
+
+- 只能调用 `toolSkillManagementProvider.authorizeRequest/listVisibleTools/executeTool/resolveMcpWorkspaceInput/publicMcpToolPayload/createLocalMcpGrant/markLocalMcpGrantUninstalled` 等 provider 方法。
+- 不能直接读取 Tool Management platform 的 `registry`、`store`、`runtime` 或 `router`。
+- console grant、MCP authorization request、Tool Management HTTP passthrough 和 client connection projection 也必须通过 provider 进入 Tool/Skill 子系统。
+
+验收守卫：`npm run server:verify:tool-skill-management` 必须确认 MCP adapter 没有回退到 Tool Management internals，并验证 provider 的授权、可见 operation、执行、local grant、workspace ref 和输出脱敏行为。
 
 ## Code Review Route Protocol
 

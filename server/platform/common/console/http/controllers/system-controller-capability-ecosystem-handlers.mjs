@@ -2,7 +2,6 @@ export function createSystemControllerCapabilityEcosystemHandlers({
   sendConsoleDomainOperation,
   parseJsonBody,
   moduleManagement = null,
-  getToolManagementPlatform = () => null,
   getStrategyManagementProvider = () => null
 }) {
   const strategyOperationIds = new Set([
@@ -187,8 +186,7 @@ export function createSystemControllerCapabilityEcosystemHandlers({
         response,
         context: {
           authSession,
-          strategyManagementProvider: getStrategyManagementProvider(),
-          toolManagementPlatform: getToolManagementPlatform()
+          strategyManagementProvider: getStrategyManagementProvider()
         },
         errorMessage: "策略管理操作失败。"
       });

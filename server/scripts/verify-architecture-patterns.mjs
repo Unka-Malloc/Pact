@@ -299,6 +299,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const knowledgeConsoleSummaryFile = "server/platform/specialized/console/knowledge-console-summary.mjs";
   const runtimeConsoleSummaryFile = "server/platform/specialized/console/runtime-console-summary.mjs";
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
+  const toolSkillManagementProviderFile = "server/platform/specialized/capabilities/skills/tool-skill-management-provider.mjs";
   const securityPermissionsProviderFile = "server/platform/common/security/security-permissions-provider.mjs";
   const moduleManagementProviderFile = "server/platform/common/module-manager/module-management-provider.mjs";
   const wordCloudFile = "server/platform/specialized/console/knowledge-word-cloud-operation-executor.mjs";
@@ -325,6 +326,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const knowledgeConsoleSummary = await read(knowledgeConsoleSummaryFile);
   const runtimeConsoleSummary = await read(runtimeConsoleSummaryFile);
   const toolManagementConnections = await read(toolManagementConnectionsFile);
+  const toolSkillManagementProvider = await read(toolSkillManagementProviderFile);
   const securityPermissionsProvider = await read(securityPermissionsProviderFile);
   const moduleManagementProvider = await read(moduleManagementProviderFile);
   const wordCloud = await read(wordCloudFile);
@@ -1689,16 +1691,28 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   }
   for (const needle of [
     "buildToolManagementClientConnectionRows",
-    "listGrants",
-    "isMcpPluginGrant",
-    "mcpGrantConnectionState",
-    "metadata.connectorVersion",
-    "sourceGrantId: grant.id"
+    "listMcpClientConnections"
   ]) {
     assertTextIncludes(
       toolManagementConnections,
       needle,
-      `${toolManagementConnectionsFile} must own Tool Management grant-to-client connection projection ${needle}`
+      `${toolManagementConnectionsFile} must delegate Tool Management grant-to-client connection projection through provider ${needle}`
+    );
+  }
+  for (const needle of [
+    "TOOL_SKILL_MANAGEMENT_PROTOCOL_VERSION",
+    "listMcpClientConnections",
+    "authorizeRequest",
+    "createLocalMcpGrant",
+    "markLocalMcpGrantUninstalled",
+    "resolveMcpWorkspaceInput",
+    "publicMcpToolPayload",
+    "sourceGrantId: grant.id"
+  ]) {
+    assertTextIncludes(
+      toolSkillManagementProvider,
+      needle,
+      `${toolSkillManagementProviderFile} must own Tool/Skill provider projection ${needle}`
     );
   }
   assertTextIncludes(

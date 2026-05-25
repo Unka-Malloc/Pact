@@ -72,52 +72,14 @@ function mcpGrantConnectionState(grant, { offlineAfterSeconds = 300 } = {}) {
 }
 
 export function buildToolManagementClientConnectionRows(
-  toolManagementPlatform,
+  toolSkillManagementProvider,
   { offlineAfterSeconds = 300 } = {}
 ) {
-  const listGrants = toolManagementPlatform?.store?.listGrants;
-  if (typeof listGrants !== "function") {
+  if (typeof toolSkillManagementProvider?.listMcpClientConnections !== "function") {
     return [];
   }
-
   try {
-    return listGrants.call(toolManagementPlatform.store, { includeRevoked: true })
-      .filter(isMcpPluginGrant)
-      .flatMap((grant) => {
-        const connection = mcpGrantConnectionState(grant, { offlineAfterSeconds });
-        const metadata = asObject(grant.metadata);
-        const targets = mcpGrantTargets(grant).filter((target) => !isMcpGrantTargetUninstalled(grant, target));
-        return targets.map((target, index) => {
-          const targetKey = targets.length > 1 ? `${slugText(target)}-${index + 1}` : slugText(target);
-          const lastSeenAt = compactText(grant.lastUsedAt || grant.updatedAt || grant.createdAt);
-          return {
-            clientId: `mcp:${grant.id}:${targetKey}`,
-            clientLabel: target || grant.label || grant.id,
-            appVersion: compactText(metadata.connectorVersion),
-            platform: "MCP 插件",
-            hostname: target || "",
-            bootstrapUrl: "",
-            currentServiceUrl: "",
-            desiredServiceUrl: "",
-            currentJobServiceUrl: "",
-            configVersion: "",
-            migrationState: connection.migrationState,
-            connectionKind: MCP_PLUGIN_CONNECTION.kind,
-            connectionMethod: MCP_PLUGIN_CONNECTION.method,
-            connectionState: connection.state,
-            connectionStatusLabel: connection.label,
-            connectionDetail: "Tool Management 授权",
-            supportsMigration: false,
-            sourceGrantId: grant.id,
-            busy: false,
-            lastJobId: "",
-            lastError: "",
-            firstSeenAt: compactText(grant.createdAt),
-            lastSeenAt,
-            lastSeenServerId: compactText(metadata.serverId)
-          };
-        });
-      });
+    return toolSkillManagementProvider.listMcpClientConnections({ offlineAfterSeconds });
   } catch {
     return [];
   }

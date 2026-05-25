@@ -272,7 +272,7 @@ export async function buildConsoleState({
   maintenanceAgent = null,
   clientRuntimeAllocator = null,
   features = null,
-  toolManagementPlatform = null,
+  toolSkillManagementProvider = null,
   consoleDomainServices = null
 }) {
   const domainServices = normalizeConsoleDomainServices(consoleDomainServices);
@@ -298,7 +298,7 @@ export async function buildConsoleState({
     })).then(async (clientRegistrations) =>
       buildClientConnectionList(
         clientRegistrations,
-        await domainServices.buildToolManagementClientConnectionRows(toolManagementPlatform, {
+        await domainServices.buildToolManagementClientConnectionRows(toolSkillManagementProvider, {
           offlineAfterSeconds: discoveryState.offlineAfterSeconds
         })
       )

@@ -4,7 +4,7 @@ export function createSystemControllerFoundationHandlers({
   workspaceIdFrom,
   authorizationFacadeContext,
   accessControlContext,
-  getToolManagementPlatform,
+  getToolSkillManagementProvider = () => null,
   getStrategyManagementProvider = () => null,
   agentWorkspace,
   runtime
@@ -60,7 +60,7 @@ export function createSystemControllerFoundationHandlers({
         operationId: operation?.id || "authorization.grants.create",
         input: protocolPayload(requestBody),
         response,
-        context: { toolManagementPlatform: getToolManagementPlatform() },
+        context: { toolSkillManagementProvider: getToolSkillManagementProvider() },
         errorMessage: "创建统一授权 grant 失败。"
       });
     },
@@ -72,7 +72,7 @@ export function createSystemControllerFoundationHandlers({
           grantId
         },
         response,
-        context: { toolManagementPlatform: getToolManagementPlatform() },
+        context: { toolSkillManagementProvider: getToolSkillManagementProvider() },
         errorMessage: "撤销统一授权 grant 失败。"
       });
     },
@@ -81,7 +81,7 @@ export function createSystemControllerFoundationHandlers({
         operationId: operation?.id || "tool_management.mcp.request_authorization",
         input: protocolPayload(requestBody),
         response,
-        context: { toolManagementPlatform: getToolManagementPlatform(), request },
+        context: { toolSkillManagementProvider: getToolSkillManagementProvider(), request },
         errorMessage: "MCP Authorization API request failed."
       });
     },
@@ -90,7 +90,7 @@ export function createSystemControllerFoundationHandlers({
         operationId: operation?.id || "tool_management.mcp.list_requests",
         input: protocolPayload(Buffer.alloc(0), url),
         response,
-        context: { toolManagementPlatform: getToolManagementPlatform() },
+        context: { toolSkillManagementProvider: getToolSkillManagementProvider() },
         errorMessage: "MCP Authorization API list failed."
       });
     },
@@ -102,7 +102,7 @@ export function createSystemControllerFoundationHandlers({
           requestId
         },
         response,
-        context: { toolManagementPlatform: getToolManagementPlatform() },
+        context: { toolSkillManagementProvider: getToolSkillManagementProvider() },
         errorMessage: "MCP Authorization API resolve failed."
       });
     },
@@ -112,7 +112,7 @@ export function createSystemControllerFoundationHandlers({
         input: {},
         response,
         context: {
-          toolManagementPlatform: getToolManagementPlatform(),
+          toolSkillManagementProvider: getToolSkillManagementProvider(),
           strategyManagementProvider: getStrategyManagementProvider(),
           request,
           response,

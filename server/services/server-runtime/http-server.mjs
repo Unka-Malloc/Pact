@@ -26,7 +26,8 @@ import {
 } from "../../platform/interactive/composition-root.mjs";
 import {
   createServerRuntimeProviders,
-  createServerToolManagementPlatform
+  createServerToolManagementPlatform,
+  createServerToolSkillManagementProvider
 } from "../../platform/interactive/server-runtime-providers.mjs";
 import {
   loadDiscoveryConfig,
@@ -431,6 +432,7 @@ export async function startHttpServer({
   let listenUrl = "";
   let controllersRef = null;
   let toolManagementPlatformRef = null;
+  let toolSkillManagementProviderRef = null;
   const runtimeProviders = await createServerRuntimeProviders({
     userDataPath,
     runtime,
@@ -446,6 +448,7 @@ export async function startHttpServer({
     runtimeLogger,
     clientRuntimeAllocator,
     getToolManagementPlatform: () => toolManagementPlatformRef,
+    getToolSkillManagementProvider: () => toolSkillManagementProviderRef,
     isFeatureActive,
     isAnyFeatureActive
   });
@@ -527,7 +530,7 @@ export async function startHttpServer({
     queueMonitor: queueMonitorAdapter,
     checkpointTreeApi: dataStructures.checkpointTree,
     devopsProvider: registeredDevopsProvider,
-    getToolManagementPlatform: () => toolManagementPlatformRef,
+    getToolSkillManagementProvider: () => toolSkillManagementProviderRef,
     consoleDomainServices
   });
   const controllers = {
@@ -549,6 +552,12 @@ export async function startHttpServer({
     logger: runtimeLogger
   });
   toolManagementPlatformRef = toolManagementPlatform;
+  const toolSkillManagementProvider = createServerToolSkillManagementProvider({
+    toolManagementPlatform,
+    securityPermissions,
+    logger: runtimeLogger
+  });
+  toolSkillManagementProviderRef = toolSkillManagementProvider;
 
   // ── H-4: in-flight request tracker for graceful drain ───────────────────
   let inFlightCount = 0;
@@ -650,10 +659,9 @@ export async function startHttpServer({
           requestBody,
           method,
           url,
-          toolManagementPlatform,
+          toolSkillManagementProvider,
           listenUrl,
           discoveryState,
-          securityPermissions,
           logger: runtimeLogger
         })
       ) {

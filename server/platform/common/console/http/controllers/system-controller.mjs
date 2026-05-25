@@ -68,7 +68,7 @@ export function createSystemController({
   queueMonitor = null,
   devopsProvider = null,
   getFeatureEntries = () => null,
-  getToolManagementPlatform = () => null,
+  getToolSkillManagementProvider = () => null,
   consoleDomainServices = null
 }) {
   const effectiveSecurityPermissions =
@@ -212,7 +212,7 @@ export function createSystemController({
       workspaceIdFrom,
       authorizationFacadeContext,
       accessControlContext,
-      getToolManagementPlatform,
+      getToolSkillManagementProvider,
       getStrategyManagementProvider: () => strategyManagementProvider,
       agentWorkspace,
       runtime
@@ -239,7 +239,7 @@ export function createSystemController({
       securityPermissions: effectiveSecurityPermissions,
       maintenanceAgent,
       clientRuntimeAllocator,
-      getToolManagementPlatform,
+      getToolSkillManagementProvider,
       consoleDomainServices
     }),
     ...createSystemControllerAgentSettingsHandlers({
@@ -260,7 +260,7 @@ export function createSystemController({
       sendConsoleDomainOperation,
       parseJsonBody,
       moduleManagement,
-      getToolManagementPlatform,
+      getToolSkillManagementProvider,
       getStrategyManagementProvider: () => strategyManagementProvider
     }),
     ...createSystemControllerKnowledgeOperationsHandlers({

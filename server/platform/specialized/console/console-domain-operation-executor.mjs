@@ -755,15 +755,15 @@ async function loadAgentSyncPolicy(context = {}) {
   return import("../../../protocols/agent-sync/policy.mjs");
 }
 
-function authorizeToolManagementScopes({ platform, request, scopes }) {
-  if (!platform?.store?.authorizeRequest) {
+function authorizeToolSkillScopes({ provider, request, scopes }) {
+  if (!provider?.authorizeRequest) {
     return {
       ok: false,
       status: 503,
-      error: "Tool Management API is unavailable."
+      error: "Tool/Skill management provider is unavailable."
     };
   }
-  return platform.store.authorizeRequest({
+  return provider.authorizeRequest({
     request,
     requiredScopes: scopes
   });
@@ -2486,7 +2486,7 @@ async function executeConsoleStateOperation({ operationId, context }) {
       maintenanceAgent: context.maintenanceAgent,
       clientRuntimeAllocator: context.clientRuntimeAllocator,
       features: context.features,
-      toolManagementPlatform: context.toolManagementPlatform,
+      toolSkillManagementProvider: context.toolSkillManagementProvider,
       consoleDomainServices: context.consoleDomainServices
     }));
   }
@@ -3703,8 +3703,8 @@ async function executeAgentSyncOperation({ operationId, input = {}, context }) {
   }
 
   if (id === "agent_sync.publish") {
-    const authorization = authorizeToolManagementScopes({
-      platform: context.toolManagementPlatform,
+    const authorization = authorizeToolSkillScopes({
+      provider: context.toolSkillManagementProvider,
       request: context.request,
       scopes: ["agent_sync:publish"]
     });
@@ -3815,17 +3815,13 @@ async function executeToolManagementAuthorizationOperation({ operationId, input 
     return null;
   }
 
-  const platform = context.toolManagementPlatform;
-  if (!platform?.store) {
-    return result(503, { error: "Tool Management API is unavailable." });
+  const provider = context.toolSkillManagementProvider;
+  if (!provider) {
+    return result(503, { error: "Tool/Skill management provider is unavailable." });
   }
-  const store = platform.store;
 
   if (id === "authorization.grants.create") {
-    if (!store.createGrant) {
-      return result(503, { error: "工具授权存储不可用。" });
-    }
-    const grantResult = store.createGrant(input.grant || input);
+    const grantResult = provider.createAuthorizationGrant(input);
     return result(201, protocolPayload({
       protocolVersion: AUTHORIZATION_PROTOCOL_VERSION,
       grant: grantResult.grant,
@@ -3834,10 +3830,7 @@ async function executeToolManagementAuthorizationOperation({ operationId, input 
   }
 
   if (id === "authorization.grants.revoke") {
-    if (!store.revokeGrant) {
-      return result(503, { error: "工具授权存储不可用。" });
-    }
-    const grant = store.revokeGrant(input.grantId || input["grant-id"] || input.id || "", input.reason || "");
+    const grant = provider.revokeAuthorizationGrant(input);
     if (!grant) {
       return result(404, { error: "授权 grant 不存在。" });
     }
@@ -3848,57 +3841,19 @@ async function executeToolManagementAuthorizationOperation({ operationId, input 
   }
 
   if (id === "tool_management.mcp.request_authorization") {
-    if (!store.createMcpAuthorizationRequest) {
-      return result(503, { error: "MCP Authorization API is unavailable." });
-    }
-    return result(200, store.createMcpAuthorizationRequest({
-      request: context.request || null,
-      clientName: String(input.clientName || input.name || "").trim(),
-      requestedScopes: Array.isArray(input.requestedScopes) ? input.requestedScopes : [],
-      requestedTools: Array.isArray(input.requestedTools) ? input.requestedTools : [],
-      reason: String(input.reason || "").trim()
+    return result(200, provider.createMcpAuthorizationRequest(input, {
+      request: context.request || null
     }));
   }
 
   if (id === "tool_management.mcp.list_requests") {
-    if (!store.listMcpAuthorizationRequests) {
-      return result(503, { error: "MCP Authorization API is unavailable." });
-    }
-    const status = input.status || "pending";
     return result(200, {
-      requests: store.listMcpAuthorizationRequests({ status })
+      requests: provider.listMcpAuthorizationRequests(input)
     });
   }
 
   if (id === "tool_management.mcp.resolve_request") {
-    if (!store.resolveMcpAuthorizationRequest) {
-      return result(503, { error: "MCP Authorization API is unavailable." });
-    }
-    const requestId = String(input.requestId || input["request-id"] || input.id || "").trim();
-    const resolution = String(input.resolution || "").trim();
-    let grantId = "";
-    if (resolution === "approved") {
-      if (!store.createGrant) {
-        return result(503, { error: "工具授权存储不可用。" });
-      }
-      const clientName = String(input.clientName || "MCP Client");
-      const grantResult = store.createGrant({
-        label: `${clientName} (MCP Client)`,
-        type: "mcp-client",
-        scopes: Array.isArray(input.scopes) ? input.scopes : [],
-        toolsets: Array.isArray(input.toolsets) ? input.toolsets : [],
-        toolAllow: Array.isArray(input.toolAllow) ? input.toolAllow : [],
-        enabled: true,
-        reason: `Approved MCP authorization request ${requestId}`
-      });
-      grantId = grantResult.grant.id;
-    }
-
-    const success = store.resolveMcpAuthorizationRequest({
-      requestId,
-      resolution,
-      grantId
-    });
+    const { success, grantId } = provider.resolveMcpAuthorizationRequest(input);
     if (!success) {
       return result(404, { error: "Request not found or already resolved." });
     }
@@ -3914,12 +3869,12 @@ async function executeToolManagementPassthroughOperation({ operationId, context 
     return null;
   }
 
-  const platform = context.toolManagementPlatform;
-  if (!platform?.router?.handleToolManagementHttpRequest) {
-    return result(503, { error: "Tool Management API is unavailable." });
+  const provider = context.toolSkillManagementProvider;
+  if (!provider?.handleToolManagementHttpRequest) {
+    return result(503, { error: "Tool/Skill management provider is unavailable." });
   }
 
-  const handled = await platform.router.handleToolManagementHttpRequest({
+  const handled = await provider.handleToolManagementHttpRequest({
     request: context.request,
     response: context.response,
     requestBody: context.requestBody,
@@ -3960,10 +3915,7 @@ async function executeStrategyManagementOperation({ operationId, input = {}, con
   if (id === "strategy.tool_policy.preview") {
     return result(200, {
       schemaVersion: 1,
-      decision: strategyManagementProvider.evaluateToolPolicy({
-        ...input,
-        toolManagementPlatform: context.toolManagementPlatform
-      })
+      decision: strategyManagementProvider.evaluateToolPolicy(input)
     });
   }
   return null;
@@ -4152,7 +4104,7 @@ async function executeDiscoveryOperation({ operationId, input = {}, context }) {
         offlineAfterSeconds: discoveryState.offlineAfterSeconds
       }),
       typeof domainServices.buildToolManagementClientConnectionRows === "function"
-        ? await domainServices.buildToolManagementClientConnectionRows(context.toolManagementPlatform, {
+        ? await domainServices.buildToolManagementClientConnectionRows(context.toolSkillManagementProvider, {
             offlineAfterSeconds: discoveryState.offlineAfterSeconds
           })
         : []
