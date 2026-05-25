@@ -734,7 +734,7 @@ function gateSubmission({ existingDuplicate = null, submission, writePolicy = {}
   };
 }
 
-export function createAgentWorkspace({ userDataPath }) {
+export function createAgentWorkspace({ userDataPath, merkleState = null }) {
   const rootPath = path.join(userDataPath, "agent-workspaces");
   fs.mkdirSync(rootPath, { recursive: true });
   const db = new Database(path.join(rootPath, "agent-workspace.sqlite"));
@@ -1108,7 +1108,155 @@ export function createAgentWorkspace({ userDataPath }) {
     throw new Error("content 或 contentBase64 至少提供一个。");
   }
 
-  function createWorkspaceFolder(input = {}) {
+  function workspaceStateScope(workspace) {
+    return `workspace:${workspace.workspaceId}`;
+  }
+
+  function compactStateCommit(commit = null) {
+    return commit
+      ? {
+          commitId: commit.commitId,
+          eventHash: commit.eventHash,
+          beforeRoot: commit.beforeRoot,
+          afterRoot: commit.afterRoot,
+          contentRefs: asArray(commit.contentRefs),
+          indexRoots: asObject(commit.indexRoots)
+        }
+      : null;
+  }
+
+  function filePayloadMetadata(file = {}) {
+    return {
+      type: file.type || "file",
+      sizeBytes: Number(file.sizeBytes || 0),
+      contentSha256: file.contentSha256 || "",
+      updatedAt: file.updatedAt || file.mtime || ""
+    };
+  }
+
+  async function archiveWorkspacePath(workspace, relativePath, metadata = {}) {
+    if (!merkleState) {
+      return null;
+    }
+    const resolved = resolveWorkspacePath(workspace, relativePath, { allowEmpty: false });
+    if (!fs.existsSync(resolved.absolutePath)) {
+      return null;
+    }
+    const stat = fs.statSync(resolved.absolutePath);
+    if (stat.isFile()) {
+      const content = fs.readFileSync(resolved.absolutePath);
+      const block = await merkleState.cas.putBlock(content, {
+        codec: "raw",
+        metadata: {
+          workspaceId: workspace.workspaceId,
+          relativePath: resolved.relativePath,
+          ...asObject(metadata)
+        }
+      });
+      const manifest = await merkleState.merkleDag.buildManifest("workspace-file", [
+        {
+          path: resolved.relativePath,
+          cid: block.cid,
+          byteLength: block.byteLength,
+          metadata: {
+            contentSha256: block.payloadHash
+          }
+        }
+      ], {
+        workspaceId: workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        type: "file",
+        ...asObject(metadata)
+      });
+      return {
+        rootCid: manifest.rootCid,
+        contentRefs: [manifest.rootCid, block.cid],
+        metadata: {
+          type: "file",
+          sizeBytes: block.byteLength,
+          contentSha256: block.payloadHash
+        }
+      };
+    }
+    if (!stat.isDirectory()) {
+      return null;
+    }
+    const entries = [];
+    const refs = [];
+    const visit = async (absoluteDir, relativeDir) => {
+      const children = fs.readdirSync(absoluteDir, { withFileTypes: true })
+        .filter((entry) => !entry.name.startsWith("."))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const child of children) {
+        const childRelativePath = relativeDir ? `${relativeDir}/${child.name}` : child.name;
+        const childAbsolutePath = path.join(absoluteDir, child.name);
+        if (child.isDirectory()) {
+          await visit(childAbsolutePath, childRelativePath);
+          continue;
+        }
+        if (!child.isFile()) {
+          continue;
+        }
+        const content = fs.readFileSync(childAbsolutePath);
+        const block = await merkleState.cas.putBlock(content, {
+          codec: "raw",
+          metadata: {
+            workspaceId: workspace.workspaceId,
+            relativePath: childRelativePath,
+            ...asObject(metadata)
+          }
+        });
+        refs.push(block.cid);
+        entries.push({
+          path: childRelativePath,
+          cid: block.cid,
+          byteLength: block.byteLength,
+          metadata: {
+            contentSha256: block.payloadHash
+          }
+        });
+      }
+    };
+    await visit(resolved.absolutePath, resolved.relativePath);
+    const manifest = await merkleState.merkleDag.buildManifest("workspace-directory", entries, {
+      workspaceId: workspace.workspaceId,
+      relativePath: resolved.relativePath,
+      type: "directory",
+      ...asObject(metadata)
+    });
+    return {
+      rootCid: manifest.rootCid,
+      contentRefs: [manifest.rootCid, ...refs],
+      metadata: {
+        type: "directory",
+        fileCount: entries.length
+      }
+    };
+  }
+
+  async function commitWorkspaceFileState({
+    workspace,
+    operationId,
+    mutations = [],
+    contentRefs = [],
+    payload = {}
+  } = {}) {
+    if (!merkleState || typeof merkleState.stateCommit?.commit !== "function") {
+      return null;
+    }
+    return compactStateCommit(await merkleState.stateCommit.commit({
+      scope: workspaceStateScope(workspace),
+      operationId,
+      mutations,
+      contentRefs: uniqueStrings(contentRefs),
+      payload: {
+        workspaceId: workspace.workspaceId,
+        ...asObject(payload)
+      }
+    }));
+  }
+
+  async function createWorkspaceFolder(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -1128,10 +1276,31 @@ export function createAgentWorkspace({ userDataPath }) {
     }
     fs.mkdirSync(resolved.absolutePath, { recursive: true });
     updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const archived = await archiveWorkspacePath(access.workspace, resolved.relativePath, {
+      operationId: input.operationId || "agent_workspaces.folder.create"
+    });
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "agent_workspaces.folder.create",
+      mutations: archived
+        ? [{
+            action: "put",
+            key: resolved.relativePath,
+            valueRef: archived.rootCid,
+            metadata: archived.metadata
+          }]
+        : [],
+      contentRefs: archived?.contentRefs || [],
+      payload: {
+        action: "folder.create",
+        path: resolved.relativePath
+      }
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
+      stateCommit,
       folder: fileMetadataFromStat({
         workspaceId: access.workspace.workspaceId,
         relativePath: resolved.relativePath,
@@ -2128,7 +2297,7 @@ export function createAgentWorkspace({ userDataPath }) {
     };
   }
 
-  function uploadWorkspaceFile(input = {}) {
+  async function uploadWorkspaceFile(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -2191,6 +2360,29 @@ export function createAgentWorkspace({ userDataPath }) {
       stat: fs.statSync(resolved.absolutePath),
       includeHash: true
     });
+    const archived = await archiveWorkspacePath(access.workspace, resolved.relativePath, {
+      operationId: input.operationId || "workspace.file.upload"
+    });
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "workspace.file.upload",
+      mutations: archived
+        ? [{
+            action: "put",
+            key: resolved.relativePath,
+            valueRef: archived.rootCid,
+            metadata: filePayloadMetadata(file)
+          }]
+        : [],
+      contentRefs: archived?.contentRefs || [],
+      payload: {
+        action: "file.upload",
+        path: resolved.relativePath,
+        overwritten,
+        sizeBytes: contentBuffer.length,
+        contentSha256: file.contentSha256 || ""
+      }
+    });
     try {
       getRuntimeLogger().info("agent_workspace.file.upload.completed", {
         workspaceId: access.workspace.workspaceId,
@@ -2212,6 +2404,7 @@ export function createAgentWorkspace({ userDataPath }) {
       ok: true,
       workspaceId: access.workspace.workspaceId,
       overwritten,
+      stateCommit,
       file,
       artifact
     };
@@ -2244,7 +2437,7 @@ export function createAgentWorkspace({ userDataPath }) {
     };
   }
 
-  function writeWorkspaceFile(input = {}) {
+  async function writeWorkspaceFile(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -2276,22 +2469,46 @@ export function createAgentWorkspace({ userDataPath }) {
     }
     fs.writeFileSync(resolved.absolutePath, contentBuffer);
     updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const file = fileMetadataFromStat({
+      workspaceId: access.workspace.workspaceId,
+      relativePath: resolved.relativePath,
+      absolutePath: resolved.absolutePath,
+      stat: fs.statSync(resolved.absolutePath),
+      includeHash: true
+    });
+    const archived = await archiveWorkspacePath(access.workspace, resolved.relativePath, {
+      operationId: input.operationId || "workspace.file.write"
+    });
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "workspace.file.write",
+      mutations: archived
+        ? [{
+            action: "put",
+            key: resolved.relativePath,
+            valueRef: archived.rootCid,
+            metadata: filePayloadMetadata(file)
+          }]
+        : [],
+      contentRefs: archived?.contentRefs || [],
+      payload: {
+        action: "file.write",
+        path: resolved.relativePath,
+        sizeBytes: contentBuffer.length,
+        contentSha256: file.contentSha256 || ""
+      }
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       overwritten: true,
-      file: fileMetadataFromStat({
-        workspaceId: access.workspace.workspaceId,
-        relativePath: resolved.relativePath,
-        absolutePath: resolved.absolutePath,
-        stat: fs.statSync(resolved.absolutePath),
-        includeHash: true
-      })
+      stateCommit,
+      file
     };
   }
 
-  function patchWorkspaceFile(input = {}) {
+  async function patchWorkspaceFile(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -2348,6 +2565,35 @@ export function createAgentWorkspace({ userDataPath }) {
     }
     fs.writeFileSync(resolved.absolutePath, nextBuffer);
     updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const file = fileMetadataFromStat({
+      workspaceId: access.workspace.workspaceId,
+      relativePath: resolved.relativePath,
+      absolutePath: resolved.absolutePath,
+      stat: fs.statSync(resolved.absolutePath),
+      includeHash: true
+    });
+    const archived = await archiveWorkspacePath(access.workspace, resolved.relativePath, {
+      operationId: input.operationId || "workspace.file.patch"
+    });
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "workspace.file.patch",
+      mutations: archived
+        ? [{
+            action: "put",
+            key: resolved.relativePath,
+            valueRef: archived.rootCid,
+            metadata: filePayloadMetadata(file)
+          }]
+        : [],
+      contentRefs: archived?.contentRefs || [],
+      payload: {
+        action: "file.patch",
+        path: resolved.relativePath,
+        beforeSha256,
+        afterSha256
+      }
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
@@ -2355,17 +2601,12 @@ export function createAgentWorkspace({ userDataPath }) {
       patched: true,
       beforeSha256,
       afterSha256,
-      file: fileMetadataFromStat({
-        workspaceId: access.workspace.workspaceId,
-        relativePath: resolved.relativePath,
-        absolutePath: resolved.absolutePath,
-        stat: fs.statSync(resolved.absolutePath),
-        includeHash: true
-      })
+      stateCommit,
+      file
     };
   }
 
-  function deleteWorkspaceFile(input = {}) {
+  async function deleteWorkspaceFile(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -2387,6 +2628,24 @@ export function createAgentWorkspace({ userDataPath }) {
       return { ok: false, status: 404, error: "文件不存在。" };
     }
     const stat = fs.statSync(resolved.absolutePath);
+    const deletedPaths = [];
+    if (stat.isDirectory()) {
+      const collect = (absoluteDir, relativeDir) => {
+        const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+          .filter((entry) => !entry.name.startsWith("."))
+          .sort((left, right) => left.name.localeCompare(right.name));
+        for (const entry of entries) {
+          const childRelativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+          const childAbsolutePath = path.join(absoluteDir, entry.name);
+          if (entry.isDirectory()) {
+            collect(childAbsolutePath, childRelativePath);
+          }
+          deletedPaths.push(childRelativePath);
+        }
+      };
+      collect(resolved.absolutePath, resolved.relativePath);
+    }
+    deletedPaths.push(resolved.relativePath);
     const meta = fileMetadataFromStat({
       workspaceId: access.workspace.workspaceId,
       relativePath: resolved.relativePath,
@@ -2403,16 +2662,31 @@ export function createAgentWorkspace({ userDataPath }) {
       fs.unlinkSync(resolved.absolutePath);
     }
     updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "agent_workspaces.file.delete",
+      mutations: deletedPaths.map((relativePath) => ({
+        action: "delete",
+        key: relativePath
+      })),
+      payload: {
+        action: "file.delete",
+        path: resolved.relativePath,
+        recursive: input.recursive === true,
+        deletedPathCount: deletedPaths.length
+      }
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       deleted: true,
+      stateCommit,
       file: meta
     };
   }
 
-  function moveWorkspaceFile(input = {}) {
+  async function moveWorkspaceFile(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -2448,6 +2722,41 @@ export function createAgentWorkspace({ userDataPath }) {
     fs.renameSync(resolvedSource.absolutePath, resolvedTarget.absolutePath);
     updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
     const newStat = fs.statSync(resolvedTarget.absolutePath);
+    const file = fileMetadataFromStat({
+      workspaceId: access.workspace.workspaceId,
+      relativePath: resolvedTarget.relativePath,
+      absolutePath: resolvedTarget.absolutePath,
+      stat: newStat,
+      includeHash: newStat.isFile()
+    });
+    const archived = await archiveWorkspacePath(access.workspace, resolvedTarget.relativePath, {
+      operationId: input.operationId || "agent_workspaces.file.move"
+    });
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "agent_workspaces.file.move",
+      mutations: [
+        {
+          action: "delete",
+          key: resolvedSource.relativePath
+        },
+        ...(archived
+          ? [{
+              action: "put",
+              key: resolvedTarget.relativePath,
+              valueRef: archived.rootCid,
+              metadata: filePayloadMetadata(file)
+            }]
+          : [])
+      ],
+      contentRefs: archived?.contentRefs || [],
+      payload: {
+        action: "file.move",
+        sourcePath: resolvedSource.relativePath,
+        targetPath: resolvedTarget.relativePath,
+        overwrite: input.overwrite === true
+      }
+    });
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
@@ -2455,13 +2764,8 @@ export function createAgentWorkspace({ userDataPath }) {
       moved: true,
       sourcePath: resolvedSource.relativePath,
       targetPath: resolvedTarget.relativePath,
-      file: fileMetadataFromStat({
-        workspaceId: access.workspace.workspaceId,
-        relativePath: resolvedTarget.relativePath,
-        absolutePath: resolvedTarget.absolutePath,
-        stat: newStat,
-        includeHash: newStat.isFile()
-      })
+      stateCommit,
+      file
     };
   }
 
@@ -2501,7 +2805,7 @@ export function createAgentWorkspace({ userDataPath }) {
     };
   }
 
-  function restoreWorkspaceFiles(input = {}) {
+  async function restoreWorkspaceFiles(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -2604,11 +2908,51 @@ export function createAgentWorkspace({ userDataPath }) {
         // Logging must not turn a completed restore into a failed operation.
       }
     }
+    const commitMutations = [];
+    const commitRefs = [];
+    if (!dryRun && applied.length > 0) {
+      for (const action of applied) {
+        if (action.action === "delete") {
+          commitMutations.push({
+            action: "delete",
+            key: action.path
+          });
+          continue;
+        }
+        const archived = await archiveWorkspacePath(access.workspace, action.path, {
+          operationId: input.operationId || "workspace.checkpoint.restore"
+        });
+        if (archived) {
+          commitMutations.push({
+            action: "put",
+            key: action.path,
+            valueRef: archived.rootCid,
+            metadata: archived.metadata
+          });
+          commitRefs.push(...archived.contentRefs);
+        }
+      }
+    }
+    const stateCommit = !dryRun && applied.length > 0
+      ? await commitWorkspaceFileState({
+          workspace: access.workspace,
+          operationId: input.operationId || "workspace.checkpoint.restore",
+          mutations: commitMutations,
+          contentRefs: commitRefs,
+          payload: {
+            action: "files.restore",
+            basePath: snapshot.basePath,
+            appliedCount: applied.length,
+            reason: input.reason || ""
+          }
+        })
+      : null;
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       dryRun,
+      stateCommit,
       basePath: snapshot.basePath,
       deleteExtraneous: snapshot.deleteExtraneous,
       fileCount: snapshot.files.length,

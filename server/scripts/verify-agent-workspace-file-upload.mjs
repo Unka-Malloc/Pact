@@ -250,6 +250,10 @@ try {
     6
   );
   assert.equal(upload.ok, true);
+  assert.ok(upload.stateCommit?.commitId, "upload should return a state commit");
+  assert.ok(upload.stateCommit?.eventHash, "upload should return an event hash");
+  assert.ok(upload.stateCommit?.afterRoot, "upload should return an afterRoot");
+  assert.ok(upload.stateCommit?.contentRefs?.length >= 2, "upload should return content refs");
   assert.equal(upload.file.relativePath, `${folderPath}/a.txt`);
   assert.equal(upload.file.type, "file");
   assert.equal(upload.artifact.title, "a.txt");
@@ -336,6 +340,8 @@ try {
     11
   );
   assert.equal(patch.ok, true);
+  assert.ok(patch.stateCommit?.commitId, "patch should return a state commit");
+  assert.notEqual(patch.stateCommit.afterRoot, upload.stateCommit.afterRoot);
   assert.equal(patch.file.relativePath, `${folderPath}/a.txt`);
   assert.equal(patch.beforeSha256, stat.file.contentSha256);
   assert.match(patch.afterSha256, /^[a-f0-9]{64}$/);

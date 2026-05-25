@@ -503,7 +503,7 @@ function workspaceFileSnapshotFromCheckpointPlan(plan = {}, input = {}) {
   };
 }
 
-function runCheckpointWorkspaceFileRestore({ plan, input = {}, context = {}, dryRun }) {
+async function runCheckpointWorkspaceFileRestore({ plan, input = {}, context = {}, dryRun }) {
   const restoreTarget = workspaceFileSnapshotFromCheckpointPlan(plan, input);
   if (!restoreTarget) {
     return null;
@@ -519,11 +519,12 @@ function runCheckpointWorkspaceFileRestore({ plan, input = {}, context = {}, dry
   if (error) {
     return error;
   }
-  const operationResult = method({
+  const operationResult = await method({
     ...input,
     workspaceId: restoreTarget.workspaceId,
     snapshot: restoreTarget.snapshot,
     dryRun,
+    operationId: input.operationId || "workspace.checkpoint.restore",
     reason: input.reason || "",
     actor: actorFrom(context.authSession, input),
     ...workspaceAccessOptions(context.authSession)
@@ -2303,7 +2304,7 @@ async function executeSystemObservationOperation({ operationId, input = {}, cont
         mode: input.mode || "",
         reason: input.reason || ""
       });
-      const fileRestore = runCheckpointWorkspaceFileRestore({
+      const fileRestore = await runCheckpointWorkspaceFileRestore({
         plan: restorePlan,
         input,
         context,
@@ -2345,7 +2346,7 @@ async function executeSystemObservationOperation({ operationId, input = {}, cont
           })
         : null;
       const fileRestore = restorePlan
-        ? runCheckpointWorkspaceFileRestore({
+        ? await runCheckpointWorkspaceFileRestore({
             plan: restorePlan,
             input,
             context,
@@ -5174,9 +5175,10 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   if (id === "agent_workspaces.folder.create") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "createWorkspaceFolder", "工作空间文件夹接口不可用。");
     if (error) return error;
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       ...input,
+      operationId: id,
       ...access
     });
     return result(operationResult.ok ? 201 : operationResult.status || 400, operationResult);
@@ -5184,7 +5186,7 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   if (id === "agent_workspaces.files.list" || id === "workspace.file.list") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "listWorkspaceFiles", "工作空间文件列表接口不可用。");
     if (error) return error;
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       path: input.path || "",
       folderPath: input.folderPath || input["folder-path"] || "",
@@ -5199,7 +5201,7 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   if (id === "agent_workspaces.file.stat") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "workspaceFileMetadata", "工作空间文件查询接口不可用。");
     if (error) return error;
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       path: input.path || input.filePath || input["file-path"] || "",
       includeHash: !["0", "false", "no"].includes(String(input.includeHash ?? input["include-hash"] ?? "true").toLowerCase()),
@@ -5210,7 +5212,7 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   if (id === "agent_workspaces.file.download" || id === "workspace.file.download" || id === "workspace.file.read") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "downloadWorkspaceFile", "工作空间文件下载接口不可用。");
     if (error) return error;
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       path: input.path || input.filePath || input["file-path"] || "",
       includeText: !["0", "false", "no"].includes(String(input.includeText ?? input["include-text"] ?? "true").toLowerCase()),
@@ -5225,9 +5227,10 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
       return result(400, { error: "请求体必须是 JSON 对象。" });
     }
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       ...input,
+      operationId: id,
       createdBy: actorId || input.createdBy || "",
       ...access
     });
@@ -5239,9 +5242,10 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
       return result(400, { error: "请求体必须是 JSON 对象。" });
     }
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       ...input,
+      operationId: id,
       createdBy: actorId || input.createdBy || "",
       ...access
     });
@@ -5253,9 +5257,10 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
       return result(400, { error: "请求体必须是 JSON 对象。" });
     }
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       ...input,
+      operationId: id,
       createdBy: actorId || input.createdBy || "",
       ...access
     });
@@ -5264,9 +5269,10 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   if (id === "agent_workspaces.file.delete") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "deleteWorkspaceFile", "工作空间存储接口不可用。");
     if (error) return error;
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       path: input.path || input.filePath || input["file-path"] || "",
+      operationId: id,
       recursive: hasInputKey(input, "recursive"),
       ...access
     });
@@ -5278,9 +5284,10 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
       return result(400, { error: "请求体必须是 JSON 对象。" });
     }
-    const operationResult = method({
+    const operationResult = await method({
       workspaceId,
       ...input,
+      operationId: id,
       createdBy: actorId || input.createdBy || "",
       ...access
     });

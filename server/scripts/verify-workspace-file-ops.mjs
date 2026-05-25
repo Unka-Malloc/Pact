@@ -44,6 +44,8 @@ await test("write overwrites content", async () => {
   const r = await call("POST", `/api/agent-workspaces/${wsId}/files/write`, { path: "test/hello.txt", contentBase64: b64("updated v2!") });
   assert.equal(r.ok, true);
   assert.equal(r.overwritten, true);
+  assert.ok(r.stateCommit?.commitId, "write should return state commit");
+  assert.ok(r.stateCommit?.eventHash, "write should return event hash");
   assert.equal(r.file.sizeBytes, 11);
 });
 
@@ -61,6 +63,7 @@ await test("write rejects dotfile", async () => {
 await test("move renames file", async () => {
   const r = await call("POST", `/api/agent-workspaces/${wsId}/files/move`, { sourcePath: "test/hello.txt", targetPath: "test/goodbye.txt" });
   assert.equal(r.ok, true);
+  assert.ok(r.stateCommit?.commitId, "move should return state commit");
   assert.equal(r.file.relativePath, "test/goodbye.txt");
   const stat = await call("GET", `/api/agent-workspaces/${wsId}/files/stat?path=test/hello.txt`);
   assert.equal(stat.exists, false);
@@ -97,6 +100,7 @@ await test("delete file", async () => {
   const r = await call("DELETE", `/api/agent-workspaces/${wsId}/files?path=test/temp.txt`);
   assert.equal(r.ok, true);
   assert.equal(r.deleted, true);
+  assert.ok(r.stateCommit?.commitId, "delete should return state commit");
   const stat = await call("GET", `/api/agent-workspaces/${wsId}/files/stat?path=test/temp.txt`);
   assert.equal(stat.exists, false);
 });

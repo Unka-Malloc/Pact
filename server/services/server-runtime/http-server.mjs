@@ -446,6 +446,7 @@ export async function startHttpServer({
     getControllers: () => controllersRef,
     operationAuditStore,
     operationConcurrencyScope,
+    dataStructures,
     queueMonitor: queueMonitorAdapter,
     runtimeLogger,
     clientRuntimeAllocator,

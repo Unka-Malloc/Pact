@@ -67,6 +67,7 @@ export async function createServerRuntimeProviders({
   getControllers,
   operationAuditStore,
   operationConcurrencyScope,
+  dataStructures = null,
   queueMonitor,
   runtimeLogger,
   clientRuntimeAllocator,
@@ -144,7 +145,7 @@ export async function createServerRuntimeProviders({
     isAnyFeatureActive("agent-exploration", "knowledge-distillation"),
     "../specialized/agent/agent-workspace/index.mjs",
     "createAgentWorkspace",
-    [{ userDataPath }]
+    [{ userDataPath, merkleState: dataStructures?.merkleState || null }]
   );
   const baseModelDecisionRuntime = await createProvider(
     isAnyFeatureActive("knowledge-distillation", "knowledge-evolution", "knowledge-outline-reasoning", "agent-exploration"),
