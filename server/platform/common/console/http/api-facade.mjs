@@ -246,6 +246,18 @@ export function buildClientConnectionList(clientRegistrations, additionalConnect
   };
 }
 
+function storageSummaryFrom(storageProvider = null) {
+  return typeof storageProvider?.getStorageSummary === "function"
+    ? storageProvider.getStorageSummary()
+    : null;
+}
+
+function clientRegistrationsFrom(storageProvider = null, input = {}) {
+  return typeof storageProvider?.listClientRegistrations === "function"
+    ? storageProvider.listClientRegistrations(input)
+    : { summary: {}, items: [] };
+}
+
 export async function buildConsoleState({
   userDataPath,
   distPath,
@@ -253,7 +265,7 @@ export async function buildConsoleState({
   moduleManagement = null,
   discoveryState,
   jobManager,
-  metadataStore,
+  storageProvider = null,
   serverUrl,
   securityPermissions = null,
   request = null,
@@ -281,7 +293,7 @@ export async function buildConsoleState({
     domainServices.loadKnowledgeTaxonomy(userDataPath),
     domainServices.getKnowledgeGuidanceSummary(userDataPath),
     jobManager.listJobs({ limit: 50 }),
-    Promise.resolve(metadataStore.listClientRegistrations({
+    Promise.resolve(clientRegistrationsFrom(storageProvider, {
       offlineAfterSeconds: discoveryState.offlineAfterSeconds
     })).then(async (clientRegistrations) =>
       buildClientConnectionList(
@@ -357,7 +369,7 @@ export async function buildConsoleState({
     knowledgeConsole: knowledgeCoreEnabled
       ? await domainServices.buildKnowledgeConsoleSummary(runtime, jobManager)
       : null,
-    storage: metadataStore.getStorageSummary(),
+    storage: storageSummaryFrom(storageProvider),
     jobs,
     clients,
     clientRuntime: clientRuntimeAllocator && typeof clientRuntimeAllocator.getStatus === "function"
@@ -373,7 +385,7 @@ export async function buildRuntimeInfo({
   runtime,
   moduleManagement = null,
   discoveryState,
-  metadataStore,
+  storageProvider = null,
   serverUrl,
   securityPermissions = null,
   request = null,
@@ -401,7 +413,7 @@ export async function buildRuntimeInfo({
     auth: securityPermissions?.getConsoleSummary
       ? securityPermissions.getConsoleSummary(request)
       : null,
-    storage: metadataStore.getStorageSummary(),
+    storage: storageSummaryFrom(storageProvider),
     discovery: buildBootstrapPayload(discoveryState),
     features
   };

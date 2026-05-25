@@ -14,6 +14,7 @@ import { registerModuleManagementPlatformServices } from "../common/module-manag
 import { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-registry.mjs";
 import { loadSettings } from "../common/platform-core/settings.mjs";
 import { registerStoragePlatformServices } from "../common/storage/register.mjs";
+import { createStorageProvider } from "../common/storage/storage-provider.mjs";
 import { registerDevopsPlatformServices } from "../common/devops/register.mjs";
 import { getAgentConfigRegistry } from "../specialized/agent/agent-configs/config-registry.mjs";
 import { createConsoleDomainServices } from "../specialized/console/console-domain-services.mjs";
@@ -60,6 +61,10 @@ export async function createServerCompositionRoot({
   const operationConcurrencyScope = path.resolve(userDataPath);
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
   const consoleDomainServices = createConsoleDomainServices();
+  const storageProvider = createStorageProvider({
+    userDataPath,
+    metadataStore: runtime.metadataStore
+  });
 
   registerCorePlatformServices(platformRegistry, {
     protocolEventBus,
@@ -80,6 +85,7 @@ export async function createServerCompositionRoot({
   registerDataStructurePlatformServices(platformRegistry, { dataStructures });
   registerDevopsPlatformServices(platformRegistry, { userDataPath });
   registerStoragePlatformServices(platformRegistry, {
+    storageProvider,
     metadataStore: runtime.metadataStore,
     userDataPath
   });
@@ -106,6 +112,7 @@ export async function createServerCompositionRoot({
     operationConcurrencyScope,
     protocolEventBus,
     consoleDomainServices,
+    storageProvider,
     metadataStore: runtime.metadataStore
   });
 }

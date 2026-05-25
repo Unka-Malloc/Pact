@@ -369,6 +369,7 @@ export async function startHttpServer({
     operationConcurrencyScope,
     protocolEventBus,
     consoleDomainServices,
+    storageProvider,
     metadataStore
   } = compositionRoot;
   runtimeLogger.info("features.resolved", {
@@ -419,6 +420,7 @@ export async function startHttpServer({
     });
   const ownsJobManager = !incomingJobManager;
   const registeredMetadataStore = requirePlatformInterface(platformRegistry, "storage.metadataStore").value;
+  const registeredStorageProvider = requirePlatformInterface(platformRegistry, "storage.provider").value || storageProvider;
   const deletionCoordinator = createBatchDeletionCoordinator({
     userDataPath,
     jobManager,
@@ -477,7 +479,7 @@ export async function startHttpServer({
   const jobsController = createJobsController({
     userDataPath,
     jobManager,
-    metadataStore,
+    storageProvider: registeredStorageProvider,
     deletionCoordinator,
     getDiscoveryState: () => discoveryState,
     proxyApiRequest,
@@ -493,6 +495,7 @@ export async function startHttpServer({
     moduleManagement,
     jobManager,
     metadataStore,
+    storageProvider: registeredStorageProvider,
     serverLabel,
     getDiscoveryState: () => discoveryState,
     setDiscoveryState: (value) => {

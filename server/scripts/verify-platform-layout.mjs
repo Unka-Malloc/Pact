@@ -11,6 +11,7 @@ import { registerDataStructurePlatformServices } from "../platform/common/data-s
 import { createModuleManagementProvider } from "../platform/common/module-manager/module-management-provider.mjs";
 import { registerModuleManagementPlatformServices } from "../platform/common/module-manager/register.mjs";
 import { registerStoragePlatformServices } from "../platform/common/storage/register.mjs";
+import { createStorageProvider } from "../platform/common/storage/storage-provider.mjs";
 import { registerDevopsPlatformServices } from "../platform/common/devops/register.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -198,11 +199,22 @@ async function assertInteractiveRegistrations() {
     featureRuntime: {},
     operationConcurrencyScope: "verify"
   });
-  registerStoragePlatformServices(registry, {
+  const storageProvider = createStorageProvider({
+    userDataPath: "verify-data",
     metadataStore: {
       databasePath: "verify.sqlite",
-      objectRootPath: "raw-objects"
-    },
+      objectRootPath: "raw-objects",
+      getStorageSummary: () => ({}),
+      getRawMailObject: () => null,
+      recordClientCheckIn: (input) => input,
+      listClientRegistrations: () => ({ items: [] }),
+      rebuildSourceVocabulary: () => ({}),
+      getSignificantSourceTerms: () => ({}),
+      search: () => ({ items: [] })
+    }
+  });
+  registerStoragePlatformServices(registry, {
+    storageProvider,
     userDataPath: "verify-data"
   });
   const moduleManagement = createModuleManagementProvider({
@@ -258,6 +270,7 @@ async function assertInteractiveRegistrations() {
     "core.operations.concurrencyScope",
     "data-structure.provider",
     "data-structure.checkpointTree",
+    "storage.provider",
     "storage.metadataStore",
     "module-management.provider",
     "module-management.serverRuntime",

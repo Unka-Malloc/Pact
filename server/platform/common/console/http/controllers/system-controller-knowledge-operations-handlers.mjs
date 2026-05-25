@@ -3,7 +3,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
   parseJsonBody,
   queryPayload,
   knowledgeWorkflowContext,
-  metadataStore
+  storageProvider
 }) {
   return {
     async handleGetRules({ operation, response, authSession }) {
@@ -77,7 +77,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "storage.summary",
         response,
-        context: { metadataStore },
+        context: { storageProvider },
         errorMessage: "读取存储摘要失败。"
       });
     },
@@ -200,6 +200,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "storage.doctor",
         response,
+        context: { storageProvider },
         errorMessage: "诊断存储一致性失败。"
       });
     },
@@ -208,6 +209,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
         operationId: operation?.id || "storage.reconcile",
         input: parseJsonBody(requestBody),
         response,
+        context: { storageProvider },
         errorMessage: "修复存储一致性失败。"
       });
     },
@@ -215,6 +217,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "storage.backups.list",
         response,
+        context: { storageProvider },
         errorMessage: "列出存储备份失败。"
       });
     },
@@ -223,6 +226,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
         operationId: operation?.id || "storage.backups.create",
         input: parseJsonBody(requestBody),
         response,
+        context: { storageProvider },
         errorMessage: "创建存储备份失败。"
       });
     },
@@ -231,6 +235,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
         operationId: operation?.id || "storage.backups.restore_preview",
         input: parseJsonBody(requestBody),
         response,
+        context: { storageProvider },
         errorMessage: "预览存储恢复失败。"
       });
     },
@@ -239,6 +244,7 @@ export function createSystemControllerKnowledgeOperationsHandlers({
         operationId: operation?.id || "storage.backups.restore",
         input: parseJsonBody(requestBody),
         response,
+        context: { storageProvider },
         errorMessage: "恢复存储备份失败。"
       });
     },

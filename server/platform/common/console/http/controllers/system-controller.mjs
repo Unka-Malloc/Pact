@@ -35,6 +35,7 @@ export function createSystemController({
   moduleManagement,
   jobManager,
   metadataStore,
+  storageProvider = null,
   serverLabel,
   getDiscoveryState,
   setDiscoveryState,
@@ -87,6 +88,7 @@ export function createSystemController({
     moduleManagement,
     jobManager,
     metadataStore,
+    storageProvider,
     protocolEventBus,
     securityPermissions: effectiveSecurityPermissions,
     operationAuditStore,
@@ -228,7 +230,7 @@ export function createSystemController({
       runtime,
       moduleManagement,
       jobManager,
-      metadataStore,
+      storageProvider,
       securityPermissions: effectiveSecurityPermissions,
       maintenanceAgent,
       clientRuntimeAllocator,
@@ -259,7 +261,7 @@ export function createSystemController({
       parseJsonBody,
       queryPayload,
       knowledgeWorkflowContext,
-      metadataStore
+      storageProvider
     }),
     ...createSystemControllerOpsObservationHandlers({
       sendConsoleDomainOperation,
@@ -279,6 +281,7 @@ export function createSystemController({
       jobManager,
       knowledgeSourceService,
       metadataStore,
+      storageProvider,
       clientRuntimeAllocator,
       modelDecisionRuntime,
       agentWorkspace,

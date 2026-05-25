@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { unzipSync } from "fflate";
-import { resolveStoredObjectPath } from "../../../storage/raw-object-store.mjs";
 import { hashClientString, serverToken } from "../../../security/client-strings.mjs";
 import { contentDispositionFileName, sendJson } from "../http-utils.mjs";
 
@@ -121,6 +120,15 @@ function requireUploadSessionStore(provider = null) {
   const missing = required.filter((name) => typeof provider?.[name] !== "function");
   if (missing.length > 0) {
     throw new Error(`uploadSessionStore provider is not configured: ${missing.join(", ")}`);
+  }
+  return provider;
+}
+
+function requireStorageProvider(provider = null) {
+  const required = ["readRawObjectById"];
+  const missing = required.filter((name) => typeof provider?.[name] !== "function");
+  if (missing.length > 0) {
+    throw new Error(`storageProvider is not configured: ${missing.join(", ")}`);
   }
   return provider;
 }
@@ -338,7 +346,7 @@ function verifyUploadedFiles(payload = {}, { resolveArchiveBatchIdentity = defau
 export function createJobsController({
   userDataPath,
   jobManager,
-  metadataStore,
+  storageProvider = null,
   deletionCoordinator,
   getDiscoveryState,
   proxyApiRequest,
@@ -348,6 +356,7 @@ export function createJobsController({
   resolveArchiveBatchIdentity = defaultArchiveBatchResolver
 }) {
   const checkpointUploadSessionStore = requireUploadSessionStore(uploadSessionStore);
+  const jobStorageProvider = requireStorageProvider(storageProvider);
   const loadNormalizedDocumentStoreRuntime =
     typeof loadNormalizedDocumentStore === "function"
       ? loadNormalizedDocumentStore
@@ -958,24 +967,23 @@ export function createJobsController({
       });
     },
     async handleGetRawObject({ objectId, response }) {
-      const rawObject = metadataStore.getRawMailObject(objectId);
+      const rawObjectEntry = await jobStorageProvider.readRawObjectById(objectId);
 
-      if (!rawObject) {
+      if (!rawObjectEntry) {
         sendJson(response, 404, {
           error: "原始邮件不存在。"
         });
         return;
       }
 
-      const buffer = await fs.readFile(resolveStoredObjectPath(userDataPath, rawObject.storage_rel_path));
       response.writeHead(200, {
-        "Content-Type": rawObject.media_type || "application/octet-stream",
+        "Content-Type": rawObjectEntry.contentType || "application/octet-stream",
         "Content-Disposition": `attachment; filename="${contentDispositionFileName(
-          rawObject.original_file_name
+          rawObjectEntry.fileName
         )}"`,
         "Cache-Control": "no-store"
       });
-      response.end(buffer);
+      response.end(rawObjectEntry.buffer);
     }
   };
 }

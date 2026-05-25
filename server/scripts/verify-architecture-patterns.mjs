@@ -116,6 +116,7 @@ async function assertCompositionRootOwnsAssembly() {
     "createDataStructureProvider",
     "registerModuleManagementPlatformServices",
     "registerStoragePlatformServices",
+    "createStorageProvider",
     "registerDevopsPlatformServices",
     "createConsoleAuth",
     "createSecurityPermissionsProvider",
@@ -173,6 +174,33 @@ async function assertDataStructureProviderOwnsPorts() {
     "uniqueNormalizedStrings"
   ]) {
     assertTextIncludes(text, needle, `${file} must own data structure provider port ${needle}`);
+  }
+}
+
+async function assertStorageProviderOwnsPorts() {
+  const file = "server/platform/common/storage/storage-provider.mjs";
+  const text = await read(file);
+  for (const needle of [
+    "pact.storage.v1",
+    "createStorageProvider",
+    "getStorageSummary",
+    "readRawObjectById",
+    "resolveStoredObjectPath",
+    "recordClientCheckIn",
+    "listClientRegistrations",
+    "findClientRegistration",
+    "runDoctor",
+    "reconcile",
+    "listBackups",
+    "createBackup",
+    "restoreBackupPreview",
+    "restoreBackup",
+    "rebuildSourceVocabulary",
+    "getSignificantSourceTerms",
+    "search",
+    "listCapabilities"
+  ]) {
+    assertTextIncludes(text, needle, `${file} must own storage provider port ${needle}`);
   }
 }
 
@@ -246,9 +274,18 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "uploadSessionStore",
     `${jobsControllerFile} must receive checkpoint upload session protocol functions through injected domain services`
   );
+  assertTextIncludes(
+    jobsController,
+    "storageProvider",
+    `${jobsControllerFile} must receive storage protocol functions through injected platform services`
+  );
   assertTextExcludes(
     jobsController,
-    ["upload-session-store.mjs"],
+    [
+      "upload-session-store.mjs",
+      "resolveStoredObjectPath",
+      "metadataStore."
+    ],
     jobsControllerFile
   );
   assertTextIncludes(
@@ -285,7 +322,9 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "runtime.mounts ||",
       "getMountConfigPath",
       "getMountConfigPaths",
-      "loadMountConfig(userDataPath)"
+      "loadMountConfig(userDataPath)",
+      "metadataStore.",
+      "getStorageSummary(),"
     ],
     apiFacadeFile
   );
@@ -1759,6 +1798,7 @@ async function main() {
   await assertCompositionRootOwnsAssembly();
   await assertRuntimeProvidersOwnProviderImports();
   await assertDataStructureProviderOwnsPorts();
+  await assertStorageProviderOwnsPorts();
   await assertCommonConsoleDelegatesSpecializedOperations();
   await assertCoreArchitectureDocsCoverMainline();
 }

@@ -106,6 +106,7 @@ export const INTERACTIVE_INTERFACE_MANIFEST = Object.freeze({
       Object.freeze({ id: "core.operations.concurrencyScope", platform: "core", source: "../common/platform-core/register.mjs" }),
       Object.freeze({ id: "data-structure.provider", platform: "data-structure", source: "../common/data-structure/register.mjs" }),
       Object.freeze({ id: "data-structure.checkpointTree", platform: "data-structure", source: "../common/data-structure/register.mjs" }),
+      Object.freeze({ id: "storage.provider", platform: "storage", source: "../common/storage/register.mjs" }),
       Object.freeze({ id: "storage.metadataStore", platform: "storage", source: "../common/storage/register.mjs" }),
       Object.freeze({ id: "module-management.provider", platform: "module-management", source: "../common/module-manager/register.mjs" }),
       Object.freeze({ id: "module-management.serverRuntime", platform: "module-management", source: "../common/module-manager/register.mjs" }),

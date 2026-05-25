@@ -51,12 +51,6 @@ import {
   getDiscoveryConfigPath,
   saveDiscoveryConfig
 } from "../../common/platform-core/discovery/config.mjs";
-import { reconcileStorage, runStorageDoctor } from "../../common/storage/ops-tools.mjs";
-import {
-  createStorageBackup,
-  listStorageBackups,
-  restoreStorageBackup
-} from "../../common/storage/backup-restore.mjs";
 import { getBackgroundProcessStatus } from "../../common/devops/process-status/background-process-status.mjs";
 import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorization/authorization-engine.mjs";
 
@@ -74,6 +68,13 @@ const PATH_BROWSER_IGNORED_NAMES = new Set([
 
 function result(status, payload) {
   return { status, payload };
+}
+
+function requireStorageProvider(context = {}) {
+  if (!context.storageProvider) {
+    return { error: result(503, { error: "存储 provider 不可用。" }) };
+  }
+  return { storageProvider: context.storageProvider };
 }
 
 function protocolPayload(payload = {}) {
@@ -1927,21 +1928,21 @@ async function executeKnowledgeCorpusOperation({ operationId, input, context }) 
   if (!handledOperations.has(id)) {
     return null;
   }
-  const metadataStore = context.metadataStore;
-  if (!metadataStore) {
-    return result(503, { error: "元数据存储不可用。" });
+  const { storageProvider, error } = requireStorageProvider(context);
+  if (error) {
+    return error;
   }
   if (id === "storage.source_vocabulary.rebuild") {
-    const operationResult = metadataStore.rebuildSourceVocabulary({
+    const operationResult = storageProvider.rebuildSourceVocabulary({
       rules: await context.loadEmailRules(context.userDataPath)
     });
-    await publishProtocolEvent(context.protocolEventBus, "storage.summary", metadataStore.getStorageSummary(), {
+    await publishProtocolEvent(context.protocolEventBus, "storage.summary", storageProvider.getStorageSummary(), {
       type: "storage.summary.snapshot"
     });
     return result(200, operationResult);
   }
   if (id === "knowledge.corpus.significant_terms") {
-    return result(200, metadataStore.getSignificantSourceTerms(input || {}));
+    return result(200, storageProvider.getSignificantSourceTerms(input || {}));
   }
   if (id === "knowledge.affair_taxonomy") {
     if (typeof context.enhanceAffairTaxonomy !== "function") {
@@ -1955,7 +1956,7 @@ async function executeKnowledgeCorpusOperation({ operationId, input, context }) 
   }
   if (id === "search.query") {
     const searchInput = normalizeSearchQueryInput(input);
-    return result(200, metadataStore.search({
+    return result(200, storageProvider.search({
       query: searchInput.query,
       limit: searchInput.limit || 20,
       batchId: searchInput.batchId,
@@ -2048,56 +2049,40 @@ async function executeStorageOperation({ operationId, input, context }) {
     return null;
   }
 
+  const { storageProvider, error } = requireStorageProvider(context);
+  if (error) {
+    return error;
+  }
+
   if (id === "storage.summary") {
-    if (!context.metadataStore || typeof context.metadataStore.getStorageSummary !== "function") {
-      return result(503, { ok: false, error: "元数据存储不可用。" });
-    }
-    return result(200, context.metadataStore.getStorageSummary());
+    return result(200, storageProvider.getStorageSummary());
   }
   if (id === "storage.doctor") {
-    return result(200, await runStorageDoctor({ userDataPath: context.userDataPath }));
+    return result(200, await storageProvider.runDoctor());
   }
   if (id === "storage.reconcile") {
-    return result(200, await reconcileStorage({
-      userDataPath: context.userDataPath,
-      apply: input.apply !== false,
-      pruneOrphanObjects: input.pruneOrphanObjects === true
-    }));
+    return result(200, await storageProvider.reconcile(input || {}));
   }
   if (id === "storage.backups.list") {
-    return result(200, await listStorageBackups({ userDataPath: context.userDataPath }));
+    return result(200, await storageProvider.listBackups());
   }
   if (id === "storage.backups.create") {
     try {
-      return result(200, await createStorageBackup({
-        userDataPath: context.userDataPath,
-        label: input.label || ""
-      }));
+      return result(200, await storageProvider.createBackup(input || {}));
     } catch (error) {
       return result(400, errorPayload(error, "Storage backup creation failed."));
     }
   }
   if (id === "storage.backups.restore_preview") {
     try {
-      return result(200, await restoreStorageBackup({
-        userDataPath: context.userDataPath,
-        backupId: input.backupId,
-        dryRun: true,
-        includePaths: input.includePaths || []
-      }));
+      return result(200, await storageProvider.restoreBackupPreview(input || {}));
     } catch (error) {
       return result(400, errorPayload(error, "Storage restore preview failed."));
     }
   }
   if (id === "storage.backups.restore") {
     try {
-      return result(200, await restoreStorageBackup({
-        userDataPath: context.userDataPath,
-        backupId: input.backupId,
-        dryRun: false,
-        apply: input.confirm === true || input.apply === true,
-        includePaths: input.includePaths || []
-      }));
+      return result(200, await storageProvider.restoreBackup(input || {}));
     } catch (error) {
       return result(400, errorPayload(error, "Storage restore failed."));
     }
@@ -2460,7 +2445,7 @@ async function executeConsoleStateOperation({ operationId, context }) {
       runtime: context.runtime,
       moduleManagement: context.moduleManagement,
       discoveryState: context.discoveryState,
-      metadataStore: context.metadataStore,
+      storageProvider: context.storageProvider,
       serverUrl: context.serverUrl,
       securityPermissions: context.securityPermissions,
       request: context.request,
@@ -2477,7 +2462,7 @@ async function executeConsoleStateOperation({ operationId, context }) {
       moduleManagement: context.moduleManagement,
       discoveryState: context.discoveryState,
       jobManager: context.jobManager,
-      metadataStore: context.metadataStore,
+      storageProvider: context.storageProvider,
       serverUrl: context.serverUrl,
       securityPermissions: context.securityPermissions,
       request: context.request,
@@ -4030,17 +4015,20 @@ async function executeDiscoveryOperation({ operationId, input = {}, context }) {
   }
 
   const discoveryState = context.discoveryState || {};
-  const metadataStore = context.metadataStore;
 
   if (id === "discovery.check_in") {
-    if (!metadataStore?.recordClientCheckIn) {
+    const { storageProvider, error } = requireStorageProvider(context);
+    if (error) {
+      return error;
+    }
+    if (typeof storageProvider.recordClientCheckIn !== "function") {
       return result(503, { error: "客户端登记存储不可用。" });
     }
     const clientId = serverToken(
       "client",
       input.clientId || input.hostname || input.currentServiceUrl || "anonymous"
     );
-    const record = metadataStore.recordClientCheckIn({
+    const record = storageProvider.recordClientCheckIn({
       clientId,
       clientLabel: hashClientString(input.clientLabel || input.hostname || clientId, "client.label"),
       appVersion: clientVersionString(input.appVersion || ""),
@@ -4092,12 +4080,16 @@ async function executeDiscoveryOperation({ operationId, input = {}, context }) {
   }
 
   if (id === "discovery.clients") {
-    if (!metadataStore?.listClientRegistrations) {
+    const { storageProvider, error } = requireStorageProvider(context);
+    if (error) {
+      return error;
+    }
+    if (typeof storageProvider.listClientRegistrations !== "function") {
       return result(503, { error: "客户端登记存储不可用。" });
     }
     const domainServices = context.consoleDomainServices || {};
     return result(200, buildClientConnectionList(
-      metadataStore.listClientRegistrations({
+      storageProvider.listClientRegistrations({
         offlineAfterSeconds: discoveryState.offlineAfterSeconds
       }),
       typeof domainServices.buildToolManagementClientConnectionRows === "function"
@@ -4109,17 +4101,21 @@ async function executeDiscoveryOperation({ operationId, input = {}, context }) {
   }
 
   if (id === "discovery.clients.migration") {
-    if (!metadataStore?.listClientRegistrations) {
+    const { storageProvider, error } = requireStorageProvider(context);
+    if (error) {
+      return error;
+    }
+    if (typeof storageProvider.findClientRegistration !== "function") {
       return result(503, { error: "客户端登记存储不可用。" });
     }
     const targetClientId = String(input.clientId || input["client-id"] || input.id || "").trim();
     if (!targetClientId) {
       return result(400, { error: "缺少客户端 ID。" });
     }
-    const clients = metadataStore.listClientRegistrations({
+    const client = storageProvider.findClientRegistration({
+      clientId: targetClientId,
       offlineAfterSeconds: discoveryState.offlineAfterSeconds
     });
-    const client = clients.items.find((item) => item.clientId === targetClientId);
     if (!client) {
       return result(404, { error: "未找到目标客户端。" });
     }

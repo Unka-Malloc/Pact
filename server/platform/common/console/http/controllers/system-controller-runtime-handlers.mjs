@@ -15,7 +15,7 @@ export function createSystemControllerRuntimeHandlers({
   runtime,
   moduleManagement,
   jobManager,
-  metadataStore,
+  storageProvider,
   securityPermissions,
   maintenanceAgent,
   clientRuntimeAllocator,
@@ -122,7 +122,7 @@ export function createSystemControllerRuntimeHandlers({
         operationId: operation?.id || "discovery.clients",
         response,
         context: {
-          metadataStore,
+          storageProvider,
           discoveryState: getDiscoveryState(),
           toolManagementPlatform: getToolManagementPlatform(),
           consoleDomainServices
@@ -140,7 +140,7 @@ export function createSystemControllerRuntimeHandlers({
         response,
         context: {
           discoveryState: getDiscoveryState(),
-          metadataStore,
+          storageProvider,
           protocolEventBus,
           authSession
         },
@@ -178,7 +178,7 @@ export function createSystemControllerRuntimeHandlers({
           runtime,
           moduleManagement,
           discoveryState: getDiscoveryState(),
-          metadataStore,
+          storageProvider,
           serverUrl: getListenUrl(),
           securityPermissions,
           request,
@@ -205,7 +205,7 @@ export function createSystemControllerRuntimeHandlers({
           moduleManagement,
           distPath,
           discoveryState: getDiscoveryState(),
-          metadataStore,
+          storageProvider,
           serverUrl: getListenUrl(),
           securityPermissions,
           request,
@@ -243,7 +243,7 @@ export function createSystemControllerRuntimeHandlers({
           moduleManagement,
           discoveryState: getDiscoveryState(),
           jobManager,
-          metadataStore,
+          storageProvider,
           serverUrl: getListenUrl(),
           securityPermissions,
           request,

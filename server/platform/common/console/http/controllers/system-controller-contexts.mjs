@@ -10,6 +10,7 @@ export function createSystemControllerContexts({
   moduleManagement = null,
   jobManager,
   metadataStore,
+  storageProvider = null,
   protocolEventBus = null,
   securityPermissions = null,
   operationAuditStore = null,
@@ -123,6 +124,7 @@ export function createSystemControllerContexts({
     return {
       runtime,
       metadataStore,
+      storageProvider,
       protocolEventBus,
       saveSettings,
       authSession
@@ -133,6 +135,7 @@ export function createSystemControllerContexts({
     return {
       protocolEventBus,
       metadataStore,
+      storageProvider,
       runtime,
       loadSettings,
       resolveUploadSessionFiles: uploadSessionStore.resolveUploadSessionFiles,
