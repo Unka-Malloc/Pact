@@ -326,6 +326,8 @@ Local agents / humans / scripts
 - 调用公开 HTTP API。
 - 不直接读取后端文件、SQLite、raw object 或内部模块。
 
+`server-web` 只能通过 `bridge`、`/api/*`、事件订阅和受控下载 URL 进入服务层；不能 import `server/platform`、`server/services`、`server/config`、Node runtime API，也不能引用 metadata store、Tool Management platform 或 agent config registry 等后端内部对象。该边界由 `npm run server:verify:management-layer` 守卫。
+
 前端组件复用规则必须从 `server-web/components/common.ts` 开始。新增界面控件时，能用通用组件就用通用组件；通用组件不能直接覆盖需求时，能继承就继承；确实需要新组件时，先扩展通用组件和 `commonComponentRegistry`，再在业务页面中使用。也就是说，页面级实现必须先扩展通用组件，而不是在每个 view 内复制 checkbox、option bar、status pill、browse button、fold card 或 history/session panel 的私有实现。
 
 `client-gui` 是 Flutter 跨平台交互层。职责：
