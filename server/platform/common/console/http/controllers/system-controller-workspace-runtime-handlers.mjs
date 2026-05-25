@@ -516,6 +516,30 @@ export function createSystemControllerWorkspaceRuntimeHandlers({
         context: { agentWorkspace, authSession },
         errorMessage: "移动工作空间文件失败。"
       });
+    },
+    async handlePlanWorkspaceLocalDirSync({ operation, workspaceId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.sync.plan",
+        input: {
+          ...parseJsonBody(requestBody),
+          workspaceId
+        },
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "生成本机目录同步计划失败。"
+      });
+    },
+    async handleApplyWorkspaceLocalDirSync({ operation, workspaceId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.sync.apply",
+        input: {
+          ...parseJsonBody(requestBody),
+          workspaceId
+        },
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "应用本机目录同步失败。"
+      });
     }
   };
 }

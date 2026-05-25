@@ -3097,6 +3097,281 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     };
   }
 
+  function scanDirectoryForWorkspaceSync(root, {
+    rootRelativePath = "",
+    maxFiles = 2000
+  } = {}) {
+    const resolvedRoot = path.resolve(root);
+    if (!fs.existsSync(resolvedRoot)) {
+      throw new Error("本机目录不存在。");
+    }
+    const rootStat = fs.lstatSync(resolvedRoot);
+    if (rootStat.isSymbolicLink()) {
+      throw new Error("不允许同步符号链接目录。");
+    }
+    if (!rootStat.isDirectory()) {
+      throw new Error("sourcePath 必须是本机目录。");
+    }
+    const files = [];
+    const visit = (absoluteDir, relativeDir) => {
+      const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
+        if (entry.name.startsWith(".")) {
+          throw new Error(`不允许同步以 . 开头的路径：${relativeDir ? `${relativeDir}/` : ""}${entry.name}`);
+        }
+        const childAbsolutePath = path.join(absoluteDir, entry.name);
+        const childRelativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+        const stat = fs.lstatSync(childAbsolutePath);
+        if (stat.isSymbolicLink()) {
+          throw new Error(`不允许同步符号链接：${childRelativePath}`);
+        }
+        if (stat.isDirectory()) {
+          visit(childAbsolutePath, childRelativePath);
+          continue;
+        }
+        if (!stat.isFile()) {
+          throw new Error(`不支持同步非普通文件：${childRelativePath}`);
+        }
+        if (files.length >= maxFiles) {
+          throw new Error(`同步文件数量超过限制：${maxFiles}`);
+        }
+        const content = fs.readFileSync(childAbsolutePath);
+        files.push({
+          sourceRelativePath: normalizeWorkspaceRelativePath(childRelativePath, { allowEmpty: false }),
+          relativePath: rootRelativePath
+            ? joinWorkspaceRelativePath(rootRelativePath, childRelativePath)
+            : normalizeWorkspaceRelativePath(childRelativePath, { allowEmpty: false }),
+          absolutePath: childAbsolutePath,
+          sizeBytes: Number(stat.size || 0),
+          contentSha256: sha256Buffer(content)
+        });
+      }
+    };
+    visit(resolvedRoot, "");
+    return files;
+  }
+
+  function scanWorkspaceFilesForSync(workspace, basePath = "", maxFiles = 2000) {
+    const base = resolveWorkspacePath(workspace, basePath, { allowEmpty: true });
+    if (!fs.existsSync(base.absolutePath)) {
+      return [];
+    }
+    const stat = fs.lstatSync(base.absolutePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error("工作空间同步目标不能是符号链接。");
+    }
+    if (!stat.isDirectory()) {
+      throw new Error("工作空间同步目标必须是目录。");
+    }
+    const files = [];
+    const visit = (absoluteDir, relativeDir) => {
+      const entries = fs.readdirSync(absoluteDir, { withFileTypes: true })
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
+        const childAbsolutePath = path.join(absoluteDir, entry.name);
+        const childRelativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+        const stat = fs.lstatSync(childAbsolutePath);
+        if (stat.isSymbolicLink()) {
+          throw new Error(`工作空间内存在不允许同步的符号链接：${childRelativePath}`);
+        }
+        if (stat.isDirectory()) {
+          visit(childAbsolutePath, childRelativePath);
+          continue;
+        }
+        if (!stat.isFile()) {
+          continue;
+        }
+        if (files.length >= maxFiles) {
+          throw new Error(`工作空间同步文件数量超过限制：${maxFiles}`);
+        }
+        const normalizedPath = normalizeWorkspaceRelativePath(childRelativePath, { allowEmpty: false });
+        files.push({
+          relativePath: basePath ? joinWorkspaceRelativePath(basePath, normalizedPath) : normalizedPath,
+          sizeBytes: Number(stat.size || 0),
+          contentSha256: sha256Buffer(fs.readFileSync(childAbsolutePath))
+        });
+      }
+    };
+    visit(base.absolutePath, "");
+    return files;
+  }
+
+  function localDirectorySyncPlan(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const sourcePath = String(input.sourcePath || input.localPath || input.dirPath || "").trim();
+    if (!sourcePath) {
+      return { ok: false, status: 400, error: "sourcePath 不能为空。" };
+    }
+    let targetPath;
+    try {
+      targetPath = normalizeWorkspaceRelativePath(input.targetPath || input.path || "", { allowEmpty: true });
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    const maxFiles = Math.max(1, Math.min(Number(input.maxFiles || input.limit || 2000), 10000));
+    const deleteExtraneous = input.deleteExtraneous === true || input.prune === true;
+    let sourceFiles, targetFiles;
+    try {
+      sourceFiles = scanDirectoryForWorkspaceSync(sourcePath, { rootRelativePath: targetPath, maxFiles });
+      targetFiles = scanWorkspaceFilesForSync(access.workspace, targetPath, maxFiles);
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    const targetByPath = new Map(targetFiles.map((file) => [file.relativePath, file]));
+    const sourceByPath = new Map(sourceFiles.map((file) => [file.relativePath, file]));
+    const actions = [];
+    for (const source of sourceFiles) {
+      const current = targetByPath.get(source.relativePath);
+      const action = !current
+        ? "create"
+        : current.contentSha256 === source.contentSha256
+          ? "noop"
+          : "write";
+      actions.push({
+        action,
+        sourceRelativePath: source.sourceRelativePath,
+        targetPath: source.relativePath,
+        sizeBytes: source.sizeBytes,
+        contentSha256: source.contentSha256
+      });
+    }
+    if (deleteExtraneous) {
+      for (const current of targetFiles) {
+        if (!sourceByPath.has(current.relativePath)) {
+          actions.push({
+            action: "delete",
+            targetPath: current.relativePath,
+            sizeBytes: current.sizeBytes,
+            contentSha256: current.contentSha256
+          });
+        }
+      }
+    }
+    const changedActions = actions.filter((action) => action.action !== "noop");
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      dryRun: true,
+      workspaceId: access.workspace.workspaceId,
+      targetPath,
+      sourceRootName: path.basename(path.resolve(sourcePath)),
+      sourceRootHash: stableHash(path.resolve(sourcePath)),
+      deleteExtraneous,
+      sourceFileCount: sourceFiles.length,
+      targetFileCount: targetFiles.length,
+      actions,
+      summary: {
+        create: actions.filter((action) => action.action === "create").length,
+        write: actions.filter((action) => action.action === "write").length,
+        delete: actions.filter((action) => action.action === "delete").length,
+        noop: actions.filter((action) => action.action === "noop").length,
+        changed: changedActions.length
+      }
+    };
+  }
+
+  async function applyLocalDirectorySync(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const plan = localDirectorySyncPlan(input);
+    if (!plan.ok) {
+      return plan;
+    }
+    if (input.dryRun === true) {
+      return plan;
+    }
+    const sourcePath = String(input.sourcePath || input.localPath || input.dirPath || "").trim();
+    const sourceFiles = scanDirectoryForWorkspaceSync(sourcePath, {
+      rootRelativePath: plan.targetPath,
+      maxFiles: Math.max(1, Math.min(Number(input.maxFiles || input.limit || 2000), 10000))
+    });
+    const sourceByTarget = new Map(sourceFiles.map((file) => [file.relativePath, file]));
+    const mutations = [];
+    const contentRefs = [];
+    const appliedActions = [];
+    for (const action of plan.actions) {
+      if (action.action === "noop") {
+        continue;
+      }
+      const target = resolveWorkspacePath(access.workspace, action.targetPath, { allowEmpty: false });
+      if (action.action === "delete") {
+        if (fs.existsSync(target.absolutePath)) {
+          fs.rmSync(target.absolutePath, { force: true });
+        }
+        mutations.push({ action: "delete", key: target.relativePath });
+        appliedActions.push(action);
+        continue;
+      }
+      const source = sourceByTarget.get(action.targetPath);
+      if (!source) {
+        return { ok: false, status: 409, error: `同步源文件消失：${action.sourceRelativePath || action.targetPath}` };
+      }
+      const content = fs.readFileSync(source.absolutePath);
+      fs.mkdirSync(path.dirname(target.absolutePath), { recursive: true });
+      fs.writeFileSync(target.absolutePath, content);
+      const archived = await archiveWorkspacePath(access.workspace, target.relativePath, {
+        operationId: input.operationId || "sharedspace.sync.apply"
+      });
+      const stat = fs.statSync(target.absolutePath);
+      const file = fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: target.relativePath,
+        absolutePath: target.absolutePath,
+        stat,
+        includeHash: true
+      });
+      if (archived) {
+        mutations.push({
+          action: "put",
+          key: target.relativePath,
+          valueRef: archived.rootCid,
+          metadata: filePayloadMetadata(file)
+        });
+        contentRefs.push(...(archived.contentRefs || []));
+      }
+      appliedActions.push(action);
+    }
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    const stateCommit = await commitWorkspaceFileState({
+      workspace: access.workspace,
+      operationId: input.operationId || "sharedspace.sync.apply",
+      mutations,
+      contentRefs,
+      payload: {
+        action: "sync.apply",
+        targetPath: plan.targetPath,
+        sourceRootName: plan.sourceRootName,
+        sourceRootHash: plan.sourceRootHash,
+        deleteExtraneous: plan.deleteExtraneous,
+        summary: plan.summary
+      }
+    });
+    const checkpoint = await recordWorkspaceFileCheckpoint({
+      workspace: access.workspace,
+      operationId: input.operationId || "sharedspace.sync.apply",
+      stateCommit,
+      action: "sync.apply",
+      path: plan.targetPath || "/"
+    });
+    return {
+      ...plan,
+      dryRun: false,
+      stateCommit,
+      checkpoint,
+      appliedActions,
+      summary: {
+        ...plan.summary,
+        applied: appliedActions.length
+      }
+    };
+  }
+
   async function decodeWorkspaceSnapshotContent(entry = {}) {
     if (entry.contentCid || entry.cid) {
       if (!merkleState) {
@@ -4279,6 +4554,8 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     downloadWorkspaceFile,
     deleteWorkspaceFile,
     moveWorkspaceFile,
+    localDirectorySyncPlan,
+    applyLocalDirectorySync,
     restoreWorkspaceFiles,
     updateArtifactsStatus,
     createIssue,

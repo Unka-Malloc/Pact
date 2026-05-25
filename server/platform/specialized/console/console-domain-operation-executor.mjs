@@ -5158,6 +5158,8 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     "agent_workspaces.file.write",
     "agent_workspaces.file.delete",
     "agent_workspaces.file.move",
+    "sharedspace.sync.plan",
+    "sharedspace.sync.apply",
     "workspace.file.upload",
     "workspace.file.list",
     "workspace.file.download",
@@ -5280,6 +5282,35 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   }
   if (id === "agent_workspaces.file.move") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "moveWorkspaceFile", "工作空间存储接口不可用。");
+    if (error) return error;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      return result(400, { error: "请求体必须是 JSON 对象。" });
+    }
+    const operationResult = await method({
+      workspaceId,
+      ...input,
+      operationId: id,
+      createdBy: actorId || input.createdBy || "",
+      ...access
+    });
+    return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
+  }
+  if (id === "sharedspace.sync.plan") {
+    const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "localDirectorySyncPlan", "本机目录同步计划接口不可用。");
+    if (error) return error;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      return result(400, { error: "请求体必须是 JSON 对象。" });
+    }
+    const operationResult = method({
+      workspaceId,
+      ...input,
+      operationId: id,
+      ...access
+    });
+    return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
+  }
+  if (id === "sharedspace.sync.apply") {
+    const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "applyLocalDirectorySync", "本机目录同步应用接口不可用。");
     if (error) return error;
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
       return result(400, { error: "请求体必须是 JSON 对象。" });

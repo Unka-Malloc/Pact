@@ -4127,6 +4127,76 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     },
     safety: { risk: "safe_write", requiresConfirmation: true }
   },
+  {
+    id: "sharedspace.sync.plan",
+    feature: "agent_workspace",
+    label: "生成本机目录到共享工作空间的同步计划",
+    target: { controller: "system", method: "handlePlanWorkspaceLocalDirSync" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/local-dir/sync/plan",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "sharedspace.sync.plan",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "local-dir", "sync-plan"],
+      usage: "agent-workspaces local-dir sync-plan --workspace-id WORKSPACE_ID --body sync.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:read"],
+    inputSchema: {
+      type: "object",
+      required: ["workspaceId", "sourcePath"],
+      properties: {
+        workspaceId: { type: "string" },
+        sourcePath: { type: "string" },
+        targetPath: { type: "string" },
+        deleteExtraneous: { type: "boolean" },
+        maxFiles: { type: "number" }
+      }
+    },
+    readOnly: true,
+    concurrencySafe: true
+  },
+  {
+    id: "sharedspace.sync.apply",
+    feature: "agent_workspace",
+    label: "应用本机目录到共享工作空间的同步计划",
+    target: { controller: "system", method: "handleApplyWorkspaceLocalDirSync" },
+    http: {
+      method: "POST",
+      path: "/api/agent-workspaces/:workspaceId/local-dir/sync/apply",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    rpc: {
+      method: "sharedspace.sync.apply",
+      body: "params",
+      params: [{ name: "workspaceId", aliases: ["workspace-id", "workspaceId", "id"], required: true }]
+    },
+    cli: {
+      command: ["agent-workspaces", "local-dir", "sync-apply"],
+      usage: "agent-workspaces local-dir sync-apply --workspace-id WORKSPACE_ID --body sync.json",
+      pathParams: { workspaceId: ["workspace-id", "workspaceId", "id"] }
+    },
+    requiredScopes: ["storage:write"],
+    inputSchema: {
+      type: "object",
+      required: ["workspaceId", "sourcePath"],
+      properties: {
+        workspaceId: { type: "string" },
+        sourcePath: { type: "string" },
+        targetPath: { type: "string" },
+        deleteExtraneous: { type: "boolean" },
+        maxFiles: { type: "number" },
+        dryRun: { type: "boolean" }
+      }
+    },
+    safety: { risk: "safe_write" }
+  },
 
   // ── Workspace inheritance, profile & sharing operations ─────────────────
   {
