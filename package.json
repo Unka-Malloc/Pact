@@ -120,6 +120,7 @@
     "server:verify:runtime-logging": "node server/scripts/verify-runtime-logging.mjs",
     "server:verify:continuity": "node server/scripts/verify-transaction-continuity.mjs",
     "server:verify:checkpoints": "node server/scripts/verify-checkpoint-lifecycle.mjs",
+    "server:verify:merkle-state-substrate": "node server/scripts/verify-merkle-state-substrate.mjs",
     "server:verify:workspace-checkpoints": "node server/scripts/verify-workspace-checkpoint-protocol.mjs",
     "server:verify:workspace-proposals": "node server/scripts/verify-workspace-proposal-protocol.mjs",
     "server:verify:codespace": "node server/scripts/verify-codespace-protocol.mjs",

@@ -20,6 +20,7 @@ import {
   truncateText,
   uniqueNormalizedStrings
 } from "./text-normalization.mjs";
+import { createMerkleStateSubstrate } from "./merkle-state-substrate.mjs";
 
 export const DATA_STRUCTURE_PROTOCOL_VERSION = "pact.data-structure.v1";
 
@@ -75,9 +76,12 @@ export function createDataStructureProvider({ userDataPath = "" } = {}) {
     uniqueNormalizedStrings
   });
 
+  const merkleState = createMerkleStateSubstrate({ userDataPath });
+
   return Object.freeze({
     protocolVersion: DATA_STRUCTURE_PROTOCOL_VERSION,
     checkpointTree,
+    merkleState,
     textNormalization,
     listCapabilities() {
       return {
@@ -98,6 +102,19 @@ export function createDataStructureProvider({ userDataPath = "" } = {}) {
               "previewCheckpointRestore",
               "restoreCheckpointTree",
               "deleteCheckpointTree"
+            ]
+          },
+          {
+            id: "merkle-state-substrate",
+            kind: "algorithm-substrate",
+            operations: [
+              "canonicalCodec",
+              "cas",
+              "merkleDag",
+              "merkleIndex",
+              "eventLog",
+              "stateCommit",
+              "lsmIngest"
             ]
           },
           {

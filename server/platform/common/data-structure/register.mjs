@@ -60,6 +60,17 @@ export function registerDataStructurePlatformServices(registry, {
       metadata: {
         protocolVersion: dataStructures?.protocolVersion || ""
       }
+    }),
+    registerPlatformService(registry, {
+      id: "data-structure.merkleState",
+      platform: "data-structure",
+      label: "Merkle state substrate",
+      kind: "algorithm-substrate",
+      ownerFeatureId: "data-structure-core",
+      value: dataStructures?.merkleState || null,
+      metadata: {
+        protocolVersion: dataStructures?.merkleState?.protocolVersion || dataStructures?.protocolVersion || ""
+      }
     })
   ];
 }
