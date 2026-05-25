@@ -77,7 +77,6 @@ import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorizat
 const contributionRegistries = new Map();
 const codespaceRegistries = new Map();
 const knowledgeDistillationWorkbenchInstances = new Map();
-const workspaceAssetPolicies = new Map();
 const PATH_BROWSER_MAX_ENTRIES = 600;
 const PATH_BROWSER_IGNORED_NAMES = new Set([
   ".git",
@@ -1252,11 +1251,11 @@ async function saveAgentModelLibrary(context = {}, current, models) {
   };
 }
 
-function appendAuthorizationArtifact(authorizationStore, methodName, artifact, metadata = {}) {
-  if (!artifact || typeof authorizationStore?.[methodName] !== "function") {
+function appendAuthorizationArtifact(securityPermissions, methodName, artifact, metadata = {}) {
+  if (!artifact || typeof securityPermissions?.[methodName] !== "function") {
     return;
   }
-  authorizationStore[methodName](artifact, metadata);
+  securityPermissions[methodName](artifact, metadata);
 }
 
 function filterContributionsForWorkspace(items = [], input = {}) {
@@ -1285,7 +1284,7 @@ async function executeWorkspaceContributionOperation({ operationId, input, conte
     username: runtimeSubject.username || authSubject.username || runtimeSubject.label || "",
     scopes: Array.isArray(runtimeSubject.scopes) ? runtimeSubject.scopes : authSubject.scopes
   };
-  const authorizationStore = context.authorizationStore;
+  const securityPermissions = context.securityPermissions;
   try {
     if (operationId === "workspace.contribution.submit" || operationId === "knowledge.contribution.submit") {
       const resultPayload = registry.submitContribution({
@@ -1325,7 +1324,7 @@ async function executeWorkspaceContributionOperation({ operationId, input, conte
         ...input,
         granteeId: input.granteeId || subject.subjectId || subject.username
       });
-      appendAuthorizationArtifact(authorizationStore, "appendLoanRecord", resultPayload.loanRecord);
+      appendAuthorizationArtifact(securityPermissions, "appendLoanRecord", resultPayload.loanRecord);
       return result(200, protocolPayload(resultPayload));
     }
     if (operationId === "workspace.skill.upload") {
@@ -1373,7 +1372,7 @@ async function executeKnowledgeAccessOperation({ operationId, input, context }) 
   if (!String(operationId || "").startsWith("knowledge.access.")) {
     return null;
   }
-  const authorizationStore = context.authorizationStore;
+  const securityPermissions = context.securityPermissions;
   if (operationId === "knowledge.access.evaluate") {
     try {
       const subject = subjectFromAuthSession(context.authSession);
@@ -1384,16 +1383,16 @@ async function executeKnowledgeAccessOperation({ operationId, input, context }) 
       };
       const policyPayload = input.policy || input.authorizationPolicy || input;
       const decision = evaluateKnowledgeAccess(requestPayload, policyPayload);
-      appendAuthorizationArtifact(authorizationStore, "appendReceipt", decision.knowledgeAccessReceipt, {
+      appendAuthorizationArtifact(securityPermissions, "appendReceipt", decision.knowledgeAccessReceipt, {
         decisionId: decision.decisionId,
         subjectId: subject.subjectId
       });
-      appendAuthorizationArtifact(authorizationStore, "appendLoanRecord", decision.loanRecord, {
+      appendAuthorizationArtifact(securityPermissions, "appendLoanRecord", decision.loanRecord, {
         decisionId: decision.decisionId,
         subjectId: subject.subjectId
       });
-      if (decision.deniedRequestAudit && typeof authorizationStore?.appendDeniedRequest === "function") {
-        authorizationStore.appendDeniedRequest({
+      if (decision.deniedRequestAudit && typeof securityPermissions?.appendDeniedRequest === "function") {
+        securityPermissions.appendDeniedRequest({
           decisionId: decision.decisionId,
           subjectId: subject.subjectId,
           operationId: "knowledge.access.evaluate",
@@ -1406,23 +1405,23 @@ async function executeKnowledgeAccessOperation({ operationId, input, context }) 
       return result(400, errorPayload(error, "知识访问裁决失败。"));
     }
   }
-  if (!authorizationStore) {
+  if (!securityPermissions) {
     return result(503, { error: "授权记录存储不可用。" });
   }
   const listInput = {
     limit: input.limit || 100,
     subjectId: input.subjectId || input["subject-id"] || ""
   };
-  if (operationId === "knowledge.access.receipt.list" && typeof authorizationStore.listReceipts === "function") {
-    const items = authorizationStore.listReceipts(listInput);
+  if (operationId === "knowledge.access.receipt.list" && typeof securityPermissions.listReceipts === "function") {
+    const items = securityPermissions.listReceipts(listInput);
     return result(200, protocolPayload({ items, count: items.length }));
   }
-  if (operationId === "knowledge.access.loan_record.list" && typeof authorizationStore.listLoanRecords === "function") {
-    const items = authorizationStore.listLoanRecords(listInput);
+  if (operationId === "knowledge.access.loan_record.list" && typeof securityPermissions.listLoanRecords === "function") {
+    const items = securityPermissions.listLoanRecords(listInput);
     return result(200, protocolPayload({ items, count: items.length }));
   }
-  if (operationId === "knowledge.access.denied_request.list" && typeof authorizationStore.listDeniedRequests === "function") {
-    const items = authorizationStore.listDeniedRequests(listInput);
+  if (operationId === "knowledge.access.denied_request.list" && typeof securityPermissions.listDeniedRequests === "function") {
+    const items = securityPermissions.listDeniedRequests(listInput);
     return result(200, protocolPayload({ items, count: items.length }));
   }
   return null;
@@ -2476,7 +2475,8 @@ async function executeConsoleStateOperation({ operationId, context }) {
       discoveryState: context.discoveryState,
       metadataStore: context.metadataStore,
       serverUrl: context.serverUrl,
-      consoleAuth: context.consoleAuth,
+      securityPermissions: context.securityPermissions,
+      request: context.request,
       features: context.features,
       consoleDomainServices: context.consoleDomainServices
     }));
@@ -2491,7 +2491,8 @@ async function executeConsoleStateOperation({ operationId, context }) {
       jobManager: context.jobManager,
       metadataStore: context.metadataStore,
       serverUrl: context.serverUrl,
-      consoleAuth: context.consoleAuth,
+      securityPermissions: context.securityPermissions,
+      request: context.request,
       maintenanceAgent: context.maintenanceAgent,
       clientRuntimeAllocator: context.clientRuntimeAllocator,
       features: context.features,
@@ -3298,21 +3299,23 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
     return null;
   }
 
-  const consoleAuth = context.consoleAuth;
-  if (!consoleAuth) {
+  const authProvider = context.securityPermissions;
+  if (!authProvider) {
     return result(503, { error: "控制台认证模块不可用。" });
   }
   const request = context.request || null;
   const authSession = context.authSession || null;
 
   if (id === "auth.session") {
-    return result(200, consoleAuth.getSummary(request));
+    return result(200, authProvider.getConsoleSummary
+      ? authProvider.getConsoleSummary(request)
+      : authProvider.getSummary(request));
   }
   if (id === "auth.login") {
     const inputSummary = loginInputSummary(input, request);
     try {
-      const login = await consoleAuth.login(input, request);
-      consoleAuth.audit({
+      const login = await authProvider.login(input, request);
+      authProvider.audit({
         user: login.session?.user,
         operationId: "auth.login",
         action: "login",
@@ -3338,11 +3341,11 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
         ok: true,
         session: login.session,
         csrfToken: login.csrfToken,
-        roles: consoleAuth.roleList()
+        roles: authProvider.roleList()
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "登录失败。";
-      consoleAuth.audit({
+      authProvider.audit({
         operationId: "auth.login",
         action: "login",
         method: "POST",
@@ -3362,8 +3365,8 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
     }
   }
   if (id === "auth.logout") {
-    const operationResult = consoleAuth.logout(request);
-    consoleAuth.audit({
+    const operationResult = authProvider.logout(request);
+    authProvider.audit({
       user: authSession?.user,
       operationId: "auth.logout",
       action: "logout",
@@ -3389,8 +3392,8 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
   }
   if (id === "auth.users") {
     return result(200, {
-      users: consoleAuth.listUsers(),
-      roles: consoleAuth.roleList()
+      users: authProvider.listUsers(),
+      roles: authProvider.roleList()
     });
   }
   if (id === "auth.users.create") {
@@ -3406,11 +3409,11 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
         });
       }
       const userId = String(input.userId || input["user-id"] || input.id || "").trim();
-      const user = await consoleAuth.updateUser(userId, input);
+      const user = await authProvider.updateUser(userId, input);
       if (!user) {
         return result(404, { error: "用户不存在。" });
       }
-      consoleAuth.audit({
+      authProvider.audit({
         user: authSession?.user,
         operationId: "auth.users.update",
         action: "update-user",
@@ -3419,7 +3422,7 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
         status: "ok",
         target: { userId: user.userId, roleId: user.roleId, enabled: user.enabled }
       });
-      return result(200, { user, users: consoleAuth.listUsers() });
+      return result(200, { user, users: authProvider.listUsers() });
     } catch (error) {
       return result(400, {
         error: error instanceof Error ? error.message : "更新用户失败。"
@@ -3428,18 +3431,18 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
   }
   if (id === "auth.roles.get") {
     const roleId = String(input.roleId || input["role-id"] || input.id || "").trim();
-    const role = consoleAuth.roleList().find((item) => item.roleId === roleId);
+    const role = authProvider.roleList().find((item) => item.roleId === roleId);
     if (!role) {
       return result(404, { error: "角色不存在。" });
     }
     return result(200, { role });
   }
   if (id === "auth.oidc.get") {
-    return result(200, { oidc: consoleAuth.getOidcConfig() });
+    return result(200, { oidc: authProvider.getOidcConfig() });
   }
   if (id === "auth.oidc.set") {
-    const oidc = consoleAuth.setOidcConfig(input);
-    consoleAuth.audit({
+    const oidc = authProvider.setOidcConfig(input);
+    authProvider.audit({
       user: authSession?.user,
       operationId: "auth.oidc",
       action: "set-oidc",
@@ -3463,7 +3466,7 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
       });
     }
     return result(200, {
-      items: consoleAuth.listAudit({
+      items: authProvider.listAudit({
         limit: query.limit,
         userId: query.userId,
         status: query.status
@@ -3471,12 +3474,12 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
     });
   }
   if (id === "auth.sessions") {
-    return result(200, { sessions: consoleAuth.listSessions() });
+    return result(200, { sessions: authProvider.listSessions() });
   }
   if (id === "auth.sessions.revoke") {
     const sessionId = String(input.sessionId || input["session-id"] || input.id || "").trim();
-    const operationResult = consoleAuth.revokeSession(sessionId);
-    consoleAuth.audit({
+    const operationResult = authProvider.revokeSession(sessionId);
+    authProvider.audit({
       user: authSession?.user,
       operationId: "auth.sessions.revoke",
       action: "revoke-session",
@@ -3557,14 +3560,13 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
     return null;
   }
 
-  const authorizationEngine = context.authorizationEngine || context.consoleAuth?.authorizationEngine;
-  const authorizationStore = context.authorizationStore || context.consoleAuth?.authorizationStore;
+  const securityPermissions = context.securityPermissions;
 
   if (id === "authorization.subject.resolve") {
-    if (!authorizationEngine || typeof authorizationEngine.resolveSubject !== "function") {
+    if (!securityPermissions || typeof securityPermissions.resolveSubject !== "function") {
       return result(503, { error: "授权主体解析接口不可用。" });
     }
-    const subject = authorizationEngine.resolveSubject({
+    const subject = securityPermissions.resolveSubject({
       subject: input.subject,
       actor: input.actor,
       authSession: context.authSession
@@ -3576,10 +3578,10 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
   }
 
   if (id === "authorization.policy.evaluate") {
-    if (!authorizationEngine || typeof authorizationEngine.evaluate !== "function") {
+    if (!securityPermissions || typeof securityPermissions.evaluatePolicy !== "function") {
       return result(503, { error: "授权策略裁决接口不可用。" });
     }
-    const decision = authorizationEngine.evaluate({
+    const decision = securityPermissions.evaluatePolicy({
       operation: input.operation || {
         id: input.operationId || id,
         requiredScopes: input.requiredScopes || [],
@@ -3605,10 +3607,10 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
   }
 
   if (id === "authorization.receipts.list") {
-    if (!authorizationStore || typeof authorizationStore.listReceipts !== "function") {
+    if (!securityPermissions || typeof securityPermissions.listReceipts !== "function") {
       return result(503, { error: "授权回执存储不可用。" });
     }
-    const items = authorizationStore.listReceipts({
+    const items = securityPermissions.listReceipts({
       limit: input.limit || 100,
       subjectId: input.subjectId || input["subject-id"] || ""
     });
@@ -3616,10 +3618,10 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
   }
 
   if (id === "authorization.loan_records.list") {
-    if (!authorizationStore || typeof authorizationStore.listLoanRecords !== "function") {
+    if (!securityPermissions || typeof securityPermissions.listLoanRecords !== "function") {
       return result(503, { error: "授权借用记录存储不可用。" });
     }
-    const items = authorizationStore.listLoanRecords({
+    const items = securityPermissions.listLoanRecords({
       limit: input.limit || 100,
       subjectId: input.subjectId || input["subject-id"] || ""
     });
@@ -3627,10 +3629,10 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
   }
 
   if (id === "authorization.denied_requests.list") {
-    if (!authorizationStore || typeof authorizationStore.listDeniedRequests !== "function") {
+    if (!securityPermissions || typeof securityPermissions.listDeniedRequests !== "function") {
       return result(503, { error: "授权拒绝请求存储不可用。" });
     }
-    const items = authorizationStore.listDeniedRequests({
+    const items = securityPermissions.listDeniedRequests({
       limit: input.limit || 100,
       subjectId: input.subjectId || input["subject-id"] || ""
     });
@@ -3638,36 +3640,24 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
   }
 
   if (id === "workspace.asset.policy.set") {
-    const workspaceId = workspaceIdFrom(input);
-    const policyId = input.policyId || `workspace_asset_policy_${crypto.randomUUID()}`;
-    const policy = {
+    if (!securityPermissions || typeof securityPermissions.setWorkspaceAssetPolicy !== "function") {
+      return result(503, { error: "工作空间资产策略 provider 不可用。" });
+    }
+    const policy = securityPermissions.setWorkspaceAssetPolicy({
       ...input,
-      policyId,
-      workspaceId,
-      updatedAt: new Date().toISOString()
-    };
-    workspaceAssetPolicies.set(`${workspaceId}:${policyId}`, policy);
+      workspaceId: workspaceIdFrom(input)
+    });
     return result(200, protocolPayload({ policy }));
   }
 
   if (id === "workspace.asset.permission.check") {
-    if (!authorizationEngine || typeof authorizationEngine.evaluate !== "function") {
+    if (!securityPermissions || typeof securityPermissions.checkWorkspaceAssetPermission !== "function") {
       return result(503, { error: "授权策略裁决接口不可用。" });
     }
-    const decision = authorizationEngine.evaluate({
-      operation: {
-        id: "workspace.asset.permission.check",
-        requiredScopes: ["workspace:read"],
-        safety: { risk: "read_only" },
-        readOnly: true
-      },
+    const decision = securityPermissions.checkWorkspaceAssetPermission({
+      ...input,
       request: context.request,
-      authSession: context.authSession,
-      input,
-      context: {
-        requestedAction: input.requestedAction || input.action || "read",
-        requestedEgress: input.requestedEgress || ""
-      }
+      authSession: context.authSession
     });
     return result(200, protocolPayload({ decision }));
   }
@@ -3991,7 +3981,8 @@ async function executeRuntimeMountOperation({ operationId, input = {}, context }
       discoveryState: context.discoveryState,
       metadataStore: context.metadataStore,
       serverUrl: context.serverUrl,
-      consoleAuth: context.consoleAuth,
+      securityPermissions: context.securityPermissions,
+      request: context.request,
       features: context.features,
       consoleDomainServices: context.consoleDomainServices
     });
@@ -6058,8 +6049,8 @@ async function executeCodeManagementOperation({ operationId, input = {}, context
 }
 
 function appendKnowledgeAccessDecisionArtifacts(context = {}, decision = null, operationId = "") {
-  const authorizationStore = context.authorizationStore;
-  if (!decision || !authorizationStore) {
+  const securityPermissions = context.securityPermissions;
+  if (!decision || !securityPermissions) {
     return;
   }
   const subjectId =
@@ -6068,16 +6059,16 @@ function appendKnowledgeAccessDecisionArtifacts(context = {}, decision = null, o
     decision.knowledgeAccessReceipt?.subjectId ||
     decision.loanRecord?.subjectId ||
     "";
-  appendAuthorizationArtifact(authorizationStore, "appendReceipt", decision.knowledgeAccessReceipt, {
+  appendAuthorizationArtifact(securityPermissions, "appendReceipt", decision.knowledgeAccessReceipt, {
     decisionId: decision.decisionId,
     subjectId
   });
-  appendAuthorizationArtifact(authorizationStore, "appendLoanRecord", decision.loanRecord, {
+  appendAuthorizationArtifact(securityPermissions, "appendLoanRecord", decision.loanRecord, {
     decisionId: decision.decisionId,
     subjectId
   });
-  if (decision.deniedRequestAudit && typeof authorizationStore.appendDeniedRequest === "function") {
-    authorizationStore.appendDeniedRequest({
+  if (decision.deniedRequestAudit && typeof securityPermissions.appendDeniedRequest === "function") {
+    securityPermissions.appendDeniedRequest({
       decisionId: decision.decisionId,
       subjectId,
       operationId,

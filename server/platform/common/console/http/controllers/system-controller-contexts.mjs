@@ -3,8 +3,6 @@ import {
   saveSettings
 } from "../../../platform-core/settings.mjs";
 import { logRuntimeEvent } from "../../../observability/runtime-logger.mjs";
-import { createAuthorizationEngine } from "../../../security/authorization/authorization-engine.mjs";
-import { createAuthorizationStore } from "../../../security/authorization/authorization-store.mjs";
 
 export function createSystemControllerContexts({
   userDataPath,
@@ -12,7 +10,7 @@ export function createSystemControllerContexts({
   jobManager,
   metadataStore,
   protocolEventBus = null,
-  consoleAuth = null,
+  securityPermissions = null,
   operationAuditStore = null,
   agentWorkspace = null,
   contextRuntime = null,
@@ -92,9 +90,6 @@ export function createSystemControllerContexts({
       typeof provider.deleteUploadSession === "function"
   );
   const agentConfigRegistry = getAgentConfigRegistry();
-  const authorizationStore = consoleAuth?.authorizationStore || createAuthorizationStore({ userDataPath });
-  const authorizationEngine = consoleAuth?.authorizationEngine || createAuthorizationEngine({ store: authorizationStore });
-
   function appendConsoleOperationLog(entry = {}) {
     if (operationAuditStore) {
       try {
@@ -199,8 +194,7 @@ export function createSystemControllerContexts({
 
   function authorizationFacadeContext(authSession = null, extra = {}) {
     return {
-      authorizationEngine,
-      authorizationStore,
+      securityPermissions,
       authSession,
       ...extra
     };
@@ -208,8 +202,8 @@ export function createSystemControllerContexts({
 
   function accessControlContext(authSession = null, extra = {}) {
     return {
+      securityPermissions,
       authSession,
-      authorizationStore,
       ...extra
     };
   }

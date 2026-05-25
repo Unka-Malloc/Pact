@@ -254,7 +254,8 @@ export async function buildConsoleState({
   jobManager,
   metadataStore,
   serverUrl,
-  consoleAuth = null,
+  securityPermissions = null,
+  request = null,
   maintenanceAgent = null,
   clientRuntimeAllocator = null,
   features = null,
@@ -345,7 +346,9 @@ export async function buildConsoleState({
       taxonomy: knowledgeTaxonomy,
       guidance: knowledgeGuidance
     },
-    auth: consoleAuth ? consoleAuth.getSummary() : null,
+    auth: securityPermissions?.getConsoleSummary
+      ? securityPermissions.getConsoleSummary(request)
+      : null,
     maintenanceAgent: maintenanceAgent
       ? await maintenanceAgent.getConsoleSummary()
       : null,
@@ -369,7 +372,8 @@ export async function buildRuntimeInfo({
   discoveryState,
   metadataStore,
   serverUrl,
-  consoleAuth = null,
+  securityPermissions = null,
+  request = null,
   features = null,
   consoleDomainServices = null
 }) {
@@ -390,7 +394,9 @@ export async function buildRuntimeInfo({
       hostname: os.hostname()
     },
     runtime: runtimeSummary,
-    auth: consoleAuth ? consoleAuth.getSummary() : null,
+    auth: securityPermissions?.getConsoleSummary
+      ? securityPermissions.getConsoleSummary(request)
+      : null,
     storage: metadataStore.getStorageSummary(),
     discovery: buildBootstrapPayload(discoveryState),
     features

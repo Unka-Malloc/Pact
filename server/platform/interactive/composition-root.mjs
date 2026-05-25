@@ -6,6 +6,7 @@ import { registerDataStructurePlatformServices } from "../common/data-structure/
 import { createConsoleAuth } from "../common/security/auth/console-auth.mjs";
 import { createOperationAuditStore } from "../common/security/operation-audit.mjs";
 import { registerSecurityPlatformServices } from "../common/security/register.mjs";
+import { createSecurityPermissionsProvider } from "../common/security/security-permissions-provider.mjs";
 import { createServerRuntime } from "../common/module-manager/server-runtime.mjs";
 import { registerModuleManagementPlatformServices } from "../common/module-manager/register.mjs";
 import { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-registry.mjs";
@@ -50,6 +51,7 @@ export async function createServerCompositionRoot({
     builtinMountProviders: createKnowledgeBuiltinMountProviders({ userDataPath })
   });
   const consoleAuth = createConsoleAuth({ userDataPath });
+  const securityPermissions = createSecurityPermissionsProvider({ consoleAuth });
   const operationAuditStore = createOperationAuditStore({ userDataPath });
   const operationConcurrencyScope = path.resolve(userDataPath);
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
@@ -62,6 +64,7 @@ export async function createServerCompositionRoot({
     operationConcurrencyScope
   });
   registerSecurityPlatformServices(platformRegistry, {
+    securityPermissions,
     consoleAuth,
     operationAuditStore
   });
@@ -91,6 +94,7 @@ export async function createServerCompositionRoot({
     platformRegistry,
     runtime,
     consoleAuth,
+    securityPermissions,
     operationAuditStore,
     operationConcurrencyScope,
     protocolEventBus,

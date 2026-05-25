@@ -23,6 +23,7 @@ export function createServerToolManagementPlatform({
   operationConcurrencyScope,
   protocolEventBus,
   consoleAuth,
+  securityPermissions,
   logger
 }) {
   return createToolManagementPlatform({
@@ -34,6 +35,7 @@ export function createServerToolManagementPlatform({
     operationConcurrencyScope,
     protocolEventBus,
     consoleAuth,
+    securityPermissions,
     logger
   });
 }

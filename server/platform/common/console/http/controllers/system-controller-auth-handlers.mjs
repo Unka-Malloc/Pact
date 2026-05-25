@@ -1,7 +1,7 @@
 export function createSystemControllerAuthHandlers({
   sendConsoleDomainOperation,
   parseJsonBody,
-  consoleAuth,
+  securityPermissions,
   operationAuditStore,
   appendConsoleOperationLog
 }) {
@@ -10,7 +10,7 @@ export function createSystemControllerAuthHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "auth.session",
         response,
-        context: { consoleAuth, request },
+        context: { securityPermissions, request },
         errorMessage: "读取控制台登录状态失败。"
       });
     },
@@ -19,7 +19,7 @@ export function createSystemControllerAuthHandlers({
         operationId: operation?.id || "auth.login",
         input: parseJsonBody(requestBody),
         response,
-        context: { consoleAuth, request, appendConsoleOperationLog },
+        context: { securityPermissions, request, appendConsoleOperationLog },
         errorMessage: "登录失败。"
       });
     },
@@ -27,7 +27,7 @@ export function createSystemControllerAuthHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "auth.logout",
         response,
-        context: { consoleAuth, request, authSession, appendConsoleOperationLog },
+        context: { securityPermissions, request, authSession, appendConsoleOperationLog },
         errorMessage: "退出登录失败。"
       });
     },
@@ -36,7 +36,7 @@ export function createSystemControllerAuthHandlers({
         operationId: operation?.id || (requestBody.length > 0 ? "auth.users.create" : "auth.users"),
         input: requestBody.length > 0 ? parseJsonBody(requestBody) : {},
         response,
-        context: { consoleAuth },
+        context: { securityPermissions },
         errorMessage: "读取控制台用户失败。"
       });
     },
@@ -48,7 +48,7 @@ export function createSystemControllerAuthHandlers({
           userId
         },
         response,
-        context: { consoleAuth, authSession },
+        context: { securityPermissions, authSession },
         errorMessage: "更新用户失败。"
       });
     },
@@ -57,7 +57,7 @@ export function createSystemControllerAuthHandlers({
         operationId: operation?.id || "auth.roles.get",
         input: { roleId },
         response,
-        context: { consoleAuth },
+        context: { securityPermissions },
         errorMessage: "读取角色失败。"
       });
     },
@@ -66,7 +66,7 @@ export function createSystemControllerAuthHandlers({
         operationId: operation?.id || (requestBody.length > 0 ? "auth.oidc.set" : "auth.oidc.get"),
         input: requestBody.length > 0 ? parseJsonBody(requestBody) : {},
         response,
-        context: { consoleAuth, authSession },
+        context: { securityPermissions, authSession },
         errorMessage: "OIDC 操作失败。"
       });
     },
@@ -80,7 +80,7 @@ export function createSystemControllerAuthHandlers({
           status: url.searchParams.get("status") || ""
         },
         response,
-        context: { consoleAuth, operationAuditStore },
+        context: { securityPermissions, operationAuditStore },
         errorMessage: "读取认证审计失败。"
       });
     },
@@ -88,7 +88,7 @@ export function createSystemControllerAuthHandlers({
       await sendConsoleDomainOperation({
         operationId: operation?.id || "auth.sessions",
         response,
-        context: { consoleAuth },
+        context: { securityPermissions },
         errorMessage: "读取控制台会话失败。"
       });
     },
@@ -97,7 +97,7 @@ export function createSystemControllerAuthHandlers({
         operationId: operation?.id || "auth.sessions.revoke",
         input: { sessionId },
         response,
-        context: { consoleAuth, authSession },
+        context: { securityPermissions, authSession },
         errorMessage: "撤销控制台会话失败。"
       });
     }

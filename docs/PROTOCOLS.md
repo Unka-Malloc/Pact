@@ -52,6 +52,7 @@
 | `pact.client-runtime-bootstrap.v1` | 最小 MCP connector 或客户端主动声明平台、命令、模块需求和上传规模，服务端返回裁剪后的 Pact client runtime 计划、可拉取 artifact refs 与 transport 降级顺序。 |
 | `pact.tool-management.v1` | Tool Management v1 catalog、grant、policy preview、execute、audit、metrics。 |
 | `pact.security.v1` | subject、workspace、scope、grant、data class、secret ref、redaction、audit policy。 |
+| `pact.security-permissions.v1` | 组合根注入的统一安全权限 provider，封装 console auth、operation authorization、authorization policy、authorization audit artifact、workspace asset policy 和 Tool/MCP grant 裁决。 |
 | `pact.workflow.v1` | 长任务、activity、checkpoint、retry、signal、timer、恢复和补偿语义。 |
 | `pact.backup-restore.v1` | 服务端数据目录备份、manifest、restore preview、确认恢复和恢复报告。 |
 | `pact.data-connector-governance.v1` | 服务端数据连接器合同、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载验收。 |

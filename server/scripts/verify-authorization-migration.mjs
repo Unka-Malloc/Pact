@@ -4,6 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { createAuthorizationEngine } from "../platform/common/security/authorization/authorization-engine.mjs";
 import { createAuthorizationStore } from "../platform/common/security/authorization/authorization-store.mjs";
+import {
+  SECURITY_PERMISSIONS_PROTOCOL_VERSION,
+  createSecurityPermissionsProvider
+} from "../platform/common/security/security-permissions-provider.mjs";
 import { createToolPolicyEngine } from "../platform/specialized/capabilities/tools/tool-management-core/policy.mjs";
 import { createToolExecutionRuntime } from "../platform/specialized/capabilities/tools/tool-management-core/runtime.mjs";
 
@@ -47,6 +51,79 @@ try {
       scopes: ["workspace:maintain"]
     }
   };
+
+  const securityPermissions = createSecurityPermissionsProvider({
+    consoleAuth: {
+      authorizationEngine,
+      authorizationStore,
+      getSummary() {
+        return {
+          enabled: true,
+          bootstrap: {},
+          session: { authenticated: false, csrfToken: "", expiresAt: "", user: null },
+          roles: [],
+          oidc: {}
+        };
+      },
+      authorizeOperation({ request, operation, method, url }) {
+        const decision = authorizationEngine.evaluate({
+          operation,
+          request,
+          authSession: viewerSession,
+          input: {
+            method,
+            path: url?.pathname || ""
+          },
+          enforceConfirmation: false
+        });
+        return decision.allowed
+          ? { ok: true, session: viewerSession, authorizationDecision: decision }
+          : { ok: false, status: 403, error: decision.reasonCode, session: viewerSession, authorizationDecision: decision };
+      }
+    }
+  });
+  assert.equal(securityPermissions.protocolVersion, SECURITY_PERMISSIONS_PROTOCOL_VERSION);
+  assert.equal(securityPermissions.getConsoleSummary().enabled, true);
+  assert.equal(securityPermissions.authorizationStore, authorizationStore);
+  assert.equal(securityPermissions.authorizationEngine, authorizationEngine);
+  const providerAllowed = await securityPermissions.authorizeOperation({
+    operation: readOperation,
+    method: "GET",
+    url: new URL("http://127.0.0.1/api/workspace/files")
+  });
+  assert.equal(providerAllowed.ok, true);
+  const providerDenied = await securityPermissions.authorizeOperation({
+    operation: writeOperation,
+    method: "POST",
+    url: new URL("http://127.0.0.1/api/workspace/file/upload")
+  });
+  assert.equal(providerDenied.ok, false);
+  assert.equal(providerDenied.authorizationDecision.reasonCode, "missing_scopes");
+  const workspaceAssetPolicy = securityPermissions.setWorkspaceAssetPolicy({
+    workspaceId: "workspace-a",
+    accessMode: "read",
+    subjectId: "viewer-1"
+  });
+  assert.equal(workspaceAssetPolicy.workspaceId, "workspace-a");
+  assert.equal(
+    securityPermissions.getWorkspaceAssetPolicy({
+      workspaceId: "workspace-a",
+      policyId: workspaceAssetPolicy.policyId
+    }).policyId,
+    workspaceAssetPolicy.policyId
+  );
+  const workspaceAssetDecision = securityPermissions.checkWorkspaceAssetPermission({
+    authSession: {
+      user: {
+        userId: "workspace-reader",
+        username: "workspace-reader",
+        roleId: "viewer",
+        scopes: ["workspace:read"]
+      }
+    },
+    requestedAction: "read"
+  });
+  assert.equal(workspaceAssetDecision.allowed, true);
 
   const readDecision = authorizationEngine.evaluate({
     operation: readOperation,
@@ -97,7 +174,7 @@ try {
   const policyEngine = createToolPolicyEngine({
     registry: { getTool: () => null, listProfiles: () => [] },
     store: policyStore,
-    authorizationStore
+    securityPermissions
   });
   const knowledgeTool = {
     id: "pact.knowledge.health",
@@ -233,7 +310,7 @@ try {
     },
     store: runtimeStore,
     policyEngine,
-    authorizationStore,
+    securityPermissions,
     operations: [{
       id: "knowledge.health",
       requiredScopes: ["knowledge:read"],

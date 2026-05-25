@@ -371,6 +371,7 @@ export async function startHttpServer({
     platformRegistry,
     runtime,
     consoleAuth,
+    securityPermissions,
     operationAuditStore,
     operationConcurrencyScope,
     protocolEventBus,
@@ -508,6 +509,7 @@ export async function startHttpServer({
     getFeatureEntries: publicFeatures,
     protocolEventBus,
     consoleAuth,
+    securityPermissions,
     operationAuditStore,
     maintenanceAgent: exposedMaintenanceAgent,
     knowledgeSourceService: exposedKnowledgeSourceService,
@@ -561,6 +563,7 @@ export async function startHttpServer({
     operationConcurrencyScope,
     protocolEventBus,
     consoleAuth,
+    securityPermissions,
     logger: runtimeLogger
   });
   toolManagementPlatformRef = toolManagementPlatform;
@@ -668,7 +671,7 @@ export async function startHttpServer({
           toolManagementPlatform,
           listenUrl,
           discoveryState,
-          consoleAuth,
+          securityPermissions,
           logger: runtimeLogger
         })
       ) {
@@ -683,7 +686,7 @@ export async function startHttpServer({
           response,
           requestBody,
           authorizeOperation: consoleAuthEnabled
-            ? (input) => consoleAuth.authorizeOperation(input)
+            ? (input) => securityPermissions.authorizeOperation(input)
             : null,
           operationAuditStore,
           concurrencyScope: operationConcurrencyScope,
@@ -719,7 +722,7 @@ export async function startHttpServer({
         response,
         requestBody,
         authorizeOperation: consoleAuthEnabled
-          ? (input) => consoleAuth.authorizeOperation(input)
+          ? (input) => securityPermissions.authorizeOperation(input)
           : null,
         operationAuditStore,
         concurrencyScope: operationConcurrencyScope,

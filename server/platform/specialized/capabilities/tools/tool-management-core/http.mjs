@@ -17,11 +17,17 @@ function pathAfterPrefix(pathname) {
   return String(pathname || "").slice(TOOL_MANAGEMENT_API_PREFIX.length) || "/";
 }
 
-async function authorizeConsole({ consoleAuth, request, method, url, requiredScopes = ["runtime:admin"] }) {
-  if (!consoleAuth || typeof consoleAuth.authorizeOperation !== "function") {
+async function authorizeConsole({
+  securityPermissions = null,
+  request,
+  method,
+  url,
+  requiredScopes = ["runtime:admin"]
+}) {
+  if (!securityPermissions || typeof securityPermissions.authorizeOperation !== "function") {
     return { ok: true, session: null };
   }
-  return consoleAuth.authorizeOperation({
+  return securityPermissions.authorizeOperation({
     request,
     method,
     url,
@@ -46,7 +52,11 @@ function sendAuthorizationDenied(response, authorization) {
   });
 }
 
-export function createToolManagementHttpRouter({ platform, consoleAuth = null, logger = getRuntimeLogger() }) {
+export function createToolManagementHttpRouter({
+  platform,
+  securityPermissions = null,
+  logger = getRuntimeLogger()
+}) {
   function logRouter(level, event, details = {}) {
     if (!logger || typeof logger[level] !== "function") {
       return;
@@ -82,7 +92,7 @@ export function createToolManagementHttpRouter({ platform, consoleAuth = null, l
 
   async function requireConsole(request, response, method, url, scopes = ["runtime:admin"]) {
     const authorization = await authorizeConsole({
-      consoleAuth,
+      securityPermissions,
       request,
       method,
       url,

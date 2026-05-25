@@ -1,10 +1,19 @@
 import { registerPlatformService } from "../../interactive/platform-registry.mjs";
 
 export function registerSecurityPlatformServices(registry, {
+  securityPermissions = null,
   consoleAuth = null,
   operationAuditStore = null
 } = {}) {
   return [
+    registerPlatformService(registry, {
+      id: "security.permissions.provider",
+      platform: "security",
+      label: "Security permissions provider",
+      kind: "authorization-provider",
+      ownerFeatureId: "security-permissions",
+      value: securityPermissions
+    }),
     registerPlatformService(registry, {
       id: "security.auth.console",
       platform: "security",

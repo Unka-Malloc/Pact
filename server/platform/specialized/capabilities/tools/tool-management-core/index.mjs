@@ -9,6 +9,7 @@ import { createToolPolicyEngine } from "./policy.mjs";
 import { createToolExecutionRuntime } from "./runtime.mjs";
 import { createToolManagementHttpRouter } from "./http.mjs";
 import { getRuntimeLogger } from "../../../../interactive/product-api.mjs";
+import { createSecurityPermissionsProvider } from "../../../../common/security/security-permissions-provider.mjs";
 
 export {
   TOOL_MANAGEMENT_SCOPES,
@@ -25,25 +26,29 @@ export function createToolManagementPlatform({
   operationConcurrencyScope = "tool-management",
   protocolEventBus = null,
   consoleAuth = null,
+  securityPermissions = null,
   featureRuntime = null,
   logger = getRuntimeLogger()
 }) {
+  const effectiveSecurityPermissions =
+    securityPermissions ||
+    (consoleAuth ? createSecurityPermissionsProvider({ consoleAuth }) : null);
   const registry = createToolCatalogRegistry({
     operations,
     activeFeatureIds: featureRuntime?.activeFeatureIds || null
   });
   const store = createToolManagementStore({ userDataPath });
-  const authorizationStore = consoleAuth?.authorizationStore || null;
+  const authorizationStore = effectiveSecurityPermissions?.authorizationStore || null;
   const policyEngine = createToolPolicyEngine({
     registry,
     store,
-    authorizationStore
+    securityPermissions: effectiveSecurityPermissions
   });
   const runtime = createToolExecutionRuntime({
     registry,
     store,
     policyEngine,
-    authorizationStore,
+    securityPermissions: effectiveSecurityPermissions,
     operations,
     controllers,
     operationAuditStore,
@@ -58,9 +63,10 @@ export function createToolManagementPlatform({
       policyEngine,
       runtime,
       authorizationStore,
+      securityPermissions: effectiveSecurityPermissions,
       catalog: () => registry.getCatalog()
     },
-    consoleAuth,
+    securityPermissions: effectiveSecurityPermissions,
     logger
   });
   store.saveCatalogSnapshot(registry.getCatalog());
@@ -71,6 +77,7 @@ export function createToolManagementPlatform({
     policyEngine,
     runtime,
     router,
+    securityPermissions: effectiveSecurityPermissions,
     authorizationStore,
     catalog: () => registry.getCatalog(),
     close() {

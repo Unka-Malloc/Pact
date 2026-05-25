@@ -1,5 +1,3 @@
-import { createAuthorizationEngine } from "../../../../common/security/authorization/authorization-engine.mjs";
-
 function nowIso() {
   return new Date().toISOString();
 }
@@ -8,9 +6,7 @@ function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
-export function createToolPolicyEngine({ registry, store, authorizationStore = null }) {
-  const authorizationEngine = createAuthorizationEngine({ store: authorizationStore });
-
+export function createToolPolicyEngine({ registry, store, securityPermissions = null }) {
   function evaluate({
     tool,
     grant = null,
@@ -30,21 +26,32 @@ export function createToolPolicyEngine({ registry, store, authorizationStore = n
       "session_task_policy",
       "runtime_safety_policy"
     ].filter(Boolean);
-    const authorizationDecision = authorizationEngine.evaluate({
-      tool,
-      grant,
-      profile,
-      input,
-      request,
-      context: {
-        ...context,
-        toolExpected: true
-      },
-      dryRun,
-      traceId,
-      toolExecutionId,
-      grantRequired: true
-    });
+    const authorizationDecision = (typeof securityPermissions?.evaluatePolicy === "function"
+      ? securityPermissions.evaluatePolicy({
+          tool,
+          grant,
+          profile,
+          input,
+          request,
+          context: {
+            ...context,
+            toolExpected: true
+          },
+          dryRun,
+          traceId,
+          toolExecutionId,
+          grantRequired: true
+        })
+      : null) || {
+          effect: "deny",
+          allowed: false,
+          reasonCode: "authorization_provider_unavailable",
+          redactedReason: "Security permissions provider is unavailable.",
+          missingScopes: [],
+          missingToolsets: [],
+          evaluatedLayers: [],
+          createdAt: nowIso()
+        };
     const decision = {
       ...authorizationDecision,
       decisionId: `policy_${cryptoRandomSuffix()}`,

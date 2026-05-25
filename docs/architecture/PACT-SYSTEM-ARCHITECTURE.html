@@ -233,17 +233,13 @@
     .specialized-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
+      grid-template-areas:
+        "knowledge agent"
+        "sharedspace codespace"
+        "policy tools";
+      align-items: stretch;
       gap: 10px;
       padding: 14px;
-    }
-
-    .application-column {
-      display: grid;
-      grid-template-rows: repeat(3, auto);
-      align-content: start;
-      gap: 10px;
-      min-width: 0;
     }
 
     .subnode {
@@ -259,26 +255,32 @@
     }
 
     .subnode.knowledge {
+      grid-area: knowledge;
       border-left: 5px solid var(--green);
     }
 
     .subnode.agent {
+      grid-area: agent;
       border-left: 5px solid var(--purple);
     }
 
     .subnode.sharedspace {
+      grid-area: sharedspace;
       border-left: 5px solid var(--brown);
     }
 
     .subnode.codespace {
+      grid-area: codespace;
       border-left: 5px solid var(--blue);
     }
 
     .subnode.policy {
+      grid-area: policy;
       border-left: 5px solid var(--red);
     }
 
     .subnode.tools {
+      grid-area: tools;
       border-left: 5px solid var(--brown);
     }
 
@@ -496,8 +498,14 @@
         min-width: 0;
       }
 
-      .application-column {
-        grid-template-rows: none;
+      .specialized-grid {
+        grid-template-areas:
+          "knowledge"
+          "sharedspace"
+          "policy"
+          "agent"
+          "codespace"
+          "tools";
       }
 
       .injection-card::before {
@@ -592,176 +600,172 @@
               <span class="base-label">Specialized</span>
             </div>
             <div class="specialized-grid" aria-label="应用层左右两列各三个子系统">
-              <div class="application-column application-left" aria-label="应用层左列：知识转化、共享空间、策略管理">
-                <div class="subnode knowledge">
-                  <h3>知识转化</h3>
-                  <div class="knowledge-grid" aria-label="知识转化核心能力">
-                    <div class="tier distill">
-                      <strong>知识蒸馏</strong>
-                      <ul>
-                        <li>摘要与文档化</li>
-                        <li>Markdown / DOCX</li>
-                      </ul>
-                    </div>
-                    <div class="tier index">
-                      <strong>知识索引</strong>
-                      <ul>
-                        <li>事件聚合</li>
-                        <li>embedding / 检索</li>
-                      </ul>
-                    </div>
-                    <div class="tier raw">
-                      <strong>原始语料</strong>
-                      <ul>
-                        <li>格式转换</li>
-                        <li>结构保留</li>
-                      </ul>
-                    </div>
-                    <div class="knowledge-base-strip">
-                      <strong>AgentLibrary / 图书馆</strong>
-                      <ul>
-                        <li><code>knowledgeBase</code> mount</li>
-                        <li>证据 / 导出 / 外部库适配</li>
-                      </ul>
-                    </div>
+              <div class="subnode knowledge">
+                <h3>知识转化</h3>
+                <div class="knowledge-grid" aria-label="知识转化核心能力">
+                  <div class="tier distill">
+                    <strong>知识蒸馏</strong>
+                    <ul>
+                      <li>摘要与文档化</li>
+                      <li>Markdown / DOCX</li>
+                    </ul>
                   </div>
-                </div>
-
-                <div class="subnode sharedspace">
-                  <h3>共享空间</h3>
-                  <div class="workspace-grid">
-                    <div class="module-tile">
-                      <strong>Sharedspace</strong>
-                      <code>agent-workspace</code>
-                      <ul>
-                        <li>受控文件空间</li>
-                        <li>StateCommit</li>
-                      </ul>
-                    </div>
-                    <div class="module-tile">
-                      <strong>协作治理</strong>
-                      <code>workspace-governance</code>
-                      <ul>
-                        <li>issue / proposal</li>
-                        <li>锁与继承</li>
-                      </ul>
-                    </div>
+                  <div class="tier index">
+                    <strong>知识索引</strong>
+                    <ul>
+                      <li>事件聚合</li>
+                      <li>embedding / 检索</li>
+                    </ul>
                   </div>
-                  <p class="caption">共享空间是公共资产和协作状态，不属于单个智能体私有状态。</p>
-                </div>
-
-                <div class="subnode policy">
-                  <h3>策略管理</h3>
-                  <div class="policy-grid">
-                    <div class="module-tile">
-                      <strong>流程策略</strong>
-                      <code>workflow-policy</code>
-                      <ul>
-                        <li>处理流程选择</li>
-                        <li>人工确认门禁</li>
-                      </ul>
-                    </div>
-                    <div class="module-tile">
-                      <strong>调用策略</strong>
-                      <code>agent-policy</code>
-                      <ul>
-                        <li>模型路由</li>
-                        <li>工具调用约束</li>
-                      </ul>
-                    </div>
+                  <div class="tier raw">
+                    <strong>原始语料</strong>
+                    <ul>
+                      <li>格式转换</li>
+                      <li>结构保留</li>
+                    </ul>
                   </div>
-                  <p class="caption">策略管理负责处理流程和智能体调用策略；安全权限仍由基建层安全权限裁决。</p>
+                  <div class="knowledge-base-strip">
+                    <strong>AgentLibrary / 图书馆</strong>
+                    <ul>
+                      <li><code>knowledgeBase</code> mount</li>
+                      <li>证据 / 导出 / 外部库适配</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 
-              <div class="application-column application-right" aria-label="应用层右列：智能体、代码管理、通用工具与技能">
-                <div class="subnode agent">
-                  <h3>智能体</h3>
-                  <div class="agent-stack" aria-label="智能体上下文、记忆与基座">
-                    <div class="agent-layer">
-                      <div class="agent-layer-name">核心组件</div>
-                      <div class="agent-runtime-rows">
-                        <div class="agent-runtime-row">
-                          <div class="module-tile">
-                            <strong>上下文（临时）</strong>
-                            <code>agent-context</code>
-                            <ul>
-                              <li>临时上下文</li>
-                              <li>会话压缩</li>
-                            </ul>
-                          </div>
-                          <div class="module-tile">
-                            <strong>记忆（长期）</strong>
-                            <code>agent-memory</code>
-                            <ul>
-                              <li>长期上下文</li>
-                              <li>contentRefs</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="agent-layer">
-                      <div class="agent-layer-name">智能体基座</div>
-                      <div class="agent-module-grid">
+              <div class="subnode agent">
+                <h3>智能体</h3>
+                <div class="agent-stack" aria-label="智能体上下文、记忆与基座">
+                  <div class="agent-layer">
+                    <div class="agent-layer-name">核心组件</div>
+                    <div class="agent-runtime-rows">
+                      <div class="agent-runtime-row">
                         <div class="module-tile">
-                          <strong>模型网关</strong>
-                          <code>agent-gateway</code>
+                          <strong>上下文（临时）</strong>
+                          <code>agent-context</code>
+                          <ul>
+                            <li>临时上下文</li>
+                            <li>会话压缩</li>
+                          </ul>
                         </div>
                         <div class="module-tile">
-                          <strong>基础配置</strong>
-                          <code>agent-configs</code>
+                          <strong>记忆（长期）</strong>
+                          <code>agent-memory</code>
+                          <ul>
+                            <li>长期上下文</li>
+                            <li>contentRefs</li>
+                          </ul>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-
-                <div class="subnode codespace">
-                  <h3>代码管理</h3>
-                  <div class="codespace-grid">
-                    <div class="module-tile">
-                      <strong>Codespace</strong>
-                      <code>pact.codespace</code>
-                      <ul>
-                        <li>target registry</li>
-                        <li>changeSet / receipt</li>
-                      </ul>
-                    </div>
-                    <div class="module-tile">
-                      <strong>Code Review</strong>
-                      <code>pact.code-review.v1</code>
-                      <ul>
-                        <li>Gerrit route</li>
-                        <li>review 状态同步</li>
-                      </ul>
+                  <div class="agent-layer">
+                    <div class="agent-layer-name">智能体基座</div>
+                    <div class="agent-module-grid">
+                      <div class="module-tile">
+                        <strong>模型网关</strong>
+                        <code>agent-gateway</code>
+                      </div>
+                      <div class="module-tile">
+                        <strong>基础配置</strong>
+                        <code>agent-configs</code>
+                      </div>
                     </div>
                   </div>
-                  <p class="caption">需要评审或合并的代码进入代码管理；Workspace 只保存治理记录、引用、审计和 fallback。</p>
                 </div>
+              </div>
 
-                <div class="subnode tools">
-                  <h3>通用工具与技能</h3>
-                  <div class="module-grid">
-                    <div class="module-tile">
-                      <strong>工具管理</strong>
-                      <code>capabilities/tools/tool-management-core</code>
-                      <ul>
-                        <li>toolset / grant</li>
-                        <li>策略与审计</li>
-                      </ul>
-                    </div>
-                    <div class="module-tile">
-                      <strong>技能管理</strong>
-                      <code>capabilities/skills</code>
-                      <ul>
-                        <li>skill registry</li>
-                        <li>profile 配置</li>
-                      </ul>
-                    </div>
+              <div class="subnode sharedspace">
+                <h3>共享空间</h3>
+                <div class="workspace-grid">
+                  <div class="module-tile">
+                    <strong>Sharedspace</strong>
+                    <code>agent-workspace</code>
+                    <ul>
+                      <li>受控文件空间</li>
+                      <li>StateCommit</li>
+                    </ul>
                   </div>
-                  <p class="caption">通用能力通过配置授权给智能体取用，不属于单个智能体私有状态。</p>
+                  <div class="module-tile">
+                    <strong>协作治理</strong>
+                    <code>workspace-governance</code>
+                    <ul>
+                      <li>issue / proposal</li>
+                      <li>锁与继承</li>
+                    </ul>
+                  </div>
                 </div>
+                <p class="caption">共享空间是公共资产和协作状态，不属于单个智能体私有状态。</p>
+              </div>
+
+              <div class="subnode codespace">
+                <h3>代码管理</h3>
+                <div class="codespace-grid">
+                  <div class="module-tile">
+                    <strong>Codespace</strong>
+                    <code>pact.codespace</code>
+                    <ul>
+                      <li>target registry</li>
+                      <li>changeSet / receipt</li>
+                    </ul>
+                  </div>
+                  <div class="module-tile">
+                    <strong>Code Review</strong>
+                    <code>pact.code-review.v1</code>
+                    <ul>
+                      <li>Gerrit route</li>
+                      <li>review 状态同步</li>
+                    </ul>
+                  </div>
+                </div>
+                <p class="caption">需要评审或合并的代码进入代码管理；Workspace 只保存治理记录、引用、审计和 fallback。</p>
+              </div>
+
+              <div class="subnode policy">
+                <h3>策略管理</h3>
+                <div class="policy-grid">
+                  <div class="module-tile">
+                    <strong>流程策略</strong>
+                    <code>workflow-policy</code>
+                    <ul>
+                      <li>处理流程选择</li>
+                      <li>人工确认门禁</li>
+                    </ul>
+                  </div>
+                  <div class="module-tile">
+                    <strong>调用策略</strong>
+                    <code>agent-policy</code>
+                    <ul>
+                      <li>模型路由</li>
+                      <li>工具调用约束</li>
+                    </ul>
+                  </div>
+                </div>
+                <p class="caption">策略管理负责处理流程和智能体调用策略；安全权限仍由基建层安全权限裁决。</p>
+              </div>
+
+              <div class="subnode tools">
+                <h3>通用工具与技能</h3>
+                <div class="module-grid">
+                  <div class="module-tile">
+                    <strong>工具管理</strong>
+                    <code>capabilities/tools/tool-management-core</code>
+                    <ul>
+                      <li>toolset / grant</li>
+                      <li>策略与审计</li>
+                    </ul>
+                  </div>
+                  <div class="module-tile">
+                    <strong>技能管理</strong>
+                    <code>capabilities/skills</code>
+                    <ul>
+                      <li>skill registry</li>
+                      <li>profile 配置</li>
+                    </ul>
+                  </div>
+                </div>
+                <p class="caption">通用能力通过配置授权给智能体取用，不属于单个智能体私有状态。</p>
               </div>
             </div>
           </article>

@@ -15,7 +15,7 @@ export function createSystemControllerRuntimeHandlers({
   runtime,
   jobManager,
   metadataStore,
-  consoleAuth,
+  securityPermissions,
   maintenanceAgent,
   clientRuntimeAllocator,
   getToolManagementPlatform,
@@ -168,7 +168,7 @@ export function createSystemControllerRuntimeHandlers({
         errorMessage: "保存服务发现配置失败。"
       });
     },
-    async handleGetRuntimeInfo({ operation, response }) {
+    async handleGetRuntimeInfo({ operation, request, response }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "runtime.info",
         response,
@@ -178,7 +178,8 @@ export function createSystemControllerRuntimeHandlers({
           discoveryState: getDiscoveryState(),
           metadataStore,
           serverUrl: getListenUrl(),
-          consoleAuth,
+          securityPermissions,
+          request,
           features: getFeatureEntries ? getFeatureEntries() : null,
           consoleDomainServices
         },
@@ -194,7 +195,7 @@ export function createSystemControllerRuntimeHandlers({
         errorMessage: "浏览服务端路径失败。"
       });
     },
-    async handleGetMounts({ operation, response }) {
+    async handleGetMounts({ operation, request, response }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "runtime.mounts",
         response,
@@ -204,7 +205,8 @@ export function createSystemControllerRuntimeHandlers({
           discoveryState: getDiscoveryState(),
           metadataStore,
           serverUrl: getListenUrl(),
-          consoleAuth,
+          securityPermissions,
+          request,
           features: getFeatureEntries ? getFeatureEntries() : null,
           consoleDomainServices
         },
@@ -229,7 +231,7 @@ export function createSystemControllerRuntimeHandlers({
         errorMessage: "重载挂载配置失败。"
       });
     },
-    async handleGetConsoleState({ operation, response }) {
+    async handleGetConsoleState({ operation, request, response }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "system.console_state",
         response,
@@ -240,7 +242,8 @@ export function createSystemControllerRuntimeHandlers({
           jobManager,
           metadataStore,
           serverUrl: getListenUrl(),
-          consoleAuth,
+          securityPermissions,
+          request,
           maintenanceAgent,
           clientRuntimeAllocator,
           features: getFeatureEntries ? getFeatureEntries() : null,

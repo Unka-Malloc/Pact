@@ -7,7 +7,7 @@
 ```text
 管理层
   -> 服务层：接口封装层
-  -> 应用层：知识转化（含 AgentLibrary） + 智能体 + 共享空间 + 代码管理 + 策略管理 + 通用工具与技能
+  -> 应用层：左列（知识转化〔含 AgentLibrary〕 + 共享空间 + 策略管理） + 右列（智能体 + 代码管理 + 通用工具与技能）
   -> 基建层：核心能力 + 安全权限 + 模块管理 + 算法和数据结构 + 存储 + 运维基础
 
 侧边：启动装配 / Composition Root 向管理层、接口封装层、应用层和基建层注入依赖
@@ -21,7 +21,7 @@
 | 2 | 共享空间 | 代码管理 |
 | 3 | 策略管理 | 通用工具与技能 |
 
-架构图已用 `application-left` / `application-right` 两个列容器固化该分组：桌面端保持左列三个、右列三个；移动端退化为单列时先展示左列，再展示右列，但模块归属口径不变。
+架构图已用 `specialized-grid` 的 `grid-template-areas` 固化为 2 x 3 矩阵：桌面端严格保持左列三个、右列三个；移动端退化为单列时先展示左列三个，再展示右列三个，但模块归属口径不变。
 
 进度百分比表示“协议化/解耦完成度”，不是产品功能完成度，也不是生产可用性评分。启动装配是侧边组合边界，不属于服务层、应用层或基建层；协议注册表、权限迁移、API Facade 拆分、Jobs Controller 拆分、MCP Adapter 拆分属于横切治理任务，不能再作为独立架构层统计。
 
@@ -47,15 +47,15 @@
 | --- | --- | --- | ---: | --- | --- | --- |
 | 管理层 | 管理层 | `[~]` | 50% | 管理界面承载知识库、工作空间、调试和系统管理入口；重构目标是只调用服务层接口。 | 需要继续确认 UI/Console 不绕过服务层读取应用 runtime 或基建存储；管理层展示依赖的 console state 仍受 API Facade 聚合影响。 | 管理层只通过接口封装层访问能力；无直接应用层/基建层访问路径。 |
 | 启动装配边界 | 启动装配 / Composition Root | `[x]` | 100% | `http-server` 中 runtime/provider 创建已迁到 `composition-root` 和 `server-runtime-providers`；启动快照通过 `dispatchInternalOperation` 发布；启动装配在架构图中已作为侧边 Composition Root 表达。 | 已完成。本子系统后续只允许维护性变更，不能让业务 runtime 装配回流到 `http-server` 或接口层。 | 已通过 `npm run server:verify:architecture-patterns`、`npm run server:verify:platform-boundaries`、`npm run server:verify:protocol-operations` 和全量 `npm run server:verify`。 |
-| 服务层 | 接口封装层 | `[~]` | 55% | HTTP server 入口已变薄；System Controller 已拆成 handler family；Tool/Knowledge/Runtime summary 已从 `api-facade` 抽出。 | `api-facade` 仍聚合 settings、agent selector、jobs、storage、auth、client runtime、maintenance summary；`jobs-controller` 仍直接持有 jobManager/metadataStore/raw object 细节；MCP adapter 仍依赖 Tool Management runtime。 | 接口封装层只做 HTTP/RPC/CLI 适配、认证、权限、参数归一化和返回格式；业务摘要全部来自 provider/operation。 |
+| 服务层 | 接口封装层 | `[~]` | 60% | HTTP server 入口已变薄；System Controller 已拆成 handler family；Tool/Knowledge/Runtime summary 已从 `api-facade` 抽出；认证和授权摘要改由 `securityPermissions` provider 提供。 | `api-facade` 仍聚合 settings、agent selector、jobs、storage、client runtime、maintenance summary；`jobs-controller` 仍直接持有 jobManager/metadataStore/raw object 细节；MCP adapter 仍依赖 Tool Management runtime。 | 接口封装层只做 HTTP/RPC/CLI 适配、认证、权限、参数归一化和返回格式；业务摘要全部来自 provider/operation。 |
 | 应用层 | 知识转化 | `[x]` | 100% | 架构图把知识蒸馏、知识索引、原始语料和 AgentLibrary 归为一个应用层模块；Knowledge console summary 已独立，`api-facade` 不再直接读 `runtime.mounts.knowledgeBase`；`knowledge-access` 已有 evaluate/receipt/loan/denied request 执行器；`raw-corpus.format.convert`、`knowledge.dossier.export`、`knowledge.distillation.export` 已接入 `KnowledgeTransformation` provider，并统一返回 portable export package 与 AgentLibrary access decision。 | 已完成。本子系统后续只允许维护性变更；更复杂的真实语料转换、Dossier 编排和蒸馏运行质量属于功能增强，不再是协议化/解耦缺口。 | 已通过 `npm run server:verify:knowledge-transformation`、`npm run server:verify:agent-library-access`、`npm run server:verify:knowledge-architecture-governance`、`npm run server:verify:protocol-operations` 和 `npm run server:verify:architecture-patterns`。 |
 | 应用层 | 智能体 | `[~]` | 65% | agent context、agent memory、Agent Gateway、agent-configs 已从服务入口迁入 runtime provider 或 composition root；context preview/compaction/session memory 相关 handler 已拆分。 | handler context 仍有 runtime/store/service 直传；settings、agent selector、model routing 仍有部分聚合留在接口层。 | context/memory/gateway/config 均只通过 agent provider/operation 暴露，接口层不直接操作 runtime。 |
 | 应用层 | 共享空间 | `[x]` | 100% | 架构图将 `agent-workspace` 提升为应用层一等子系统，定位为受控文件空间、StateCommit、issue/proposal、锁和继承治理；workspace handler 已拆分；`workspace-contribution`、workspace file upload/list/download/read/write/patch、checkpoint diff/scope/restore preview/restore、proposal create/apply 均已接入 operation/provider 后端；workspace runtime、issue resolve、lock、inheritance/share/profile/source 已通过 `agent_workspaces.*` registry 暴露；checkpoint restore 在通用 checkpoint tree 记录 marker/event/audit，同时把文件树 dry-run 和实际恢复委托给共享空间 `restoreWorkspaceFiles` provider。 | 已完成。本子系统后续只允许维护性变更；proposal apply 按设计只把审核后的 proposal 转为 decision，不直接改写任意 canonical state。 | 已通过 `npm run server:verify:workspace-checkpoints`、`npm run server:verify:workspace-proposals`、`npm run server:verify:workspace-governance`、`npm run server:verify:workspace-contribution-governance` 和 `npm run server:verify:agent-workspace`。 |
 | 应用层 | 代码管理 / Codespace | `[x]` | 100% | 架构图新增 `pact.codespace` 和 `pact.code-review.v1` 应用能力；Codespace 已有持久化 registry，保存 target evaluation、CodeChange、changeSet、review target link、status sync、upload receipt 和 append-only event；`workspace.code.*` 已从轻量 facade 迁入 `createCodespaceRegistry` provider；Gerrit upload route 仍负责真实 code-review 外部系统确认。 | 已完成。本子系统后续只允许维护性变更；安全授权迁移仍作为横切任务处理，不计入代码管理子系统本身。 | 已通过 `npm run server:verify:codespace`、`npm run server:verify:gerrit-mcp`、`npm run server:verify:protocol-operations`、`npm run server:verify:architecture-patterns` 和 `npm run server:verify:platform-boundaries`。 |
 | 应用层 | 策略管理 | `[ ]` | 20% | 架构图新增策略管理应用模块，专门承载处理流程策略和智能体调用策略；现有相关规则仍散落在 model routing、tool grant、workspace governance、workflow config 等路径。 | 需要定义 workflow-policy / agent-policy 的协议入口、策略注册表、策略评估 provider 和审计输出；同时明确它与基建层安全权限的边界。 | 处理流程选择、模型路由、工具调用约束、人工确认门禁都通过策略管理 provider/operation 评估；安全授权仍只由安全权限层裁决。 |
-| 应用层 | 通用工具与技能 | `[~]` | 55% | Tool Management 客户端连接投影已从 `api-facade` 迁入 specialized provider；runtime 创建已迁出 `http-server`；技能管理定位为 skill registry 和 profile 配置。 | MCP 授权、tool exposure、grant/policy 访问链仍未完全收口；skill registry、profile 配置、workspace skill 与 agent skill planning 需要统一协议化验收。 | Tool/Skill 能力注册、授权、profile 应用和调用均走 operation/provider，MCP adapter 不直接依赖 Tool Management platform。 |
+| 应用层 | 通用工具与技能 | `[~]` | 65% | Tool Management 客户端连接投影已从 `api-facade` 迁入 specialized provider；runtime 创建已迁出 `http-server`；Tool HTTP、Tool policy、Tool runtime denial audit 和 MCP local grant 授权已统一经 `securityPermissions` provider；技能管理定位为 skill registry 和 profile 配置。 | tool exposure 与 MCP adapter 语义入口仍需继续瘦身；skill registry、profile 配置、workspace skill 与 agent skill planning 需要统一协议化验收。 | Tool/Skill 能力注册、授权、profile 应用和调用均走 operation/provider，MCP adapter 不直接依赖 Tool Management platform。 |
 | 基建层 | 核心能力 | `[~]` | 65% | 服务发现、状态协调、通用调度方向与 `dispatchInternalOperation`、system interfaces/discovery snapshots 一致。 | operation registry 完成度还需要按 `registered/wired/implemented/verified` 分级治理。 | system/discovery/operation registry 有一致注册表和 verify 输出。 |
-| 基建层 | 安全权限 | `[~]` | 30% | 已拆出 auth handler，authorization engine 是正确主线。 | 权限体系尚未整体迁移到新设计；`api-facade` 仍直接读取 `consoleAuth` 摘要；接口层权限逻辑仍需收束。 | 所有鉴权、授权、访问控制、审计策略都只通过 authorization/policy provider 裁决。 |
+| 基建层 | 安全权限 | `[x]` | 100% | 已落地 `pact.security-permissions.v1` provider，统一封装 console auth、operation authorization、authorization policy、authorization audit artifact、workspace asset policy、Tool policy/runtime denial audit 和 MCP local grant 授权；接口层、console executor、Tool Management 和 MCP adapter 不再直接调用 `consoleAuth.authorizeOperation`、裸 `authorizationEngine` 或裸 `authorizationStore` 做权限裁决。 | 已完成。本子系统后续只允许维护性变更；策略编排类能力继续归入应用层“策略管理”，不能回流到安全权限层硬编码业务流程。 | 已通过 `npm run server:verify:authorization-migration`、`npm run server:verify:console-auth`、`npm run server:verify:tool-management`、`npm run server:verify:architecture-patterns`，并通过直接调用扫描确认目标路径无权限直连。 |
 | 基建层 | 模块管理 | `[~]` | 55% | mount 注册、能力声明方向明确；Runtime summary 已抽离；Tool Management 投影已隔离。 | MCP adapter 和模块暴露路径仍有 runtime/platform 直接依赖；热加载和能力声明需要独立 contract test。 | module-management 只识别 mount contract/module descriptor/provider interface，不了解业务实现。 |
 | 基建层 | 算法和数据结构 | `[~]` | 40% | analysis/mount 摘要已抽离；架构图中的 Merkle Index、Prefix/Range Index、Checkpoint Projection 是基建能力边界。 | 算法模块注册、选择、调用和能力声明还没有统一协议入口；checkpoint projection 需要与 storage/jobs 解耦验收。 | 数据结构层保持无副作用工具/索引/projection，不引入 HTTP/UI/业务 runtime。 |
 | 基建层 | 存储 | `[~]` | 45% | upload session 已通过 provider 边界隔离；启动期 storage summary 已走 internal operation。 | `jobs-controller` 仍直接处理 metadataStore、raw object、路径解析；`api-facade` 还有 storage summary 直接聚合。 | LSM ingest、CAS block、Merkle DAG、任务持久化只通过 storage provider/repository contract 暴露。 |
@@ -70,7 +70,7 @@
 | 1 | 跑最新全量验证：`npm run server:verify` | 全部，尤其启动装配边界 | `[x]` | 最新 runtime summary 迁移后已全量通过。 |
 | 2 | 输出 operation registry 差距清单 | 核心能力、接口封装层、应用层各能力 | `[x]` | 已落地 `reports/protocol-operation-registry-gap-2026-05-25.md`；当前 52 个协议操作全部注册，明确空后端为 0。 |
 | 3 | 补齐 P0 协议缺口 | AgentLibrary、知识转化 | `[x]` | 共享空间、代码管理、knowledge access 和知识转化协议均已完成 operation/provider/verify 闭环；原 3 个知识/原始语料空后端已清零。 |
-| 4 | 迁移安全 + 权限管理 | 接口封装层、安全权限、工具管理、共享空间、代码管理 | `[ ]` | console/auth/tool/workspace/codespace 权限统一进入 authorization engine / policy provider。 |
+| 4 | 迁移安全 + 权限管理 | 接口封装层、安全权限、工具管理、共享空间、代码管理 | `[x]` | 已统一进入 `pact.security-permissions.v1` provider；console/auth/tool/MCP/workspace asset/knowledge access artifact 不再由接口层或应用 executor 直接持有裸 `consoleAuth`、`authorizationEngine` 或 `authorizationStore` 裁决。 |
 | 5 | 继续拆 `api-facade.mjs` | 接口封装层、智能体、存储、运维基础 | `[ ]` | settings、agent selector、jobs、storage、auth、client runtime、maintenance summary 全部下沉。 |
 | 6 | 继续拆 `jobs-controller.mjs` | 接口封装层、原始语料、存储 | `[ ]` | jobManager、metadataStore、raw object download、stored object path 不再留在 controller 内。 |
 | 7 | 继续拆 MCP adapter | 接口封装层、工具管理、模块管理、安全权限 | `[ ]` | MCP adapter 只面对五个语义入口和 Tool Management 协议 facade。 |

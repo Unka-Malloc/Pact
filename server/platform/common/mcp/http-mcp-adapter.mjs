@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { sendJson } from "../console/http/http-utils.mjs";
+import { createSecurityPermissionsProvider } from "../security/security-permissions-provider.mjs";
 import {
   buildMcpHandshakePayload,
   publicMcpIdentity,
@@ -1077,7 +1078,7 @@ function denyLocalGrant(status, code, message, details = {}) {
 async function authorizeLocalGrantElevation({
   request,
   url,
-  consoleAuth = null,
+  securityPermissions = null,
   resolved,
   requestedMaxRisk,
   matchedLocalTarget = false
@@ -1107,10 +1108,10 @@ async function authorizeLocalGrantElevation({
       );
     }
   }
-  if (!consoleAuth || typeof consoleAuth.authorizeOperation !== "function") {
+  if (!securityPermissions || typeof securityPermissions.authorizeOperation !== "function") {
     return null;
   }
-  const authorization = await consoleAuth.authorizeOperation({
+  const authorization = await securityPermissions.authorizeOperation({
     request,
     method: "POST",
     url,
@@ -1131,7 +1132,14 @@ async function authorizeLocalGrantElevation({
   return null;
 }
 
-async function createLocalMcpGrant({ request, requestBody, toolManagementPlatform, discoveryState = null, consoleAuth = null, url = null }) {
+async function createLocalMcpGrant({
+  request,
+  requestBody,
+  toolManagementPlatform,
+  discoveryState = null,
+  securityPermissions = null,
+  url = null
+}) {
   if (!isLocalMcpPairingRequest(request)) {
     return {
       status: 403,
@@ -1171,7 +1179,7 @@ async function createLocalMcpGrant({ request, requestBody, toolManagementPlatfor
   const elevationDenied = await authorizeLocalGrantElevation({
     request,
     url,
-    consoleAuth,
+    securityPermissions,
     resolved,
     requestedMaxRisk,
     matchedLocalTarget: targetMatch.matched && !hasExplicitGrantRequest
@@ -1322,8 +1330,8 @@ function authorizeMcpRequest({ request, toolManagementPlatform }) {
     request,
     requiredScopes: []
   });
-  if (!authorization.ok && typeof toolManagementPlatform.authorizationStore?.appendDecision === "function") {
-    toolManagementPlatform.authorizationStore.appendDecision({
+  if (!authorization.ok && typeof toolManagementPlatform.securityPermissions?.appendDecision === "function") {
+    toolManagementPlatform.securityPermissions.appendDecision({
       decisionId: `authz_mcp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
       traceId: request?.__pactTraceContext?.traceId || request?.__pactRequestId || "",
       operationId: "mcp.request",
@@ -1989,9 +1997,13 @@ export async function handlePactMcpHttpRequest({
   toolManagementPlatform,
   listenUrl = "",
   discoveryState = null,
+  securityPermissions = null,
   consoleAuth = null,
   logger = null
 }) {
+  const effectiveSecurityPermissions =
+    securityPermissions ||
+    (consoleAuth ? createSecurityPermissionsProvider({ consoleAuth }) : null);
   if (url.pathname === "/.well-known/pact/mcp.json" || url.pathname === "/api/mcp/discovery") {
     if (method !== "GET" && method !== "HEAD") {
       response.writeHead(405, { Allow: "GET", "Cache-Control": "no-store" });
@@ -2032,7 +2044,7 @@ export async function handlePactMcpHttpRequest({
         requestBody,
         toolManagementPlatform,
         discoveryState,
-        consoleAuth,
+        securityPermissions: effectiveSecurityPermissions,
         url
       });
       const awaitedResult = typeof result?.then === "function" ? await result : result;

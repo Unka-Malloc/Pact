@@ -116,6 +116,7 @@ async function assertCompositionRootOwnsAssembly() {
     "registerStoragePlatformServices",
     "registerDevopsPlatformServices",
     "createConsoleAuth",
+    "createSecurityPermissionsProvider",
     "createOperationAuditStore",
     "createServerRuntime",
     "createProtocolEventBus",
@@ -137,6 +138,7 @@ async function assertRuntimeProvidersOwnProviderImports() {
     "createProvider",
     "createServerRuntimeProviders",
     "createServerToolManagementPlatform",
+    "securityPermissions",
     "createAgentMemory",
     "createContextRuntime",
     "callAgentGatewayIfAvailable",
@@ -173,6 +175,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const knowledgeConsoleSummaryFile = "server/platform/specialized/console/knowledge-console-summary.mjs";
   const runtimeConsoleSummaryFile = "server/platform/specialized/console/runtime-console-summary.mjs";
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
+  const securityPermissionsProviderFile = "server/platform/common/security/security-permissions-provider.mjs";
   const wordCloudFile = "server/platform/specialized/console/knowledge-word-cloud-operation-executor.mjs";
   const codespaceModuleFile = "server/platform/specialized/capabilities/code-management/codespace/module.json";
   const knowledgeTransformationModuleFile = "server/platform/specialized/knowledge/transformation/module.json";
@@ -196,6 +199,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const knowledgeConsoleSummary = await read(knowledgeConsoleSummaryFile);
   const runtimeConsoleSummary = await read(runtimeConsoleSummaryFile);
   const toolManagementConnections = await read(toolManagementConnectionsFile);
+  const securityPermissionsProvider = await read(securityPermissionsProviderFile);
   const wordCloud = await read(wordCloudFile);
   const codespaceModule = await read(codespaceModuleFile);
   const knowledgeTransformationModule = await read(knowledgeTransformationModuleFile);
@@ -828,8 +832,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   for (const needle of [
     "createSystemControllerContexts",
     "requireDomainService",
-    "createAuthorizationEngine",
-    "createAuthorizationStore",
+    "securityPermissions",
     "appendConsoleOperationLog",
     "knowledgeWorkflowContext",
     "settingsAgentGatewayContext",
@@ -1334,6 +1337,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "authorization.denied_requests.list",
       "workspace.asset.policy.set",
       "workspace.asset.permission.check",
+      "securityPermissions",
       "executeAgentSyncOperation",
       "events.subscribe",
       "agent_sync.config.get",
@@ -1387,6 +1391,24 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "executeConsoleDomainOperation"
   ]) {
     assertTextIncludes(executor, needle, `${executorFile} must own specialized console operation ${needle}`);
+  }
+  for (const needle of [
+    "pact.security-permissions.v1",
+    "createSecurityPermissionsProvider",
+    "authorizeOperation",
+    "getConsoleSummary",
+    "evaluatePolicy",
+    "appendDecision",
+    "setWorkspaceAssetPolicy",
+    "checkWorkspaceAssetPermission",
+    "authorizationEngine",
+    "authorizationStore"
+  ]) {
+    assertTextIncludes(
+      securityPermissionsProvider,
+      needle,
+      `${securityPermissionsProviderFile} must declare the unified security permissions provider ${needle}`
+    );
   }
   for (const needle of [
     "CodespaceManagement",

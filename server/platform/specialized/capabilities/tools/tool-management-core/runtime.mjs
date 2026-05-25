@@ -237,7 +237,7 @@ export function createToolExecutionRuntime({
   registry,
   store,
   policyEngine,
-  authorizationStore = null,
+  securityPermissions = null,
   operations = [],
   controllers,
   operationAuditStore = null,
@@ -249,10 +249,10 @@ export function createToolExecutionRuntime({
   const toolLocks = new Map();
 
   function appendAuthorizationDecision(decision = {}) {
-    if (!authorizationStore || typeof authorizationStore.appendDecision !== "function") {
+    if (!securityPermissions || typeof securityPermissions.appendDecision !== "function") {
       return;
     }
-    authorizationStore.appendDecision({
+    securityPermissions.appendDecision({
       protocolVersion: "pact.authorization.v1",
       allowed: false,
       effect: "deny",

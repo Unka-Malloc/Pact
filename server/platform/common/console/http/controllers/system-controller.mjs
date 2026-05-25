@@ -13,6 +13,7 @@ import { createSystemControllerOpsObservationHandlers } from "./system-controlle
 import { createSystemControllerRuntimeHandlers } from "./system-controller-runtime-handlers.mjs";
 import { createSystemControllerWorkspaceProtocolHandlers } from "./system-controller-workspace-protocol-handlers.mjs";
 import { createSystemControllerWorkspaceRuntimeHandlers } from "./system-controller-workspace-runtime-handlers.mjs";
+import { createSecurityPermissionsProvider } from "../../../security/security-permissions-provider.mjs";
 
 function parseJsonBody(requestBody) {
   return requestBody.length > 0 ? JSON.parse(requestBody.toString("utf8")) : {};
@@ -40,6 +41,7 @@ export function createSystemController({
   getInterfaceCatalog = () => [],
   protocolEventBus = null,
   consoleAuth = null,
+  securityPermissions = null,
   operationAuditStore = null,
   maintenanceAgent = null,
   knowledgeSourceService = null,
@@ -65,6 +67,9 @@ export function createSystemController({
   getToolManagementPlatform = () => null,
   consoleDomainServices = null
 }) {
+  const effectiveSecurityPermissions =
+    securityPermissions ||
+    (consoleAuth ? createSecurityPermissionsProvider({ consoleAuth }) : null);
   const {
     executeConsoleDomainOperation,
     knowledgeDomainContext,
@@ -81,7 +86,7 @@ export function createSystemController({
     jobManager,
     metadataStore,
     protocolEventBus,
-    consoleAuth,
+    securityPermissions: effectiveSecurityPermissions,
     operationAuditStore,
     agentWorkspace,
     contextRuntime,
@@ -190,7 +195,7 @@ export function createSystemController({
     ...createSystemControllerAuthHandlers({
       sendConsoleDomainOperation,
       parseJsonBody,
-      consoleAuth,
+      securityPermissions: effectiveSecurityPermissions,
       operationAuditStore,
       appendConsoleOperationLog
     }),
@@ -221,7 +226,7 @@ export function createSystemController({
       runtime,
       jobManager,
       metadataStore,
-      consoleAuth,
+      securityPermissions: effectiveSecurityPermissions,
       maintenanceAgent,
       clientRuntimeAllocator,
       getToolManagementPlatform,
