@@ -440,6 +440,33 @@ fn main() -> Result<()> {
             print_json(&pact_client_native::forwarding::forward(&params)?);
             Ok(())
         }
+        [scope, action, collection] if scope == "state" && action == "get" => {
+            print_json(&pact_client_native::client_state::state_get(collection)?);
+            Ok(())
+        }
+        [scope, action, collection, payload] if scope == "state" && action == "set" => {
+            print_json(&pact_client_native::client_state::state_set(
+                collection,
+                parse_json_arg(payload),
+            )?);
+            Ok(())
+        }
+        [scope, action, rest @ ..] if scope == "activity" && action == "list" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::client_state::activity_list(&params)?);
+            Ok(())
+        }
+        [scope, action, rest @ ..] if scope == "snapshots" && action == "list" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::client_state::snapshots_list(&params)?);
+            Ok(())
+        }
+        [scope, action, snapshot_id] if scope == "snapshots" && action == "restore" => {
+            print_json(&pact_client_native::client_state::snapshots_restore(
+                snapshot_id,
+            )?);
+            Ok(())
+        }
         [scope, action] if scope == "agents" && action == "list" => {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method("agents.list", json!({}), None)?);
@@ -655,6 +682,10 @@ fn print_usage() {
   pact-client model profiles list
   pact-client model profiles set <profile-id> [--command CMD|--url URL] [--args JSON] [--api-key KEY]
   pact-client forward --profile <profile-id> --text <input>
+  pact-client state get|set <settings|targets|pairings|skills|pins> [json]
+  pact-client activity list [--type TYPE] [--target TARGET] [--limit N]
+  pact-client snapshots list [--target TARGET]
+  pact-client snapshots restore <snapshot-id>
   pact-client agents sync [--service-url URL]
   pact-client agents list
   pact-client targets scan
