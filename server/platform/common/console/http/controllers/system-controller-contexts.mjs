@@ -33,18 +33,6 @@ export function createSystemControllerContexts({
   getFeatureEntries = () => null,
   consoleDomainServices = null
 } = {}) {
-  const loadAgentGatewayModule =
-    typeof consoleDomainServices?.loadAgentGatewayModule === "function"
-      ? consoleDomainServices.loadAgentGatewayModule
-      : async () => {
-          throw new Error("Agent gateway runtime provider is not configured.");
-        };
-  const loadModelProbeModule =
-    typeof consoleDomainServices?.loadModelProbeModule === "function"
-      ? consoleDomainServices.loadModelProbeModule
-      : async () => {
-          throw new Error("Model probe runtime provider is not configured.");
-        };
   const requireDomainService = (name) => {
     const service = consoleDomainServices?.[name];
     if (typeof service !== "function") {
@@ -59,12 +47,15 @@ export function createSystemControllerContexts({
     }
     return provider;
   };
-  const getAgentConfigRegistry =
-    typeof consoleDomainServices?.getAgentConfigRegistry === "function"
-      ? consoleDomainServices.getAgentConfigRegistry
-      : () => {
-          throw new Error("Agent config registry provider is not configured.");
-        };
+  const agentRuntimeProvider = requireDomainProvider(
+    "agentRuntimeProvider",
+    (provider) =>
+      provider &&
+      typeof provider.getAgentConfigRegistry === "function" &&
+      typeof provider.callAgentGateway === "function" &&
+      typeof provider.probeModelConnection === "function" &&
+      typeof provider.inspectAgentModelRouting === "function"
+  );
   const getEmailRulesPath = requireDomainService("getEmailRulesPath");
   const loadEmailRules = requireDomainService("loadEmailRules");
   const saveEmailRules = requireDomainService("saveEmailRules");
@@ -92,7 +83,6 @@ export function createSystemControllerContexts({
       typeof provider.resolveUploadSessionFiles === "function" &&
       typeof provider.deleteUploadSession === "function"
   );
-  const agentConfigRegistry = getAgentConfigRegistry();
   function appendConsoleOperationLog(entry = {}) {
     if (operationAuditStore) {
       try {
@@ -173,8 +163,7 @@ export function createSystemControllerContexts({
       queueMonitor,
       contextRuntime,
       clientRuntimeAllocator,
-      loadAgentGatewayModule,
-      getAgentConfigRegistry,
+      agentRuntimeProvider,
       appendConsoleOperationLog,
       summarizationRuntime,
       agentExplorationRuntime,
@@ -190,9 +179,7 @@ export function createSystemControllerContexts({
       contextRuntime,
       agentWorkspace,
       clientRuntimeAllocator,
-      loadAgentGatewayModule,
-      loadModelProbeModule,
-      agentConfigRegistry,
+      agentRuntimeProvider,
       appendConsoleOperationLog,
       authSession,
       ...extra
@@ -229,9 +216,7 @@ export function createSystemControllerContexts({
       contextRuntime,
       clientRuntimeAllocator,
       queueMonitor,
-      loadSettings,
-      loadAgentGatewayModule,
-      getAgentConfigRegistry
+      agentRuntimeProvider
     });
   }
 

@@ -351,7 +351,7 @@ Local agents / humans / scripts
 `server/platform/specialized` 承载应用能力：
 
 - `knowledge`：三层知识模型、KnowledgeCore、外部知识库 adapter、document export、retrieval、preprocessing。
-- `agent`：agent workspace、agent context、agent memory、agent gateway。
+- `agent`：`pact.agent-runtime.v1` provider、agent workspace、agent context、agent memory、agent gateway、model probe、model routing 和 agent config registry。Console settings/gateway/model-routing/word-cloud agent calls 只能通过该 provider 进入 Agent Gateway、Model Probe 和 agent-configs，不能直接持有 gateway module loader 或 registry 实例。
 - `capabilities/strategy-management`：`pact.strategy-management.v1` provider，统一处理 workflow policy、agent policy、模型路由策略包装和工具调用策略预览。
 - `capabilities/tools`：Tool Management、catalog、grant、policy、execute 和 audit。
 - `capabilities/skills`：`pact.tool-skill-management.v1` provider、SkillLibrary、skill registry、skill bundle、MCP Skill Hub 语义入口和 skill 使用事件。MCP adapter、console grant / authorization / passthrough、client connection projection 只能通过该 provider 访问 Tool/Skill 能力，不能直接持有 Tool Management `registry/store/runtime/router`。

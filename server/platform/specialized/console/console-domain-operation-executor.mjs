@@ -799,12 +799,14 @@ function appendConsoleLog(context = {}, entry = {}) {
   }
 }
 
+function agentRuntimeProviderFrom(context = {}) {
+  return context.agentRuntimeProvider || null;
+}
+
 function agentConfigRegistryFrom(context = {}) {
-  if (context.agentConfigRegistry) {
-    return context.agentConfigRegistry;
-  }
-  if (typeof context.getAgentConfigRegistry === "function") {
-    return context.getAgentConfigRegistry();
+  const provider = agentRuntimeProviderFrom(context);
+  if (typeof provider?.getAgentConfigRegistry === "function") {
+    return provider.getAgentConfigRegistry();
   }
   return null;
 }
@@ -1221,10 +1223,10 @@ async function saveAgentModelLibrary(context = {}, current, models) {
   if (!registry) {
     throw new Error("Agent config registry provider is not configured.");
   }
-  if (typeof context.loadAgentGatewayModule !== "function") {
+  const agentRuntimeProvider = agentRuntimeProviderFrom(context);
+  if (!agentRuntimeProvider || typeof agentRuntimeProvider.publicAgentGatewayRegistry !== "function") {
     throw new Error("Agent gateway runtime provider is not configured.");
   }
-  const { publicAgentGatewayRegistry } = await context.loadAgentGatewayModule();
   await registry.replaceFromModelLibraryAgents(models);
   const savedBase = await saveSettings(context.userDataPath, {
     ...current,
@@ -1247,7 +1249,7 @@ async function saveAgentModelLibrary(context = {}, current, models) {
   );
   return {
     saved,
-    registry: publicAgentGatewayRegistry(saved)
+    registry: await agentRuntimeProvider.publicAgentGatewayRegistry(saved)
   };
 }
 
@@ -2698,6 +2700,10 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
   }
 
   const settingsInput = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const agentRuntimeProvider = agentRuntimeProviderFrom(context);
+  if (!agentRuntimeProvider) {
+    return result(503, { error: "Agent runtime provider is not configured." });
+  }
   const registry = agentConfigRegistryFrom(context);
   const requiresRegistry = id !== "model_routing.health";
   if (requiresRegistry && !registry) {
@@ -2819,8 +2825,7 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
         provider,
         { modelAlias }
       );
-      const { probeModelConnection } = await context.loadModelProbeModule();
-      probeResult = await probeModelConnection({
+      probeResult = await agentRuntimeProvider.probeModelConnection({
         provider,
         settings: candidateSettings,
         modelAlias,
@@ -2875,14 +2880,13 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
   }
 
   if (id === "agent_gateway.config.get" || id === "agent_gateway.config.set") {
-    if (typeof context.loadAgentGatewayModule !== "function") {
+    if (typeof agentRuntimeProvider.publicAgentGatewayConfig !== "function") {
       return result(503, { error: "Agent gateway runtime provider is not configured." });
     }
-    const { publicAgentGatewayConfig } = await context.loadAgentGatewayModule();
     if (id === "agent_gateway.config.get") {
       const settings = await loadAgentRuntimeSettings(context);
       return result(200, {
-        config: publicAgentGatewayConfig(settings)
+        config: await agentRuntimeProvider.publicAgentGatewayConfig(settings)
       });
     }
 
@@ -2909,7 +2913,7 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
       { type: "settings.updated" }
     );
     return result(200, {
-      config: publicAgentGatewayConfig({
+      config: await agentRuntimeProvider.publicAgentGatewayConfig({
         ...saved,
         modelLibraryAgents: registry.getModelLibraryAgents(),
         modelLibraryEntries: registry.getModelLibraryEntries()
@@ -2918,7 +2922,7 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
   }
 
   if (id === "agent_gateway.call") {
-    if (typeof context.loadAgentGatewayModule !== "function") {
+    if (typeof agentRuntimeProvider.callAgentGateway !== "function") {
       return result(503, { error: "Agent gateway runtime provider is not configured." });
     }
     const workspaceApplied = applyWorkspaceRuntimeContext(
@@ -2931,9 +2935,8 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
         error: workspaceApplied.workspaceError.error
       });
     }
-    const { callAgentGateway } = await context.loadAgentGatewayModule();
     const settings = await loadAgentRuntimeSettings(context);
-    const gatewayResult = await callAgentGateway({
+    const gatewayResult = await agentRuntimeProvider.callAgentGateway({
       settings,
       input: workspaceApplied.input,
       userDataPath: context.userDataPath,
@@ -2953,20 +2956,18 @@ async function executeSettingsAgentGatewayOperation({ operationId, input = {}, c
   }
 
   if (id === "agents.list") {
-    if (typeof context.loadAgentGatewayModule !== "function") {
+    if (typeof agentRuntimeProvider.publicAgentGatewayRegistry !== "function") {
       return result(503, { error: "Agent gateway runtime provider is not configured." });
     }
-    const { publicAgentGatewayRegistry } = await context.loadAgentGatewayModule();
     const settings = await loadAgentRuntimeSettings(context);
-    return result(200, publicAgentGatewayRegistry(settings));
+    return result(200, await agentRuntimeProvider.publicAgentGatewayRegistry(settings));
   }
 
   if (id === "model_routing.health") {
-    if (typeof context.loadAgentGatewayModule !== "function") {
+    if (typeof agentRuntimeProvider.inspectAgentModelRouting !== "function") {
       return result(503, { error: "Agent gateway runtime provider is not configured." });
     }
-    const { inspectAgentModelRouting } = await context.loadAgentGatewayModule();
-    return result(200, await inspectAgentModelRouting({
+    return result(200, await agentRuntimeProvider.inspectAgentModelRouting({
       userDataPath: context.userDataPath,
       limit: Number(settingsInput.limit || 50)
     }));

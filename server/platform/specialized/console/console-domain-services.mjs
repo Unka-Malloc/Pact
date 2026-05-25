@@ -1,4 +1,5 @@
 import { getAgentConfigRegistry } from "../agent/agent-configs/config-registry.mjs";
+import { createAgentRuntimeProvider } from "../agent/agent-runtime-provider.mjs";
 import { listAvailableAnalysisModules } from "../knowledge/preprocessing/analysis-engine-registry.mjs";
 import {
   getEmailRulesPath,
@@ -61,6 +62,11 @@ async function loadModelProbeModule() {
 }
 
 export function createConsoleDomainServices() {
+  const agentRuntimeProvider = createAgentRuntimeProvider({
+    getAgentConfigRegistry,
+    loadAgentGatewayModule,
+    loadModelProbeModule
+  });
   const uploadSessionStore = Object.freeze({
     appendUploadSessionChunk,
     buildCheckpointReceiptFromUploadSession,
@@ -72,6 +78,7 @@ export function createConsoleDomainServices() {
 
   return Object.freeze({
     getAgentConfigRegistry,
+    agentRuntimeProvider,
     listAvailableAnalysisModules,
     getEmailRulesPath,
     loadEmailRules,

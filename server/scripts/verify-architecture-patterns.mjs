@@ -302,6 +302,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const knowledgeConsoleSummaryFile = "server/platform/specialized/console/knowledge-console-summary.mjs";
   const runtimeConsoleSummaryFile = "server/platform/specialized/console/runtime-console-summary.mjs";
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
+  const agentRuntimeProviderFile = "server/platform/specialized/agent/agent-runtime-provider.mjs";
   const toolSkillManagementProviderFile = "server/platform/specialized/capabilities/skills/tool-skill-management-provider.mjs";
   const securityPermissionsProviderFile = "server/platform/common/security/security-permissions-provider.mjs";
   const moduleManagementProviderFile = "server/platform/common/module-manager/module-management-provider.mjs";
@@ -332,6 +333,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const knowledgeConsoleSummary = await read(knowledgeConsoleSummaryFile);
   const runtimeConsoleSummary = await read(runtimeConsoleSummaryFile);
   const toolManagementConnections = await read(toolManagementConnectionsFile);
+  const agentRuntimeProvider = await read(agentRuntimeProviderFile);
   const toolSkillManagementProvider = await read(toolSkillManagementProviderFile);
   const securityPermissionsProvider = await read(securityPermissionsProviderFile);
   const moduleManagementProvider = await read(moduleManagementProviderFile);
@@ -487,6 +489,41 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   ]) {
     assertTextIncludes(jobWorkflowProvider, needle, `${jobWorkflowProviderFile} must own job workflow provider port ${needle}`);
   }
+  for (const needle of [
+    "pact.agent-runtime.v1",
+    "createAgentRuntimeProvider",
+    "getAgentConfigRegistry",
+    "publicAgentGatewayConfig",
+    "publicAgentGatewayRegistry",
+    "callAgentGateway",
+    "callGatewayWithRuntimeSettings",
+    "probeModelConnection",
+    "inspectAgentModelRouting"
+  ]) {
+    assertTextIncludes(agentRuntimeProvider, needle, `${agentRuntimeProviderFile} must own agent runtime provider port ${needle}`);
+  }
+  assertTextIncludes(provider, "agentRuntimeProvider", `${providerFile} must expose agent runtime provider`);
+  assertTextIncludes(executor, "agentRuntimeProviderFrom", `${executorFile} must resolve agent operations through agent runtime provider`);
+  assertTextIncludes(wordCloud, "agentRuntimeProvider", `${wordCloudFile} must route word-cloud agent calls through agent runtime provider`);
+  assertTextExcludes(
+    executor,
+    [
+      "context.loadAgentGatewayModule",
+      "context.loadModelProbeModule",
+      "context.agentConfigRegistry",
+      "context.getAgentConfigRegistry"
+    ],
+    executorFile
+  );
+  assertTextExcludes(
+    wordCloud,
+    [
+      "loadAgentGatewayModule",
+      "getAgentConfigRegistry",
+      "loadSettings("
+    ],
+    wordCloudFile
+  );
   assertTextIncludes(
     controller,
     "createSystemControllerFoundationHandlers",
@@ -1050,18 +1087,31 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   for (const needle of [
     "createSystemControllerContexts",
     "requireDomainService",
+    "requireDomainProvider",
     "securityPermissions",
+    "agentRuntimeProvider",
     "appendConsoleOperationLog",
     "knowledgeWorkflowContext",
     "settingsAgentGatewayContext",
     "authorizationFacadeContext",
     "accessControlContext",
-    "resumeKnowledgeWordCloudTasks",
-    "loadAgentGatewayModule",
-    "getAgentConfigRegistry"
+    "resumeKnowledgeWordCloudTasks"
   ]) {
     assertTextIncludes(contextFactory, needle, `${contextFile} must own console context assembly ${needle}`);
   }
+  assertTextExcludes(
+    contextFactory,
+    [
+      "const loadAgentGatewayModule",
+      "const loadModelProbeModule",
+      "const getAgentConfigRegistry",
+      "const agentConfigRegistry",
+      "loadAgentGatewayModule,",
+      "loadModelProbeModule,",
+      "getAgentConfigRegistry,"
+    ],
+    contextFile
+  );
   for (const needle of [
     "createSystemControllerAgentSettingsHandlers",
     "settings.get",

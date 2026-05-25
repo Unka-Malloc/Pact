@@ -1,5 +1,4 @@
 import path from "node:path";
-import { loadSettings } from "../../common/platform-core/settings.mjs";
 import { hashClientString, serverToken } from "../../common/security/client-strings.mjs";
 import { preprocessWordCloudVocabulary as defaultPreprocessWordCloudVocabulary } from "../knowledge/preprocessing/word-cloud/preprocess.mjs";
 
@@ -576,8 +575,7 @@ async function runWordCloudClassificationTask({
   prompt,
   modelAlias,
   preprocess,
-  loadAgentGatewayModule,
-  getAgentConfigRegistry
+  agentRuntimeProvider
 }) {
   const preprocessing = preprocess && typeof preprocess === "object" ? preprocess : null;
   const sourceTerms = Array.isArray(terms) ? terms : [];
@@ -589,16 +587,10 @@ async function runWordCloudClassificationTask({
       phase: "model_call",
       status: "running"
     }));
-    const { callAgentGateway } = await loadAgentGatewayModule();
-    const runtimeSettings = await loadSettings(userDataPath);
-    const agentConfigRegistry = getAgentConfigRegistry();
-    await agentConfigRegistry.refresh({ settingsFallback: runtimeSettings });
-    const gatewayResult = await callAgentGateway({
-      settings: {
-        ...runtimeSettings,
-        modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents(),
-        modelLibraryEntries: agentConfigRegistry.getModelLibraryEntries()
-      },
+    if (!agentRuntimeProvider || typeof agentRuntimeProvider.callGatewayWithRuntimeSettings !== "function") {
+      throw new Error("Agent runtime provider is not configured.");
+    }
+    const gatewayResult = await agentRuntimeProvider.callGatewayWithRuntimeSettings({
       userDataPath,
       contextRuntime,
       clientRuntimeAllocator,
@@ -788,8 +780,7 @@ async function resumeWordCloudClassificationTasks({
   contextRuntime,
   clientRuntimeAllocator,
   queueMonitor,
-  loadAgentGatewayModule,
-  getAgentConfigRegistry
+  agentRuntimeProvider
 }) {
   const state = await metadataStore.getKnowledgeWordCloudState({
     limit: 100000,
@@ -832,8 +823,7 @@ async function resumeWordCloudClassificationTasks({
         prompt,
         modelAlias,
         preprocess,
-        loadAgentGatewayModule,
-        getAgentConfigRegistry
+        agentRuntimeProvider
       });
     });
   }
@@ -1174,8 +1164,7 @@ export async function executeKnowledgeWordCloudOperation({ operationId, input = 
         prompt,
         modelAlias,
         preprocess: preprocessed,
-        loadAgentGatewayModule: context.loadAgentGatewayModule,
-        getAgentConfigRegistry: context.getAgentConfigRegistry
+        agentRuntimeProvider: context.agentRuntimeProvider
       });
     });
     return result(202, {
