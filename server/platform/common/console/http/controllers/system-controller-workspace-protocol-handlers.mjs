@@ -159,6 +159,105 @@ export function createSystemControllerWorkspaceProtocolHandlers({
         errorMessage: "同步代码评审状态失败。"
       });
     },
+    async handleCodespaceProvidersManifest({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.providers.manifest",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "读取 Codespace provider manifest 失败。"
+      });
+    },
+    async handleCodespaceRepositoryStatus({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.repository.status",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "读取 Codespace repository 状态失败。"
+      });
+    },
+    async handleCodespaceTreeList({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.tree.list",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "读取 Codespace tree 失败。"
+      });
+    },
+    async handleCodespaceFileRead({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.file.read",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "读取 Codespace file 失败。"
+      });
+    },
+    async handleCodespaceDiffRead({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.diff.read",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "读取 Codespace diff 失败。"
+      });
+    },
+    async handleCodespaceChangePrepare({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.change.prepare",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "准备 Codespace changeSet 失败。"
+      });
+    },
+    async handleCodespaceChangeUpload({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.change.upload",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "上传 Codespace change 失败。"
+      });
+    },
+    async handleCodespaceReviewComment({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.review.comment",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "提交 Codespace review 评论失败。"
+      });
+    },
+    async handleCodespaceReviewRequestChanges({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.review.requestChanges",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "请求 Codespace review 修改失败。"
+      });
+    },
+    async handleCodespaceReviewApprove({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.review.approve",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "批准 Codespace review 失败。"
+      });
+    },
+    async handleCodespaceReviewStatusSync({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "codespace.review.status.sync",
+        input: protocolPayload(requestBody),
+        response,
+        context: { authSession },
+        errorMessage: "同步 Codespace review 状态失败。"
+      });
+    },
     async handleRawCorpusFormatConvert({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "raw-corpus.format.convert",

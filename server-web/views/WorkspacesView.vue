@@ -139,6 +139,8 @@ const chainData         = ref<any>(null);
 const contextData       = ref<any>(null);
 const workspaceFilesData = ref<any>(null);
 const localDirMountData = ref<any>(null);
+const codespaceData = ref<any>(null);
+const codespaceResult = ref<any>(null);
 const workspaceCheckpointTrees = ref<WsCheckpointTreeSummary[]>([]);
 const workspaceCheckpointDetail = ref<WsCheckpointTreeDetail | null>(null);
 const workspaceCheckpointPreview = ref<any>(null);
@@ -147,13 +149,25 @@ const selectedCheckpointTreeId = ref('');
 const selectedCheckpointNodeId = ref('');
 const sessionContextData = ref<WsSessionContext | null>(null);
 const localError        = ref('');
-const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share' | 'localDir'>('list');
+const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share' | 'localDir' | 'codespace'>('list');
 
 const createForm = reactive({ title: '', objective: '', parentWorkspaceId: '' });
 const profileForm = reactive({ contextProfileId: '', toolGrantId: '', modelAlias: '', includeSourceIds: '', excludeSourceIds: '', ownedSourceIds: '' });
 const parentForm  = reactive({ parentWorkspaceId: '' });
 const shareForm   = reactive({ targetWorkspaceId: '', action: 'share' as 'share' | 'unshare' });
 const localDirForm = reactive({ sourcePath: '', targetPath: 'mirror', deleteExtraneous: true, maxFiles: 2000 });
+const codespaceForm = reactive({
+  provider: 'github',
+  repoId: '',
+  repositoryRef: '',
+  branch: 'main',
+  path: 'README.md',
+  baseRef: 'HEAD~1',
+  headRef: 'HEAD',
+  diff: 'diff --git a/README.md b/README.md\n',
+  reviewTarget: '',
+  codeChangeId: '',
+});
 
 const showDeleteModal = ref(false);
 const deleteFolderChecked = ref(false);
@@ -256,7 +270,7 @@ async function load() {
 }
 
 async function loadChain(id: string) {
-  chainData.value = null; contextData.value = null; workspaceFilesData.value = null; localDirMountData.value = null;
+  chainData.value = null; contextData.value = null; workspaceFilesData.value = null; localDirMountData.value = null; codespaceData.value = null; codespaceResult.value = null;
   workspaceCheckpointTrees.value = [];
   workspaceCheckpointDetail.value = null;
   workspaceCheckpointPreview.value = null;
@@ -264,16 +278,18 @@ async function loadChain(id: string) {
   selectedCheckpointTreeId.value = '';
   selectedCheckpointNodeId.value = '';
   try {
-    const [c, ctx, files, localDirs] = await Promise.all([
+    const [c, ctx, files, localDirs, codespace] = await Promise.all([
       apiFetch(`/api/agent-workspaces/${id}/chain`),
       apiFetch(`/api/agent-workspaces/${id}/context`),
       apiFetch(`/api/agent-workspaces/${id}/files?recursive=true`).catch(() => ({ files: [] })),
       apiFetch(`/api/agent-workspaces/${id}/local-dir/mounts`).catch(() => ({ mounts: [], count: 0 })),
+      apiFetch('/api/codespace/providers/manifest').catch(() => ({ providers: {}, providerCount: 0 })),
     ]);
     chainData.value = c;
     contextData.value = ctx;
     workspaceFilesData.value = files;
     localDirMountData.value = localDirs;
+    codespaceData.value = codespace;
     await loadWorkspaceCheckpoints(id);
   } catch (e: any) { localError.value = e.message; }
 }
@@ -552,6 +568,81 @@ function openLocalDir() {
   panel.value = 'localDir';
 }
 
+function openCodespace() {
+  codespaceResult.value = null;
+  if (!codespaceForm.repositoryRef && selected.value?.title) {
+    codespaceForm.repositoryRef = selected.value.title;
+  }
+  panel.value = 'codespace';
+}
+
+async function inspectCodespaceStatus() {
+  setBusy('ws:codespace-status');
+  localError.value = '';
+  try {
+    codespaceResult.value = await apiFetch('/api/codespace/repository/status', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: codespaceForm.provider,
+        repoId: codespaceForm.repoId || undefined,
+        repositoryRef: codespaceForm.repositoryRef,
+        branch: codespaceForm.branch,
+      }),
+    });
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function prepareCodespaceChange() {
+  if (!selectedId.value) return;
+  setBusy('ws:codespace-prepare');
+  localError.value = '';
+  try {
+    const prepared = await apiFetch('/api/codespace/change/prepare', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: selectedId.value,
+        provider: codespaceForm.provider,
+        repositoryRef: codespaceForm.repositoryRef || codespaceForm.repoId,
+        branch: codespaceForm.branch,
+        diff: codespaceForm.diff,
+        dataClass: 'codeChange',
+        policy: { decision: 'allow', source: 'console' },
+        checkpoint: { workspaceId: selectedId.value },
+        commitPlan: [{ message: 'Pact Codespace console change' }],
+      }),
+    });
+    codespaceForm.codeChangeId = prepared.codeChangeId || prepared.codeChange?.codeChangeId || '';
+    codespaceResult.value = prepared;
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function uploadCodespaceChange() {
+  if (!selectedId.value) return;
+  setBusy('ws:codespace-upload');
+  localError.value = '';
+  try {
+    codespaceResult.value = await apiFetch('/api/codespace/change/upload', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: selectedId.value,
+        codeChangeId: codespaceForm.codeChangeId || undefined,
+        provider: codespaceForm.provider,
+        repoId: codespaceForm.repoId || undefined,
+        repositoryRef: codespaceForm.repositoryRef,
+        branch: codespaceForm.branch,
+        sourceRef: codespaceForm.headRef || 'HEAD',
+        targetRef: codespaceForm.branch || 'main',
+        title: 'Pact Codespace console dry-run',
+        dryRun: true,
+        confirm: true,
+      }),
+    });
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
 // busyKey helpers (work on the existing string-compat ref)
 function setBusy(k: string)  { localBusyKey.value = k; }
 function clearBusy()         { localBusyKey.value = ''; }
@@ -652,6 +743,7 @@ load();
             <button class="table-action" type="button" @click.stop="openProfile(ws)">配置 Profile</button>
             <button class="table-action" type="button" @click.stop="openParent(ws)">设置继承</button>
             <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openLocalDir()">本机目录</button>
+            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCodespace()">代码库</button>
             <button class="table-action" type="button" @click.stop="panel = 'share'; shareForm.action = 'share'">共享</button>
           </div>
         </article>
@@ -822,6 +914,44 @@ load();
           </div>
         </template>
 
+        <template v-else-if="panel === 'codespace' && selected">
+          <div class="surface-card drawer-panel">
+            <div class="panel-header">
+              <h4>代码库 — {{ selected.title }}</h4>
+              <p>Codespace 统一封装 RepositoryPort 和 ReviewPort；外部凭据只显示 secretRef。</p>
+            </div>
+            <div class="form-grid">
+              <OptionBar
+                v-model="codespaceForm.provider"
+                label="Provider"
+                :options="[{ value: 'github', label: 'GitHub' }, { value: 'gerrit', label: 'Gerrit' }]"
+              />
+              <label><span>本机 repoId / worktreePath</span><input v-model="codespaceForm.repoId" autocomplete="off" placeholder="/Users/example/project" /></label>
+              <label><span>Repository Ref</span><input v-model="codespaceForm.repositoryRef" autocomplete="off" placeholder="owner/repo 或 gerrit/project" /></label>
+              <label><span>Branch</span><input v-model="codespaceForm.branch" autocomplete="off" placeholder="main" /></label>
+              <label><span>Diff Base</span><input v-model="codespaceForm.baseRef" autocomplete="off" /></label>
+              <label><span>Diff Head</span><input v-model="codespaceForm.headRef" autocomplete="off" /></label>
+            </div>
+            <label class="module-field-block">
+              <span>ChangeSet Diff</span>
+              <textarea v-model="codespaceForm.diff" rows="5" spellcheck="false"></textarea>
+            </label>
+            <div class="module-actions">
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="inspectCodespaceStatus">
+                {{ busyKey === 'ws:codespace-status' ? '读取中…' : '读取状态' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="prepareCodespaceChange">
+                {{ busyKey === 'ws:codespace-prepare' ? '准备中…' : '准备 ChangeSet' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="uploadCodespaceChange">
+                {{ busyKey === 'ws:codespace-upload' ? '验证中…' : '上传预检' }}
+              </button>
+              <button class="tool-button tool-button-ghost" type="button" @click="panel = 'list'">取消</button>
+            </div>
+            <pre v-if="codespaceResult" class="config-json-preview" style="margin-top: var(--space-3);">{{ JSON.stringify(codespaceResult, null, 2) }}</pre>
+          </div>
+        </template>
+
         <!-- ── Detail view (default) ────────────────────────────────── -->
         <template v-else-if="selected">
           <div class="surface-card">
@@ -940,6 +1070,24 @@ load();
                 </div>
               </div>
               <div v-else class="checkpoint-empty">当前工作空间还没有连接本机目录。</div>
+            </ConfigFoldCard>
+
+            <ConfigFoldCard title="代码库 Codespace（v0.0.1）">
+              <div class="checkpoint-toolbar">
+                <div>
+                  <strong>{{ codespaceData?.enabledProviderCount ?? 0 }} / {{ codespaceData?.providerCount ?? 0 }} 个 provider 可用</strong>
+                  <span v-if="codespaceData?.configPath">配置：{{ codespaceData.configPath }}</span>
+                </div>
+                <button class="table-action" type="button" :disabled="!!busyKey" @click="openCodespace">打开工作台</button>
+              </div>
+              <div v-if="codespaceData?.providers" class="ws-id-list" style="margin-top: var(--space-3);">
+                <div v-for="provider in codespaceData.providers" :key="provider.provider" class="ws-chain-item" style="justify-content: space-between;">
+                  <code>{{ provider.provider }}</code>
+                  <span>{{ provider.mode }} · {{ provider.secretRef }}</span>
+                  <StatusPill :tone="provider.enabled ? 'success' : 'neutral'" :label="provider.enabled ? 'enabled' : 'disabled'" />
+                </div>
+              </div>
+              <div v-else class="checkpoint-empty">Codespace provider manifest 尚未加载。</div>
             </ConfigFoldCard>
 
             <ConfigFoldCard title="文件回退点（管控台）">
@@ -1141,6 +1289,20 @@ load();
 .ws-id-list { list-style: none; padding: 0; margin: var(--space-1) 0; font-size: 0.8rem; display: flex; flex-direction: column; gap: var(--space-1); }
 .ws-id-list li { display: flex; align-items: center; gap: var(--space-2); }
 .ws-id-list code { background: var(--bg-subtle); padding: 1px 6px; border-radius: 4px; }
+
+.module-field-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.module-field-block textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-mono);
+}
 
 .checkpoint-panel {
   display: flex;

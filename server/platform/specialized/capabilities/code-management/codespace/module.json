@@ -16,6 +16,17 @@
         "createCodespaceRegistry"
       ],
       "operations": [
+        "codespace.providers.manifest",
+        "codespace.repository.status",
+        "codespace.tree.list",
+        "codespace.file.read",
+        "codespace.diff.read",
+        "codespace.change.prepare",
+        "codespace.change.upload",
+        "codespace.review.comment",
+        "codespace.review.requestChanges",
+        "codespace.review.approve",
+        "codespace.review.status.sync",
         "workspace.code.target.evaluate",
         "workspace.code.change.prepare",
         "workspace.code.change.upload",
@@ -32,12 +43,15 @@
     }
   },
   "providers": [
+    "github",
     "gerrit"
   ],
   "storage": {
-    "registryFile": "code-management/codespace-registry.json"
+    "registryFile": "code-management/codespace-registry.json",
+    "providerConfigFile": "code-management/codespace-providers.json"
   },
   "verification": [
+    "npm run server:verify:v001-codespace-e2e --silent",
     "npm run server:verify:codespace --silent",
     "npm run server:verify:gerrit-mcp --silent",
     "npm run server:verify:protocol-operations --silent"

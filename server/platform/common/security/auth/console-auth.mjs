@@ -29,6 +29,12 @@ export const CONSOLE_SCOPES = [
   "maintenance:run",
   "maintenance:approve",
   "maintenance:admin",
+  "repo:read",
+  "repo:write",
+  "repo:review",
+  "repo:approve",
+  "repo:maintain",
+  "repo:admin",
   "runtime:admin",
   "auth:admin"
 ];
@@ -58,7 +64,12 @@ export const CONSOLE_ROLES = {
       "maintenance:read",
       "maintenance:run",
       "maintenance:approve",
-      "maintenance:admin"
+      "maintenance:admin",
+      "repo:read",
+      "repo:write",
+      "repo:review",
+      "repo:approve",
+      "repo:maintain"
     ]
   },
   operator: {

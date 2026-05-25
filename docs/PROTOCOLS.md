@@ -1019,6 +1019,14 @@ Skill 贡献排行榜演示：
 - `workspace.code.change.link`：把已有 Gerrit change 与 workspace task / operation / contribution 关联，并追加 `code.change.linked` event。
 - `workspace.code.change.status.sync`：从 Gerrit 同步 review、submit、abandon、merge、rebase 和 conflict 状态，并追加 `code.change.status.synced` event。
 
+v0.0.1 Codespace 语义入口：
+
+- `codespace.providers.manifest`：读取运行态 GitHub/Gerrit provider manifest；只返回 `secretRef`，不返回 secret value。
+- `codespace.repository.status`、`codespace.tree.list`、`codespace.file.read`、`codespace.diff.read`：统一 `RepositoryPort` 读接口；本机 `repoId/worktreePath` 可实读，外部 provider 缺少凭据时只返回 `contractVerified` receipt。
+- `codespace.change.prepare`：生成受控 `changeSet`，保留 `dataClass`、`policy`、`checkpoint` 和 audit，不直接提交。
+- `codespace.change.upload`：统一 GitHub PR / Gerrit Change 上传语义；无真实凭据或 dry-run 时必须标记 `contractVerified`，不能说成真实 PR/Change 已创建。
+- `codespace.review.comment`、`codespace.review.requestChanges`、`codespace.review.approve`、`codespace.review.status.sync`：统一 `ReviewPort`；review action 和 status sync 必须追加 Codespace registry event。
+
 Gerrit upload 的完成判定不能只看 `git push` 进程退出码。`workspace.code.change.upload` / MCP concrete operation `pact.workspace.code.change.upload` 必须在 push 退出 0 后继续通过 Gerrit REST 查询上传的 `HEAD` commit，直到 Gerrit 返回 change 且 `current_revision` 或 revisions 中包含该 commit，才能把操作标记为 `completed`。确认结果必须进入响应的 `completion` 字段，并通过 `GET /mcp` SSE 向同一 grant 推送 `notifications/pact/operation_reply`；如果确认超时或无法证明 Gerrit 已接收该 revision，则整个 upload 返回失败，不能推送 completed 回信。
 
 Agent-facing Gerrit MCP 操作：

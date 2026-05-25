@@ -2,13 +2,17 @@ import crypto, { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ServerConfig } from "../../../../common/config/ServerConfig.mjs";
+import { executeRepoOperation as defaultExecuteRepoOperation } from "../../code-repository/repo-operations/index.mjs";
 
 export const CODESPACE_PROTOCOL_VERSION = "pact.codespace.v1";
 
 const REGISTRY_FILE = path.join("code-management", "codespace-registry.json");
+const PROVIDER_CONFIG_FILE = path.join("code-management", "codespace-providers.json");
 const CODE_PAYLOAD_KINDS = new Set(["sourceCode", "patch", "gitDiff", "repositoryChange", "codeChange"]);
 const REVIEW_STATUS = new Set(["draft", "open", "reviewed", "submitted", "merged", "abandoned", "conflict", "failed"]);
 const SUBMIT_STATUS = new Set(["notSubmitted", "submitted", "merged", "failed"]);
+const GITHUB_PROVIDER_NAMES = new Set(["github", "gh", "github-pr"]);
+const GERRIT_PROVIDER_NAMES = new Set(["gerrit", "gerrit-change"]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -51,6 +55,10 @@ function registryPath(userDataPath = "") {
   return path.join(userDataPath || ServerConfig.getDataDir(), REGISTRY_FILE);
 }
 
+function providerConfigPath(userDataPath = "") {
+  return path.join(userDataPath || ServerConfig.getDataDir(), PROVIDER_CONFIG_FILE);
+}
+
 async function readJson(filePath, fallback) {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8"));
@@ -76,6 +84,85 @@ function emptyRegistry() {
   };
 }
 
+function defaultProviderConfig() {
+  return {
+    schemaVersion: 1,
+    protocolVersion: CODESPACE_PROTOCOL_VERSION,
+    updatedAt: nowIso(),
+    providers: {
+      github: {
+        provider: "github",
+        enabled: true,
+        mode: "contract",
+        authType: "githubApp",
+        secretRef: "secret://pact/codespace/github-app",
+        repositoryPort: true,
+        reviewPort: true,
+        capabilities: [
+          "repository.status",
+          "tree.list",
+          "file.read",
+          "diff.read",
+          "change.prepare",
+          "change.upload",
+          "review.comment",
+          "review.requestChanges",
+          "review.approve",
+          "review.status.sync"
+        ]
+      },
+      gerrit: {
+        provider: "gerrit",
+        enabled: true,
+        mode: "contract",
+        authType: "serviceAccount",
+        secretRef: "secret://pact/codespace/gerrit-service-account",
+        repositoryPort: true,
+        reviewPort: true,
+        capabilities: [
+          "repository.status",
+          "tree.list",
+          "file.read",
+          "diff.read",
+          "change.prepare",
+          "change.upload",
+          "review.comment",
+          "review.requestChanges",
+          "review.approve",
+          "review.status.sync"
+        ]
+      }
+    }
+  };
+}
+
+function publicProviderConfig(config = {}, filePath = "") {
+  const providers = {};
+  for (const [providerId, provider] of Object.entries(asObject(config.providers))) {
+    providers[providerId] = {
+      provider: text(provider.provider || providerId),
+      enabled: provider.enabled !== false,
+      mode: text(provider.mode || "contract"),
+      authType: text(provider.authType || ""),
+      secretRef: text(provider.secretRef || ""),
+      repositoryPort: provider.repositoryPort !== false,
+      reviewPort: provider.reviewPort !== false,
+      capabilities: uniqueStrings(provider.capabilities)
+    };
+  }
+  return {
+    schemaVersion: Number(config.schemaVersion || 1),
+    protocolVersion: CODESPACE_PROTOCOL_VERSION,
+    configPath: filePath,
+    providers,
+    providerCount: Object.keys(providers).length,
+    enabledProviderCount: Object.values(providers).filter((provider) => provider.enabled).length,
+    secretPolicy: "secretRefOnly",
+    contractMode: Object.values(providers).some((provider) => provider.mode === "contract"),
+    updatedAt: text(config.updatedAt || "")
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -94,6 +181,31 @@ function branchFrom(input = {}) {
 
 function targetProviderFor(input = {}, routeDecision = "") {
   return text(input.targetProvider || input.provider || (routeDecision === "gerritChange" ? "gerrit" : "workspace"));
+}
+
+function providerKeyFor(input = {}, fallback = "gerrit") {
+  const provider = text(input.targetProvider || input.provider || fallback).toLowerCase();
+  if (GITHUB_PROVIDER_NAMES.has(provider)) return "github";
+  if (GERRIT_PROVIDER_NAMES.has(provider)) return "gerrit";
+  return provider || fallback;
+}
+
+function localRepoInput(input = {}) {
+  const repoId = text(input.repoId || input.worktreePath || input.localPath || "");
+  return repoId ? { ...input, repoId } : null;
+}
+
+function contractVerifiedReceipt({ operationId, provider = {}, input = {}, reason = "" } = {}) {
+  return {
+    contractVerified: true,
+    provider: provider.provider || providerKeyFor(input),
+    providerMode: provider.mode || "contract",
+    secretRef: provider.secretRef || "",
+    operationId,
+    repositoryRef: repositoryRefFrom(input),
+    branch: branchFrom(input),
+    reason: reason || "External provider credentials are represented by secretRef and this verification ran in contract mode."
+  };
 }
 
 function routeDecisionFor(input = {}) {
@@ -231,9 +343,18 @@ function normalizeChangeSet(input = {}) {
   const payload = {
     payloadKind: text(input.payloadKind || "repositoryChange"),
     payloadRefs: uniqueStrings(input.payloadRefs || input.payloadRef),
+    dataClass: text(input.dataClass || input.payloadKind || "codeChange"),
     diff,
     files,
-    commitPlan
+    commitPlan,
+    policy: asObject(input.policy, {
+      decision: text(input.policyDecision || "allow"),
+      dataClass: text(input.dataClass || input.payloadKind || "codeChange")
+    }),
+    checkpoint: asObject(input.checkpoint, {
+      checkpointNodeId: text(input.checkpointNodeId || ""),
+      checkpointId: text(input.checkpointId || "")
+    })
   };
   return {
     changeSetId: text(input.changeSetId || "") || stableId("change_set", payload),
@@ -298,9 +419,11 @@ function statusFromGerritChange(change = {}) {
 export function createCodespaceRegistry({
   userDataPath,
   executeGerritCommonOperation,
-  uploadGerritGitChange
+  uploadGerritGitChange,
+  executeRepoOperation = defaultExecuteRepoOperation
 } = {}) {
   const filePath = registryPath(userDataPath);
+  const providersPath = providerConfigPath(userDataPath);
 
   async function loadRegistry() {
     const registry = await readJson(filePath, emptyRegistry());
@@ -319,11 +442,119 @@ export function createCodespaceRegistry({
     return registry;
   }
 
+  async function loadProviderConfig() {
+    const existing = await readJson(providersPath, null);
+    if (existing) {
+      return {
+        ...defaultProviderConfig(),
+        ...existing,
+        providers: {
+          ...defaultProviderConfig().providers,
+          ...asObject(existing.providers)
+        }
+      };
+    }
+    const defaults = defaultProviderConfig();
+    await writeJson(providersPath, defaults);
+    return defaults;
+  }
+
+  async function providerManifest() {
+    const config = await loadProviderConfig();
+    return {
+      ok: true,
+      ...publicProviderConfig(config, providersPath)
+    };
+  }
+
+  async function resolveProvider(input = {}, fallback = "gerrit") {
+    const config = await loadProviderConfig();
+    const providerId = providerKeyFor(input, fallback);
+    const provider = asObject(config.providers?.[providerId], {
+      provider: providerId,
+      enabled: false,
+      mode: "contract"
+    });
+    return {
+      providerId,
+      provider: {
+        ...provider,
+        provider: text(provider.provider || providerId),
+        enabled: provider.enabled !== false,
+        mode: text(provider.mode || "contract"),
+        secretRef: text(provider.secretRef || "")
+      },
+      config: publicProviderConfig(config, providersPath)
+    };
+  }
+
   async function mutate(mutator) {
     const registry = await loadRegistry();
     const output = await mutator(registry);
     await saveRegistry(registry);
     return output;
+  }
+
+  async function runRepoPort(operationId, input = {}, context = {}) {
+    const { providerId, provider, config } = await resolveProvider(input, providerKeyFor(input, "gerrit"));
+    if (!provider.enabled) {
+      return {
+        ok: false,
+        status: 409,
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        provider: providerId,
+        error: `Codespace provider is disabled: ${providerId}`,
+        providerConfig: config
+      };
+    }
+    const localInput = localRepoInput(input);
+    if (!localInput) {
+      return {
+        ok: true,
+        status: 200,
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        operationId,
+        provider: provider.provider,
+        adapter: "RepositoryPort",
+        repositoryRef: repositoryRefFrom(input),
+        branch: branchFrom(input),
+        data: {},
+        receipt: contractVerifiedReceipt({ operationId, provider, input, reason: "No local repoId/worktreePath was supplied for provider-backed repository read." }),
+        providerConfig: config
+      };
+    }
+    const mapped = {
+      "codespace.repository.status": "repo.status",
+      "codespace.tree.list": "repo.tree.list",
+      "codespace.file.read": "repo.file.read",
+      "codespace.diff.read": "repo.diff.read"
+    }[operationId];
+    const repoResult = await executeRepoOperation({
+      operationId: mapped,
+      input: localInput,
+      authSession: context.authSession
+    });
+    return {
+      ok: repoResult.ok === true,
+      status: repoResult.status || (repoResult.ok ? 200 : 400),
+      protocolVersion: CODESPACE_PROTOCOL_VERSION,
+      operationId,
+      provider: provider.provider,
+      adapter: "RepositoryPort",
+      repositoryRef: repositoryRefFrom(input) || repoResult.repo?.repoId || localInput.repoId || "",
+      branch: branchFrom(input) || repoResult.repo?.branch || "",
+      repo: repoResult.repo || {},
+      data: repoResult.data || {},
+      error: repoResult.error,
+      receipt: {
+        contractVerified: provider.mode === "contract",
+        provider: provider.provider,
+        secretRef: provider.secretRef,
+        operationId,
+        repoOperationId: mapped
+      },
+      providerConfig: config
+    };
   }
 
   async function evaluateTarget(input = {}) {
@@ -717,6 +948,287 @@ export function createCodespaceRegistry({
     });
   }
 
+  async function uploadGithubChange(input = {}, context = {}) {
+    const { provider, config } = await resolveProvider(input, "github");
+    if (!provider.enabled) {
+      return {
+        ok: false,
+        status: 409,
+        error: "Codespace GitHub provider is disabled."
+      };
+    }
+    const repoOperation = localRepoInput(input)
+      ? await executeRepoOperation({
+          operationId: "repo.proposal.create",
+          input: {
+            ...input,
+            provider: "github",
+            sourceRef: text(input.sourceRef || input.headRef || input.branch || "HEAD"),
+            targetRef: text(input.targetRef || input.baseRef || input.branch || "main"),
+            title: text(input.title || input.subject || "Pact Codespace change"),
+            dryRun: input.dryRun !== false
+          },
+          authSession: context.authSession
+        })
+      : {
+          ok: true,
+          status: 200,
+          data: contractVerifiedReceipt({
+            operationId: "codespace.change.upload",
+            provider,
+            input,
+            reason: "No local repoId/worktreePath was supplied for GitHub PR creation."
+          })
+        };
+    if (repoOperation.ok !== true) {
+      return {
+        ok: false,
+        status: repoOperation.status || 400,
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        operationId: "codespace.change.upload",
+        error: repoOperation.error || "GitHub upload preparation failed.",
+        providerConfig: config
+      };
+    }
+    return mutate(async (registry) => {
+      const timestamp = nowIso();
+      const existing = findChange(registry, input);
+      const targetRecord = normalizeTarget({
+        ...input,
+        routeDecision: "githubPullRequest",
+        targetProvider: "github",
+        repositoryRef: repositoryRefFrom(input) || input.repoId || input.worktreePath || "",
+        branch: branchFrom(input),
+        reviewUrl: text(input.reviewUrl || "")
+      });
+      targetRecord.targetKind = "githubPullRequest";
+      targetRecord.status = input.dryRun === false ? "uploaded" : "contractVerified";
+      registry.targets[targetRecord.targetId] = {
+        ...registry.targets[targetRecord.targetId],
+        ...targetRecord,
+        updatedAt: timestamp
+      };
+      const codeChangeId = existing?.codeChangeId || codeChangeIdFor({ ...input, targetId: targetRecord.targetId });
+      const audit = appendEvent(registry, "code.change.uploaded", {
+        workspaceId: workspaceIdFrom(input),
+        targetId: targetRecord.targetId,
+        codeChangeId,
+        provider: "github",
+        contractVerified: true
+      });
+      const reviewId = text(input.reviewId || input.pullRequestNumber || "") || stableId("github_pr", { codeChangeId, repositoryRef: repositoryRefFrom(input), branch: branchFrom(input) });
+      const reviewUrl = text(input.reviewUrl || "") || `https://github.example.invalid/${repositoryRefFrom(input) || "owner/repo"}/pull/${reviewId.replace(/^github_pr_/, "")}`;
+      const change = {
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        ...(existing || {}),
+        codeChangeId,
+        workspaceId: workspaceIdFrom(input),
+        targetId: targetRecord.targetId,
+        repositoryId: text(input.repositoryId || input.repoId || ""),
+        repositoryRef: text(input.repositoryRef || input.repoId || input.worktreePath || ""),
+        branch: branchFrom(input),
+        changeId: reviewId,
+        changeNumber: reviewId,
+        changeRef: reviewId,
+        gerritChangeUrl: "",
+        reviewUrl,
+        patchSetRefs: uniqueStrings(existing?.patchSetRefs),
+        reviewStatus: input.dryRun === false ? "open" : "draft",
+        submitStatus: "notSubmitted",
+        operationId: "codespace.change.upload",
+        checkpointNodeId: text(input.checkpointNodeId || existing?.checkpointNodeId || ""),
+        auditId: audit.eventId,
+        changeSet: asObject(existing?.changeSet),
+        target: {
+          targetKind: "codespace",
+          targetProvider: "github",
+          repositoryRef: repositoryRefFrom(input) || input.repoId || input.worktreePath || "",
+          branch: branchFrom(input),
+          changeRef: reviewId,
+          reviewUrl
+        },
+        completion: {
+          confirmed: input.dryRun === false && input.contractVerified !== true,
+          dryRun: input.dryRun !== false,
+          contractVerified: true,
+          provider: "github",
+          receipt: repoOperation.data || repoOperation,
+          secretRef: provider.secretRef
+        },
+        statusHistory: [
+          ...(existing?.statusHistory || []),
+          { status: input.dryRun === false ? "uploaded" : "contract_verified", at: timestamp, auditId: audit.eventId }
+        ],
+        createdAt: existing?.createdAt || timestamp,
+        updatedAt: timestamp
+      };
+      registry.changes[codeChangeId] = change;
+      return {
+        ok: true,
+        status: 200,
+        schemaVersion: 1,
+        operationId: "codespace.change.upload",
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        provider: "github",
+        contractVerified: true,
+        dryRun: input.dryRun !== false,
+        codeChange: publicCodeChange(change),
+        codeChangeId,
+        target: change.target,
+        completion: change.completion,
+        auditId: audit.eventId,
+        providerConfig: config
+      };
+    });
+  }
+
+  async function uploadCodespaceChange(input = {}, context = {}) {
+    const providerId = providerKeyFor(input, "gerrit");
+    if (providerId === "github") {
+      return uploadGithubChange(input, context);
+    }
+    const upload = await uploadChange(input);
+    if (upload?.operationId === "workspace.code.change.upload") {
+      return {
+        ...upload,
+        operationId: "codespace.change.upload"
+      };
+    }
+    return upload;
+  }
+
+  async function reviewAction(kind, input = {}, context = {}) {
+    const providerId = providerKeyFor(input, "gerrit");
+    const { provider, config } = await resolveProvider(input, providerId);
+    if (!provider.enabled) {
+      return {
+        ok: false,
+        status: 409,
+        error: `Codespace provider is disabled: ${providerId}`
+      };
+    }
+    const operationIdByKind = {
+      comment: "repo.review.comment",
+      requestChanges: "repo.review.requestChanges",
+      approve: "repo.review.approve"
+    };
+    const operationId = operationIdByKind[kind] || "repo.review.comment";
+    const localInput = localRepoInput(input);
+    const reviewTarget = text(input.reviewTarget || input.changeRef || input.changeId || input.codeChangeId || "");
+    const providerReceipt = localInput && reviewTarget
+      ? await executeRepoOperation({
+          operationId,
+          input: {
+            ...input,
+            ...localInput,
+            provider: providerId,
+            reviewTarget,
+            dryRun: input.dryRun !== false
+          },
+          authSession: context.authSession
+        })
+      : {
+          ok: true,
+          status: 200,
+          data: contractVerifiedReceipt({
+            operationId: `codespace.review.${kind}`,
+            provider,
+            input,
+            reason: "Review operation ran without a local repoId/reviewTarget and produced a contract receipt."
+          })
+        };
+    if (providerReceipt.ok !== true) {
+      return {
+        ok: false,
+        status: providerReceipt.status || 400,
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        operationId: `codespace.review.${kind}`,
+        error: providerReceipt.error || "Codespace review operation failed.",
+        providerConfig: config
+      };
+    }
+    return mutate(async (registry) => {
+      const timestamp = nowIso();
+      const existing = findChange(registry, input);
+      const target = existing?.targetId && registry.targets[existing.targetId]
+        ? registry.targets[existing.targetId]
+        : normalizeTarget({
+            ...input,
+            payloadKind: input.payloadKind || "repositoryChange",
+            routeDecision: providerId === "github" ? "githubPullRequest" : "gerritChange",
+            targetProvider: providerId
+          });
+      target.targetKind = providerId === "github" ? "githubPullRequest" : "gerritChange";
+      registry.targets[target.targetId] = {
+        ...registry.targets[target.targetId],
+        ...target,
+        updatedAt: timestamp
+      };
+      const codeChangeId = existing?.codeChangeId || codeChangeIdFor({ ...input, targetId: target.targetId });
+      const eventType = kind === "approve"
+        ? "code.review.approved"
+        : kind === "requestChanges"
+          ? "code.review.changes_requested"
+          : "code.review.commented";
+      const audit = appendEvent(registry, eventType, {
+        workspaceId: workspaceIdFrom(input),
+        targetId: target.targetId,
+        codeChangeId,
+        provider: providerId
+      });
+      const reviewStatus = kind === "approve" ? "reviewed" : normalizeReviewStatus(existing?.reviewStatus || "open", "open");
+      const change = {
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        ...(existing || {}),
+        codeChangeId,
+        workspaceId: workspaceIdFrom(input),
+        targetId: target.targetId,
+        repositoryId: text(input.repositoryId || existing?.repositoryId || target.repositoryId),
+        repositoryRef: text(input.repositoryRef || existing?.repositoryRef || target.repositoryRef),
+        branch: branchFrom({ ...target, ...existing, ...input }),
+        changeId: text(input.changeId || existing?.changeId || reviewTarget),
+        changeNumber: text(input.changeNumber || existing?.changeNumber || ""),
+        changeRef: text(input.changeRef || existing?.changeRef || reviewTarget),
+        gerritChangeUrl: text(input.gerritChangeUrl || existing?.gerritChangeUrl || ""),
+        reviewUrl: text(input.reviewUrl || input.gerritChangeUrl || existing?.reviewUrl || ""),
+        patchSetRefs: uniqueStrings(input.patchSetRefs || existing?.patchSetRefs),
+        reviewStatus,
+        submitStatus: normalizeSubmitStatus(input.submitStatus || existing?.submitStatus, reviewStatus),
+        operationId: `codespace.review.${kind}`,
+        checkpointNodeId: text(input.checkpointNodeId || existing?.checkpointNodeId || ""),
+        auditId: audit.eventId,
+        changeSet: asObject(existing?.changeSet),
+        target: compatibleTarget(registry.targets[target.targetId]),
+        completion: {
+          ...asObject(existing?.completion),
+          lastReviewReceipt: providerReceipt.data || providerReceipt,
+          contractVerified: provider.mode === "contract",
+          secretRef: provider.secretRef
+        },
+        statusHistory: [
+          ...(existing?.statusHistory || []),
+          { status: eventType, at: timestamp, auditId: audit.eventId }
+        ],
+        createdAt: existing?.createdAt || timestamp,
+        updatedAt: timestamp
+      };
+      registry.changes[codeChangeId] = change;
+      return {
+        ok: true,
+        status: 200,
+        protocolVersion: CODESPACE_PROTOCOL_VERSION,
+        operationId: `codespace.review.${kind}`,
+        provider: providerId,
+        reviewAction: kind,
+        contractVerified: provider.mode === "contract",
+        providerReceipt: providerReceipt.data || providerReceipt,
+        codeChange: publicCodeChange(change),
+        auditId: audit.eventId,
+        providerConfig: config
+      };
+    });
+  }
+
   async function getChange(input = {}) {
     const registry = await loadRegistry();
     const change = findChange(registry, input);
@@ -742,11 +1254,20 @@ export function createCodespaceRegistry({
 
   return {
     protocolVersion: CODESPACE_PROTOCOL_VERSION,
+    providerManifest,
+    repositoryStatus: (input, context) => runRepoPort("codespace.repository.status", input, context),
+    listTree: (input, context) => runRepoPort("codespace.tree.list", input, context),
+    readFile: (input, context) => runRepoPort("codespace.file.read", input, context),
+    readDiff: (input, context) => runRepoPort("codespace.diff.read", input, context),
     evaluateTarget,
     prepareChange,
     uploadChange,
+    uploadCodespaceChange,
     linkChange,
     syncStatus,
+    reviewComment: (input, context) => reviewAction("comment", input, context),
+    reviewRequestChanges: (input, context) => reviewAction("requestChanges", input, context),
+    reviewApprove: (input, context) => reviewAction("approve", input, context),
     getChange,
     listChanges
   };

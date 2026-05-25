@@ -633,6 +633,198 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
   }),
 
   protocolOperation({
+    id: "codespace.providers.manifest",
+    feature: "codespace",
+    label: "读取 Codespace provider manifest",
+    targetMethod: "handleCodespaceProvidersManifest",
+    method: "GET",
+    path: "/api/codespace/providers/manifest",
+    scopes: ["repo:read"],
+    readOnly: true
+  }),
+  protocolOperation({
+    id: "codespace.repository.status",
+    feature: "codespace",
+    label: "读取代码库状态",
+    targetMethod: "handleCodespaceRepositoryStatus",
+    path: "/api/codespace/repository/status",
+    scopes: ["repo:read"],
+    readOnly: true,
+    inputSchema: schema([], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      repositoryRef: { type: "string" },
+      branch: { type: "string" },
+      targetType: { type: "string" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.tree.list",
+    feature: "codespace",
+    label: "列出代码库目录",
+    targetMethod: "handleCodespaceTreeList",
+    path: "/api/codespace/tree/list",
+    scopes: ["repo:read"],
+    readOnly: true,
+    inputSchema: schema([], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      repositoryRef: { type: "string" },
+      ref: { type: "string" },
+      path: { type: "string" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.file.read",
+    feature: "codespace",
+    label: "读取代码库文件",
+    targetMethod: "handleCodespaceFileRead",
+    path: "/api/codespace/file/read",
+    scopes: ["repo:read"],
+    readOnly: true,
+    inputSchema: schema(["path"], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      repositoryRef: { type: "string" },
+      ref: { type: "string" },
+      path: { type: "string" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.diff.read",
+    feature: "codespace",
+    label: "读取代码库 diff",
+    targetMethod: "handleCodespaceDiffRead",
+    path: "/api/codespace/diff/read",
+    scopes: ["repo:read"],
+    readOnly: true,
+    inputSchema: schema(["baseRef", "headRef"], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      repositoryRef: { type: "string" },
+      baseRef: { type: "string" },
+      headRef: { type: "string" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.change.prepare",
+    feature: "codespace",
+    label: "准备 Codespace changeSet",
+    targetMethod: "handleCodespaceChangePrepare",
+    path: "/api/codespace/change/prepare",
+    scopes: ["repo:write"],
+    risk: "safe_write",
+    inputSchema: schema([], {
+      workspaceId: { type: "string" },
+      targetId: { type: "string" },
+      provider: { type: "string" },
+      repositoryRef: { type: "string" },
+      branch: { type: "string" },
+      diff: { type: "string" },
+      files: { type: "array" },
+      commitPlan: { type: "array" },
+      dataClass: { type: "string" },
+      policy: { type: "object" },
+      checkpoint: { type: "object" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.change.upload",
+    feature: "codespace",
+    label: "上传 Codespace change 到评审系统",
+    targetMethod: "handleCodespaceChangeUpload",
+    path: "/api/codespace/change/upload",
+    scopes: ["repo:maintain"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "repo:maintain",
+    inputSchema: schema([], {
+      workspaceId: { type: "string" },
+      codeChangeId: { type: "string" },
+      provider: { type: "string" },
+      repositoryRef: { type: "string" },
+      repoId: { type: "string" },
+      worktreePath: { type: "string" },
+      branch: { type: "string" },
+      sourceRef: { type: "string" },
+      targetRef: { type: "string" },
+      title: { type: "string" },
+      dryRun: { type: "boolean" },
+      confirm: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.review.comment",
+    feature: "codespace",
+    label: "提交 Codespace review 评论",
+    targetMethod: "handleCodespaceReviewComment",
+    path: "/api/codespace/review/comment",
+    scopes: ["repo:review"],
+    risk: "safe_write",
+    inputSchema: schema([], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      codeChangeId: { type: "string" },
+      reviewTarget: { type: "string" },
+      body: { type: "string" },
+      comments: { type: "object" },
+      dryRun: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.review.requestChanges",
+    feature: "codespace",
+    label: "请求 Codespace review 修改",
+    targetMethod: "handleCodespaceReviewRequestChanges",
+    path: "/api/codespace/review/request-changes",
+    scopes: ["repo:review"],
+    risk: "safe_write",
+    inputSchema: schema([], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      codeChangeId: { type: "string" },
+      reviewTarget: { type: "string" },
+      body: { type: "string" },
+      dryRun: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.review.approve",
+    feature: "codespace",
+    label: "批准 Codespace review",
+    targetMethod: "handleCodespaceReviewApprove",
+    path: "/api/codespace/review/approve",
+    scopes: ["repo:approve"],
+    risk: "safe_write",
+    inputSchema: schema([], {
+      provider: { type: "string" },
+      repoId: { type: "string" },
+      codeChangeId: { type: "string" },
+      reviewTarget: { type: "string" },
+      body: { type: "string" },
+      label: { type: "string" },
+      value: { type: "number" },
+      dryRun: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
+    id: "codespace.review.status.sync",
+    feature: "codespace",
+    label: "同步 Codespace review 状态",
+    targetMethod: "handleCodespaceReviewStatusSync",
+    path: "/api/codespace/review/status/sync",
+    scopes: ["repo:read"],
+    inputSchema: schema([], {
+      provider: { type: "string" },
+      codeChangeId: { type: "string" },
+      changeId: { type: "string" },
+      reviewStatus: { type: "string" },
+      submitStatus: { type: "string" },
+      providerReceipt: { type: "object" }
+    })
+  }),
+
+  protocolOperation({
     id: "raw-corpus.format.convert",
     feature: "knowledge",
     label: "转换原始语料格式",

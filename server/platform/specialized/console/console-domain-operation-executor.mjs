@@ -664,7 +664,8 @@ function codespaceRegistryFor(context = {}) {
     codespaceRegistries.set(key, createCodespaceRegistry({
       userDataPath: context.userDataPath,
       executeGerritCommonOperation,
-      uploadGerritGitChange
+      uploadGerritGitChange,
+      executeRepoOperation
     }));
   }
   return codespaceRegistries.get(key);
@@ -6001,6 +6002,17 @@ async function executeWorkspaceGovernanceOperation({ operationId, input, context
 async function executeCodeManagementOperation({ operationId, input = {}, context }) {
   const id = String(operationId || "");
   const handledOperations = new Set([
+    "codespace.providers.manifest",
+    "codespace.repository.status",
+    "codespace.tree.list",
+    "codespace.file.read",
+    "codespace.diff.read",
+    "codespace.change.prepare",
+    "codespace.change.upload",
+    "codespace.review.comment",
+    "codespace.review.requestChanges",
+    "codespace.review.approve",
+    "codespace.review.status.sync",
     "workspace.code.target.evaluate",
     "workspace.code.change.prepare",
     "workspace.code.change.upload",
@@ -6012,6 +6024,67 @@ async function executeCodeManagementOperation({ operationId, input = {}, context
   }
   const codespace = codespaceRegistryFor(context);
   try {
+    if (id === "codespace.providers.manifest") {
+      return result(200, protocolPayload(await codespace.providerManifest()));
+    }
+    if (id === "codespace.repository.status") {
+      const operationResult = await codespace.repositoryStatus(input, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.tree.list") {
+      const operationResult = await codespace.listTree(input, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.file.read") {
+      const operationResult = await codespace.readFile(input, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.diff.read") {
+      const operationResult = await codespace.readDiff(input, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.change.prepare") {
+      return result(200, protocolPayload(await codespace.prepareChange({
+        ...input,
+        operationId: id,
+        actorId: actorFrom(context.authSession, input)
+      })));
+    }
+    if (id === "codespace.change.upload") {
+      const operationResult = await codespace.uploadCodespaceChange({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      }, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.review.comment") {
+      const operationResult = await codespace.reviewComment({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      }, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.review.requestChanges") {
+      const operationResult = await codespace.reviewRequestChanges({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      }, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.review.approve") {
+      const operationResult = await codespace.reviewApprove({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      }, { authSession: context.authSession });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, protocolPayload(operationResult));
+    }
+    if (id === "codespace.review.status.sync") {
+      return result(200, protocolPayload(await codespace.syncStatus({
+        ...input,
+        operationId: id,
+        actorId: actorFrom(context.authSession, input)
+      })));
+    }
     if (id === "workspace.code.target.evaluate") {
       return result(200, protocolPayload(await codespace.evaluateTarget({
         ...input,
