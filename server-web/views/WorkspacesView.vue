@@ -99,6 +99,15 @@ interface WsSessionContext extends WsContext {
   sessionAppendOnly: boolean;
 }
 
+interface CloudDriveExposureForm {
+  id: string;
+  name: string;
+  path: string;
+  permissionMode: 'all' | 'allowlist' | 'denylist';
+  subjects: string;
+  showPermissions: boolean;
+}
+
 interface WsCheckpointTreeSummary {
   treeId: string;
   kind: string;
@@ -162,8 +171,14 @@ const cloudDriveForm = reactive({
   provider: 'icloud',
   rootPath: '',
   driveRef: '',
-  path: '',
-  uploadPath: 'pact-console-upload.txt',
+  clientId: 'owner',
+  managedFolderRoot: '.pact-data',
+  publicFolder: 'public',
+  allowedClients: 'owner, codex',
+  advancedMode: false,
+  exposedDirectories: [] as CloudDriveExposureForm[],
+  path: 'default',
+  uploadPath: 'default/pact-console-upload.txt',
   uploadContent: 'Pact cloud drive console upload\n',
   targetPath: 'cloud-drive',
 });
@@ -207,6 +222,50 @@ const cloudDriveConnectionOptions = computed(() => {
     label: `${drive.label || drive.provider} · ${String(drive.driveRef || '').slice(0, 18)}`,
   })).filter((item: { value: string }) => item.value);
 });
+
+function splitCsv(value: string) {
+  return String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function cloudDriveAllowedClients() {
+  const clients = splitCsv(cloudDriveForm.allowedClients);
+  return clients.length ? clients : ['owner'];
+}
+
+function addCloudDriveExposure() {
+  const index = cloudDriveForm.exposedDirectories.length + 1;
+  cloudDriveForm.exposedDirectories.push({
+    id: `exposure-${Date.now()}-${index}`,
+    name: `共享目录 ${index}`,
+    path: '',
+    permissionMode: 'all',
+    subjects: '',
+    showPermissions: false,
+  });
+}
+
+function removeCloudDriveExposure(index: number) {
+  cloudDriveForm.exposedDirectories.splice(index, 1);
+}
+
+function cloudDriveExposurePayload() {
+  if (!cloudDriveForm.advancedMode) return [];
+  return cloudDriveForm.exposedDirectories
+    .filter(item => item.path.trim())
+    .map(item => ({
+      name: item.name.trim() || item.path.trim(),
+      drivePath: item.path.trim(),
+      spaceKind: 'advancedExposure',
+      writable: false,
+      accessPolicy: {
+        mode: item.permissionMode,
+        subjects: item.permissionMode === 'all' ? [] : splitCsv(item.subjects),
+      },
+    }));
+}
 
 const sessionItems = computed<HistorySessionPanelItem[]>(() =>
   sessions.value.map(session => ({
@@ -568,6 +627,7 @@ function cloudDriveQuery(extra: Record<string, unknown> = {}) {
   query.set('workspaceId', selectedId.value || 'default');
   if (cloudDriveForm.driveRef) query.set('driveRef', cloudDriveForm.driveRef);
   else query.set('provider', cloudDriveForm.provider);
+  if (cloudDriveForm.clientId.trim()) query.set('clientId', cloudDriveForm.clientId.trim());
   for (const [key, value] of Object.entries(extra)) {
     if (value !== undefined && value !== null && String(value) !== '') {
       query.set(key, String(value));
@@ -597,6 +657,12 @@ async function connectCloudDrive() {
       workspaceId: selectedId.value,
       provider,
       mode: provider === 'icloud' ? 'local' : 'contract',
+      managedFolder: true,
+      managedFolderRoot: cloudDriveForm.managedFolderRoot.trim() || '.pact-data',
+      publicFolder: cloudDriveForm.publicFolder.trim() || 'public',
+      allowedClients: cloudDriveAllowedClients(),
+      defaultClient: cloudDriveForm.clientId.trim() || cloudDriveAllowedClients()[0] || 'owner',
+      directoryMappings: cloudDriveExposurePayload(),
     };
     if (provider === 'icloud' && cloudDriveForm.rootPath.trim()) payload.rootPath = cloudDriveForm.rootPath.trim();
     if (provider !== 'icloud') payload.secretRef = `secret://pact/drive/${provider}-oauth`;
@@ -650,6 +716,7 @@ async function uploadCloudDriveFile() {
         workspaceId: selectedId.value,
         provider: cloudDriveForm.driveRef ? undefined : cloudDriveForm.provider,
         driveRef: cloudDriveForm.driveRef || undefined,
+        clientId: cloudDriveForm.clientId.trim() || undefined,
         path: cloudDriveForm.uploadPath,
         content: cloudDriveForm.uploadContent,
         overwrite: true,
@@ -673,6 +740,7 @@ async function planCloudDriveSync() {
         workspaceId: selectedId.value,
         provider: cloudDriveForm.driveRef ? undefined : cloudDriveForm.provider,
         driveRef: cloudDriveForm.driveRef || undefined,
+        clientId: cloudDriveForm.clientId.trim() || undefined,
         path: cloudDriveForm.path || '',
         targetPath: cloudDriveForm.targetPath || 'cloud-drive',
         direction: 'import_to_sharedspace',
@@ -693,6 +761,7 @@ async function applyCloudDriveSync() {
         workspaceId: selectedId.value,
         provider: cloudDriveForm.driveRef ? undefined : cloudDriveForm.provider,
         driveRef: cloudDriveForm.driveRef || undefined,
+        clientId: cloudDriveForm.clientId.trim() || undefined,
         path: cloudDriveForm.path || '',
         targetPath: cloudDriveForm.targetPath || 'cloud-drive',
         direction: 'import_to_sharedspace',
@@ -1124,9 +1193,50 @@ load();
                 <span>iCloud 受控目录</span>
                 <input v-model="cloudDriveForm.rootPath" autocomplete="off" placeholder="留空使用系统 iCloud Drive 默认路径" />
               </label>
-              <label><span>文件/文件夹路径</span><input v-model="cloudDriveForm.path" autocomplete="off" placeholder="Documents/example.txt" /></label>
+              <label><span>Pact 根目录</span><input v-model="cloudDriveForm.managedFolderRoot" autocomplete="off" /></label>
+              <label><span>公共目录</span><input v-model="cloudDriveForm.publicFolder" autocomplete="off" /></label>
+              <label><span>当前客户端</span><input v-model="cloudDriveForm.clientId" autocomplete="off" /></label>
+              <label><span>允许客户端</span><input v-model="cloudDriveForm.allowedClients" autocomplete="off" /></label>
+              <label><span>文件/文件夹路径</span><input v-model="cloudDriveForm.path" autocomplete="off" placeholder="default 或 public/example.txt" /></label>
               <label><span>上传路径</span><input v-model="cloudDriveForm.uploadPath" autocomplete="off" /></label>
               <label><span>同步目标路径</span><input v-model="cloudDriveForm.targetPath" autocomplete="off" /></label>
+            </div>
+            <div class="module-panel" style="margin-top: var(--space-4);">
+              <div class="module-panel-heading">
+                <strong>目录暴露</strong>
+                <button class="table-action" type="button" :disabled="!!busyKey" @click="addCloudDriveExposure">添加目录</button>
+              </div>
+              <BinaryCheckbox v-model="cloudDriveForm.advancedMode" label="高级模式" />
+              <div v-if="cloudDriveForm.advancedMode" class="ws-id-list" style="margin-top: var(--space-3);">
+                <div v-for="(item, index) in cloudDriveForm.exposedDirectories" :key="item.id" class="module-panel" style="margin-top: var(--space-3);">
+                  <div class="module-panel-heading">
+                    <strong>{{ item.name || `目录 ${index + 1}` }}</strong>
+                    <div class="module-actions" style="margin: 0;">
+                      <button class="table-action" type="button" @click="item.showPermissions = !item.showPermissions">权限配置</button>
+                      <button class="table-action" type="button" @click="removeCloudDriveExposure(index)">移除</button>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <label><span>名称</span><input v-model="item.name" autocomplete="off" /></label>
+                    <label><span>绑定路径</span><input v-model="item.path" autocomplete="off" /></label>
+                  </div>
+                  <div v-if="item.showPermissions" class="form-grid" style="margin-top: var(--space-3);">
+                    <label>
+                      <span>访问模式</span>
+                      <select v-model="item.permissionMode">
+                        <option value="all">所有人可读</option>
+                        <option value="allowlist">白名单</option>
+                        <option value="denylist">黑名单</option>
+                      </select>
+                    </label>
+                    <label v-if="item.permissionMode !== 'all'">
+                      <span>客户端列表</span>
+                      <input v-model="item.subjects" autocomplete="off" />
+                    </label>
+                  </div>
+                </div>
+                <p v-if="cloudDriveForm.exposedDirectories.length === 0" class="muted-text">暂无目录。</p>
+              </div>
             </div>
             <label class="module-field-block">
               <span>上传内容</span>
@@ -1162,11 +1272,11 @@ load();
                 <span>{{ cloudDriveData.connections.length }} 个</span>
               </div>
               <div class="ws-id-list">
-                <div v-for="drive in cloudDriveData.connections" :key="drive.driveRef" class="ws-chain-item" style="justify-content: space-between;">
-                  <code>{{ drive.driveRef.slice(0, 22) }}</code>
-                  <span>{{ drive.provider }} · {{ drive.mode }}</span>
-                  <StatusPill :tone="drive.contractVerified ? 'info' : 'success'" :label="drive.contractVerified ? 'contractVerified' : 'localAdapterVerified'" />
-                </div>
+	                <div v-for="drive in cloudDriveData.connections" :key="drive.driveRef" class="ws-chain-item" style="justify-content: space-between;">
+	                  <code>{{ drive.driveRef.slice(0, 22) }}</code>
+	                  <span>{{ drive.provider }} · {{ drive.mode }} · {{ drive.directoryMappingCount || 0 }} 个目录</span>
+	                  <StatusPill :tone="drive.contractVerified ? 'info' : 'success'" :label="drive.contractVerified ? 'contractVerified' : 'localAdapterVerified'" />
+	                </div>
               </div>
             </div>
             <pre v-if="cloudDriveResult" class="config-json-preview" style="margin-top: var(--space-3);">{{ JSON.stringify(cloudDriveResult, null, 2) }}</pre>

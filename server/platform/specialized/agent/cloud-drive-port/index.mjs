@@ -9,6 +9,9 @@ export const CLOUD_DRIVE_PORT_PROTOCOL_VERSION = "pact.cloud-drive-port.v1";
 
 const CLOUD_DRIVE_CONFIG_FILE = path.join("agent-workspaces", "cloud-drive-connections.json");
 const CLOUD_DRIVE_LEDGER_FILE = path.join("agent-workspaces", "cloud-drive-ledger.json");
+const DEFAULT_MANAGED_FOLDER_ROOT = ".pact-data";
+const DEFAULT_MANAGED_CLIENT = "owner";
+const DEFAULT_PUBLIC_FOLDER = "public";
 const SUPPORTED_PROVIDERS = Object.freeze(["icloud", "onedrive", "google-drive", "dropbox"]);
 const OAUTH_PROVIDERS = new Set(["onedrive", "google-drive", "dropbox"]);
 const SECRET_REF_BY_PROVIDER = Object.freeze({
@@ -181,6 +184,486 @@ function normalizeDriveRelativePath(value = "", { allowEmpty = true } = {}) {
   return normalized.replace(/^\/+/, "");
 }
 
+function normalizeManagedFolderSegment(value = "") {
+  const raw = text(value)
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .trim();
+  if (!raw || raw === "." || raw === ".." || raw.includes("/") || raw.includes("\0")) {
+    return "";
+  }
+  return raw.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.+$/, "") || "";
+}
+
+function normalizeManagedFolderRoot(value = "") {
+  const root = normalizeDriveRelativePath(value || DEFAULT_MANAGED_FOLDER_ROOT, { allowEmpty: false });
+  if (root === "." || root === ".." || root.startsWith("../")) {
+    return DEFAULT_MANAGED_FOLDER_ROOT;
+  }
+  return root;
+}
+
+function normalizeMappingDrivePath(value = "", { allowRoot = true } = {}) {
+  const raw = text(value).replace(/\\/g, "/");
+  if ((raw === "" || raw === "." || raw === "/") && allowRoot) {
+    return "";
+  }
+  return normalizeDriveRelativePath(raw, { allowEmpty: allowRoot });
+}
+
+function normalizeAllowedClients(value = []) {
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || "")
+      .split(",")
+      .map((item) => item.trim());
+  const clients = [...new Set(raw.map(normalizeManagedFolderSegment).filter(Boolean))];
+  return clients.length ? clients : [DEFAULT_MANAGED_CLIENT];
+}
+
+function managedFolderPolicy(input = {}, provider = "icloud") {
+  const enabled = input.managedFolder !== false && input.shareMode !== "directMapping";
+  const rootPath = normalizeManagedFolderRoot(input.managedFolderRoot || input.pactDataRoot || DEFAULT_MANAGED_FOLDER_ROOT);
+  const allowedClients = normalizeAllowedClients(input.allowedClients || input.allowedClientIds || input.clients || [DEFAULT_MANAGED_CLIENT]);
+  const defaultClient = normalizeManagedFolderSegment(input.defaultClient || input.clientId || allowedClients[0]) || allowedClients[0];
+  const publicFolder = normalizeManagedFolderSegment(input.publicFolder || DEFAULT_PUBLIC_FOLDER) || DEFAULT_PUBLIC_FOLDER;
+  return {
+    enabled,
+    rootPath,
+    ownerFolder: normalizeManagedFolderSegment(input.ownerFolder || DEFAULT_MANAGED_CLIENT) || DEFAULT_MANAGED_CLIENT,
+    defaultClient: allowedClients.includes(defaultClient) ? defaultClient : allowedClients[0],
+    publicFolder,
+    allowedClients,
+    accessModel: "agentDefaultAndPublic",
+    userAction: "dragFilesIntoManagedFolderOrExposeReadOnlyDirectory",
+    directMapping: false,
+    provisioningState: provider === "icloud" ? "localAdapterVerified" : "contractVerified"
+  };
+}
+
+function normalizeAccessMode(value = "") {
+  const mode = text(value).toLowerCase().replace(/[_\s-]+/g, "");
+  if (["allowlist", "whitelist", "allow", "only"].includes(mode)) return "allowlist";
+  if (["denylist", "blacklist", "deny", "block"].includes(mode)) return "denylist";
+  return "all";
+}
+
+function normalizeAccessPolicy(value = {}) {
+  const policy = asObject(value);
+  const mode = normalizeAccessMode(policy.mode || policy.permissionMode || policy.accessMode || (policy.defaultEveryone === false ? "allowlist" : "all"));
+  const subjects = normalizeAllowedClients(
+    policy.subjects ||
+    policy.clients ||
+    policy.allowedClients ||
+    policy.deniedClients ||
+    policy.allow ||
+    policy.deny ||
+    []
+  );
+  return {
+    mode,
+    defaultEveryone: mode === "all",
+    subjects: mode === "all" ? [] : subjects
+  };
+}
+
+function normalizeSpaceKind(value = "") {
+  const kind = text(value).toLowerCase().replace(/[_\s-]+/g, "");
+  if (["agentdefault", "default", "private", "clientdefault"].includes(kind)) return "agentDefault";
+  if (["public", "shared", "common"].includes(kind)) return "public";
+  return "advancedExposure";
+}
+
+function normalizeWritable(value, spaceKind = "advancedExposure") {
+  if (spaceKind === "agentDefault") return true;
+  if (value === true) return true;
+  const raw = text(value).toLowerCase();
+  return ["write", "writable", "readwrite", "rw"].includes(raw);
+}
+
+function materializedDefaultFolderPath(managed = {}, input = {}) {
+  const rootPath = normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT);
+  const allowedClients = normalizeAllowedClients(managed.allowedClients || [DEFAULT_MANAGED_CLIENT]);
+  const requestedClient = normalizeManagedFolderSegment(input.clientId || input.client || input.subjectId || input.subject || managed.defaultClient || allowedClients[0]);
+  const clientFolder = allowedClients.includes(requestedClient) ? requestedClient : normalizeManagedFolderSegment(managed.defaultClient || allowedClients[0]) || allowedClients[0];
+  return normalizeDriveRelativePath(path.posix.join(rootPath, clientFolder), { allowEmpty: false });
+}
+
+function materializedPublicFolderPath(managed = {}) {
+  const rootPath = normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT);
+  const publicFolder = normalizeManagedFolderSegment(managed.publicFolder || DEFAULT_PUBLIC_FOLDER) || DEFAULT_PUBLIC_FOLDER;
+  return normalizeDriveRelativePath(path.posix.join(rootPath, publicFolder), { allowEmpty: false });
+}
+
+function materializedMappingDrivePath(mapping = {}, managed = {}, input = {}) {
+  if (mapping.spaceKind === "agentDefault") {
+    return materializedDefaultFolderPath(managed, input);
+  }
+  if (mapping.spaceKind === "public") {
+    return materializedPublicFolderPath(managed);
+  }
+  return normalizeMappingDrivePath(mapping.drivePath || "", { allowRoot: true });
+}
+
+function directoryMappingAliases(mapping = {}) {
+  return [
+    normalizeManagedFolderSegment(mapping.alias || ""),
+    normalizeManagedFolderSegment(mapping.name || ""),
+    normalizeManagedFolderSegment(mapping.mappingId || "")
+  ].filter(Boolean);
+}
+
+function normalizeDirectoryMapping(value = {}, index = 0) {
+  const mapping = asObject(value);
+  const spaceKind = normalizeSpaceKind(mapping.spaceKind || mapping.kind || mapping.type || "");
+  const rawDrivePath = mapping.drivePath ?? mapping.path ?? mapping.folderPath ?? (index === 0 ? DEFAULT_MANAGED_FOLDER_ROOT : "");
+  const drivePath = normalizeMappingDrivePath(rawDrivePath, { allowRoot: true });
+  const scope = drivePath ? "directory" : "wholeDrive";
+  const fallbackName = scope === "wholeDrive" ? "Whole Drive" : (path.posix.basename(drivePath) || DEFAULT_MANAGED_FOLDER_ROOT);
+  const name = text(mapping.name || mapping.label || fallbackName) || fallbackName;
+  const accessPolicy = normalizeAccessPolicy(mapping.accessPolicy || mapping.permissionPolicy || {
+    mode: mapping.permissionMode,
+    subjects: mapping.subjects || mapping.clients || mapping.allowedClients || mapping.deniedClients,
+    defaultEveryone: mapping.defaultEveryone
+  });
+  const mappingId = text(mapping.mappingId || mapping.id) || stableId("cloud_drive_mapping", {
+    drivePath,
+    index
+  });
+  return {
+    mappingId,
+    name,
+    alias: normalizeManagedFolderSegment(mapping.alias || name) || `dir-${index + 1}`,
+    drivePath,
+    displayPath: text(mapping.displayPath || "") || (drivePath || "/"),
+    scope,
+    spaceKind,
+    writable: normalizeWritable(mapping.writable ?? mapping.writeMode ?? mapping.accessMode, spaceKind),
+    writePolicy: spaceKind === "agentDefault" ? "clientDefaultWritable" : "readOnlyByDefault",
+    createIfMissing: mapping.createIfMissing === true,
+    accessPolicy,
+    metadataOnly: true
+  };
+}
+
+function defaultDirectoryMappings(managed = {}) {
+  const rootPath = normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT);
+  const defaultClient = normalizeManagedFolderSegment(managed.defaultClient || DEFAULT_MANAGED_CLIENT) || DEFAULT_MANAGED_CLIENT;
+  const publicFolderPath = materializedPublicFolderPath(managed);
+  return [
+    {
+      mappingId: "managed-default-space",
+      name: "默认空间",
+      alias: "default",
+      drivePath: path.posix.join(rootPath, defaultClient),
+      displayPath: path.posix.join(rootPath, "{client}"),
+      spaceKind: "agentDefault",
+      writable: true,
+      createIfMissing: true,
+      accessPolicy: { mode: "all" }
+    },
+    {
+      mappingId: "managed-public-space",
+      name: "公共空间",
+      alias: "public",
+      drivePath: publicFolderPath,
+      displayPath: publicFolderPath,
+      spaceKind: "public",
+      writable: false,
+      createIfMissing: true,
+      accessPolicy: { mode: "all" }
+    }
+  ];
+}
+
+function normalizeDirectoryMappings(value = [], managed = {}) {
+  const rawMappings = Array.isArray(value) ? value : [];
+  const mappings = [
+    ...(managed.enabled === false ? [] : defaultDirectoryMappings(managed)),
+    ...rawMappings.map((mapping) => ({
+      ...asObject(mapping),
+      spaceKind: asObject(mapping).spaceKind || asObject(mapping).kind || "advancedExposure",
+      writable: asObject(mapping).writable === true,
+      createIfMissing: asObject(mapping).createIfMissing === true
+    }))
+  ];
+  const seen = new Set();
+  const normalized = [];
+  for (const [index, mapping] of mappings.entries()) {
+    const next = normalizeDirectoryMapping(mapping, index);
+    const key = `${next.spaceKind}:${next.alias}:${next.drivePath || "/"}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(next);
+  }
+  return normalized.length ? normalized : [normalizeDirectoryMapping(defaultDirectoryMappings(managed)[0], 0)];
+}
+
+function publicDirectoryMappings(connection = {}) {
+  return normalizeDirectoryMappings(connection.directoryMappings || [], connection.managedFolder)
+    .map((mapping) => ({
+      mappingId: mapping.mappingId,
+      name: mapping.name,
+      alias: mapping.alias,
+      drivePath: mapping.displayPath,
+      scope: mapping.scope,
+      spaceKind: mapping.spaceKind,
+      writable: mapping.writable === true,
+      writePolicy: mapping.writePolicy,
+      accessPolicy: mapping.accessPolicy,
+      metadataOnly: true
+    }));
+}
+
+function publicMapping(mapping = {}) {
+  return {
+    mappingId: mapping.mappingId,
+    name: mapping.name,
+    alias: mapping.alias,
+    drivePath: mapping.displayPath,
+    scope: mapping.scope,
+    spaceKind: mapping.spaceKind,
+    writable: mapping.writable === true,
+    writePolicy: mapping.writePolicy,
+    accessPolicy: mapping.accessPolicy
+  };
+}
+
+async function provisionLocalDirectoryMappings(rootPath, mappings = [], managed = {}) {
+  const provisioned = [];
+  const managedRoot = managed.enabled === true ? normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT) : "";
+  for (const mapping of normalizeDirectoryMappings(mappings, managed)) {
+    if (mapping.spaceKind === "agentDefault") {
+      await fs.mkdir(safeJoinLocal(rootPath, managedRoot, { allowRoot: false }).absolutePath, { recursive: true });
+      for (const client of normalizeAllowedClients(managed.allowedClients)) {
+        const folderPath = normalizeDriveRelativePath(path.posix.join(managedRoot, client), { allowEmpty: false });
+        const clientTarget = safeJoinLocal(rootPath, folderPath, { allowRoot: false });
+        await fs.mkdir(clientTarget.absolutePath, { recursive: true });
+        provisioned.push({ mappingId: mapping.mappingId, drivePath: folderPath, state: "localAdapterVerified", writable: true });
+      }
+      continue;
+    }
+    if (mapping.spaceKind === "public") {
+      const publicPath = materializedPublicFolderPath(managed);
+      const publicTarget = safeJoinLocal(rootPath, publicPath, { allowRoot: false });
+      await fs.mkdir(publicTarget.absolutePath, { recursive: true });
+      provisioned.push({ mappingId: mapping.mappingId, drivePath: publicPath, state: "localAdapterVerified", writable: false });
+      continue;
+    }
+    if (!mapping.drivePath) {
+      provisioned.push({ mappingId: mapping.mappingId, drivePath: "/", state: "localAdapterVerified", writable: mapping.writable === true });
+      continue;
+    }
+    const target = safeJoinLocal(rootPath, mapping.drivePath, { allowRoot: false });
+    if (mapping.createIfMissing === true || mapping.drivePath === managedRoot) {
+      await fs.mkdir(target.absolutePath, { recursive: true });
+    } else {
+      const stat = await fs.lstat(target.absolutePath);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new Error(`目录映射必须绑定已经存在的普通目录：${mapping.displayPath}`);
+      }
+    }
+    provisioned.push({ mappingId: mapping.mappingId, drivePath: mapping.displayPath, state: "localAdapterVerified", writable: mapping.writable === true });
+  }
+  return provisioned;
+}
+
+function mappingContainsPath(mapping = {}, drivePath = "", managed = {}, input = {}) {
+  const root = materializedMappingDrivePath(mapping, managed, input);
+  const normalizedPath = normalizeMappingDrivePath(drivePath || "", { allowRoot: true });
+  if (!root) return true;
+  return normalizedPath === root || normalizedPath.startsWith(`${root}/`);
+}
+
+function subjectForInput(input = {}) {
+  return normalizeManagedFolderSegment(input.clientId || input.client || input.subjectId || input.subject || "") || "";
+}
+
+function assertMappingAccess(mapping = {}, input = {}) {
+  const subject = subjectForInput(input);
+  const policy = normalizeAccessPolicy(mapping.accessPolicy);
+  if (!subject || policy.mode === "all") {
+    return;
+  }
+  const listed = policy.subjects.includes(subject);
+  if ((policy.mode === "allowlist" && !listed) || (policy.mode === "denylist" && listed)) {
+    const error = new Error("当前客户端无权访问该云盘目录映射。");
+    error.code = "DRIVE_MAPPING_ACCESS_DENIED";
+    throw error;
+  }
+}
+
+function assertMappingWrite(connection = {}, resolved = {}, input = {}) {
+  const mapping = asObject(resolved.mapping);
+  const managed = asObject(connection.managedFolder);
+  if (mapping.spaceKind === "agentDefault") {
+    const defaultRoot = materializedDefaultFolderPath(managed, input);
+    if (resolved.drivePath === defaultRoot || resolved.drivePath.startsWith(`${defaultRoot}/`)) {
+      return;
+    }
+  }
+  if (mapping.writable === true) {
+    return;
+  }
+  const error = new Error("该云盘空间是只读映射；只能写入 default/ 默认空间。");
+  error.code = "DRIVE_MAPPING_READ_ONLY";
+  throw error;
+}
+
+function resolveMappedDrivePath(connection = {}, drivePath = "", { allowRoot = true, input = {} } = {}) {
+  const raw = normalizeMappingDrivePath(drivePath, { allowRoot: true });
+  const mappings = normalizeDirectoryMappings(connection.directoryMappings || [], connection.managedFolder);
+  const managed = asObject(connection.managedFolder);
+  if (!raw) {
+    const mapping = mappings[0];
+    assertMappingAccess(mapping, input);
+    return {
+      drivePath: normalizeMappingDrivePath(mapping.drivePath, { allowRoot }),
+      mapping,
+      requestedPath: raw
+    };
+  }
+  for (const mapping of mappings) {
+    for (const alias of directoryMappingAliases(mapping)) {
+      if (raw === alias || raw.startsWith(`${alias}/`)) {
+        const suffix = raw === alias ? "" : raw.slice(alias.length + 1);
+        const mappingRoot = materializedMappingDrivePath(mapping, managed, input);
+        const resolvedPath = normalizeMappingDrivePath(path.posix.join(mappingRoot || "", suffix), { allowRoot });
+        assertMappingAccess(mapping, input);
+        return { drivePath: resolvedPath, mapping, requestedPath: raw };
+      }
+    }
+  }
+  if (managed.enabled === true) {
+    const rootPath = normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT);
+    const allowedClients = normalizeAllowedClients(managed.allowedClients || [DEFAULT_MANAGED_CLIENT]);
+    const publicPath = materializedPublicFolderPath(managed);
+    if (raw === publicPath || raw.startsWith(`${publicPath}/`)) {
+      const publicMapping = mappings.find((mapping) => mapping.spaceKind === "public");
+      if (publicMapping) {
+        assertMappingAccess(publicMapping, input);
+        return { drivePath: normalizeMappingDrivePath(raw, { allowRoot }), mapping: publicMapping, requestedPath: raw };
+      }
+    }
+    const [firstSegment] = raw.split("/");
+    if (allowedClients.includes(firstSegment)) {
+      const subject = subjectForInput(input);
+      if (subject && subject !== firstSegment) {
+        const error = new Error("当前客户端只能通过 default/ 访问自己的默认空间。");
+        error.code = "DRIVE_MAPPING_ACCESS_DENIED";
+        throw error;
+      }
+      const managedPath = normalizeDriveRelativePath(path.posix.join(rootPath, raw), { allowEmpty: false });
+      const managedMapping = mappings.find((mapping) => mapping.spaceKind === "agentDefault" && mappingContainsPath(mapping, managedPath, managed, { ...input, clientId: firstSegment }));
+      if (managedMapping) {
+        assertMappingAccess(managedMapping, input);
+        return { drivePath: managedPath, mapping: managedMapping, requestedPath: raw };
+      }
+    }
+  }
+  const matches = mappings
+    .filter((mapping) => mappingContainsPath(mapping, raw, managed, input))
+    .sort((left, right) => String(right.drivePath || "").length - String(left.drivePath || "").length);
+  if (matches.length) {
+    const mapping = matches[0];
+    assertMappingAccess(mapping, input);
+    return { drivePath: normalizeMappingDrivePath(raw, { allowRoot }), mapping, requestedPath: raw };
+  }
+  const error = new Error("云盘路径必须落在已配置的目录映射内。");
+  error.code = "DRIVE_PATH_OUTSIDE_MAPPINGS";
+  throw error;
+}
+
+function contractItemsForMappings(provider, connection, limit = 2, input = {}) {
+  const items = [];
+  for (const mapping of normalizeDirectoryMappings(connection.directoryMappings || [], connection.managedFolder)) {
+    try {
+      assertMappingAccess(mapping, input);
+    } catch {
+      continue;
+    }
+    const index = items.length;
+    items.push(contractItem(provider, connection, index, mapping, input));
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+function managedFolderDrivePath(connection = {}, drivePath = "", { allowRoot = true, clientId = "" } = {}) {
+  const managed = asObject(connection.managedFolder);
+  const raw = normalizeDriveRelativePath(drivePath, { allowEmpty: true });
+  if (managed.enabled !== true) {
+    return normalizeDriveRelativePath(raw, { allowEmpty: allowRoot });
+  }
+  const rootPath = normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT);
+  const allowedClients = normalizeAllowedClients(managed.allowedClients || [DEFAULT_MANAGED_CLIENT]);
+  const defaultClient = normalizeManagedFolderSegment(clientId || managed.defaultClient || allowedClients[0]) || allowedClients[0];
+  if (!raw) {
+    return rootPath;
+  }
+  if (raw === rootPath || raw.startsWith(`${rootPath}/`)) {
+    return normalizeDriveRelativePath(raw, { allowEmpty: allowRoot });
+  }
+  const [firstSegment] = raw.split("/");
+  if (allowedClients.includes(firstSegment)) {
+    return normalizeDriveRelativePath(path.posix.join(rootPath, raw), { allowEmpty: false });
+  }
+  return normalizeDriveRelativePath(path.posix.join(rootPath, defaultClient, raw), { allowEmpty: false });
+}
+
+function publicManagedFolder(connection = {}) {
+  const managed = asObject(connection.managedFolder);
+  if (managed.enabled !== true) {
+    return {
+      enabled: false,
+      directMapping: true
+    };
+  }
+  return {
+    enabled: true,
+    rootPath: normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT),
+    ownerFolder: normalizeManagedFolderSegment(managed.ownerFolder || DEFAULT_MANAGED_CLIENT) || DEFAULT_MANAGED_CLIENT,
+    defaultClient: normalizeManagedFolderSegment(managed.defaultClient || DEFAULT_MANAGED_CLIENT) || DEFAULT_MANAGED_CLIENT,
+    publicFolder: normalizeManagedFolderSegment(managed.publicFolder || DEFAULT_PUBLIC_FOLDER) || DEFAULT_PUBLIC_FOLDER,
+    allowedClients: normalizeAllowedClients(managed.allowedClients || [DEFAULT_MANAGED_CLIENT]),
+    accessModel: "agentDefaultAndPublic",
+    spaces: {
+      default: {
+        alias: "default",
+        drivePath: `${normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT)}/{client}`,
+        writable: true
+      },
+      public: {
+        alias: "public",
+        drivePath: path.posix.join(
+          normalizeManagedFolderRoot(managed.rootPath || DEFAULT_MANAGED_FOLDER_ROOT),
+          normalizeManagedFolderSegment(managed.publicFolder || DEFAULT_PUBLIC_FOLDER) || DEFAULT_PUBLIC_FOLDER
+        ),
+        writable: false
+      }
+    },
+    userAction: "dragFilesIntoManagedFolderOrExposeReadOnlyDirectory",
+    directMapping: false,
+    provisioningState: text(managed.provisioningState || (connection.provider === "icloud" ? "localAdapterVerified" : "contractVerified"))
+  };
+}
+
+async function provisionLocalManagedFolders(rootPath, managed = {}) {
+  if (managed.enabled !== true) {
+    return [];
+  }
+  const root = safeJoinLocal(rootPath, managed.rootPath, { allowRoot: false });
+  await fs.mkdir(root.absolutePath, { recursive: true });
+  const provisioned = [managed.rootPath];
+  for (const client of normalizeAllowedClients(managed.allowedClients)) {
+    const folderPath = normalizeDriveRelativePath(path.posix.join(managed.rootPath, client), { allowEmpty: false });
+    const target = safeJoinLocal(rootPath, folderPath, { allowRoot: false });
+    await fs.mkdir(target.absolutePath, { recursive: true });
+    provisioned.push(folderPath);
+  }
+  return provisioned;
+}
+
 async function validateLocalICloudRoot(rootPath) {
   const rawPath = text(rootPath || defaultICloudRootPath());
   if (!rawPath) {
@@ -246,6 +729,7 @@ async function statfsSummary(rootPath) {
 
 function publicConnection(connection = {}, { configFilePath = "" } = {}) {
   const provider = normalizeProvider(connection.provider);
+  const directoryMappings = publicDirectoryMappings(connection);
   return {
     driveRef: text(connection.driveRef),
     provider,
@@ -262,10 +746,19 @@ function publicConnection(connection = {}, { configFilePath = "" } = {}) {
     secretPolicy: "secretRefOnly",
     contractVerified: connection.contractVerified === true,
     localAdapterVerified: connection.localAdapterVerified === true,
+    managedFolder: publicManagedFolder(connection),
+    directoryMappings,
+    directoryMappingCount: directoryMappings.length,
+    directMappingDefault: false,
     stateSemantics: {
       providerState: connection.contractVerified === true ? "contractVerified" : "projected",
       canonicalState: "pactSharedspace",
-      driveRole: "externalAdapterProjection"
+      driveRole: "mappedDirectoryProjection",
+      accessModel: "directoryMapping",
+      defaultSpaceWritable: true,
+      publicSpaceWritable: false,
+      advancedExposuresWritableByDefault: false,
+      wholeDriveAllowed: directoryMappings.some((mapping) => mapping.scope === "wholeDrive")
     },
     connectedAt: text(connection.connectedAt || ""),
     updatedAt: text(connection.updatedAt || ""),
@@ -399,14 +892,18 @@ function decodeUploadContent(input = {}) {
   return Buffer.from(String(input.content ?? ""), input.encoding || "utf8");
 }
 
-function contractItem(provider, connection, index = 0) {
+function contractItem(provider, connection, index = 0, mapping = null, input = {}) {
   const name = `${provider}-contract-${index + 1}.txt`;
+  const folderPath = materializedMappingDrivePath(mapping || {}, connection.managedFolder, input);
+  const itemPath = normalizeDriveRelativePath(path.posix.join(folderPath, name), { allowEmpty: false });
   return {
     itemId: stableId("cloud_drive_item", { provider, driveRef: connection.driveRef, name }),
     provider,
     driveRef: connection.driveRef,
+    mappingId: text(mapping?.mappingId || ""),
+    mappingName: text(mapping?.name || ""),
     name,
-    path: `contract/${name}`,
+    path: itemPath,
     itemType: "file",
     mimeType: "text/plain",
     sizeBytes: 128 + index,
@@ -550,9 +1047,15 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
     assertSupportedProvider(provider);
     const config = await loadConfig();
     const timestamp = nowIso();
+    const managedFolder = managedFolderPolicy(input, provider);
+    const directoryMappings = normalizeDirectoryMappings(
+      input.directoryMappings || input.exposedDirectories || input.mappedDirectories || input.mappings || [],
+      managedFolder
+    );
     let connection;
     if (provider === "icloud") {
       const root = await validateLocalICloudRoot(input.rootPath || input.sourcePath || input.localPath || input.path);
+      const provisionedMappings = await provisionLocalDirectoryMappings(root.realPath, directoryMappings, managedFolder);
       const driveRef = text(input.driveRef || input.driveId) || stableId("cloud_drive", {
         provider,
         root: root.realPath,
@@ -571,6 +1074,16 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
         status: "active",
         contractVerified: false,
         localAdapterVerified: true,
+        managedFolder: {
+          ...managedFolder,
+          provisioningState: "localAdapterVerified",
+          provisionedFolders: provisionedMappings.map((item) => item.drivePath)
+        },
+        directoryMappings: directoryMappings.map((mapping) => ({
+          ...mapping,
+          provisioningState: "localAdapterVerified"
+        })),
+        directoryProvisioning: provisionedMappings,
         connectedAt: timestamp,
         updatedAt: timestamp
       };
@@ -600,6 +1113,20 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
         status: "active",
         contractVerified: true,
         localAdapterVerified: false,
+        managedFolder: {
+          ...managedFolder,
+          provisioningState: "contractVerified",
+          provisionedFolders: directoryMappings.map((mapping) => mapping.displayPath)
+        },
+        directoryMappings: directoryMappings.map((mapping) => ({
+          ...mapping,
+          provisioningState: "contractVerified"
+        })),
+        directoryProvisioning: directoryMappings.map((mapping) => ({
+          mappingId: mapping.mappingId,
+          drivePath: mapping.displayPath,
+          state: "contractVerified"
+        })),
         connectedAt: timestamp,
         updatedAt: timestamp
       };
@@ -617,7 +1144,14 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
       provider,
       mode: connection.mode,
       contractVerified: connection.contractVerified === true,
-      localAdapterVerified: connection.localAdapterVerified === true
+      localAdapterVerified: connection.localAdapterVerified === true,
+      managedFolderRoot: connection.managedFolder?.rootPath || DEFAULT_MANAGED_FOLDER_ROOT,
+      directoryMappingCount: connection.directoryMappings?.length || 0,
+      directoryMappings: publicDirectoryMappings(connection),
+      directMappingDefault: false,
+      defaultSpaceWritable: true,
+      publicSpaceWritable: false,
+      wholeDriveAllowed: publicDirectoryMappings(connection).some((mapping) => mapping.scope === "wholeDrive")
     });
     await saveLedger(ledger);
     return {
@@ -658,20 +1192,55 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
   async function listItems(input = {}) {
     const { connection } = await resolveConnection(input);
     const ledger = await loadLedger();
-    const basePath = normalizeDriveRelativePath(input.path || input.folderPath || "", { allowEmpty: true });
+    const requestedPath = input.path || input.folderPath || "";
     const recursive = ["1", "true", "yes"].includes(text(input.recursive ?? "false").toLowerCase());
     const includeHash = ["1", "true", "yes"].includes(text(input.includeHash ?? input["include-hash"] ?? "false").toLowerCase());
     const limit = Math.max(1, Math.min(Number(input.limit || 200) || 200, 1000));
+    const hasRequestedPath = text(requestedPath) !== "";
     let items;
+    let basePath = "";
+    let mapping = null;
     if (connection.provider === "icloud") {
-      items = await listLocalItems(connection.rootPath, basePath, { recursive, includeHash, limit });
+      if (hasRequestedPath) {
+        const resolved = resolveMappedDrivePath(connection, requestedPath, { allowRoot: true, input });
+        basePath = resolved.drivePath;
+        mapping = resolved.mapping;
+        items = await listLocalItems(connection.rootPath, basePath, { recursive, includeHash, limit });
+      } else {
+        const collected = [];
+        for (const directoryMapping of normalizeDirectoryMappings(connection.directoryMappings || [], connection.managedFolder)) {
+          if (collected.length >= limit) break;
+          assertMappingAccess(directoryMapping, input);
+          const mappedBasePath = materializedMappingDrivePath(directoryMapping, connection.managedFolder, input);
+          const mappedItems = await listLocalItems(connection.rootPath, mappedBasePath, {
+            recursive,
+            includeHash,
+            limit: limit - collected.length
+          });
+          collected.push(...mappedItems.map((item) => ({
+            ...item,
+            mappingId: directoryMapping.mappingId,
+            mappingName: directoryMapping.name
+          })));
+        }
+        basePath = "/";
+        items = collected;
+      }
       items = items.map((item) => ({
         ...item,
         provider: connection.provider,
         driveRef: connection.driveRef
       }));
     } else {
-      items = [contractItem(connection.provider, connection, 0), contractItem(connection.provider, connection, 1)].slice(0, limit);
+      if (hasRequestedPath) {
+        const resolved = resolveMappedDrivePath(connection, requestedPath, { allowRoot: true, input });
+        basePath = resolved.drivePath;
+        mapping = resolved.mapping;
+        items = [contractItem(connection.provider, connection, 0, mapping, input)].slice(0, limit);
+      } else {
+        basePath = "/";
+        items = contractItemsForMappings(connection.provider, connection, limit, input);
+      }
     }
     const accessReceipt = createAccessReceipt({
       operationId: input.operationId || "sharedspace.drive.item.list",
@@ -694,6 +1263,8 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
       protocolVersion: CLOUD_DRIVE_PORT_PROTOCOL_VERSION,
       drive: publicConnection(connection, { configFilePath }),
       basePath,
+      requestedPath: hasRequestedPath ? normalizeMappingDrivePath(requestedPath, { allowRoot: true }) : "",
+      mapping: mapping ? publicMapping(mapping) : null,
       items,
       paths: items.map((item) => item.path),
       count: items.length,
@@ -707,7 +1278,11 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
   async function downloadFile(input = {}) {
     const { connection } = await resolveConnection(input);
     const ledger = await loadLedger();
-    const drivePath = normalizeDriveRelativePath(input.path || input.filePath || input.itemPath || "", { allowEmpty: false });
+    const resolved = resolveMappedDrivePath(connection, input.path || input.filePath || input.itemPath || "", {
+      allowRoot: false,
+      input
+    });
+    const drivePath = resolved.drivePath;
     let content = Buffer.from(`Contract drive content for ${connection.provider}:${drivePath}\n`, "utf8");
     let localAdapterVerified = false;
     if (connection.provider === "icloud") {
@@ -757,6 +1332,8 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
       protocolVersion: CLOUD_DRIVE_PORT_PROTOCOL_VERSION,
       drive: publicConnection(connection, { configFilePath }),
       path: drivePath,
+      requestedPath: resolved.requestedPath,
+      mapping: publicMapping(resolved.mapping),
       byteSize: content.length,
       contentSha256,
       contentBase64: content.toString("base64"),
@@ -771,10 +1348,13 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
   async function uploadFile(input = {}) {
     const { connection } = await resolveConnection(input);
     const ledger = await loadLedger();
-    const drivePath = normalizeDriveRelativePath(
+    const resolved = resolveMappedDrivePath(
+      connection,
       input.path || input.filePath || path.posix.join(input.parentPath || "", input.name || "upload.txt"),
-      { allowEmpty: false }
+      { allowRoot: false, input }
     );
+    const drivePath = resolved.drivePath;
+    assertMappingWrite(connection, resolved, input);
     const content = decodeUploadContent(input);
     const contentSha256 = sha256Buffer(content);
     const policyDecision = {
@@ -839,6 +1419,8 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
       protocolVersion: CLOUD_DRIVE_PORT_PROTOCOL_VERSION,
       drive: publicConnection(connection, { configFilePath }),
       path: drivePath,
+      requestedPath: resolved.requestedPath,
+      mapping: publicMapping(resolved.mapping),
       byteSize: content.length,
       contentSha256,
       policyDecision,
@@ -852,12 +1434,35 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
 
   async function syncPlan(input = {}) {
     const { connection } = await resolveConnection(input);
-    const basePath = normalizeDriveRelativePath(input.path || input.scope || "", { allowEmpty: true });
+    const requestedPath = input.path || input.scope || "";
+    const hasRequestedPath = text(requestedPath) !== "";
     const direction = text(input.direction || "import_to_sharedspace");
     const limit = Math.max(1, Math.min(Number(input.limit || 200) || 200, 1000));
-    const items = connection.provider === "icloud"
-      ? await listLocalItems(connection.rootPath, basePath, { recursive: true, includeHash: true, limit })
-      : [contractItem(connection.provider, connection, 0)];
+    let basePath = "/";
+    let mapping = null;
+    let items = [];
+    if (hasRequestedPath) {
+      const resolved = resolveMappedDrivePath(connection, requestedPath, { allowRoot: true, input });
+      basePath = resolved.drivePath || "/";
+      mapping = resolved.mapping;
+      items = connection.provider === "icloud"
+        ? await listLocalItems(connection.rootPath, resolved.drivePath, { recursive: true, includeHash: true, limit })
+        : [contractItem(connection.provider, connection, 0, mapping, input)];
+    } else if (connection.provider === "icloud") {
+      for (const directoryMapping of normalizeDirectoryMappings(connection.directoryMappings || [], connection.managedFolder)) {
+        if (items.length >= limit) break;
+        assertMappingAccess(directoryMapping, input);
+        const mappedBasePath = materializedMappingDrivePath(directoryMapping, connection.managedFolder, input);
+        const mappedItems = await listLocalItems(connection.rootPath, mappedBasePath, {
+          recursive: true,
+          includeHash: true,
+          limit: limit - items.length
+        });
+        items.push(...mappedItems);
+      }
+    } else {
+      items = contractItemsForMappings(connection.provider, connection, limit, input);
+    }
     const plan = syncPlanFromItems({
       connection,
       items,
@@ -869,6 +1474,8 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
       protocolVersion: CLOUD_DRIVE_PORT_PROTOCOL_VERSION,
       drive: publicConnection(connection, { configFilePath }),
       basePath,
+      requestedPath: hasRequestedPath ? normalizeMappingDrivePath(requestedPath, { allowRoot: true }) : "",
+      mapping: mapping ? publicMapping(mapping) : null,
       ...plan,
       contractVerified: connection.contractVerified === true,
       localAdapterVerified: connection.localAdapterVerified === true
@@ -929,26 +1536,46 @@ export function createCloudDrivePort({ userDataPath = "" } = {}) {
 
   async function permissionList(input = {}) {
     const { connection } = await resolveConnection(input);
-    const drivePath = normalizeDriveRelativePath(input.path || input.itemPath || "", { allowEmpty: true });
+    const requestedPath = input.path || input.itemPath || "";
+    const hasRequestedPath = text(requestedPath) !== "";
+    const resolved = hasRequestedPath
+      ? resolveMappedDrivePath(connection, requestedPath, { allowRoot: true, input })
+      : null;
+    const drivePath = resolved?.drivePath || "/";
+    const mappings = resolved ? [resolved.mapping] : normalizeDirectoryMappings(connection.directoryMappings || [], connection.managedFolder);
     return {
       ok: true,
       protocolVersion: CLOUD_DRIVE_PORT_PROTOCOL_VERSION,
       drive: publicConnection(connection, { configFilePath }),
       path: drivePath,
-      permissions: [
-        {
+      permissions: mappings.map((mapping) => {
+        const policy = normalizeAccessPolicy(mapping.accessPolicy);
+        return {
           permissionId: stableId("cloud_drive_permission", {
             driveRef: connection.driveRef,
-            drivePath,
-            principal: "pact-owner"
+            drivePath: mapping.drivePath || "/",
+            principal: policy.mode
           }),
-          principal: "pact-owner",
-          role: connection.provider === "icloud" ? "local-owner" : "contract-owner",
-          inherited: drivePath === "",
+          principal: policy.defaultEveryone ? "all-clients" : policy.subjects.join(","),
+          role: policy.mode === "allowlist"
+            ? "managed-folder-allowlist"
+            : policy.mode === "denylist"
+              ? "managed-folder-denylist"
+              : "managed-folder-access",
+          mode: policy.mode,
+          subjects: policy.subjects,
+          defaultEveryone: policy.defaultEveryone,
+          mappingId: mapping.mappingId,
+          mappingName: mapping.name,
+          spaceKind: mapping.spaceKind,
+          writable: mapping.writable === true,
+          writePolicy: mapping.writePolicy,
+          drivePath: mapping.displayPath,
+          inherited: !hasRequestedPath,
           metadataOnly: true,
           contractVerified: connection.contractVerified === true
-        }
-      ],
+        };
+      }),
       redactions: ["shareLink", "providerNativeId", "token"],
       contractVerified: connection.contractVerified === true,
       localAdapterVerified: connection.localAdapterVerified === true

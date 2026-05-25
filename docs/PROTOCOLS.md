@@ -1029,9 +1029,9 @@ v0.0.1 Codespace 语义入口：
 
 v0.0.1 Cloud Drive 语义入口：
 
-- `sharedspace.drive.connect`：创建云盘连接或本机 iCloud 受控目录 mount；OAuth provider 只保存 `secretRef`，不保存 token value。
-- `sharedspace.drive.status`、`sharedspace.drive.item.list`、`sharedspace.drive.permission.list`：只返回安全元数据、连接状态、ACL 摘要和 provider contract 标记，不返回私有本机路径、上游裸 ID、下载 URL 或 secret value。
-- `sharedspace.drive.file.download`、`sharedspace.drive.file.upload`：所有传输都必须生成 `transferReceipt`；iCloud local adapter 可实读/实写受控目录，OneDrive/Google Drive/Dropbox 缺少真实 OAuth 凭据时只能返回 `contractVerified`，不能说成真实上传或真实下载。
+- `sharedspace.drive.connect`：创建云盘连接或本机 iCloud 受控目录 mount；基础模式固定暴露 `default/` 和 `public/` 两个 agent 视图，分别映射到 `.pact-data/<client>` 可写默认空间和 `.pact-data/public` 只读公共空间；高级模式只能额外暴露用户显式选择的既有目录，默认只读。OAuth provider 只保存 `secretRef`，不保存 token value。
+- `sharedspace.drive.status`、`sharedspace.drive.item.list`、`sharedspace.drive.permission.list`：只返回安全元数据、连接状态、目录映射、读写语义、ACL 摘要和 provider contract 标记，不返回私有本机路径、上游裸 ID、下载 URL 或 secret value。
+- `sharedspace.drive.file.download`、`sharedspace.drive.file.upload`：所有传输都必须生成 `transferReceipt`；iCloud local adapter 只能在 `default/` 可写空间实写，`public/` 和高级暴露目录默认只读；OneDrive/Google Drive/Dropbox 缺少真实 OAuth 凭据时只能返回 `contractVerified`，不能说成真实上传或真实下载。
 - `sharedspace.drive.sync.plan`、`sharedspace.drive.sync.apply`：同步以 Sharedspace 为 Pact 权威状态，云盘只是外部 adapter/projection；apply 必须写 sync receipt 和 checkpoint，contract-mode 只能证明操作合同，不声明 remote sync completed。
 
 v0.0.1 release readiness 语义：

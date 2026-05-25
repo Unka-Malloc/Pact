@@ -140,6 +140,8 @@ printf '%s' "$DROPBOX_CLIENT_SECRET" | npm run cli -- secret dropbox oauth \
 
 无桌面浏览器或 CI 环境可加 `--no-open`，再手动打开 stderr 中的 `oauthAuthorizationUrl`。如果 provider 后台不接受动态端口，使用 `--port` 固定回调地址，例如 `http://127.0.0.1:7392/oauth/callback`。
 
+云盘连接完成后，Pact 默认使用两层 agent 视图：`default/` 映射到 `.pact-data/<client>`，是当前智能体的可写默认空间；`public/` 映射到 `.pact-data/public`，是所有智能体可读的公共空间。控制台的 Cloud Drive 面板可以开启高级模式并添加只读目录卡片，把用户选定的既有路径暴露到智能体视野中；这些暴露目录默认不可写，真实 token 仍只通过 `secretRef` 留在运行态 secret store。
+
 等价点号命令也可用，例如：
 
 ```bash

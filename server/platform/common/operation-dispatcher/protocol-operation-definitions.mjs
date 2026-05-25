@@ -78,7 +78,8 @@ const DRIVE_QUERY = [
   ...WORKSPACE_ID_QUERY,
   { name: "provider", aliases: ["provider", "driveProvider", "drive-provider"] },
   { name: "driveRef", aliases: ["drive-ref", "driveRef", "driveId", "drive-id"] },
-  { name: "path", aliases: ["path", "filePath", "file-path", "folderPath", "folder-path"] }
+  { name: "path", aliases: ["path", "filePath", "file-path", "folderPath", "folder-path"] },
+  { name: "clientId", aliases: ["client-id", "clientId", "client", "subjectId", "subject-id"] }
 ];
 
 export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
@@ -522,7 +523,14 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
       rootPath: { type: "string" },
       secretRef: { type: "string" },
       endpointRef: { type: "string" },
-      mode: { type: "string", enum: ["local", "contract", "live"] }
+      mode: { type: "string", enum: ["local", "contract", "live"] },
+      managedFolder: { type: "boolean" },
+      managedFolderRoot: { type: "string" },
+      publicFolder: { type: "string" },
+      allowedClients: { type: "array" },
+      defaultClient: { type: "string" },
+      directoryMappings: { type: "array" },
+      exposedDirectories: { type: "array" }
     })
   }),
   protocolOperation({
@@ -579,6 +587,7 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
       workspaceId: { type: "string" },
       provider: { type: "string" },
       driveRef: { type: "string" },
+      clientId: { type: "string" },
       path: { type: "string" },
       name: { type: "string" },
       parentPath: { type: "string" },
@@ -600,6 +609,7 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
       workspaceId: { type: "string" },
       provider: { type: "string" },
       driveRef: { type: "string" },
+      clientId: { type: "string" },
       path: { type: "string" },
       direction: { type: "string" },
       targetPath: { type: "string" },
@@ -618,6 +628,7 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
       workspaceId: { type: "string" },
       provider: { type: "string" },
       driveRef: { type: "string" },
+      clientId: { type: "string" },
       path: { type: "string" },
       direction: { type: "string" },
       targetPath: { type: "string" },

@@ -747,6 +747,7 @@ Client upload code intent
 ```text
 Agent calls MCP `pact.sharedspace` with operation `sharedspace.drive.file.upload`
   -> CloudDrivePort resolves provider connection
+  -> default/public/advanced directory mapping resolution
   -> secretRef / local path guard validation
   -> policy decision
   -> transfer receipt
@@ -755,7 +756,7 @@ Agent calls MCP `pact.sharedspace` with operation `sharedspace.drive.file.upload
   -> cloud drive projection status
 ```
 
-验收要求：Sharedspace 仍是 Pact 权威状态，云盘只作为外部 adapter/projection。iCloud local adapter 可以对受控目录实读实写，但公开响应只能返回 `driveRef`、root hash、receipt 和 checkpoint，不返回本机绝对路径。OneDrive、Google Drive、Dropbox 缺少真实 OAuth 凭据时只能标记 `contractVerified`，不能把 contract-mode 说成真实上传、真实同步或 production ready。
+验收要求：Sharedspace 仍是 Pact 权威状态，云盘只作为外部 adapter/projection。iCloud local adapter 默认只创建 `.pact-data/<client>` 可写空间和 `.pact-data/public` 只读公共空间；用户显式添加的高级目录暴露默认只读，不能被当成整盘映射。公开响应只能返回 `driveRef`、root hash、目录映射、receipt 和 checkpoint，不返回本机绝对路径。OneDrive、Google Drive、Dropbox 缺少真实 OAuth 凭据时只能标记 `contractVerified`，不能把 contract-mode 说成真实上传、真实同步或 production ready。
 
 #### 知识再授权流程
 
