@@ -51,7 +51,7 @@ class AgentService {
       if (override != null && override.trim().isNotEmpty) override.trim(),
       p.join(
         File(Platform.resolvedExecutable).parent.path,
-        'pact-client\$suffix',
+        'pact-client$suffix',
       ),
       p.join(
         Directory.current.path,
@@ -59,14 +59,14 @@ class AgentService {
         'client-cli',
         'target',
         'debug',
-        'pact-client\$suffix',
+        'pact-client$suffix',
       ),
       p.join(
         Directory.current.path,
         'client-cli',
         'target',
         'debug',
-        'pact-client\$suffix',
+        'pact-client$suffix',
       ),
       '/Users/unka/DevSpace/Unka-Malloc/Pact/client-cli/target/debug/pact-client',
     ];

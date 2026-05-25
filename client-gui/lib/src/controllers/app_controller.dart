@@ -346,7 +346,7 @@ class AppController extends ChangeNotifier {
   final inputController = TextEditingController();
   final Uuid _uuid = const Uuid();
 
-  AppSection currentSection = AppSection.console;
+  AppSection currentSection = AppSection.agents;
   ClientConfig config = const ClientConfig();
   List<QueuedFile> queuedFiles = const [];
   List<RecentRun> recentRuns = const [];
@@ -1505,25 +1505,8 @@ class AppController extends ChangeNotifier {
     }
     currentSection = section;
     _syncSelections();
-    _startUploadSessionWatch();
-    if (section == AppSection.modules && localMailIndexAvailable) {
-      _requestMailIndexStatsRefreshIfStale();
-    }
-    if (section == AppSection.server && serverOperations.isEmpty) {
-      unawaited(refreshServerCapabilities());
-    }
-    if (section == AppSection.dataConnectors) {
-      unawaited(refreshDataConnectors());
-    }
-    if (section == AppSection.knowledgeGraph && localMailIndexAvailable) {
-      _notifyKnowledgeDaemon(
-        KnowledgeDaemonEvent(
-          kind: KnowledgeDaemonEventKind.manualRefresh,
-          sourceId: 'graph-tab',
-          reason: 'section-entered',
-        ),
-        delay: const Duration(milliseconds: 350),
-      );
+    if (section == AppSection.agents && scannedTargets.isEmpty) {
+      unawaited(scanTargets());
     }
     notifyListeners();
   }
@@ -1891,7 +1874,7 @@ class AppController extends ChangeNotifier {
           );
     statusMessage = '检查点 ${shortId(node.checkpointId)} 已载入控制台。';
     statusCaption = '可继续恢复';
-    currentSection = AppSection.console;
+    currentSection = AppSection.activity;
     notifyListeners();
   }
 
@@ -2851,7 +2834,7 @@ class AppController extends ChangeNotifier {
       await _refreshClientBackendState(notify: false);
       _lastMailIndexStatsRefreshAt = DateTime.now();
       _markKnowledgeGraphDirty();
-      if (currentSection == AppSection.knowledgeGraph || !silent) {
+      if (!silent) {
         _syncKnowledgeGraph();
       }
       if (!silent) {

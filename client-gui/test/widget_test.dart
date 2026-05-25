@@ -12,18 +12,13 @@ void main() {
     ]);
   });
 
-  test('app sections include modules tab', () {
+  test('app sections are the future client modules', () {
     expect(AppSection.values, [
-      AppSection.console,
-      AppSection.queue,
       AppSection.agents,
-      AppSection.server,
-      AppSection.modules,
-      AppSection.dataConnectors,
-      AppSection.knowledgeGraph,
-      AppSection.export,
-      AppSection.checkpoints,
-      AppSection.localLogs,
+      AppSection.mcpPlugins,
+      AppSection.skillHub,
+      AppSection.modelForwarding,
+      AppSection.activity,
       AppSection.settings,
     ]);
   });
