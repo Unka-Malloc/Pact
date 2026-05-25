@@ -6,6 +6,7 @@ import { FEATURE_MANIFEST } from "../platform/interactive/features/feature-manif
 import { createPlatformRegistry } from "../platform/interactive/platform-registry.mjs";
 import { registerCorePlatformServices } from "../platform/common/platform-core/register.mjs";
 import { registerSecurityPlatformServices } from "../platform/common/security/register.mjs";
+import { createDataStructureProvider } from "../platform/common/data-structure/data-structure-provider.mjs";
 import { registerDataStructurePlatformServices } from "../platform/common/data-structure/register.mjs";
 import { createModuleManagementProvider } from "../platform/common/module-manager/module-management-provider.mjs";
 import { registerModuleManagementPlatformServices } from "../platform/common/module-manager/register.mjs";
@@ -242,7 +243,9 @@ async function assertInteractiveRegistrations() {
     consoleAuth: {},
     operationAuditStore: {}
   });
-  registerDataStructurePlatformServices(registry);
+  registerDataStructurePlatformServices(registry, {
+    dataStructures: createDataStructureProvider({ userDataPath: "verify-data" })
+  });
   registerDevopsPlatformServices(registry, { userDataPath: "verify-data" });
 
   const registeredIds = new Set(registry.list().map((entry) => entry.id));
@@ -253,6 +256,7 @@ async function assertInteractiveRegistrations() {
     "core.logging.runtime",
     "core.features.runtime",
     "core.operations.concurrencyScope",
+    "data-structure.provider",
     "data-structure.checkpointTree",
     "storage.metadataStore",
     "module-management.provider",

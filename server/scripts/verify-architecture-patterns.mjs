@@ -98,7 +98,8 @@ async function assertHttpServerUsesCompositionRoot() {
       "loadSettings(userDataPath)",
       "loadAgentSyncConfig(userDataPath)",
       "metadataStore.getStorageSummary(),",
-      "interfaces: listInterfaceCatalog(activeApiOperations)"
+      "interfaces: listInterfaceCatalog(activeApiOperations)",
+      "checkpoint-tree-store.mjs"
     ],
     file
   );
@@ -112,6 +113,7 @@ async function assertCompositionRootOwnsAssembly() {
     "registerCorePlatformServices",
     "registerSecurityPlatformServices",
     "registerDataStructurePlatformServices",
+    "createDataStructureProvider",
     "registerModuleManagementPlatformServices",
     "registerStoragePlatformServices",
     "registerDevopsPlatformServices",
@@ -152,6 +154,25 @@ async function assertRuntimeProvidersOwnProviderImports() {
     "await import(specifier)"
   ]) {
     assertTextIncludes(text, needle, `${file} must own runtime provider selection`);
+  }
+}
+
+async function assertDataStructureProviderOwnsPorts() {
+  const file = "server/platform/common/data-structure/data-structure-provider.mjs";
+  const text = await read(file);
+  for (const needle of [
+    "pact.data-structure.v1",
+    "createDataStructureProvider",
+    "checkpointTree",
+    "textNormalization",
+    "listCapabilities",
+    "diffCheckpointTree",
+    "queryCheckpointScope",
+    "previewCheckpointRestore",
+    "restoreCheckpointTree",
+    "uniqueNormalizedStrings"
+  ]) {
+    assertTextIncludes(text, needle, `${file} must own data structure provider port ${needle}`);
   }
 }
 
@@ -1737,6 +1758,7 @@ async function main() {
   await assertHttpServerUsesCompositionRoot();
   await assertCompositionRootOwnsAssembly();
   await assertRuntimeProvidersOwnProviderImports();
+  await assertDataStructureProviderOwnsPorts();
   await assertCommonConsoleDelegatesSpecializedOperations();
   await assertCoreArchitectureDocsCoverMainline();
 }

@@ -2,6 +2,7 @@ import path from "node:path";
 import { resolveFeatureRuntimeFromEnv, filterOperationsForFeatures, publicFeatureRuntime } from "./features/feature-manifest.mjs";
 import { createProtocolEventBus } from "../../protocols/pubsub/event-bus.mjs";
 import { registerCorePlatformServices } from "../common/platform-core/register.mjs";
+import { createDataStructureProvider } from "../common/data-structure/data-structure-provider.mjs";
 import { registerDataStructurePlatformServices } from "../common/data-structure/register.mjs";
 import { createConsoleAuth } from "../common/security/auth/console-auth.mjs";
 import { createOperationAuditStore } from "../common/security/operation-audit.mjs";
@@ -54,6 +55,7 @@ export async function createServerCompositionRoot({
   const consoleAuth = createConsoleAuth({ userDataPath });
   const securityPermissions = createSecurityPermissionsProvider({ consoleAuth });
   const moduleManagement = createModuleManagementProvider({ runtime, userDataPath });
+  const dataStructures = createDataStructureProvider({ userDataPath });
   const operationAuditStore = createOperationAuditStore({ userDataPath });
   const operationConcurrencyScope = path.resolve(userDataPath);
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
@@ -75,7 +77,7 @@ export async function createServerCompositionRoot({
     runtime,
     runtimeOptions: runtimeOptionsWithFeatures
   });
-  registerDataStructurePlatformServices(platformRegistry);
+  registerDataStructurePlatformServices(platformRegistry, { dataStructures });
   registerDevopsPlatformServices(platformRegistry, { userDataPath });
   registerStoragePlatformServices(platformRegistry, {
     metadataStore: runtime.metadataStore,
@@ -97,6 +99,7 @@ export async function createServerCompositionRoot({
     platformRegistry,
     runtime,
     moduleManagement,
+    dataStructures,
     consoleAuth,
     securityPermissions,
     operationAuditStore,

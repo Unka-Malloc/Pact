@@ -13,15 +13,6 @@ import {
   buildClientRuntimeBootstrapPull
 } from "../client/client-runtime-core/client-runtime-bootstrap.mjs";
 import {
-  checkpointTreeSummary,
-  diffCheckpointTree,
-  listCheckpointTrees,
-  loadCheckpointTree,
-  previewCheckpointRestore,
-  queryCheckpointScope,
-  restoreCheckpointTree
-} from "../../platform/common/data-structure/checkpoint-tree-store.mjs";
-import {
   acknowledgeQueueMonitorAlert,
   inspectQueueMonitor,
   registerQueueClosed,
@@ -371,6 +362,7 @@ export async function startHttpServer({
     platformRegistry,
     runtime,
     moduleManagement,
+    dataStructures,
     consoleAuth,
     securityPermissions,
     operationAuditStore,
@@ -534,15 +526,7 @@ export async function startHttpServer({
       buildPull: buildClientRuntimeBootstrapPull
     },
     queueMonitor: queueMonitorAdapter,
-    checkpointTreeApi: {
-      checkpointTreeSummary,
-      diffCheckpointTree,
-      listCheckpointTrees,
-      loadCheckpointTree,
-      previewCheckpointRestore,
-      queryCheckpointScope,
-      restoreCheckpointTree
-    },
+    checkpointTreeApi: dataStructures.checkpointTree,
     monitorAlertApi: {
       getState: () => getMonitorAlertState(userDataPath, { queueMonitor: queueMonitorAdapter }),
       saveConfig: (input) => saveMonitorAlertConfig(userDataPath, input),

@@ -3,31 +3,63 @@ import {
   checkpointTreeId,
   checkpointTreeSummary,
   deleteCheckpointTree,
+  diffCheckpointTree,
   finishCheckpointTree,
   listCheckpointTrees,
   loadCheckpointTree,
+  previewCheckpointRestore,
+  queryCheckpointScope,
+  restoreCheckpointTree,
   startCheckpointTree,
   upsertCheckpointNode
 } from "./checkpoint-tree-store.mjs";
 
-export function registerDataStructurePlatformServices(registry) {
+function legacyCheckpointTreePort() {
+  return Object.freeze({
+    checkpointTreeId,
+    checkpointTreeSummary,
+    deleteCheckpointTree,
+    diffCheckpointTree,
+    finishCheckpointTree,
+    listCheckpointTrees,
+    loadCheckpointTree,
+    previewCheckpointRestore,
+    queryCheckpointScope,
+    restoreCheckpointTree,
+    startCheckpointTree,
+    upsertCheckpointNode
+  });
+}
+
+export function registerDataStructurePlatformServices(registry, {
+  dataStructures = null
+} = {}) {
+  const checkpointTree = dataStructures?.checkpointTree || legacyCheckpointTreePort();
   return [
+    registerPlatformService(registry, {
+      id: "data-structure.provider",
+      platform: "data-structure",
+      label: "Data structure provider",
+      kind: "provider",
+      ownerFeatureId: "data-structure-core",
+      value: dataStructures,
+      metadata: {
+        protocolVersion: dataStructures?.protocolVersion || "",
+        capabilityIds: dataStructures?.listCapabilities
+          ? dataStructures.listCapabilities().capabilities.map((capability) => capability.id)
+          : ["checkpoint-tree"]
+      }
+    }),
     registerPlatformService(registry, {
       id: "data-structure.checkpointTree",
       platform: "data-structure",
       label: "Checkpoint tree data structure",
       kind: "checkpoint-tree",
       ownerFeatureId: "data-structure-core",
-      value: Object.freeze({
-        checkpointTreeId,
-        checkpointTreeSummary,
-        deleteCheckpointTree,
-        finishCheckpointTree,
-        listCheckpointTrees,
-        loadCheckpointTree,
-        startCheckpointTree,
-        upsertCheckpointNode
-      })
+      value: checkpointTree,
+      metadata: {
+        protocolVersion: dataStructures?.protocolVersion || ""
+      }
     })
   ];
 }
