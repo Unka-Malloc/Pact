@@ -280,6 +280,10 @@ try {
     },
     7
   );
+  assert.equal(afterUpload.cacheReceipt?.cacheFamily, "merkle-radix-compatible");
+  assert.equal(afterUpload.cacheReceipt?.hit, true);
+  assert.ok(afterUpload.cacheReceipt?.indexRootCid);
+  assert.ok(afterUpload.cacheReceipt?.proofHash);
   assert.ok(afterUpload.paths.includes(`${folderPath}/a.txt`));
 
   const stat = await callWorkspaceMcp(
@@ -293,6 +297,9 @@ try {
     8
   );
   assert.equal(stat.exists, true);
+  assert.equal(stat.cacheReceipt?.hit, true);
+  assert.ok(stat.cacheReceipt?.valueRoot);
+  assert.ok(stat.cacheReceipt?.proofHash);
   assert.equal(stat.file.relativePath, `${folderPath}/a.txt`);
   assert.equal(stat.file.sizeBytes, Buffer.byteLength(sampleContent));
   assert.match(stat.file.contentSha256, /^[a-f0-9]{64}$/);
@@ -309,6 +316,8 @@ try {
   );
   assert.equal(missingStat.ok, true);
   assert.equal(missingStat.exists, false);
+  assert.equal(missingStat.cacheReceipt?.hit, false);
+  assert.ok(missingStat.cacheReceipt?.proofHash);
   assert.equal(missingStat.file.relativePath, `${folderPath}/missing.txt`);
 
   const download = await callWorkspaceMcp(

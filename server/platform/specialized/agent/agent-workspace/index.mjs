@@ -1332,6 +1332,44 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     };
   }
 
+  async function workspaceListCacheReceipt(workspace, prefix = "") {
+    if (!merkleState || typeof merkleState.stateCommit?.begin !== "function") {
+      return null;
+    }
+    const state = await merkleState.stateCommit.begin({
+      scope: workspaceStateScope(workspace)
+    });
+    const indexRootCid = String(state.currentRoot || "");
+    if (!indexRootCid) {
+      return {
+        protocolVersion: merkleState.protocolVersion,
+        cacheFamily: "merkle-radix-compatible",
+        implementation: "sorted-chunk-index-v1",
+        cacheKey: `${workspaceStateScope(workspace)}:${prefix || "/"}`,
+        hit: false,
+        indexRootCid: "",
+        prefix,
+        entryCount: 0,
+        valueRoots: [],
+        proofHash: ""
+      };
+    }
+    const entries = await merkleState.merkleIndex.prefix(indexRootCid, prefix);
+    const proof = await merkleState.merkleIndex.prove(indexRootCid, prefix || entries[0]?.key || "");
+    return {
+      protocolVersion: merkleState.protocolVersion,
+      cacheFamily: "merkle-radix-compatible",
+      implementation: "sorted-chunk-index-v1",
+      cacheKey: `${workspaceStateScope(workspace)}:${prefix || "/"}`,
+      hit: entries.length > 0,
+      indexRootCid,
+      prefix,
+      entryCount: entries.length,
+      valueRoots: uniqueStrings(entries.map((entry) => entry.valueRef)).slice(0, 100),
+      proofHash: proof.proofHash
+    };
+  }
+
   async function commitWorkspaceFileState({
     workspace,
     operationId,
@@ -1358,7 +1396,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     if (!merkleState) {
       return null;
     }
-    const listed = listWorkspaceFiles({
+    const listed = await listWorkspaceFiles({
       workspaceId: workspace.workspaceId,
       path: basePath,
       folderPath: basePath,
@@ -1536,7 +1574,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     };
   }
 
-  function listWorkspaceFiles(input = {}) {
+  async function listWorkspaceFiles(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -1558,6 +1596,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
         workspaceId: access.workspace.workspaceId,
         basePath: base.relativePath,
         exists: false,
+        cacheReceipt: await workspaceListCacheReceipt(access.workspace, base.relativePath),
         paths: [],
         files: []
       };
@@ -1614,13 +1653,14 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       workspaceId: access.workspace.workspaceId,
       basePath: base.relativePath,
       exists: true,
+      cacheReceipt: await workspaceListCacheReceipt(access.workspace, base.relativePath),
       paths: files.map((file) => file.relativePath),
       files,
       count: files.length
     };
   }
 
-  function workspaceFileMetadata(input = {}) {
+  async function workspaceFileMetadata(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
       return access;
@@ -1641,6 +1681,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
         ok: true,
         workspaceId: access.workspace.workspaceId,
         exists: false,
+        cacheReceipt: await workspaceDownloadCacheReceipt(access.workspace, resolved.relativePath),
         file: {
           workspaceId: access.workspace.workspaceId,
           relativePath: resolved.relativePath
@@ -1652,6 +1693,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       ok: true,
       workspaceId: access.workspace.workspaceId,
       exists: true,
+      cacheReceipt: await workspaceDownloadCacheReceipt(access.workspace, resolved.relativePath),
       file: fileMetadataFromStat({
         workspaceId: access.workspace.workspaceId,
         relativePath: resolved.relativePath,
@@ -2663,7 +2705,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
   }
 
   async function downloadWorkspaceFile(input = {}) {
-    const statResult = workspaceFileMetadata(input);
+    const statResult = await workspaceFileMetadata(input);
     if (!statResult.ok || !statResult.exists) {
       return statResult.exists === false
         ? { ...statResult, ok: false, status: 404, error: "文件不存在。" }
@@ -3119,7 +3161,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     const dryRun = input.dryRun === true || input.preview === true;
     const requestedBy = String(input.createdBy || input.actorUserId || input.agentId || "").trim();
     const desiredByPath = new Map(snapshot.files.map((entry) => [entry.relativePath, entry]));
-    const existing = listWorkspaceFiles({
+    const existing = await listWorkspaceFiles({
       ...input,
       workspaceId: access.workspace.workspaceId,
       path: snapshot.basePath,
