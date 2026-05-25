@@ -82,9 +82,9 @@
 | 5 | 继续拆 `api-facade.mjs` | 接口封装层、智能体、运维基础 | `[x]` | settings、agent selector、jobs、client connection、client runtime、maintenance、Tool/Knowledge/Runtime summary 均已改为 provider/domain service 投影；`api-facade` 不再直接调用 `loadSettings()`、agent config registry、job manager、client runtime allocator 或 maintenance agent。 |
 | 6 | 继续拆 `jobs-controller.mjs` | 接口封装层、原始语料、任务工作流 | `[x]` | metadataStore、raw object download、stored object path 已迁入 `storageProvider`；任务创建/查询/复用/重跑/结果读取已统一进入 `pact.job-workflow.v1` provider。 |
 | 7 | 继续拆 MCP adapter | 接口封装层、工具管理、模块管理、安全权限 | `[x]` | MCP adapter 已只面对五个语义入口和 `pact.tool-skill-management.v1` provider；`verify-tool-skill-management` 已禁止 adapter 回退到 Tool Management platform internals。 |
-| 8 | 清理 `PROTOCOLS.md` | 全部 | `[ ]` | 旧 `/api/workspaces/` 前缀、旧 operation id、旧 MCP 扁平工具名口径清除。 |
-| 9 | 清理 `PRODUCTION-CAPABILITY-GAP.md` | 全部 | `[ ]` | 已实现缺口移出 unresolved，并改用四级完成度。 |
-| 10 | 补架构门禁 | 全部 | `[ ]` | 新增 architecture-patterns / protocol-operations / platform-boundaries 验证规则。 |
+| 8 | 清理 `PROTOCOLS.md` | 全部 | `[x]` | 已补齐 `pact.agent-runtime.v1`、`pact.tool-skill-management.v1` 和 `pact.job-workflow.v1` 协议口径；旧 `/api/workspaces/`、旧 MCP alias 和内部 operation 展开为 MCP tool name 的内容仅作为否定/兼容说明保留。 |
+| 9 | 清理 `PRODUCTION-CAPABILITY-GAP.md` | 全部 | `[x]` | 已增加 2026-05-25 协议化重构校准，生产缺口改用 `verified-complete` / `implemented-needs-production-evidence` / `planned-contract` / `not-started` 四级完成度，避免把已完成协议化的子系统继续列为未实现。 |
+| 10 | 补架构门禁 | 全部 | `[x]` | `server:verify:architecture-patterns`、`server:verify:protocol-operations`、`server:verify:platform-boundaries` 已覆盖本轮 provider/operation/domain service 边界，并由全量 `npm run server:verify` 验证。 |
 
 ## 更新规则
 

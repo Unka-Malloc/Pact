@@ -51,11 +51,14 @@
 | `pact.knowledge.v1` | `knowledgeBase` mount、evidence pack、asset、search、export、external knowledge adapter。 |
 | `pact.context-bundle.v1` | 面向本地智能体和短上下文模型的 context compiler / context compression。 |
 | `pact.client-runtime-bootstrap.v1` | 最小 MCP connector 或客户端主动声明平台、命令、模块需求和上传规模，服务端返回裁剪后的 Pact client runtime 计划、可拉取 artifact refs 与 transport 降级顺序。 |
+| `pact.agent-runtime.v1` | Agent config registry、Agent Gateway config/registry/call、Model Probe、model routing health 和带 settings/model-library 投影的 gateway call provider。 |
 | `pact.strategy-management.v1` | 处理流程策略、智能体调用策略、模型路由策略包装和工具调用策略预览；安全授权仍委托 `pact.security-permissions.v1`。 |
 | `pact.tool-management.v1` | Tool Management v1 catalog、grant、policy preview、execute、audit、metrics。 |
+| `pact.tool-skill-management.v1` | Tool/Skill Management provider，统一封装 Tool catalog/grant/runtime、MCP local grant、workspace ref 解析、MCP 可见 operation 和输出脱敏。 |
 | `pact.security.v1` | subject、workspace、scope、grant、data class、secret ref、redaction、audit policy。 |
 | `pact.security-permissions.v1` | 组合根注入的统一安全权限 provider，封装 console auth、operation authorization、authorization policy、authorization audit artifact、workspace asset policy 和 Tool/MCP grant 裁决。 |
 | `pact.workflow.v1` | 长任务、activity、checkpoint、retry、signal、timer、恢复和补偿语义。 |
+| `pact.job-workflow.v1` | 任务创建、列表、详情、checkpoint lookup、结果读取和重跑 provider；HTTP/RPC/console 不直接持有 job manager。 |
 | `pact.backup-restore.v1` | 服务端数据目录备份、manifest、restore preview、确认恢复和恢复报告。 |
 | `pact.data-connector-governance.v1` | 服务端数据连接器合同、OAuth refresh 策略、增量 cursor、mirror 冲突/清理、localQuery 禁远程和卸载验收。 |
 | `pact.performance-capacity.v1` | 容量目标、benchmark runner、ingest/search/sync/distillation/cost 指标、失败注入和阈值门禁。 |
