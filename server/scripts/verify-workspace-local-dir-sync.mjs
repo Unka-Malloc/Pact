@@ -58,6 +58,51 @@ async function callMcpRaw(baseUrl, token, operation, input = {}, id = 1) {
   });
 }
 
+function valuesForKey(value, keyName) {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => valuesForKey(item, keyName));
+  }
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, child]) => [
+    ...(key === keyName ? [child] : []),
+    ...valuesForKey(child, keyName)
+  ]);
+}
+
+function assertAuditTrail(payload, operationId, { label, minCount, readOnly, sourcePath, targetPath, expectInputScope = !readOnly }) {
+  assert.ok(Array.isArray(payload.items), `${label} should return audit items`);
+  assert.ok(payload.count >= minCount, `${label} should include at least ${minCount} ${operationId} items`);
+  const matchingItems = payload.items.filter((item) => item.operationId === operationId);
+  assert.ok(matchingItems.length >= minCount, `${label} should include ${operationId} entries`);
+  const item = matchingItems[0];
+  assert.equal(item.transport, "tool-management", `${label} should be recorded through MCP tool-management`);
+  assert.equal(item.status, "ok", `${label} should record successful operations`);
+  assert.equal(item.readOnly, readOnly, `${label} should preserve read-only metadata`);
+  assert.ok(item.inputHash, `${label} should store a stable input hash`);
+  assert.ok(item.createdAt, `${label} should store creation time`);
+  assert.ok(item.actor?.userId, `${label} should store the MCP grant actor`);
+  const redactedInputText = JSON.stringify(item.redactedInput || {});
+  if (expectInputScope) {
+    assert.ok(
+      valuesForKey(item.redactedInput, "targetPath").includes(targetPath),
+      `${label} should preserve workspace target scope: ${redactedInputText}`
+    );
+    assert.ok(
+      valuesForKey(item.redactedInput, "workspaceId").length > 0 || valuesForKey(item.redactedInput, "workspaceRef").length > 0,
+      `${label} should preserve workspace identity`
+    );
+  } else {
+    assert.deepEqual(item.redactedInput || {}, {}, `${label} should not persist read-only input`);
+  }
+  if (sourcePath) {
+    const inputText = redactedInputText;
+    assert.equal(inputText.includes(sourcePath), false, `${label} should not leak the local source path`);
+    assert.equal(valuesForKey(item.redactedInput, "sourcePath").includes(sourcePath), false, `${label} should redact the local source path`);
+  }
+}
+
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-local-dir-sync-server-"));
 const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-local-dir-source-"));
 let server = null;
@@ -82,7 +127,8 @@ try {
       targets: ["codex"],
       label: "verify-local-dir-sync",
       connectorVersion: "verify",
-      toolsets: ["pact.agent.workspace", "pact.storage.read", "pact.storage.write"]
+      grantMode: "maintain",
+      toolsets: ["pact.agent.workspace", "pact.agent.workspace.maintain", "pact.storage.read", "pact.storage.write"]
     })
   });
   assert.equal(grant.status, 201, JSON.stringify(grant.payload, null, 2));
@@ -170,6 +216,54 @@ try {
   assert.equal(deletedStat.exists, false);
   assert.equal(deletedStat.cacheReceipt?.hit, false);
   assert.ok(deletedStat.cacheReceipt?.proofHash);
+
+  const planAudit = await callMcp(server.url, grant.payload.token, "pact.workspace.audit.query", {
+    operationId: "sharedspace.sync.plan",
+    limit: 20
+  });
+  assertAuditTrail(planAudit, "sharedspace.sync.plan", {
+    label: "sync plan audit query",
+    minCount: 2,
+    readOnly: true,
+    sourcePath: sourceDir,
+    targetPath: "mirror",
+    expectInputScope: false
+  });
+
+  const applyAudit = await callMcp(server.url, grant.payload.token, "pact.workspace.audit.query", {
+    operationId: "sharedspace.sync.apply",
+    limit: 20
+  });
+  assertAuditTrail(applyAudit, "sharedspace.sync.apply", {
+    label: "sync apply audit query",
+    minCount: 2,
+    readOnly: false,
+    sourcePath: sourceDir,
+    targetPath: "mirror"
+  });
+
+  const applyHistory = await callMcp(server.url, grant.payload.token, "pact.workspace.operation.history", {
+    operationId: "sharedspace.sync.apply",
+    limit: 20
+  });
+  assertAuditTrail(applyHistory, "sharedspace.sync.apply", {
+    label: "sync apply operation history",
+    minCount: 2,
+    readOnly: false,
+    sourcePath: sourceDir,
+    targetPath: "mirror"
+  });
+
+  const revertScope = await callMcp(server.url, grant.payload.token, "pact.workspace.operation.revert.scope", {
+    operationId: "sharedspace.sync.apply",
+    limit: 20,
+    confirm: true
+  });
+  assert.equal(revertScope.canApply, true, "sync apply history should be eligible for manual revert planning");
+  assert.ok(revertScope.reversibleCount >= 2, "sync apply history should expose reversible audit entries");
+  assert.ok(revertScope.scope.every((item) => item.operationId === "sharedspace.sync.apply"));
+  assert.ok(revertScope.scope.every((item) => item.inputHash));
+  assert.ok(revertScope.actions.every((action) => action.action === "manual_revert_required"));
 
   if (process.platform !== "win32") {
     await fs.symlink(path.join(sourceDir, "one.txt"), path.join(sourceDir, "linked.txt"));
