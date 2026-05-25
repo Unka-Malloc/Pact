@@ -430,12 +430,75 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
     label: "读取知识证据",
     targetMethod: "handleKnowledgeProtocolEvidenceGet",
     method: "GET",
-    path: "/api/knowledge/evidence/get",
+    path: "/api/knowledge/evidence-read",
     query: [
       { name: "id", aliases: ["id", "evidenceId", "evidence-id"] },
-      { name: "batchId", aliases: ["batch-id", "batchId"] }
+      { name: "batchId", aliases: ["batch-id", "batchId"] },
+      { name: "subjectId", aliases: ["subject-id", "subjectId"] },
+      { name: "username", aliases: ["username"] }
     ],
     scopes: ["knowledge:read"]
+  }),
+  protocolOperation({
+    id: "knowledge.backend.connect",
+    feature: "knowledge",
+    label: "连接外部知识库后端",
+    targetMethod: "handleKnowledgeBackendConnect",
+    path: "/api/knowledge/backend/connect",
+    scopes: ["knowledge:maintain"],
+    risk: "safe_write",
+    inputSchema: schema(["provider", "secretRef"], {
+      provider: { type: "string", enum: ["dify", "ragflow"] },
+      secretRef: { type: "string" },
+      endpointRef: { type: "string" },
+      mode: { type: "string", enum: ["contract", "live"] }
+    })
+  }),
+  protocolOperation({
+    id: "knowledge.space.list",
+    feature: "knowledge",
+    label: "列出外部知识库派生空间",
+    targetMethod: "handleKnowledgeSpaceList",
+    method: "GET",
+    path: "/api/knowledge/spaces",
+    query: [{ name: "provider", aliases: ["provider", "backend"] }],
+    scopes: ["knowledge:read"],
+    readOnly: true,
+    inputSchema: schema([], {
+      provider: { type: "string", enum: ["dify", "ragflow"] }
+    })
+  }),
+  protocolOperation({
+    id: "knowledge.export.request",
+    feature: "knowledge",
+    label: "申请外部知识库导出",
+    targetMethod: "handleKnowledgeExportRequest",
+    path: "/api/knowledge/export/request",
+    scopes: ["knowledge:write"],
+    risk: "safe_write",
+    requiresConfirmation: true,
+    approvalScope: "knowledge:write",
+    inputSchema: schema(["provider"], {
+      provider: { type: "string", enum: ["dify", "ragflow"] },
+      format: { type: "string" },
+      confirm: { type: "boolean" },
+      authorization: { type: "object" }
+    })
+  }),
+  protocolOperation({
+    id: "knowledge.permission.request",
+    feature: "knowledge",
+    label: "申请外部知识库权限",
+    targetMethod: "handleKnowledgePermissionRequest",
+    path: "/api/knowledge/permission/request",
+    scopes: ["knowledge:write"],
+    risk: "safe_write",
+    inputSchema: schema(["provider", "requestedEgress"], {
+      provider: { type: "string", enum: ["dify", "ragflow"] },
+      requestedAccessMode: { type: "string" },
+      requestedEgress: { type: "string" },
+      reason: { type: "string" }
+    })
   }),
 
   protocolOperation({

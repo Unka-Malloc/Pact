@@ -199,6 +199,8 @@ upstream knowledge base
 
 下游智能体不能持有上游 token、上游私有对象路径、collection id 或裸 source id。它们只能访问 Pact 授权后的派生视图、脱敏内容、只读阅览会话或 evidence pack。
 
+v0.0.1 的上游知识库兼容通过 `pact.knowledge-backend-port.v1` 接入 Dify 和 RAGFlow。运行配置只保存到 `ServerConfig.getDataDir()/knowledge/knowledge-backends.json`，且只能保存 `secretRef` / `endpointRef`；Agent、MCP、CLI 和控制台都不能直接持有上游 token。缺少真实 Dify/RAGFlow 凭据时只能标记 `contractVerified`，不能声明真实上游检索、evidence 回读或导出已完成。
+
 #### FR-4 终端贡献和贡献统计
 
 系统必须允许本地智能体、脚本、人工终端向公共工作空间提交贡献资产：
@@ -641,6 +643,11 @@ Knowledge API 公开能力：
 
 - `knowledge.search`
 - `knowledge.get.evidence`
+- `knowledge.backend.connect`
+- `knowledge.space.list`
+- `knowledge.evidence.get`
+- `knowledge.export.request`
+- `knowledge.permission.request`
 - `knowledge.asset`
 - `knowledge.document.structure`
 - `knowledge.export.docx`

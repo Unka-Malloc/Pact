@@ -318,6 +318,10 @@ type Bridge = {
   reindexKnowledge: (payload?: { confirm?: boolean; [key: string]: unknown }) => Promise<Record<string, unknown>>;
   rebuildSourceVocabulary: (payload?: { confirm?: boolean; [key: string]: unknown }) => Promise<Record<string, unknown>>;
   searchKnowledge: (payload: Record<string, unknown>) => Promise<KnowledgeSearchResponse>;
+  connectKnowledgeBackend: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  listKnowledgeSpaces: (params?: { provider?: string }) => Promise<Record<string, unknown>>;
+  requestKnowledgeExport: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  requestKnowledgePermission: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
   recordKnowledgeFeedback: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getContextProfiles: () => Promise<Record<string, unknown>>;
   previewContextPack: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -924,6 +928,20 @@ const browserBridge: Bridge = {
   rebuildSourceVocabulary: (payload = { confirm: true }) =>
     postJson<Record<string, unknown>>("/api/storage/source-vocabulary/rebuild", payload, { safetyConfirm: true }),
   searchKnowledge: (payload) => postJson<KnowledgeSearchResponse>("/api/knowledge/search", payload),
+  connectKnowledgeBackend: (payload) =>
+    postJson<Record<string, unknown>>("/api/knowledge/backend/connect", payload, { safetyConfirm: true }),
+  listKnowledgeSpaces: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.provider) {
+      query.set("provider", params.provider);
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return getJson<Record<string, unknown>>(`/api/knowledge/spaces${suffix}`);
+  },
+  requestKnowledgeExport: (payload) =>
+    postJson<Record<string, unknown>>("/api/knowledge/export/request", payload, { safetyConfirm: true }),
+  requestKnowledgePermission: (payload) =>
+    postJson<Record<string, unknown>>("/api/knowledge/permission/request", payload, { safetyConfirm: true }),
   recordKnowledgeFeedback: (payload) => postJson<Record<string, unknown>>("/api/knowledge/feedback", payload),
   getContextProfiles: () => getJson<Record<string, unknown>>("/api/context/profiles"),
   previewContextPack: (payload) => postJson<Record<string, unknown>>("/api/context/preview", payload),

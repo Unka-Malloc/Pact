@@ -307,8 +307,44 @@ export function createSystemControllerFoundationHandlers({
         operationId: operation?.id || "knowledge.evidence",
         input: protocolPayload(Buffer.alloc(0), url),
         response,
-        context: { runtime, authSession },
+        context: accessControlContext(authSession, { runtime }),
         errorMessage: "读取知识证据失败。"
+      });
+    },
+    async handleKnowledgeBackendConnect({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "knowledge.backend.connect",
+        input: protocolPayload(requestBody),
+        response,
+        context: accessControlContext(authSession, { runtime }),
+        errorMessage: "连接知识库后端失败。"
+      });
+    },
+    async handleKnowledgeSpaceList({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "knowledge.space.list",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        context: accessControlContext(authSession, { runtime }),
+        errorMessage: "列出知识库派生空间失败。"
+      });
+    },
+    async handleKnowledgeExportRequest({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "knowledge.export.request",
+        input: protocolPayload(requestBody),
+        response,
+        context: accessControlContext(authSession, { runtime }),
+        errorMessage: "申请知识库导出失败。"
+      });
+    },
+    async handleKnowledgePermissionRequest({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "knowledge.permission.request",
+        input: protocolPayload(requestBody),
+        response,
+        context: accessControlContext(authSession, { runtime }),
+        errorMessage: "申请知识库权限失败。"
       });
     },
     async handleWorkspaceSkillUpload({ operation, requestBody, response, authSession }) {

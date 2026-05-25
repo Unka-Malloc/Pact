@@ -294,6 +294,7 @@ export function createSystemController({
       modelDecisionRuntime,
       strategyManagementProvider,
       agentWorkspace,
+      accessControlContext,
       consoleDomainServices
     }),
     ...createSystemControllerWorkspaceRuntimeHandlers({

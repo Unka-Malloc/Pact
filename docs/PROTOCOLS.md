@@ -1106,6 +1106,11 @@ Legal hold 必须阻断 delete/purge/expire/retention.dispose 等破坏性动作
 
 - `knowledge.search`
 - `knowledge.get.evidence`
+- `knowledge.backend.connect`
+- `knowledge.space.list`
+- `knowledge.evidence.get`
+- `knowledge.export.request`
+- `knowledge.permission.request`
 - `knowledge.asset`
 - `knowledge.document.structure`
 - `knowledge.export.docx`，HTTP 入口固定为 `GET /api/knowledge/export/docx`
@@ -1144,7 +1149,13 @@ Legal hold 必须阻断 delete/purge/expire/retention.dispose 等破坏性动作
 - `granularity.secondaryParse.enabled`
 - `completeOriginalAvailable`
 
-外部知识库适配器必须仍返回 Pact 形状的 evidence pack，包含 `sourceTrace`、`citations`、`assetId`、`scoreReasons`、`backendTrace` 和权限过滤结果。当前实现入口是 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`，首批后端为 `pgvector`、`qdrant`、`opensearch`，通过 `PACT_EXTERNAL_KB_PROVIDER` 等配置启用。
+外部知识库适配器必须仍返回 Pact 形状的 evidence pack，包含 `sourceTrace`、`citations`、`assetId`、`scoreReasons`、`backendTrace` 和权限过滤结果。内部索引型外部适配器入口是 `server/platform/specialized/knowledge/storage/external-knowledge-base/index.mjs`，首批后端为 `pgvector`、`qdrant`、`opensearch`，通过 `PACT_EXTERNAL_KB_PROVIDER` 等配置启用。
+
+v0.0.1 面向上游知识库的兼容入口是 `pact.knowledge-backend-port.v1`，实现位于 `server/platform/specialized/knowledge/storage/knowledge-backend-port/index.mjs`。Dify 和 RAGFlow provider manifest 写入 `ServerConfig.getDataDir()/knowledge/knowledge-backends.json`，只允许 `secret://` secret ref 和 `config://` endpoint ref；Agent、MCP、CLI 和控制台都不能接触上游 token。当前无真实 Dify/RAGFlow 凭据时，`knowledge.backend.connect`、`knowledge.space.list`、`knowledge.search`、`knowledge.evidence.get` 和 `knowledge.export.request` 返回 `contractVerified=true`，不能表述为真实上游检索、真实 evidence 回读或真实导出。
+
+`knowledge.space.list` 只返回安全派生空间元数据：`derivedKnowledgeSpace`、`derivedViewRef`、`upstreamKnowledgeRef`、`upstreamPolicyRef`、data class、sensitivity 和访问模式。默认 discover/search 不返回正文、snippet、上游裸对象 id、私有路径或上游 dataset id。v0.0.1 protocol evidence HTTP path 为 `GET /api/knowledge/evidence-read`，避免与旧兼容路径 `GET /api/knowledge/evidence/:evidenceId` 冲突。
+
+`knowledge.search` 如带 `provider=dify|ragflow`、`knowledgeBackend=true`、`spaceId` 或 `backendRef`，先进入 KnowledgeBasePort，再执行 AgentLibrary authorization overlay。search 结果默认 `metadataOnly=true`，正文只能通过 `knowledge.evidence.get` 在授权后读取。成功 evidence 读取必须写入 `knowledgeAccessReceipt` 和 `loanRecord`；未授权 evidence 或 export 必须写入 denied request audit。`knowledge.export.request` 必须显式授权，未授权时 `backendExportInvoked=false`。
 
 数据连接器治理保留在服务端协议层，不要求本轮实现客户端连接器。`pact.data-connector-governance.v1` 校验 `pact.data-connector.v1` manifest，并用 `pact.local-mirror.v1` 验收 OAuth refresh 策略、增量 cursor、冲突处理、hash collision quarantine、rate limit、mirror cleanup、localQuery 禁远程和 uninstall policy。当前实现入口是 `server/platform/specialized/knowledge/connectors/data-connector-governance/index.mjs`。
 

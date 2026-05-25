@@ -232,6 +232,34 @@ const dynamicParsingPreviewConfig = {
 };
 const dynamicParsingPolicySignature = JSON.stringify(dynamicParsingPreviewConfig);
 const documentPreviewResult = ref<Record<string, unknown> | null>(null);
+const knowledgeBackendProvider = ref("dify");
+const knowledgeBackendQuery = ref("policy receipt");
+const knowledgeBackendBusy = ref("");
+const knowledgeBackendError = ref("");
+const knowledgeBackendManifest = ref<Record<string, unknown> | null>(null);
+const knowledgeBackendSpacesResult = ref<Record<string, unknown> | null>(null);
+const knowledgeBackendSearchResult = ref<Record<string, unknown> | null>(null);
+const knowledgeBackendProviderOptions = [
+  { value: "dify", label: "Dify" },
+  { value: "ragflow", label: "RAGFlow" },
+];
+const knowledgeBackendSpaces = computed<Array<Record<string, unknown>>>(() => {
+  const items = knowledgeBackendSpacesResult.value?.spaces;
+  return Array.isArray(items) ? items as Array<Record<string, unknown>> : [];
+});
+const knowledgeBackendProviders = computed<Array<Record<string, unknown>>>(() => {
+  const providers = knowledgeBackendManifest.value?.manifest &&
+    typeof knowledgeBackendManifest.value.manifest === "object" &&
+    !Array.isArray(knowledgeBackendManifest.value.manifest)
+    ? (knowledgeBackendManifest.value.manifest as Record<string, unknown>).providers
+    : knowledgeBackendManifest.value?.providers;
+  return Object.entries(
+    providers && typeof providers === "object" && !Array.isArray(providers) ? providers as Record<string, unknown> : {},
+  ).map(([id, provider]) => ({
+    id,
+    ...(provider && typeof provider === "object" && !Array.isArray(provider) ? provider as Record<string, unknown> : {}),
+  }));
+});
 
 async function previewKnowledgeDocumentParsing() {
   if (ingestFiles.value.length === 0) {
@@ -248,6 +276,35 @@ async function previewKnowledgeDocumentParsing() {
     granularity: dynamicParsingPreviewConfig.granularity,
     dynamicParsing: dynamicParsingPreviewConfig.dynamicParsing,
   });
+}
+
+async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search") {
+  knowledgeBackendBusy.value = action;
+  knowledgeBackendError.value = "";
+  try {
+    if (action === "connect") {
+      knowledgeBackendManifest.value = await bridge.connectKnowledgeBackend({
+        provider: knowledgeBackendProvider.value,
+        secretRef: `secret://pact/knowledge/${knowledgeBackendProvider.value}-api-key`,
+        mode: "contract",
+      });
+    } else if (action === "spaces") {
+      knowledgeBackendSpacesResult.value = await bridge.listKnowledgeSpaces({
+        provider: knowledgeBackendProvider.value,
+      });
+    } else {
+      knowledgeBackendSearchResult.value = await bridge.searchKnowledge({
+        provider: knowledgeBackendProvider.value,
+        knowledgeBackend: true,
+        query: knowledgeBackendQuery.value,
+        limit: 2,
+      }) as unknown as Record<string, unknown>;
+    }
+  } catch (caught) {
+    knowledgeBackendError.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    knowledgeBackendBusy.value = "";
+  }
 }
 </script>
 
@@ -608,6 +665,82 @@ async function previewKnowledgeDocumentParsing() {
                 </form>
               </section>
             </template>
+
+            <article
+              v-if="isManagementKnowledgePanel"
+              class="surface-card knowledge-backend-card"
+            >
+              <div class="section-header">
+                <div>
+                  <h3>外部知识库</h3>
+                  <p>Dify / RAGFlow 通过 KnowledgeBasePort 进入 Pact，配置只保存 secret ref 和派生空间元数据。</p>
+                </div>
+                <StatusPill tone="info" label="contractVerified" />
+              </div>
+              <div class="maintenance-runner">
+                <OptionBar
+                  v-model="knowledgeBackendProvider"
+                  label="后端"
+                  :options="knowledgeBackendProviderOptions"
+                />
+                <label>
+                  <span>检索词</span>
+                  <input v-model="knowledgeBackendQuery" type="text" />
+                </label>
+                <button
+                  class="tool-button"
+                  type="button"
+                  :disabled="knowledgeBackendBusy === 'connect'"
+                  @click="runKnowledgeBackendAction('connect')"
+                >
+                  {{ knowledgeBackendBusy === "connect" ? "测试中" : "测试连接" }}
+                </button>
+                <button
+                  class="tool-button tool-button-ghost"
+                  type="button"
+                  :disabled="knowledgeBackendBusy === 'spaces'"
+                  @click="runKnowledgeBackendAction('spaces')"
+                >
+                  {{ knowledgeBackendBusy === "spaces" ? "读取中" : "列出空间" }}
+                </button>
+                <button
+                  class="tool-button tool-button-ghost"
+                  type="button"
+                  :disabled="knowledgeBackendBusy === 'search'"
+                  @click="runKnowledgeBackendAction('search')"
+                >
+                  {{ knowledgeBackendBusy === "search" ? "检索中" : "检索预览" }}
+                </button>
+              </div>
+              <p v-if="knowledgeBackendError" class="module-note">{{ knowledgeBackendError }}</p>
+              <div v-if="knowledgeBackendProviders.length" class="job-table compact-job-table normalized-table">
+                <div class="job-table-header">
+                  <span>Provider</span>
+                  <span>Mode</span>
+                  <span>Secret</span>
+                </div>
+                <div v-for="provider in knowledgeBackendProviders" :key="String(provider.id)" class="job-row">
+                  <span>{{ provider.id }}</span>
+                  <span>{{ provider.mode }}</span>
+                  <span>{{ provider.secretRef }}</span>
+                </div>
+              </div>
+              <div v-if="knowledgeBackendSpaces.length" class="job-table compact-job-table normalized-table">
+                <div class="job-table-header">
+                  <span>派生空间</span>
+                  <span>Provider</span>
+                  <span>访问</span>
+                </div>
+                <div v-for="space in knowledgeBackendSpaces" :key="String(space.spaceId)" class="job-row">
+                  <span>{{ space.label }}</span>
+                  <span>{{ space.provider }}</span>
+                  <span>{{ space.accessMode }}</span>
+                </div>
+              </div>
+              <ConfigFoldCard v-if="knowledgeBackendSearchResult" title="检索预览 JSON">
+                <pre>{{ jsonPreview(knowledgeBackendSearchResult) }}</pre>
+              </ConfigFoldCard>
+            </article>
 
             <article
               id="knowledge-file-import"

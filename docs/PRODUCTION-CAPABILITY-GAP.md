@@ -120,7 +120,7 @@
 
 ### P0-00 智能体知识源头权限门禁缺失
 
-当前状态：传统知识库倾向于把已经存进去的内容按召回和排序结果提供给智能体，重点放在优化切分、召回、排序和摘要。Pact 的路线不同：知识能力应命名和治理为 `AgentLibrary / 图书馆`，必须从 source / asset 入库开始治理智能体是否能发现、读取、引用、复制进上下文、导出、下载或写入长期 memory。当前代码已具备 `pact.knowledge-access.v1`、`pact.agent-library.v1`、accessMode / checkoutPolicy / loanRecord 裁决实现，并已通过 specialized console operation executor 绑定 `knowledge.access.*` 协议入口；剩余差距是把检索、evidence 回读、上下文编译、导出、蒸馏、memory 写入和外部 adapter 的所有出口都强制接入该裁决，而不是只在验证脚本和控制台入口中证明能力存在。
+当前状态：传统知识库倾向于把已经存进去的内容按召回和排序结果提供给智能体，重点放在优化切分、召回、排序和摘要。Pact 的路线不同：知识能力应命名和治理为 `AgentLibrary / 图书馆`，必须从 source / asset 入库开始治理智能体是否能发现、读取、引用、复制进上下文、导出、下载或写入长期 memory。当前代码已具备 `pact.knowledge-access.v1`、`pact.agent-library.v1`、accessMode / checkoutPolicy / loanRecord 裁决实现，并已通过 specialized console operation executor 绑定 `knowledge.access.*` 协议入口；v0.0.1 已把 Dify/RAGFlow contract-mode `KnowledgeBasePort` 的检索、evidence 回读和 export gate 接入同一裁决链。剩余差距是把真实上游凭据环境、上下文编译、蒸馏、memory 写入和更多外部 adapter 的所有出口继续强制接入该裁决，而不是只在验证脚本和控制台入口中证明能力存在。
 
 为什么重要：随着大模型基座智力、上下文窗口和注意力能力提升，知识库不应主要承担“有限信息投喂器”的角色，而应成为一栋权限严密、分类清楚、索引完备的团队知识图书馆。智能体有门禁卡才能进入，有楼层权限才能访问 source group，有图书权限才能读具体内容，有借阅权限才能带走。高敏感资产可以只允许受控读取，不允许导出、下载、写 artifact、写 memory 或送入未授权模型上下文。
 
@@ -148,6 +148,7 @@
 当前实现入口：
 
 - `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 实现 `pact.knowledge-access.v1` 和 `pact.agent-library.v1` 的源头裁决、标准 `accessMode`、`requestedEgress`、`authorizationOverlay`、`knowledgeAccessReceipt`、`loanRecord` 和 denied request audit；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 access policy。
+- `server/platform/specialized/knowledge/storage/knowledge-backend-port/index.mjs` 实现 v0.0.1 Dify/RAGFlow `pact.knowledge-backend-port.v1` contract-mode：运行配置写入 `ServerConfig.getDataDir()/knowledge/knowledge-backends.json`，只保存 `secretRef` / `endpointRef`；safe discovery 不返回正文、snippet、上游裸 ID 或私有路径；授权 evidence 读取写 receipt/loan record，拒绝读取和拒绝导出写 denied request audit。缺少真实 Dify/RAGFlow 凭据时只能标记 `contractVerified`。
 - `npm run server:verify:agent-library-access` 验证 A/B 再授权：A 获取授权范围并产生 receipt / loan record，B 在所有出口 `searchResult`、`evidenceRead`、`contextBundle`、`artifactWrite`、`exportFile`、`distillationInput`、`distillationOutput`、`memoryWrite`、`toolCall`、`evaluationSample` 都被同一套裁决拒绝。
 - `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
 

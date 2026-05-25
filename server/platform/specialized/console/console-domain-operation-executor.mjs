@@ -10,6 +10,10 @@ import { createCapabilityPackageRegistry } from "../capabilities/package-lifecyc
 import { createAssetLineageRegistry } from "../knowledge/assets/asset-lineage/index.mjs";
 import { evaluateKnowledgeAccess } from "../knowledge/agent-library/access-policy.mjs";
 import {
+  createKnowledgeBackendPort,
+  isKnowledgeBackendEvidenceId
+} from "../knowledge/storage/knowledge-backend-port/index.mjs";
+import {
   GERRIT_ACTIONS,
   executeGerritCommonOperation,
   uploadGerritGitChange
@@ -56,6 +60,7 @@ import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorizat
 
 const contributionRegistries = new Map();
 const codespaceRegistries = new Map();
+const knowledgeBackendPorts = new Map();
 const knowledgeDistillationWorkbenchInstances = new Map();
 const PATH_BROWSER_MAX_ENTRIES = 600;
 const PATH_BROWSER_IGNORED_NAMES = new Set([
@@ -669,6 +674,16 @@ function codespaceRegistryFor(context = {}) {
     }));
   }
   return codespaceRegistries.get(key);
+}
+
+function knowledgeBackendPortFor(context = {}) {
+  const key = context.userDataPath || "default";
+  if (!knowledgeBackendPorts.has(key)) {
+    knowledgeBackendPorts.set(key, createKnowledgeBackendPort({
+      userDataPath: context.userDataPath
+    }));
+  }
+  return knowledgeBackendPorts.get(key);
 }
 
 function requireRuntimeMethod(runtime, methodName, message) {
@@ -4587,6 +4602,80 @@ async function executeKnowledgeAgentSupportOperation({ operationId, input, conte
   return null;
 }
 
+function knowledgeBackendSubject(context = {}, input = {}) {
+  const authSubject = subjectFromAuthSession(context.authSession);
+  const requestedSubject = input.subject && typeof input.subject === "object" && !Array.isArray(input.subject)
+    ? input.subject
+    : (input.subjectId || input["subject-id"] || input.username)
+      ? {
+          subjectId: input.subjectId || input["subject-id"] || input.username,
+          username: input.username || input.subjectId || input["subject-id"] || ""
+        }
+    : null;
+  if (!requestedSubject) {
+    return authSubject;
+  }
+  return {
+    ...authSubject,
+    ...requestedSubject,
+    subjectId: requestedSubject.subjectId || requestedSubject.id || requestedSubject.username || authSubject.subjectId,
+    username: requestedSubject.username || authSubject.username,
+    type: requestedSubject.type || authSubject.type
+  };
+}
+
+function knowledgeBackendProviderRequested(input = {}) {
+  const provider = String(input.provider || input.backend || input.knowledgeBackendProvider || "").trim().toLowerCase();
+  return provider === "dify" || provider === "ragflow" || provider === "rag-flow";
+}
+
+function knowledgeBackendSearchRequested(input = {}) {
+  return Boolean(
+    input.knowledgeBackend === true ||
+    input.externalKnowledgeBase === true ||
+    input.backendRef ||
+    input.spaceId ||
+    input.derivedKnowledgeSpace ||
+    knowledgeBackendProviderRequested(input)
+  );
+}
+
+async function executeKnowledgeBackendOperation({ operationId, input = {}, context }) {
+  const id = String(operationId || "");
+  const handledOperations = new Set([
+    "knowledge.backend.connect",
+    "knowledge.space.list",
+    "knowledge.export.request",
+    "knowledge.permission.request"
+  ]);
+  if (!handledOperations.has(id)) {
+    return null;
+  }
+  const port = knowledgeBackendPortFor(context);
+  const subject = knowledgeBackendSubject(context, input);
+  const workspaceId = workspaceIdFrom(input);
+  try {
+    if (id === "knowledge.backend.connect") {
+      return result(200, await port.connect(input));
+    }
+    if (id === "knowledge.space.list") {
+      return result(200, await port.listSpaces(input));
+    }
+    if (id === "knowledge.export.request") {
+      const operationResult = await port.requestExport(input, { subject, workspaceId });
+      appendKnowledgeAccessDecisionArtifacts(context, operationResult.accessDecision, id);
+      return result(operationResult.httpStatus || 200, operationResult);
+    }
+    if (id === "knowledge.permission.request") {
+      return result(201, await port.requestPermission(input, { subject, workspaceId }));
+    }
+  } catch (error) {
+    const status = error?.code === "UNSUPPORTED_PROVIDER" ? 404 : 400;
+    return result(status, errorPayload(error, "Knowledge backend operation failed."));
+  }
+  return null;
+}
+
 async function executeKnowledgeEvaluationOperation({ operationId, input, context }) {
   const id = String(operationId || "");
   const handledOperations = new Set([
@@ -4951,6 +5040,7 @@ async function executeKnowledgeRetrievalOperation({ operationId, input, context 
     "knowledge.document_structure",
     "knowledge.item",
     "knowledge.evidence",
+    "knowledge.evidence.get",
     "knowledge.asset",
     "knowledge.render_markdown"
   ]);
@@ -4969,6 +5059,14 @@ async function executeKnowledgeRetrievalOperation({ operationId, input, context 
         limit: payload.limit || 20,
         returnAll: payload.returnAll === true || payload.all === true
       }));
+    }
+    if (knowledgeBackendSearchRequested(payload)) {
+      const port = knowledgeBackendPortFor(context);
+      const operationResult = await port.search(payload, {
+        subject: knowledgeBackendSubject(context, payload),
+        workspaceId: workspaceIdFrom(payload)
+      });
+      return result(200, operationResult);
     }
     if (knowledgeCore && typeof knowledgeCore.search === "function") {
       const allocationResult = typeof context.clientRuntimeAllocator?.apply === "function"
@@ -5105,8 +5203,22 @@ async function executeKnowledgeRetrievalOperation({ operationId, input, context 
       : result(404, { error: "知识对象不存在。" });
   }
 
-  if (id === "knowledge.evidence") {
+  if (id === "knowledge.evidence" || id === "knowledge.evidence.get") {
     const evidenceId = input.evidenceId || input["evidence-id"] || input.id || "";
+    if (isKnowledgeBackendEvidenceId(evidenceId) || knowledgeBackendProviderRequested(input)) {
+      const port = knowledgeBackendPortFor(context);
+      const operationResult = await port.getEvidence({ ...input, evidenceId }, {
+        subject: knowledgeBackendSubject(context, input),
+        workspaceId: workspaceIdFrom(input)
+      });
+      if (operationResult) {
+        appendKnowledgeAccessDecisionArtifacts(context, operationResult.accessDecision, id);
+        return result(operationResult.httpStatus || 200, operationResult);
+      }
+      if (isKnowledgeBackendEvidenceId(evidenceId)) {
+        return result(404, { error: "外部知识库 evidence 不存在。" });
+      }
+    }
     if (isSourceEvidenceId(evidenceId)) {
       const operationResult = await getSourceFileEvidence({
         userDataPath: context.userDataPath,
@@ -6370,6 +6482,7 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeKnowledgeSummarizationOperation,
     executeKnowledgeDistillationWorkflowOperation,
     executeAgentExplorationOperation,
+    executeKnowledgeBackendOperation,
     executeKnowledgeRetrievalOperation,
     executeKnowledgeGraphOperation,
     executeContextRuntimeOperation,

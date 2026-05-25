@@ -13,6 +13,7 @@ export function createSystemControllerKnowledgeRuntimeHandlers({
   modelDecisionRuntime,
   strategyManagementProvider = null,
   agentWorkspace,
+  accessControlContext = (_authSession, extra = {}) => extra,
   consoleDomainServices
 }) {
   return {
@@ -817,7 +818,7 @@ export function createSystemControllerKnowledgeRuntimeHandlers({
         operationId: operation?.id || "knowledge.evidence",
         input: { evidenceId },
         response,
-        context: { runtime, authSession },
+        context: accessControlContext(authSession, { runtime }),
         errorMessage: "读取知识证据失败。"
       });
     },
