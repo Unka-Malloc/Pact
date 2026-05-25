@@ -131,12 +131,12 @@ async function subscribeMcpOperationReplies(baseUrl, token) {
   };
 }
 
-async function callWorkspaceMcp(baseUrl, token, operation, input = {}, id = 1) {
+async function callWorkspaceMcp(baseUrl, token, operation, input = {}, id = 1, toolName = "pact.sharedspace") {
   const response = await fetchJsonResponse(`${baseUrl}/mcp`, {
     method: "POST",
     headers: apiKeyHeaders(token),
     body: JSON.stringify(mcpRequest("tools/call", {
-      name: "pact.sharedspace",
+      name: toolName,
       arguments: {
         apiVersion: "pact.mcp.v1",
         operation,
@@ -168,12 +168,26 @@ try {
     body: JSON.stringify({
       targets: ["codex"],
       label: "verify-mcp-workspace-files",
+      grantMode: "maintain",
+      maxRisk: "repair_write",
+      scopes: [
+        "workspace:read",
+        "workspace:write",
+        "workspace:maintain",
+        "knowledge:read",
+        "knowledge:write",
+        "storage:read",
+        "storage:write"
+      ],
       toolsets: ["pact.agent.workspace", "pact.storage.read", "pact.storage.write"]
     })
   });
   assert.equal(localGrant.status, 201);
   assert.equal(localGrant.payload.ok, true);
   assert.ok(localGrant.payload.token);
+  assert.equal(localGrant.payload.scopes.includes("workspace:read"), true);
+  assert.equal(localGrant.payload.scopes.includes("workspace:write"), true);
+  assert.equal(localGrant.payload.scopes.includes("workspace:maintain"), true);
   assert.equal(localGrant.payload.scopes.includes("knowledge:write"), true);
   assert.equal(localGrant.payload.scopes.includes("storage:write"), true);
   assert.equal(localGrant.payload.toolsets.includes("pact.agent.workspace"), true);
@@ -254,6 +268,8 @@ try {
   assert.ok(upload.stateCommit?.eventHash, "upload should return an event hash");
   assert.ok(upload.stateCommit?.afterRoot, "upload should return an afterRoot");
   assert.ok(upload.stateCommit?.contentRefs?.length >= 2, "upload should return content refs");
+  assert.ok(upload.checkpoint?.treeId, "upload should create a workspace_files checkpoint tree");
+  assert.ok(upload.checkpoint?.nodeId, "upload should create a restorable checkpoint node");
   assert.equal(upload.ingestReceipt?.status, "archived");
   assert.ok(upload.ingestReceipt?.uploadSessionId, "upload should return an LSM ingest session id");
   assert.ok(upload.ingestReceipt?.segmentId, "upload should return an immutable ingest segment id");
@@ -378,6 +394,121 @@ try {
   assert.equal(patchedDownload.ok, true);
   assert.equal(patchedDownload.content, patchedContent);
 
+  const checkpointTrees = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.checkpoint.tree.list",
+    {
+      workspaceId,
+      kind: "workspace_files",
+      limit: 10
+    },
+    13,
+    "pact.call"
+  );
+  assert.equal(checkpointTrees.count >= 1, true, JSON.stringify(checkpointTrees, null, 2));
+  assert.ok(checkpointTrees.items.some((item) => item.treeId === upload.checkpoint.treeId));
+  const allCheckpointTrees = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.checkpoint.tree.list",
+    {
+      limit: 10
+    },
+    14,
+    "pact.call"
+  );
+  assert.ok(
+    allCheckpointTrees.items.some((item) => item.treeId === upload.checkpoint.treeId),
+    JSON.stringify({ filtered: checkpointTrees, all: allCheckpointTrees, checkpoint: upload.checkpoint }, null, 2)
+  );
+
+  const checkpointTree = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.checkpoint.node.get",
+    {
+      treeId: upload.checkpoint.treeId
+    },
+    15,
+    "pact.call"
+  );
+  const uploadCheckpointNode = checkpointTree.nodes?.[upload.checkpoint.nodeId];
+  assert.equal(checkpointTree.kind, "workspace_files", JSON.stringify(checkpointTree, null, 2));
+  assert.match(checkpointTree.ownerId, /^workspace_[a-f0-9]+$/, JSON.stringify(checkpointTree, null, 2));
+  assert.ok(uploadCheckpointNode, "checkpoint tree should contain the upload snapshot node");
+  assert.ok(uploadCheckpointNode.metadata?.workspaceFileSnapshot, "checkpoint node should carry a file snapshot");
+  assert.equal(
+    Array.isArray(uploadCheckpointNode.metadata.workspaceFileSnapshot.files),
+    true,
+    JSON.stringify(uploadCheckpointNode, null, 2)
+  );
+
+  const restorePreview = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.checkpoint.restore.preview",
+    {
+      treeId: upload.checkpoint.treeId,
+      nodeId: upload.checkpoint.nodeId,
+      workspaceId,
+      reason: "verify MCP workspace checkpoint restore preview"
+    },
+    16,
+    "pact.call"
+  );
+  assert.equal(restorePreview.ok, true);
+  assert.equal(restorePreview.dryRun, true);
+  assert.equal(restorePreview.applied, false);
+  assert.equal(restorePreview.workspaceFileRestore?.ok, true);
+  assert.equal(restorePreview.workspaceFileRestore?.dryRun, true);
+  assert.ok(restorePreview.workspaceFileRestore.actions.some((item) =>
+    item.action === "write" && item.path === `${folderPath}/a.txt`
+  ));
+
+  const restored = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.checkpoint.restore",
+    {
+      treeId: upload.checkpoint.treeId,
+      nodeId: upload.checkpoint.nodeId,
+      workspaceId,
+      reason: "verify MCP workspace checkpoint restore"
+    },
+    17,
+    "pact.call"
+  );
+  assert.equal(restored.ok, true);
+  assert.equal(restored.applied, true);
+  assert.equal(restored.workspaceFileRestore?.ok, true);
+  assert.equal(restored.workspaceFileRestore?.dryRun, false);
+  assert.ok(restored.workspaceFileRestore?.stateCommit?.commitId);
+  assert.ok(restored.workspaceFileRestore.appliedActions.some((item) =>
+    item.action === "write" && item.path === `${folderPath}/a.txt`
+  ));
+  const restoreReply = await operationReplies.waitFor((event) =>
+    ["workspace.checkpoint.restore", "pact.workspace.checkpoint.restore"].includes(event.params?.operation) &&
+    event.params?.status === "completed"
+  );
+  assert.equal(restoreReply.params.target.targetKind, "sharedspace");
+
+  const restoredDownload = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.file.download",
+    {
+      workspaceId,
+      path: `${folderPath}/a.txt`
+    },
+    18
+  );
+  assert.equal(restoredDownload.ok, true);
+  assert.equal(restoredDownload.content, sampleContent);
+  assert.equal(restoredDownload.cacheReceipt?.cacheFamily, "merkle-radix-compatible");
+  assert.equal(restoredDownload.cacheReceipt?.hit, true);
+  assert.ok(restoredDownload.cacheReceipt?.proofHash);
+
   const readOnlyGrant = await fetchJsonResponse(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -404,7 +535,7 @@ try {
           content: "denied"
         }
       }
-    }, 13))
+    }, 19))
   });
   assert.equal(deniedUpload.status, 403);
   assert.equal(deniedUpload.payload.error.data.code, "missing_scopes");

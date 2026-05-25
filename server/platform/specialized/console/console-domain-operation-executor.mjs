@@ -2238,7 +2238,7 @@ async function executeSystemObservationOperation({ operationId, input = {}, cont
   if (id === "system.checkpoint_trees.list" || id === "workspace.checkpoint.tree.list") {
     const trees = await checkpointTreeApi.listCheckpointTrees({
       userDataPath: context.userDataPath,
-      ownerId: input.ownerId || input["owner-id"] || "",
+      ownerId: input.ownerId || input["owner-id"] || input.workspaceId || input["workspace-id"] || input.workspaceRef || input["workspace-ref"] || "",
       kind: input.kind || "",
       limit: Number(input.limit || 100)
     });
