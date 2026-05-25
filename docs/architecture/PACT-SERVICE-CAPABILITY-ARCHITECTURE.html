@@ -365,25 +365,29 @@
                   <div class="target-card">
                     <strong>iCloud</strong>
                     <ul>
-                      <li>文件镜像。</li>
+                      <li>受控目录实读实写。</li>
+                      <li>返回 driveRef、hash、receipt。</li>
                     </ul>
                   </div>
                   <div class="target-card">
                     <strong>OneDrive</strong>
                     <ul>
-                      <li>增量同步。</li>
+                      <li>OAuth secretRef。</li>
+                      <li>无凭据时 contractVerified。</li>
                     </ul>
                   </div>
                   <div class="target-card">
                     <strong>Google Drive</strong>
                     <ul>
                       <li>共享文件。</li>
+                      <li>无凭据时 contractVerified。</li>
                     </ul>
                   </div>
                   <div class="target-card">
                     <strong>Dropbox</strong>
                     <ul>
                       <li>对象拉取。</li>
+                      <li>无凭据时 contractVerified。</li>
                     </ul>
                   </div>
                 </div>
@@ -416,8 +420,8 @@
               <div class="layer-card gateway">
                 <strong>Cloud Drive Gateway</strong>
                 <ul>
-                  <li>文件列表、增量同步、下载。</li>
-                  <li>统一进入 LSM Ingest / CAS。</li>
+                  <li>connect/list/download/upload/sync plan。</li>
+                  <li>receipt、checkpoint、projection，不声明 remote synced。</li>
                 </ul>
               </div>
               <div class="layer-card gateway">
@@ -510,6 +514,7 @@
                 <ul>
                   <li>分派到 Knowledge、Sharedspace、Codespace、Skill Hub。</li>
                   <li>结果进入 Ledger、StateCommit 和 Projection。</li>
+                  <li>v0.0.1 readiness 汇总 Phase 0-4 verifier。</li>
                 </ul>
               </div>
             </div>
@@ -540,7 +545,7 @@
               <div class="layer-card plugin">
                 <strong>Sharedspace</strong>
                 <ul>
-                  <li>Context、Files、Artifacts、Proposals。</li>
+                  <li>Context、Files、Artifacts、Proposals、Cloud Drive。</li>
                   <li>共享状态受 StateCommit 管理。</li>
                 </ul>
               </div>

@@ -207,6 +207,8 @@
 - `server/scripts/production-readiness-gate.mjs` 聚合上述门禁并写出 Markdown / JSON 报告。
 - `npm run server:verify:production-readiness` 作为 release gate；存在 P0 未通过或必需覆盖缺失时，报告状态为 `blocked`，默认以非零退出码阻断发布。
 - 该 gate 只能证明被覆盖项，不会把单点 verify 的通过误判为整体生产就绪。
+- `server/scripts/verify-v001.mjs` 作为 v0.0.1 单机 release 收口门禁，聚合 Phase 0-4 verifier、迁移保留报告、MCP/Tool/Policy 注册和 renderer raw build，并输出 `reports/v001-readiness/<run-id>/report.{json,md}`。
+- v0.0.1 readiness 报告把 GitHub、Gerrit、Dify、RAGFlow、OneDrive、Google Drive 和 Dropbox 缺少真实凭据的状态标为 `contractVerified`；这只证明接口合同，不计为真实外部 E2E 或 production ready。
 
 补全效果：项目从“功能验证”升级为“可汇报验收”；每次决策可以基于同一份报告，而不是临时问当前能不能用。
 

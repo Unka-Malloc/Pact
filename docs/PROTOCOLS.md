@@ -1034,6 +1034,12 @@ v0.0.1 Cloud Drive 语义入口：
 - `sharedspace.drive.file.download`、`sharedspace.drive.file.upload`：所有传输都必须生成 `transferReceipt`；iCloud local adapter 可实读/实写受控目录，OneDrive/Google Drive/Dropbox 缺少真实 OAuth 凭据时只能返回 `contractVerified`，不能说成真实上传或真实下载。
 - `sharedspace.drive.sync.plan`、`sharedspace.drive.sync.apply`：同步以 Sharedspace 为 Pact 权威状态，云盘只是外部 adapter/projection；apply 必须写 sync receipt 和 checkpoint，contract-mode 只能证明操作合同，不声明 remote sync completed。
 
+v0.0.1 release readiness 语义：
+
+- `server:migrate:v001` 只在 `ServerConfig.getDataDir()` 对应运行目录生成迁移/保留报告、恢复点 manifest 和 rollback preview，不移动运行配置回 repo，也不清空旧 runtime 状态。
+- `server:verify:v001` 聚合 Phase 0-4 verifier、迁移报告、Tool/Policy/MCP 注册和 renderer raw build，输出 `reports/v001-readiness/<run-id>/report.{json,md}`。
+- readiness report 的结论只能声明 v0.0.1 单机可交付；缺少真实外部凭据的 GitHub、Gerrit、Dify、RAGFlow、OneDrive、Google Drive 和 Dropbox 必须保留 `contractVerified`，不能被文案提升为真实外部 E2E、真实上传、真实同步或 production ready。
+
 Gerrit upload 的完成判定不能只看 `git push` 进程退出码。`workspace.code.change.upload` / MCP concrete operation `pact.workspace.code.change.upload` 必须在 push 退出 0 后继续通过 Gerrit REST 查询上传的 `HEAD` commit，直到 Gerrit 返回 change 且 `current_revision` 或 revisions 中包含该 commit，才能把操作标记为 `completed`。确认结果必须进入响应的 `completion` 字段，并通过 `GET /mcp` SSE 向同一 grant 推送 `notifications/pact/operation_reply`；如果确认超时或无法证明 Gerrit 已接收该 revision，则整个 upload 返回失败，不能推送 completed 回信。
 
 Agent-facing Gerrit MCP 操作：

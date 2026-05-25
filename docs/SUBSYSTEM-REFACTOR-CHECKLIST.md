@@ -76,7 +76,7 @@
 | 顺序 | 横切任务 | 关联架构节点 | 当前状态 | 验收口径 |
 | --- | --- | --- | --- | --- |
 | 1 | 跑最新全量验证：`npm run server:verify` | 全部，尤其启动装配边界 | `[x]` | 最新 runtime summary 迁移后已全量通过。 |
-| 2 | 输出 operation registry 差距清单 | 核心能力、接口封装层、应用层各能力 | `[x]` | 已落地 `reports/protocol-operation-registry-gap-2026-05-25.md`；当前 68 个协议操作全部注册，明确空后端为 0。 |
+| 2 | 输出 operation registry 差距清单 | 核心能力、接口封装层、应用层各能力 | `[x]` | 已落地 `reports/protocol-operation-registry-gap-2026-05-25.md`；当前 76 个协议操作全部注册，明确空后端为 0。 |
 | 3 | 补齐 P0 协议缺口 | AgentLibrary、知识转化 | `[x]` | 共享空间、代码管理、knowledge access 和知识转化协议均已完成 operation/provider/verify 闭环；原 3 个知识/原始语料空后端已清零。 |
 | 4 | 迁移安全 + 权限管理 | 接口封装层、安全权限、工具管理、共享空间、代码管理 | `[x]` | 已统一进入 `pact.security-permissions.v1` provider；console/auth/tool/MCP/workspace asset/knowledge access artifact 不再由接口层或应用 executor 直接持有裸 `consoleAuth`、`authorizationEngine` 或 `authorizationStore` 裁决。 |
 | 5 | 继续拆 `api-facade.mjs` | 接口封装层、智能体、运维基础 | `[x]` | settings、agent selector、jobs、client connection、client runtime、maintenance、Tool/Knowledge/Runtime summary 均已改为 provider/domain service 投影；`api-facade` 不再直接调用 `loadSettings()`、agent config registry、job manager、client runtime allocator 或 maintenance agent。 |
@@ -90,6 +90,7 @@
 | 13 | 补 v0.0.1 Phase 2 代码库门禁 | Codespace、代码评审、工具管理、安全权限、管理层 | `[x]` | 已新增 `codespace.providers.manifest`、`codespace.repository.status`、`codespace.tree.list`、`codespace.file.read`、`codespace.diff.read`、`codespace.change.prepare/upload`、`codespace.review.comment/requestChanges/approve/status.sync` 的 operation 和 Tool Management 映射；`server:verify:v001-codespace-e2e` 覆盖 API/RPC/MCP/CLI 注册、GitHub/Gerrit provider manifest、secretRef-only、RepositoryPort 本地实读、ReviewPort dry-run、GitHub contract upload、audit event 和 `contractVerified` 标记。 |
 | 14 | 补 v0.0.1 Phase 3 知识库门禁 | 知识转化、AgentLibrary、工具管理、安全权限、管理层 | `[x]` | 已新增 `knowledge.backend.connect`、`knowledge.space.list`、`knowledge.export.request`、`knowledge.permission.request` 的 operation 和 Tool Management 映射，并改造 `knowledge.search` / `knowledge.evidence.get` 在 Dify/RAGFlow 输入下进入 `KnowledgeBasePort`；`server:verify:v001-knowledge-e2e` 覆盖 API/RPC/MCP/CLI 注册、运行态 provider manifest、secretRef-only、safe metadata discovery、contract search、evidence receipt/loan、denied audit、export gate 和控制台 Knowledge backend workbench。 |
 | 15 | 补 v0.0.1 Phase 4 云盘门禁 | 共享空间、外部服务兼容、工具管理、安全权限、管理层 | `[x]` | 已新增 `CloudDrivePort` 和 `sharedspace.drive.connect/status/item.list/file.download/file.upload/sync.plan/sync.apply/permission.list` 的 operation、Tool Management scope/toolset 和控制台 Cloud Drive workbench；`server:verify:v001-cloud-drive-e2e` 覆盖 API/RPC/MCP/CLI 注册、iCloud 受控目录实读/实写/同步投影、OneDrive/Google Drive/Dropbox secretRef-only contract-mode、transfer receipt、access receipt、checkpoint、operation audit 和 `contractVerified` 标记。 |
+| 16 | 补 v0.0.1 Phase 5 release 收口 | 全部，尤其迁移、验证、文档和管理层 | `[x]` | 已新增 `server:migrate:v001` 非破坏迁移/恢复点报告、`server:verify:v001` Phase 0-4 聚合 verifier 和 `reports/v001-readiness/<run-id>/report.{json,md}`；readiness 明确区分单机可交付、`contractVerified` 外部 provider 和缺少真实凭据的生产阻塞。 |
 
 ## 更新规则
 

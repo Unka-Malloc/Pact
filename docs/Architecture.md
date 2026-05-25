@@ -954,7 +954,9 @@ npm run server:verify:mcp-demo
 - 成功样例
 - 拒绝样例
 
-生产级验收最终必须收敛为 `npm run server:verify:production-readiness`，并输出可汇报的 Markdown / JSON 报告。
+v0.0.1 单机交付验收由 `npm run server:verify:v001` 聚合 Phase 0-4 verifier、非破坏迁移报告、MCP/Tool/Policy 注册和前端 raw build，输出 `reports/v001-readiness/<run-id>/report.{json,md}`。该报告只能证明单机可交付和 contract-mode 外部 adapter 合同通过。
+
+生产级验收最终必须收敛为 `npm run server:verify:production-readiness`，并输出可汇报的 Markdown / JSON 报告。缺少真实 GitHub/Gerrit/Dify/RAGFlow/云盘 OAuth 凭据时，readiness 必须明确标为 `contractVerified` 或未配置，不能声明真实外部 E2E、真实上传、真实同步或 production ready。
 
 ## 核心原则
 
