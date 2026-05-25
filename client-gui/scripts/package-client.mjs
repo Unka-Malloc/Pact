@@ -27,6 +27,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     configPath: defaultConfigPath,
     enabledOverrides: [],
     disabledOverrides: [],
+    profile: null,
     skipFlutterBuild: false,
     skipNativeBuild: false,
     dryRun: false
@@ -49,6 +50,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     } else if (arg === "--without" && next) {
       options.disabledOverrides.push(...splitList(next));
       index += 1;
+    } else if (arg === "--profile" && next) {
+      options.profile = normalizeProfile(next);
+      index += 1;
     } else if (arg === "--skip-flutter-build") {
       options.skipFlutterBuild = true;
     } else if (arg === "--skip-native-build") {
@@ -69,6 +73,14 @@ function splitList(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeProfile(value) {
+  const normalized = String(value || "").trim();
+  if (["future-client", "legacy/dev-only"].includes(normalized)) {
+    return normalized;
+  }
+  throw new Error(`Unsupported client package profile: ${value}`);
 }
 
 function normalizePlatform(value) {
@@ -123,6 +135,8 @@ function platformSupported(moduleConfig, platform) {
 }
 
 function selectModules(config, options) {
+  const activeProfile = options.profile || config.packageProfile || "future-client";
+  const legacyProfile = activeProfile === "legacy/dev-only";
   const modules = Object.entries(config.modules).map(([id, moduleConfig]) => ({
     id,
     ...moduleConfig
@@ -149,8 +163,19 @@ function selectModules(config, options) {
     const enabled = overrides.has(moduleConfig.id)
       ? overrides.get(moduleConfig.id)
       : moduleConfig.enabled !== false;
+    const legacyDevOnly =
+      moduleConfig.legacyDevOnly === true || moduleConfig.profile === "legacy/dev-only";
     if (!supported) {
       skipped.push({ ...moduleConfig, status: "skipped-platform" });
+      continue;
+    }
+    if (legacyDevOnly && enabled && !legacyProfile) {
+      throw new Error(
+        `Legacy/dev-only client packaging module cannot be enabled in profile ${activeProfile}: ${moduleConfig.id}`
+      );
+    }
+    if (legacyDevOnly && !legacyProfile) {
+      skipped.push({ ...moduleConfig, status: "legacy-dev-only" });
       continue;
     }
     if (moduleConfig.required && !enabled) {
@@ -394,7 +419,7 @@ function preparePortableData(config, selected, skipped, bundle, options) {
   }
   const manifestPath = path.join(
     bundle.root,
-    config.bundle?.manifestPath || "portable-data/backend/packaging-modules.json"
+    config.bundle?.manifestPath || "portable-data/future-client/packaging-modules.json"
   );
   mkdirSync(path.dirname(manifestPath), { recursive: true });
   const manifest = {
@@ -419,6 +444,8 @@ function publicModuleRecord(moduleConfig) {
     label: moduleConfig.label || moduleConfig.id,
     category: moduleConfig.category || "",
     packaging: moduleConfig.packaging || "",
+    profile: moduleConfig.profile || "",
+    legacyDevOnly: moduleConfig.legacyDevOnly === true,
     required: moduleConfig.required === true,
     status: moduleConfig.status || ""
   };
@@ -429,14 +456,14 @@ function writeBundleNotes(config, selected, bundle, options) {
     `Pact ${options.platform} Client Bundle`,
     "",
     "Run the Flutter desktop frontend from this bundle.",
-    "The frontend resolves pact-clientd as its local backend sidecar.",
+    "The frontend resolves pact-client as its future client sidecar.",
     "Run pact-client for command-line operations against the same portable-data workspace.",
     "",
     "Enabled modules:",
     ...selected.map((item) => `- ${item.id}: ${item.label || item.id}`),
     "",
     `Packaging config: ${path.relative(workspaceRoot, options.configPath)}`,
-    `Packaging manifest: ${path.relative(bundle.root, path.join(bundle.root, config.bundle?.manifestPath || "portable-data/backend/packaging-modules.json"))}`,
+    `Packaging manifest: ${path.relative(bundle.root, path.join(bundle.root, config.bundle?.manifestPath || "portable-data/future-client/packaging-modules.json"))}`,
     ""
   ];
   const fileName = options.platform === "windows" ? "README-windows.txt" : `README-${options.platform}.txt`;
@@ -491,13 +518,14 @@ function applyPackage(config, selected, skipped, options) {
   return { bundle, copiedArtifacts, manifestPath };
 }
 
-function printPlan(selected, skipped, options) {
+function printPlan(selected, skipped, options, config) {
   console.log(
     JSON.stringify(
       {
         ok: true,
         platform: options.platform,
         mode: options.mode,
+        profile: options.profile || config.packageProfile || "future-client",
         configPath: options.configPath,
         enabledModules: selected.map(publicModuleRecord),
         skippedModules: skipped.map(publicModuleRecord)
@@ -513,7 +541,7 @@ export function packageClient(argv = process.argv.slice(2)) {
   const config = loadPackagingConfig(options.configPath);
   const { selected, skipped } = selectModules(config, options);
   if (options.dryRun) {
-    printPlan(selected, skipped, options);
+    printPlan(selected, skipped, options, config);
     return null;
   }
   buildNativeSidecars(selected, options);

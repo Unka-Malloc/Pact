@@ -22,6 +22,44 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
 const DEFAULT_OUTPUT_ROOT = path.join(REPO_ROOT, "build/feature-profiles");
 const CLIENT_MODULE_CONFIG_PATH = path.join(REPO_ROOT, "client-gui/packaging.modules.json");
+const LEGACY_CLIENT_MODULE_IDS = [
+  "client-daemon",
+  "local-rpc",
+  "file-system-adapter",
+  "server-bridge",
+  "upload-queue",
+  "checkpoint-upload",
+  "knowledge-mirror",
+  "data-connectors",
+  "gmail-connector",
+  "outlook-mail-connector",
+  "google-drive-connector",
+  "onedrive-connector",
+  "slack-connector",
+  "teams-connector",
+  "knowledge-agent",
+  "agent-registry",
+  "expert-vocabulary",
+  "mail-index",
+  "macos-mail-import",
+  "knowledge-graph-ui",
+  "server.FileProcessor",
+  "server.KnowledgeCore",
+  "server.EmbeddingRuntime",
+  "server.VectorStore",
+  "server.AgentGateway",
+  "server.LearningRuntime",
+  "server.MaintenanceAgent"
+];
+const LEGACY_PORTABLE_DIR_PREFIXES = [
+  "backend",
+  "logs",
+  "exports",
+  "mail-imports",
+  "knowledge",
+  "connectors/",
+  "chat-index"
+];
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -111,6 +149,19 @@ function runBusinessChecks({ featureRuntime, activeOperations, clientPackagingCo
   });
   const toolIds = new Set(catalog.tools.map((tool) => tool.id));
   const clientModules = clientPackagingConfig.modules || {};
+  const portableDirs = clientModules["portable-data"]?.portableDirectories || [];
+
+  for (const moduleId of LEGACY_CLIENT_MODULE_IDS) {
+    assertCondition(clientModules[moduleId]?.enabled !== true, `future client package must not enable legacy module ${moduleId}`, failures);
+  }
+  assertCondition(
+    !portableDirs.some((directory) => {
+      const value = String(directory);
+      return LEGACY_PORTABLE_DIR_PREFIXES.some((prefix) => value === prefix || value.startsWith(prefix));
+    }),
+    "future client portable data must not create legacy backend, connector, mail, knowledge, export, log, or chat-index directories",
+    failures
+  );
 
   if (featureRuntime.edition === "community") {
     assertCondition(!activeOperationIds.has("knowledge.evolution.runs.create"), "community must not expose knowledge evolution RPC/HTTP/CLI operations", failures);
@@ -118,23 +169,11 @@ function runBusinessChecks({ featureRuntime, activeOperations, clientPackagingCo
     assertCondition(!toolIds.has("pact.knowledge.evolution.runs.create"), "community tool catalog must not expose knowledge evolution tool", failures);
     assertCondition(clientModules["gmail-connector"]?.enabled !== true, "community client package must not enable Gmail connector", failures);
     assertCondition(clientModules["slack-connector"]?.enabled !== true, "community client package must not enable Slack connector", failures);
-    assertCondition(
-      !(clientModules["portable-data"]?.portableDirectories || []).some((directory) => String(directory).startsWith("connectors/")),
-      "community portable data must not create connector directories",
-      failures
-    );
   }
 
   if (featureRuntime.edition === "enterprise") {
     assertCondition(activeOperationIds.has("knowledge.evolution.runs.create"), "enterprise must expose knowledge evolution operations", failures);
     assertCondition(activeOperationIds.has("maintenance_agent.runs.create"), "enterprise must expose maintenance agent runbooks", failures);
-    assertCondition(clientModules["gmail-connector"]?.enabled === true, "enterprise client package must enable Gmail connector", failures);
-    assertCondition(clientModules["slack-connector"]?.enabled === true, "enterprise client package must enable Slack connector", failures);
-    assertCondition(
-      (clientModules["portable-data"]?.portableDirectories || []).some((directory) => String(directory).startsWith("connectors/")),
-      "enterprise portable data must include connector directories",
-      failures
-    );
   }
 
   return {
