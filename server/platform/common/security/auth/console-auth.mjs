@@ -35,6 +35,10 @@ export const CONSOLE_SCOPES = [
   "repo:approve",
   "repo:maintain",
   "repo:admin",
+  "drive:read",
+  "drive:write",
+  "drive:sync",
+  "drive:share",
   "runtime:admin",
   "auth:admin"
 ];
@@ -69,7 +73,11 @@ export const CONSOLE_ROLES = {
       "repo:write",
       "repo:review",
       "repo:approve",
-      "repo:maintain"
+      "repo:maintain",
+      "drive:read",
+      "drive:write",
+      "drive:sync",
+      "drive:share"
     ]
   },
   operator: {
@@ -89,13 +97,16 @@ export const CONSOLE_ROLES = {
       "jobs:write",
       "maintenance:read",
       "maintenance:run",
-      "maintenance:approve"
+      "maintenance:approve",
+      "drive:read",
+      "drive:write",
+      "drive:sync"
     ]
   },
   viewer: {
     roleId: "viewer",
     label: "Viewer",
-    scopes: ["console:read", "knowledge:read", "workspace:read", "storage:read", "jobs:read"]
+    scopes: ["console:read", "knowledge:read", "workspace:read", "storage:read", "jobs:read", "drive:read"]
   }
 };
 

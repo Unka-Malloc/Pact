@@ -564,6 +564,78 @@ export function createSystemControllerWorkspaceRuntimeHandlers({
         context: { agentWorkspace, authSession },
         errorMessage: "应用本机目录同步失败。"
       });
+    },
+    async handleSharedspaceDriveConnect({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.connect",
+        input: parseJsonBody(requestBody),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "连接云盘适配器失败。"
+      });
+    },
+    async handleSharedspaceDriveStatus({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.status",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "读取云盘连接状态失败。"
+      });
+    },
+    async handleSharedspaceDriveItemList({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.item.list",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "列出云盘条目失败。"
+      });
+    },
+    async handleSharedspaceDriveFileDownload({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.file.download",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "下载云盘文件失败。"
+      });
+    },
+    async handleSharedspaceDriveFileUpload({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.file.upload",
+        input: parseJsonBody(requestBody),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "上传云盘文件失败。"
+      });
+    },
+    async handleSharedspaceDriveSyncPlan({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.sync.plan",
+        input: parseJsonBody(requestBody),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "生成云盘同步计划失败。"
+      });
+    },
+    async handleSharedspaceDriveSyncApply({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.sync.apply",
+        input: parseJsonBody(requestBody),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "应用云盘同步失败。"
+      });
+    },
+    async handleSharedspaceDrivePermissionList({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "sharedspace.drive.permission.list",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        context: { agentWorkspace, authSession },
+        errorMessage: "读取云盘权限失败。"
+      });
     }
   };
 }

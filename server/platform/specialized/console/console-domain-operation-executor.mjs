@@ -7,6 +7,7 @@ import { createWorkspaceGovernanceRegistry } from "../agent/workspace-governance
 import { createContributionRegistry } from "../agent/workspace-contribution/index.mjs";
 import { createCodespaceRegistry } from "../capabilities/code-management/codespace/index.mjs";
 import { createCapabilityPackageRegistry } from "../capabilities/package-lifecycle/index.mjs";
+import { createCloudDrivePort } from "../agent/cloud-drive-port/index.mjs";
 import { createAssetLineageRegistry } from "../knowledge/assets/asset-lineage/index.mjs";
 import { evaluateKnowledgeAccess } from "../knowledge/agent-library/access-policy.mjs";
 import {
@@ -60,6 +61,7 @@ import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorizat
 
 const contributionRegistries = new Map();
 const codespaceRegistries = new Map();
+const cloudDrivePorts = new Map();
 const knowledgeBackendPorts = new Map();
 const knowledgeDistillationWorkbenchInstances = new Map();
 const PATH_BROWSER_MAX_ENTRIES = 600;
@@ -684,6 +686,16 @@ function knowledgeBackendPortFor(context = {}) {
     }));
   }
   return knowledgeBackendPorts.get(key);
+}
+
+function cloudDrivePortFor(context = {}) {
+  const key = context.userDataPath || "default";
+  if (!cloudDrivePorts.has(key)) {
+    cloudDrivePorts.set(key, createCloudDrivePort({
+      userDataPath: context.userDataPath
+    }));
+  }
+  return cloudDrivePorts.get(key);
 }
 
 function requireRuntimeMethod(runtime, methodName, message) {
@@ -4676,6 +4688,59 @@ async function executeKnowledgeBackendOperation({ operationId, input = {}, conte
   return null;
 }
 
+async function executeCloudDriveOperation({ operationId, input = {}, context }) {
+  const id = String(operationId || "");
+  const handledOperations = new Set([
+    "sharedspace.drive.connect",
+    "sharedspace.drive.status",
+    "sharedspace.drive.item.list",
+    "sharedspace.drive.file.download",
+    "sharedspace.drive.file.upload",
+    "sharedspace.drive.sync.plan",
+    "sharedspace.drive.sync.apply",
+    "sharedspace.drive.permission.list"
+  ]);
+  if (!handledOperations.has(id)) {
+    return null;
+  }
+  const port = cloudDrivePortFor(context);
+  const operationInput = {
+    ...input,
+    workspaceId: workspaceIdFrom(input),
+    operationId: id
+  };
+  try {
+    if (id === "sharedspace.drive.connect") {
+      return result(200, await port.connect(operationInput));
+    }
+    if (id === "sharedspace.drive.status") {
+      return result(200, await port.status(operationInput));
+    }
+    if (id === "sharedspace.drive.item.list") {
+      return result(200, await port.listItems(operationInput));
+    }
+    if (id === "sharedspace.drive.file.download") {
+      return result(200, await port.downloadFile(operationInput));
+    }
+    if (id === "sharedspace.drive.file.upload") {
+      return result(201, await port.uploadFile(operationInput));
+    }
+    if (id === "sharedspace.drive.sync.plan") {
+      return result(200, await port.syncPlan(operationInput));
+    }
+    if (id === "sharedspace.drive.sync.apply") {
+      return result(200, await port.syncApply(operationInput));
+    }
+    if (id === "sharedspace.drive.permission.list") {
+      return result(200, await port.permissionList(operationInput));
+    }
+  } catch (error) {
+    const status = error?.code === "UNSUPPORTED_PROVIDER" || error?.code === "DRIVE_CONNECTION_NOT_FOUND" ? 404 : 400;
+    return result(status, errorPayload(error, "Cloud drive operation failed."));
+  }
+  return null;
+}
+
 async function executeKnowledgeEvaluationOperation({ operationId, input, context }) {
   const id = String(operationId || "");
   const handledOperations = new Set([
@@ -6483,6 +6548,7 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeKnowledgeDistillationWorkflowOperation,
     executeAgentExplorationOperation,
     executeKnowledgeBackendOperation,
+    executeCloudDriveOperation,
     executeKnowledgeRetrievalOperation,
     executeKnowledgeGraphOperation,
     executeContextRuntimeOperation,

@@ -742,6 +742,21 @@ Client upload code intent
 
 验收要求：代码文件、patch 或仓库变更默认进入 Gerrit review；Workspace 只保存 `codeChange` 治理记录、review reference、hash、状态、权限裁决和 fallback 原因。需要评审和合并的代码不得默认沉淀为普通 `file` 资产。
 
+#### 云盘投影流程
+
+```text
+Agent calls MCP `pact.sharedspace` with operation `sharedspace.drive.file.upload`
+  -> CloudDrivePort resolves provider connection
+  -> secretRef / local path guard validation
+  -> policy decision
+  -> transfer receipt
+  -> checkpoint
+  -> Operation Ledger append
+  -> cloud drive projection status
+```
+
+验收要求：Sharedspace 仍是 Pact 权威状态，云盘只作为外部 adapter/projection。iCloud local adapter 可以对受控目录实读实写，但公开响应只能返回 `driveRef`、root hash、receipt 和 checkpoint，不返回本机绝对路径。OneDrive、Google Drive、Dropbox 缺少真实 OAuth 凭据时只能标记 `contractVerified`，不能把 contract-mode 说成真实上传、真实同步或 production ready。
+
 #### 知识再授权流程
 
 ```text

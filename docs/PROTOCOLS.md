@@ -1027,6 +1027,13 @@ v0.0.1 Codespace 语义入口：
 - `codespace.change.upload`：统一 GitHub PR / Gerrit Change 上传语义；无真实凭据或 dry-run 时必须标记 `contractVerified`，不能说成真实 PR/Change 已创建。
 - `codespace.review.comment`、`codespace.review.requestChanges`、`codespace.review.approve`、`codespace.review.status.sync`：统一 `ReviewPort`；review action 和 status sync 必须追加 Codespace registry event。
 
+v0.0.1 Cloud Drive 语义入口：
+
+- `sharedspace.drive.connect`：创建云盘连接或本机 iCloud 受控目录 mount；OAuth provider 只保存 `secretRef`，不保存 token value。
+- `sharedspace.drive.status`、`sharedspace.drive.item.list`、`sharedspace.drive.permission.list`：只返回安全元数据、连接状态、ACL 摘要和 provider contract 标记，不返回私有本机路径、上游裸 ID、下载 URL 或 secret value。
+- `sharedspace.drive.file.download`、`sharedspace.drive.file.upload`：所有传输都必须生成 `transferReceipt`；iCloud local adapter 可实读/实写受控目录，OneDrive/Google Drive/Dropbox 缺少真实 OAuth 凭据时只能返回 `contractVerified`，不能说成真实上传或真实下载。
+- `sharedspace.drive.sync.plan`、`sharedspace.drive.sync.apply`：同步以 Sharedspace 为 Pact 权威状态，云盘只是外部 adapter/projection；apply 必须写 sync receipt 和 checkpoint，contract-mode 只能证明操作合同，不声明 remote sync completed。
+
 Gerrit upload 的完成判定不能只看 `git push` 进程退出码。`workspace.code.change.upload` / MCP concrete operation `pact.workspace.code.change.upload` 必须在 push 退出 0 后继续通过 Gerrit REST 查询上传的 `HEAD` commit，直到 Gerrit 返回 change 且 `current_revision` 或 revisions 中包含该 commit，才能把操作标记为 `completed`。确认结果必须进入响应的 `completion` 字段，并通过 `GET /mcp` SSE 向同一 grant 推送 `notifications/pact/operation_reply`；如果确认超时或无法证明 Gerrit 已接收该 revision，则整个 upload 返回失败，不能推送 completed 回信。
 
 Agent-facing Gerrit MCP 操作：

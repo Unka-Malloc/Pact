@@ -139,6 +139,8 @@ const chainData         = ref<any>(null);
 const contextData       = ref<any>(null);
 const workspaceFilesData = ref<any>(null);
 const localDirMountData = ref<any>(null);
+const cloudDriveData = ref<any>(null);
+const cloudDriveResult = ref<any>(null);
 const codespaceData = ref<any>(null);
 const codespaceResult = ref<any>(null);
 const workspaceCheckpointTrees = ref<WsCheckpointTreeSummary[]>([]);
@@ -149,13 +151,22 @@ const selectedCheckpointTreeId = ref('');
 const selectedCheckpointNodeId = ref('');
 const sessionContextData = ref<WsSessionContext | null>(null);
 const localError        = ref('');
-const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share' | 'localDir' | 'codespace'>('list');
+const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share' | 'localDir' | 'cloudDrive' | 'codespace'>('list');
 
 const createForm = reactive({ title: '', objective: '', parentWorkspaceId: '' });
 const profileForm = reactive({ contextProfileId: '', toolGrantId: '', modelAlias: '', includeSourceIds: '', excludeSourceIds: '', ownedSourceIds: '' });
 const parentForm  = reactive({ parentWorkspaceId: '' });
 const shareForm   = reactive({ targetWorkspaceId: '', action: 'share' as 'share' | 'unshare' });
 const localDirForm = reactive({ sourcePath: '', targetPath: 'mirror', deleteExtraneous: true, maxFiles: 2000 });
+const cloudDriveForm = reactive({
+  provider: 'icloud',
+  rootPath: '',
+  driveRef: '',
+  path: '',
+  uploadPath: 'pact-console-upload.txt',
+  uploadContent: 'Pact cloud drive console upload\n',
+  targetPath: 'cloud-drive',
+});
 const codespaceForm = reactive({
   provider: 'github',
   repoId: '',
@@ -188,6 +199,14 @@ const workspaceCheckpointPreviewRestore = computed(() => workspaceCheckpointPrev
 const workspaceOptions = computed(() =>
   workspaces.value.map(w => ({ value: w.workspaceId, label: w.title || w.workspaceId.slice(0, 12) }))
 );
+
+const cloudDriveConnectionOptions = computed(() => {
+  const connections = Array.isArray(cloudDriveData.value?.connections) ? cloudDriveData.value.connections : [];
+  return connections.map((drive: any) => ({
+    value: String(drive.driveRef || ''),
+    label: `${drive.label || drive.provider} · ${String(drive.driveRef || '').slice(0, 18)}`,
+  })).filter((item: { value: string }) => item.value);
+});
 
 const sessionItems = computed<HistorySessionPanelItem[]>(() =>
   sessions.value.map(session => ({
@@ -270,7 +289,7 @@ async function load() {
 }
 
 async function loadChain(id: string) {
-  chainData.value = null; contextData.value = null; workspaceFilesData.value = null; localDirMountData.value = null; codespaceData.value = null; codespaceResult.value = null;
+  chainData.value = null; contextData.value = null; workspaceFilesData.value = null; localDirMountData.value = null; cloudDriveData.value = null; cloudDriveResult.value = null; codespaceData.value = null; codespaceResult.value = null;
   workspaceCheckpointTrees.value = [];
   workspaceCheckpointDetail.value = null;
   workspaceCheckpointPreview.value = null;
@@ -278,17 +297,19 @@ async function loadChain(id: string) {
   selectedCheckpointTreeId.value = '';
   selectedCheckpointNodeId.value = '';
   try {
-    const [c, ctx, files, localDirs, codespace] = await Promise.all([
+    const [c, ctx, files, localDirs, cloudDrives, codespace] = await Promise.all([
       apiFetch(`/api/agent-workspaces/${id}/chain`),
       apiFetch(`/api/agent-workspaces/${id}/context`),
       apiFetch(`/api/agent-workspaces/${id}/files?recursive=true`).catch(() => ({ files: [] })),
       apiFetch(`/api/agent-workspaces/${id}/local-dir/mounts`).catch(() => ({ mounts: [], count: 0 })),
+      apiFetch(`/api/sharedspace/drive/status?workspaceId=${encodeURIComponent(id)}`).catch(() => ({ connections: [], count: 0, providers: [] })),
       apiFetch('/api/codespace/providers/manifest').catch(() => ({ providers: {}, providerCount: 0 })),
     ]);
     chainData.value = c;
     contextData.value = ctx;
     workspaceFilesData.value = files;
     localDirMountData.value = localDirs;
+    cloudDriveData.value = cloudDrives;
     codespaceData.value = codespace;
     await loadWorkspaceCheckpoints(id);
   } catch (e: any) { localError.value = e.message; }
@@ -542,6 +563,158 @@ async function syncLocalDirectory(mount: any) {
   finally { clearBusy(); }
 }
 
+function cloudDriveQuery(extra: Record<string, unknown> = {}) {
+  const query = new URLSearchParams();
+  query.set('workspaceId', selectedId.value || 'default');
+  if (cloudDriveForm.driveRef) query.set('driveRef', cloudDriveForm.driveRef);
+  else query.set('provider', cloudDriveForm.provider);
+  for (const [key, value] of Object.entries(extra)) {
+    if (value !== undefined && value !== null && String(value) !== '') {
+      query.set(key, String(value));
+    }
+  }
+  return query.toString();
+}
+
+async function refreshCloudDriveStatus() {
+  if (!selectedId.value) return;
+  setBusy('ws:drive-status');
+  localError.value = '';
+  try {
+    cloudDriveData.value = await apiFetch(`/api/sharedspace/drive/status?workspaceId=${encodeURIComponent(selectedId.value)}`);
+    cloudDriveResult.value = cloudDriveData.value;
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function connectCloudDrive() {
+  if (!selectedId.value) return;
+  setBusy('ws:drive-connect');
+  localError.value = '';
+  try {
+    const provider = cloudDriveForm.provider;
+    const payload: Record<string, unknown> = {
+      workspaceId: selectedId.value,
+      provider,
+      mode: provider === 'icloud' ? 'local' : 'contract',
+    };
+    if (provider === 'icloud' && cloudDriveForm.rootPath.trim()) payload.rootPath = cloudDriveForm.rootPath.trim();
+    if (provider !== 'icloud') payload.secretRef = `secret://pact/drive/${provider}-oauth`;
+    const connected = await apiFetch('/api/sharedspace/drive/connect', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    cloudDriveForm.driveRef = connected.drive?.driveRef || cloudDriveForm.driveRef;
+    await refreshCloudDriveStatus();
+    cloudDriveResult.value = connected;
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function listCloudDriveItems() {
+  if (!selectedId.value) return;
+  setBusy('ws:drive-list');
+  localError.value = '';
+  try {
+    cloudDriveResult.value = await apiFetch(`/api/sharedspace/drive/items?${cloudDriveQuery({
+      path: cloudDriveForm.path,
+      recursive: true,
+      includeHash: true,
+      limit: 200,
+    })}`);
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function downloadCloudDriveFile() {
+  if (!selectedId.value || !cloudDriveForm.path.trim()) return;
+  setBusy('ws:drive-download');
+  localError.value = '';
+  try {
+    cloudDriveResult.value = await apiFetch(`/api/sharedspace/drive/files/download?${cloudDriveQuery({
+      path: cloudDriveForm.path,
+      includeText: true,
+    })}`);
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function uploadCloudDriveFile() {
+  if (!selectedId.value || !cloudDriveForm.uploadPath.trim()) return;
+  setBusy('ws:drive-upload');
+  localError.value = '';
+  try {
+    const uploaded = await apiFetch('/api/sharedspace/drive/files/upload', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: selectedId.value,
+        provider: cloudDriveForm.driveRef ? undefined : cloudDriveForm.provider,
+        driveRef: cloudDriveForm.driveRef || undefined,
+        path: cloudDriveForm.uploadPath,
+        content: cloudDriveForm.uploadContent,
+        overwrite: true,
+      }),
+    });
+    cloudDriveForm.path = cloudDriveForm.uploadPath;
+    await refreshCloudDriveStatus();
+    cloudDriveResult.value = uploaded;
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function planCloudDriveSync() {
+  if (!selectedId.value) return;
+  setBusy('ws:drive-sync-plan');
+  localError.value = '';
+  try {
+    cloudDriveResult.value = await apiFetch('/api/sharedspace/drive/sync/plan', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: selectedId.value,
+        provider: cloudDriveForm.driveRef ? undefined : cloudDriveForm.provider,
+        driveRef: cloudDriveForm.driveRef || undefined,
+        path: cloudDriveForm.path || '',
+        targetPath: cloudDriveForm.targetPath || 'cloud-drive',
+        direction: 'import_to_sharedspace',
+      }),
+    });
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function applyCloudDriveSync() {
+  if (!selectedId.value) return;
+  setBusy('ws:drive-sync-apply');
+  localError.value = '';
+  try {
+    cloudDriveResult.value = await apiFetch('/api/sharedspace/drive/sync/apply', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: selectedId.value,
+        provider: cloudDriveForm.driveRef ? undefined : cloudDriveForm.provider,
+        driveRef: cloudDriveForm.driveRef || undefined,
+        path: cloudDriveForm.path || '',
+        targetPath: cloudDriveForm.targetPath || 'cloud-drive',
+        direction: 'import_to_sharedspace',
+        confirm: true,
+      }),
+    });
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
+async function listCloudDrivePermissions() {
+  if (!selectedId.value) return;
+  setBusy('ws:drive-permissions');
+  localError.value = '';
+  try {
+    cloudDriveResult.value = await apiFetch(`/api/sharedspace/drive/permissions?${cloudDriveQuery({
+      path: cloudDriveForm.path || '',
+    })}`);
+  } catch (e: any) { localError.value = e.message; }
+  finally { clearBusy(); }
+}
+
 function openProfile(ws: WsWorkspace) {
   const scope = ws.profile?.knowledgeScope ?? {};
   Object.assign(profileForm, {
@@ -566,6 +739,14 @@ function openLocalDir() {
   localDirForm.deleteExtraneous = true;
   localDirForm.maxFiles = 2000;
   panel.value = 'localDir';
+}
+
+function openCloudDrive() {
+  cloudDriveResult.value = null;
+  if (!cloudDriveForm.driveRef && cloudDriveConnectionOptions.value.length > 0) {
+    cloudDriveForm.driveRef = cloudDriveConnectionOptions.value[0].value;
+  }
+  panel.value = 'cloudDrive';
 }
 
 function openCodespace() {
@@ -743,6 +924,7 @@ load();
             <button class="table-action" type="button" @click.stop="openProfile(ws)">配置 Profile</button>
             <button class="table-action" type="button" @click.stop="openParent(ws)">设置继承</button>
             <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openLocalDir()">本机目录</button>
+            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCloudDrive()">云盘</button>
             <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCodespace()">代码库</button>
             <button class="table-action" type="button" @click.stop="panel = 'share'; shareForm.action = 'share'">共享</button>
           </div>
@@ -914,6 +1096,83 @@ load();
           </div>
         </template>
 
+        <template v-else-if="panel === 'cloudDrive' && selected">
+          <div class="surface-card drawer-panel">
+            <div class="panel-header">
+              <h4>云盘 — {{ selected.title }}</h4>
+              <p>云盘只作为 Sharedspace 的外部 adapter/projection；OAuth provider 当前显示 contractVerified。</p>
+            </div>
+            <div class="form-grid">
+              <OptionBar
+                v-model="cloudDriveForm.provider"
+                label="Provider"
+                :options="[
+                  { value: 'icloud', label: 'iCloud' },
+                  { value: 'onedrive', label: 'OneDrive' },
+                  { value: 'google-drive', label: 'Google Drive' },
+                  { value: 'dropbox', label: 'Dropbox' },
+                ]"
+              />
+              <label>
+                <span>连接</span>
+                <select v-model="cloudDriveForm.driveRef">
+                  <option value="">按 provider 选择</option>
+                  <option v-for="drive in cloudDriveConnectionOptions" :key="drive.value" :value="drive.value">{{ drive.label }}</option>
+                </select>
+              </label>
+              <label v-if="cloudDriveForm.provider === 'icloud'">
+                <span>iCloud 受控目录</span>
+                <input v-model="cloudDriveForm.rootPath" autocomplete="off" placeholder="留空使用系统 iCloud Drive 默认路径" />
+              </label>
+              <label><span>文件/文件夹路径</span><input v-model="cloudDriveForm.path" autocomplete="off" placeholder="Documents/example.txt" /></label>
+              <label><span>上传路径</span><input v-model="cloudDriveForm.uploadPath" autocomplete="off" /></label>
+              <label><span>同步目标路径</span><input v-model="cloudDriveForm.targetPath" autocomplete="off" /></label>
+            </div>
+            <label class="module-field-block">
+              <span>上传内容</span>
+              <textarea v-model="cloudDriveForm.uploadContent" rows="4" spellcheck="false"></textarea>
+            </label>
+            <div class="module-actions">
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="connectCloudDrive">
+                {{ busyKey === 'ws:drive-connect' ? '连接中…' : '连接' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="listCloudDriveItems">
+                {{ busyKey === 'ws:drive-list' ? '读取中…' : '列出' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!cloudDriveForm.path.trim() || !!busyKey" @click="downloadCloudDriveFile">
+                {{ busyKey === 'ws:drive-download' ? '下载中…' : '下载' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!cloudDriveForm.uploadPath.trim() || !!busyKey" @click="uploadCloudDriveFile">
+                {{ busyKey === 'ws:drive-upload' ? '上传中…' : '上传' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="planCloudDriveSync">
+                {{ busyKey === 'ws:drive-sync-plan' ? '规划中…' : '同步计划' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="applyCloudDriveSync">
+                {{ busyKey === 'ws:drive-sync-apply' ? '应用中…' : '应用同步' }}
+              </button>
+              <button class="tool-button" type="button" :disabled="!!busyKey" @click="listCloudDrivePermissions">
+                {{ busyKey === 'ws:drive-permissions' ? '读取中…' : '权限' }}
+              </button>
+              <button class="tool-button tool-button-ghost" type="button" @click="panel = 'list'">取消</button>
+            </div>
+            <div v-if="cloudDriveData?.connections?.length" class="module-panel" style="margin-top: var(--space-4);">
+              <div class="module-panel-heading">
+                <strong>已连接云盘</strong>
+                <span>{{ cloudDriveData.connections.length }} 个</span>
+              </div>
+              <div class="ws-id-list">
+                <div v-for="drive in cloudDriveData.connections" :key="drive.driveRef" class="ws-chain-item" style="justify-content: space-between;">
+                  <code>{{ drive.driveRef.slice(0, 22) }}</code>
+                  <span>{{ drive.provider }} · {{ drive.mode }}</span>
+                  <StatusPill :tone="drive.contractVerified ? 'info' : 'success'" :label="drive.contractVerified ? 'contractVerified' : 'localAdapterVerified'" />
+                </div>
+              </div>
+            </div>
+            <pre v-if="cloudDriveResult" class="config-json-preview" style="margin-top: var(--space-3);">{{ JSON.stringify(cloudDriveResult, null, 2) }}</pre>
+          </div>
+        </template>
+
         <template v-else-if="panel === 'codespace' && selected">
           <div class="surface-card drawer-panel">
             <div class="panel-header">
@@ -1070,6 +1329,24 @@ load();
                 </div>
               </div>
               <div v-else class="checkpoint-empty">当前工作空间还没有连接本机目录。</div>
+            </ConfigFoldCard>
+
+            <ConfigFoldCard title="云盘 Cloud Drive（v0.0.1）">
+              <div class="checkpoint-toolbar">
+                <div>
+                  <strong>{{ cloudDriveData?.connectedProviderCount ?? 0 }} / {{ cloudDriveData?.providerCount ?? 0 }} 个 provider 已连接</strong>
+                  <span v-if="cloudDriveData?.configPath">配置：{{ cloudDriveData.configPath }}</span>
+                </div>
+                <button class="table-action" type="button" :disabled="!!busyKey" @click="openCloudDrive">打开工作台</button>
+              </div>
+              <div v-if="cloudDriveData?.connections?.length" class="ws-id-list" style="margin-top: var(--space-3);">
+                <div v-for="drive in cloudDriveData.connections" :key="drive.driveRef" class="ws-chain-item" style="justify-content: space-between;">
+                  <code>{{ drive.driveRef.slice(0, 22) }}</code>
+                  <span>{{ drive.provider }} · {{ drive.mode }} · {{ drive.rootName || drive.secretRef }}</span>
+                  <StatusPill :tone="drive.contractVerified ? 'info' : 'success'" :label="drive.contractVerified ? 'contractVerified' : 'localAdapterVerified'" />
+                </div>
+              </div>
+              <div v-else class="checkpoint-empty">当前工作空间还没有连接云盘。</div>
             </ConfigFoldCard>
 
             <ConfigFoldCard title="代码库 Codespace（v0.0.1）">

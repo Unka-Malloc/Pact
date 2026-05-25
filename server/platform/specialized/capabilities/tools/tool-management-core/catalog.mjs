@@ -114,6 +114,26 @@ const DEFAULT_TOOL_MANAGEMENT_SCOPES = Object.freeze([
     description: "Write workspace artifacts and related storage records."
   },
   {
+    id: "drive:read",
+    label: "Read cloud drives",
+    description: "Read cloud drive accounts, safe metadata, downloads, sync plans, and provider status."
+  },
+  {
+    id: "drive:write",
+    label: "Write cloud drives",
+    description: "Create drive connections and write mediated cloud drive projections."
+  },
+  {
+    id: "drive:sync",
+    label: "Sync cloud drives",
+    description: "Plan and apply mediated cloud drive sync operations."
+  },
+  {
+    id: "drive:share",
+    label: "Read cloud drive permissions",
+    description: "Read cloud drive ACL and sharing metadata without exposing provider secrets."
+  },
+  {
     id: "jobs:read",
     label: "Read jobs",
     description: "Read job lists and job details."
@@ -181,6 +201,38 @@ const DEFAULT_TOOL_MANAGEMENT_TOOLSETS = Object.freeze([
     label: "Storage write",
     requiredScopes: ["storage:write"],
     maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.drive.read",
+    label: "Cloud drive read",
+    requiredScopes: ["drive:read"],
+    maxRisk: "read_only",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.drive.write",
+    label: "Cloud drive write",
+    requiredScopes: ["drive:read", "drive:write"],
+    maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.drive.sync",
+    label: "Cloud drive sync",
+    requiredScopes: ["drive:read", "drive:sync"],
+    maxRisk: "safe_write",
+    grantable: true,
+    defaultForAgents: false
+  },
+  {
+    id: "pact.drive.share",
+    label: "Cloud drive share",
+    requiredScopes: ["drive:read", "drive:share"],
+    maxRisk: "read_only",
     grantable: true,
     defaultForAgents: false
   },
@@ -578,6 +630,14 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "sharedspace.item.delete": "pact.sharedspace.item.delete",
   "sharedspace.sync.plan": "pact.sharedspace.sync.plan",
   "sharedspace.sync.apply": "pact.sharedspace.sync.apply",
+  "sharedspace.drive.connect": "pact.sharedspace.drive.connect",
+  "sharedspace.drive.status": "pact.sharedspace.drive.status",
+  "sharedspace.drive.item.list": "pact.sharedspace.drive.item.list",
+  "sharedspace.drive.file.download": "pact.sharedspace.drive.file.download",
+  "sharedspace.drive.file.upload": "pact.sharedspace.drive.file.upload",
+  "sharedspace.drive.sync.plan": "pact.sharedspace.drive.sync.plan",
+  "sharedspace.drive.sync.apply": "pact.sharedspace.drive.sync.apply",
+  "sharedspace.drive.permission.list": "pact.sharedspace.drive.permission.list",
   "workspace.proposal.create": "pact.workspace.proposal.create",
   "workspace.proposal.apply": "pact.workspace.proposal.apply",
   "workspace_governance.describe": "pact.workspaceGovernance.describe",
@@ -811,6 +871,14 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "sharedspace.item.delete": "storage:write",
   "sharedspace.sync.plan": "storage:read",
   "sharedspace.sync.apply": "storage:write",
+  "sharedspace.drive.connect": "drive:write",
+  "sharedspace.drive.status": "drive:read",
+  "sharedspace.drive.item.list": "drive:read",
+  "sharedspace.drive.file.download": "drive:read",
+  "sharedspace.drive.file.upload": "drive:write",
+  "sharedspace.drive.sync.plan": "drive:sync",
+  "sharedspace.drive.sync.apply": "drive:sync",
+  "sharedspace.drive.permission.list": "drive:share",
   "workspace_governance.describe": "workspace:read",
   "workspace_governance.policy.set": "workspace:maintain",
   "workspace_governance.evaluate": "workspace:read",
@@ -949,6 +1017,10 @@ const TOOLSET_BY_SCOPE = Object.freeze({
   "repo:admin": "pact.repo.admin",
   "storage:read": "pact.storage.read",
   "storage:write": "pact.storage.write",
+  "drive:read": "pact.drive.read",
+  "drive:write": "pact.drive.write",
+  "drive:sync": "pact.drive.sync",
+  "drive:share": "pact.drive.share",
   "jobs:read": "pact.jobs.read",
   "console:read": "pact.console.read",
   "agent_sync:publish": "pact.agent.sync.publish",

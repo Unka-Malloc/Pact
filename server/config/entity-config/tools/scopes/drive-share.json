@@ -1,0 +1,5 @@
+{
+  "id": "drive:share",
+  "label": "Read cloud drive permissions",
+  "description": "Read cloud drive ACL and sharing metadata without exposing provider secrets."
+}

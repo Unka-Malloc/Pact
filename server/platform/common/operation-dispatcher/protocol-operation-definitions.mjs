@@ -74,6 +74,13 @@ const FILE_QUERY = [
   { name: "recursive", aliases: ["recursive"] }
 ];
 
+const DRIVE_QUERY = [
+  ...WORKSPACE_ID_QUERY,
+  { name: "provider", aliases: ["provider", "driveProvider", "drive-provider"] },
+  { name: "driveRef", aliases: ["drive-ref", "driveRef", "driveId", "drive-id"] },
+  { name: "path", aliases: ["path", "filePath", "file-path", "folderPath", "folder-path"] }
+];
+
 export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
   protocolOperation({
     id: "v001.baseline.status",
@@ -499,6 +506,134 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
       requestedEgress: { type: "string" },
       reason: { type: "string" }
     })
+  }),
+
+  protocolOperation({
+    id: "sharedspace.drive.connect",
+    feature: "agent_workspace",
+    label: "连接云盘适配器",
+    targetMethod: "handleSharedspaceDriveConnect",
+    path: "/api/sharedspace/drive/connect",
+    scopes: ["drive:write"],
+    risk: "safe_write",
+    inputSchema: schema(["provider"], {
+      workspaceId: { type: "string" },
+      provider: { type: "string", enum: ["icloud", "onedrive", "google-drive", "dropbox"] },
+      rootPath: { type: "string" },
+      secretRef: { type: "string" },
+      endpointRef: { type: "string" },
+      mode: { type: "string", enum: ["local", "contract", "live"] }
+    })
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.status",
+    feature: "agent_workspace",
+    label: "读取云盘连接状态",
+    targetMethod: "handleSharedspaceDriveStatus",
+    method: "GET",
+    path: "/api/sharedspace/drive/status",
+    query: DRIVE_QUERY,
+    scopes: ["drive:read"],
+    readOnly: true
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.item.list",
+    feature: "agent_workspace",
+    label: "列出云盘安全元数据",
+    targetMethod: "handleSharedspaceDriveItemList",
+    method: "GET",
+    path: "/api/sharedspace/drive/items",
+    query: [
+      ...DRIVE_QUERY,
+      { name: "recursive", aliases: ["recursive"] },
+      { name: "includeHash", aliases: ["include-hash", "includeHash"] },
+      { name: "limit", aliases: ["limit"] }
+    ],
+    scopes: ["drive:read"],
+    readOnly: true
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.file.download",
+    feature: "agent_workspace",
+    label: "下载云盘文件",
+    targetMethod: "handleSharedspaceDriveFileDownload",
+    method: "GET",
+    path: "/api/sharedspace/drive/files/download",
+    query: [
+      ...DRIVE_QUERY,
+      { name: "includeText", aliases: ["include-text", "includeText"] },
+      { name: "encoding", aliases: ["encoding"] }
+    ],
+    scopes: ["drive:read"],
+    readOnly: true
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.file.upload",
+    feature: "agent_workspace",
+    label: "上传云盘文件",
+    targetMethod: "handleSharedspaceDriveFileUpload",
+    path: "/api/sharedspace/drive/files/upload",
+    scopes: ["drive:write"],
+    risk: "safe_write",
+    inputSchema: schema(["driveRef"], {
+      workspaceId: { type: "string" },
+      provider: { type: "string" },
+      driveRef: { type: "string" },
+      path: { type: "string" },
+      name: { type: "string" },
+      parentPath: { type: "string" },
+      content: { type: "string" },
+      contentBase64: { type: "string" },
+      overwrite: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.sync.plan",
+    feature: "agent_workspace",
+    label: "生成云盘同步计划",
+    targetMethod: "handleSharedspaceDriveSyncPlan",
+    path: "/api/sharedspace/drive/sync/plan",
+    scopes: ["drive:sync"],
+    risk: "read_only",
+    readOnly: true,
+    inputSchema: schema(["driveRef"], {
+      workspaceId: { type: "string" },
+      provider: { type: "string" },
+      driveRef: { type: "string" },
+      path: { type: "string" },
+      direction: { type: "string" },
+      targetPath: { type: "string" },
+      limit: { type: "number" }
+    })
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.sync.apply",
+    feature: "agent_workspace",
+    label: "应用云盘同步计划",
+    targetMethod: "handleSharedspaceDriveSyncApply",
+    path: "/api/sharedspace/drive/sync/apply",
+    scopes: ["drive:sync"],
+    risk: "safe_write",
+    inputSchema: schema(["driveRef"], {
+      workspaceId: { type: "string" },
+      provider: { type: "string" },
+      driveRef: { type: "string" },
+      path: { type: "string" },
+      direction: { type: "string" },
+      targetPath: { type: "string" },
+      confirm: { type: "boolean" }
+    })
+  }),
+  protocolOperation({
+    id: "sharedspace.drive.permission.list",
+    feature: "agent_workspace",
+    label: "读取云盘权限元数据",
+    targetMethod: "handleSharedspaceDrivePermissionList",
+    method: "GET",
+    path: "/api/sharedspace/drive/permissions",
+    query: DRIVE_QUERY,
+    scopes: ["drive:share"],
+    readOnly: true
   }),
 
   protocolOperation({
