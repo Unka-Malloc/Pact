@@ -1298,6 +1298,40 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     };
   }
 
+  async function workspaceDownloadCacheReceipt(workspace, relativePath) {
+    if (!merkleState || typeof merkleState.stateCommit?.begin !== "function") {
+      return null;
+    }
+    const state = await merkleState.stateCommit.begin({
+      scope: workspaceStateScope(workspace)
+    });
+    const indexRootCid = String(state.currentRoot || "");
+    if (!indexRootCid) {
+      return {
+        protocolVersion: merkleState.protocolVersion,
+        cacheFamily: "merkle-radix-compatible",
+        implementation: "sorted-chunk-index-v1",
+        cacheKey: `${workspaceStateScope(workspace)}:${relativePath}`,
+        hit: false,
+        indexRootCid: "",
+        valueRoot: "",
+        proofHash: ""
+      };
+    }
+    const entry = await merkleState.merkleIndex.get(indexRootCid, relativePath);
+    const proof = await merkleState.merkleIndex.prove(indexRootCid, relativePath);
+    return {
+      protocolVersion: merkleState.protocolVersion,
+      cacheFamily: "merkle-radix-compatible",
+      implementation: "sorted-chunk-index-v1",
+      cacheKey: `${workspaceStateScope(workspace)}:${relativePath}`,
+      hit: Boolean(entry),
+      indexRootCid,
+      valueRoot: entry?.valueRef || "",
+      proofHash: proof.proofHash
+    };
+  }
+
   async function commitWorkspaceFileState({
     workspace,
     operationId,
@@ -2628,7 +2662,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     };
   }
 
-  function downloadWorkspaceFile(input = {}) {
+  async function downloadWorkspaceFile(input = {}) {
     const statResult = workspaceFileMetadata(input);
     if (!statResult.ok || !statResult.exists) {
       return statResult.exists === false
@@ -2644,11 +2678,13 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     }
     const resolved = resolveWorkspacePath(access.workspace, statResult.file.relativePath);
     const content = fs.readFileSync(resolved.absolutePath);
+    const cacheReceipt = await workspaceDownloadCacheReceipt(access.workspace, statResult.file.relativePath);
     return {
       protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
       ok: true,
       workspaceId: access.workspace.workspaceId,
       file: statResult.file,
+      cacheReceipt,
       encoding: "base64",
       contentBase64: content.toString("base64"),
       content: input.includeText === false ? undefined : content.toString(String(input.textEncoding || input.encoding || "utf8"))

@@ -323,6 +323,11 @@ try {
   );
   assert.equal(download.ok, true);
   assert.equal(download.file.relativePath, `${folderPath}/a.txt`);
+  assert.equal(download.cacheReceipt?.cacheFamily, "merkle-radix-compatible");
+  assert.equal(download.cacheReceipt?.hit, true);
+  assert.ok(download.cacheReceipt?.indexRootCid);
+  assert.ok(download.cacheReceipt?.valueRoot);
+  assert.ok(download.cacheReceipt?.proofHash);
   assert.equal(download.content, sampleContent);
   await fs.writeFile(localDownloadPath, Buffer.from(download.contentBase64, "base64"));
   assert.equal(await fs.readFile(localDownloadPath, "utf8"), sampleContent);
