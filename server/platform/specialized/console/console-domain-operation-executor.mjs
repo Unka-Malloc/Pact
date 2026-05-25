@@ -5016,7 +5016,8 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
     "workspace.file.list",
     "workspace.file.download",
     "workspace.file.read",
-    "workspace.file.write"
+    "workspace.file.write",
+    "workspace.file.patch"
   ]);
   if (!handledOperations.has(id)) {
     return null;
@@ -5089,6 +5090,20 @@ async function executeAgentWorkspaceFileOperation({ operationId, input, context 
   }
   if (id === "agent_workspaces.file.write" || id === "workspace.file.write") {
     const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "writeWorkspaceFile", "工作空间存储接口不可用。");
+    if (error) return error;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      return result(400, { error: "请求体必须是 JSON 对象。" });
+    }
+    const operationResult = method({
+      workspaceId,
+      ...input,
+      createdBy: actorId || input.createdBy || "",
+      ...access
+    });
+    return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
+  }
+  if (id === "workspace.file.patch") {
+    const { method, error } = requireAgentWorkspaceMethod(agentWorkspace, "patchWorkspaceFile", "工作空间补丁接口不可用。");
     if (error) return error;
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
       return result(400, { error: "请求体必须是 JSON 对象。" });
@@ -5653,7 +5668,6 @@ async function executeWorkspaceGovernanceOperation({ operationId, input, context
 async function executeProtocolFacadeOperation({ operationId, input = {} }) {
   const id = String(operationId || "");
   const notImplementedBackends = {
-    "workspace.file.patch": "agentWorkspace.patchWorkspaceFile",
     "workspace.checkpoint.diff": "checkpointTreeApi.diff",
     "workspace.checkpoint.restore.preview": "checkpointTreeApi.restorePreview",
     "workspace.checkpoint.restore": "checkpointTreeApi.restore",

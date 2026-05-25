@@ -15,7 +15,7 @@
 | --- | ---: | --- |
 | 协议操作定义 | 50 | 全部追加进 `SERVER_API_OPERATIONS`。 |
 | 已注册并可发现 | 50 | 已通过 HTTP/RPC/Tool Management/MCP 发现验证。 |
-| 明确空后端 | 9 | 运行时返回 `not_implemented`，只能算 `contract_registered`。 |
+| 明确空后端 | 8 | 运行时返回 `not_implemented`，只能算 `contract_registered`。 |
 | P0 旧“零实现”模块 | 0 | workspace contribution 与 knowledge access 已有执行器；code review 已有 Gerrit upload route，但仍有轻量占位操作。 |
 
 ## 按子系统统计
@@ -26,7 +26,7 @@
 | workspace-contribution | 8 | 0 | 已接入 contribution registry，支持 submit/list/leaderboard/stats/report/permission grant。 |
 | knowledge-access | 4 | 0 | 已接入 `evaluateKnowledgeAccess` 和 authorization store receipt/loan/denied list。 |
 | code-management | 5 | 0 | `workspace.code.change.upload` 已走 Gerrit upload；target/prepare/link/status 仍偏轻量占位，未形成完整 Codespace 持久化。 |
-| workspace-file | 6 | 1 | `workspace.file.patch` 仍缺 patch backend。 |
+| workspace-file | 6 | 0 | upload/list/download/read/write/patch 已接入 agent workspace file backend。 |
 | checkpoint | 7 | 5 | diff/restore/scope/revert 仍缺 workspace checkpoint backend。 |
 | knowledge-export/evidence | 3 | 2 | evidence get 已接线；dossier/export 与 distillation/export 仍缺后端。 |
 | raw-corpus | 1 | 1 | format convert 仍缺 raw corpus converter。 |
@@ -45,7 +45,6 @@
 | `workspace.checkpoint.restore` | 共享空间 / Checkpoint | `checkpointTreeApi.restore` | P1 |
 | `workspace.checkpoint.scope.query` | 共享空间 / Checkpoint | `checkpointTreeApi.scopeQuery` | P1 |
 | `workspace.operation.revert.scope` | 共享空间 / Operation Ledger | `operationLedger.revertScope` | P1 |
-| `workspace.file.patch` | 共享空间 / 文件协议 | `agentWorkspace.patchWorkspaceFile` | P1 |
 | `raw-corpus.format.convert` | 知识转化 / 原始语料 | `rawCorpus.formatConverter` | P1 |
 | `knowledge.dossier.export` | 知识转化 / Dossier | `knowledgeDossierExporter` | P1 |
 | `knowledge.distillation.export` | 知识转化 / 蒸馏导出 | `knowledgeDistillationExporter` | P1 |
@@ -60,7 +59,7 @@
 
 ## 下一步顺序
 
-1. 共享空间优先：补 `workspace.file.patch` 与 checkpoint diff/restore/scope/revert，目标是把共享空间从部分协议化推进到可恢复、可审计、可回滚。
+1. 共享空间优先：补 checkpoint diff/restore/scope/revert，目标是把共享空间从部分协议化推进到可恢复、可审计、可回滚。
 2. 知识转化其次：补 `raw-corpus.format.convert`、`knowledge.dossier.export`、`knowledge.distillation.export`，避免知识协议只完成检索/访问而缺少转换和导出闭环。
 3. 代码管理第三：把 target/prepare/link/status 从轻量 facade 升级为 Codespace 持久化和 Gerrit 状态同步后端。
 4. 每补一个子系统，必须同步更新 `docs/SUBSYSTEM-REFACTOR-CHECKLIST.md`，并增加或扩展 `server:verify:*` 覆盖。

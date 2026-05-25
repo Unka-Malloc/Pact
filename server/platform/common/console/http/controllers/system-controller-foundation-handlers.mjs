@@ -182,11 +182,16 @@ export function createSystemControllerFoundationHandlers({
         errorMessage: "写入 workspace 文件失败。"
       });
     },
-    async handleWorkspaceProtocolFilePatch({ operation, requestBody, response }) {
+    async handleWorkspaceProtocolFilePatch({ operation, requestBody, response, authSession }) {
+      const payload = protocolPayload(requestBody);
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.file.patch",
-        input: protocolPayload(requestBody),
+        input: {
+          ...payload,
+          workspaceId: workspaceIdFrom(payload)
+        },
         response,
+        context: { agentWorkspace, authSession },
         errorMessage: "补丁更新 workspace 文件失败。"
       });
     },

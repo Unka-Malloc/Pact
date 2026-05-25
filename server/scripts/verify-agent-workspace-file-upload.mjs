@@ -319,6 +319,41 @@ try {
   await fs.writeFile(localDownloadPath, Buffer.from(download.contentBase64, "base64"));
   assert.equal(await fs.readFile(localDownloadPath, "utf8"), sampleContent);
 
+  const patchedContent = "hello from Pact MCP patched workspace file flow\n";
+  const patch = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.file.patch",
+    {
+      workspaceId,
+      path: `${folderPath}/a.txt`,
+      expectedSha256: stat.file.contentSha256,
+      hunks: [{
+        oldText: sampleContent,
+        newText: patchedContent
+      }]
+    },
+    11
+  );
+  assert.equal(patch.ok, true);
+  assert.equal(patch.file.relativePath, `${folderPath}/a.txt`);
+  assert.equal(patch.beforeSha256, stat.file.contentSha256);
+  assert.match(patch.afterSha256, /^[a-f0-9]{64}$/);
+  assert.notEqual(patch.afterSha256, patch.beforeSha256);
+
+  const patchedDownload = await callWorkspaceMcp(
+    server.url,
+    localGrant.payload.token,
+    "pact.workspace.file.download",
+    {
+      workspaceId,
+      path: `${folderPath}/a.txt`
+    },
+    12
+  );
+  assert.equal(patchedDownload.ok, true);
+  assert.equal(patchedDownload.content, patchedContent);
+
   const readOnlyGrant = await fetchJsonResponse(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -345,7 +380,7 @@ try {
           content: "denied"
         }
       }
-    }, 11))
+    }, 13))
   });
   assert.equal(deniedUpload.status, 403);
   assert.equal(deniedUpload.payload.error.data.code, "missing_scopes");

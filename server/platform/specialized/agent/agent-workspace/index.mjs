@@ -117,6 +117,113 @@ function joinWorkspaceRelativePath(...parts) {
   );
 }
 
+function sha256Buffer(buffer) {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function splitPatchTextLines(text) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const finalNewline = normalized.endsWith("\n");
+  const body = finalNewline ? normalized.slice(0, -1) : normalized;
+  return {
+    lines: body ? body.split("\n") : [],
+    finalNewline
+  };
+}
+
+function parseUnifiedPatch(patchText = "") {
+  const hunks = [];
+  let current = null;
+  for (const line of String(patchText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")) {
+    const header = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (header) {
+      current = {
+        oldStart: Number(header[1]),
+        lines: []
+      };
+      hunks.push(current);
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    if (line.startsWith("\\ No newline")) {
+      continue;
+    }
+    if (/^[ +\-]/.test(line)) {
+      current.lines.push(line);
+    }
+  }
+  if (hunks.length === 0) {
+    throw new Error("patch 必须包含至少一个 unified diff hunk。");
+  }
+  return hunks;
+}
+
+function assertPatchLineMatches(actual, expected, lineNumber) {
+  if (actual !== expected) {
+    throw new Error(`patch hunk 与当前文件不匹配：第 ${lineNumber} 行。`);
+  }
+}
+
+function applyUnifiedPatchText(sourceText, patchText) {
+  const source = splitPatchTextLines(sourceText);
+  const output = [];
+  let cursor = 0;
+  for (const hunk of parseUnifiedPatch(patchText)) {
+    const start = Math.max(0, hunk.oldStart - 1);
+    if (start < cursor) {
+      throw new Error("patch hunk 顺序重叠或倒退。");
+    }
+    output.push(...source.lines.slice(cursor, start));
+    let oldCursor = start;
+    for (const entry of hunk.lines) {
+      const prefix = entry[0];
+      const line = entry.slice(1);
+      if (prefix === " ") {
+        assertPatchLineMatches(source.lines[oldCursor], line, oldCursor + 1);
+        output.push(line);
+        oldCursor += 1;
+      } else if (prefix === "-") {
+        assertPatchLineMatches(source.lines[oldCursor], line, oldCursor + 1);
+        oldCursor += 1;
+      } else if (prefix === "+") {
+        output.push(line);
+      }
+    }
+    cursor = oldCursor;
+  }
+  output.push(...source.lines.slice(cursor));
+  return `${output.join("\n")}${source.finalNewline ? "\n" : ""}`;
+}
+
+function applyReplacementHunks(sourceText, hunks = []) {
+  let nextText = String(sourceText || "");
+  let appliedCount = 0;
+  for (const hunk of hunks) {
+    const oldText = String(hunk.oldText ?? hunk.search ?? hunk.before ?? "");
+    const newText = String(hunk.newText ?? hunk.replace ?? hunk.after ?? "");
+    if (!oldText) {
+      throw new Error("replacement hunk 必须提供 oldText/search。");
+    }
+    if (!nextText.includes(oldText)) {
+      throw new Error("replacement hunk 与当前文件不匹配。");
+    }
+    if (hunk.replaceAll === true) {
+      const before = nextText;
+      nextText = nextText.split(oldText).join(newText);
+      appliedCount += before === nextText ? 0 : 1;
+    } else {
+      nextText = nextText.replace(oldText, newText);
+      appliedCount += 1;
+    }
+  }
+  if (appliedCount === 0) {
+    throw new Error("没有可应用的 replacement hunk。");
+  }
+  return nextText;
+}
+
 function optionalLimit(value, max = 500) {
   if (value === undefined || value === null || value === false) {
     return null;
@@ -2181,6 +2288,80 @@ export function createAgentWorkspace({ userDataPath }) {
     };
   }
 
+  function patchWorkspaceFile(input = {}) {
+    const access = workspaceForStorage(input);
+    if (!access.ok) {
+      return access;
+    }
+    const explicitPath = String(input.path || input.relativePath || input.filePath || input["file-path"] || "").trim();
+    if (!explicitPath) {
+      return { ok: false, status: 400, error: "path 不能为空。" };
+    }
+    if (path.posix.basename(explicitPath).startsWith(".")) {
+      return { ok: false, status: 400, error: "不允许操作以 . 开头的文件。" };
+    }
+    let resolved;
+    try {
+      resolved = resolveWorkspacePath(access.workspace, normalizeWorkspaceRelativePath(explicitPath, { allowEmpty: false }));
+    } catch (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    if (!fs.existsSync(resolved.absolutePath)) {
+      return { ok: false, status: 404, error: "文件不存在。" };
+    }
+    if (fs.statSync(resolved.absolutePath).isDirectory()) {
+      return { ok: false, status: 400, error: "目标路径是文件夹，不能打补丁。" };
+    }
+    const encoding = String(input.encoding || input.textEncoding || "utf8");
+    const beforeBuffer = fs.readFileSync(resolved.absolutePath);
+    const beforeSha256 = sha256Buffer(beforeBuffer);
+    const expectedSha256 = String(input.expectedSha256 || input.baseSha256 || "").trim();
+    if (expectedSha256 && expectedSha256 !== beforeSha256) {
+      return {
+        ok: false,
+        status: 409,
+        error: "文件内容与 expectedSha256 不匹配。",
+        expectedSha256,
+        currentSha256: beforeSha256
+      };
+    }
+    let nextText;
+    try {
+      const beforeText = beforeBuffer.toString(encoding);
+      if (Array.isArray(input.hunks) && input.hunks.length > 0) {
+        nextText = applyReplacementHunks(beforeText, input.hunks);
+      } else if (Object.hasOwn(input, "patch")) {
+        nextText = applyUnifiedPatchText(beforeText, input.patch);
+      } else {
+        return { ok: false, status: 400, error: "patch 或 hunks 至少提供一个。" };
+      }
+    } catch (error) {
+      return { ok: false, status: 409, error: error instanceof Error ? error.message : "patch 应用失败。" };
+    }
+    const nextBuffer = Buffer.from(nextText, encoding);
+    const afterSha256 = sha256Buffer(nextBuffer);
+    if (afterSha256 === beforeSha256) {
+      return { ok: false, status: 409, error: "patch 未改变文件内容。", currentSha256: beforeSha256 };
+    }
+    fs.writeFileSync(resolved.absolutePath, nextBuffer);
+    updateWorkspaceTimeStmt.run(nowIso(), access.workspace.workspaceId);
+    return {
+      protocolVersion: AGENT_WORKSPACE_PROTOCOL_VERSION,
+      ok: true,
+      workspaceId: access.workspace.workspaceId,
+      patched: true,
+      beforeSha256,
+      afterSha256,
+      file: fileMetadataFromStat({
+        workspaceId: access.workspace.workspaceId,
+        relativePath: resolved.relativePath,
+        absolutePath: resolved.absolutePath,
+        stat: fs.statSync(resolved.absolutePath),
+        includeHash: true
+      })
+    };
+  }
+
   function deleteWorkspaceFile(input = {}) {
     const access = workspaceForStorage(input);
     if (!access.ok) {
@@ -3236,6 +3417,7 @@ export function createAgentWorkspace({ userDataPath }) {
     workspaceFileMetadata,
     uploadWorkspaceFile,
     writeWorkspaceFile,
+    patchWorkspaceFile,
     downloadWorkspaceFile,
     deleteWorkspaceFile,
     moveWorkspaceFile,
