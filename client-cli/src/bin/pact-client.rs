@@ -415,31 +415,29 @@ fn main() -> Result<()> {
             print_json(&backend.execute_method("knowledge.export", params, None)?);
             Ok(())
         }
-        [scope, action, query @ ..]
-            if scope == "knowledge"
-                && matches!(action.as_str(), "agent-context" | "agent-answer") =>
-        {
-            let backend = Backend::from_portable_data_dir()?;
-            let method = if action == "agent-answer" {
-                "knowledge.agent.answer"
-            } else {
-                "knowledge.agent.context"
-            };
-            let params = if action == "agent-answer" {
-                agent_invocation_params(query)
-            } else {
-                json!({ "query": query.join(" ") })
-            };
-            print_json(&backend.execute_method(method, params, None)?);
-            Ok(())
-        }
-        [scope, action, query @ ..] if scope == "agent" && action == "invoke" => {
+        [scope, action, query @ ..] if scope == "knowledge" && action == "agent-context" => {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method(
-                "agent.invoke",
-                agent_invocation_params(query),
+                "knowledge.agent.context",
+                json!({ "query": query.join(" ") }),
                 None,
             )?);
+            Ok(())
+        }
+        [scope, action, subaction] if scope == "model" && action == "profiles" && subaction == "list" => {
+            print_json(&pact_client_native::forwarding::list_model_profiles()?);
+            Ok(())
+        }
+        [scope, action, subaction, rest @ ..]
+            if scope == "model" && action == "profiles" && subaction == "set" =>
+        {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::forwarding::save_model_profile(&params)?);
+            Ok(())
+        }
+        [scope, rest @ ..] if scope == "forward" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::forwarding::forward(&params)?);
             Ok(())
         }
         [scope, action] if scope == "agents" && action == "list" => {
@@ -654,8 +652,9 @@ fn print_usage() {
   pact-client knowledge document get|open <document-id>
   pact-client knowledge export [document-id]
   pact-client knowledge agent-context <query>
-  pact-client knowledge agent-answer [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <query>
-  pact-client agent invoke [--url URL] [--token TOKEN] [--alias NAME] [--agent NAME] [--engine ENGINE] <question>
+  pact-client model profiles list
+  pact-client model profiles set <profile-id> [--command CMD|--url URL] [--args JSON] [--api-key KEY]
+  pact-client forward --profile <profile-id> --text <input>
   pact-client agents sync [--service-url URL]
   pact-client agents list
   pact-client targets scan
@@ -670,115 +669,6 @@ fn print_usage() {
   pact-client rpc <method> [json-params]
   pact-client task cancel <task-id>"
     );
-}
-
-fn agent_invocation_params(args: &[String]) -> Value {
-    let mut params = json!({});
-    params["customHttpAdapter"] = json!({});
-    let mut question = Vec::new();
-    let mut plugins = Vec::<Value>::new();
-    let mut parameters = serde_json::Map::new();
-    let mut index = 0;
-    while index < args.len() {
-        let arg = &args[index];
-        match arg.as_str() {
-            "--url" | "--endpoint" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["customHttpAdapter"]["url"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--token" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["customHttpAdapter"]["token"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--token-header" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["customHttpAdapter"]["tokenHeader"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--agent" | "--agent-name" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["customHttpAdapter"]["agentName"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--alias" | "--adapter-alias" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["agentAlias"] = json!(value);
-                    params["customModelAlias"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--engine" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["customHttpAdapter"]["engine"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--session-id" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["sessionId"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--user-id" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["userId"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--project-id" => {
-                if let Some(value) = args.get(index + 1) {
-                    params["projectId"] = json!(value);
-                    index += 2;
-                    continue;
-                }
-            }
-            "--plugin" => {
-                if let Some(value) = args.get(index + 1) {
-                    plugins.push(json!(value));
-                    index += 2;
-                    continue;
-                }
-            }
-            "--param" => {
-                if let Some(value) = args.get(index + 1) {
-                    if let Some((key, raw_value)) = value.split_once('=') {
-                        let parsed = serde_json::from_str::<Value>(raw_value)
-                            .unwrap_or_else(|_| json!(raw_value));
-                        parameters.insert(key.to_string(), parsed);
-                    }
-                    index += 2;
-                    continue;
-                }
-            }
-            _ => {}
-        }
-        question.push(arg.clone());
-        index += 1;
-    }
-    if !plugins.is_empty() {
-        params["pluginList"] = json!(plugins);
-    }
-    if !parameters.is_empty() {
-        params["parameters"] = Value::Object(parameters);
-    }
-    let joined_question = question.join(" ");
-    params["question"] = json!(joined_question);
-    params["query"] = json!(joined_question);
-    params
 }
 
 fn knowledge_sync_params(args: &[String]) -> Value {

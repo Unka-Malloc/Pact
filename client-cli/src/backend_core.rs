@@ -1,4 +1,3 @@
-use crate::agent_client::{AgentClientConfig, invoke_agent};
 use crate::connectors;
 use crate::upload_queue::{self, UploadQueueFile, UploadQueueState, UploadQueueTask};
 use anyhow::{Result, anyhow};
@@ -1687,215 +1686,6 @@ impl Backend {
         }))
     }
 
-    pub fn agent_invoke(&self, params: Value) -> Result<Value> {
-        let question = params
-            .get("question")
-            .or_else(|| params.get("query"))
-            .or_else(|| params.get("q"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        self.invoke_configured_agent(&params, question, json!({}))
-    }
-
-    pub fn knowledge_agent_answer(&self, params: Value) -> Result<Value> {
-        let context = self.knowledge_agent_context(params.clone())?;
-        let question = params
-            .get("question")
-            .or_else(|| params.get("query"))
-            .or_else(|| params.get("q"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let runtime_parameters = json!({
-            "knowledgeContextMarkdown": context
-                .get("contextMarkdown")
-                .cloned()
-                .unwrap_or_else(|| json!("")),
-            "knowledgeCitations": context
-                .get("citations")
-                .cloned()
-                .unwrap_or_else(|| json!([])),
-            "knowledgeSearch": context
-                .get("search")
-                .cloned()
-                .unwrap_or_else(|| json!({}))
-        });
-        match self.invoke_configured_agent(&params, question, runtime_parameters) {
-            Ok(agent_result) => {
-                let answer_text = agent_result
-                    .get("answer")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                Ok(json!({
-                    "ok": true,
-                    "answered": agent_result
-                        .get("answered")
-                        .and_then(Value::as_bool)
-                        .unwrap_or_else(|| !answer_text.is_empty()),
-                    "answer": answer_text,
-                    "agent": agent_result,
-                    "context": context
-                }))
-            }
-            Err(error)
-                if error
-                    .to_string()
-                    .contains("customHttpAdapter.url is not configured") =>
-            {
-                Ok(json!({
-                    "ok": true,
-                    "answered": false,
-                    "reason": "customHttpAdapter.url is not configured",
-                    "context": context
-                }))
-            }
-            Err(error) => Ok(json!({
-                "ok": true,
-                "answered": false,
-                "error": error.to_string(),
-                "context": context
-            })),
-        }
-    }
-
-    fn invoke_configured_agent(
-        &self,
-        params: &Value,
-        question: &str,
-        runtime_parameters: Value,
-    ) -> Result<Value> {
-        let config_value = self.load_config_value().unwrap_or_else(|_| json!({}));
-        let requested_alias = requested_agent_alias(params);
-        let local_alias = local_agent_alias(&config_value);
-        let has_direct_endpoint = params
-            .pointer("/customHttpAdapter/url")
-            .and_then(Value::as_str)
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false);
-        let should_use_local = has_direct_endpoint
-            || (requested_alias
-                .as_ref()
-                .zip(local_alias.as_ref())
-                .map(|(requested, local)| requested == local)
-                .unwrap_or(false));
-        if should_use_local || requested_alias.is_none() {
-            if let Some(agent_config) = AgentClientConfig::from_values(params, &config_value)? {
-                if should_use_local || !agent_config.endpoint_url.trim().is_empty() {
-                    return invoke_agent(&agent_config, question, runtime_parameters);
-                }
-            }
-        }
-
-        if let Some(agent) = self.resolve_server_agent(requested_alias.as_deref()) {
-            return self.invoke_server_agent(&agent, params, question, runtime_parameters);
-        }
-
-        if let Some(agent_config) = AgentClientConfig::from_values(params, &config_value)? {
-            return invoke_agent(&agent_config, question, runtime_parameters);
-        }
-
-        Err(anyhow!("customHttpAdapter.url is not configured"))
-    }
-
-    fn resolve_server_agent(&self, alias: Option<&str>) -> Option<Value> {
-        let synced = read_json_file(&self.agent_registry_path())?;
-        let agents = synced.pointer("/registry/agents")?.as_array()?;
-        let selected = alias
-            .and_then(|target| {
-                agents
-                    .iter()
-                    .find(|agent| agent.get("alias").and_then(Value::as_str) == Some(target))
-            })
-            .or_else(|| {
-                let default_alias = synced
-                    .pointer("/registry/defaultAlias")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                agents
-                    .iter()
-                    .find(|agent| agent.get("alias").and_then(Value::as_str) == Some(default_alias))
-            })
-            .or_else(|| {
-                agents
-                    .iter()
-                    .find(|agent| agent.get("urlConfigured").and_then(Value::as_bool) == Some(true))
-            })?;
-        if selected.get("urlConfigured").and_then(Value::as_bool) == Some(false) {
-            return None;
-        }
-        Some(json!({
-            "serviceBaseUrl": synced.get("serviceBaseUrl").cloned().unwrap_or_else(|| json!("")),
-            "agent": selected
-        }))
-    }
-
-    fn invoke_server_agent(
-        &self,
-        selected: &Value,
-        params: &Value,
-        question: &str,
-        runtime_parameters: Value,
-    ) -> Result<Value> {
-        let config = self.load_config().unwrap_or_default();
-        let service_url = selected
-            .get("serviceBaseUrl")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .map(normalize_service_url)
-            .or_else(|| service_base_url(&config).ok())
-            .ok_or_else(|| anyhow!("missing service URL in settings.json"))?;
-        let agent = selected.get("agent").cloned().unwrap_or_else(|| json!({}));
-        let alias = agent
-            .get("alias")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let mut parameters = runtime_parameters.as_object().cloned().unwrap_or_default();
-        if let Some(input_parameters) = params.get("parameters").and_then(Value::as_object) {
-            for (key, value) in input_parameters {
-                parameters.insert(key.clone(), value.clone());
-            }
-        }
-        let body = json!({
-            "alias": alias,
-            "question": question,
-            "agentName": params
-                .get("agentName")
-                .and_then(Value::as_str)
-                .unwrap_or_else(|| agent.get("agentName").and_then(Value::as_str).unwrap_or("")),
-            "pluginList": params
-                .get("pluginList")
-                .cloned()
-                .unwrap_or_else(|| agent.get("pluginList").cloned().unwrap_or_else(|| json!([]))),
-            "sessionId": params.get("sessionId").and_then(Value::as_str).unwrap_or(""),
-            "userId": params.get("userId").and_then(Value::as_str).unwrap_or(""),
-            "projectId": params.get("projectId").and_then(Value::as_str).unwrap_or(""),
-            "engine": params
-                .get("engine")
-                .and_then(Value::as_str)
-                .unwrap_or_else(|| agent.get("engine").and_then(Value::as_str).unwrap_or("")),
-            "parameters": parameters
-        });
-        let session = console_session_for_config(&service_url, &config)?;
-        let response = http_json_with_auth(
-            "POST",
-            &format!("{}/api/agent-gateway/call", service_url),
-            Some(body),
-            session.as_ref(),
-        )?;
-        Ok(json!({
-            "ok": response.get("ok").and_then(Value::as_bool).unwrap_or(true),
-            "answered": response
-                .get("answer")
-                .and_then(Value::as_str)
-                .map(|value| !value.is_empty())
-                .unwrap_or(false),
-            "answer": response.get("answer").cloned().unwrap_or_else(|| json!("")),
-            "source": "server",
-            "alias": alias,
-            "response": response
-        }))
-    }
-
     pub fn submit_pipeline(&self, params: Value, task_id: Option<&str>) -> Result<Value> {
         let config = self.load_config().unwrap_or_default();
         let service_url = params
@@ -3255,7 +3045,6 @@ impl Backend {
             "knowledge.document.open" => self.open_knowledge_document(params),
             "knowledge.export" => self.export_knowledge(params),
             "knowledge.agent.context" => self.knowledge_agent_context(params),
-            "knowledge.agent.answer" => self.knowledge_agent_answer(params),
             "connectors.list" => self.list_data_connectors(),
             "connectors.install" => self.install_data_connector(params),
             "connectors.enable" => self.enable_data_connector(params),
@@ -3272,7 +3061,6 @@ impl Backend {
             "context.compaction.records" => self.context_compaction_records(params),
             "context.session_memory.get" => self.context_session_memory_get(params),
             "context.session_memory.clear" => self.context_session_memory_clear(params),
-            "agent.invoke" => self.agent_invoke(params),
             "agents.sync" => self.sync_agent_registry(params),
             "agents.list" => self.list_agent_registry(),
             "knowledge.change.queue" => self.queue_knowledge_change(params),
@@ -4411,112 +4199,13 @@ fn first_json_array(value: &Value, paths: &[&str]) -> Vec<Value> {
     Vec::new()
 }
 
-fn requested_agent_alias(params: &Value) -> Option<String> {
-    first_json_string(
-        params,
-        &[
-            "agentAlias",
-            "alias",
-            "customModelAlias",
-            "modelAlias",
-            "model",
-        ],
-    )
-}
-
-fn local_agent_alias(config: &Value) -> Option<String> {
-    first_json_string(
-        config,
-        &[
-            "customModelAlias",
-            "customHttpAdapter.alias",
-            "agentAlias",
-        ],
-    )
-}
-
-fn local_agent_registry(config: &Value) -> Value {
-    let explicit_alias = local_agent_alias(config);
-    let label = first_json_string(
-        config,
-        &[
-            "customModelLabel",
-            "customHttpAdapter.label",
-            "agentLabel",
-        ],
-    )
-    .unwrap_or_else(|| "本地自定义 HTTP Adapter".to_string());
-    let url = first_json_string(
-        config,
-        &[
-            "customHttpAdapter.url",
-        ],
-    )
-    .unwrap_or_default();
-    let alias = explicit_alias.unwrap_or_else(|| {
-        if url.trim().is_empty() {
-            String::new()
-        } else {
-            "external-agent".to_string()
-        }
-    });
-    let token_configured = first_json_string(
-        config,
-        &[
-            "customHttpAdapter.token",
-            "customHttpAdapter.apiKey",
-        ],
-    )
-    .is_some()
-        || json_path(config, "customHttpAdapter.tokenConfigured")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-    let parameter_keys = json_path(config, "customHttpAdapter.parameters")
-        .and_then(Value::as_object)
-        .map(|items| items.keys().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
-    let has_local_adapter =
-        json_path(config, "customHttpAdapter").is_some() || !url.trim().is_empty() || token_configured;
-    let agents = if alias.trim().is_empty()
-        || (!has_local_adapter && url.trim().is_empty() && !token_configured)
-    {
-        Vec::new()
-    } else {
-        vec![json!({
-            "alias": alias,
-            "model": alias,
-            "provider": "custom-http",
-            "label": label,
-            "callMode": "local-direct",
-            "urlConfigured": !url.trim().is_empty(),
-            "tokenConfigured": token_configured,
-            "agentName": first_json_string(
-                config,
-                &["customHttpAdapter.agentName"]
-            )
-            .unwrap_or_default(),
-            "pluginList": first_json_array(
-                config,
-                &["customHttpAdapter.pluginList"]
-            ),
-            "engine": first_json_string(
-                config,
-                &["customHttpAdapter.engine"]
-            )
-            .unwrap_or_default(),
-            "timeoutMs": json_path(config, "customHttpAdapter.timeoutMs")
-                .and_then(Value::as_u64)
-                .unwrap_or(120000),
-            "parameterKeys": parameter_keys,
-            "capabilities": ["agent.invoke", "knowledge.agent.answer"]
-        })]
-    };
+fn local_agent_registry(_config: &Value) -> Value {
     json!({
         "schemaVersion": 1,
         "source": "local",
-        "provider": "custom-http",
-        "defaultAlias": alias,
-        "agents": agents
+        "provider": "model-forwarding",
+        "defaultAlias": "",
+        "agents": []
     })
 }
 
@@ -4985,7 +4674,6 @@ fn backend_methods() -> Vec<String> {
         "knowledge.document.open",
         "knowledge.export",
         "knowledge.agent.context",
-        "knowledge.agent.answer",
         "connectors.list",
         "connectors.install",
         "connectors.enable",
@@ -5002,7 +4690,6 @@ fn backend_methods() -> Vec<String> {
         "context.compaction.records",
         "context.session_memory.get",
         "context.session_memory.clear",
-        "agent.invoke",
         "agents.sync",
         "agents.list",
         "knowledge.change.queue",
