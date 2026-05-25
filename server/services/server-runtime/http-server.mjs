@@ -9,6 +9,10 @@ import { createBatchDeletionCoordinator } from "../client/work-queue-core/batch-
 import { resolveArchiveBatchIdentity } from "../client/work-queue-core/archive-batch-id.mjs";
 import { createClientRuntimeAllocator } from "../client/client-runtime-core/client-runtime-allocator.mjs";
 import {
+  buildClientRuntimeBootstrapPlan,
+  buildClientRuntimeBootstrapPull
+} from "../client/client-runtime-core/client-runtime-bootstrap.mjs";
+import {
   checkpointTreeSummary,
   listCheckpointTrees,
   loadCheckpointTree
@@ -25,12 +29,10 @@ import {
   createServerCompositionRoot,
   ensureConsoleOwner
 } from "../../platform/interactive/composition-root.mjs";
-import { createToolManagementPlatform } from "../../platform/specialized/capabilities/tools/tool-management-core/index.mjs";
-import { createServerRuntimeProviders } from "../../platform/interactive/server-runtime-providers.mjs";
-import { createContextRuntime } from "../../platform/specialized/agent/agent-context/interface/index.mjs";
-import { createAgentMemory } from "../../platform/specialized/agent/agent-memory/index.mjs";
-import { getAgentConfigRegistry } from "../../platform/specialized/agent/agent-configs/config-registry.mjs";
-import { loadSettings } from "../../platform/common/platform-core/settings.mjs";
+import {
+  createServerRuntimeProviders,
+  createServerToolManagementPlatform
+} from "../../platform/interactive/server-runtime-providers.mjs";
 import {
   loadDiscoveryConfig,
   resolveDiscoveryState,
@@ -53,6 +55,7 @@ import {
   saveMonitorAlertConfig
 } from "../../platform/common/devops/monitor-alert-core/monitor-alerts.mjs";
 import {
+  dispatchInternalOperation,
   dispatchRegisteredHttpOperation,
   dispatchRpcOperation,
   shouldProxyRegisteredApiRequest
@@ -62,7 +65,6 @@ import { handlePactMcpHttpRequest } from "../../platform/common/mcp/http-mcp-ada
 import { loadOrCreateMcpIdentity } from "../../platform/common/mcp/identity.mjs";
 import { createJobsController } from "../../platform/common/console/http/controllers/jobs-controller.mjs";
 import { createSystemController } from "../../platform/common/console/http/controllers/system-controller.mjs";
-import { buildConsoleState } from "../../platform/common/console/http/api-facade.mjs";
 import {
   defaultAdvertisedHost,
   formatUrlHost,
@@ -339,9 +341,6 @@ export async function startHttpServer({
     component: "server"
   });
   setRuntimeLogger(runtimeLogger);
-  await getAgentConfigRegistry({ rootPath: path.join(userDataPath, "agent-configs") }).refresh({
-    settingsFallback: await loadSettings(userDataPath)
-  });
   runtimeLogger.info("server.start.requested", {
     host,
     port,
@@ -371,20 +370,9 @@ export async function startHttpServer({
     operationAuditStore,
     operationConcurrencyScope,
     protocolEventBus,
+    consoleDomainServices,
     metadataStore
   } = compositionRoot;
-  const callAgentGatewayIfAvailable = async (input = {}, options = {}) => {
-    if (!isFeatureActive("agent-gateway")) {
-      throw new Error("AgentGateway feature is not active in this feature edition.");
-    }
-    const { callAgentGateway } = await import("../../platform/specialized/agent/agent-gateway/index.mjs");
-    return callAgentGateway({
-      ...options,
-      input,
-      userDataPath,
-      clientRuntimeAllocator
-    });
-  };
   runtimeLogger.info("features.resolved", {
     edition: featureRuntime.edition,
     activeFeatureCount: featureRuntime.activeFeatureIds.length,
@@ -447,15 +435,6 @@ export async function startHttpServer({
     acknowledge: (alertId) => acknowledgeQueueMonitorAlert(userDataPath, alertId)
   };
   const clientRuntimeAllocator = createClientRuntimeAllocator({ userDataPath });
-  const agentMemory = createAgentMemory({ userDataPath });
-  const contextRuntime = createContextRuntime({
-    userDataPath,
-    agentMemory,
-    clientRuntimeAllocator,
-    agentGatewayCall: async (input = {}) => callAgentGatewayIfAvailable(input, {
-      settings: await loadSettings(userDataPath)
-    })
-  });
   let discoveryState = await loadDiscoveryConfig(userDataPath);
   let listenUrl = "";
   let controllersRef = null;
@@ -467,7 +446,6 @@ export async function startHttpServer({
     protocolEventBus,
     getDiscoveryState: () => discoveryState,
     getListenUrl: () => listenUrl,
-    contextRuntime,
     getControllers: () => controllersRef,
     operationAuditStore,
     operationConcurrencyScope,
@@ -475,10 +453,10 @@ export async function startHttpServer({
     runtimeLogger,
     clientRuntimeAllocator,
     isFeatureActive,
-    isAnyFeatureActive,
-    callAgentGatewayIfAvailable
+    isAnyFeatureActive
   });
   const {
+    contextRuntime,
     maintenanceAgent,
     knowledgeSourceService,
     agentWorkspace,
@@ -506,6 +484,8 @@ export async function startHttpServer({
     getDiscoveryState: () => discoveryState,
     proxyApiRequest,
     protocolEventBus,
+    loadNormalizedDocumentStore: consoleDomainServices.loadNormalizedDocumentStore,
+    uploadSessionStore: consoleDomainServices.uploadSessionStore,
     resolveArchiveBatchIdentity
   });
   const systemController = createSystemController({
@@ -541,6 +521,10 @@ export async function startHttpServer({
     summarizationRuntime,
     agentExplorationRuntime,
     clientRuntimeAllocator,
+    clientRuntimeBootstrap: {
+      buildPlan: buildClientRuntimeBootstrapPlan,
+      buildPull: buildClientRuntimeBootstrapPull
+    },
     queueMonitor: queueMonitorAdapter,
     checkpointTreeApi: {
       checkpointTreeSummary,
@@ -552,14 +536,15 @@ export async function startHttpServer({
       saveConfig: (input) => saveMonitorAlertConfig(userDataPath, input),
       acknowledge: (alertId) => acknowledgeMonitorAlert(userDataPath, alertId, { queueMonitor: queueMonitorAdapter })
     },
-    getToolManagementPlatform: () => toolManagementPlatformRef
+    getToolManagementPlatform: () => toolManagementPlatformRef,
+    consoleDomainServices
   });
   const controllers = {
     jobs: jobsController,
     system: systemController
   };
   controllersRef = controllers;
-  const toolManagementPlatform = createToolManagementPlatform({
+  const toolManagementPlatform = createServerToolManagementPlatform({
     userDataPath,
     operations: activeApiOperations,
     featureRuntime: publicFeatures(),
@@ -835,31 +820,45 @@ export async function startHttpServer({
     },
     { type: "server.started" }
   );
+  async function dispatchStartupSnapshot(operationId, {
+    input = {},
+    payloadFromResult = (result) => result.payload,
+    errorMessage = `Failed to build ${operationId} startup snapshot.`
+  } = {}) {
+    const snapshot = await dispatchInternalOperation({
+      operations: activeApiOperations,
+      controllers,
+      operationId,
+      input,
+      operationAuditStore,
+      concurrencyScope: operationConcurrencyScope,
+      logger: runtimeLogger,
+      actor: { type: "system", username: "server-runtime" }
+    });
+    if (snapshot.statusCode >= 400) {
+      throw new Error(snapshot.payload?.error || errorMessage);
+    }
+    return payloadFromResult(snapshot);
+  }
+  const interfaceSnapshot = await dispatchStartupSnapshot("system.interfaces");
   await protocolEventBus.publish(
     "system.interfaces",
-    {
-      transport: {
-        http: "direct",
-        rpc: "POST /api/rpc",
-        events: "GET /api/events"
-      },
-      interfaces: listInterfaceCatalog(activeApiOperations),
-      features: publicFeatures()
-    },
+    interfaceSnapshot,
     { type: "system.interfaces.snapshot" }
   );
+  const discoveryConfigSnapshot = await dispatchStartupSnapshot("discovery.get_config");
   await protocolEventBus.publish(
     "discovery.config",
-    {
-      value: discoveryState
-    },
+    discoveryConfigSnapshot,
     { type: "discovery.config.snapshot" }
   );
   if (isFeatureActive("agent-gateway")) {
-    const { loadAgentSyncConfig } = await import("../../protocols/agent-sync/policy.mjs");
+    const agentSyncConfigSnapshot = await dispatchStartupSnapshot("agent_sync.config.get", {
+      payloadFromResult: (result) => result.payload?.config || {}
+    });
     await protocolEventBus.publish(
       "agent_sync.config",
-      await loadAgentSyncConfig(userDataPath),
+      agentSyncConfigSnapshot,
       { type: "agent_sync.config.snapshot" }
     );
   }
@@ -869,28 +868,18 @@ export async function startHttpServer({
   if (exposedKnowledgeSourceService) {
     await exposedKnowledgeSourceService.start();
   }
+  const consoleStateSnapshot = await dispatchStartupSnapshot("system.console_state");
   await protocolEventBus.publish(
     "system.console_state",
     {
-        state: await buildConsoleState({
-          userDataPath,
-          distPath,
-          runtime,
-          discoveryState,
-          jobManager,
-          metadataStore,
-          serverUrl: listenUrl,
-          consoleAuth,
-          maintenanceAgent: exposedMaintenanceAgent,
-          clientRuntimeAllocator,
-          features: publicFeatures()
-        })
+      state: consoleStateSnapshot
     },
     { type: "system.console_state.snapshot" }
   );
+  const storageSummarySnapshot = await dispatchStartupSnapshot("storage.summary");
   await protocolEventBus.publish(
     "storage.summary",
-    metadataStore.getStorageSummary(),
+    storageSummarySnapshot,
     { type: "storage.summary.snapshot" }
   );
   await deletionCoordinator.resumePendingDeletions();

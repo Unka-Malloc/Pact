@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadEmailRules } from "../../specialized/knowledge/preprocessing/domain/rules/email-rules.mjs";
 import { createMetadataStore } from "./metadata-store.mjs";
 import { getMetadataDatabasePath } from "./schema-manager.mjs";
 
@@ -100,13 +99,17 @@ function toPersistedSource(source = {}, batchId) {
   };
 }
 
-export async function rebuildMetadataStore({ userDataPath }) {
+export async function rebuildMetadataStore({
+  userDataPath,
+  domainServices = {},
+  loadRules = async () => ({})
+}) {
   await fs.rm(path.dirname(getMetadataDatabasePath(userDataPath)), {
     recursive: true,
     force: true
   });
-  const metadataStore = createMetadataStore({ userDataPath });
-  const rules = await loadEmailRules(userDataPath);
+  const metadataStore = createMetadataStore({ userDataPath, domainServices });
+  const rules = await loadRules(userDataPath);
   const jobsRootPath = getJobsRootPath(userDataPath);
   await fs.mkdir(jobsRootPath, { recursive: true });
   const entries = await fs.readdir(jobsRootPath, {

@@ -6,6 +6,7 @@ import FeatureToggle from '../../components/FeatureToggle.vue';
 import OptionBar from '../../components/OptionBar.vue';
 import SegmentedToggle from '../../components/SegmentedToggle.vue';
 import StatusPill from '../../components/StatusPill.vue';
+import ScopeSelector from '../../components/ScopeSelector.vue';
 const {
   activeToolManagementToolCount,
   adminView,
@@ -307,19 +308,10 @@ const activeTab = ref("catalog");
                   <input v-model="newGrantLabel" autocomplete="off" />
                 </label>
 
-                <div class="scope-grid">
-                  <button
-                    v-for="scope in toolScopes"
-                    :key="scope.id"
-                    class="scope-chip"
-                    :class="{ active: newGrantScopes.includes(scope.id) }"
-                    type="button"
-                    @click="toggleNewGrantScope(scope.id)"
-                  >
-                    <strong>{{ scope.label }}</strong>
-                    <span>{{ scope.description }}</span>
-                  </button>
-                </div>
+                <ScopeSelector
+                  v-model="newGrantScopes"
+                  :scopes="toolScopes"
+                />
                 <div class="scope-grid">
                   <button
                     v-for="toolset in toolManagementToolsets.filter((item) => item.grantable !== false)"
@@ -390,19 +382,13 @@ const activeTab = ref("catalog");
                   </div>
 
                   <div class="permission-card-controls">
-                    <div class="scope-grid compact-scope-grid">
-                      <button
-                        v-for="scope in toolScopes"
-                        :key="scope.id"
-                        class="scope-chip"
-                        :class="{ active: grantHasScope(grant, scope.id) }"
-                        type="button"
-                        :disabled="busyKey === `grant:${grant.id}`"
-                        @click="toggleGrantScope(grant, scope.id)"
-                      >
-                        <strong>{{ scope.label }}</strong>
-                      </button>
-                    </div>
+                    <ScopeSelector
+                      :model-value="grant.scopes"
+                      :scopes="toolScopes"
+                      :disabled="busyKey === `grant:${grant.id}`"
+                      @update:model-value="(v) => updateGrant(grant, { scopes: v })"
+                      compact
+                    />
                     <div class="scope-grid compact-scope-grid">
                       <button
                         v-for="toolset in toolManagementToolsets.filter((item) => item.grantable !== false)"

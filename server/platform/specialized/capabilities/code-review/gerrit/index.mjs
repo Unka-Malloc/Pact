@@ -693,6 +693,145 @@ function gitRefForReview(input = {}) {
   return `HEAD:refs/for/${branch}${params.length ? `%${params.join(",")}` : ""}`;
 }
 
+function stripReviewOptions(ref = "") {
+  return String(ref || "").split("%")[0];
+}
+
+function branchFromReviewRef(input = {}, targetRef = "") {
+  const explicit = String(input.branch || "").trim();
+  if (explicit) {
+    return explicit.replace(/^refs\/heads\//, "").replace(/^refs\/for\//, "");
+  }
+  const normalized = stripReviewOptions(targetRef)
+    .replace(/^HEAD:/, "")
+    .replace(/^refs\/for\//, "")
+    .replace(/^refs\/heads\//, "");
+  return normalized || "main";
+}
+
+function redactUrlCredentials(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  try {
+    const parsed = new URL(raw);
+    parsed.username = parsed.username ? "<redacted>" : "";
+    parsed.password = parsed.password ? "<redacted>" : "";
+    return parsed.toString().replace(/\/$/, raw.endsWith("/") ? "/" : "");
+  } catch {
+    return raw.replace(/\/\/([^/@\s]+):([^/@\s]+)@/, "//<redacted>:<redacted>@");
+  }
+}
+
+function baseUrlFromRemoteUrl(remoteUrl = "") {
+  try {
+    const parsed = new URL(String(remoteUrl || "").trim());
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      parsed.username = "";
+      parsed.password = "";
+      parsed.pathname = "/";
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString().replace(/\/$/, "");
+    }
+  } catch {
+    // Non-URL remotes such as ssh/scp style cannot provide an HTTP base URL.
+  }
+  return "";
+}
+
+function projectFromRemoteUrl(remoteUrl = "") {
+  const raw = String(remoteUrl || "").trim();
+  if (!raw) {
+    return "";
+  }
+  try {
+    const parsed = new URL(raw);
+    let project = decodeURIComponent(parsed.pathname || "")
+      .replace(/^\/+/, "")
+      .replace(/^a\//, "")
+      .replace(/\.git$/, "");
+    return project;
+  } catch {
+    const scp = raw.match(/^[^@:\s]+@[^:\s]+:(.+)$/);
+    if (scp) {
+      return scp[1].replace(/\.git$/, "");
+    }
+  }
+  return "";
+}
+
+function encodeGerritProjectPath(project = "") {
+  return String(project || "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function reviewUrlForChange({ baseUrl = "", project = "", number = "" } = {}) {
+  const root = String(baseUrl || "").replace(/\/+$/, "");
+  const changeNumber = String(number || "").trim();
+  if (!root || !changeNumber) {
+    return "";
+  }
+  const projectPath = encodeGerritProjectPath(project);
+  return projectPath
+    ? `${root}/c/${projectPath}/+/${changeNumber}`
+    : `${root}/q/${encodeURIComponent(changeNumber)}`;
+}
+
+function changeConfirmsHead(change = {}, head = "") {
+  const commit = String(head || "").trim();
+  if (!commit || !change || typeof change !== "object") {
+    return false;
+  }
+  if (String(change.current_revision || "") === commit) {
+    return true;
+  }
+  if (change.revisions && typeof change.revisions === "object" && change.revisions[commit]) {
+    return true;
+  }
+  for (const revision of Object.values(change.revisions || {})) {
+    if (String(revision?.commit?.commit || "") === commit) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function publicChangeReceipt(change = {}, { baseUrl = "", head = "", query = "", attempts = 0 } = {}) {
+  const project = String(change.project || "");
+  const number = String(change._number || change.number || "");
+  return {
+    confirmed: true,
+    confirmationMethod: "gerrit_rest_change_query",
+    query,
+    attempts,
+    changeId: String(change.id || ""),
+    changeNumber: number,
+    project,
+    branch: String(change.branch || ""),
+    status: String(change.status || ""),
+    currentRevision: String(change.current_revision || head || ""),
+    revisionNumber: change.revisions?.[change.current_revision]?._number || "",
+    reviewUrl: reviewUrlForChange({ baseUrl, project, number })
+  };
+}
+
+function extractChangeNumbersFromPushOutput(output = "") {
+  const numbers = new Set();
+  const text = String(output || "");
+  for (const match of text.matchAll(/\/\+\/(\d+)(?:[\s/]|$)/g)) {
+    numbers.add(match[1]);
+  }
+  return [...numbers];
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runGit(args, { cwd }) {
   return await new Promise((resolve) => {
     const child = spawn("git", args, {
@@ -716,10 +855,104 @@ async function runGit(args, { cwd }) {
   });
 }
 
+async function resolveRemoteUrl({ worktreePath, remote }) {
+  const result = await runGit(["remote", "get-url", remote], { cwd: worktreePath });
+  return result.code === 0 ? result.stdout.trim() : "";
+}
+
+async function queryConfirmedChange({ input, head, baseUrl, project, branch, pushOutput, attempts }) {
+  const baseInput = { ...input, baseUrl: input.baseUrl || baseUrl };
+  const queries = [
+    `commit:${head}`,
+    project && branch ? `project:${project} branch:${branch} commit:${head}` : "",
+    project && branch && input.topic ? `project:${project} branch:${branch} topic:${input.topic} status:open` : ""
+  ].filter(Boolean);
+  for (const query of queries) {
+    const result = await gerritRequest({
+      input: baseInput,
+      method: "GET",
+      path: "/changes/",
+      query: { q: query, n: 10, o: ["CURRENT_REVISION", "CURRENT_COMMIT"] }
+    });
+    if (!result.ok) {
+      continue;
+    }
+    const changes = Array.isArray(result.payload) ? result.payload : [];
+    const exact = changes.find((change) => changeConfirmsHead(change, head));
+    if (exact) {
+      return publicChangeReceipt(exact, { baseUrl, head, query, attempts });
+    }
+  }
+  for (const number of extractChangeNumbersFromPushOutput(pushOutput)) {
+    const result = await gerritRequest({
+      input: baseInput,
+      method: "GET",
+      path: `/changes/${enc(number)}/detail`,
+      query: { o: ["CURRENT_REVISION", "CURRENT_COMMIT"] }
+    });
+    if (result.ok && changeConfirmsHead(result.payload, head)) {
+      return publicChangeReceipt(result.payload, {
+        baseUrl,
+        head,
+        query: `change:${number}`,
+        attempts
+      });
+    }
+  }
+  return null;
+}
+
+async function confirmGerritUploadCompletion({ input, head, targetRef, remoteUrl, push }) {
+  const baseUrl = String(input.baseUrl || baseUrlFromRemoteUrl(remoteUrl) || normalizeBaseUrl(input)).replace(/\/+$/, "");
+  const project = String(input.project || projectFromRemoteUrl(remoteUrl) || "").trim();
+  const branch = branchFromReviewRef(input, targetRef);
+  const pushOutput = `${push.stdout || ""}\n${push.stderr || ""}`;
+  const timeoutMs = Math.max(0, Number(input.confirmationTimeoutMs || input.confirmTimeoutMs || 30_000) || 30_000);
+  const intervalMs = Math.max(100, Number(input.confirmationIntervalMs || 1000) || 1000);
+  const deadline = Date.now() + timeoutMs;
+  let attempts = 0;
+  while (true) {
+    attempts += 1;
+    const receipt = await queryConfirmedChange({
+      input,
+      head,
+      baseUrl,
+      project,
+      branch,
+      pushOutput,
+      attempts
+    });
+    if (receipt) {
+      return {
+        ...receipt,
+        targetProvider: "gerrit",
+        targetKind: "codespace",
+        targetRef: receipt.changeId || receipt.changeNumber,
+        repositoryRef: receipt.project || project,
+        branch: receipt.branch || branch
+      };
+    }
+    if (Date.now() >= deadline) {
+      return {
+        confirmed: false,
+        confirmationMethod: "gerrit_rest_change_query",
+        attempts,
+        project,
+        branch,
+        head,
+        baseUrl,
+        error: "Gerrit accepted git push, but the uploaded commit was not visible through Gerrit REST before the confirmation timeout."
+      };
+    }
+    await sleep(intervalMs);
+  }
+}
+
 export async function uploadGerritGitChange(input = {}) {
   const worktreePath = path.resolve(requireString(input, "worktreePath"));
   const remote = String(input.remote || "origin").trim();
   const targetRef = input.targetRef ? String(input.targetRef) : gitRefForReview(input);
+  const remoteUrl = await resolveRemoteUrl({ worktreePath, remote });
   const status = await runGit(["status", "--short"], { cwd: worktreePath });
   if (status.code !== 0) {
     return {
@@ -753,23 +986,76 @@ export async function uploadGerritGitChange(input = {}) {
       dryRun: true,
       worktreePath,
       remote,
+      remoteUrl: redactUrlCredentials(remoteUrl),
       targetRef,
       head: head.stdout.trim(),
       gitStatus: status.stdout
     };
   }
   const push = await runGit(["push", remote, targetRef], { cwd: worktreePath });
-  const ok = push.code === 0;
+  const pushOk = push.code === 0;
+  if (!pushOk) {
+    return {
+      ok: false,
+      status: 502,
+      uploadId: randomId("gerrit_git_upload"),
+      worktreePath,
+      remote,
+      remoteUrl: redactUrlCredentials(remoteUrl),
+      targetRef,
+      head: head.stdout.trim(),
+      stdout: push.stdout,
+      stderr: push.stderr,
+      completion: { confirmed: false, error: push.stderr || "git push failed" },
+      error: push.stderr || "git push failed"
+    };
+  }
+  const completion = await confirmGerritUploadCompletion({
+    input,
+    head: head.stdout.trim(),
+    targetRef,
+    remoteUrl,
+    push
+  });
+  if (!completion.confirmed) {
+    return {
+      ok: false,
+      status: 502,
+      uploadId: randomId("gerrit_git_upload"),
+      worktreePath,
+      remote,
+      remoteUrl: redactUrlCredentials(remoteUrl),
+      targetRef,
+      head: head.stdout.trim(),
+      stdout: push.stdout,
+      stderr: push.stderr,
+      completion,
+      error: completion.error
+    };
+  }
   return {
-    ok,
-    status: ok ? 200 : 502,
+    ok: true,
+    status: 200,
     uploadId: randomId("gerrit_git_upload"),
     worktreePath,
     remote,
+    remoteUrl: redactUrlCredentials(remoteUrl),
     targetRef,
     head: head.stdout.trim(),
     stdout: push.stdout,
     stderr: push.stderr,
-    error: ok ? undefined : push.stderr || "git push failed"
+    completion,
+    provider: "gerrit",
+    targetProvider: "gerrit",
+    targetKind: "codespace",
+    targetRef: completion.changeId || completion.changeNumber,
+    repositoryRef: completion.project,
+    changeRef: completion.changeId || completion.changeNumber,
+    status: "completed",
+    changeId: completion.changeId,
+    changeNumber: completion.changeNumber,
+    reviewUrl: completion.reviewUrl,
+    project: completion.project,
+    branch: completion.branch
   };
 }

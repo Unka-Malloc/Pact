@@ -318,7 +318,7 @@ async function verifyMcpTools({ baseUrl, token }) {
     !toolsList.ok
     || !health.ok
     || (tools.length !== 1 && tools.length !== 5)
-    || !tools.some((tool) => tool.name === "pact.call" || tool.name === "pact.workspace")
+    || !tools.some((tool) => tool.name === "pact.call" || tool.name === "pact.discovery" || tool.name === "pact.sharedspace")
     || health.payload?.result?.structuredContent?.payload?.ok !== true
   ) {
     throw new Error("MCP HTTP verification failed.");

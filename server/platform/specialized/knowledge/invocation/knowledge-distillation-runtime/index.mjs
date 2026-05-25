@@ -1322,6 +1322,7 @@ export function createKnowledgeDistillationRuntime({
     if (!modelDecisionRuntime || typeof modelDecisionRuntime.decide !== "function") {
       return modelRequiredFailure("model_decision_runtime", null, "模型决策运行时不可用。");
     }
+    const allowDeterministicModelFallback = input.allowDeterministicModelFallback === true;
     const rawCorpusLoad = await loadRawCorpusItems(input, query, limit);
     let searchResult = {
       query,
@@ -1379,7 +1380,7 @@ export function createKnowledgeDistillationRuntime({
         modelEnabled: true,
         modelAlias: input.topicClusterModelAlias || modelAlias
       });
-      if (clusterName.modelDecision?.usedModel !== true) {
+      if (clusterName.modelDecision?.usedModel !== true && !allowDeterministicModelFallback) {
         return modelRequiredFailure(
           "topic_cluster_namer",
           clusterName.modelDecision,
@@ -1404,7 +1405,7 @@ export function createKnowledgeDistillationRuntime({
           modelEnabled: true
         }
       });
-      if (modelDistiller?.usedModel !== true) {
+      if (modelDistiller?.usedModel !== true && !allowDeterministicModelFallback) {
         return modelRequiredFailure(
           "knowledge_skill_distiller",
           modelDistiller,
@@ -1497,7 +1498,7 @@ export function createKnowledgeDistillationRuntime({
           modelEnabled: true
         }
       });
-      if (reviewer?.usedModel !== true) {
+      if (reviewer?.usedModel !== true && !allowDeterministicModelFallback) {
         return modelRequiredFailure(
           "skill_reviewer",
           reviewer,

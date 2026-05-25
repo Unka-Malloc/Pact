@@ -64,7 +64,7 @@
 | `DEC-P0-08` 统一 Checkpoint Tree | 任务、队列、访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露和恢复动作全部进入统一 Checkpoint Tree。 |
 | `DEC-P0-09` git worktree 边界 | 可以复用 git tree/diff/worktree 底层能力，但产品恢复必须是 append-only restore operation，采用更安全的模式替代裸 reset 语义以保护用户数据。 |
 | `DEC-P0-10` 工作空间环境 | 受管工作空间必须安装 Pact 管理软件；智能体访问必须经过 adapter；直连文件系统视为未受管。 |
-| `DEC-P0-11` 贡献状态机 | 固定 submitted -> scanned -> reviewed -> published/rejected/needs_changes -> adopted -> deprecated/revoked。 |
+| `DEC-P0-11` 贡献状态机 | 固定 submitted -> preview -> scanned -> reviewed -> published/rejected/needs_changes -> adopted -> deprecated/revoked；内容到达服务器并完成最小留档后才是 preview，审核和权限确认后才是 published。 |
 | `DEC-P0-12` Skill 贡献值 | 采用“使用为主”的质量加权公式：以 usageCount * successRate 为核心，叠加 uniqueWorkspaceAdoptions，扣减 rollbackCount。 |
 | `DEC-P0-13` 贡献报表 | 资产贡献统计报表进入 P0，是管理者视角必备能力。 |
 | `DEC-P0-14` 演示验收 | 四个演示全部作为 P0 验收：文档互通、Skill 贡献、A/B 权限、Checkpoint Tree 恢复。 |
@@ -169,7 +169,7 @@
 
 需要决策：
 
-- 是否固定 `deny`、`discoverOnly`、`metadataOnly`、`readInPlace`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
+- 是否固定 `deny`、`discoverOnly`、`metadataOnly`、`controlledView`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
 - 是否把 `read`、`cite`、`copyToContext`、`export`、`checkout`、`writeMemory`、`share` 分成不同动作。
 - 表格 cell、图片、附件、section、block、field 是否都要成为可授权颗粒度。
 
@@ -256,12 +256,12 @@
 需要决策：
 
 - 贡献资产类型是否固定为 `knowledge`、`skill`、`tool`、`script`、`file`、`goldenRule`、`expertOpinion`。
-- 状态机是否固定为 `submitted -> scanned -> reviewed -> published | rejected | needs_changes -> adopted -> deprecated | revoked`。
+- 状态机是否固定为 `submitted -> preview -> scanned -> reviewed -> published | rejected | needs_changes -> adopted -> deprecated | revoked`。
 - 哪些贡献必须人审，哪些可以策略自动发布。
 
 默认建议：类型和状态机先固定；第一版默认高风险 Skill、tool、script 必须人审，knowledge/file 可按 workspace policy 自动发布或进入 review。
 
-已决议：固定贡献状态机。
+已决议：固定贡献状态机。内容到达服务器并完成最小留档后进入 `preview`；权限、风险、许可、重复性和审核策略确认后才进入 `published`。
 
 决议后回写：`WORKSPACE-ASSET-GOVERNANCE.md`、`PROTOCOLS.md`。
 
@@ -628,6 +628,23 @@
 默认建议：先不做；等单实例 workspace governance 稳定后再评估。
 
 已决议：暂不做联邦工作空间。
+
+### DEC-P0-17 MCP 新五类入口和外部智能体回信闭环
+
+已决议：
+
+- MCP `tools/list` 在 v0.0.1 硬切为 `pact.discovery`、`pact.knowledge`、`pact.sharedspace`、`pact.codespace`、`pact.skillHub`，旧入口 `pact.workspace`、`pact.list`、`pact.skill`、`pact.help` 不保留 alias。
+- MCP 调用全面采用 Intent Operation envelope。外部请求缺省字段可由 adapter 从 grant、目标匹配和请求上下文补齐，但进入 Operation Registry、Tool Management、Workspace API、Audit 和 Checkpoint 前必须形成完整 envelope。
+- `pact.capabilities.list` 只返回当前 grant 权限范围内可见的全部 operation，不返回未授权或被 deny 的 operation。
+- 本机 local grant 必须按目标匹配：无匹配时默认只读；匹配支持目标后自动授予预定义 safe-write agent toolset，并记录 `targetMatch`、`matchedTargets` 和 `agentProfileId`。
+- `GET /mcp` SSE 必须承担 MCP Event Hub；operation 完成或失败后向同一 grant 主动推送 `notifications/pact/operation_reply`。
+- 所有上传和写入链路必须返回目标回执，明确 `targetKind`、`targetProvider`、`targetRef` 以及 workspace、repository、branch、change、reviewUrl 或 provider durable id。
+
+拒绝选项：
+
+- 不接受旧 outlet alias 过渡期，因为会继续污染智能体工具心智模型并让验证脚本长期背兼容包袱。
+- 不接受 `capabilities.list` 返回全量目录再让智能体自行猜权限；权限事实必须由 Pact 返回。
+- 不接受上传完成后只在同步 HTTP 响应里给结果；长链路必须有主动回信，避免外部智能体轮询或误判。
 
 ## 原建议决策顺序
 

@@ -2,11 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import {
-  buildSearchTerms,
-  compileRuleSet,
-  tokenizeText
-} from "../../specialized/knowledge/preprocessing/domain/rules/index.mjs";
 import { getRawMailObjectRoot } from "./raw-object-store.mjs";
 import { asBoolInt, asJson, scopedId } from "./metadata-helpers.mjs";
 
@@ -25,6 +20,42 @@ const WORD_CLOUD_DEFAULT_WORD_BAG_ID = "default";
 const WORD_CLOUD_OTHER_WORD_BAG_ID = "other";
 const WORD_CLOUD_LOW_WEIGHT_THRESHOLD = 0.15;
 const wordCloudJsonlWriteQueues = new Map();
+
+function createDefaultTextIndexingService() {
+  return {
+    compileRuleSet: (rules = {}) => ({
+      stopwords: new Set(
+        Array.isArray(rules.keywordStopwords)
+          ? rules.keywordStopwords.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+          : []
+      )
+    }),
+    tokenizeText(text, ruleSet = {}) {
+      const counts = new Map();
+      const normalized = String(text || "").toLowerCase();
+      const stopwords = ruleSet.stopwords instanceof Set ? ruleSet.stopwords : new Set();
+
+      for (const word of normalized.match(/[a-z0-9][a-z0-9._-]{1,}/g) || []) {
+        if (!stopwords.has(word)) {
+          counts.set(word, (counts.get(word) || 0) + 1);
+        }
+      }
+      for (const run of normalized.match(/[\u4e00-\u9fff]{2,}/g) || []) {
+        for (let index = 0; index < run.length - 1; index += 1) {
+          const bigram = run.slice(index, index + 2);
+          if (!stopwords.has(bigram)) {
+            counts.set(bigram, (counts.get(bigram) || 0) + 1);
+          }
+        }
+      }
+
+      return counts;
+    },
+    buildSearchTerms(text, ruleSet) {
+      return [...this.tokenizeText(text, ruleSet).keys()];
+    }
+  };
+}
 
 function asObjectJson(value) {
   return JSON.stringify(value && typeof value === "object" && !Array.isArray(value) ? value : {});
@@ -1522,8 +1553,8 @@ function buildSourceVocabularyFileKey(source = {}, text = "") {
   return "";
 }
 
-function buildSourceVocabularyFileEntries(sources = [], rules = {}) {
-  const ruleSet = compileRuleSet(rules || {});
+function buildSourceVocabularyFileEntries(sources = [], rules = {}, textIndexing) {
+  const ruleSet = textIndexing.compileRuleSet(rules || {});
   const entries = new Map();
 
   for (const source of sources || []) {
@@ -1537,7 +1568,7 @@ function buildSourceVocabularyFileEntries(sources = [], rules = {}) {
     }
 
     const termCounts = new Map();
-    for (const [term, count] of tokenizeText(text, ruleSet).entries()) {
+    for (const [term, count] of textIndexing.tokenizeText(text, ruleSet).entries()) {
       const normalizedTerm = String(term || "").trim();
       const normalizedCount = Number(count || 0);
       if (
@@ -1689,7 +1720,8 @@ function buildSourceVocabularyEntriesFromSourceFileIndex({ userDataPath } = {}) 
   }
 }
 
-export function createBatchRepository({ db, userDataPath }) {
+export function createBatchRepository({ db, userDataPath, textIndexing = null }) {
+  const textIndexingService = textIndexing || createDefaultTextIndexingService();
   const insertBatchStmt = db.prepare(`
     INSERT INTO import_batches (
       batch_id, job_id, status, created_at, updated_at, generated_at, settings_json
@@ -2350,7 +2382,7 @@ export function createBatchRepository({ db, userDataPath }) {
     const minFrequency = clampInteger(input.minFrequency, 1, 1, 1000000000);
     const query = String(input.query || "").trim().toLowerCase();
     const entriesByFileKey = new Map();
-    for (const entry of buildSourceVocabularyFileEntries(sources, input.rules || {})) {
+    for (const entry of buildSourceVocabularyFileEntries(sources, input.rules || {}, textIndexingService)) {
       if (!entriesByFileKey.has(entry.fileKey)) {
         entriesByFileKey.set(entry.fileKey, entry);
       }
@@ -2445,7 +2477,7 @@ export function createBatchRepository({ db, userDataPath }) {
         }
         const sources = listSourcesForVocabularyStmt.all(batchId).map(rowToSourceForVocabulary);
         scannedSourceCount += sources.length;
-        const entries = buildSourceVocabularyFileEntries(sources, rules);
+        const entries = buildSourceVocabularyFileEntries(sources, rules, textIndexingService);
         persistSourceVocabularyBatch({
           batchId,
           entries,
@@ -2535,7 +2567,7 @@ export function createBatchRepository({ db, userDataPath }) {
       scope.externalId,
       maxForegroundFiles
     ).map(rowToSourceForVocabulary);
-    const foregroundEntries = buildSourceVocabularyFileEntries(scopedSources, input.rules || {});
+    const foregroundEntries = buildSourceVocabularyFileEntries(scopedSources, input.rules || {}, textIndexingService);
     const foregroundByTerm = new Map();
     for (const entry of foregroundEntries) {
       for (const [term, count] of entry.termCounts.entries()) {
@@ -3546,7 +3578,7 @@ export function createBatchRepository({ db, userDataPath }) {
         }
 
         for (const item of result.retrieval?.items || []) {
-          const searchTerms = buildSearchTerms(
+          const searchTerms = textIndexingService.buildSearchTerms(
             [item.title, item.text, ...(item.keywords || [])].join("\n"),
             rules
           );

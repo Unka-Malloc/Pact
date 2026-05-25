@@ -32,12 +32,111 @@ function mcpRequest(method, params = {}, id = 1) {
   };
 }
 
+async function subscribeMcpOperationReplies(baseUrl, token) {
+  const controller = new AbortController();
+  const response = await fetch(`${baseUrl}/mcp`, {
+    method: "GET",
+    headers: apiKeyHeaders(token),
+    signal: controller.signal
+  });
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const replies = [];
+  const waiters = [];
+
+  function resolveWaiters() {
+    for (const waiter of [...waiters]) {
+      const match = replies.find(waiter.predicate);
+      if (!match) {
+        continue;
+      }
+      clearTimeout(waiter.timer);
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve(match);
+    }
+  }
+
+  function pushEvent(rawEvent) {
+    const dataLines = rawEvent
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trim());
+    if (!dataLines.length) {
+      return;
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (parsed.method === "notifications/pact/operation_reply") {
+      replies.push(parsed);
+      resolveWaiters();
+    }
+  }
+
+  const pump = (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() || "";
+        for (const event of events) {
+          pushEvent(event);
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        throw error;
+      }
+    }
+  })();
+
+  return {
+    waitFor(predicate, timeoutMs = 5000) {
+      const existing = replies.find(predicate);
+      if (existing) {
+        return Promise.resolve(existing);
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          predicate,
+          resolve,
+          timer: setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) {
+              waiters.splice(index, 1);
+            }
+            reject(new Error("Timed out waiting for MCP operation_reply."));
+          }, timeoutMs)
+        };
+        waiters.push(waiter);
+      });
+    },
+    async close() {
+      controller.abort();
+      try {
+        await pump;
+      } catch {
+        // Expected when the SSE fetch is aborted.
+      }
+    }
+  };
+}
+
 async function callWorkspaceMcp(baseUrl, token, operation, input = {}, id = 1) {
   const response = await fetchJsonResponse(`${baseUrl}/mcp`, {
     method: "POST",
     headers: apiKeyHeaders(token),
     body: JSON.stringify(mcpRequest("tools/call", {
-      name: "pact.workspace",
+      name: "pact.sharedspace",
       arguments: {
         apiVersion: "pact.mcp.v1",
         operation,
@@ -60,10 +159,12 @@ const server = await startHttpServer({
 });
 await installAuthenticatedFetch(server);
 
+let operationReplies = null;
+
 try {
   const localGrant = await fetchJsonResponse(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-pact-safety-confirm": "true" },
     body: JSON.stringify({
       targets: ["codex"],
       label: "verify-mcp-workspace-files",
@@ -84,7 +185,9 @@ try {
     body: JSON.stringify(mcpRequest("tools/list", {}, 2))
   });
   assert.equal(tools.status, 200);
-  assert.ok(tools.payload.result.tools.some((tool) => tool.name === "pact.workspace"));
+  assert.ok(tools.payload.result.tools.some((tool) => tool.name === "pact.sharedspace"));
+
+  operationReplies = await subscribeMcpOperationReplies(server.url, localGrant.payload.token);
 
   const created = await callWorkspaceMcp(
     server.url,
@@ -97,8 +200,8 @@ try {
     3
   );
   const workspace = created.workspace;
-  assert.ok(workspace.workspaceId);
-  assert.equal(workspace.ownerUserId, localGrant.payload.grant.id);
+  const workspaceId = workspace.workspaceId || workspace.workspaceRef;
+  assert.ok(workspaceId);
   assert.equal(workspace.metadata.defaultAdminUserId, localGrant.payload.grant.id);
   assert.equal(workspace.metadata.adminUserIds.includes(localGrant.payload.grant.id), true);
 
@@ -108,7 +211,7 @@ try {
     localGrant.payload.token,
     "pact.workspace.folder.create",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       folderPath
     },
     4
@@ -122,7 +225,7 @@ try {
     localGrant.payload.token,
     "pact.workspace.files.list",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       path: "files",
       recursive: true
     },
@@ -137,7 +240,7 @@ try {
     localGrant.payload.token,
     "pact.workspace.file.upload",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       folderPath,
       fileName: "a.txt",
       content: sampleContent,
@@ -151,13 +254,19 @@ try {
   assert.equal(upload.file.type, "file");
   assert.equal(upload.artifact.title, "a.txt");
   assert.equal(upload.artifact.content, sampleContent);
+  const uploadReply = await operationReplies.waitFor((event) =>
+    event.params?.operation === "pact.workspace.file.upload" &&
+    event.params?.status === "completed"
+  );
+  assert.equal(uploadReply.params.target.targetKind, "sharedspace");
+  assert.ok(uploadReply.params.target.targetRef || uploadReply.params.target.workspaceId);
 
   const afterUpload = await callWorkspaceMcp(
     server.url,
     localGrant.payload.token,
     "pact.workspace.files.list",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       path: "files",
       recursive: true
     },
@@ -170,7 +279,7 @@ try {
     localGrant.payload.token,
     "pact.workspace.file.stat",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       path: `${folderPath}/a.txt`
     },
     8
@@ -185,7 +294,7 @@ try {
     localGrant.payload.token,
     "pact.workspace.file.stat",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       path: `${folderPath}/missing.txt`
     },
     9
@@ -199,7 +308,7 @@ try {
     localGrant.payload.token,
     "pact.workspace.file.download",
     {
-      workspaceId: workspace.workspaceId,
+      workspaceId,
       path: `${folderPath}/a.txt`
     },
     10
@@ -225,12 +334,12 @@ try {
     method: "POST",
     headers: apiKeyHeaders(readOnlyGrant.payload.token),
     body: JSON.stringify(mcpRequest("tools/call", {
-      name: "pact.workspace",
+      name: "pact.sharedspace",
       arguments: {
         apiVersion: "pact.mcp.v1",
         operation: "pact.workspace.file.upload",
         input: {
-          workspaceId: workspace.workspaceId,
+          workspaceId,
           folderPath,
           fileName: "denied.txt",
           content: "denied"
@@ -243,6 +352,9 @@ try {
 
   console.log("agent-workspace-file-upload verification passed");
 } finally {
+  if (operationReplies) {
+    await operationReplies.close();
+  }
   await server.close();
   await fs.rm(userDataPath, { recursive: true, force: true });
 }

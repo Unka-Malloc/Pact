@@ -7,7 +7,7 @@ export const ACCESS_MODES = Object.freeze([
   "deny",
   "discoverOnly",
   "metadataOnly",
-  "readInPlace",
+  "controlledView",
   "citeOnly",
   "copyToContext",
   "exportAllowed",
@@ -28,8 +28,8 @@ export const REQUESTED_EGRESS = Object.freeze([
 ]);
 
 const EGRESS_ACCESS_MODE = Object.freeze({
-  searchResult: ["discoverOnly", "metadataOnly", "readInPlace", "citeOnly", "copyToContext", "exportAllowed", "checkoutAllowed"],
-  evidenceRead: ["readInPlace", "citeOnly", "copyToContext", "exportAllowed", "checkoutAllowed"],
+  searchResult: ["discoverOnly", "metadataOnly", "controlledView", "citeOnly", "copyToContext", "exportAllowed", "checkoutAllowed"],
+  evidenceRead: ["controlledView", "citeOnly", "copyToContext", "exportAllowed", "checkoutAllowed"],
   contextBundle: ["copyToContext", "exportAllowed", "checkoutAllowed"],
   artifactWrite: ["copyToContext", "exportAllowed", "checkoutAllowed"],
   exportFile: ["exportAllowed", "checkoutAllowed"],
@@ -174,7 +174,7 @@ export function createAuthorizationOverlay(input = {}) {
       actions: asArray(rule.actions).map(text).filter(Boolean),
       egress: asArray(rule.egress).map(text).filter((item) => REQUESTED_EGRESS.includes(item)),
       targetRefs: asArray(rule.targetRefs).map(text).filter(Boolean),
-      accessMode: normalizeAccessMode(rule.accessMode || input.defaultAccessMode || "readInPlace"),
+      accessMode: normalizeAccessMode(rule.accessMode || input.defaultAccessMode || "controlledView"),
       reason: text(rule.reason || "")
     }))
   };
@@ -310,7 +310,7 @@ export function evaluateKnowledgeAccess(request = {}, input = {}) {
     ...shallowObject(input.authorizationOverlay)
   });
   const requestedAction = text(request.requestedAction || "read");
-  const requestedAccessMode = normalizeAccessMode(request.requestedAccessMode || overlay.defaultAccessMode || "readInPlace");
+  const requestedAccessMode = normalizeAccessMode(request.requestedAccessMode || overlay.defaultAccessMode || "controlledView");
   const requestedEgress = normalizeRequestedEgress(request.requestedEgress);
   const targetRefs = targetRefsFromRequest(request);
   const policy = policyAllowsRequest({ request, view, requestedAction });

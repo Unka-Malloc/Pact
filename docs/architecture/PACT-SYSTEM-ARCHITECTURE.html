@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pact 系统架构图</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --ink: #17212f;
+      --muted: #66758a;
+      --line: #d4deea;
+      --blue: #276d9d;
+      --green: #3d7a47;
+      --purple: #7656a8;
+      --brown: #8a6230;
+      --red: #8b4a5b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.58 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 22px 48px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 32px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #eef3f8;
+      color: #26364a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: end;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--line);
+    }
+
+    .lead {
+      max-width: 780px;
+      margin-top: 10px;
+      color: #3f5064;
+      font-size: 15px;
+    }
+
+    .meta {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      text-align: right;
+      font-size: 13px;
+    }
+
+    .diagram {
+      margin-top: 20px;
+      padding: 16px;
+      overflow-x: auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 24px rgb(23 33 47 / 8%);
+    }
+
+    .architecture-board {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      grid-template-areas:
+        "management inject-management"
+        "service-label ."
+        "service inject-service"
+        "app-label ."
+        "app inject-application"
+        "foundation-label ."
+        "foundation inject-foundation";
+      align-items: stretch;
+      gap: 12px 14px;
+      min-width: 1040px;
+    }
+
+    .console-row,
+    .specialized-row,
+    .platform-foundation-row {
+      display: grid;
+    }
+
+    .console-row {
+      grid-area: management;
+    }
+
+    .service-connector {
+      grid-area: service-label;
+    }
+
+    .service-row {
+      grid-area: service;
+    }
+
+    .app-connector {
+      grid-area: app-label;
+    }
+
+    .specialized-row {
+      grid-area: app;
+    }
+
+    .foundation-connector {
+      grid-area: foundation-label;
+    }
+
+    .platform-foundation-row {
+      grid-area: foundation;
+    }
+
+    .service-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .node {
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--blue);
+      border-radius: 8px;
+    }
+
+    .node.console {
+      border-top-color: var(--purple);
+    }
+
+    .node.interface {
+      border-top-color: var(--blue);
+    }
+
+    .node.composition {
+      border-top-color: var(--brown);
+    }
+
+    .node.specialized {
+      border-top-color: var(--red);
+    }
+
+    .node.common {
+      border-top-color: var(--green);
+    }
+
+    .node-heading {
+      display: flex;
+      min-height: 44px;
+      padding: 10px 12px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #eef4fb;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .node-heading h3 {
+      font-size: 16px;
+    }
+
+    .base-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .node > ul {
+      margin: 0;
+      padding: 14px 14px 14px 32px;
+    }
+
+    .node li {
+      margin: 3px 0;
+    }
+
+    .connector {
+      display: grid;
+      place-items: center;
+      position: relative;
+      min-height: 28px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .connector::before {
+      content: "";
+      position: absolute;
+      inset: 50% 0 auto;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .connector span {
+      position: relative;
+      padding: 2px 10px;
+      background: var(--bg);
+    }
+
+    .specialized-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas:
+        "knowledge agent"
+        "sharedspace codespace"
+        "policy tools";
+      align-items: start;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .subnode {
+      padding: 12px;
+      background: #fbfdff;
+      border: 1px solid #dfe7f0;
+      border-radius: 7px;
+    }
+
+    .subnode h3 {
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    .subnode.knowledge {
+      grid-area: knowledge;
+      border-left: 5px solid var(--green);
+    }
+
+    .subnode.agent {
+      grid-area: agent;
+      border-left: 5px solid var(--purple);
+    }
+
+    .subnode.sharedspace {
+      grid-area: sharedspace;
+      border-left: 5px solid var(--brown);
+    }
+
+    .subnode.codespace {
+      grid-area: codespace;
+      border-left: 5px solid var(--blue);
+    }
+
+    .subnode.policy {
+      grid-area: policy;
+      border-left: 5px solid var(--red);
+    }
+
+    .subnode.tools {
+      grid-area: tools;
+      border-left: 5px solid var(--brown);
+    }
+
+    .knowledge-grid,
+    .agent-stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .tier,
+    .agent-layer,
+    .knowledge-base-strip,
+    .module-tile {
+      padding: 9px;
+      background: #fff;
+      border: 1px solid #dfe7f0;
+      border-radius: 6px;
+    }
+
+    .tier strong,
+    .module-tile strong,
+    .knowledge-base-strip strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .tier ul,
+    .module-tile ul,
+    .knowledge-base-strip ul {
+      margin: 0;
+      padding-left: 17px;
+    }
+
+    .tier li,
+    .module-tile li,
+    .knowledge-base-strip li {
+      margin: 2px 0;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .tier.distill {
+      border-left: 4px solid var(--red);
+    }
+
+    .tier.index {
+      border-left: 4px solid var(--blue);
+    }
+
+    .tier.raw {
+      border-left: 4px solid var(--green);
+    }
+
+    .knowledge-base-strip {
+      margin-top: 10px;
+      background: #fffdf8;
+      border-left: 4px solid var(--brown);
+    }
+
+    .agent-layer {
+      background: #fff;
+    }
+
+    .agent-layer-name {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .agent-runtime-rows {
+      display: grid;
+      gap: 8px;
+    }
+
+    .agent-runtime-row,
+    .agent-module-grid,
+    .knowledge-grid,
+    .workspace-grid,
+    .codespace-grid,
+    .policy-grid,
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .agent-runtime-row.single {
+      grid-template-columns: 1fr;
+    }
+
+    .caption {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .injection-card {
+      align-self: start;
+      position: relative;
+      background: #fffdf8;
+      border: 1px solid #eadcc9;
+      border-top: 5px solid var(--brown);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .inject-management {
+      grid-area: inject-management;
+    }
+
+    .inject-service {
+      grid-area: inject-service;
+    }
+
+    .inject-application {
+      grid-area: inject-application;
+    }
+
+    .inject-foundation {
+      grid-area: inject-foundation;
+    }
+
+    .injection-card-heading {
+      display: flex;
+      min-height: 44px;
+      padding: 10px 12px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: #f8f1e7;
+      border-bottom: 1px solid #eadcc9;
+    }
+
+    .injection-card-heading h3 {
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .injection-card-body {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .injection-card-body p {
+      color: #4f3f2b;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .injection-card-body ul {
+      margin: 0;
+      padding-left: 17px;
+    }
+
+    .injection-card-body li {
+      margin: 2px 0;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .injection-card::before {
+      content: "";
+      position: absolute;
+      top: 28px;
+      left: -24px;
+      width: 20px;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .platform-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      padding: 14px;
+    }
+
+    @media (max-width: 860px) {
+      main {
+        padding: 24px 14px 36px;
+      }
+
+      header,
+      .service-row,
+      .specialized-grid,
+      .platform-grid,
+      .knowledge-grid,
+      .agent-runtime-row,
+      .agent-module-grid,
+      .workspace-grid,
+      .codespace-grid,
+      .policy-grid,
+      .module-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .architecture-board {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "inject-management"
+          "management"
+          "service-label"
+          "inject-service"
+          "service"
+          "app-label"
+          "inject-application"
+          "app"
+          "foundation-label"
+          "inject-foundation"
+          "foundation";
+        min-width: 0;
+      }
+
+      .specialized-grid {
+        grid-template-areas:
+          "knowledge"
+          "agent"
+          "sharedspace"
+          "codespace"
+          "policy"
+          "tools";
+      }
+
+      .injection-card::before {
+        display: none;
+      }
+
+      .meta {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Pact 系统架构图</h1>
+        <p class="lead">从管理层到基建层展示 Pact 内部系统结构，重点表达接口封装、应用能力、公共基础设施和侧边启动装配边界之间的关系。</p>
+      </div>
+      <div class="meta">
+        <span>历史基线：2026-05-19</span>
+        <span>状态：工作稿</span>
+        <span>范围：Pact 内部结构</span>
+      </div>
+    </header>
+
+    <section class="diagram" aria-label="Pact 系统架构图">
+      <div class="architecture-board">
+        <div class="console-row">
+          <article class="node console">
+            <div class="node-heading">
+              <h3>管理层</h3>
+              <span class="base-label">Management</span>
+            </div>
+            <ul>
+              <li>提供知识库、工作空间、调试和系统管理界面。</li>
+              <li>只调用服务层接口，不直接访问应用层运行时或基建层存储。</li>
+            </ul>
+          </article>
+        </div>
+
+        <article class="injection-card inject-management">
+          <div class="injection-card-heading">
+            <h3>注入管理层入口</h3>
+            <span class="base-label">Composition Root</span>
+          </div>
+          <div class="injection-card-body">
+            <p>装配 Console shell、管理页面和只读系统视图。</p>
+            <ul>
+              <li>只注入服务层入口。</li>
+              <li>不暴露应用 runtime 或基建存储。</li>
+            </ul>
+          </div>
+        </article>
+
+        <div class="connector service-connector"><span>服务层</span></div>
+
+        <div class="service-row">
+          <article class="node interface">
+            <div class="node-heading">
+              <h3>接口封装层</h3>
+              <span class="base-label">Interface Wrapper</span>
+            </div>
+            <ul>
+              <li>统一 HTTP / RPC / CLI 三种交互。</li>
+              <li>负责认证、权限、参数归一化和返回格式。</li>
+              <li>对上承接管理层，对下只调用装配后的能力。</li>
+            </ul>
+          </article>
+        </div>
+
+        <article class="injection-card inject-service">
+          <div class="injection-card-heading">
+            <h3>注入接口适配器</h3>
+            <span class="base-label">Composition Root</span>
+          </div>
+          <div class="injection-card-body">
+            <p>注册 HTTP / RPC / CLI / MCP route、handler、adapter。</p>
+            <ul>
+              <li>注入认证和权限裁决端口。</li>
+              <li>注入应用层 operation/provider。</li>
+            </ul>
+          </div>
+        </article>
+
+        <div class="connector app-connector"><span>应用层</span></div>
+
+        <div class="specialized-row">
+          <article class="node specialized">
+            <div class="node-heading">
+              <h3>应用层</h3>
+              <span class="base-label">Specialized</span>
+            </div>
+            <div class="specialized-grid">
+              <div class="subnode knowledge">
+                <h3>知识转化</h3>
+                <div class="knowledge-grid" aria-label="知识转化核心能力">
+                  <div class="tier distill">
+                    <strong>知识蒸馏</strong>
+                    <ul>
+                      <li>摘要与文档化</li>
+                      <li>Markdown / DOCX</li>
+                    </ul>
+                  </div>
+                  <div class="tier index">
+                    <strong>知识索引</strong>
+                    <ul>
+                      <li>事件聚合</li>
+                      <li>embedding / 检索</li>
+                    </ul>
+                  </div>
+                  <div class="tier raw">
+                    <strong>原始语料</strong>
+                    <ul>
+                      <li>格式转换</li>
+                      <li>结构保留</li>
+                    </ul>
+                  </div>
+                  <div class="knowledge-base-strip">
+                    <strong>AgentLibrary / 图书馆</strong>
+                    <ul>
+                      <li><code>knowledgeBase</code> mount</li>
+                      <li>证据 / 导出 / 外部库适配</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+                <div class="subnode agent">
+                  <h3>智能体</h3>
+                  <div class="agent-stack" aria-label="智能体上下文、记忆与基座">
+                    <div class="agent-layer">
+                      <div class="agent-layer-name">核心组件</div>
+                      <div class="agent-runtime-rows">
+                        <div class="agent-runtime-row">
+                          <div class="module-tile">
+                            <strong>上下文（临时）</strong>
+                            <code>agent-context</code>
+                            <ul>
+                              <li>临时上下文</li>
+                              <li>会话压缩</li>
+                            </ul>
+                          </div>
+                          <div class="module-tile">
+                            <strong>记忆（长期）</strong>
+                            <code>agent-memory</code>
+                            <ul>
+                              <li>长期上下文</li>
+                              <li>contentRefs</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="agent-layer">
+                      <div class="agent-layer-name">智能体基座</div>
+                      <div class="agent-module-grid">
+                        <div class="module-tile">
+                          <strong>模型网关</strong>
+                          <code>agent-gateway</code>
+                        </div>
+                        <div class="module-tile">
+                          <strong>基础配置</strong>
+                          <code>agent-configs</code>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="subnode sharedspace">
+                  <h3>共享空间</h3>
+                  <div class="workspace-grid">
+                    <div class="module-tile">
+                      <strong>Sharedspace</strong>
+                      <code>agent-workspace</code>
+                      <ul>
+                        <li>受控文件空间</li>
+                        <li>StateCommit</li>
+                      </ul>
+                    </div>
+                    <div class="module-tile">
+                      <strong>协作治理</strong>
+                      <code>workspace-governance</code>
+                      <ul>
+                        <li>issue / proposal</li>
+                        <li>锁与继承</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p class="caption">共享空间是公共资产和协作状态，不属于单个智能体私有状态。</p>
+                </div>
+
+                <div class="subnode codespace">
+                  <h3>代码管理</h3>
+                  <div class="codespace-grid">
+                    <div class="module-tile">
+                      <strong>Codespace</strong>
+                      <code>pact.codespace</code>
+                      <ul>
+                        <li>repo / diff</li>
+                        <li>changeSet</li>
+                      </ul>
+                    </div>
+                    <div class="module-tile">
+                      <strong>Code Review</strong>
+                      <code>pact.code-review.v1</code>
+                      <ul>
+                        <li>Gerrit route</li>
+                        <li>review 状态同步</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p class="caption">需要评审或合并的代码进入代码管理；Workspace 只保存治理记录、引用、审计和 fallback。</p>
+                </div>
+
+                <div class="subnode policy">
+                  <h3>策略管理</h3>
+                  <div class="policy-grid">
+                    <div class="module-tile">
+                      <strong>流程策略</strong>
+                      <code>workflow-policy</code>
+                      <ul>
+                        <li>处理流程选择</li>
+                        <li>人工确认门禁</li>
+                      </ul>
+                    </div>
+                    <div class="module-tile">
+                      <strong>调用策略</strong>
+                      <code>agent-policy</code>
+                      <ul>
+                        <li>模型路由</li>
+                        <li>工具调用约束</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p class="caption">策略管理负责处理流程和智能体调用策略；安全权限仍由基建层安全权限裁决。</p>
+                </div>
+
+                <div class="subnode tools">
+                  <h3>通用工具与技能</h3>
+                  <div class="module-grid">
+                    <div class="module-tile">
+                      <strong>工具管理</strong>
+                      <code>capabilities/tools/tool-management-core</code>
+                      <ul>
+                        <li>toolset / grant</li>
+                        <li>策略与审计</li>
+                      </ul>
+                    </div>
+                    <div class="module-tile">
+                      <strong>技能管理</strong>
+                      <code>capabilities/skills</code>
+                      <ul>
+                        <li>skill registry</li>
+                        <li>profile 配置</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p class="caption">通用能力通过配置授权给智能体取用，不属于单个智能体私有状态。</p>
+                </div>
+            </div>
+          </article>
+        </div>
+
+        <article class="injection-card inject-application">
+          <div class="injection-card-heading">
+            <h3>注入应用能力</h3>
+            <span class="base-label">Composition Root</span>
+          </div>
+          <div class="injection-card-body">
+            <p>创建 Knowledge、Agent、Sharedspace、Codespace、Policy、Tool、Skill providers。</p>
+            <ul>
+              <li>应用模块声明依赖。</li>
+              <li>不主动查找全局 runtime。</li>
+            </ul>
+          </div>
+        </article>
+
+        <div class="connector foundation-connector"><span>基建层</span></div>
+
+        <div class="platform-foundation-row">
+          <article class="node common">
+            <div class="node-heading">
+              <h3>基建层</h3>
+              <span class="base-label">Common</span>
+            </div>
+            <div class="platform-grid">
+              <div class="module-tile">
+                <strong>核心能力</strong>
+                <code>core</code>
+                <ul>
+                  <li>服务发现</li>
+                  <li>状态协调</li>
+                  <li>通用调度</li>
+                </ul>
+              </div>
+              <div class="module-tile">
+                <strong>安全权限</strong>
+                <code>security</code>
+                <ul>
+                  <li>认证</li>
+                  <li>授权</li>
+                  <li>访问控制</li>
+                  <li>审计策略</li>
+                </ul>
+              </div>
+              <div class="module-tile">
+                <strong>模块管理</strong>
+                <code>module-management</code>
+                <ul>
+                  <li>mount 注册</li>
+                  <li>热加载</li>
+                  <li>能力声明</li>
+                </ul>
+              </div>
+              <div class="module-tile">
+                  <strong>算法和数据结构</strong>
+                <code>data-structure</code>
+                <ul>
+                  <li>Merkle Index</li>
+                  <li>Prefix / Range Index</li>
+                  <li>Checkpoint Projection</li>
+                </ul>
+              </div>
+              <div class="module-tile">
+                <strong>存储</strong>
+                <code>storage</code>
+                <ul>
+                  <li>LSM Ingest</li>
+                  <li>CAS Block Store</li>
+                  <li>Merkle DAG</li>
+                  <li>任务持久化</li>
+                </ul>
+              </div>
+              <div class="module-tile">
+                <strong>运维基础</strong>
+                <code>devops</code>
+                <ul>
+                  <li>日志</li>
+                  <li>健康状态</li>
+                  <li>监控告警</li>
+                  <li>诊断</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <article class="injection-card inject-foundation">
+          <div class="injection-card-heading">
+            <h3>注入基建实现</h3>
+            <span class="base-label">Composition Root</span>
+          </div>
+          <div class="injection-card-body">
+            <p>绑定 Security、Module、Storage、Data Structure、DevOps、Core 实现。</p>
+            <ul>
+              <li>基建层保持通用能力边界。</li>
+              <li>不反向理解业务语义。</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

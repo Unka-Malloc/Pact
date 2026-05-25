@@ -4,6 +4,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { createAuthorizationEngine } from "../authorization/authorization-engine.mjs";
+import { createAuthorizationStore } from "../authorization/authorization-store.mjs";
 
 const scryptAsync = promisify(crypto.scrypt);
 
@@ -377,6 +379,8 @@ export function createConsoleAuth({ userDataPath }) {
   fs.mkdirSync(rootPath, { recursive: true });
   const db = new Database(path.join(rootPath, "console-auth.sqlite"));
   ensureSchema(db);
+  const authorizationStore = createAuthorizationStore({ userDataPath });
+  const authorizationEngine = createAuthorizationEngine({ store: authorizationStore });
 
   // M-3: HMAC-derived CSRF tokens — never stored in the DB, cannot be extracted
   // from a DB backup.  The HMAC secret is generated once and persisted.
@@ -810,7 +814,6 @@ export function createConsoleAuth({ userDataPath }) {
   }
 
   function authorizeOperation({ request, operation, method, url }) {
-    const requiredScopes = Array.isArray(operation?.requiredScopes) ? operation.requiredScopes : [];
     const publicAccess = operation?.public === true;
     const externalAuth = operation?.externalAuth === true;
     if (!safeRequestMethod(method) && !sameOriginRequest(request)) {
@@ -858,8 +861,20 @@ export function createConsoleAuth({ userDataPath }) {
         bootstrap: getBootstrapStatus()
       };
     }
-    const missingScopes = requiredScopes.filter((scope) => !session.user.scopes.includes(scope));
-    if (missingScopes.length > 0) {
+    const authorizationDecision = authorizationEngine.evaluate({
+      operation,
+      request,
+      authSession: session,
+      input: {
+        method,
+        path: url?.pathname || ""
+      },
+      context: {
+        transport: "console-http"
+      },
+      enforceConfirmation: false
+    });
+    if (!authorizationDecision.allowed) {
       audit({
         user: session.user,
         operationId: operation?.id || "",
@@ -867,13 +882,16 @@ export function createConsoleAuth({ userDataPath }) {
         method,
         path: url?.pathname || "",
         status: "denied",
-        error: `missing scopes: ${missingScopes.join(",")}`
+        error: authorizationDecision.reasonCode || "authorization denied"
       });
+      const missingScopes = authorizationDecision.missingScopes || [];
+      const scopeSuffix = missingScopes.length > 0 ? `：${missingScopes.join(", ")}` : "";
       return {
         ok: false,
         status: 403,
-        error: `权限不足：${missingScopes.join(", ")}。`,
-        session
+        error: `权限不足${scopeSuffix}。`,
+        session,
+        authorizationDecision
       };
     }
     const needsCsrf =
@@ -900,7 +918,7 @@ export function createConsoleAuth({ userDataPath }) {
         };
       }
     }
-    return { ok: true, session };
+    return { ok: true, session, authorizationDecision };
   }
 
   function getSummary(request = null) {
@@ -929,6 +947,8 @@ export function createConsoleAuth({ userDataPath }) {
   return {
     rootPath,
     db,
+    authorizationStore,
+    authorizationEngine,
     ensureInitialOwner,
     ensureBootstrapToken,
     getBootstrapStatus,
@@ -950,6 +970,7 @@ export function createConsoleAuth({ userDataPath }) {
     audit,
     listAudit,
     close() {
+      authorizationStore.close?.();
       db.close();
     }
   };

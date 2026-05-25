@@ -75,7 +75,7 @@ async function callMcp(server, token, operation, input, id = 1) {
     headers: mcpHeaders(token),
     body: JSON.stringify(mcpRequest("tools/call", {
       name: "pact.call",
-      arguments: { operation, input }
+      arguments: { apiVersion: "pact.mcp.v1", operation, input }
     }, id))
   });
 }

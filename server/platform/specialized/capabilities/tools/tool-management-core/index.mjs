@@ -33,11 +33,17 @@ export function createToolManagementPlatform({
     activeFeatureIds: featureRuntime?.activeFeatureIds || null
   });
   const store = createToolManagementStore({ userDataPath });
-  const policyEngine = createToolPolicyEngine({ registry, store });
+  const authorizationStore = consoleAuth?.authorizationStore || null;
+  const policyEngine = createToolPolicyEngine({
+    registry,
+    store,
+    authorizationStore
+  });
   const runtime = createToolExecutionRuntime({
     registry,
     store,
     policyEngine,
+    authorizationStore,
     operations,
     controllers,
     operationAuditStore,
@@ -51,6 +57,7 @@ export function createToolManagementPlatform({
       store,
       policyEngine,
       runtime,
+      authorizationStore,
       catalog: () => registry.getCatalog()
     },
     consoleAuth,
@@ -64,6 +71,7 @@ export function createToolManagementPlatform({
     policyEngine,
     runtime,
     router,
+    authorizationStore,
     catalog: () => registry.getCatalog(),
     close() {
       store.close();

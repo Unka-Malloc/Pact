@@ -1,0 +1,271 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createAuthorizationEngine } from "../platform/common/security/authorization/authorization-engine.mjs";
+import { createAuthorizationStore } from "../platform/common/security/authorization/authorization-store.mjs";
+import { createToolPolicyEngine } from "../platform/specialized/capabilities/tools/tool-management-core/policy.mjs";
+import { createToolExecutionRuntime } from "../platform/specialized/capabilities/tools/tool-management-core/runtime.mjs";
+
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-authz-migration-"));
+const authorizationStore = createAuthorizationStore({ userDataPath });
+const authorizationEngine = createAuthorizationEngine({ store: authorizationStore });
+
+try {
+  const readOperation = {
+    id: "workspace.file.list",
+    requiredScopes: ["storage:read"],
+    safety: { risk: "read_only" },
+    readOnly: true
+  };
+  const writeOperation = {
+    id: "workspace.file.upload",
+    requiredScopes: ["storage:write"],
+    safety: { risk: "safe_write" },
+    readOnly: false
+  };
+  const repairOperation = {
+    id: "workspace.checkpoint.restore",
+    requiredScopes: ["workspace:maintain"],
+    safety: { risk: "repair_write", requiresConfirmation: true },
+    readOnly: false
+  };
+
+  const viewerSession = {
+    user: {
+      userId: "viewer-1",
+      username: "viewer",
+      roleId: "viewer",
+      scopes: ["storage:read"]
+    }
+  };
+  const maintainerSession = {
+    user: {
+      userId: "maintainer-1",
+      username: "maintainer",
+      roleId: "operator",
+      scopes: ["workspace:maintain"]
+    }
+  };
+
+  const readDecision = authorizationEngine.evaluate({
+    operation: readOperation,
+    authSession: viewerSession
+  });
+  assert.equal(readDecision.allowed, true);
+  assert.equal(readDecision.reasonCode, "allowed");
+
+  const writeDecision = authorizationEngine.evaluate({
+    operation: writeOperation,
+    authSession: viewerSession
+  });
+  assert.equal(writeDecision.allowed, false);
+  assert.equal(writeDecision.reasonCode, "missing_scopes");
+  assert.deepEqual(writeDecision.missingScopes, ["storage:write"]);
+
+  const repairNeedsConfirmation = authorizationEngine.evaluate({
+    operation: repairOperation,
+    authSession: maintainerSession,
+    input: {}
+  });
+  assert.equal(repairNeedsConfirmation.effect, "require_confirmation");
+  assert.equal(repairNeedsConfirmation.requiredConfirmation, true);
+
+  const repairConfirmed = authorizationEngine.evaluate({
+    operation: repairOperation,
+    authSession: maintainerSession,
+    input: { confirm: true }
+  });
+  assert.equal(repairConfirmed.allowed, true);
+
+  const deniedRequests = authorizationStore.listDeniedRequests({ limit: 20 });
+  assert.ok(
+    deniedRequests.some((item) => item.reasonCode === "missing_scopes"),
+    "denied authorization decisions must be recorded in unified store"
+  );
+
+  const policyStore = {
+    decisions: [],
+    appendPolicyDecision(decision) {
+      this.decisions.push(decision);
+      return { decisionId: decision.decisionId };
+    },
+    getRawGrant() {
+      return null;
+    }
+  };
+  const policyEngine = createToolPolicyEngine({
+    registry: { getTool: () => null, listProfiles: () => [] },
+    store: policyStore,
+    authorizationStore
+  });
+  const knowledgeTool = {
+    id: "pact.knowledge.health",
+    status: "active",
+    operationId: "knowledge.health",
+    requiredScopes: ["knowledge:read"],
+    toolsets: ["pact.knowledge.read"],
+    risk: "read_only",
+    readOnly: true
+  };
+  const narrowGrant = {
+    id: "grant-narrow",
+    label: "narrow",
+    scopes: ["knowledge:read"],
+    toolsets: ["pact.document.parse"],
+    toolAllow: [],
+    toolDeny: [],
+    metadata: {}
+  };
+  const toolsetDenied = policyEngine.evaluate({
+    tool: knowledgeTool,
+    grant: narrowGrant
+  });
+  assert.equal(toolsetDenied.effect, "deny");
+  assert.equal(toolsetDenied.reasonCode, "missing_toolsets");
+  assert.ok(policyStore.decisions.some((decision) => decision.reasonCode === "missing_toolsets"));
+  assert.ok(
+    authorizationStore.listDecisions({ limit: 50 }).some((decision) =>
+      decision.toolId === "pact.knowledge.health" && decision.reasonCode === "missing_toolsets"
+    ),
+    "tool policy decisions must also be mirrored into the unified authorization store"
+  );
+
+  const repairTool = {
+    id: "pact.runtime.mounts.reload",
+    status: "active",
+    operationId: "runtime.reload_mounts",
+    requiredScopes: ["knowledge:maintain"],
+    toolsets: ["pact.runtime.maintain"],
+    risk: "repair_write",
+    readOnly: false,
+    requiresApproval: true
+  };
+  const repairGrant = {
+    id: "grant-repair",
+    label: "repair",
+    scopes: ["knowledge:maintain"],
+    toolsets: ["pact.runtime.maintain"],
+    toolAllow: [],
+    toolDeny: [],
+    metadata: { maxRisk: "repair_write" }
+  };
+  const policyNeedsConfirmation = policyEngine.evaluate({
+    tool: repairTool,
+    grant: repairGrant,
+    input: {}
+  });
+  assert.equal(policyNeedsConfirmation.effect, "require_confirmation");
+
+  const policyAllowed = policyEngine.evaluate({
+    tool: repairTool,
+    grant: repairGrant,
+    input: { confirm: true }
+  });
+  assert.equal(policyAllowed.effect, "allow");
+
+  const expiredGrantDecision = authorizationEngine.evaluate({
+    operation: {
+      id: "tool.grant.authorize",
+      requiredScopes: [],
+      safety: { risk: "read_only" },
+      readOnly: true
+    },
+    grant: {
+      id: "grant-expired",
+      scopes: [],
+      toolsets: [],
+      expiresAt: new Date(Date.now() - 1000).toISOString()
+    },
+    grantRequired: true
+  });
+  assert.equal(expiredGrantDecision.allowed, false);
+  assert.equal(expiredGrantDecision.reasonCode, "grant_expired");
+
+  const originGrantDecision = authorizationEngine.evaluate({
+    operation: {
+      id: "tool.grant.authorize",
+      requiredScopes: [],
+      safety: { risk: "read_only" },
+      readOnly: true
+    },
+    grant: {
+      id: "grant-origin",
+      scopes: [],
+      toolsets: [],
+      allowedOrigins: ["https://allowed.example"]
+    },
+    request: { headers: { origin: "https://denied.example" } },
+    grantRequired: true
+  });
+  assert.equal(originGrantDecision.allowed, false);
+  assert.equal(originGrantDecision.reasonCode, "origin_not_allowed");
+
+  const runtimeStore = {
+    policyDecisions: [],
+    executions: [],
+    metrics: [],
+    authorizeRequest() {
+      return {
+        ok: false,
+        status: 401,
+        error: "缺少工具访问令牌。",
+        reasonCode: "missing_token"
+      };
+    },
+    appendPolicyDecision(decision) {
+      this.policyDecisions.push(decision);
+      return { decisionId: decision.decisionId };
+    },
+    appendExecution(entry) {
+      this.executions.push(entry);
+      return { toolExecutionId: entry.toolExecutionId };
+    },
+    appendMetric(entry) {
+      this.metrics.push(entry);
+      return {};
+    }
+  };
+  const runtime = createToolExecutionRuntime({
+    registry: {
+      getTool: () => knowledgeTool,
+      listProfiles: () => []
+    },
+    store: runtimeStore,
+    policyEngine,
+    authorizationStore,
+    operations: [{
+      id: "knowledge.health",
+      requiredScopes: ["knowledge:read"],
+      safety: { risk: "read_only" },
+      readOnly: true,
+      target: { controller: "system", method: "handleHealthz" },
+      http: { method: "GET", path: "/api/knowledge/health" }
+    }],
+    controllers: {},
+    logger: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {}
+    }
+  });
+  const runtimeDenied = await runtime.executeTool({
+    toolId: "pact.knowledge.health",
+    input: {},
+    request: { headers: {}, socket: {} }
+  });
+  assert.equal(runtimeDenied.ok, false);
+  assert.equal(runtimeDenied.payload.error.code, "missing_token");
+  assert.ok(
+    authorizationStore.listDecisions({ limit: 100 }).some((decision) =>
+      decision.toolId === "pact.knowledge.health" && decision.reasonCode === "missing_token"
+    ),
+    "tool token authorization denials must be mirrored into unified authorization store"
+  );
+} finally {
+  authorizationStore.close();
+  await fs.rm(userDataPath, { recursive: true, force: true });
+}
+
+console.log("authorization migration verification passed");

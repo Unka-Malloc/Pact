@@ -354,6 +354,14 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           </button>
           <button
             class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'productionHealth' }"
+            type="button"
+            @click="openAdmin('productionHealth')"
+          >
+            生产健康
+          </button>
+          <button
+            class="side-link side-link-subtle"
             :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'logs' }"
             type="button"
             @click="openAdmin('logs')"

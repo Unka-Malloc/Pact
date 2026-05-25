@@ -1,0 +1,10 @@
+{
+  "id": "pact.authorization.admin",
+  "label": "Authorization admin",
+  "requiredScopes": [
+    "auth:admin"
+  ],
+  "maxRisk": "repair_write",
+  "grantable": false,
+  "defaultForAgents": false
+}

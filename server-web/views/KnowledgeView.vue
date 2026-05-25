@@ -2,6 +2,8 @@
 import { computed, nextTick, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useConsole, type KnowledgeTab } from '../composables/useConsole';
+import { bridge } from '../lib/bridge';
+import { createKnowledgeUploadedFilesPayload } from '../lib/knowledge-upload-session';
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
 import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
@@ -50,6 +52,7 @@ const {
   goldenRulePackages,
   hasFeature,
   hiddenVocabularyEntryCount,
+  ingestFiles,
   ingestJob,
   ingestProgress,
   isAuthenticated,
@@ -212,10 +215,44 @@ const isKnownKnowledgeTab = computed(
     activeKnowledgeTab.value === "conflicts" ||
     activeKnowledgeTab.value === "maintenance",
 );
+const dynamicParsingPreviewConfig = {
+  pipelineId: "dynamic-parameter-v1",
+  ingestPipelineId: "unified-knowledge-ingest-v1",
+  contextBudget: { knowledgeTokens: 12000 },
+  payloadBudget: { maxResponseBytes: 1048576 },
+  granularity: {
+    secondaryParse: { enabled: false },
+  },
+  dynamicParsing: {
+    preserveStructureArtifacts: true,
+  },
+  structureArtifacts: true,
+  granularityFragments: true,
+  parentArtifactId: "",
+};
+const dynamicParsingPolicySignature = JSON.stringify(dynamicParsingPreviewConfig);
+const documentPreviewResult = ref<Record<string, unknown> | null>(null);
+
+async function previewKnowledgeDocumentParsing() {
+  if (ingestFiles.value.length === 0) {
+    return;
+  }
+  const uploadedFiles = await createKnowledgeUploadedFilesPayload(ingestFiles.value);
+  documentPreviewResult.value = await bridge.parseDocument({
+    pipelineId: dynamicParsingPreviewConfig.pipelineId,
+    expectedOutputs: ["preprocessResult", "chunks", "structureArtifacts", "granularityFragments"],
+    uploadedFiles,
+    dryRun: true,
+    contextBudget: dynamicParsingPreviewConfig.contextBudget,
+    payloadBudget: dynamicParsingPreviewConfig.payloadBudget,
+    granularity: dynamicParsingPreviewConfig.granularity,
+    dynamicParsing: dynamicParsingPreviewConfig.dynamicParsing,
+  });
+}
 </script>
 
 <template>
-          <section class="knowledge-layout">
+          <section class="knowledge-layout" :data-dynamic-parsing-policy="dynamicParsingPolicySignature">
             <SegmentedToggle
               v-if="activeKnowledgeTab === 'management'"
               v-model="knowledgeManagementPanel"
@@ -612,8 +649,17 @@ const isKnownKnowledgeTab = computed(
                 >
                   {{ busyKey === "knowledge:ingest" ? "上传中" : "开始整理" }}
                 </button>
+                <button
+                  class="tool-button tool-button-ghost"
+                  type="button"
+                  :disabled="!canWriteJobs || ingestFiles.length === 0"
+                  @click="previewKnowledgeDocumentParsing"
+                >
+                  预览解析
+                </button>
               </div>
               <p class="module-note">{{ ingestProgress || "选择文件后，处理进度会显示在这里。" }}</p>
+              <pre v-if="documentPreviewResult" class="module-json-preview">{{ jsonPreview(documentPreviewResult) }}</pre>
               <div v-if="ingestJob" class="ingest-queue-card">
                 <div>
                   <strong>{{ ingestJob.id }}</strong>

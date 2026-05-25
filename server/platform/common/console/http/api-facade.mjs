@@ -1,54 +1,66 @@
 import os from "node:os";
-import { listAvailableAnalysisModules } from "../../../../platform/specialized/knowledge/preprocessing/analysis-engine-registry.mjs";
-import { getAgentConfigRegistry } from "../../../specialized/agent/agent-configs/config-registry.mjs";
 import { getSettingsPath, loadSettings } from "../../platform-core/settings.mjs";
 import { buildBootstrapPayload, getDiscoveryConfigPath } from "../../platform-core/discovery/config.mjs";
-import { getEmailRulesPath, loadEmailRules } from "../../../specialized/knowledge/preprocessing/domain/rules/email-rules.mjs";
-import { getExpertVocabularyPath, loadExpertVocabulary } from "../../../specialized/knowledge/preprocessing/domain/rules/expert-vocabulary.mjs";
-import {
-  getKnowledgeGuidanceSummary,
-  getKnowledgeTaxonomyPath,
-  loadKnowledgeTaxonomy
-} from "../../../specialized/knowledge/preprocessing/domain/knowledge-taxonomy/index.mjs";
-import {
-  getMountConfigPath,
-  getMountConfigPaths,
-  loadMountConfig
-} from "../../module-manager/mount-config.mjs";
 
-function summarizeMount(name, mount) {
+function createFallbackAgentConfigRegistry() {
   return {
-    name,
-    id: mount?.id || "",
-    kind: mount?.kind || name,
-    enabled: mount?.enabled !== false,
-    reason: mount?.reason || "",
-    supportsStructuredDocument: typeof mount?.extractDocument === "function",
-    supportsTextExtraction: typeof mount?.extractText === "function",
-    supportsBatchHook: typeof mount?.onBatchCompleted === "function"
+    async refresh() {
+      return {
+        rootPath: "",
+        modelListPath: "",
+        agentListPath: "",
+        modelManifest: {},
+        agentManifest: {}
+      };
+    },
+    getModelLibraryEntries() {
+      return [];
+    },
+    getModelLibraryAgents() {
+      return [];
+    }
   };
 }
 
-function redactModulePaths(value) {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  const clone = JSON.parse(JSON.stringify(value));
-  function walk(item) {
-    if (!item || typeof item !== "object") {
-      return;
-    }
-    delete item.rootPath;
-    delete item.databasePath;
-    delete item.extensionPath;
-    for (const child of Object.values(item)) {
-      if (child && typeof child === "object") {
-        walk(child);
-      }
-    }
-  }
-  walk(clone);
-  return clone;
+function normalizeConsoleDomainServices(services = {}) {
+  return {
+    getAgentConfigRegistry:
+      typeof services.getAgentConfigRegistry === "function"
+        ? services.getAgentConfigRegistry
+        : createFallbackAgentConfigRegistry,
+    listAvailableAnalysisModules:
+      typeof services.listAvailableAnalysisModules === "function"
+        ? services.listAvailableAnalysisModules
+        : async () => [],
+    getEmailRulesPath:
+      typeof services.getEmailRulesPath === "function" ? services.getEmailRulesPath : () => "",
+    loadEmailRules:
+      typeof services.loadEmailRules === "function" ? services.loadEmailRules : async () => ({}),
+    getExpertVocabularyPath:
+      typeof services.getExpertVocabularyPath === "function" ? services.getExpertVocabularyPath : () => "",
+    loadExpertVocabulary:
+      typeof services.loadExpertVocabulary === "function" ? services.loadExpertVocabulary : async () => ({}),
+    getKnowledgeGuidanceSummary:
+      typeof services.getKnowledgeGuidanceSummary === "function"
+        ? services.getKnowledgeGuidanceSummary
+        : async () => ({}),
+    getKnowledgeTaxonomyPath:
+      typeof services.getKnowledgeTaxonomyPath === "function" ? services.getKnowledgeTaxonomyPath : () => "",
+    loadKnowledgeTaxonomy:
+      typeof services.loadKnowledgeTaxonomy === "function" ? services.loadKnowledgeTaxonomy : async () => ({}),
+    buildToolManagementClientConnectionRows:
+      typeof services.buildToolManagementClientConnectionRows === "function"
+        ? services.buildToolManagementClientConnectionRows
+        : () => [],
+    buildKnowledgeConsoleSummary:
+      typeof services.buildKnowledgeConsoleSummary === "function"
+        ? services.buildKnowledgeConsoleSummary
+        : async () => null,
+    buildRuntimeConsoleSummary:
+      typeof services.buildRuntimeConsoleSummary === "function"
+        ? services.buildRuntimeConsoleSummary
+        : async () => null
+  };
 }
 
 function featureEnabled(features, featureId) {
@@ -176,27 +188,6 @@ function buildAgentSelector(settings = {}) {
   };
 }
 
-export async function buildKnowledgeConsoleSummary(runtime, jobManager) {
-  const knowledgeBase = runtime?.mounts?.knowledgeBase;
-  const [health, capabilities, maintenance, jobs] = await Promise.all([
-    typeof knowledgeBase?.health === "function" ? Promise.resolve(knowledgeBase.health()) : Promise.resolve(null),
-    typeof knowledgeBase?.capabilities === "function"
-      ? Promise.resolve(knowledgeBase.capabilities())
-      : Promise.resolve(null),
-    typeof knowledgeBase?.getMaintenance === "function"
-      ? Promise.resolve(knowledgeBase.getMaintenance())
-      : Promise.resolve(null),
-    jobManager.listJobs({ limit: 8 })
-  ]);
-  return {
-    available: Boolean(knowledgeBase && knowledgeBase.enabled !== false),
-    health: redactModulePaths(health),
-    capabilities: redactModulePaths(capabilities),
-    maintenance,
-    recentJobs: jobs.items || []
-  };
-}
-
 const PACT_CLIENT_CONNECTION = {
   kind: "pact-client",
   method: "pact-client 封装",
@@ -205,108 +196,15 @@ const PACT_CLIENT_CONNECTION = {
 };
 
 const MCP_PLUGIN_CONNECTION = {
-  kind: "mcp-plugin",
-  method: "MCP 插件连接"
+  kind: "mcp-plugin"
 };
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function asObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
 function compactText(value) {
   return String(value || "").trim();
-}
-
-function slugText(value, fallback = "target") {
-  const normalized = compactText(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || fallback;
-}
-
-function isMcpPluginGrant(grant) {
-  const metadata = asObject(grant?.metadata);
-  return (
-    compactText(grant?.type) === "mcp-client" ||
-    compactText(metadata.issuedBy) === "pact-mcp-local-pairing"
-  );
-}
-
-function mcpGrantTargets(grant) {
-  const metadata = asObject(grant?.metadata);
-  const targets = asArray(metadata.targets).map(compactText).filter(Boolean);
-  if (targets.length > 0) {
-    return targets;
-  }
-  const label = compactText(grant?.label).replace(/\s*\(MCP Client\)\s*$/i, "");
-  return [label || compactText(grant?.id) || "MCP 插件"];
-}
-
-function mcpGrantConnectionState(grant) {
-  if (compactText(grant?.revokedAt)) {
-    return { state: "revoked", label: "已撤销", migrationState: "offline" };
-  }
-  if (grant?.enabled === false) {
-    return { state: "disabled", label: "停用", migrationState: "offline" };
-  }
-  if (compactText(grant?.lastUsedAt)) {
-    return { state: "connected", label: "已连接", migrationState: "unknown" };
-  }
-  return { state: "paired", label: "已配对", migrationState: "unknown" };
-}
-
-function mcpGrantRows(toolManagementPlatform) {
-  const listGrants = toolManagementPlatform?.store?.listGrants;
-  if (typeof listGrants !== "function") {
-    return [];
-  }
-
-  try {
-    return listGrants.call(toolManagementPlatform.store)
-      .filter(isMcpPluginGrant)
-      .flatMap((grant) => {
-        const connection = mcpGrantConnectionState(grant);
-        const metadata = asObject(grant.metadata);
-        const targets = mcpGrantTargets(grant);
-        return targets.map((target, index) => {
-          const targetKey = targets.length > 1 ? `${slugText(target)}-${index + 1}` : slugText(target);
-          const lastSeenAt = compactText(grant.lastUsedAt || grant.updatedAt || grant.createdAt);
-          return {
-            clientId: `mcp:${grant.id}:${targetKey}`,
-            clientLabel: target || grant.label || grant.id,
-            appVersion: compactText(metadata.connectorVersion),
-            platform: "MCP 插件",
-            hostname: target || "",
-            bootstrapUrl: "",
-            currentServiceUrl: "",
-            desiredServiceUrl: "",
-            currentJobServiceUrl: "",
-            configVersion: "",
-            migrationState: connection.migrationState,
-            connectionKind: MCP_PLUGIN_CONNECTION.kind,
-            connectionMethod: MCP_PLUGIN_CONNECTION.method,
-            connectionState: connection.state,
-            connectionStatusLabel: connection.label,
-            connectionDetail: "Tool Management 授权",
-            supportsMigration: false,
-            sourceGrantId: grant.id,
-            busy: false,
-            lastJobId: "",
-            lastError: "",
-            firstSeenAt: compactText(grant.createdAt),
-            lastSeenAt,
-            lastSeenServerId: compactText(metadata.serverId)
-          };
-        });
-      });
-  } catch {
-    return [];
-  }
 }
 
 function normalizePactClientRow(item) {
@@ -336,9 +234,9 @@ function buildClientConnectionSummary(items) {
   };
 }
 
-export function buildClientConnectionList(clientRegistrations, toolManagementPlatform = null) {
+export function buildClientConnectionList(clientRegistrations, additionalConnectionRows = []) {
   const pactClientRows = asArray(clientRegistrations?.items).map(normalizePactClientRow);
-  const mcpRows = mcpGrantRows(toolManagementPlatform);
+  const mcpRows = asArray(additionalConnectionRows);
   const items = [...pactClientRows, ...mcpRows].sort((left, right) =>
     compactText(right.lastSeenAt).localeCompare(compactText(left.lastSeenAt))
   );
@@ -360,8 +258,10 @@ export async function buildConsoleState({
   maintenanceAgent = null,
   clientRuntimeAllocator = null,
   features = null,
-  toolManagementPlatform = null
+  toolManagementPlatform = null,
+  consoleDomainServices = null
 }) {
+  const domainServices = normalizeConsoleDomainServices(consoleDomainServices);
   const [
     settings,
     rawSettings,
@@ -370,27 +270,27 @@ export async function buildConsoleState({
     knowledgeTaxonomy,
     knowledgeGuidance,
     jobs,
-    clients,
-    mountConfig
+    clients
   ] = await Promise.all([
     loadSettings(userDataPath, { redactSecrets: true }),
     loadSettings(userDataPath),
-    loadEmailRules(userDataPath),
-    loadExpertVocabulary(userDataPath),
-    loadKnowledgeTaxonomy(userDataPath),
-    getKnowledgeGuidanceSummary(userDataPath),
+    domainServices.loadEmailRules(userDataPath),
+    domainServices.loadExpertVocabulary(userDataPath),
+    domainServices.loadKnowledgeTaxonomy(userDataPath),
+    domainServices.getKnowledgeGuidanceSummary(userDataPath),
     jobManager.listJobs({ limit: 50 }),
-    Promise.resolve(
+    Promise.resolve(metadataStore.listClientRegistrations({
+      offlineAfterSeconds: discoveryState.offlineAfterSeconds
+    })).then(async (clientRegistrations) =>
       buildClientConnectionList(
-        metadataStore.listClientRegistrations({
+        clientRegistrations,
+        await domainServices.buildToolManagementClientConnectionRows(toolManagementPlatform, {
           offlineAfterSeconds: discoveryState.offlineAfterSeconds
-        }),
-        toolManagementPlatform
+        })
       )
-    ),
-    loadMountConfig(userDataPath)
+    )
   ]);
-  const agentConfigRegistry = getAgentConfigRegistry();
+  const agentConfigRegistry = domainServices.getAgentConfigRegistry();
   const agentConfigState = await agentConfigRegistry.refresh({ settingsFallback: rawSettings });
   const projectedSettings = {
     ...settings,
@@ -398,9 +298,14 @@ export async function buildConsoleState({
     modelLibraryAgentIds: agentConfigRegistry.getModelLibraryAgents().map((agent) => agent.uid).filter(Boolean),
     modelLibraryAgents: agentConfigRegistry.getModelLibraryAgents({ redactSecrets: true })
   };
-  const analysisModules = await listAvailableAnalysisModules(runtime, projectedSettings);
-  const analysisRuntimeEnabled = featureEnabled(features, "analysis-runtime");
   const knowledgeCoreEnabled = featureEnabled(features, "knowledge-core");
+  const runtimeSummary = await domainServices.buildRuntimeConsoleSummary({
+    userDataPath,
+    runtime,
+    settings: projectedSettings,
+    features,
+    listAvailableAnalysisModules: domainServices.listAvailableAnalysisModules
+  });
 
   return {
     server: {
@@ -409,19 +314,7 @@ export async function buildConsoleState({
       distPath: distPath || "",
       hostname: os.hostname()
     },
-    runtime: {
-      profile: runtime.runtimeOptions.profile,
-      cwd: runtime.runtimeOptions.cwd,
-      mountModules: runtime.runtimeOptions.mountModules,
-      mountRouting: runtime.runtimeOptions.mountRouting,
-      mountGeneration: runtime.mountGeneration || 0,
-      mountConfigPath: getMountConfigPath(userDataPath),
-      mountConfigPaths: getMountConfigPaths(userDataPath),
-      mountConfig,
-      mounts: Object.entries(runtime.mounts || {}).map(([name, mount]) => summarizeMount(name, mount)),
-      analysisModules: analysisRuntimeEnabled ? analysisModules : [],
-      currentAnalysisModuleId: projectedSettings.analysisModuleId
-    },
+    runtime: runtimeSummary,
     settings: {
       path: getSettingsPath(userDataPath),
       value: projectedSettings
@@ -440,15 +333,15 @@ export async function buildConsoleState({
       bootstrap: buildBootstrapPayload(discoveryState)
     },
     emailRules: {
-      path: getEmailRulesPath(userDataPath),
+      path: domainServices.getEmailRulesPath(userDataPath),
       rules
     },
     expertVocabulary: {
-      path: getExpertVocabularyPath(userDataPath),
+      path: domainServices.getExpertVocabularyPath(userDataPath),
       vocabulary: expertVocabulary
     },
     knowledgeTaxonomy: {
-      path: getKnowledgeTaxonomyPath(userDataPath),
+      path: domainServices.getKnowledgeTaxonomyPath(userDataPath),
       taxonomy: knowledgeTaxonomy,
       guidance: knowledgeGuidance
     },
@@ -456,7 +349,9 @@ export async function buildConsoleState({
     maintenanceAgent: maintenanceAgent
       ? await maintenanceAgent.getConsoleSummary()
       : null,
-    knowledgeConsole: knowledgeCoreEnabled ? await buildKnowledgeConsoleSummary(runtime, jobManager) : null,
+    knowledgeConsole: knowledgeCoreEnabled
+      ? await domainServices.buildKnowledgeConsoleSummary(runtime, jobManager)
+      : null,
     storage: metadataStore.getStorageSummary(),
     jobs,
     clients,
@@ -475,11 +370,18 @@ export async function buildRuntimeInfo({
   metadataStore,
   serverUrl,
   consoleAuth = null,
-  features = null
+  features = null,
+  consoleDomainServices = null
 }) {
+  const domainServices = normalizeConsoleDomainServices(consoleDomainServices);
   const settings = await loadSettings(userDataPath, { redactSecrets: true });
-  const mountConfig = await loadMountConfig(userDataPath);
-  const analysisRuntimeEnabled = featureEnabled(features, "analysis-runtime");
+  const runtimeSummary = await domainServices.buildRuntimeConsoleSummary({
+    userDataPath,
+    runtime,
+    settings,
+    features,
+    listAvailableAnalysisModules: domainServices.listAvailableAnalysisModules
+  });
   return {
     server: {
       url: serverUrl,
@@ -487,21 +389,7 @@ export async function buildRuntimeInfo({
       distPath: distPath || "",
       hostname: os.hostname()
     },
-    runtime: {
-      profile: runtime.runtimeOptions.profile,
-      cwd: runtime.runtimeOptions.cwd,
-      mountModules: runtime.runtimeOptions.mountModules,
-      mountRouting: runtime.runtimeOptions.mountRouting,
-      mountGeneration: runtime.mountGeneration || 0,
-      mountConfigPath: getMountConfigPath(userDataPath),
-      mountConfigPaths: getMountConfigPaths(userDataPath),
-      mountConfig,
-      mounts: Object.entries(runtime.mounts || {}).map(([name, mount]) =>
-        summarizeMount(name, mount)
-      ),
-      analysisModules: analysisRuntimeEnabled ? await listAvailableAnalysisModules(runtime, settings) : [],
-      currentAnalysisModuleId: settings.analysisModuleId
-    },
+    runtime: runtimeSummary,
     auth: consoleAuth ? consoleAuth.getSummary() : null,
     storage: metadataStore.getStorageSummary(),
     discovery: buildBootstrapPayload(discoveryState),

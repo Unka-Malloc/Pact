@@ -107,7 +107,7 @@
 
 ### P0-00 智能体知识源头权限门禁缺失
 
-当前差距：传统知识库倾向于把已经存进去的内容按召回和排序结果提供给智能体，重点放在优化切分、召回、排序和摘要。Pact 的路线不同：知识能力应命名和治理为 `AgentLibrary / 图书馆`，必须从 source / asset 入库开始治理智能体是否能发现、读取、引用、复制进上下文、导出、下载或写入长期 memory。当前代码还没有完整的 `pact.knowledge-access.v1`、`pact.agent-library.v1`、accessMode / checkoutPolicy / loanRecord 闭环。
+当前状态：传统知识库倾向于把已经存进去的内容按召回和排序结果提供给智能体，重点放在优化切分、召回、排序和摘要。Pact 的路线不同：知识能力应命名和治理为 `AgentLibrary / 图书馆`，必须从 source / asset 入库开始治理智能体是否能发现、读取、引用、复制进上下文、导出、下载或写入长期 memory。当前代码已具备 `pact.knowledge-access.v1`、`pact.agent-library.v1`、accessMode / checkoutPolicy / loanRecord 裁决实现，并已通过 specialized console operation executor 绑定 `knowledge.access.*` 协议入口；剩余差距是把检索、evidence 回读、上下文编译、导出、蒸馏、memory 写入和外部 adapter 的所有出口都强制接入该裁决，而不是只在验证脚本和控制台入口中证明能力存在。
 
 为什么重要：随着大模型基座智力、上下文窗口和注意力能力提升，知识库不应主要承担“有限信息投喂器”的角色，而应成为一栋权限严密、分类清楚、索引完备的团队知识图书馆。智能体有门禁卡才能进入，有楼层权限才能访问 source group，有图书权限才能读具体内容，有借阅权限才能带走。高敏感资产可以只允许受控读取，不允许导出、下载、写 artifact、写 memory 或送入未授权模型上下文。
 
@@ -119,14 +119,14 @@
 
 怎么补：
 
-- 定义并实现 `pact.knowledge-access.v1` 和 `pact.agent-library.v1`。
+- 继续完善 `pact.knowledge-access.v1` 和 `pact.agent-library.v1` 在所有知识出口的强制接入。
 - 增加 `libraryCardId`、`knowledgeAccessReceipt`、`loanRecord`、`requestedEgress`、`canRetain`、`canShare`、`revocationPolicy`。
 - 定义外部知识库再授权模型：`upstreamKnowledgeRef`、`upstreamPolicyRef`、`derivedKnowledgeSpace`、`authorizationOverlay`、`upstreamAccessDenied`。
 - 支持同一 `upstreamKnowledgeRef` 映射多个 `derivedViewRef`，并按 subject / workspace / agent profile 分配不同权限。
 - 资产入库时写入 `dataClass`、`sensitivity`、`workspaceScope`、`sourceScope`、`owner`、`allowedSubjects`、`allowedAgentProfiles`、`allowedActions`、`checkoutPolicy`。
 - 权限颗粒度覆盖 source、document、section、block、field、table cell、image、attachment、evidence pack、asset rendition。
 - 检索、上下文编译、evidence 回读、导出、蒸馏、memory 写入和 artifact 生成都必须先做权限裁决。
-- 支持 `deny`、`discoverOnly`、`metadataOnly`、`readInPlace`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
+- 支持 `deny`、`discoverOnly`、`metadataOnly`、`controlledView`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
 - 没有权限的内容不能进入 retrieval candidate、rerank hint、hidden context、distillation input、memory summary 或评估样本。
 - 下游智能体不能持有上游知识库 token，不能看到上游私有对象路径，不能绕过 Pact 直接查上游索引。
 - 所有出馆信息必须产生 receipt；所有允许保留、导出、复制或跨 workspace 使用的信息必须产生 loan record；所有拒绝带走的请求必须进入 denied request audit。
@@ -134,7 +134,7 @@
 
 当前实现入口：
 
-- `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 实现 `pact.knowledge-access.v1` 和 `pact.agent-library.v1` 的源头裁决、标准 `accessMode`、`requestedEgress`、`authorizationOverlay`、`knowledgeAccessReceipt`、`loanRecord` 和 denied request audit。
+- `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 实现 `pact.knowledge-access.v1` 和 `pact.agent-library.v1` 的源头裁决、标准 `accessMode`、`requestedEgress`、`authorizationOverlay`、`knowledgeAccessReceipt`、`loanRecord` 和 denied request audit；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 access policy。
 - `npm run server:verify:agent-library-access` 验证 A/B 再授权：A 获取授权范围并产生 receipt / loan record，B 在所有出口 `searchResult`、`evidenceRead`、`contextBundle`、`artifactWrite`、`exportFile`、`distillationInput`、`distillationOutput`、`memoryWrite`、`toolCall`、`evaluationSample` 都被同一套裁决拒绝。
 - `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
 
@@ -142,7 +142,7 @@
 
 ### P0-00-02 终端贡献型资产治理缺失
 
-当前差距：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统还没有完整的 `pact.workspace-contribution.v1`、贡献排行榜、统计面板、贡献授权和跨 workspace 复用治理。
+当前状态：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统已具备 `pact.workspace-contribution.v1` 的内存型贡献状态机、贡献排行榜、统计面板、贡献授权和 usage / loan / audit 记录，并已通过 specialized console operation executor 绑定 `workspace.contribution.*` 与 `workspace.skill.*` 协议入口；剩余差距是把贡献资产落到持久化 workspace asset、跨 workspace 复用和发布审核流，而不是停留在控制台 runtime 内存注册表。
 
 为什么重要：人过滤和精加工的信息往往最有效。过去如果只用知识库视角看这些材料，会把专家意见、黄金规则、Skills、脚本、文件和工具都压成“知识条目”，失去可操作性。AgentLibrary 应允许下游智能体向上提交资产，并让贡献资产在公共工作空间中被发现、授权、复用和审计。
 
@@ -150,11 +150,11 @@
 
 怎么补：
 
-- 定义 `pact.workspace-contribution.v1`。
+- 继续完善 `pact.workspace-contribution.v1` 的持久化资产、跨 workspace 复用和发布审核闭环。
 - 每个 workspace 固定提供 `skills/`、`tools/`、`scripts/`、`files/`、`knowledge/`、`rules/`、`expert-opinions/` 存放位置。
 - 允许下游智能体选择一个或多个可访问 workspace 上传贡献。
 - 贡献类型覆盖 `knowledge`、`skill`、`tool`、`script`、`file`、`goldenRule`、`expertOpinion`。
-- 建立贡献状态机：submitted -> scanned -> reviewed -> published / rejected / needs_changes -> adopted -> deprecated / revoked。
+- 建立贡献状态机：submitted -> scanned -> reviewed -> published / rejected / needs_changes -> adopted -> deprecated / revoked。内容到达服务器并完成最小留档后才可进入 scan/review，审核和权限确认后才是 published。
 - 建立排行榜和统计面板：贡献次数、审核通过次数、使用次数、跨 workspace 采用次数、Skills / 工具 / 脚本调用次数、授权请求和授权通过次数、复用成功率、回滚次数、维护新鲜度。
 - 建立资产贡献统计报表：按 workspace、贡献者、资产类型、时间窗口、使用动作、授权流、风险和维护状态汇总，让管理者看到公共空间的资产沉淀质量和复用价值。
 - 贡献资产被下载、安装、复制、执行、写入上下文或跨 workspace 使用时，必须生成 grant、loan record、usage event 和 audit。
@@ -164,7 +164,7 @@
 
 当前实现入口：
 
-- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `pact.workspace-contribution.v1` 的贡献状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表。
+- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `pact.workspace-contribution.v1` 的贡献状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 contribution registry。
 - `npm run server:verify:workspace-contribution-governance` 验证 Skill 贡献从 submitted -> scanned -> reviewed -> published，随后授权 B 下载/安装/执行，记录 usage event，并按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 生成排行榜；`acceptedCount` 只作为报表维度。
 - `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
 
@@ -185,7 +185,7 @@
 - 增加 `npm run server:verify:production-readiness`。
 - 输出 `reports/production-readiness/<run-id>/report.md` 和 `report.json`。
 - 汇总运行：架构门禁、文档解析真实样例、外部知识库一致性、RAG 评估、蒸馏评估、会话线程、工具权限、备份恢复、升级迁移、端到端 UI smoke、离线包 license gate。
-- 每个 gate 输出：状态、证据文件、阻塞级别、负责人、下一步。
+- 每个 gate 输出：状态、证据文件、阻塞级别、负责人、下一步、`verificationMode=verified|mocked`。mocked 只能证明接口合同，不计入真实完成率。
 
 当前实现入口：
 
@@ -366,7 +366,7 @@
 
 ### P0-08 备份、恢复、迁移和升级策略不足
 
-当前差距：有 SQLite、对象存储、jobs、upload session、knowledge-core 等多处状态，但缺少统一 backup manifest、restore drill、schema migration report、外部知识库重放策略、版本兼容策略。
+当前差距：有 SQLite、对象存储、jobs、upload session、knowledge-core 等多处状态，但缺少面向独立备份服务器/灾备目标的统一 backup manifest、restore drill、schema migration report、外部知识库重放策略、版本兼容策略。这里的 backup 不是 v0.0.1 上传留档、Checkpoint Restore 或 cloud sync 的同义词。
 
 更关键的是，任务和队列层面的 checkpoint tree 还不够。系统必须把所有访问请求、文件变动、知识贡献、技能调用、权限裁决、上下文暴露和恢复动作都纳入统一 Checkpoint Tree。否则只能恢复部分任务或文件状态，不能真正回答智能体在公共空间里读过什么、带走过什么、调用过什么、贡献过什么、被拒绝过什么，也就不能做到真正不怕智能体乱搞。
 
@@ -394,7 +394,7 @@
 - `server/platform/common/data-structure/checkpoint-tree-store.mjs` 和 `/api/system/checkpoint-trees` 提供长任务 checkpoint tree 查询、节点状态和事件链。
 - `server/platform/common/storage/rebuild-metadata.mjs`、`ops-tools.mjs` 和 `sqlite-migrations.mjs` 覆盖元数据重建、存储 doctor/reconcile 和 SQLite schema migration。
 - `server/scripts/verify-backup-restore.mjs` 验证备份 manifest、日志排除、文件恢复预览、确认恢复、恢复报告和路径约束。
-- `npm run server:verify:production-readiness` 已把 `backup-restore`、`upgrade-migration` 和 `offline-license` 纳入 P0 门禁。
+- `npm run server:verify:production-readiness` 已把 `backup-restore`、`upgrade-migration` 和 `offline-license` 纳入生产硬化门禁；这不是 v0.0.1 上传留档主链路的前置条件。
 
 补全效果：生产事故后有恢复路径；升级时能解释哪些状态是权威、哪些可以重建。
 

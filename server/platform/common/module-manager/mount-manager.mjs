@@ -117,15 +117,8 @@ async function createBuiltinPdfProcessorMount() {
   return createPdfProcessorMount();
 }
 
-async function createBuiltinKnowledgeCoreMount(userDataPath, runtimeOptions = {}) {
-  const { createKnowledgeCoreMount } = await import("../../specialized/knowledge/storage/knowledge-core/index.mjs");
-  return createKnowledgeCoreMount({
-    userDataPath,
-    outlineEnabled: isMountRuntimeFeatureActive(runtimeOptions, "knowledge-outline-reasoning")
-  });
-}
-
-function createMountFactories(userDataPath) {
+function createMountFactories(builtinMountProviders = {}) {
+  const knowledgeBaseProvider = builtinMountProviders.knowledgeBase || {};
   return {
     analysis: {
       builtinFactory: () => createNoopBatchMount("analysis"),
@@ -153,8 +146,8 @@ function createMountFactories(userDataPath) {
       fallbackFactory: () => createNoopMount("pdfProcessor")
     },
     knowledgeBase: {
-      builtinFactory: ({ runtimeOptions } = {}) => createBuiltinKnowledgeCoreMount(userDataPath, runtimeOptions),
-      minimalFactory: ({ runtimeOptions } = {}) => createBuiltinKnowledgeCoreMount(userDataPath, runtimeOptions),
+      builtinFactory: knowledgeBaseProvider.builtinFactory || (() => createNoopBatchMount("knowledgeBase")),
+      minimalFactory: knowledgeBaseProvider.minimalFactory || (() => createNoopBatchMount("knowledgeBase")),
       fallbackFactory: () => createNoopBatchMount("knowledgeBase")
     },
     vectorStore: {
@@ -332,7 +325,11 @@ async function closeMounts(mounts = {}) {
   );
 }
 
-export async function createMountManager({ userDataPath, runtimeOptions = {} }) {
+export async function createMountManager({
+  userDataPath,
+  runtimeOptions = {},
+  builtinMountProviders = {}
+}) {
   const normalizedRuntimeOptions = normalizeRuntimeOptions(runtimeOptions);
   const persistedMountConfig = await loadMountConfig(userDataPath);
   const initialRuntimeOptions = normalizeRuntimeOptions({
@@ -347,7 +344,7 @@ export async function createMountManager({ userDataPath, runtimeOptions = {} }) 
     )
   });
 
-  const factories = createMountFactories(userDataPath);
+  const factories = createMountFactories(builtinMountProviders);
   let currentRuntimeOptions = initialRuntimeOptions;
   let currentMounts = {};
   let generation = 0;

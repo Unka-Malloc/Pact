@@ -41,13 +41,13 @@ Pact 不关心智能体之间如何互相协作，也不把智能体当作可信
 
 > Pact 是面向智能体时代的 Workspace Asset Governance System。
 
-对外叙事固定为：
+产品问题定义固定为：
 
 > 两个问题，一个能力，三个兼容。
 
 - 两个问题：知识库缺少面向智能体的权限管控；本地智能体相对独立，难以协同。
 - 一个能力：工作空间管理，覆盖权限控制、快照、Checkpoint Tree、Operation Ledger、回溯、恢复、审计和资产贡献统计报表。
-- 三个兼容：智能体兼容、信息源兼容、工作空间环境兼容。
+- 三个兼容层：`agent-client-mcp-compatibility`、`external-service-compatibility`、`pact-internal-compatibility`。
 
 它瞄准的是上游知识库和下游本地智能体之间的中间狭窄地带：
 
@@ -55,11 +55,11 @@ Pact 不关心智能体之间如何互相协作，也不把智能体当作可信
 - 下游本地智能体太细：各自有本地能力，但缺少可共享、可接力、可审计的公共资产空间。
 - Pact 的工作：把上游粗资源加工成可授权资产，把下游细贡献沉淀成可复用资产，并在中间统一快照、溯源、恢复、授权和排行。
 
-三个兼容的边界如下：
+三个兼容层的治理边界如下：
 
-- 智能体兼容：OpenClaw、Codex、Claude Code、Cursor Agent、其它机器人体系或脚本都不是核心抽象；统一通过 Pact MCP service / Workspace API 访问工作空间。
-- 信息源兼容：知识库、网站订阅、文件库、业务系统、人工整理和智能体上传文档都先进入 workspace asset model，再统一治理。
-- 工作空间环境兼容：容器、虚拟机、本机、云端、Linux、macOS、Windows 都只是环境差异；安装 Pact 管理软件后，智能体访问工作空间必须经过 Pact 的权限、路径、快照和审计适配。
+- `agent-client-mcp-compatibility`：OpenClaw、Codex、Claude Code、Cursor Agent、其它机器人体系或脚本都不是核心抽象；统一通过 Pact MCP service / Workspace API 访问工作空间。
+- `external-service-compatibility`：知识库、网站订阅、文件库、业务系统、人工整理和智能体上传文档都先进入 workspace asset model，再统一治理。
+- `pact-internal-compatibility`：容器、虚拟机、本机、云端、Linux、macOS、Windows 以及内部 mount/module/runtime 差异都只是环境差异；安装 Pact 管理软件后，智能体访问工作空间必须经过 Pact 的权限、路径、快照和审计适配。
 
 本地智能体可以使用公共空间，但不能拥有公共空间。它们可以提交观察、产物、建议和轨迹；公共事实、公共资产和公共决策必须由 Pact 的状态机、策略和审计链确认。
 
@@ -141,7 +141,7 @@ workspace/
   expert-opinions/
 ```
 
-下游智能体可以选择一个或多个自己有权限访问的 workspace 上传贡献。上传不代表直接发布：贡献先成为 `contribution.submitted`，经过权限、风险、许可、重复性和质量检查后，才能进入 `contribution.published` 或 `contribution.rejected`。
+下游智能体可以选择一个或多个自己有权限访问的 workspace 上传贡献。上传不代表直接发布：贡献先成为 `contribution.submitted`；内容到达服务器并完成最小留档后进入 `preview`；经过权限、风险、许可、重复性和质量检查后，才能进入 `contribution.published` 或 `contribution.rejected`。
 
 贡献不能绕过公共空间治理：
 
@@ -227,7 +227,7 @@ Pact 用排行榜和统计面板管理贡献，而不是只依赖后台人工整
 - 贡献者：subject、agentProfile、operatorKind、team。
 - 资产类型：knowledge、skill、tool、script、file、goldenRule、expertOpinion。
 - 使用动作：read、copyToContext、download、install、execute、export、checkout、share。
-- 治理状态：submitted、reviewed、published、adopted、deprecated、revoked。
+- 治理状态：submitted、preview、reviewed、published、adopted、deprecated、revoked。
 - 风险状态：敏感度、失败率、回滚率、过期状态、维护新鲜度。
 
 第一版报表可以先做简单汇总：
@@ -277,10 +277,10 @@ assetContributionReportV0 =
 流程：
 
 1. A 端 OpenClaw 选择一个本地文档，调用 `workspace.contribution.submit`，贡献类型为 `knowledge` 或 `file`。
-2. Pact 创建上传记录、内容对象、资产快照、`contribution.submitted` 和 `auditId`，并把资产放入 `workspace/knowledge/` 或 `workspace/files/`。
-3. 策略引擎检查敏感度、许可、重复资产和默认授权范围；通过后进入 `contribution.published`。
+2. Pact 在真实内容到达服务器并完成最小留档后创建上传记录、内容对象、资产快照、`contribution.submitted`、`contribution.previewed` 和 `auditId`，资产状态进入 `preview`。
+3. 策略引擎检查敏感度、许可、重复资产和默认授权范围；审核通过后进入 `contribution.published`，并按权限进入 `workspace/knowledge/` 或 `workspace/files/` 的可见集合。
 4. B 端 OpenClaw 调用 `workspace.asset.list` 或 `workspace.evidence.search` 查找这个 workspace 中可见的文档。
-5. B 请求下载时，Pact 校验 B 是否具备 `export` 或 `checkout` 权限；通过后生成 `knowledgeAccessReceipt`、`loanRecord`、`asset.downloaded` 和 `auditId`。
+5. B 请求下载时，Pact 校验 B 是否具备 `export` 或 `checkout` 权限；通过后生成 `knowledgeAccessReceipt`、`loanRecord`、transfer id 和 `auditId`。只有内容真实传完并校验成功后，才生成 `asset.downloaded`。
 
 闭环标准：
 
@@ -296,11 +296,11 @@ assetContributionReportV0 =
 
 流程：
 
-1. A 上传 Skill manifest、说明、执行约束和必要文件到 `workspace/skills/`。
+1. A 上传 Skill manifest、说明、执行约束和必要文件；内容到达服务器后先进入 `preview`。
 2. A 设置默认公开权限，例如同 workspace 内主体默认允许 `read`、`install` 和 `use`。
-3. Pact 扫描 Skill 的权限需求、脚本风险、依赖和许可；通过后发布到 SkillLibrary、贡献面板和排行榜候选池。
+3. Pact 扫描 Skill 的权限需求、脚本风险、依赖和许可；通过后进入 `published`，发布到 `workspace/skills/`、SkillLibrary、贡献面板和排行榜候选池。
 4. B 在面板中看到该 Skill，也可以通过 Pact MCP service 调用 `workspace.skill.list` 发现它。
-5. B 下载、安装或调用该 Skill 时，Pact 记录 `skill.downloaded`、`skill.installed` 或 `skill.used`，同时生成 `loanRecord` 和 `auditId`。
+5. B 下载、安装或调用该 Skill 时，Pact 按真实完成阶段记录 `skill.downloaded`、`skill.installed` 或 `skill.used`，同时生成 `loanRecord` 和 `auditId`。
 6. A 的 `usageCount` 增加，排行榜刷新。
 
 第一版贡献值算法保持简单，但以真实使用质量为主：
@@ -375,7 +375,7 @@ Demo 数据允许清空重建。第一阶段到第三阶段默认给两个 subje
 - Checkpoint Tree 必须从第一阶段开始写入。即使第五阶段才展示回档，前面阶段的上传、下载、读取、列表、发现、权限检查、receipt 查询和修改也要成为可回放证据。
 - 知识与回档必须复用核心能力：知识走现有 KnowledgeCore / `knowledge.search`，文件树回档用 git-backed workspace 加产品封装，不另做只服务演示的旁路系统。
 - 管控台必须跟着阶段走：文件资产列表、知识访问记录、Skill 使用、权限策略、不可见过滤统计、Checkpoint Tree、restore preview 和 restore action 都要能逐步看到。
-- 先用本地 mock MCP client 验证，再安装到设备级目标智能体；OpenClaw（OrbStack Kate）和 Hermes Agent（OrbStack Serena）是首批真实 OrbStack 验收目标，真实安装后保留人工演示记录。
+- 先用本地 mock MCP client 验证，再安装到设备级目标智能体；OpenClaw（OrbStack Kate）和 Hermes Agent（OrbStack Serena）是首批真实 OrbStack 验收目标，真实安装后保留人工演示记录。验收报告必须显式标记 `verificationMode=mocked|verified`，mock 结果不得计入真实完成率。
 - 如果 HTTP 或 stdio 某一侧的真实 agent 兼容性和本地 mock 结果不一致，优先修 MCP adapter，不降级为 agent 直连文件系统。
 
 Agent 安装策略：
@@ -392,13 +392,13 @@ Agent 安装策略：
 - OpenClaw（OrbStack Kate）：通过 VM 内 `openclaw mcp set` 配置 `http://host.orb.internal:7228/mcp`。
 - Hermes Agent（OrbStack Serena）：通过 VM 内 `hermes mcp add --url --auth header` 安装，安装器随后用 Hermes config helper 启用并执行 `hermes mcp test`。
 - Antigravity：按官方 `~/.gemini/antigravity/mcp_config.json` 的 `serverUrl` + `headers` 格式结构化写入。
-- 所有 installer 修改前必须备份目标配置，只追加或替换 `pact` 条目，不打印完整 agent config，避免泄漏现有 token、API key 或 bot token。
+- 所有 installer 修改前必须生成目标配置回滚副本，只追加或替换 `pact` 条目，不打印完整 agent config，避免泄漏现有 token、API key 或 bot token。
 
 实现默认约束：
 
 - 可以改 repo 代码、package scripts、server-web、demo build 目录。
-- 验证通过后可以备份并修改两个 OrbStack 智能体的 MCP 配置。
-- Demo workspace 可以清空重建；真实 agent 原配置只允许备份后追加 Pact 配置，不做破坏性重写。
+- 验证通过后可以生成配置回滚副本，并修改两个 OrbStack 智能体的 MCP 配置。
+- Demo workspace 可以清空重建；真实 agent 原配置只允许生成回滚副本后追加 Pact 配置，不做破坏性重写。
 - MCP 服务端只实现当前验收需要的标准 JSON-RPC 方法和 Streamable HTTP 最小面；目标客户端安装必须走 `pact-mcp-connector` release 包，不得靠人工手写配置。`server:mcp:install` 只作为服务端开发者本机调试入口。
 
 ### 阶段一：MCP 服务 + 本机工作空间
@@ -526,7 +526,7 @@ Initial state.
 | `deny` | 完全不可见 | 无 | 发现、读取、下载、写入、引用 |
 | `discoverOnly` | 可见存在 | 列表中看到脱敏标题或类型 | 读取正文、下载、写入 |
 | `metadataOnly` | 可看元数据 | 查看 owner、时间、类型、摘要级元数据 | 读取正文、下载、写入 |
-| `readInPlace` | 受控读取 | 在受控会话内读 | 下载、导出、写 memory、复制到外部 |
+| `controlledView` | 受控阅览 | 在 Pact 受控会话内查看内容，不是读取本机原路径 | 下载、导出、写 memory、复制到外部 |
 | `copyToContext` | 可进入本次上下文 | 放入本次 context bundle | 写长期 memory、导出、跨 workspace 迁移 |
 | `exportAllowed` | 可导出 | 生成 artifact/export | 未授权跨 workspace 传播 |
 | `checkoutAllowed` | 可带走 | 下载、复制、迁移 | 绕开 loan record 和撤销策略 |
@@ -610,7 +610,7 @@ npm run server:verify:checkpoint-restore-demo
 - 楼层：`sourceGroup.read`
 - 书架：`catalog.discover` / `metadata.read`
 - 图书：`asset.read` / `evidence.read`
-- 阅览室：`readInPlace`
+- 阅览室：`controlledView`，即 Pact 受控会话内查看，不代表 Agent 获得文件系统路径或长期副本。
 - 借走：`checkout` / `export`
 - 借阅登记：`knowledgeAccessReceipt` / `loanRecord`
 
@@ -621,7 +621,7 @@ npm run server:verify:checkpoint-restore-demo
 - `deny`
 - `discoverOnly`
 - `metadataOnly`
-- `readInPlace`
+- `controlledView`，即受控阅览。
 - `citeOnly`
 - `copyToContext`
 - `exportAllowed`
@@ -629,7 +629,7 @@ npm run server:verify:checkpoint-restore-demo
 
 这些是内置标准模式，用于跨 workspace、MCP 工具和控制台的互操作。具体 workspace 可以通过 policy 增加自定义 `accessMode` 或 action，但必须映射回内置出口动作，保证审计、receipt、loan record 和拒绝策略可解释。
 
-高敏感资产默认不允许 `exportAllowed` 和 `checkoutAllowed`。如果需要让智能体参考，应优先使用 `readInPlace`、脱敏 evidence 或私有模型路径。
+高敏感资产默认不允许 `exportAllowed` 和 `checkoutAllowed`。如果需要让智能体参考，应优先使用 `controlledView`、脱敏 evidence 或私有模型路径。
 
 从图书馆带走或知道的每一项信息都必须登记：
 
@@ -651,9 +651,9 @@ npm run server:verify:checkpoint-restore-demo
 - Pact 必须能对同一份上游材料切出不同的 `derivedKnowledgeSpace`。
 - 不同 subject / workspace / agent profile 读取的是不同 `authorizationOverlay`。
 - 某些内容可以允许人看，但不允许智能体看。
-- 某些内容可以允许智能体 readInPlace，但不允许 checkout/export。
+- 某些内容可以允许智能体以 `controlledView` 受控阅览，但不允许 checkout/export。
 
-这使 Pact 与外部知识库不会撞型：外部知识库负责保存或检索上游资产，Pact 负责把这些资产变成下游可治理、可快照、可审计、可恢复的工作空间资产视图。
+这使 Pact 与外部知识库不会撞型：外部知识库负责保存或检索上游资产，Pact 负责把这些资产变成下游可治理、可快照、可审计、可恢复的工作空间资产视图。Pact 允许对上游知识库执行 live proxy 或 `controlledView`；但凡是要进入 evidence、context、receipt、cache、export 或可复用资产的内容，都必须把真实返回内容或授权派生视图写入 Pact 的内容存储。
 
 因此，上游知识库的信息和资源权限再分配是 workspace asset governance 的核心能力，而不是外部连接器的附属功能。连接器只负责把上游资源带进来；Pact 必须负责重新切分、重新授权、重新登记、重新审计和在需要时撤销下游借阅。
 

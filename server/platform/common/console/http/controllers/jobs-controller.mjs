@@ -3,18 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { unzipSync } from "fflate";
 import { resolveStoredObjectPath } from "../../../storage/raw-object-store.mjs";
-import {
-  appendUploadSessionChunk,
-  buildCheckpointReceiptFromUploadSession,
-  createOrResumeUploadSession,
-  getUploadSession
-} from "../../../../../protocols/checkpoint/upload-session-store.mjs";
 import { hashClientString, serverToken } from "../../../security/client-strings.mjs";
 import { contentDispositionFileName, sendJson } from "../http-utils.mjs";
-
-async function loadNormalizedDocumentStore() {
-  return import("../../../../specialized/knowledge/preprocessing/file-processor/FileNormalizer/NormalizedDocuments/store.mjs");
-}
 
 async function publishProtocolEvent(protocolEventBus, topic, payload, options = {}) {
   if (!protocolEventBus || typeof protocolEventBus.publish !== "function") {
@@ -119,6 +109,20 @@ function createUploadTracePublisher(protocolEventBus, requestId, base = {}) {
       }
     );
   };
+}
+
+function requireUploadSessionStore(provider = null) {
+  const required = [
+    "appendUploadSessionChunk",
+    "buildCheckpointReceiptFromUploadSession",
+    "createOrResumeUploadSession",
+    "getUploadSession"
+  ];
+  const missing = required.filter((name) => typeof provider?.[name] !== "function");
+  if (missing.length > 0) {
+    throw new Error(`uploadSessionStore provider is not configured: ${missing.join(", ")}`);
+  }
+  return provider;
 }
 
 function bufferStartsWith(buffer, bytes) {
@@ -339,8 +343,20 @@ export function createJobsController({
   getDiscoveryState,
   proxyApiRequest,
   protocolEventBus,
+  loadNormalizedDocumentStore = null,
+  uploadSessionStore = null,
   resolveArchiveBatchIdentity = defaultArchiveBatchResolver
 }) {
+  const checkpointUploadSessionStore = requireUploadSessionStore(uploadSessionStore);
+  const loadNormalizedDocumentStoreRuntime =
+    typeof loadNormalizedDocumentStore === "function"
+      ? loadNormalizedDocumentStore
+      : async () => {
+          const error = new Error("Normalized document store provider is not configured.");
+          error.code = "ENOENT";
+          throw error;
+        };
+
   return {
     async handleCreateUploadSession({ requestBody, response }) {
       const requestId = randomUUID();
@@ -358,7 +374,7 @@ export function createJobsController({
         request: summarizeUploadSessionPayload(payload, requestBody.length)
       });
       try {
-        const session = await createOrResumeUploadSession({
+        const session = await checkpointUploadSessionStore.createOrResumeUploadSession({
           userDataPath,
           checkpoint: payload?.checkpoint || {},
           manifest: payload?.manifest || {},
@@ -413,7 +429,7 @@ export function createJobsController({
         stage: "request_received",
         message: "收到上传会话查询请求。"
       });
-      const session = await getUploadSession(userDataPath, sessionId);
+      const session = await checkpointUploadSessionStore.getUploadSession(userDataPath, sessionId);
       if (!session) {
         await trace({
           functionName: "handleGetUploadSession",
@@ -468,7 +484,7 @@ export function createJobsController({
           contentType: "application/octet-stream"
         }
       });
-      const appendResult = await appendUploadSessionChunk({
+      const appendResult = await checkpointUploadSessionStore.appendUploadSessionChunk({
         userDataPath,
         sessionId,
         fileIndex,
@@ -597,7 +613,10 @@ export function createJobsController({
         }
         try {
           verifiedUpload = {
-            receipt: await buildCheckpointReceiptFromUploadSession(userDataPath, payload.uploadSessionId),
+            receipt: await checkpointUploadSessionStore.buildCheckpointReceiptFromUploadSession(
+              userDataPath,
+              payload.uploadSessionId
+            ),
             uploadedFiles: []
           };
         } catch (error) {
@@ -833,7 +852,7 @@ export function createJobsController({
         }
 
         try {
-          const { loadNormalizedDocumentsManifest } = await loadNormalizedDocumentStore();
+          const { loadNormalizedDocumentsManifest } = await loadNormalizedDocumentStoreRuntime();
           sendJson(response, 200, await loadNormalizedDocumentsManifest(userDataPath, jobId));
         } catch (error) {
           if (error?.code === "ENOENT") {
@@ -880,7 +899,7 @@ export function createJobsController({
 
         let manifest;
         try {
-          const { loadNormalizedDocumentsManifest } = await loadNormalizedDocumentStore();
+          const { loadNormalizedDocumentsManifest } = await loadNormalizedDocumentStoreRuntime();
           manifest = await loadNormalizedDocumentsManifest(userDataPath, jobId);
         } catch (error) {
           if (error?.code === "ENOENT") {
@@ -896,7 +915,7 @@ export function createJobsController({
           normalizedContentType,
           resolveNormalizedDocumentEntry,
           resolveNormalizedDocumentPath
-        } = await loadNormalizedDocumentStore();
+        } = await loadNormalizedDocumentStoreRuntime();
         const entry = resolveNormalizedDocumentEntry(manifest, documentId);
         if (!entry) {
           sendJson(response, 404, {

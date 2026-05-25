@@ -194,6 +194,8 @@ try {
           sourceType: "mail"
         }
       ],
+      modelEnabled: true,
+      allowDeterministicModelFallback: true,
       semanticSupportRequired: false
     })
   });

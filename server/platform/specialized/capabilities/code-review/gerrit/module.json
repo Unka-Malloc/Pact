@@ -2,7 +2,13 @@
   "schemaVersion": 1,
   "name": "GerritCodeReviewRoute",
   "version": 1,
-  "category": "compatibility",
+  "category": "external-service-compatibility",
+  "compatibilityLayer": "external-service-compatibility",
+  "compatibilityBoundary": "remote-service",
+  "serviceKind": "code-review",
+  "serviceProviders": [
+    "gerrit"
+  ],
   "description": "Built-in compatibility component for agent-facing Gerrit code review operations through Pact MCP and Tool Management.",
   "defaultLoaded": true,
   "protocol": "pact.code-review.v1",

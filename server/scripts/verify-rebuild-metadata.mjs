@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { startHttpServer } from "../services/server-runtime/http-server.mjs";
 import { rebuildMetadataStore } from "../platform/common/storage/rebuild-metadata.mjs";
 import { getMetadataDatabasePath } from "../platform/common/storage/schema-manager.mjs";
+import { createKnowledgeMetadataStoreDomainServices } from "../platform/specialized/knowledge/storage/metadata-store-domain-services.mjs";
 import { installAuthenticatedFetch } from "./test-auth-helper.mjs";
 
 const mockDocumentParserModulePath = path.resolve(
@@ -274,8 +275,11 @@ try {
   serverClosed = true;
   await rmWithRetry(path.dirname(getMetadataDatabasePath(userDataPath)));
 
+  const rebuildDomainServices = createKnowledgeMetadataStoreDomainServices();
   const rebuildSummary = await rebuildMetadataStore({
-    userDataPath
+    userDataPath,
+    domainServices: rebuildDomainServices,
+    loadRules: rebuildDomainServices.loadRules
   });
   assert.ok(rebuildSummary.rebuiltCompletedCount >= 1);
 

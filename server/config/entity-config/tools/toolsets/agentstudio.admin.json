@@ -5,7 +5,8 @@
     "knowledge:admin",
     "storage:read",
     "jobs:read",
-    "agent_sync:publish"
+    "agent_sync:publish",
+    "auth:admin"
   ],
   "maxRisk": "repair_write",
   "grantable": false,

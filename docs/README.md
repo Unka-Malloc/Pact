@@ -46,11 +46,24 @@ graph LR
 | [USAGE.md](USAGE.md) | 使用说明 | Console, client, and CLI usage guide | 7 KB |
 | [FEATURE-PROFILES.md](FEATURE-PROFILES.md) | Feature Profile | Feature profile planning, trimming, and build commands | 2 KB |
 | [IMPLEMENTATION-DECISION-REGISTER.md](IMPLEMENTATION-DECISION-REGISTER.md) | 设计决策登记表 | Pre-implementation design decisions; finalized conclusions must be merged back into core docs | 33 KB |
+| [V0.0.1-IMPLEMENTATION-PLAN.md](V0.0.1-IMPLEMENTATION-PLAN.md) | v0.0.1 实施计划 | Single-node v0.0.1 delivery phases, checkpoints, interfaces, compatibility targets, and acceptance gates | 28 KB |
+| [CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md](CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md) | Checkpoint 算法演进方案 | Step-by-step LSM/Merkle/CAS/checkpoint algorithm evolution path from single-node contracts to distributed lossless migration | 25 KB |
 | [ENTITY-CONFIG-LAYOUT.md](ENTITY-CONFIG-LAYOUT.md) | 实体配置目录 | Human-maintainable entity config directory, lightweight skill packs, and validation | 2 KB |
 | [TEST-FRAMEWORK.md](TEST-FRAMEWORK.md) | 测试框架 | Unified test framework contract | 6 KB |
 | [DEVELOPER-GUIDELINES.md](DEVELOPER-GUIDELINES.md) | 开发者核心守则 | Coding conventions, architecture principles, and design philosophy | 5 KB |
 | [GIT-COLLAB.md](GIT-COLLAB.md) | Git 协作约定 | Local collaboration conventions | 2 KB |
 | [testing/memory-and-smoke-framework.md](testing/memory-and-smoke-framework.md) | 记忆与 Smoke 测试 | Memory and smoke test framework guide | < 1 KB |
+
+---
+
+## 架构图 / Architecture Diagrams
+
+长期维护的 HTML 架构图保存在 `docs/architecture/`，作为可审阅的源文件。`build/artifacts/architecture/` 只能作为本地构建或导出产物，不作为事实源。
+
+| Diagram | 图 | Description |
+| --- | --- | --- |
+| [architecture/PACT-SYSTEM-ARCHITECTURE.html](architecture/PACT-SYSTEM-ARCHITECTURE.html) | Pact 系统架构图 | Pact internal system structure, application layer, runtime assembly, and foundation boundaries |
+| [architecture/PACT-SERVICE-CAPABILITY-ARCHITECTURE.html](architecture/PACT-SERVICE-CAPABILITY-ARCHITECTURE.html) | Pact 服务能力架构图 | Agent Harness / Pact Client to MCP Plugin, routing, algorithm substrate, gateway, and external services |
 
 ---
 
@@ -62,5 +75,5 @@ graph LR
   *Legacy design documents with remaining value must be merged as a section of a core document, then deleted.*
 - 操作说明、命令说明、配置说明可以保留为运行支持文档，但不得承载新的架构决策。
   *Operational docs may contain instructions and configurations, but must not carry new architectural decisions.*
-- 生成物不进入 `docs/`。需要长期维护的图、报告或导出必须转成可审阅的 Markdown 设计或运行文档。
-  *Generated artifacts do not belong in `docs/`. Long-lived diagrams, reports, or exports must be converted to reviewable Markdown.*
+- 生成物不进入 `docs/`。需要长期维护的图必须放在 `docs/architecture/` 作为可审阅源文件；报告或导出必须转成可审阅的 Markdown 设计或运行文档。
+  *Generated artifacts do not belong in `docs/`. Long-lived diagrams must live under `docs/architecture/` as reviewable source files; reports and exports must be converted to reviewable Markdown.*

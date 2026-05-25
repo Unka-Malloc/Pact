@@ -6,6 +6,7 @@ import { viewToPath, adminSectionToSlug, slugToAdminView } from "../router/route
 // dependency (components → useConsole → components). Each view imports the
 // component files it needs directly.
 import { bridge, type McpAuthorizationRequest } from "../lib/bridge";
+import { createKnowledgeUploadSession } from "../lib/knowledge-upload-session";
 import type {
   AgentSettings,
   AgentModelConfig,
@@ -761,15 +762,15 @@ const knowledgeLogColumnMinWidths: Record<KnowledgeLogColumnKey, number> = {
   detail: 220,
   error: 180,
 };
-const knowledgeLogColumnWidths = ref<Record<KnowledgeLogColumnKey, number>>({
-  kind: 110,
-  target: 320,
-  status: 120,
-  stage: 220,
-  progress: 92,
-  time: 142,
-  detail: 380,
-  error: 320,
+const knowledgeLogColumnWidths = ref<Record<KnowledgeLogColumnKey, string | number>>({
+  kind: "7%",
+  target: "19%",
+  status: "7%",
+  stage: "13%",
+  progress: "5%",
+  time: "8%",
+  detail: "22%",
+  error: "19%",
 });
 const knowledgeLogResizing = ref<{
   key: KnowledgeLogColumnKey;
@@ -10476,16 +10477,6 @@ function onIngestFilesSelected(files: File[]) {
     : "";
 }
 
-async function sha256File(file: File) {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256Text(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 async function uploadFilesToKnowledge() {
   if (ingestFiles.value.length === 0) {
     error.value = "请先选择需要入库的文件。";
@@ -10497,61 +10488,12 @@ async function uploadFilesToKnowledge() {
   ingestJob.value = null;
   normalizedManifest.value = null;
   try {
-    const fileDigests = await Promise.all(
-      ingestFiles.value.map(async (file) => ({
-        name: file.name,
-        relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
-        mediaType: file.type || "application/octet-stream",
-        byteSize: file.size,
-        sha256: await sha256File(file),
-      })),
-    );
-    const totalBytes = ingestFiles.value.reduce((sum, file) => sum + file.size, 0);
-    const manifestDigest = await sha256Text(
-      JSON.stringify(fileDigests.map((file) => [file.relativePath, file.sha256, file.byteSize])),
-    );
-    const inputDigest = await sha256Text("");
-    const checkpointId = `knowledge-console:${manifestDigest}`;
-    const session = await bridge.createUploadSession({
-      manifest: {
-        manifestDigest,
-        inputDigest,
-        fileCount: ingestFiles.value.length,
-        totalBytes,
-        fileRecords: fileDigests.map((file) => ({
-          label: file.name,
-          relativePath: file.relativePath,
-          sha256: file.sha256,
-          byteSize: file.byteSize,
-        })),
-      },
-      files: fileDigests,
-      checkpoint: {
-        checkpointId,
-        parentCheckpointId: "",
-        mode: "server-console",
-        source: "knowledge-console",
-        inputDigest,
-        manifestDigest,
+    const filesToUpload = [...ingestFiles.value];
+    const { session } = await createKnowledgeUploadSession(filesToUpload, {
+      onProgress: (progress) => {
+        ingestProgress.value = progress.message;
       },
     });
-    const chunkSize = 1024 * 1024;
-    let uploadedBytes = (session.files || []).reduce(
-      (sum, file) => sum + Math.min(Number(file.receivedBytes || 0), Number(file.byteSize || 0)),
-      0,
-    );
-    for (let fileIndex = 0; fileIndex < ingestFiles.value.length; fileIndex += 1) {
-      const file = ingestFiles.value[fileIndex];
-      const sessionFile = (session.files || []).find((item) => Number(item.index ?? item.fileIndex) === fileIndex);
-      let offset = Math.min(Number(sessionFile?.receivedBytes || 0), file.size);
-      while (offset < file.size) {
-        const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
-        await bridge.uploadSessionChunk(session.sessionId, fileIndex, offset, chunk);
-        offset += chunk.size;
-        uploadedBytes += chunk.size;
-        ingestProgress.value = `上传中 ${Math.round((uploadedBytes / totalBytes) * 100)}%`;
-      }
-    }
     ingestProgress.value = "创建入库任务…";
     const job = await bridge.createJob({
       inputText: "",
@@ -11556,6 +11498,43 @@ function migrationTone(state: ClientMigrationState) {
   }
 
   return "attention";
+}
+
+type ClientConnectionRow = NonNullable<ServerConsoleState["clients"]["items"][number]>;
+
+function clientConnectionMethodLabel(client: ClientConnectionRow) {
+  return String(client.connectionMethod || (client.connectionKind === "mcp-plugin" ? "MCP 插件连接" : "pact-client 封装"));
+}
+
+function clientConnectionDetail(client: ClientConnectionRow) {
+  if (client.connectionDetail) {
+    return String(client.connectionDetail);
+  }
+  if (client.connectionKind === "mcp-plugin") {
+    return client.sourceGrantId ? `授权 ${client.sourceGrantId}` : "Tool Management 授权";
+  }
+  return "Discovery Check-in";
+}
+
+function clientStatusLabel(client: ClientConnectionRow) {
+  if (client.connectionKind === "mcp-plugin") {
+    return String(client.connectionStatusLabel || "已配对");
+  }
+  return migrationStateLabels[client.migrationState as ClientMigrationState] || "未知";
+}
+
+function clientStatusTone(client: ClientConnectionRow) {
+  if (client.connectionKind !== "mcp-plugin") {
+    return migrationTone(client.migrationState as ClientMigrationState);
+  }
+
+  if (client.connectionState === "disabled" || client.connectionState === "revoked" || client.connectionState === "offline") {
+    return "offline";
+  }
+  if (client.connectionState === "pending") {
+    return "attention";
+  }
+  return "aligned";
 }
 
 function migrationProgress(state: ClientMigrationState) {
@@ -12960,6 +12939,9 @@ const filteredClientList = computed(() => {
       (item.hostname || "").toLowerCase().includes(query) ||
       (item.platform || "").toLowerCase().includes(query) ||
       (item.currentServiceUrl || "").toLowerCase().includes(query) ||
+      clientConnectionMethodLabel(item).toLowerCase().includes(query) ||
+      clientConnectionDetail(item).toLowerCase().includes(query) ||
+      clientStatusLabel(item).toLowerCase().includes(query) ||
       (migrationStateLabels[item.migrationState as ClientMigrationState] || "").includes(query)
     );
   });
@@ -14164,6 +14146,10 @@ onUnmounted(() => {
     extractInfoFeedClarification, 
     fallbackInfoFeedSummary, 
     filter, 
+    clientConnectionDetail,
+    clientConnectionMethodLabel,
+    clientStatusLabel,
+    clientStatusTone,
     filteredClientList, 
     filteredClients, 
     filteredJobs, 

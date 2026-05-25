@@ -1150,7 +1150,12 @@ export type DiscoveryClientSummary = {
   bootstrapOnlyCount: number;
   offlineCount: number;
   unknownCount: number;
+  pactClientCount?: number;
+  mcpPluginCount?: number;
+  migratableCount?: number;
 };
+
+export type ClientConnectionKind = "pact-client" | "mcp-plugin" | string;
 
 export type DiscoveryClientRegistration = {
   clientId: string;
@@ -1164,6 +1169,13 @@ export type DiscoveryClientRegistration = {
   currentJobServiceUrl: string;
   configVersion: string;
   migrationState: ClientMigrationState;
+  connectionKind?: ClientConnectionKind;
+  connectionMethod?: string;
+  connectionState?: string;
+  connectionStatusLabel?: string;
+  connectionDetail?: string;
+  supportsMigration?: boolean;
+  sourceGrantId?: string;
   busy: boolean;
   lastJobId: string;
   lastError: string;
@@ -1386,6 +1398,7 @@ export type ToolManagementScope = {
 export type ToolManagementGrant = {
   id: string;
   label: string;
+  type?: string;
   enabled: boolean;
   toolsets?: string[];
   toolAllow?: string[];

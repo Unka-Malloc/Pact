@@ -1,3 +1,21 @@
+import {
+  clamp,
+  clampLimit,
+  escapeRegExp,
+  normalizeWhitespace,
+  truncateText,
+  uniqueNormalizedStrings
+} from "../../../../../common/data-structure/text-normalization.mjs";
+
+export {
+  clamp,
+  clampLimit,
+  escapeRegExp,
+  normalizeWhitespace,
+  truncateText,
+  uniqueNormalizedStrings
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const BASE_STOPWORDS = new Set([
@@ -52,26 +70,6 @@ export const DEFAULT_MERGE_RULES = {
   highParticipantOverlap: 0.6
 };
 
-export function normalizeWhitespace(value) {
-  return String(value || "")
-    .replace(/\r/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\u00a0/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
-}
-
-export function truncateText(value, maxChars = 180) {
-  const normalized = normalizeWhitespace(value);
-
-  if (normalized.length <= maxChars) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
-}
-
 export function normalizeTimestamp(value, fallback = "") {
   if (!value) {
     return fallback;
@@ -116,19 +114,6 @@ export function addDays(timestamp, days) {
   return new Date(parsed.getTime() + days * DAY_MS).toISOString();
 }
 
-export function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-export function clampLimit(value, fallback = 20, max = 200) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return Math.min(parsed, max);
-}
-
 export function formatFreshness(timestamp, referenceTime, staleAfterDays) {
   const ageDays = dayDiff(timestamp, referenceTime);
 
@@ -148,32 +133,6 @@ export function computeTimeWeight(timestamp, referenceTime, halfLifeDays) {
   const safeHalfLife = Math.max(1, Number(halfLifeDays) || 1);
   const value = Math.exp((-Math.log(2) * ageDays) / safeHalfLife);
   return clamp(Number(value.toFixed(4)), 0.05, 1);
-}
-
-export function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function uniqueNormalizedStrings(values = []) {
-  const seen = new Set();
-  const output = [];
-
-  for (const value of values) {
-    const normalized = normalizeWhitespace(value);
-    if (!normalized) {
-      continue;
-    }
-
-    const key = normalized.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    output.push(normalized);
-  }
-
-  return output;
 }
 
 export function buildTextMatchers(patterns = []) {

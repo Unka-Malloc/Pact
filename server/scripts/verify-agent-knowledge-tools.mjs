@@ -208,7 +208,15 @@ try {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       label: "verify-agent-workspace-context-tools-admin",
-      scopes: ["knowledge:read", "knowledge:write", "knowledge:maintain", "knowledge:admin"]
+      scopes: [
+        "knowledge:read",
+        "knowledge:write",
+        "knowledge:maintain",
+        "knowledge:admin",
+        "workspace:read",
+        "workspace:write",
+        "workspace:maintain"
+      ]
     })
   });
   assert.equal(adminGrant.status, 201);

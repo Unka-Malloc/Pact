@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
+import DataTable from '../../components/DataTable.vue';
 import OptionBar from '../../components/OptionBar.vue';
 import StatusPill from '../../components/StatusPill.vue';
 const {
@@ -10,22 +11,25 @@ const {
   exportKnowledgeLogRows,
   filteredKnowledgeLogRows,
   formatMachineDate,
-  handleKnowledgeLogColumnDividerKeydown,
   handleKnowledgeLogTableScroll,
   isAuthenticated,
   knowledgeLogAdvancedOpen,
-  knowledgeLogColumnDividers,
   knowledgeLogColumnWidths,
   knowledgeLogFilters,
-  knowledgeLogResizing,
   knowledgeLogStatusOptionBarOptions,
   knowledgeLogTableShellRef,
   monitorAlertSummary,
   workQueueSummary,
   refreshSystemStatusLogs,
   serverLogRows,
-  startKnowledgeLogColumnResize,
 } = useConsole();
+
+function handleHeaderDragend(newWidth: number, oldWidth: number, column: any) {
+  const key = column.property;
+  if (key && key in knowledgeLogColumnWidths.value) {
+    knowledgeLogColumnWidths.value[key as keyof typeof knowledgeLogColumnWidths.value] = newWidth;
+  }
+}
 </script>
 
 <template>
@@ -70,21 +74,19 @@ const {
             </div>
             <div
               ref="knowledgeLogTableShellRef"
-              class="knowledge-log-table-shell"
-              :class="{ 'is-resizing-column': Boolean(knowledgeLogResizing) }"
+              class="knowledge-log-table-shell" style="width: 100%; min-width: 0; overflow: hidden; border-radius: var(--radius-md);"
             >
-              <el-table
+              <DataTable
                 :data="filteredKnowledgeLogRows"
                 row-key="logId"
-                border
-                stripe
-                size="small"
-                class="knowledge-log-table"
                 empty-text="暂无系统日志"
                 @scroll="handleKnowledgeLogTableScroll"
+                @header-dragend="handleHeaderDragend"
               >
-                <el-table-column prop="kindLabel" label="类型" :width="knowledgeLogColumnWidths.kind" />
-                <el-table-column label="对象" :width="knowledgeLogColumnWidths.target" show-overflow-tooltip>
+                <el-table-column prop="kind" label="类型" :min-width="knowledgeLogColumnWidths.kind">
+                  <template #default="{ row }">{{ row.kindLabel }}</template>
+                </el-table-column>
+                <el-table-column prop="target" label="对象" :min-width="knowledgeLogColumnWidths.target" show-overflow-tooltip>
                   <template #default="{ row }">
                     <div class="knowledge-log-target">
                       <span class="mono-compact" :title="row.logId">{{ row.displayId }}</span>
@@ -92,43 +94,27 @@ const {
                     </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="状态" :width="knowledgeLogColumnWidths.status">
+                <el-table-column prop="status" label="状态" :min-width="knowledgeLogColumnWidths.status">
                   <template #default="{ row }">
                     <StatusPill :tone="row.tone" :label="row.statusLabel" />
                   </template>
                 </el-table-column>
-                <el-table-column prop="stage" label="阶段" :width="knowledgeLogColumnWidths.stage" show-overflow-tooltip />
-                <el-table-column label="进度" :width="knowledgeLogColumnWidths.progress">
+                <el-table-column prop="stage" label="阶段" :min-width="knowledgeLogColumnWidths.stage" show-overflow-tooltip />
+                <el-table-column prop="progress" label="进度" :min-width="knowledgeLogColumnWidths.progress">
                   <template #default="{ row }">
                     {{ Math.round(Number(row.progressPercent || 0)) }}%
                   </template>
                 </el-table-column>
-                <el-table-column label="时间" :width="knowledgeLogColumnWidths.time">
+                <el-table-column prop="time" label="时间" :min-width="knowledgeLogColumnWidths.time">
                   <template #default="{ row }">
                     <span :title="formatMachineDate(row.occurredAt, 'full')">
                       {{ formatMachineDate(row.occurredAt, 'compact') }}
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="detail" label="详情" :width="knowledgeLogColumnWidths.detail" show-overflow-tooltip />
-                <el-table-column prop="error" label="错误" :width="knowledgeLogColumnWidths.error" show-overflow-tooltip />
-              </el-table>
-              <div class="knowledge-log-resize-layer">
-                <button
-                  v-for="divider in knowledgeLogColumnDividers"
-                  :key="divider.key"
-                  class="knowledge-log-column-divider"
-                  type="button"
-                  :aria-label="`拖拽调整${divider.label}列宽`"
-                  :data-active="divider.active"
-                  :style="{ left: `${divider.left}px` }"
-                  :title="`拖拽调整${divider.label}列宽`"
-                  @pointerdown="startKnowledgeLogColumnResize($event, divider.key)"
-                  @keydown="handleKnowledgeLogColumnDividerKeydown($event, divider.key)"
-                >
-                  <span />
-                </button>
-              </div>
+                <el-table-column prop="detail" label="详情" :min-width="knowledgeLogColumnWidths.detail" show-overflow-tooltip />
+                <el-table-column prop="error" label="错误" :min-width="knowledgeLogColumnWidths.error" show-overflow-tooltip />
+              </DataTable>
             </div>
           </section>
 </template>

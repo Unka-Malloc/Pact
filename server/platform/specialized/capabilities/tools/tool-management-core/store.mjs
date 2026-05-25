@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { runMigrations } from "../../../../common/storage/sqlite-migrations.mjs";
+import { evaluateAuthorizationPolicy } from "../../../../common/security/authorization/authorization-engine.mjs";
 import {
   TOOL_MANAGEMENT_SCOPES,
   scopesToToolsets,
@@ -319,64 +320,6 @@ function sourceIpFromRequest(request) {
   ).split(",")[0].trim();
 }
 
-function normalizeIp(value) {
-  const text = String(value || "").trim();
-  return text.startsWith("::ffff:") ? text.slice("::ffff:".length) : text;
-}
-
-function ipv4ToInt(value) {
-  const parts = normalizeIp(value).split(".");
-  if (parts.length !== 4) {
-    return null;
-  }
-  let output = 0;
-  for (const part of parts) {
-    const number = Number(part);
-    if (!Number.isInteger(number) || number < 0 || number > 255) {
-      return null;
-    }
-    output = (output << 8) + number;
-  }
-  return output >>> 0;
-}
-
-function ipMatchesRule(ip, rule) {
-  const normalizedRule = String(rule || "").trim();
-  const normalizedIp = normalizeIp(ip);
-  if (!normalizedRule) {
-    return false;
-  }
-  if (!normalizedRule.includes("/")) {
-    return normalizedIp === normalizeIp(normalizedRule);
-  }
-  const [base, bitsText] = normalizedRule.split("/");
-  const bits = Number(bitsText);
-  const ipInt = ipv4ToInt(normalizedIp);
-  const baseInt = ipv4ToInt(base);
-  if (ipInt === null || baseInt === null || !Number.isInteger(bits) || bits < 0 || bits > 32) {
-    return false;
-  }
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-  return (ipInt & mask) === (baseInt & mask);
-}
-
-function requestOrigin(request) {
-  const origin = String(request?.headers?.origin || "").trim();
-  if (origin) {
-    return origin.replace(/\/+$/, "");
-  }
-  const referer = String(request?.headers?.referer || "").trim();
-  if (referer) {
-    try {
-      const url = new URL(referer);
-      return url.origin;
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
 function hashValue(value) {
   return crypto.createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
 }
@@ -610,91 +553,52 @@ export function createToolManagementStore({ userDataPath }) {
         reasonCode: "invalid_token"
       };
     }
-    if (grant.expiresAt && Date.parse(grant.expiresAt) <= Date.now()) {
-      return {
-        ok: false,
-        status: 403,
-        error: "工具授权已过期。",
-        reasonCode: "grant_expired",
-        grant: publicGrant(grant)
-      };
-    }
-    if (grant.maxUses > 0 && grant.useCount >= grant.maxUses) {
-      return {
-        ok: false,
-        status: 403,
-        error: "工具授权已超过最大使用次数。",
-        reasonCode: "grant_max_uses",
-        grant: publicGrant(grant)
-      };
-    }
-    const origin = requestOrigin(request);
-    if (grant.allowedOrigins.length > 0 && (!origin || !grant.allowedOrigins.map((item) => item.replace(/\/+$/, "")).includes(origin))) {
-      return {
-        ok: false,
-        status: 403,
-        error: "当前请求来源暂未匹配到该工具的可用授权，请核实授权配置以启用该能力。",
-        reasonCode: "origin_not_allowed",
-        grant: publicGrant(grant)
-      };
-    }
     const sourceIp = sourceIpFromRequest(request);
-    if (grant.allowedCidrs.length > 0 && !grant.allowedCidrs.some((rule) => ipMatchesRule(sourceIp, rule))) {
-      return {
-        ok: false,
-        status: 403,
-        error: "当前网络来源暂未开通访问权限，如需调用请调整授权清单。",
-        reasonCode: "cidr_not_allowed",
-        grant: publicGrant(grant)
-      };
-    }
     const perMinute = Math.max(0, Number(grant.rateLimit?.perMinute || 0));
+    let grantRateLimited = false;
     if (perMinute > 0) {
       const since = new Date(Date.now() - 60_000).toISOString();
       const count = db.prepare(`
         SELECT count(*) AS count FROM tool_metric_events
         WHERE grant_id = ? AND created_at >= ?
       `).get(grant.id, since).count;
-      if (count >= perMinute) {
-        return {
-          ok: false,
-          status: 429,
-          error: "工具授权已超过限流阈值。",
-          reasonCode: "rate_limited",
-          grant: publicGrant(grant)
-        };
-      }
+      grantRateLimited = count >= perMinute;
     }
-    const scopes = normalizeScopes(requiredScopes.length ? requiredScopes : tool?.requiredScopes || []);
-    const missingScopes = scopes.filter((scope) => !grant.scopes.includes(scope));
-    if (missingScopes.length > 0) {
+    const authorizationDecision = evaluateAuthorizationPolicy({
+      operation: {
+        id: "tool.grant.authorize",
+        requiredScopes: [],
+        safety: { risk: "read_only" },
+        readOnly: true
+      },
+      grant: publicGrant(grant),
+      request,
+      context: {
+        grantRateLimited,
+        sourceIp
+      },
+      grantRequired: true,
+      enforceConfirmation: false
+    });
+    if (!authorizationDecision.allowed) {
+      const errorByReason = {
+        grant_expired: "工具授权已过期。",
+        grant_max_uses: "工具授权已超过最大使用次数。",
+        origin_not_allowed: "当前请求来源暂未匹配到该工具的可用授权，请核实授权配置以启用该能力。",
+        cidr_not_allowed: "当前网络来源暂未开通访问权限，如需调用请调整授权清单。",
+        rate_limited: "工具授权已超过限流阈值。"
+      };
       return {
         ok: false,
-        status: 403,
-        error: `工具权限不足：${missingScopes.join(", ")}。`,
-        reasonCode: "missing_scopes",
-        missingScopes,
-        grant: publicGrant(grant)
+        status: authorizationDecision.reasonCode === "rate_limited" ? 429 : 403,
+        error: errorByReason[authorizationDecision.reasonCode] || "工具授权策略拒绝了该请求。",
+        reasonCode: authorizationDecision.reasonCode,
+        grant: publicGrant(grant),
+        authorizationDecision
       };
     }
-    if (tool?.id && grant.toolDeny.includes(tool.id)) {
-      return {
-        ok: false,
-        status: 403,
-        error: `工具已被授权策略拒绝：${tool.id}。`,
-        reasonCode: "tool_denied",
-        grant: publicGrant(grant)
-      };
-    }
-    if (tool?.id && grant.toolAllow.length > 0 && !grant.toolAllow.includes(tool.id)) {
-      return {
-        ok: false,
-        status: 403,
-        error: `工具不在授权白名单中：${tool.id}。`,
-        reasonCode: "tool_not_allowed",
-        grant: publicGrant(grant)
-      };
-    }
+    void requiredScopes;
+    void tool;
     const usedAt = nowIso();
     const updated = {
       ...grant,

@@ -52,17 +52,17 @@
 | `drive:read` | `drive.item.get` | `driveId`, `itemId?`, `path?`, `fields?` | 读取文件或文件夹元信息，不下载正文内容。 |
 | `drive:read` | `drive.folder.list` | `driveId`, `folderId?`, `path?`, `recursive?`, `pageToken?`, `limit?` | 列出文件夹内容。 |
 | `drive:read` | `drive.search` | `driveId`, `query`, `folderId?`, `mimeTypes?`, `modifiedSince?`, `pageToken?`, `limit?` | 搜索云盘文件或文件夹。 |
-| `drive:read` | `drive.file.download` | `driveId`, `fileId?`, `path?`, `revisionId?`, `range?`, `format?` | 下载文件内容或导出指定格式内容。 |
+| `drive:read` | `drive.file.download` | `driveId`, `fileId?`, `path?`, `revisionId?`, `range?`, `format?` | 下载文件内容或导出指定格式内容。允许 provider 直接流转到客户端/Agent，但必须生成 transfer receipt、byte count、digest/etag/version、完成状态和失败原因，不能静默丢失。 |
 | `drive:read` | `drive.revision.list` | `driveId`, `fileId?`, `path?`, `pageToken?`, `limit?` | 列出文件版本历史。 |
 | `drive:read` | `drive.revision.download` | `driveId`, `fileId?`, `path?`, `revisionId`, `format?` | 下载指定历史版本。 |
-| `drive:write` | `drive.folder.create` | `driveId`, `parentId?`, `parentPath?`, `name`, `conflictPolicy?` | 创建文件夹。 |
-| `drive:write` | `drive.file.upload` | `driveId`, `parentId?`, `parentPath?`, `name`, `content?`, `contentBase64?`, `mimeType?`, `conflictPolicy?` | 上传新文件。 |
-| `drive:write` | `drive.file.update` | `driveId`, `fileId?`, `path?`, `content?`, `contentBase64?`, `mimeType?`, `ifRevisionId?` | 更新已有文件内容。 |
-| `drive:write` | `drive.item.copy` | `driveId`, `itemId?`, `path?`, `targetParentId?`, `targetParentPath?`, `newName?` | 复制文件或文件夹。 |
-| `drive:write` | `drive.item.move` | `driveId`, `itemId?`, `path?`, `targetParentId?`, `targetParentPath?`, `conflictPolicy?` | 移动文件或文件夹。 |
-| `drive:write` | `drive.item.rename` | `driveId`, `itemId?`, `path?`, `newName`, `conflictPolicy?` | 重命名文件或文件夹。 |
-| `drive:write` | `drive.item.trash` | `driveId`, `itemId?`, `path?`, `confirm` | 移入回收站或软删除。 |
-| `drive:write` | `drive.item.restore` | `driveId`, `itemId`, `targetParentId?`, `targetParentPath?`, `confirm` | 从回收站恢复文件或文件夹。 |
+| `drive:write` | `drive.folder.create` | `driveId`, `parentId?`, `parentPath?`, `name`, `conflictPolicy?` | 创建新文件夹；v0.0.1 需要 policy 允许，冲突时转 proposal。 |
+| `drive:write` | `drive.file.upload` | `driveId`, `parentId?`, `parentPath?`, `name`, `content?`, `contentBase64?`, `mimeType?`, `conflictPolicy?` | 上传新文件；覆盖已有对象、冲突或替换内容必须转 proposal。 |
+| `drive:write` | `drive.file.update` | `driveId`, `fileId?`, `path?`, `content?`, `contentBase64?`, `mimeType?`, `ifRevisionId?` | 更新已有文件内容；v0.0.1 强制 proposal + 审核或高权限确认。 |
+| `drive:write` | `drive.item.copy` | `driveId`, `itemId?`, `path?`, `targetParentId?`, `targetParentPath?`, `newName?` | 复制文件或文件夹；跨位置复制或冲突时强制 proposal。 |
+| `drive:write` | `drive.item.move` | `driveId`, `itemId?`, `path?`, `targetParentId?`, `targetParentPath?`, `conflictPolicy?` | 移动文件或文件夹；v0.0.1 强制 proposal + 审核或高权限确认。 |
+| `drive:write` | `drive.item.rename` | `driveId`, `itemId?`, `path?`, `newName`, `conflictPolicy?` | 重命名文件或文件夹；v0.0.1 强制 proposal + 审核或高权限确认。 |
+| `drive:write` | `drive.item.trash` | `driveId`, `itemId?`, `path?`, `confirm` | 移入回收站或软删除；v0.0.1 强制 proposal + 审核或高权限确认。 |
+| `drive:write` | `drive.item.restore` | `driveId`, `itemId`, `targetParentId?`, `targetParentPath?`, `confirm` | 从回收站恢复文件或文件夹；v0.0.1 强制 proposal + 审核或高权限确认。 |
 | `drive:share` | `drive.permission.list` | `driveId`, `itemId?`, `path?` | 读取文件或文件夹 ACL、共享成员和共享链接状态。 |
 | `drive:share` | `drive.permission.create` | `driveId`, `itemId?`, `path?`, `principal`, `role`, `expiresAt?`, `notify?`, `confirm` | 新增共享授权。 |
 | `drive:share` | `drive.permission.update` | `driveId`, `itemId?`, `path?`, `permissionId`, `role`, `expiresAt?`, `confirm` | 更新已有共享授权。 |
@@ -70,10 +70,10 @@
 | `drive:share` | `drive.link.create` | `driveId`, `itemId?`, `path?`, `scope`, `role`, `expiresAt?`, `confirm` | 创建共享链接。 |
 | `drive:share` | `drive.link.delete` | `driveId`, `itemId?`, `path?`, `linkId`, `confirm` | 删除共享链接。 |
 | `drive:sync` | `drive.sync.plan` | `driveId`, `scope`, `direction`, `sinceCursor?`, `dryRun?` | 生成同步计划，不直接写入目标。 |
-| `drive:sync` | `drive.sync.run` | `driveId`, `scope`, `direction`, `sinceCursor?`, `conflictPolicy?`, `confirm?` | 执行同步任务。 |
+| `drive:sync` | `drive.sync.run` | `driveId`, `scope`, `direction`, `sinceCursor?`, `conflictPolicy?`, `confirm?` | 执行同步任务；默认只增不删，覆盖/删除/冲突必须生成 proposal 并审核。 |
 | `drive:sync` | `drive.sync.cancel` | `driveId`, `syncJobId`, `reason?`, `confirm` | 取消正在运行的同步任务。 |
-| `drive:maintain` | `drive.item.purge` | `driveId`, `itemId`, `confirm` | 永久删除文件或文件夹，不能只用普通 `drive:write`。 |
-| `drive:maintain` | `drive.trash.empty` | `driveId`, `scope?`, `confirm` | 清空回收站或按范围永久清理。 |
+| `drive:maintain` | `drive.item.purge` | `driveId`, `itemId`, `confirm` | 永久删除文件或文件夹，不能只用普通 `drive:write`；v0.0.1 强制 proposal + 高权限确认。 |
+| `drive:maintain` | `drive.trash.empty` | `driveId`, `scope?`, `confirm` | 清空回收站或按范围永久清理；v0.0.1 强制 proposal + 高权限确认。 |
 | `drive:maintain` | `drive.sync.reconcile` | `driveId`, `scope?`, `confirm` | 对账云盘索引、游标、本地镜像或导入记录。 |
 | `drive:admin` | `drive.account.connect` | `provider`, `authFlow`, `scopes`, `redirectUri?`, `confirm` | 发起云盘账号连接或 OAuth 授权。 |
 | `drive:admin` | `drive.account.disconnect` | `driveId`, `revokeRemoteToken?`, `confirm` | 断开云盘账号或挂载。 |
@@ -95,7 +95,7 @@
 | `knowledge:read` | `knowledge.item.get` | `knowledgeId`, `itemId`, `includeEvidence?` | 读取知识条目或索引对象。 |
 | `knowledge:read` | `knowledge.document.structure` | `knowledgeId`, `documentId`, `contextBudget?`, `continuationToken?` | 读取文档结构、标题树、source ranges 和结构质量信息。 |
 | `knowledge:read` | `knowledge.evidence.get` | `knowledgeId`, `evidenceId`, `contextBudget?`, `payloadBudget?`, `continuationToken?` | 读取 evidence pack。返回证据、引用、结构片段和可追溯元数据。 |
-| `knowledge:read` | `knowledge.asset.download` | `knowledgeId`, `assetId`, `variant?`, `range?` | 下载知识资产，例如图片、附件、OCR 资产或归一化材料。 |
+| `knowledge:read` | `knowledge.asset.download` | `knowledgeId`, `assetId`, `variant?`, `range?` | 下载知识资产，例如图片、附件、OCR 资产或归一化材料；返回的是下载状态响应/transfer id，不是文件系统句柄。 |
 | `knowledge:read` | `knowledge.graph.query` | `knowledgeId`, `query`, `nodeIds?`, `edgeTypes?`, `depth?`, `limit?` | 查询实体、关系和图谱邻域。 |
 | `knowledge:write` | `knowledge.source.create` | `knowledgeId`, `sourceType`, `locator`, `metadata?`, `ingestPolicy?` | 注册新的知识源。可以指向本地目录、云盘文件、上传对象、邮件包或外部知识源。 |
 | `knowledge:write` | `knowledge.source.update` | `knowledgeId`, `sourceId`, `metadata?`, `ingestPolicy?` | 更新知识源元信息或入库策略。 |

@@ -2,13 +2,22 @@ import { createMetadataStore } from "../storage/metadata-store.mjs";
 import { createMountManager } from "./mount-manager.mjs";
 import { getMountConfigPath, getMountConfigPaths } from "./mount-config.mjs";
 
-export async function createServerRuntime({ userDataPath, runtimeOptions = {} }) {
-  const metadataStore = createMetadataStore({ userDataPath });
+export async function createServerRuntime({
+  userDataPath,
+  runtimeOptions = {},
+  metadataStoreDomainServices = {},
+  builtinMountProviders = {}
+}) {
+  const metadataStore = createMetadataStore({
+    userDataPath,
+    domainServices: metadataStoreDomainServices
+  });
 
   try {
     const mountManager = await createMountManager({
       userDataPath,
-      runtimeOptions
+      runtimeOptions,
+      builtinMountProviders
     });
 
     return {

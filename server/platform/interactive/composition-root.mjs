@@ -9,8 +9,13 @@ import { registerSecurityPlatformServices } from "../common/security/register.mj
 import { createServerRuntime } from "../common/module-manager/server-runtime.mjs";
 import { registerModuleManagementPlatformServices } from "../common/module-manager/register.mjs";
 import { SERVER_API_OPERATIONS } from "../common/operation-dispatcher/operation-registry.mjs";
+import { loadSettings } from "../common/platform-core/settings.mjs";
 import { registerStoragePlatformServices } from "../common/storage/register.mjs";
 import { registerDevopsPlatformServices } from "../common/devops/register.mjs";
+import { getAgentConfigRegistry } from "../specialized/agent/agent-configs/config-registry.mjs";
+import { createConsoleDomainServices } from "../specialized/console/console-domain-services.mjs";
+import { createKnowledgeBuiltinMountProviders } from "../specialized/knowledge/storage/builtin-mount-providers.mjs";
+import { createKnowledgeMetadataStoreDomainServices } from "../specialized/knowledge/storage/metadata-store-domain-services.mjs";
 import { createPlatformRegistry } from "./platform-registry.mjs";
 
 export async function createServerCompositionRoot({
@@ -40,12 +45,15 @@ export async function createServerCompositionRoot({
 
   const runtime = await createServerRuntime({
     userDataPath,
-    runtimeOptions: runtimeOptionsWithFeatures
+    runtimeOptions: runtimeOptionsWithFeatures,
+    metadataStoreDomainServices: createKnowledgeMetadataStoreDomainServices(),
+    builtinMountProviders: createKnowledgeBuiltinMountProviders({ userDataPath })
   });
   const consoleAuth = createConsoleAuth({ userDataPath });
   const operationAuditStore = createOperationAuditStore({ userDataPath });
   const operationConcurrencyScope = path.resolve(userDataPath);
   const protocolEventBus = createProtocolEventBus({ userDataPath, logger: runtimeLogger });
+  const consoleDomainServices = createConsoleDomainServices();
 
   registerCorePlatformServices(platformRegistry, {
     protocolEventBus,
@@ -67,6 +75,9 @@ export async function createServerCompositionRoot({
     metadataStore: runtime.metadataStore,
     userDataPath
   });
+  await getAgentConfigRegistry({ rootPath: path.join(userDataPath, "agent-configs") }).refresh({
+    settingsFallback: await loadSettings(userDataPath)
+  });
 
   return Object.freeze({
     userDataPath,
@@ -83,6 +94,7 @@ export async function createServerCompositionRoot({
     operationAuditStore,
     operationConcurrencyScope,
     protocolEventBus,
+    consoleDomainServices,
     metadataStore: runtime.metadataStore
   });
 }

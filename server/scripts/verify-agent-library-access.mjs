@@ -81,7 +81,7 @@ function requestFor(subjectId, workspaceId, egress = "exportFile") {
 }
 
 function assertAccessModesAndEgressCatalogs() {
-  for (const mode of ["deny", "discoverOnly", "metadataOnly", "readInPlace", "citeOnly", "copyToContext", "exportAllowed", "checkoutAllowed"]) {
+  for (const mode of ["deny", "discoverOnly", "metadataOnly", "controlledView", "citeOnly", "copyToContext", "exportAllowed", "checkoutAllowed"]) {
     assert.ok(ACCESS_MODES.includes(mode), `missing access mode ${mode}`);
   }
   for (const egress of ["searchResult", "evidenceRead", "contextBundle", "artifactWrite", "exportFile", "distillationInput", "distillationOutput", "memoryWrite", "toolCall", "evaluationSample"]) {

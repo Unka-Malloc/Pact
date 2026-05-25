@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -61,7 +63,7 @@ async function localMcpGrant(serverUrl, body = {}, headers = {}) {
 
 let mcpRequestId = 100;
 
-async function callMcpOperation({ serverUrl, token, outlet = "pact.skill", operation, input = {} }) {
+async function callMcpOperation({ serverUrl, token, outlet = "pact.codespace", operation, input = {} }) {
   mcpRequestId += 1;
   return fetchJson(`${serverUrl}/mcp`, {
     method: "POST",
@@ -76,6 +78,105 @@ async function callMcpOperation({ serverUrl, token, outlet = "pact.skill", opera
       }
     }, mcpRequestId))
   });
+}
+
+async function subscribeMcpOperationReplies(serverUrl, token) {
+  const controller = new AbortController();
+  const response = await fetch(`${serverUrl}/mcp`, {
+    method: "GET",
+    headers: mcpHeaders(token),
+    signal: controller.signal
+  });
+  assert.equal(response.status, 200);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const replies = [];
+  const waiters = [];
+
+  function resolveWaiters() {
+    for (const waiter of [...waiters]) {
+      const match = replies.find(waiter.predicate);
+      if (!match) {
+        continue;
+      }
+      clearTimeout(waiter.timer);
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve(match);
+    }
+  }
+
+  function pushEvent(rawEvent) {
+    const dataLines = rawEvent
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trim());
+    if (!dataLines.length) {
+      return;
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (parsed.method === "notifications/pact/operation_reply") {
+      replies.push(parsed);
+      resolveWaiters();
+    }
+  }
+
+  const pump = (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() || "";
+        for (const event of events) {
+          pushEvent(event);
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        throw error;
+      }
+    }
+  })();
+
+  return {
+    waitFor(predicate, timeoutMs = 10000) {
+      const existing = replies.find(predicate);
+      if (existing) {
+        return Promise.resolve(existing);
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          predicate,
+          resolve,
+          timer: setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) {
+              waiters.splice(index, 1);
+            }
+            reject(new Error("Timed out waiting for MCP operation_reply."));
+          }, timeoutMs)
+        };
+        waiters.push(waiter);
+      });
+    },
+    async close() {
+      controller.abort();
+      try {
+        await pump;
+      } catch {
+        // Expected when aborting the SSE stream.
+      }
+    }
+  };
 }
 
 function structuredPayload(response) {
@@ -170,6 +271,54 @@ function configureLocalGerritCredentialsForVerify() {
   }
 }
 
+async function runProcess(command, args = [], options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd || repoRoot,
+    env: { ...process.env, ...(options.env || {}) },
+    encoding: "utf8",
+    stdio: options.stdio || "pipe"
+  });
+  if (result.status !== 0 && options.allowFailure !== true) {
+    throw new Error(`${command} ${args.join(" ")} failed:\n${result.stdout || ""}${result.stderr || ""}`);
+  }
+  return result;
+}
+
+function localGerritGitUrl(project) {
+  configureLocalGerritCredentialsForVerify();
+  const baseUrl = String(process.env.PACT_GERRIT_BASE_URL || "http://127.0.0.1:18080").replace(/\/+$/, "");
+  const url = new URL(`/a/${project}`, `${baseUrl}/`);
+  url.username = process.env.PACT_GERRIT_USERNAME || "admin";
+  url.password = process.env.PACT_GERRIT_HTTP_PASSWORD || "secret";
+  return url.toString();
+}
+
+async function createUploadWorktree(project, suffix) {
+  const workRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-gerrit-upload-worktree-"));
+  const worktreePath = path.join(workRoot, "repo");
+  await runProcess("git", ["clone", localGerritGitUrl(project), worktreePath]);
+  await runProcess("git", ["config", "user.name", "Pact MCP Verify"], { cwd: worktreePath });
+  await runProcess("git", ["config", "user.email", "pact-mcp-verify@example.com"], { cwd: worktreePath });
+  const fileName = `pact-mcp-upload-${suffix}.txt`;
+  const content = `Pact MCP Gerrit upload verification ${suffix}\n`;
+  await fs.writeFile(path.join(worktreePath, fileName), content);
+  await runProcess("git", ["add", fileName], { cwd: worktreePath });
+  const changeId = `I${crypto.randomBytes(20).toString("hex")}`;
+  await runProcess("git", [
+    "commit",
+    "-m",
+    `Pact MCP Gerrit upload verification ${suffix}\n\nChange-Id: ${changeId}`
+  ], { cwd: worktreePath });
+  const head = (await runProcess("git", ["rev-parse", "HEAD"], { cwd: worktreePath })).stdout.trim();
+  return {
+    workRoot,
+    worktreePath,
+    fileName,
+    changeId,
+    head
+  };
+}
+
 async function runLiveGerritMcpScenario({ serverUrl, readToken, writeToken, maintainToken, liveVersion }) {
   configureLocalGerritCredentialsForVerify();
   const suffix = Date.now().toString(36);
@@ -192,7 +341,7 @@ async function runLiveGerritMcpScenario({ serverUrl, readToken, writeToken, main
   const readVersion = assertMcpToolOk(await callMcpOperation({
     serverUrl,
     token: readToken,
-    outlet: "pact.skill",
+    outlet: "pact.codespace",
     operation: "pact.gerrit.read",
     input: { action: "server.version" }
   }), "pact.gerrit.read");
@@ -263,6 +412,80 @@ async function runLiveGerritMcpScenario({ serverUrl, readToken, writeToken, main
   }), "pact.gerrit.read");
   assert.equal(detail.data?.id, changeId);
 
+  let operationReplies = null;
+  let uploadWorktree = null;
+  let uploadedChangeId = "";
+  try {
+    operationReplies = await subscribeMcpOperationReplies(serverUrl, maintainToken);
+    uploadWorktree = await createUploadWorktree(project, suffix);
+    const upload = assertMcpToolOk(await callMcpOperation({
+      serverUrl,
+      token: maintainToken,
+      operation: "pact.workspace.code.change.upload",
+      input: {
+        worktreePath: uploadWorktree.worktreePath,
+        branch: "master",
+        remote: "origin",
+        project,
+        baseUrl: process.env.PACT_GERRIT_BASE_URL || "http://127.0.0.1:18080",
+        topic: `${topic}-git-upload`,
+        confirm: true,
+        confirmationTimeoutMs: 60000,
+        confirmationIntervalMs: 500
+      }
+    }), "pact.workspace.code.change.upload");
+    assert.equal(upload.ok, true);
+    assert.equal(upload.head, uploadWorktree.head);
+    assert.equal(upload.completion?.confirmed, true);
+    assert.equal(upload.completion?.currentRevision, uploadWorktree.head);
+    assert.ok(upload.changeId, "Gerrit upload must return a confirmed change id");
+    assert.ok(upload.reviewUrl, "Gerrit upload must return a confirmed review URL");
+    uploadedChangeId = upload.changeId;
+
+    const uploadedDetail = assertMcpToolOk(await callMcpOperation({
+      serverUrl,
+      token: readToken,
+      operation: "pact.gerrit.read",
+      input: { action: "changes.get", changeId: uploadedChangeId, options: ["CURRENT_REVISION", "CURRENT_COMMIT"] }
+    }), "pact.gerrit.read");
+    const uploadedCurrentRevision =
+      uploadedDetail.data?.current_revision ||
+      Object.keys(uploadedDetail.data?.revisions || {}).find((revision) => revision === uploadWorktree.head);
+    assert.equal(uploadedCurrentRevision, uploadWorktree.head);
+
+    const uploadReply = await operationReplies.waitFor((event) =>
+      event.params?.operation === "pact.workspace.code.change.upload" &&
+      event.params?.status === "completed" &&
+      event.params?.target?.reviewUrl === upload.reviewUrl
+    );
+    assert.equal(uploadReply.params.target.targetKind, "codespace");
+    assert.equal(uploadReply.params.target.targetProvider, "gerrit");
+    assert.equal(uploadReply.params.target.reviewUrl, upload.reviewUrl);
+    assert.equal(uploadReply.params.message, "已完成 pact.workspace.code.change.upload 任务");
+    assert.match(JSON.stringify(uploadReply.params.payload), /confirmed/);
+  } finally {
+    if (operationReplies) {
+      await operationReplies.close();
+    }
+    if (uploadedChangeId) {
+      await callMcpOperation({
+        serverUrl,
+        token: maintainToken,
+        operation: "pact.gerrit.maintain",
+        input: {
+          action: "changes.abandon",
+          changeId: uploadedChangeId,
+          message: "Pact Gerrit MCP git upload verification cleanup",
+          notify: "NONE",
+          confirm: true
+        }
+      });
+    }
+    if (uploadWorktree?.workRoot) {
+      await fs.rm(uploadWorktree.workRoot, { recursive: true, force: true });
+    }
+  }
+
   const abandoned = assertMcpToolOk(await callMcpOperation({
     serverUrl,
     token: maintainToken,
@@ -316,7 +539,10 @@ async function verifyMaintenanceArtifacts() {
 
   const gerritManifestPath = "server/platform/specialized/capabilities/code-review/gerrit/module.json";
   const gerritManifest = await readJson(gerritManifestPath);
-  assert.equal(gerritManifest.category, "compatibility");
+  assert.equal(gerritManifest.category, "external-service-compatibility");
+  assert.equal(gerritManifest.compatibilityLayer, "external-service-compatibility");
+  assert.equal(gerritManifest.compatibilityBoundary, "remote-service");
+  assert.equal(gerritManifest.serviceProviders.includes("gerrit"), true);
   assert.equal(gerritManifest.protocol, "pact.code-review.v1");
   assert.equal(gerritManifest.maintenanceSkill, skillPath);
   assert.deepEqual(gerritManifest.components.gerritMcpRoute.operations, [
@@ -330,7 +556,10 @@ async function verifyMaintenanceArtifacts() {
   assert.ok(gerritManifest.verification.includes("PACT_VERIFY_GERRIT_LIVE=1 npm run server:verify:gerrit-mcp --silent"));
 
   const repoManifest = await readJson("server/platform/specialized/capabilities/code-repository/repo-operations/module.json");
-  assert.equal(repoManifest.category, "compatibility");
+  assert.equal(repoManifest.category, "pact-internal-compatibility");
+  assert.equal(repoManifest.compatibilityLayer, "pact-internal-compatibility");
+  assert.equal(repoManifest.compatibilityBoundary, "resource-operation");
+  assert.equal(repoManifest.internalCompatibilityKind, "resource-operation");
   assert.equal(repoManifest.protocol, "pact.resource-operation.v1");
   assert.equal(repoManifest.maintenanceSkill, skillPath);
   assert.equal(repoManifest.components.repoOperationRoute.operations.includes("repo.proposal.create"), true);
@@ -524,7 +753,7 @@ try {
 
   const maintainGrant = await localMcpGrant(server.url, {
     label: "verify-gerrit-maintain",
-    scopes: ["repo:maintain"],
+    toolsets: ["pact.repo.read", "pact.repo.write", "pact.repo.review", "pact.repo.approve", "pact.repo.maintain"],
     grantMode: "maintain",
     targets: ["verify-gerrit-mcp"]
   }, { "x-pact-safety-confirm": "true" });
@@ -539,20 +768,34 @@ try {
   });
   assert.equal(toolsList.status, 200);
   const publicToolNames = toolsList.payload.result.tools.map((tool) => tool.name);
-  assert.deepEqual(publicToolNames.sort(), ["pact.help", "pact.knowledge", "pact.list", "pact.skill", "pact.workspace"].sort());
+  assert.deepEqual(publicToolNames.sort(), ["pact.discovery", "pact.knowledge", "pact.sharedspace", "pact.codespace", "pact.skillHub"].sort());
   assert.equal(publicToolNames.includes("pact.gerrit.read"), false);
 
   const capabilities = await callMcpOperation({
     serverUrl: server.url,
     token: readToken,
-    outlet: "pact.help",
+    outlet: "pact.discovery",
     operation: "pact.capabilities.list",
     input: {}
   });
   assert.equal(capabilities.status, 200);
   const capabilityNames = new Set(capabilities.payload.result.structuredContent.operations.map((tool) => tool.name));
+  assert.equal(capabilityNames.has("pact.gerrit.read"), true, "read grant must see read capability");
+  assert.equal(capabilityNames.has("pact.gerrit.write"), false, "read grant must not see write capability");
+  assert.equal(capabilityNames.has("pact.gerrit.maintain"), false, "read grant must not see maintain capability");
+  assert.equal(capabilityNames.has("pact.gerrit.gitUpload"), false, "read grant must not see git upload capability");
+
+  const maintainCapabilities = await callMcpOperation({
+    serverUrl: server.url,
+    token: maintainToken,
+    outlet: "pact.discovery",
+    operation: "pact.capabilities.list",
+    input: {}
+  });
+  assert.equal(maintainCapabilities.status, 200);
+  const maintainCapabilityNames = new Set(maintainCapabilities.payload.result.structuredContent.operations.map((tool) => tool.name));
   for (const toolName of ["pact.gerrit.read", "pact.gerrit.write", "pact.gerrit.maintain", "pact.gerrit.gitUpload"]) {
-    assert.equal(capabilityNames.has(toolName), true, `missing MCP capability ${toolName}`);
+    assert.equal(maintainCapabilityNames.has(toolName), true, `missing maintain MCP capability ${toolName}`);
   }
 
   const directToolRejected = await fetchJson(`${server.url}/mcp`, {

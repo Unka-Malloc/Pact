@@ -74,17 +74,19 @@ Pact 的核心定位是：
 - 工作空间管理。Pact 管理公共工作空间的资产、权限、快照、Checkpoint Tree、Operation Ledger、审计和恢复。核心不是让智能体互相聊天，而是让所有智能体通过同一个受控工作空间读写资产，并且任何修改都可追踪、可回溯、可撤销。
 - 资产贡献统计报表是工作空间管理的管理者视角输出。公共空间的价值必须能被管理者看见：谁贡献了资产、贡献了什么、被谁使用、复用了多少次、带来了多少跨 workspace 采用、产生过哪些授权请求、失败、回滚和维护动作。
 
-三个兼容：
+三个兼容层：
 
-1. 智能体兼容：不关心底层是哪个大模型、哪个 agent framework、哪个机器人体系；只要通过 Pact MCP service / Workspace API 接入，就按同一套权限、审计和工作空间协议操作。
-2. 信息源兼容：不关心信息来自上游知识库、网站订阅、文件库、业务系统、人工整理，还是智能体上传的文档；进入 Pact 后全部收纳为 workspace asset，统一切分、标注、授权、索引、审计和恢复。
-3. 工作空间环境兼容：不关心工作空间运行在容器、虚拟机、本机还是云端，也不关心底层是 Linux、macOS 还是 Windows；只要安装 Pact 管理软件，智能体访问工作空间就必须经过这层软件，由 Pact 负责权限管控、路径适配、环境差异和审计。
+1. 智能体客户端 MCP 插件兼容层（`agent-client-mcp-compatibility`）：不关心底层是哪个大模型、哪个 agent framework、哪个机器人体系；只要通过 Pact MCP service、MCP connector、local bridge 或 Workspace API 接入，就按同一套权限、审计和工作空间协议操作。
+2. 外部服务交互兼容层（`external-service-compatibility`）：不关心外部系统是 Docker、GitHub、Gerrit、Mailbox、外部知识库、模型 provider、向量库、图数据库、云盘还是业务系统；进入 Pact 后必须被转换为受控 operation、workspace asset、evidence、codeChange 或 mirror projection。
+3. Pact 内部兼容层（`pact-internal-compatibility`）：不把 Pact 应用内部的模块、mount、资源语义、运行时、状态边界和能力包生命周期散落成多套兼容概念；统一归入内部兼容层，由明确子类承载内部演进。
+
+“两个问题，一个能力，三个兼容”的产品表达只保留为问题定义，不再作为架构分层口径；架构分层统一使用 `agent-client-mcp-compatibility`、`external-service-compatibility` 和 `pact-internal-compatibility` 三个边界。
 
 这不是横向再造知识库，也不是横向再造智能体平台。Pact 只猛攻两端之间最缺的中间层：
 
-- 对上游：接入外部知识库、文件库、向量库、图谱库和业务资产源，把粗粒度资源重新切分、重新标注、重新授权、重新登记。
-- 对下游：接入各类本地智能体、脚本和人工终端，让它们在公共工作空间里共享一部分资产、Skills、工具、脚本、专家意见和任务状态。
-- 对中间：用 AgentLibrary、Workspace Asset Governance、Operation Ledger、Contribution Registry 和 Context Compiler 把“可看、可借、可贡献、可复用、可撤销”做成同一套治理机制。
+- 对上游和外部服务：用 `external-service-compatibility` 接入外部知识库、文件库、邮箱、代码评审系统、向量库、图谱库和业务资产源，把粗粒度资源重新切分、重新标注、重新授权、重新登记。
+- 对下游智能体客户端：用 `agent-client-mcp-compatibility` 接入各类本地智能体、脚本和人工终端，让它们在公共工作空间里共享一部分资产、Skills、工具、脚本、专家意见和任务状态。
+- 对 Pact 内部系统：用 `pact-internal-compatibility` 统一模块合同、资源语义、能力包生命周期、运行时环境和状态边界，再由 AgentLibrary、Workspace Asset Governance、Operation Ledger、Contribution Registry 和 Context Compiler 把“可看、可借、可贡献、可复用、可撤销”做成同一套治理机制。
 
 Pact 不做另一个智能体平台，不做完整 A2A Gateway，也不把自己包装成自治 Agent。系统只治理公共工作空间里的资产、知识、任务、产物、决策和审计状态。本地智能体可以接入、读取、提交和请求操作，但永远不能绕过工作空间协议直接改写 canonical state。
 
@@ -175,7 +177,7 @@ Pact 不做另一个智能体平台，不做完整 A2A Gateway，也不把自己
 
 - 支持上游知识库、文件库、人工整理和智能体上传进入 `derivedKnowledgeSpace`。
 - 支持 source、document、section、block、field、table cell、image、attachment、evidence pack 和 asset rendition 级别授权。
-- 支持 `deny`、`discoverOnly`、`metadataOnly`、`readInPlace`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
+- 支持 `deny`、`discoverOnly`、`metadataOnly`、`controlledView`、`citeOnly`、`copyToContext`、`exportAllowed`、`checkoutAllowed`。
 - 支持知识访问 receipt、loan record、denied request audit 和撤销策略。
 - 支持知识搜索、证据回读、上下文编译、导出、蒸馏、memory write 和 tool call 出口共用同一权限裁决。
 
@@ -203,7 +205,7 @@ upstream knowledge base
 
 - 贡献类型：`knowledge`、`skill`、`tool`、`script`、`file`、`sourceCode`、`codeChange`、`goldenRule`、`expertOpinion`。
 - 固定位置：`workspace/skills/`、`workspace/tools/`、`workspace/scripts/`、`workspace/files/`、`workspace/knowledge/`、`workspace/rules/`、`workspace/expert-opinions/`。
-- 状态机：`submitted -> scanned -> reviewed -> published | rejected | needs_changes -> adopted -> deprecated | revoked`。
+- 状态机：`submitted -> preview -> scanned -> reviewed -> published | rejected | needs_changes -> adopted -> deprecated | revoked`。内容到达服务器并完成最小留档后才是 `preview`；权限、风险和审核确认后才是 `published`。
 - 下载、安装、执行、复制到上下文、跨 workspace 使用都必须写 usage event、loan record 和 audit。
 
 资产贡献统计报表是 P0 能力。第一版报表按 workspace、贡献者、资产类型、时间窗口、使用动作、授权流、风险和维护状态统计。排行榜从报表中派生，第一版主分数为：
@@ -226,12 +228,13 @@ rankScoreV0 =
 - 设备级发现统一封装为 `pact-mcp discover-local`，它只维护 canonical registry `~/.pact/mcp/servers.json`，并由 `/.well-known/pact/mcp.json` 和 `/api/mcp/discovery` 暴露当前 HTTP endpoint、VM endpoint、connector release 包和安装状态；不得通过写多个本机发现文件来兼容不同客户端。
 - 客户端安装器必须通过 `pact-mcp-connector` release 包发布；终端用户不得为了安装 MCP 拉取完整服务端仓库。release manifest 必须包含 package version、npm tarball sha256、portable zip sha256、portable tarball sha256、GitHub 一行安装命令、Hub 注册命令、本机发现命令、多选交互式安装命令、单客户端脚本化连接命令、卸载命令、doctor 命令和支持的 target 列表。一行安装脚本优先使用已有 Node.js 20+ 下载小体积 source tarball；没有 Node.js / npm / npx 的机器必须能 fallback 到自带 Node runtime 的 portable zip 包安装。
 - 每个智能体使用独立 grant/token，不复用控制台 cookie / CSRF；grant 记录目标客户端、默认 agent toolset、scope 和审计时间。预签发自定义 grant 仍可通过 `--token-stdin` 安装。
-- 最小 MCP JSON-RPC：`initialize`、`tools/list`、`tools/call`、标准错误、工具 schema；**严守语义分类出口设计：`tools/list` 对外必须且只能返回以下五个功能大类入口：`pact.knowledge` (知识蒸馏/共享/图谱)、`pact.workspace` (共享空间与协作环境)、`pact.list` (全局资源清单)、`pact.skill` (技能执行与统一工具管理) 以及 `pact.help` (协议与元发现)**。绝不允许直接暴露内部庞杂的基础工具列表，通过语义分类在保护 Context Window 的同时为智能体建立清晰的职能心理模型，统一由服务端处理版本分发和权限收敛。
-- 所有的分类入口（以及保留兼容的 `pact.call`）均使用 `apiVersion`、`operation` 和 `input` 三段式参数，内部 operation 仍通过 Tool Management / Operation Registry 路由和审计；高风险 restore/delete/reindex、auth、settings、runtime mounts 和 grant 管理必须通过显式 grant 扩展，不能作为独立 MCP tool 展开。
-- 版本升级推送：`initialize` 声明 `tools.listChanged=true`，服务端在 discovery / initialize / `pact.mcp.version` 暴露 `interfaceVersion` 和 `toolsetVersion`，并在 `GET /mcp` SSE 上发送 `notifications/tools/list_changed`。
-- 安装器必须覆盖 `codex`、`gemini-cli`、`kilo-code`、`copilot`、`openclaw --vm kate`、`hermes --vm serena` 和 `antigravity`：无 `--target` 的 `pact-mcp install` 必须启动 TUI 菜单，扫描可用客户端和 OrbStack 中的 claw-compatible 衍生体；能调用标准 CLI 的目标必须调用标准 CLI；无非交互 CLI 的目标按官方配置格式结构化写入、先备份、只替换 `pact` 条目，不覆盖其它 agent 配置。
-- MCP 上传大文件或目录时，MCP service 只承担控制面和权限面，数据面优先交给本机 Pact client runtime。支持本地 sidecar / stdio bridge 复用 `pact-client upload enqueue`、后台队列、upload session、checkpoint 和断点续传；纯 HTTP MCP 的 inline/base64 上传只作为小文本兼容路径。
-- Pact client runtime 必须支持客户端主动 bootstrap：客户端声明平台、可用命令、需要模块和上传规模，服务端返回裁剪后的 `pact-client-cli`、`clientd`、upload queue、MCP local bridge、connector/cache 和 transport adapter 计划。服务端不得仅凭 Linux 平台假设 `rsync` 可用，native transport 只能在客户端命令和服务端能力同时声明后启用。
+- 最小 MCP JSON-RPC：`initialize`、`tools/list`、`tools/call`、标准错误、工具 schema；**v0.0.1 硬切语义分类出口：`tools/list` 对外必须且只能返回 `pact.discovery`、`pact.knowledge`、`pact.sharedspace`、`pact.codespace` 和 `pact.skillHub` 五个功能大类入口**。旧入口 `pact.workspace`、`pact.list`、`pact.skill`、`pact.help` 不再作为 alias 接受；新版 connector / doctor 必须提示旧配置重装。绝不允许直接暴露内部庞杂的基础工具列表，通过语义分类在保护 Context Window 的同时为智能体建立清晰的职能心理模型，统一由服务端处理版本分发和权限收敛。
+- 所有分类入口均采用统一 Intent Operation envelope：`apiVersion`、`operation`、`subject`、`operatorId`、`agentProfileId`、`workspaceId`、`traceId`、`idempotencyKey`、`intent`、`input`、`dryRun` 和 `requestedScopes`。MCP adapter 可为缺省字段注入认证 grant 和本机目标信息，但进入 Operation Registry、Tool Management、Workspace API、Policy Engine、Operation Ledger 和审计前必须形成完整 envelope。高风险 restore/delete/reindex、auth、settings、runtime mounts 和 grant 管理必须通过显式 grant 扩展，不能作为独立 MCP tool 展开。
+- MCP capability discovery 必须按当前 grant 过滤：智能体能看到权限范围内所有可调用 operation，不能看到未授权写入、维护、admin 或被 deny 的 operation。`/api/mcp/local-grant` 没有匹配目标时只授予默认只读 agent toolset；匹配到 Codex、Gemini CLI、Kilo Code、Copilot、OpenClaw、Hermes、Antigravity、OpenCode 等受支持目标时自动授予预定义 safe-write agent toolset，并写入 `targetMatch`、`matchedTargets` 和 `agentProfileId`。
+- 版本和操作回信推送：`initialize` 声明 `tools.listChanged=true`，服务端在 discovery / initialize / `pact.mcp.version` 暴露 `interfaceVersion` 和 `toolsetVersion`，并在 `GET /mcp` SSE 上发送 `notifications/tools/list_changed`。每次已授权 operation 执行完成或失败后，服务端还必须向同一 grant 的 SSE 连接推送 `notifications/pact/operation_reply`，包含 envelope、执行状态、目标回执、错误或结果摘要。
+- 安装器必须覆盖 `codex`、`gemini-cli`、`kilo-code`、`copilot`、`openclaw --vm kate`、`hermes --vm serena` 和 `antigravity`：无 `--target` 的 `pact-mcp install` 必须启动 TUI 菜单，扫描可用客户端和 OrbStack 中的 claw-compatible 衍生体；能调用标准 CLI 的目标必须调用标准 CLI；无非交互 CLI 的目标按官方配置格式结构化写入、先生成配置回滚副本、只替换 `pact` 条目，不覆盖其它 agent 配置。
+- MCP 上传大文件或目录时，MCP service 只承担控制面和权限面，数据面优先交给本机 Pact client runtime。不能预设本地已经安装 `pact-client-cli` 或 `clientd`：最小 MCP connector 必须能先向服务端发起 client runtime bootstrap pull，按需拉取裁剪后的客户端模块，再启动本地 sidecar / stdio bridge 复用 `pact-client upload enqueue`、后台队列、upload session、checkpoint 和断点续传；纯 HTTP MCP 的 inline/base64 上传只作为小文本兼容路径。
+- Pact client runtime 必须支持客户端主动 bootstrap：客户端声明平台、可用命令、需要模块和上传规模，服务端返回裁剪后的 `pact-client-cli`、`clientd`、upload queue、MCP local bridge、connector/cache 和 transport adapter 计划，并提供从服务端拉取这些模块的 MCP/HTTP/RPC 操作。服务端不得仅凭 Linux 平台假设 `rsync` 可用，native transport 只能在客户端命令和服务端能力同时声明后启用。
 
 MCP handler 不能直接改文件夹或数据库，必须落到 Workspace API、Policy Engine、Operation Ledger、Checkpoint Tree 和 storage metadata。
 
@@ -382,6 +385,59 @@ Local agents / humans / scripts
 - `devops`：进程状态、统一注册、监控告警和生产运行辅助。
 
 `server/platform/modules` 存放外置模块和本地运行时资源，例如 Tika、OCR、document parser 和 runtime assets。
+
+#### 基础能力内聚和解耦合同
+
+平台基础能力必须遵守低耦合、高内聚。`server/platform/common` 不是业务能力仓库，也不是跨模块 service locator；它只承载可被多个应用能力复用的稳定合同、运行时基础设施和防腐层。依赖方向固定为：
+
+```text
+interactive composition root
+  -> common platform contracts
+  -> specialized capability implementations
+  -> modules / external adapters
+
+specialized capability implementations
+  -> common platform contracts
+
+common platform contracts
+  -/-> specialized capability implementations
+```
+
+基础能力归口如下：
+
+| 基础能力 | 高内聚边界 | 允许依赖 | 禁止依赖 |
+| --- | --- | --- | --- |
+| 安全和权限管理 | `server/platform/common/security` 统一认证、CSRF、subject resolution、authorization decision、grant/token 裁决、toolset maxRisk 约束和 denied audit。 | operation metadata、tool catalog metadata、独立 authorization store。 | 直接读取 knowledge、workspace、tool runtime 的内部状态；为某个业务模块硬编码权限分支；把高风险 operation 挂入低风险 toolset。 |
+| 模块管理 | `server/platform/common/module-manager` 统一 mount 合同、模块发现、加载、热重载、合同测试和 capability package 生命周期入口。 | mount manifest、module descriptor、runtime provider interface。 | 在模块管理器里直接实现知识、OCR、向量库或业务处理逻辑。 |
+| 算法和数据结构 | `server/platform/common/data-structure` 承载 Checkpoint Tree、共享图结构、排序/合并/差异算法和状态协调原语。 | 纯数据模型、序列化合同、无副作用算法。 | HTTP controller、UI 状态、业务 runtime、裸数据库细节。 |
+| 存储 | `server/platform/common/storage` 统一 SQLite migration、对象存储、raw object、metadata repository、backup/restore 和 storage doctor。 | 数据库连接、repository interface、对象引用、migration。 | 业务模块直接拼 SQL 操作核心表；storage 反向调用知识检索、agent workspace 或 Tool Management 业务逻辑。 |
+| 运维 | `server/platform/common/devops` 统一进程状态、启动发现、监控告警、生产运行辅助和统一注册。 | runtime health interface、event bus、只读状态摘要。 | 绕过 operation/authorization 直接修复业务状态；把运维脚本变成业务状态事实源。 |
+
+任何基础能力对应用能力的调用都必须通过组合根注入的接口、Operation Registry、Tool Management runtime 或明确的 mount contract 完成。`common/console` 对 system health/bootstrap operations、console auth/session management、authorization façade / grant / MCP authorization operations、Tool Management HTTP passthrough operations、event subscribe / agent sync operations、runtime info / console state aggregation、system interfaces / runtime path browse、maintenance agent operations、workspace audit/history、discovery/client registration operations、knowledge core operations（retrieval/evidence/knowledge graph/asset rendering/export/maintenance/review/learning）、knowledge source management、preprocessing rules、document parsing、corpus search/source vocabulary、word-cloud/domain summary、storage summary/doctor/reconcile/backup-restore、client runtime allocation/bootstrap、runtime mount operations、production readiness / executive report / architecture live map / sample business pack operations、module ecosystem operations、Codex OAuth operations、settings/model-library/Agent Gateway operations、monitor alerts、system observation/background process/checkpoint tree、job failed review、evidence sufficiency、knowledge agent skill、golden rules / rule authoring / gold cases、knowledge skills、agent evaluation、model decision、knowledge evolution、knowledge distillation/workbench、summarization、agent exploration、agent workspace file、agent workspace management/session/inheritance/lock、context runtime、workspace contribution、protocol façade / contract-registered operations、AgentLibrary knowledge access、workspace governance、asset lineage、Gerrit/repo、data connector、performance capacity 和 capability package 这类 console 操作只能提交 `operationId + input + context` 给 `server/platform/specialized/console/console-domain-operation-executor.mjs` 或同目录下的专用 operation executor，不能直接持有具体业务 registry、access policy、runtime 方法、runtime mount config/apply 方法、runtime refreshMounts 调用、production readiness/report/module ecosystem/OAuth 执行函数、settings/model-library/gateway provider 方法、model probe/gateway 调用、Agent Gateway workspace/session context 解析、discovery client registration/config 方法、console auth 方法、maintenance agent service 方法、operation audit store 查询、event bus 订阅策略/agent-sync policy、Tool Management grant/authorization store/router 方法、metadataStore 业务方法、knowledge source service 方法、knowledge.search/search.query 输入策略、多模态检索策略、event/agent-sync subscription topic 策略、word-cloud corpusPath 策略、storage repair/backup 函数、client runtime allocator/bootstrap 方法、background process 函数、checkpoint tree API、job manager 查询、文件系统路径浏览、接口目录拼装、controller-to-controller 业务转调、知识配置 schema 拼装、协议占位响应或执行函数。`system-controller.mjs` 当前只保留 handler family composition 和 shared request/response helper，不再直接实现任何 `async handle*` 方法；domain provider 解析、authorization engine/store 装配、审计日志封装和 knowledge / Agent Gateway / authorization context 组装集中在 `server/platform/common/console/http/controllers/system-controller-contexts.mjs`；console auth/session handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-auth-handlers.mjs`；authorization、workspace file façade、workspace contribution、AgentLibrary access、workspace skill 和 workspace asset permission 这些基础协议 handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-foundation-handlers.mjs`；system interfaces、events/agent-sync、discovery、runtime info/path/mounts/console state 和 maintenance agent 这些 runtime/system handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-runtime-handlers.mjs`；settings、model probe、Agent Gateway、agent registry 和 model routing handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-agent-settings-handlers.mjs`；workspace audit/history、checkpoint façade、workspace code change façade、raw corpus、dossier 和 distillation export handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-workspace-protocol-handlers.mjs`；knowledge workflow config、corpus、document parse、word-cloud、word-bag、storage summary/doctor/reconcile/backup 和 affair taxonomy handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-knowledge-operations-handlers.mjs`；knowledge console/source/config schema/capabilities/export/health/maintenance/review/learning/golden rules/distillation/workbench/skills/evaluation/evolution/summarization/exploration/search/graph handler 已按接口族进入 `server/platform/common/console/http/controllers/system-controller-knowledge-runtime-handlers.mjs`。当前门禁要求 `server/platform/common` 到 `server/platform/specialized` 的真实 static/dynamic import 为 0，并禁止 `system-controller.mjs` 回流上述业务直接调用、context/provider assembly 或已拆出的接口族 handler；如未来确有短期迁移桥，必须先登记 owner、原因、退出条件和到期日，并在同一轮变更中给出移除计划，不能作为常态架构口径。
+
+`server/platform/common/console/http/controllers/system-controller-ops-observation-handlers.mjs` 已承接 failed jobs review、background processes、checkpoint tree observation 和 monitor alerts handler。`system-controller.mjs` 只能通过 `createSystemControllerOpsObservationHandlers(...)` 组合这些运维观测方法，不能回到主文件内直接调用 background process 函数、checkpoint tree API、monitor alert API 或 job manager 查询。
+
+`server/platform/common/console/http/controllers/system-controller-capability-ecosystem-handlers.mjs` 已承接 capability package、Codex OAuth、production health、executive report、architecture live map、sample business pack、module ecosystem、workspace governance、Gerrit/repo、asset lineage、data connector governance 和 performance capacity handler。`system-controller.mjs` 只能通过 `createSystemControllerCapabilityEcosystemHandlers(...)` 组合这一组能力生态和治理入口，不能回到主文件内承载这些生产治理、模块生态或外部能力转发方法。
+
+`server/platform/common/console/http/controllers/system-controller-workspace-runtime-handlers.mjs` 已承接 context profiles、context preview/compaction/session memory/build records/evaluation、client runtime allocation/bootstrap/status、agent workspace、agent sessions、workspace inheritance、locks 和 workspace file runtime handler。`system-controller.mjs` 只能通过 `createSystemControllerWorkspaceRuntimeHandlers(...)` 组合这一组工作空间运行时入口，不能回到主文件内承载 context runtime、client runtime 或 agent workspace 转发方法。
+
+`server/platform/common/console/http/controllers/system-controller-knowledge-runtime-handlers.mjs` 已承接 knowledge console/source/config schema/capabilities/export/health/maintenance/review/learning/golden rules/distillation/workbench/skills/evaluation/evolution/summarization/exploration/search/graph 等知识运行时 handler。`system-controller.mjs` 只能通过 `createSystemControllerKnowledgeRuntimeHandlers(...)` 组合这一组知识运行时入口，不能回到主文件内承载知识源、检索、蒸馏、技能、评估或进化 handler。
+
+服务端内部工作流也必须遵守同一条协议边界。`server/services/server-runtime/http-server.mjs` 发布启动期 `system.interfaces.snapshot`、`discovery.config.snapshot`、`agent_sync.config.snapshot`、`system.console_state.snapshot` 和 `storage.summary.snapshot` 时只能通过 `dispatchInternalOperation(...)` 进入 Operation Dispatcher，不能直接调用 `buildConsoleState()`、`loadAgentSyncConfig()`、`metadataStore.getStorageSummary()` 或手工拼装 interface/discovery/storage 快照；内部调度、HTTP 和 RPC 都必须复用同一份 operation contract、并发控制、审计和 trace 语义。
+
+服务入口不得直接装配 specialized agent 配置注册表。`server/services/server-runtime/http-server.mjs` 不能 import 或调用 `getAgentConfigRegistry()`；agent config registry refresh 归 `server/platform/interactive/composition-root.mjs` 所有，随 feature runtime、platform registry、console domain services 和 storage/runtime provider 一起完成交互层组合。
+
+服务入口也不得直接装配 agent memory、context runtime 或 Agent Gateway adapter。`server/services/server-runtime/http-server.mjs` 不能 import 或调用 `createAgentMemory()`、`createContextRuntime()` 或 `agent-gateway/index.mjs`；这些 agent runtime provider 由 `server/platform/interactive/server-runtime-providers.mjs` 按 feature runtime 和 provider contract 创建，再作为组合根产物注入 controller、maintenance agent、summarization、agent exploration 和其它 workflow。
+
+Tool Management runtime 也归交互层 provider 装配。`server/services/server-runtime/http-server.mjs` 不能直接 import `tool-management-core/index.mjs` 或调用 `createToolManagementPlatform()`；服务入口只能调用 `server/platform/interactive/server-runtime-providers.mjs` 暴露的 `createServerToolManagementPlatform(...)`，由 provider 层注入 operations、feature runtime、controllers、audit/concurrency/protocol event bus、console auth 和 logger。
+
+Checkpoint upload session 属于协议工作流实现，不属于 `common/console` 的稳定基础能力。`server/platform/common/console/http/controllers/jobs-controller.mjs` 和 `system-controller-contexts.mjs` 不能直接 import `protocols/checkpoint/upload-session-store.mjs`；它们只能通过 `server/platform/specialized/console/console-domain-services.mjs` 注入的 `uploadSessionStore` provider 调用创建/查询/追加 chunk、receipt 构建、文件解析和清理能力。
+
+Tool Management grant 到客户端连接列表的投影属于 Tool Management 领域语义，也不属于 `common/console`。`server/platform/common/console/http/api-facade.mjs` 不能直接读取 `toolManagementPlatform.store.listGrants()`、不能理解 MCP grant metadata 或拼装 MCP 插件连接行；只能调用 `console-domain-services.mjs` 暴露的 `buildToolManagementClientConnectionRows(...)`，再与 Pact client registration rows 做通用列表合并。
+
+Knowledge console summary 属于知识运行时领域语义，不属于 `common/console`。`server/platform/common/console/http/api-facade.mjs` 不能直接访问 `runtime.mounts.knowledgeBase`、调用 knowledgeBase health/capabilities/maintenance 或维护知识模块路径脱敏逻辑；只能调用 `console-domain-services.mjs` 暴露的 `buildKnowledgeConsoleSummary(...)`，由 `server/platform/specialized/console/knowledge-console-summary.mjs` 负责知识运行时摘要投影。
+
+Runtime console summary 属于 runtime/domain projection，也不属于 `common/console`。`server/platform/common/console/http/api-facade.mjs` 不能直接读取 `runtime.runtimeOptions`、枚举 `runtime.mounts`、拼装 mount summary 或读取 mount config 路径；只能调用 `console-domain-services.mjs` 暴露的 `buildRuntimeConsoleSummary(...)`，由 `server/platform/specialized/console/runtime-console-summary.mjs` 统一投影 runtime profile、mount modules/routing、mount config、mount capability summary 和 analysis module 列表。
 
 ### 核心数据模型
 
@@ -588,38 +644,19 @@ Knowledge API 公开能力：
 
 #### MCP Tool Surface
 
-第一版 MCP tool surface 固定为：
+第一版 MCP 对外工具面固定为五个语义分类入口：
 
 ```text
-workspace.info
-workspace.file.upload
-workspace.file.list
-workspace.file.download
-workspace.file.read
-workspace.file.write
-workspace.file.patch
-knowledge.contribution.submit
-knowledge.search
-knowledge.evidence.get
-knowledge.access.receipt.list
-workspace.skill.upload
-workspace.skill.list
-workspace.skill.download
-workspace.skill.usage.report
-workspace.asset.policy.set
-workspace.asset.permission.check
-workspace.code.target.evaluate
-workspace.code.change.prepare
-workspace.code.change.upload
-workspace.code.change.status.sync
-workspace.audit.query
-workspace.operation.history
-workspace.checkpoint.tree.list
-workspace.checkpoint.restore.preview
-workspace.checkpoint.restore
+pact.discovery
+pact.knowledge
+pact.sharedspace
+pact.codespace
+pact.skillHub
 ```
 
-公开 checkpoint tool 名称必须使用 `workspace.checkpoint.tree.list`、`workspace.checkpoint.restore.preview` 和 `workspace.checkpoint.restore`。
+v0.0.1 不保留旧入口 alias。`tools/list` 的产品口径是五个语义入口，不再把内部 operation 展开为 20+ 个扁平 MCP tools。
+
+`workspace.info`、`workspace.file.upload`、`knowledge.search`、`workspace.checkpoint.restore.preview` 等名称是 Operation Registry / Tool Management 的 operation id，只能作为分类入口的 `operation` 参数出现，不能被写成 MCP tool name。公开 checkpoint operation id 使用 `workspace.checkpoint.tree.list`、`workspace.checkpoint.restore.preview` 和 `workspace.checkpoint.restore`。
 
 #### Tool Management API
 
@@ -639,13 +676,14 @@ Skill 可以被贡献和安装，但执行必须通过 Tool Management grant。
 
 ```text
 Agent A upload file
-  -> MCP workspace.file.upload
+  -> MCP `pact.sharedspace` with operation `workspace.file.upload`
   -> identity resolution
   -> policy evaluation
   -> Operation Ledger append
   -> asset object write
   -> checkpoint node
   -> audit event
+  -> MCP operation_reply pushed to the calling grant with target receipt
   -> Agent B list/download through same policy path
 ```
 
@@ -654,9 +692,10 @@ Agent A upload file
 #### MCP 大文件上传流程
 
 ```text
-Agent calls MCP workspace.file.upload
+Agent calls MCP `pact.sharedspace` with operation `workspace.file.upload`
   -> MCP adapter classifies payload and local file intent
-  -> client runtime bootstrap plan if local runtime is missing or stale
+  -> client runtime bootstrap pull if local runtime is missing
+  -> client runtime bootstrap plan if local runtime is stale or incomplete
   -> MCP local bridge invokes pact-client upload enqueue
   -> transport negotiation
   -> upload session/checkpoint or native transport
@@ -665,6 +704,7 @@ Agent calls MCP workspace.file.upload
   -> Operation Ledger append
   -> checkpoint node
   -> audit event
+  -> MCP operation_reply pushed to the calling grant with upload target receipt
 ```
 
 验收要求：小文本可以通过 MCP inline 兼容上传；大文件、目录和可恢复上传必须复用 client-cli 的后台队列、checkpoint 和 upload session，不把大 payload 塞进 JSON-RPC。
@@ -771,7 +811,7 @@ C0 -> C1(A change) -> C2(B change) -> R1(restore to C1) -> R2(restore to C0)
 
 - 默认拒绝，显式授权。
 - 高敏资产可以隐藏存在性。
-- `readInPlace` 不等于可以下载或写 memory。
+- `controlledView` 是 Pact 受控会话内阅览，不是读取本机原路径，也不等于可以下载或写 memory。
 - 任何导出、下载、checkout、context injection 都必须产生 receipt / loan record。
 - 权限拒绝必须进入 denied request audit。
 - secret 只以 secret ref 存储和传递。
@@ -928,7 +968,7 @@ npm run server:verify:mcp-demo
 
 外部知识库是上游资产源，不是下游智能体的直接暴露面。Pact 的 workspace asset 不与外部知识库撞型：外部知识库可以提供原始文档、索引、向量、图谱或检索结果，但进入 Pact 后必须被重新切分、重新标注、重新授权，形成 `derivedKnowledgeSpace`。下游某些人或智能体能看哪些内容，完全由 Pact 的 `authorizationOverlay` 决定。
 
-上游知识库的信息和资源权限再分配是 AgentLibrary 的核心功能。Pact 必须能把同一份上游知识资源拆成多个下游视图：A workspace 能看全文，B workspace 只能看元数据，C agent 只能 readInPlace，D agent 可以 checkout，E agent 完全不可见。这个再分配结果必须独立于上游知识库原始权限模型，并由 Pact 自己登记、审计和恢复。
+上游知识库的信息和资源权限再分配是 AgentLibrary 的核心功能。Pact 必须能把同一份上游知识资源拆成多个下游视图：A workspace 能看全文，B workspace 只能看元数据，C agent 只能 controlledView，D agent 可以 checkout，E agent 完全不可见。这个再分配结果必须独立于上游知识库原始权限模型，并由 Pact 自己登记、审计和恢复。
 
 因此，某些智能体即使能操作 Pact，也永远访问不到最上游知识库。它们只能访问被 Pact 授权后的派生视图、evidence pack、脱敏内容或只读阅览会话。上游知识库凭据、原始 API、原始对象路径和未授权 source id 不能泄漏给下游智能体。
 
@@ -978,17 +1018,17 @@ OpenClaw 文档互通演示用于证明 Pact 的生态位：两个本地 OpenCla
 流程：
 
 1. OpenClaw A 通过 MCP 工具把本地文档提交到目标 workspace。
-2. Pact 把文档登记为 `knowledge` 或 `file` 类型贡献资产，落到 `workspace/knowledge/` 或 `workspace/files/`，生成 `contribution.submitted`、上传记录、资产快照和审计记录。
-3. 经过权限、风险、许可和重复性检查后，资产进入 `contribution.published`，并按 workspace 权限决定谁能看、能引用、能复制到上下文、能导出或能 checkout。
+2. Pact 在真实内容到达服务器并完成最小留档后，把文档登记为 `knowledge` 或 `file` 类型贡献资产，生成 `contribution.submitted`、`contribution.previewed`、上传记录、资产快照和审计记录，资产状态先进入 `preview`。
+3. 经过权限、风险、许可、重复性和审核策略确认后，资产进入 `contribution.published`，并按 workspace 权限决定谁能看、能引用、能复制到上下文、能导出或能 checkout。
 4. OpenClaw B 通过同一个 Pact MCP service 查询该 workspace 的资产。
-5. 如果 B 的 subject / agent profile 有授权，Pact 返回可下载或可借走的派生视图，并生成 `knowledgeAccessReceipt`、`loanRecord`、`asset.downloaded` 和 `auditId`。
+5. 如果 B 的 subject / agent profile 有授权，Pact 返回下载状态响应或可借走的派生视图，并生成 `knowledgeAccessReceipt`、`loanRecord` 和 `auditId`；只有内容真实传完并完成校验后才记录 `asset.downloaded`。
 
 这个场景实现的是文档通过公共工作空间互通，而不是 A 把文件直接发给 B。资产状态、权限状态、快照、借阅和撤销都由 Pact 统一治理。
 
 Skill 贡献排行榜演示用于证明终端贡献闭环：
 
-1. OpenClaw A 上传一个 Skill 到 `workspace/skills/`，并设置默认公开权限，例如允许同 workspace 内主体 `read`、`install` 和 `use`。
-2. Pact 登记 `skill` 类型贡献，完成扫描和审核后发布到面板和 MCP skill list。
+1. OpenClaw A 上传一个 Skill，并设置默认公开权限，例如允许同 workspace 内主体 `read`、`install` 和 `use`。
+2. Pact 登记 `skill` 类型贡献，真实内容到达服务器后先进入 `preview`，完成扫描和审核后发布到 `workspace/skills/`、面板和 MCP skill list。
 3. OpenClaw B 在面板上看到该 Skill，或通过 MCP 工具列出可用 Skills。
 4. B 下载、安装或调用该 Skill 时，Pact 记录使用事件、借阅记录和审计记录。
 5. 初始贡献算法采用使用为主的质量加权口径：每次确认下载、安装或使用都会写 `usageEvent`，但排行榜主分数是 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount`。`acceptedCount` 保留为报表维度，不作为排行榜主导项。
@@ -1024,6 +1064,14 @@ Protocol Adapters
   - Knowledge Evidence API
   - Context Compiler API
   - optional A2A / OpenAI-compatible adapters
+
+Compatibility Layers
+  - agent-client-mcp-compatibility
+    - MCP connector, local grant pairing, client runtime bridge, transport fallback
+  - external-service-compatibility
+    - Docker, GitHub, Gerrit, Mailbox, external knowledge, model provider, vector/graph backend
+  - pact-internal-compatibility
+    - module contracts, resource operations, capability lifecycle, runtime environment, state boundary
 
 Pact Core
   - WorkspaceGateway
@@ -1151,12 +1199,15 @@ Checkpoint Tree 必须升级为统一 Checkpoint Tree，而不是只服务任务
 
 Pact 的智能体接入面是 MCP service，但文件上传的数据面不能长期依赖 MCP JSON-RPC 的 `contentBase64` 或 inline text。MCP 适合作为控制面：认证、授权、目标 workspace、操作意图、审计和错误语义；本机文件读取、目录遍历、断点续传、增量同步和长任务队列必须由运行在文件所在机器上的 Pact client runtime 执行。
 
+默认不能假设本地已经有完整客户端。Pact MCP connector 的最小形态只负责发现服务端、完成握手、申请 grant、请求 bootstrap pull、下载并校验裁剪模块、启动本地 bridge。需要上传大文件时，connector 先把缺失的 client runtime 从服务端拉下来，而不是要求用户预先安装完整客户端，也不是要求用户 clone 服务端仓库。
+
 ### 目标架构
 
 ```text
 Agent MCP client
   -> HTTP MCP endpoint or stdio MCP bridge
   -> MCP control operation
+  -> bootstrap pull from server when local runtime is missing
   -> local Pact client runtime
   -> pact-client upload enqueue
   -> transport adapter
@@ -1167,7 +1218,7 @@ Agent MCP client
 
 ### Client Runtime Bootstrap
 
-客户端首次连接或能力过期时，主动向服务端请求运行时计划：
+客户端首次连接、能力过期或本地没有客户端时，主动向服务端请求运行时计划和裁剪包：
 
 ```text
 client bootstrap request
@@ -1176,7 +1227,7 @@ client bootstrap request
   -> availableCommands: rsync, ssh, scp, sftp
   -> requested modules: upload, mcp-local-bridge, connectors, cache
   -> transfer profile: bytes, file count, directory, incremental
-  -> server returns trimmed module plan and transport plan
+  -> server returns trimmed module plan, pull manifest, and transport plan
 ```
 
 服务端返回的是裁剪后的模块 manifest，而不是要求终端用户拉完整服务端仓库。模块分层为：
@@ -1193,7 +1244,19 @@ client bootstrap request
 
 动态裁剪规则是：框架和 `pact-client-cli` 必选；上传能力请求会带上 `clientd`、`upload queue` 和 `checkpoint-http-upload`；MCP 本地文件上传请求会带上 `mcp-local-bridge`；connector、mail、cache 等能力只在客户端声明需要时加入。
 
-所有下载模块必须由服务端发布 manifest 提供 artifact id、版本、digest、签名和下载 URL。客户端必须先校验签名和 digest，再启用模块。bootstrap 接口可以先返回 manifest-only 计划，实际二进制发布由 release 或 capability package lifecycle 填充。
+MCP 必须支持一个从服务端拉取客户端的操作。该操作不是“下载完整客户端”，而是按请求能力拉取经过裁剪的 client runtime bundle：
+
+```text
+client_runtime.bootstrap.pull
+  -> request: client profile, requested modules, transfer profile
+  -> response: selected modules, artifact refs, digests, signatures, delivery metadata
+  -> connector downloads artifacts
+  -> connector verifies signatures and digests
+  -> connector installs modules under local client runtime root
+  -> connector starts or refreshes local bridge
+```
+
+所有下载模块必须由服务端发布 manifest 提供 artifact id、版本、digest、签名和交付信息。客户端必须先校验签名和 digest，再启用模块。bootstrap plan 可以先返回 manifest-only 计划；bootstrap pull 首版返回 inline manifest bundle，不伪造二进制 URL，实际二进制发布由 release 或 capability package lifecycle 填充。
 
 ### Transport 降级顺序
 
@@ -1201,7 +1264,7 @@ client bootstrap request
 
 候选顺序：
 
-1. `local-copy`：客户端和服务端声明共享文件系统时使用，适合本机同进程或受控挂载目录。
+1. `local-copy`：客户端和服务端声明共享文件系统时使用，适合本机同进程或受控挂载目录；它仍然必须把真实 bytes 深拷贝到 Pact staging/CAS，不能保存共享路径引用或零拷贝引用。
 2. `rsync-over-ssh`：客户端存在 `rsync` 和 `ssh`，服务端声明 `rsync` 和 `ssh` 可用时启用，适合目录、增量、大文件和失败重试。
 3. 小文件 `scp`：客户端存在 `scp` 和 `ssh`，服务端声明 `scp` 和 `ssh` 可用，且是小的单文件时启用。
 4. `sftp`：客户端存在 `sftp` 和 `ssh`，服务端声明 `sftp` 和 `ssh` 可用时启用，适合没有 rsync 但需要稳定传输的文件。
@@ -1242,7 +1305,7 @@ client bootstrap request
 
 第一阶段只落设计和协议：明确 bootstrap 请求/响应、模块目录、transport 降级规则、安全边界和验收脚本。
 
-第二阶段落服务端 bootstrap plan：提供 HTTP/RPC/MCP tool 入口，返回裁剪模块计划、transport candidates、blocked reason 和 manifest-only artifact refs。
+第二阶段落服务端 bootstrap plan/pull：提供 HTTP/RPC/MCP tool 入口，`plan` 返回裁剪模块计划、transport candidates、blocked reason 和 manifest-only artifact refs；`pull` 返回裁剪模块 artifact refs、digest、签名状态和 inline manifest bundle。
 
 第三阶段落 MCP local bridge：bridge 调用 `pact-client upload enqueue`，复用已有后台队列和 upload session checkpoint，MCP 只返回 job handle 和进度查询入口。
 
@@ -1415,6 +1478,16 @@ Pact 的目标是从少数几个智能体平滑过渡到企业级规模，但这
 
 虽然系统早期可能只是在一个 Node.js 进程里执行同步或简单的异步操作，但组件间的交互必须通过严格定义的领域接口，严禁直接引用内部实例细节或裸调数据库。
 - **守则：** 即使是本地方法调用，也必须抽象为如 `TaskQueue.submit(type, payload)` 或 `AgentGateway.invoke()` 的形式。底层实现初期可以是简单的 `setTimeout` 或内存队列，以确保未来剥离为独立 Worker 服务或引入分布式消息队列时，业务调用方代码无需修改。
+
+### 1.1 三大兼容层归口 (Compatibility Ownership)
+
+新增兼容能力必须先归入三大兼容层之一：
+
+- `agent-client-mcp-compatibility`：智能体客户端、MCP 插件、stdio/HTTP bridge、client runtime bootstrap 和本机发现安装。
+- `external-service-compatibility`：Docker、GitHub、Gerrit、Mailbox、外部知识库、模型 provider、向量库、图数据库、云盘和业务系统。
+- `pact-internal-compatibility`：Pact 内部模块、mount、资源操作语义、能力包生命周期、运行时环境和状态边界。
+
+`pact-internal-compatibility` 内部可以细分为 module contract、resource operation、capability lifecycle、runtime environment 和 state boundary，但对外统一作为 Pact 内部兼容层，不再把内部 mount、adapter、connector、runtime helper 混写成多套顶层概念。
 
 ### 2. 构建状态存储的“防腐层” (Anti-Corruption Layer)
 

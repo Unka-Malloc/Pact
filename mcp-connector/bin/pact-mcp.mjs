@@ -869,7 +869,7 @@ async function verifyMcpTools({ baseUrl, token }) {
     })
   });
   const tools = toolsList.payload?.result?.tools || [];
-  const hasStableOutlet = tools.some(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.help" || t.name === "pact.knowledge");
+  const hasStableOutlet = tools.some(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.discovery" || t.name === "pact.knowledge");
   if (
     !toolsList.ok
     || !health.ok
@@ -881,7 +881,7 @@ async function verifyMcpTools({ baseUrl, token }) {
   }
   return {
     toolCount: tools.length,
-    stableToolName: tools.find(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.help")?.name || tools[0]?.name || "",
+    stableToolName: tools.find(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.discovery")?.name || tools[0]?.name || "",
     systemHealthOk: health.payload?.result?.structuredContent?.payload?.ok === true
   };
 }
@@ -4399,6 +4399,30 @@ async function requestLocalMcpGrant(options, { targets = [], autoUpdate = false 
   };
 }
 
+async function notifyLocalMcpUninstall(options, { targets = [] } = {}) {
+  const settings = installerOptions(options);
+  const targetList = [...new Set(targets.map(normalizeTarget).filter(Boolean))];
+  if (!settings.baseUrl || targetList.length === 0) {
+    return { ok: true, skipped: true, targets: targetList };
+  }
+  const response = await fetchJson(`${settings.baseUrl}/api/mcp/local-uninstall`, {
+    method: "POST",
+    timeoutMs: 10000,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      targets: targetList,
+      connectorVersion: packageJson.version
+    })
+  });
+  if (!response.ok || response.payload?.ok === false) {
+    const reason = response.payload?.error?.message || response.payload?.error || `HTTP ${response.status}`;
+    throw new Error(`Failed to update Pact MCP device list after uninstall: ${reason}`);
+  }
+  return response.payload || { ok: true, targets: targetList };
+}
+
 async function resolveInstallToken(options, { targets = [], autoUpdate = false } = {}) {
   const explicit = await resolveToken(options, { required: false });
   if (explicit) {
@@ -4923,6 +4947,33 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
         discoveryPath: discoveryRegistryPath(mergedOptions)
       })
     : "";
+  const successfulTargets = targets.filter((target) => uninstalled[target]?.ok !== false);
+  let serverUninstall = null;
+  if (settings.baseUrl && successfulTargets.length > 0) {
+    try {
+      serverUninstall = await notifyLocalMcpUninstall(mergedOptions, { targets: successfulTargets });
+      for (const target of successfulTargets) {
+        uninstalled[target] = {
+          ...uninstalled[target],
+          serverDeviceRemoved: true
+        };
+      }
+    } catch (error) {
+      serverUninstall = {
+        ok: false,
+        error: error?.message || String(error)
+      };
+      for (const target of successfulTargets) {
+        uninstalled[target] = {
+          ...uninstalled[target],
+          ok: false,
+          status: "failed",
+          serverDeviceRemoved: false,
+          error: error?.message || String(error)
+        };
+      }
+    }
+  }
   return {
     ok: Object.values(uninstalled).every((value) => value?.ok !== false),
     packageName: packageJson.name,
@@ -4930,6 +4981,7 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
     targets,
     baseUrl: settings.baseUrl,
     discoveryManifest,
+    serverUninstall,
     uninstalled
   };
 }
@@ -5215,10 +5267,11 @@ async function doctorCommand(options) {
   if (token) {
     const verification = await verifyMcpTools({ baseUrl: settings.baseUrl, token });
     checks.toolsList = {
-      ok: verification.toolCount === 1 && verification.stableToolName === MCP_STABLE_TOOL_NAME,
+      ok: verification.toolCount === 5 && verification.stableToolName === "pact.discovery",
       skipped: false,
       toolCount: verification.toolCount,
-      stableToolOnly: verification.toolCount === 1 && verification.stableToolName === MCP_STABLE_TOOL_NAME
+      stableToolOnly: false,
+      categorizedOutletsOnly: verification.toolCount === 5
     };
     checks.systemHealth = {
       ok: verification.systemHealthOk,

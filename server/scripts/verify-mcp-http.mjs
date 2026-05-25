@@ -156,6 +156,15 @@ try {
   assert.equal(unauthenticatedList.status, 401);
   assert.equal(unauthenticatedList.payload.error.data.code, "missing_token");
 
+  const mcpDeniedRequests = await fetchJson(`${server.url}/api/authorization/denied-requests?limit=20`);
+  assert.equal(mcpDeniedRequests.status, 200);
+  assert.ok(
+    mcpDeniedRequests.payload.items.some((item) =>
+      item.operationId === "mcp.request" && item.reasonCode === "missing_token"
+    ),
+    "MCP token denials must be recorded in the unified authorization store"
+  );
+
   const localGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,21 +179,38 @@ try {
   assert.ok(localGrant.payload.token);
   assert.ok(localGrant.payload.grant.tokenPrefix);
   assert.deepEqual(localGrant.payload.targets, ["codex"]);
-  assert.equal(localGrant.payload.toolsets.includes("pact.knowledge.read"), true);
+  assert.equal(localGrant.payload.maxRisk, "safe_write");
+  assert.equal(localGrant.payload.targetMatch.matched, true);
+  assert.equal(localGrant.payload.toolsets.includes("pact.storage.write"), true);
+  assert.equal(localGrant.payload.toolsets.includes("pact.agent.workspace"), true);
 
-  const legacyScopeGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+  const unknownTargetGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      targets: ["codex"],
-      label: "verify-mcp-local-grant-legacy-scope",
-      scope: "storage:write"
+      targets: ["unknown-agent"],
+      label: "verify-mcp-local-grant-unknown-target"
     })
   });
-  assert.equal(legacyScopeGrant.status, 201);
-  assert.equal(legacyScopeGrant.payload.ok, true);
-  assert.equal(legacyScopeGrant.payload.scopes.includes("storage:write"), true);
-  assert.equal(legacyScopeGrant.payload.toolsets.includes("pact.storage.write"), true);
+  assert.equal(unknownTargetGrant.status, 201);
+  assert.equal(unknownTargetGrant.payload.ok, true);
+  assert.equal(unknownTargetGrant.payload.maxRisk, "read_only");
+  assert.equal(unknownTargetGrant.payload.targetMatch.matched, false);
+  assert.equal(unknownTargetGrant.payload.toolsets.includes("pact.storage.write"), false);
+
+  const explicitScopeGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-pact-safety-confirm": "true" },
+    body: JSON.stringify({
+      targets: ["codex"],
+      label: "verify-mcp-local-grant-explicit-scope",
+      scopes: ["storage:write"]
+    })
+  });
+  assert.equal(explicitScopeGrant.status, 201);
+  assert.equal(explicitScopeGrant.payload.ok, true);
+  assert.equal(explicitScopeGrant.payload.scopes.includes("storage:write"), true);
+  assert.equal(explicitScopeGrant.payload.toolsets.includes("pact.storage.write"), true);
 
   const unconfirmedWriteGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
@@ -198,20 +224,20 @@ try {
   assert.equal(unconfirmedWriteGrant.status, 403);
   assert.equal(unconfirmedWriteGrant.payload.error.code, "confirmation_required");
 
-  const legacyToolsetGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+  const explicitToolsetGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-pact-safety-confirm": "true" },
     body: JSON.stringify({
       targets: ["codex"],
-      label: "verify-mcp-local-grant-legacy-toolset",
-      toolset: "pact.storage.write"
+      label: "verify-mcp-local-grant-explicit-toolset",
+      toolsets: ["pact.storage.write"]
     })
   });
-  assert.equal(legacyToolsetGrant.status, 201);
-  assert.equal(legacyToolsetGrant.payload.ok, true);
-  assert.equal(legacyToolsetGrant.payload.toolsets.includes("pact.storage.write"), true);
+  assert.equal(explicitToolsetGrant.status, 201);
+  assert.equal(explicitToolsetGrant.payload.ok, true);
+  assert.equal(explicitToolsetGrant.payload.toolsets.includes("pact.storage.write"), true);
 
-  const expectedTools = ["pact.knowledge", "pact.workspace", "pact.list", "pact.skill", "pact.help"];
+  const expectedTools = ["pact.discovery", "pact.knowledge", "pact.sharedspace", "pact.codespace", "pact.skillHub"];
 
   const localGrantList = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
@@ -270,6 +296,7 @@ try {
     body: JSON.stringify(mcpRequest("tools/call", {
       name: "pact.call",
       arguments: {
+        apiVersion: "pact.mcp.v1",
         operation: "pact.capabilities.list"
       }
     }, 5))
@@ -287,7 +314,7 @@ try {
   });
   assert.equal(unsupportedDirectCall.status, 200);
   assert.equal(unsupportedDirectCall.payload.error.data.stableToolName, "pact.call");
-  assert.ok(unsupportedDirectCall.payload.error.data.categorizedOutlets.includes("pact.knowledge"));
+  assert.ok(unsupportedDirectCall.payload.error.data.categorizedOutlets.includes("pact.discovery"));
 
   console.log("mcp-http verification passed");
 } finally {

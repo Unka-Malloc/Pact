@@ -11,6 +11,10 @@ const {
   clientSearchQuery,
   clientStateFilter,
   clientStateFilterOptionBarOptions,
+  clientConnectionDetail,
+  clientConnectionMethodLabel,
+  clientStatusLabel,
+  clientStatusTone,
   consoleState,
   currentView,
   exportClients,
@@ -21,6 +25,7 @@ const {
   isAuthenticated,
   migrationStateLabels,
   migrationTone,
+  refreshState,
   requestClientMigration,
 } = useConsole();
 
@@ -30,6 +35,10 @@ const latestClient = computed(() => {
   );
   return sorted[0] ?? null;
 });
+
+const migratableClientList = computed(() =>
+  filteredClientList.value.filter((item) => item.supportsMigration !== false)
+);
 </script>
 
 <template>
@@ -70,6 +79,14 @@ const latestClient = computed(() => {
                 <button
                   class="tool-button tool-button-ghost"
                   type="button"
+                  :disabled="busyKey === 'refresh'"
+                  @click="refreshState()"
+                >
+                  {{ busyKey === "refresh" ? "刷新中" : "刷新" }}
+                </button>
+                <button
+                  class="tool-button tool-button-ghost"
+                  type="button"
                   @click="importClients"
                 >
                   导入
@@ -85,13 +102,14 @@ const latestClient = computed(() => {
             </div>
 
             <div class="table-shell">
-              <table class="jobs-table">
+              <table class="jobs-table clients-table">
                 <thead>
                   <tr>
                     <th>客户端信息</th>
                     <th>平台环境</th>
                     <th>版本</th>
                     <th>当前服务</th>
+                    <th>连接方式</th>
                     <th>最近活跃</th>
                     <th>状态</th>
                   </tr>
@@ -125,6 +143,12 @@ const latestClient = computed(() => {
                       }}</span>
                     </td>
                     <td>
+                      <div class="primary-cell">
+                        <strong>{{ clientConnectionMethodLabel(item) }}</strong>
+                        <span>{{ clientConnectionDetail(item) }}</span>
+                      </div>
+                    </td>
+                    <td>
                       <div class="time-cell">
                         <strong>{{ formatCompactDate(item.lastSeenAt) }}</strong>
                         <span>{{ item.lastSeenServerId || "N/A" }}</span>
@@ -132,8 +156,8 @@ const latestClient = computed(() => {
                     </td>
                     <td>
 	                      <StatusPill
-	                        :tone="migrationTone(item.migrationState)"
-	                        :label="migrationStateLabels[item.migrationState]"
+	                        :tone="clientStatusTone(item)"
+	                        :label="clientStatusLabel(item)"
 	                      />
                     </td>
                   </tr>
@@ -167,9 +191,9 @@ const latestClient = computed(() => {
               </div>
             </div>
 
-            <div class="migration-form-list" v-if="filteredClientList.length > 0">
+            <div class="migration-form-list" v-if="migratableClientList.length > 0">
               <form
-                v-for="item in filteredClientList"
+                v-for="item in migratableClientList"
                 :key="item.clientId"
                 class="module-panel migration-control-form"
                 :data-tone="migrationTone(item.migrationState)"
@@ -232,7 +256,7 @@ const latestClient = computed(() => {
             </div>
 
             <div v-else class="migration-empty">
-              <strong>暂无客户端迁移流量</strong>
+              <strong>暂无 pact-client 迁移流量</strong>
               <p>
                 引导地址
                   {{ consoleState?.discovery?.value?.bootstrapBaseUrl || "未配置" }}

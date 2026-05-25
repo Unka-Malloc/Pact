@@ -5,7 +5,8 @@
   "toolsets": [
     "pact.admin",
     "pact.knowledge.admin",
-    "pact.runtime.maintain"
+    "pact.runtime.maintain",
+    "pact.authorization.admin"
   ],
   "toolAllow": [],
   "toolDeny": [],

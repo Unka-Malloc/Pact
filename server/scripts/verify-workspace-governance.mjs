@@ -191,7 +191,8 @@ function verifyOperationsAndTools() {
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
   const policyTool = catalog.tools.find((tool) => tool.id === "pact.workspaceGovernance.policy.set");
   assert.ok(policyTool, "workspace governance policy tool must be exposed");
-  assert.ok(policyTool.toolsets.includes("pact.agent.workspace"));
+  assert.ok(policyTool.toolsets.includes("pact.agent.workspace.maintain"));
+  assert.equal(policyTool.toolsets.includes("pact.agent.workspace"), false);
   assert.equal(policyTool.requiresApproval, true);
 }
 

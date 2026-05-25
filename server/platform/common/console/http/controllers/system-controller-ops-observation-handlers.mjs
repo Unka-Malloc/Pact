@@ -1,0 +1,68 @@
+export function createSystemControllerOpsObservationHandlers({
+  sendConsoleDomainOperation,
+  parseJsonBody,
+  jobManager,
+  checkpointTreeApi,
+  monitorAlertApi
+}) {
+  return {
+    async handleFailedJobsReview({ operation, limit, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "jobs.failed_review",
+        input: { limit },
+        response,
+        context: { jobManager },
+        errorMessage: "生成失败任务复盘失败。"
+      });
+    },
+    async handleGetBackgroundProcesses({ operation, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "system.background_processes",
+        response,
+        errorMessage: "读取后台进程状态失败。"
+      });
+    },
+    async handleListCheckpointTrees({ operation, url, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "system.checkpoint_trees.list",
+        input: {
+          ownerId: url.searchParams.get("ownerId") || url.searchParams.get("owner-id") || "",
+          kind: url.searchParams.get("kind") || "",
+          limit: Number(url.searchParams.get("limit") || 100)
+        },
+        response,
+        context: { checkpointTreeApi },
+        errorMessage: "读取 checkpoint tree 列表失败。"
+      });
+    },
+    async handleGetCheckpointTree({ operation, treeId, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "system.checkpoint_trees.get",
+        input: { treeId },
+        response,
+        context: { checkpointTreeApi },
+        errorMessage: "读取 checkpoint tree 失败。"
+      });
+    },
+    async handleMonitorAlerts({ operation, requestBody, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || (requestBody.length > 0
+          ? "system.monitor_alerts.set"
+          : "system.monitor_alerts.get"),
+        input: requestBody.length > 0 ? parseJsonBody(requestBody) : {},
+        response,
+        context: { monitorAlertApi },
+        errorMessage: "监控报警操作失败。"
+      });
+    },
+    async handleAcknowledgeMonitorAlert({ operation, alertId, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "system.monitor_alerts.ack",
+        input: { alertId },
+        response,
+        context: { monitorAlertApi },
+        errorMessage: "确认监控报警失败。"
+      });
+    }
+  };
+}

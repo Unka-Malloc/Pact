@@ -24,6 +24,39 @@ After a server is verified, the installer requests a local Tool Management grant
 from Pact and writes that token into the selected client configuration.
 Users do not need to copy `PACT_MCP_TOKEN` during normal install.
 
+## Selective Client Runtime Pull
+
+The MCP connector must not assume that a full Pact client already exists on the
+machine. The connector is only the minimal bootstrapper: after discovery,
+handshake, and grant pairing, it asks the verified Pact server for a trimmed
+client runtime.
+
+This pull is selective. It does not clone the Pact repository and it does not
+download every client feature. The connector declares the modules it needs, such
+as `upload`, `mcp-local-bridge`, `connectors`, `knowledge-cache`, or
+`mail-import`; the server returns only the required framework, `pact-client-cli`,
+`clientd`, upload queue, checkpoint upload, local bridge, and transport adapter
+artifacts for that request.
+
+Protocol entry points:
+
+```text
+HTTP POST /api/client-runtime/bootstrap/plan
+HTTP POST /api/client-runtime/bootstrap/pull
+RPC  client_runtime.bootstrap.plan
+RPC  client_runtime.bootstrap.pull
+MCP  pact.clientRuntime.bootstrapPlan
+MCP  pact.clientRuntime.bootstrapPull
+```
+
+The first implementation returns an inline manifest bundle and does not fake
+binary download URLs; release/package publishing later fills real artifact URLs.
+The connector must verify each artifact digest and signature before enabling the
+runtime. Large file and directory uploads then go through the pulled local
+bridge and reuse `pact-client upload enqueue`, the background queue, upload
+sessions, checkpoints, and resumable transfer state. Inline MCP payloads remain
+only a small-text compatibility path.
+
 In the TUI:
 
 - Use Up/Down or `j`/`k` to move.

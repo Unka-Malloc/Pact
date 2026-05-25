@@ -513,7 +513,8 @@
 .knowledge-log-report {
   display: grid;
   gap: var(--space-3);
-}
+  min-width: 0;
+} /* for knowledge-log-report */
 
 .knowledge-log-filters {
   display: grid;
@@ -534,98 +535,16 @@
   text-overflow: ellipsis;
 }
 
-.knowledge-log-table-shell {
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-}
 
-.knowledge-log-table.el-table {
-  --el-table-border-color: var(--border-subtle);
-  --el-table-header-bg-color: var(--bg-subtle);
-  --el-table-row-hover-bg-color: var(--bg-subtle);
-  --el-table-text-color: var(--text-primary);
-  --el-table-header-text-color: var(--text-secondary);
-  border-radius: inherit;
-  overflow: hidden;
-}
 
-.knowledge-log-table .el-table__cell {
-  vertical-align: top;
-}
 
-.knowledge-log-table.el-table--border .el-table__cell {
-  border-right-color: transparent;
-}
 
-.knowledge-log-resize-layer {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-overlay);
-  overflow: hidden;
-  pointer-events: none;
-}
 
-.knowledge-log-column-divider {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 13px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: col-resize;
-  pointer-events: auto;
-  touch-action: none;
-  transform: translateX(-6px);
-}
 
-.knowledge-log-column-divider::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 6px;
-  width: 1px;
-  background: var(--border-subtle);
-  transition:
-    background var(--dur-fast) var(--ease-std),
-    width var(--dur-fast) var(--ease-std);
-}
 
-.knowledge-log-column-divider span {
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 7px;
-  height: 42px;
-  border-radius: var(--radius-full);
-  background: transparent;
-  transform: translateY(-50%);
-  transition:
-    background var(--dur-fast) var(--ease-std),
-    box-shadow var(--dur-fast) var(--ease-std);
-}
 
-.knowledge-log-column-divider:hover::before,
-.knowledge-log-column-divider:focus-visible::before,
-.knowledge-log-column-divider[data-active="true"]::before,
-.knowledge-log-table-shell.is-resizing-column .knowledge-log-column-divider[data-active="true"]::before {
-  width: 2px;
-  background: var(--brand);
-}
 
-.knowledge-log-column-divider:hover span,
-.knowledge-log-column-divider:focus-visible span,
-.knowledge-log-column-divider[data-active="true"] span {
-  background: var(--brand);
-  box-shadow: 0 0 0 4px #dbeafe;
-}
 
-.knowledge-log-column-divider:focus-visible {
-  outline: none;
-}
 
 .knowledge-conflict-table.el-table {
   --el-table-border-color: var(--border-subtle);

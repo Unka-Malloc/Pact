@@ -237,6 +237,7 @@ export function createToolExecutionRuntime({
   registry,
   store,
   policyEngine,
+  authorizationStore = null,
   operations = [],
   controllers,
   operationAuditStore = null,
@@ -246,6 +247,20 @@ export function createToolExecutionRuntime({
 }) {
   const operationsById = new Map(operations.map((operation) => [operation.id, operation]));
   const toolLocks = new Map();
+
+  function appendAuthorizationDecision(decision = {}) {
+    if (!authorizationStore || typeof authorizationStore.appendDecision !== "function") {
+      return;
+    }
+    authorizationStore.appendDecision({
+      protocolVersion: "pact.authorization.v1",
+      allowed: false,
+      effect: "deny",
+      evaluatedLayers: ["tool_token_authorization"],
+      createdAt: nowIso(),
+      ...decision
+    });
+  }
 
   function logTool(level, event, details = {}) {
     if (!logger || typeof logger[level] !== "function") {
@@ -343,6 +358,25 @@ export function createToolExecutionRuntime({
         finishedAt: nowIso()
       });
       store.appendMetric({ traceId, toolId, status: "denied", reasonCode });
+      appendAuthorizationDecision({
+        decisionId: randomId("authz_decision"),
+        traceId,
+        toolExecutionId,
+        toolId: toolId || "",
+        operationId: tool?.operationId || "",
+        reasonCode,
+        redactedReason: tool ? "Tool operation is not available." : "Tool is not registered.",
+        subject: {
+          type: "anonymous",
+          subjectId: "",
+          scopes: []
+        },
+        resource: {
+          toolId: toolId || "",
+          operationId: tool?.operationId || "",
+          risk: tool?.risk || ""
+        }
+      });
       return {
         ok: false,
         status,
@@ -398,6 +432,33 @@ export function createToolExecutionRuntime({
         toolId: tool.id,
         grantId: authorization.grant?.id || "",
         missingScopes: authorization.missingScopes || []
+      });
+      appendAuthorizationDecision({
+        ...decision,
+        traceId,
+        toolExecutionId,
+        toolId: tool.id,
+        operationId: tool.operationId,
+        grantId: authorization.grant?.id || "",
+        subject: authorization.grant
+          ? {
+              type: "tool-grant",
+              subjectId: authorization.grant.id,
+              username: authorization.grant.label || authorization.grant.id,
+              scopes: authorization.grant.scopes || []
+            }
+          : {
+              type: "anonymous",
+              subjectId: "",
+              scopes: []
+            },
+        resource: {
+          toolId: tool.id,
+          operationId: tool.operationId,
+          risk: tool.risk
+        },
+        missingScopes: authorization.missingScopes || [],
+        redactedReason: authorization.error || "Tool token authorization denied."
       });
       store.appendExecution({
         toolExecutionId,

@@ -69,7 +69,7 @@ Pact 和传统知识库走的是两条路。传统知识库常把重点放在切
 | 楼层 | `sourceGroup.read`，能访问哪些业务域、项目、团队、密级区域。 |
 | 书架 | `catalog.discover` / `metadata.read`，能不能看到目录、标题、摘要和存在性。 |
 | 图书 | `asset.read` / `evidence.read`，能不能读具体内容。 |
-| 阅览室 | `readInPlace`，只能在受控会话内读取，不能导出或写入长期记忆。 |
+| 阅览室 | `controlledView`，只能在 Pact 受控会话内阅览，不能导出或写入长期记忆；它不是读取本机原路径。 |
 | 借走 | `checkout` / `export`，能不能下载、复制进 artifact、放入 context bundle 或带到其它 workspace。 |
 
 因此，`read`、`cite`、`copyToContext`、`export`、`checkout`、`writeMemory` 是不同权限，不能合并成一个“可访问”布尔值。
@@ -96,7 +96,7 @@ AgentLibrary 允许共享，也允许借走，但必须登记和管控。
 
 - 哪个 subject / agent / workspace / task 取用了信息。
 - 取用的是原文、脱敏摘录、summary、evidence、metadata、表格单元格、图片还是派生视图。
-- 权限模式是 `readInPlace`、`citeOnly`、`copyToContext`、`exportAllowed` 还是 `checkoutAllowed`。
+- 权限模式是 `controlledView`、`citeOnly`、`copyToContext`、`exportAllowed` 还是 `checkoutAllowed`。
 - 是否允许写入 artifact、长期 memory、上下文包、导出文件或其它 workspace。
 - 有效期、撤销策略、再次分享策略和审计 ID。
 
@@ -139,12 +139,14 @@ upstream knowledge base
 - 上游文档允许进入 Pact，但只允许某些 workspace 发现。
 - 某些人只能看 metadata，不能看正文。
 - 某些智能体可以读脱敏 evidence，不能读原始资产。
-- 某些任务可以 `readInPlace`，但不能 `checkout`。
+- 某些任务可以 `controlledView`，但不能 `checkout`。
 - 某些内容可以进入人类控制台，不允许进入模型上下文。
 - 某些 source 可以用于人工审计，不能进入自动蒸馏。
 - 同一份上游资源可以对不同下游身份生成不同派生视图、不同脱敏版本和不同借阅策略。
 
 下游智能体不需要、也不应该直接访问最上游知识库。它们不能持有上游 API token，不能知道上游私有对象路径，不能绕过 Pact 的 `authorizationOverlay` 直接查上游索引。这样上游知识库仍然是资产源，Pact 则是面向 workspace 的再切分、再授权和证据治理层。
+
+live proxy 允许用于受控 `controlledView` 和即时查看，但它不是 Pact evidence 入库。凡是要进入 Pact evidence、context bundle、receipt、cache、export、artifact 或可复用知识资产的内容，必须把真实返回内容或授权派生视图写入 Pact 内容存储，并记录上游 result id、source metadata hash 和 content root。
 
 ### 演示场景：上游知识库 A/B 权限再授权
 
@@ -264,7 +266,7 @@ Evidence Pack 必须说明：
 
 - 为什么这些证据被返回。
 - 哪些内容因为权限被过滤。
-- 当前结果是 `readInPlace`、`citeOnly`、`copyToContext` 还是 `exportAllowed`。
+- 当前结果是 `controlledView`、`citeOnly`、`copyToContext` 还是 `exportAllowed`。
 - 是否存在冲突证据。
 - 是否截断。
 - 是否需要 continuation。
@@ -295,7 +297,7 @@ Evidence Pack 必须说明：
 - `deny`：完全不可见，不能泄漏存在性。
 - `discoverOnly`：只能看到存在性、类型或脱敏标题，不能读内容。
 - `metadataOnly`：可看目录、来源、时间、owner、摘要级元数据。
-- `readInPlace`：可在受控会话中读取，但不能下载、导出、写 memory 或进入非授权模型上下文。
+- `controlledView`：可在 Pact 受控会话中阅览，但不能下载、导出、写 memory 或进入非授权模型上下文；它不是读取本机原路径或返回文件系统句柄。
 - `citeOnly`：可引用经过脱敏的 evidence，不可输出原文全文。
 - `copyToContext`：可进入本次上下文包，但不得写入长期 memory 或 artifact。
 - `exportAllowed`：可进入导出文件或 artifact。
@@ -303,7 +305,7 @@ Evidence Pack 必须说明：
 
 这些是 AgentLibrary 的内置标准模式，用于保证不同智能体、不同 workspace 和不同接入协议之间能互相解释权限。Workspace 可以通过 policy 增加自定义 `accessMode` 或 action，但自定义项必须映射回内置出口动作，不能绕开 receipt、loan record、denied request audit 和撤销策略。
 
-高敏感资产默认至少禁止 `exportAllowed` 和 `checkoutAllowed`，并且可能禁止 `copyToContext`；如果必须允许读取，应优先使用 `readInPlace` 或受控本地模型 / 私有模型路径。
+高敏感资产默认至少禁止 `exportAllowed` 和 `checkoutAllowed`，并且可能禁止 `copyToContext`；如果必须允许读取，应优先使用 `controlledView` 或受控本地模型 / 私有模型路径。
 
 ## 动态解析与预算
 

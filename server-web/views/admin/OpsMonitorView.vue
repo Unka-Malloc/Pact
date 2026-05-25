@@ -195,7 +195,7 @@ const {
               </div>
             </article>
 
-            <article class="surface-card">
+            <article class="surface-card" style="display: flex; flex-direction: column; gap: 16px;">
               <div class="section-header">
                 <div>
                   <h3>监控报警</h3>

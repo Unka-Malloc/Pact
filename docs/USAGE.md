@@ -87,6 +87,58 @@ npm run cli -- \
   --output-result result.json
 ```
 
+### 3.1 MCP 按需拉取裁剪客户端
+
+MCP 不能假设机器上已经安装了完整 `pact-client-cli` 或后台 `clientd`。正常流程是：最小 MCP connector 先完成服务端发现和握手，然后通过服务端 bootstrap 操作按需拉取裁剪后的客户端运行时。
+
+这不是拉取完整客户端，也不是拉取服务端仓库。客户端必须声明自己需要哪些能力，服务端只返回这些能力依赖的模块。例如只为了 MCP 大文件上传，通常只需要：
+
+- runtime framework
+- `pact-client-cli`
+- `clientd`
+- upload queue
+- `mcp-local-bridge`
+- HTTP upload session/checkpoint
+- 当前机器和服务端同时支持的 transport adapter，例如 `rsync`、`scp`、`sftp`
+
+MCP connector 内部应先请求计划：
+
+```json
+{
+  "clientUid": "codex-local",
+  "client": {
+    "os": "linux",
+    "arch": "x64",
+    "availableCommands": ["rsync", "ssh", "scp", "sftp"]
+  },
+  "modules": ["upload", "mcp-local-bridge"],
+  "transfer": {
+    "directory": true,
+    "incremental": true,
+    "totalBytes": 536870912,
+    "fileCount": 200
+  }
+}
+```
+
+对应入口：
+
+```text
+HTTP POST /api/client-runtime/bootstrap/plan
+RPC  client_runtime.bootstrap.plan
+MCP  pact.clientRuntime.bootstrapPlan
+```
+
+如果本地缺少客户端运行时，connector 再调用拉取入口：
+
+```text
+HTTP POST /api/client-runtime/bootstrap/pull
+RPC  client_runtime.bootstrap.pull
+MCP  pact.clientRuntime.bootstrapPull
+```
+
+`bootstrap.pull` 返回裁剪模块的 artifact refs、版本、digest、签名状态和交付信息。首版实现返回 inline manifest bundle，不伪造二进制下载 URL；后续发布流水线接入后，响应中的 artifact refs 会带上真实下载 URL。connector 启用任何模块前都必须校验签名和 digest，再安装到本机 client runtime 目录并启动 local bridge。之后 MCP 上传大文件或目录时，才通过 local bridge 调用 `pact-client upload enqueue`，复用后台队列、分块、checkpoint 和断点续传。若 transport 选择 `local-copy`，也必须把真实 bytes 深拷贝到 Pact staging/CAS，不能保存共享路径引用或零拷贝引用。
+
 ## 4. 邮件导入
 
 推荐输入：

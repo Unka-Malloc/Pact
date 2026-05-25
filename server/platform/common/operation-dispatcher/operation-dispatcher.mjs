@@ -1,6 +1,7 @@
 import { sendJson } from "../console/http/http-utils.mjs";
 import { evaluateOperationSafety } from "./operation-decorators.mjs";
 import { SERVER_API_OPERATIONS } from "./operation-registry.mjs";
+import { createAuthorizationEngine } from "../security/authorization/authorization-engine.mjs";
 import {
   getRuntimeLogger,
   summarizeError,
@@ -16,6 +17,7 @@ import {
 } from "../observability/trace-context.mjs";
 
 const operationLocks = new Map();
+const dispatcherAuthorizationEngine = createAuthorizationEngine();
 
 const LOCAL_FORWARD_PREFIXES = [
   "/api/jobs",
@@ -185,27 +187,6 @@ function actorFromInput({ actor = null, authSession = null } = {}) {
 
 function requestIdFromRequest(request) {
   return request?.__pactTraceContext?.requestId || request?.__pactRequestId || "";
-}
-
-function actorScopeSet(actor = null, authSession = null) {
-  const scopes = [
-    ...(Array.isArray(actor?.scopes) ? actor.scopes : []),
-    ...(Array.isArray(actor?.user?.scopes) ? actor.user.scopes : []),
-    ...(Array.isArray(authSession?.user?.scopes) ? authSession.user.scopes : [])
-  ];
-  return new Set(scopes.map((scope) => String(scope || "").trim()).filter(Boolean));
-}
-
-function evaluateExplicitScopes({ operation, actor = null, authSession = null }) {
-  const requiredScopes = Array.isArray(operation?.requiredScopes) ? operation.requiredScopes : [];
-  if (requiredScopes.length === 0 || operation?.public === true || operation?.externalAuth === true) {
-    return { ok: true, missingScopes: [] };
-  }
-  const scopes = actorScopeSet(actor, authSession);
-  const missingScopes = requiredScopes.filter((scope) => !scopes.has(scope));
-  return missingScopes.length === 0
-    ? { ok: true, missingScopes: [] }
-    : { ok: false, missingScopes };
 }
 
 function operationEventName(transport, suffix) {
@@ -529,13 +510,24 @@ export async function dispatchOperation({
       }
       authSession = authorization.session || null;
     } else if (skipAuthorization) {
-      const scopeCheck = evaluateExplicitScopes({
+      const authorizationDecision = dispatcherAuthorizationEngine.evaluate({
         operation,
+        request,
         actor: providedActor,
-        authSession
+        authSession,
+        input: operationInput,
+        context: {
+          transport,
+          skipAuthorization: true
+        },
+        traceId: traceContext.traceId,
+        enforceConfirmation: false
       });
-      if (!scopeCheck.ok) {
-        const error = `Operation ${operation.id} requires scopes: ${scopeCheck.missingScopes.join(", ")}.`;
+      if (!authorizationDecision.allowed) {
+        const missingScopes = authorizationDecision.missingScopes || [];
+        const error = missingScopes.length > 0
+          ? `Operation ${operation.id} requires scopes: ${missingScopes.join(", ")}.`
+          : `Operation ${operation.id} authorization denied: ${authorizationDecision.reasonCode}.`;
         auditOperation({
           operationAuditStore,
           operation,
@@ -549,15 +541,16 @@ export async function dispatchOperation({
         logOperation(logger, "warn", operationEventName(transport, "denied"), {
           requestId: requestIdFromRequest(request),
           operationId: operation.id,
-          reason: "scope",
-          missingScopes: scopeCheck.missingScopes,
+          reason: authorizationDecision.reasonCode || "authorization",
+          missingScopes,
           status: 403
         });
         sendOperationDenied(response, 403, {
           error,
           operationId: operation.id,
           traceId: traceContext.traceId,
-          missingScopes: scopeCheck.missingScopes
+          missingScopes,
+          authorizationDecisionId: authorizationDecision.decisionId
         });
         return {
           ok: false,
@@ -729,6 +722,52 @@ export async function dispatchRegisteredHttpOperation({
     logger
   });
   return true;
+}
+
+export async function dispatchInternalOperation({
+  operations = SERVER_API_OPERATIONS,
+  controllers,
+  operationId,
+  input = {},
+  request = null,
+  authSession = null,
+  actor = { type: "system" },
+  operationAuditStore = null,
+  concurrencyScope = "default",
+  logger = getRuntimeLogger()
+} = {}) {
+  const operation = operations.find((item) => item.id === operationId);
+  if (!operation) {
+    throw new Error(`Internal operation not registered: ${operationId}`);
+  }
+
+  const captured = createCapturedResponse();
+  const url = new URL(operation.http?.path || operation.rpc?.syntheticPath || `/internal/${operation.id}`, "http://127.0.0.1");
+  await dispatchOperation({
+    operation,
+    controllers,
+    request,
+    response: captured,
+    requestBody: Buffer.from(JSON.stringify(input || {}), "utf8"),
+    url,
+    input,
+    transport: "internal",
+    method: operation.http?.method || "POST",
+    applyHttpQuery: false,
+    authorizeOperation: null,
+    operationAuditStore,
+    concurrencyScope,
+    logger,
+    authSession,
+    actor
+  });
+
+  return {
+    operation,
+    statusCode: captured.statusCode || 200,
+    headers: captured.headers || {},
+    payload: parseCapturedResult({ operation, captured })
+  };
 }
 
 function createCapturedResponse() {

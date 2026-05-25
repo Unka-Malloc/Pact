@@ -1,4 +1,5 @@
 import { loadSettings } from "../common/platform-core/settings.mjs";
+import { createToolManagementPlatform } from "../specialized/capabilities/tools/tool-management-core/index.mjs";
 import { createToolManagementStore } from "../specialized/capabilities/tools/tool-management-core/store.mjs";
 
 async function createProvider(enabled, specifier, exportName, args = []) {
@@ -13,6 +14,30 @@ async function createProvider(enabled, specifier, exportName, args = []) {
   return factory(...args);
 }
 
+export function createServerToolManagementPlatform({
+  userDataPath,
+  operations,
+  featureRuntime,
+  controllers,
+  operationAuditStore,
+  operationConcurrencyScope,
+  protocolEventBus,
+  consoleAuth,
+  logger
+}) {
+  return createToolManagementPlatform({
+    userDataPath,
+    operations,
+    featureRuntime,
+    controllers,
+    operationAuditStore,
+    operationConcurrencyScope,
+    protocolEventBus,
+    consoleAuth,
+    logger
+  });
+}
+
 export async function createServerRuntimeProviders({
   userDataPath,
   runtime,
@@ -21,7 +46,6 @@ export async function createServerRuntimeProviders({
   protocolEventBus,
   getDiscoveryState,
   getListenUrl,
-  contextRuntime,
   getControllers,
   operationAuditStore,
   operationConcurrencyScope,
@@ -29,9 +53,39 @@ export async function createServerRuntimeProviders({
   runtimeLogger,
   clientRuntimeAllocator,
   isFeatureActive,
-  isAnyFeatureActive,
-  callAgentGatewayIfAvailable
+  isAnyFeatureActive
 }) {
+  const agentMemory = await createProvider(
+    true,
+    "../specialized/agent/agent-memory/index.mjs",
+    "createAgentMemory",
+    [{ userDataPath }]
+  );
+  const callAgentGatewayIfAvailable = async (input = {}, options = {}) => {
+    if (!isFeatureActive("agent-gateway")) {
+      throw new Error("AgentGateway feature is not active in this feature edition.");
+    }
+    const { callAgentGateway } = await import("../specialized/agent/agent-gateway/index.mjs");
+    return callAgentGateway({
+      ...options,
+      input,
+      userDataPath,
+      clientRuntimeAllocator
+    });
+  };
+  const contextRuntime = await createProvider(
+    true,
+    "../specialized/agent/agent-context/interface/index.mjs",
+    "createContextRuntime",
+    [{
+      userDataPath,
+      agentMemory,
+      clientRuntimeAllocator,
+      agentGatewayCall: async (input = {}) => callAgentGatewayIfAvailable(input, {
+        settings: await loadSettings(userDataPath)
+      })
+    }]
+  );
   const maintenanceAgent = await createProvider(
     isFeatureActive("maintenance-agent-runbooks"),
     "../../services/agent/maintenance-agent/index.mjs",
@@ -199,6 +253,7 @@ export async function createServerRuntimeProviders({
   );
 
   return Object.freeze({
+    contextRuntime,
     maintenanceAgent,
     knowledgeSourceService,
     agentWorkspace,

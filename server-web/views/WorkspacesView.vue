@@ -5,6 +5,7 @@ import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import OptionBar from '../components/OptionBar.vue';
 import StatusPill from '../components/StatusPill.vue';
+import WorkspaceFileTree from '../components/WorkspaceFileTree.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import type { HistorySessionPanelItem } from '../types/app';
 
@@ -105,8 +106,9 @@ const sessions          = ref<WsSession[]>([]);
 const selectedId        = ref('');
 const selectedSessionId = ref('');
 const selectedSession   = ref<WsSessionDetail | null>(null);
-const chainData         = ref<{ chain: WsChainItem[]; resolvedSourceIds: string[]; resolvedProfile: object } | null>(null);
-const contextData       = ref<WsContext | null>(null);
+const chainData         = ref<any>(null);
+const contextData       = ref<any>(null);
+const workspaceFilesData = ref<any>(null);
 const sessionContextData = ref<WsSessionContext | null>(null);
 const localError        = ref('');
 const panel             = ref<'list' | 'create' | 'profile' | 'parent' | 'share'>('list');
@@ -199,14 +201,16 @@ async function load() {
 }
 
 async function loadChain(id: string) {
-  chainData.value = null; contextData.value = null;
+  chainData.value = null; contextData.value = null; workspaceFilesData.value = null;
   try {
-    const [c, ctx] = await Promise.all([
+    const [c, ctx, files] = await Promise.all([
       apiFetch(`/api/agent-workspaces/${id}/chain`),
       apiFetch(`/api/agent-workspaces/${id}/context`),
+      apiFetch(`/api/agent-workspaces/${id}/files?recursive=true`).catch(() => ({ files: [] })),
     ]);
     chainData.value = c;
     contextData.value = ctx;
+    workspaceFilesData.value = files;
   } catch (e: any) { localError.value = e.message; }
 }
 
@@ -680,6 +684,10 @@ load();
             <!-- Profile 配置（本级自有） -->
             <ConfigFoldCard title="本级 Profile（仅本工作空间自有的差异配置）">
               <pre class="config-json-preview">{{ JSON.stringify(selected.profile, null, 2) || '{}' }}</pre>
+            </ConfigFoldCard>
+
+            <ConfigFoldCard v-if="workspaceFilesData?.files" title="工作空间文件树（物理文件）">
+              <WorkspaceFileTree :files="workspaceFilesData.files" />
             </ConfigFoldCard>
 
             <!-- Resolved profile (inherited) -->

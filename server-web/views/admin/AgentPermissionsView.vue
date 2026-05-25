@@ -2,6 +2,7 @@
 import { useConsole } from '../../composables/useConsole';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import FeatureToggle from '../../components/FeatureToggle.vue';
+import ScopeSelector from '../../components/ScopeSelector.vue';
 const {
   addAgentPermissionGroup,
   adminView,
@@ -99,19 +100,11 @@ const {
                 <input v-model="group.description" autocomplete="off" />
               </label>
               <ConfigFoldCard title="第一层：权限控制层级" open>
-                <div class="scope-grid compact-scope-grid">
-                  <button
-                    v-for="scope in toolScopes"
-                    :key="scope.id"
-                    class="scope-chip"
-                    :class="{ active: permissionGroupHasScope(group, scope.id) }"
-                    type="button"
-                    @click="togglePermissionGroupScope(group, scope.id)"
-                  >
-                    <strong>{{ scope.label }}</strong>
-                    <span>{{ scope.id }}</span>
-                  </button>
-                </div>
+                <ScopeSelector
+                  v-model="group.scopeIds"
+                  :scopes="toolScopes"
+                  compact
+                />
               </ConfigFoldCard>
               <ConfigFoldCard title="第二层：工具集权限" open>
                 <div class="scope-grid compact-scope-grid">

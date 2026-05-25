@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
+
 export const CLIENT_RUNTIME_BOOTSTRAP_PROTOCOL_VERSION = "pact.client-runtime-bootstrap.v1";
 
 export const INLINE_TEXT_MAX_BYTES = 256 * 1024;
 export const SCP_SMALL_FILE_MAX_BYTES = 8 * 1024 * 1024;
 
 const FRAMEWORK_VERSION = "0.1.0";
+const MODULE_ARTIFACT_MEDIA_TYPE = "application/vnd.pact.client-runtime-module+json";
 
 const MODULES = Object.freeze({
   "runtime-framework": {
@@ -166,6 +169,23 @@ function normalizeId(value = "") {
 
 function uniqueStrings(values = []) {
   return [...new Set(values.map(normalizeText).filter(Boolean))];
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sha256Hex(value) {
+  return createHash("sha256").update(String(value)).digest("hex");
 }
 
 function commandSet(input = {}) {
@@ -413,5 +433,126 @@ export function buildClientRuntimeBootstrapPlan(input = {}) {
     },
     transportPlan,
     modules
+  };
+}
+
+function buildInlineModuleArtifact({ module, plan, input }) {
+  const artifactManifest = {
+    schemaVersion: 1,
+    protocolVersion: CLIENT_RUNTIME_BOOTSTRAP_PROTOCOL_VERSION,
+    artifactKind: "client-runtime-module-descriptor",
+    module: {
+      moduleId: module.moduleId,
+      title: module.title,
+      layer: module.layer,
+      version: FRAMEWORK_VERSION,
+      capabilities: module.capabilities,
+      dependencies: module.dependencies,
+      selectedTransport: module.selectedTransport === true
+    },
+    client: plan.client,
+    transportPlan: {
+      selected: plan.transportPlan.selected,
+      fallbackOrder: plan.transportPlan.fallbackOrder,
+      thresholds: plan.transportPlan.thresholds
+    },
+    constraints: {
+      completeClient: false,
+      includesServerRepository: false,
+      trimmedByRequestedModules: true
+    }
+  };
+  const payload = stableJson(artifactManifest);
+  const digestSha256 = sha256Hex(payload);
+  return {
+    artifactId: module.delivery.artifactId,
+    moduleId: module.moduleId,
+    version: FRAMEWORK_VERSION,
+    fileName: `${module.moduleId}-${FRAMEWORK_VERSION}.pact-client-runtime-module.json`,
+    mediaType: MODULE_ARTIFACT_MEDIA_TYPE,
+    byteSize: Buffer.byteLength(payload, "utf8"),
+    digestSha256,
+    downloadUrl: normalizeText(asObject(input.artifactUrls)[module.moduleId]),
+    status: "inline-manifest",
+    packageKind: "module-descriptor",
+    signature: {
+      required: true,
+      algorithm: "ed25519",
+      status: "unsigned-preview",
+      value: "",
+      reason: "runtime-module-publisher-not-configured"
+    },
+    inlineManifest: artifactManifest
+  };
+}
+
+export function buildClientRuntimeBootstrapPull(input = {}) {
+  const plan = buildClientRuntimeBootstrapPlan(input);
+  const artifacts = plan.modules.map((module) => buildInlineModuleArtifact({ module, plan, input }));
+  const artifactsByModuleId = new Map(artifacts.map((artifact) => [artifact.moduleId, artifact]));
+  const bundleManifest = {
+    schemaVersion: 1,
+    protocolVersion: CLIENT_RUNTIME_BOOTSTRAP_PROTOCOL_VERSION,
+    artifactKind: "client-runtime-trimmed-bundle",
+    frameworkVersion: FRAMEWORK_VERSION,
+    client: plan.client,
+    requestedModules: plan.client.requestedModules,
+    modules: artifacts.map((artifact) => ({
+      moduleId: artifact.moduleId,
+      artifactId: artifact.artifactId,
+      version: artifact.version,
+      digestSha256: artifact.digestSha256,
+      byteSize: artifact.byteSize,
+      status: artifact.status
+    })),
+    constraints: {
+      completeClient: false,
+      includesServerRepository: false,
+      trimmedByRequestedModules: true
+    }
+  };
+  const bundleDigestSha256 = sha256Hex(stableJson(bundleManifest));
+
+  return {
+    ...plan,
+    generatedAt: new Date().toISOString(),
+    operation: "client_runtime.bootstrap.pull",
+    installation: {
+      ...plan.installation,
+      artifactStatus: "inline-manifest",
+      artifactMode: "selective-trimmed-client-runtime",
+      pullMode: "inline-manifest-bundle",
+      note: "This preview pull returns a trimmed client runtime manifest bundle. Binary module URLs are attached by the release/package publisher when available."
+    },
+    pull: {
+      status: "inline-manifest",
+      mode: "selective-trimmed-client-runtime",
+      completeClient: false,
+      includesServerRepository: false,
+      moduleCount: artifacts.length,
+      artifactCount: artifacts.length,
+      warnings: ["binary-runtime-artifact-publisher-not-configured"]
+    },
+    bundle: {
+      bundleId: `pact-client-runtime/trimmed/${bundleDigestSha256.slice(0, 16)}`,
+      version: FRAMEWORK_VERSION,
+      mediaType: "application/vnd.pact.client-runtime-bundle+json",
+      digestSha256: bundleDigestSha256,
+      manifest: bundleManifest
+    },
+    artifacts,
+    modules: plan.modules.map((module) => {
+      const artifact = artifactsByModuleId.get(module.moduleId);
+      return {
+        ...module,
+        delivery: {
+          ...module.delivery,
+          status: artifact?.status || module.delivery.status,
+          digestSha256: artifact?.digestSha256 || module.delivery.digestSha256,
+          downloadUrl: artifact?.downloadUrl || module.delivery.downloadUrl,
+          artifactRef: artifact?.artifactId || module.delivery.artifactId
+        }
+      };
+    })
   };
 }

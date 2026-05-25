@@ -2,6 +2,7 @@ import {
   decorateServerApiOperations,
   serializableOperationSafety
 } from "./operation-decorators.mjs";
+import { PROTOCOL_OPERATION_DEFINITIONS } from "./protocol-operation-definitions.mjs";
 
 const REPO_OPERATION_SPECS = Object.freeze([
   ["repo.status", "repo:read", "查看代码库对象状态", ["repoId", "targetType"], "read_only", true],
@@ -2104,7 +2105,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "GET", path: "/api/knowledge/console" },
     rpc: { method: "knowledge.console" },
     cli: { command: ["knowledge", "console"], usage: "knowledge console" },
-    requiredScopes: ["workspace:read"]
+    requiredScopes: ["knowledge:read"]
   },
   {
     id: "knowledge.sources.list",
@@ -2127,7 +2128,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       command: ["knowledge", "sources", "add"],
       usage: "knowledge sources add --body source.json"
     },
-    requiredScopes: ["workspace:write"]
+    requiredScopes: ["knowledge:write"]
   },
   {
     id: "knowledge.sources.update",
@@ -2431,7 +2432,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     http: { method: "POST", path: "/api/knowledge/changes" },
     rpc: { method: "knowledge.changes", body: "params" },
     cli: { command: ["knowledge", "changes"], usage: "knowledge changes --body changes.json" },
-    requiredScopes: ["workspace:write"]
+    requiredScopes: ["knowledge:write"]
   },
   {
     id: "knowledge.review_items",
@@ -3579,7 +3580,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       command: ["agent-sessions"],
       usage: "agent-sessions [--workspace-id WORKSPACE_ID] [--status active] [--limit 100]"
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_sessions.get",
@@ -3605,7 +3606,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions get --id SESSION_ID",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_sessions.context.get",
@@ -3626,7 +3627,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions context --id SESSION_ID",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:read"]
+    requiredScopes: ["workspace:read"]
   },
   {
     id: "agent_sessions.events.append",
@@ -3648,7 +3649,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions events append --id SESSION_ID --body event.json",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "agent_sessions.fork",
@@ -3670,7 +3671,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       usage: "agent-sessions fork --id SESSION_ID --body fork.json",
       pathParams: { sessionId: ["session-id", "sessionId", "id"] }
     },
-    requiredScopes: ["knowledge:write"]
+    requiredScopes: ["workspace:write"]
   },
   {
     id: "agent_sessions.compare",
@@ -4324,6 +4325,23 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     aspects: ["client-runtime", "bootstrap", "module-trimming", "transport-negotiation"]
   },
   {
+    id: "client_runtime.bootstrap.pull",
+    feature: "client_runtime_allocator",
+    label: "拉取客户端运行时 bootstrap 裁剪包",
+    target: { controller: "system", method: "handleClientRuntimeBootstrapPull" },
+    http: { method: "POST", path: "/api/client-runtime/bootstrap/pull" },
+    rpc: { method: "client_runtime.bootstrap.pull", body: "params" },
+    cli: {
+      command: ["client-runtime", "bootstrap", "pull"],
+      usage: "client-runtime bootstrap pull --body client-runtime-bootstrap.json"
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    safety: { risk: "read_only" },
+    aspects: ["client-runtime", "bootstrap", "module-trimming", "artifact-pull", "transport-negotiation"]
+  },
+  {
     id: "client_runtime.status",
     feature: "client_runtime_allocator",
     label: "客户端运行时热度与冷却状态",
@@ -4905,7 +4923,8 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     },
     requiredScopes: ["jobs:read"],
     binary: true
-  }
+  },
+  ...PROTOCOL_OPERATION_DEFINITIONS
 ];
 
 export const SERVER_API_OPERATIONS = decorateServerApiOperations(SERVER_API_OPERATION_DEFINITIONS);

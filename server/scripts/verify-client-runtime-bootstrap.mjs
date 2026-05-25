@@ -7,6 +7,7 @@ import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/o
 import { createToolCatalog } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 import {
   buildClientRuntimeBootstrapPlan,
+  buildClientRuntimeBootstrapPull,
   CLIENT_RUNTIME_BOOTSTRAP_PROTOCOL_VERSION,
   INLINE_TEXT_MAX_BYTES,
   SCP_SMALL_FILE_MAX_BYTES
@@ -128,22 +129,80 @@ function verifyPortableFallbacks() {
   assert.ok(moduleIds(tinyPlan).has("transport-mcp-inline"));
 }
 
+function verifySelectivePullBundle() {
+  const pull = buildClientRuntimeBootstrapPull({
+    clientUid: "missing-local-runtime",
+    client: {
+      os: "linux",
+      arch: "x64",
+      availableCommands: ["rsync", "ssh"]
+    },
+    serverCapabilities: {
+      ssh: true,
+      rsync: true
+    },
+    modules: ["mcp-local-bridge"],
+    transfer: {
+      directory: true,
+      incremental: true,
+      totalBytes: 128 * 1024 * 1024,
+      fileCount: 60
+    }
+  });
+
+  assert.equal(pull.operation, "client_runtime.bootstrap.pull");
+  assert.equal(pull.installation.artifactStatus, "inline-manifest");
+  assert.equal(pull.pull.mode, "selective-trimmed-client-runtime");
+  assert.equal(pull.pull.completeClient, false);
+  assert.equal(pull.pull.includesServerRepository, false);
+  assert.equal(pull.transportPlan.selected, "rsync-over-ssh");
+  assert.equal(pull.artifacts.length, pull.modules.length);
+  assert.match(pull.bundle.digestSha256, /^[a-f0-9]{64}$/);
+
+  const modules = moduleIds(pull);
+  assert.ok(modules.has("runtime-framework"));
+  assert.ok(modules.has("pact-client-cli"));
+  assert.ok(modules.has("clientd"));
+  assert.ok(modules.has("upload-queue"));
+  assert.ok(modules.has("mcp-local-bridge"));
+  assert.equal(modules.has("connectors"), false, "pull must not include unrequested connector modules");
+  for (const artifact of pull.artifacts) {
+    assert.match(artifact.digestSha256, /^[a-f0-9]{64}$/);
+    assert.equal(artifact.status, "inline-manifest");
+    assert.equal(artifact.signature.required, true);
+    assert.equal(artifact.inlineManifest.constraints.completeClient, false);
+    assert.equal(artifact.inlineManifest.constraints.includesServerRepository, false);
+  }
+}
+
 function verifyOperationRegistry() {
   const operations = new Map(SERVER_API_OPERATIONS.map((operation) => [operation.id, operation]));
-  const operation = operations.get("client_runtime.bootstrap.plan");
-  assert.ok(operation, "client_runtime.bootstrap.plan operation must be registered");
-  assert.equal(operation.http.path, "/api/client-runtime/bootstrap/plan");
-  assert.equal(operation.http.method, "POST");
-  assert.equal(operation.readOnly, true);
-  assert.ok(operation.requiredScopes.includes("knowledge:read"));
+  const planOperation = operations.get("client_runtime.bootstrap.plan");
+  assert.ok(planOperation, "client_runtime.bootstrap.plan operation must be registered");
+  assert.equal(planOperation.http.path, "/api/client-runtime/bootstrap/plan");
+  assert.equal(planOperation.http.method, "POST");
+  assert.equal(planOperation.readOnly, true);
+  assert.ok(planOperation.requiredScopes.includes("knowledge:read"));
+
+  const pullOperation = operations.get("client_runtime.bootstrap.pull");
+  assert.ok(pullOperation, "client_runtime.bootstrap.pull operation must be registered");
+  assert.equal(pullOperation.http.path, "/api/client-runtime/bootstrap/pull");
+  assert.equal(pullOperation.http.method, "POST");
+  assert.equal(pullOperation.readOnly, true);
+  assert.ok(pullOperation.requiredScopes.includes("knowledge:read"));
 }
 
 function verifyToolCatalogExposure() {
   const catalog = createToolCatalog({ operations: SERVER_API_OPERATIONS });
-  const tool = catalog.tools.find((item) => item.id === "pact.clientRuntime.bootstrapPlan");
-  assert.ok(tool, "pact.clientRuntime.bootstrapPlan tool must be exposed");
-  assert.ok(tool.requiredScopes.includes("knowledge:read"));
-  assert.ok(tool.toolsets.includes("pact.knowledge.read"));
+  const planTool = catalog.tools.find((item) => item.id === "pact.clientRuntime.bootstrapPlan");
+  assert.ok(planTool, "pact.clientRuntime.bootstrapPlan tool must be exposed");
+  assert.ok(planTool.requiredScopes.includes("knowledge:read"));
+  assert.ok(planTool.toolsets.includes("pact.knowledge.read"));
+
+  const pullTool = catalog.tools.find((item) => item.id === "pact.clientRuntime.bootstrapPull");
+  assert.ok(pullTool, "pact.clientRuntime.bootstrapPull tool must be exposed");
+  assert.ok(pullTool.requiredScopes.includes("knowledge:read"));
+  assert.ok(pullTool.toolsets.includes("pact.knowledge.read"));
 }
 
 async function verifyHttpEndpoint() {
@@ -180,6 +239,28 @@ async function verifyHttpEndpoint() {
     assert.equal(response.status, 200);
     assert.equal(response.payload.transportPlan.selected, "rsync-over-ssh");
     assert.ok(response.payload.modules.some((module) => module.moduleId === "mcp-local-bridge"));
+
+    const pullResponse = await fetchJson(`${server.url}/api/client-runtime/bootstrap/pull`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientUid: "http-missing-local-runtime",
+        client: {
+          os: "linux",
+          arch: "x64",
+          availableCommands: []
+        },
+        modules: ["mcp-local-bridge"],
+        transfer: {
+          totalBytes: 2 * 1024 * 1024,
+          fileCount: 1
+        }
+      })
+    });
+    assert.equal(pullResponse.status, 200);
+    assert.equal(pullResponse.payload.operation, "client_runtime.bootstrap.pull");
+    assert.equal(pullResponse.payload.pull.completeClient, false);
+    assert.ok(pullResponse.payload.artifacts.some((artifact) => artifact.moduleId === "mcp-local-bridge"));
   } finally {
     await server.close();
     await fs.rm(userDataPath, { recursive: true, force: true });
@@ -189,6 +270,7 @@ async function verifyHttpEndpoint() {
 verifyNativeTransportPriority();
 verifyScpSmallFileFallback();
 verifyPortableFallbacks();
+verifySelectivePullBundle();
 verifyOperationRegistry();
 verifyToolCatalogExposure();
 await verifyHttpEndpoint();

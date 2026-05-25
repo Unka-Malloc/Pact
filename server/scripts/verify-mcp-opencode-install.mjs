@@ -107,6 +107,7 @@ try {
   // ── SECTION 2: Token acquisition ──
   console.log("\n[2] Token acquisition");
   let token = "";
+  let localGrantId = "";
   await testAsync("local-grant for opencode", async () => {
     const g = await fetchJson(`${serverUrl}/api/mcp/local-grant`, {
       method: "POST",
@@ -117,6 +118,16 @@ try {
     assert.ok(g.payload.token);
     assert.deepEqual(g.payload.targets, ["opencode"]);
     token = g.payload.token;
+    localGrantId = g.payload.grant?.id || "";
+    assert.ok(localGrantId);
+  });
+  await testAsync("discovery clients includes opencode after grant", async () => {
+    const clients = await fetchJson(`${serverUrl}/api/discovery/clients`);
+    assert.equal(clients.status, 200);
+    assert.ok(
+      clients.payload.items?.some((item) => item.sourceGrantId === localGrantId && item.clientLabel === "opencode"),
+      "opencode grant should be visible as a current MCP client"
+    );
   });
   await testAsync("MCP tools/list with token", async () => {
     const t = await fetchJson(`${serverUrl}/mcp`, {
@@ -265,22 +276,45 @@ try {
 
   // ── SECTION 6: End-to-end CLI uninstall ──
   console.log("\n[6] End-to-end CLI uninstall --target opencode");
+  let cliUninstallPayload = null;
   await testAsync("cli uninstall succeeds", async () => {
     const result = await spawnConnector([
       "uninstall",
       "--target", "opencode",
       "--url", serverUrl,
       "--opencode-config", opencodeConfigPath,
-      "--discovery-file", tempRegistryPath
+      "--discovery-file", tempRegistryPath,
+      "--json"
     ]);
     if (result.code !== 0) {
       console.log(`\n      stdout: ${result.stdout.slice(0, 300)}`);
       console.log(`      stderr: ${result.stderr.slice(0, 300)}`);
     }
     assert.equal(result.code, 0, `exit code ${result.code}`);
+    cliUninstallPayload = JSON.parse(result.stdout);
+    assert.equal(cliUninstallPayload.serverUninstall?.ok, true);
+    assert.ok(cliUninstallPayload.serverUninstall?.updatedCount >= 1);
 
     const config = JSON.parse(await fs.readFile(opencodeConfigPath, "utf8"));
     assert.equal(config.mcp?.pact, undefined, "pact should be removed after uninstall");
+  });
+  await testAsync("discovery clients removes opencode after uninstall", async () => {
+    const clients = await fetchJson(`${serverUrl}/api/discovery/clients`);
+    assert.equal(clients.status, 200);
+    assert.equal(
+      clients.payload.items?.some((item) => item.sourceGrantId === localGrantId && item.clientLabel === "opencode"),
+      false,
+      "uninstalled opencode should not remain in the current device list"
+    );
+  });
+  await testAsync("tool grant record remains with uninstall metadata", async () => {
+    const grants = await fetchJson(`${serverUrl}/api/tool-management/v1/grants`);
+    assert.equal(grants.status, 200);
+    const grant = grants.payload.grants?.find((item) => item.id === localGrantId);
+    assert.ok(grant, "grant record should remain after uninstall");
+    assert.equal(grant.enabled, false);
+    assert.ok(grant.metadata?.uninstalledTargets?.includes("opencode"));
+    assert.ok(grant.metadata?.uninstalledAt);
   });
 
   // ── SECTION 7: Scan detection ──

@@ -2,8 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { createClientRegistryService } from "./client-registry-repository.mjs";
-import { createSearchService } from "../../specialized/knowledge/retrieval/search-service.mjs";
-import { createTransactionLifecycleService } from "../../specialized/knowledge/preprocessing/domain/rules/transaction-lifecycle-service.mjs";
 import { createBatchRepository } from "./batch-repository.mjs";
 import { createKnowledgeRepository } from "./knowledge-repository.mjs";
 import { getRawMailObjectRoot } from "./raw-object-store.mjs";
@@ -11,15 +9,72 @@ import { getMetadataDatabasePath, initializeMetadataSchema } from "./schema-mana
 
 export { getMetadataDatabasePath } from "./schema-manager.mjs";
 
-export function createMetadataStore({ userDataPath }) {
+function createDefaultSearchService() {
+  return {
+    search({ query = "", limit = 20, batchId = "", entityTypes = [], formalOnly = false } = {}) {
+      return {
+        query: String(query || "").trim(),
+        batchId: String(batchId || ""),
+        limit: Number.isInteger(Number(limit)) && Number(limit) > 0 ? Number(limit) : 20,
+        formalOnly: Boolean(formalOnly),
+        entityTypes: Array.isArray(entityTypes) ? entityTypes : [],
+        items: [],
+        unavailable: true,
+        unavailableReason: "metadata search domain service is not configured"
+      };
+    }
+  };
+}
+
+function createDefaultTransactionLifecycleService() {
+  return {
+    persistTransactionLineages() {},
+    refreshTransactionLineageStates() {
+      return {
+        refreshedCount: 0,
+        unavailable: true,
+        unavailableReason: "transaction lifecycle domain service is not configured"
+      };
+    },
+    resolveTransactionLifecycle() {
+      return {
+        lifecycleState: "unknown",
+        unavailable: true,
+        unavailableReason: "transaction lifecycle domain service is not configured"
+      };
+    }
+  };
+}
+
+function createDomainService(factory, fallbackFactory, input) {
+  return typeof factory === "function" ? factory(input) : fallbackFactory();
+}
+
+export function createMetadataStore({ userDataPath, domainServices = {} }) {
   fs.mkdirSync(path.join(userDataPath, "metadata"), { recursive: true });
   const db = new Database(getMetadataDatabasePath(userDataPath));
   initializeMetadataSchema(db);
 
-  const batchRepository = createBatchRepository({ db, userDataPath });
-  const lifecycleService = createTransactionLifecycleService({ db });
+  const batchRepository = createBatchRepository({
+    db,
+    userDataPath,
+    textIndexing: createDomainService(
+      domainServices.createTextIndexingService,
+      () => null,
+      { db }
+    )
+  });
+  const lifecycleService = createDomainService(
+    domainServices.createTransactionLifecycleService,
+    createDefaultTransactionLifecycleService,
+    { db }
+  );
   const clientRegistryService = createClientRegistryService({ db });
-  const searchService = createSearchService({ db });
+  const searchService = createDomainService(
+    domainServices.createSearchService,
+    createDefaultSearchService,
+    { db }
+  );
   const knowledgeRepository = createKnowledgeRepository({ db });
 
   return {

@@ -69,7 +69,6 @@ export {
   traceContextFromRequest,
   traceDetails
 } from "../common/observability/trace-context.mjs";
-export { createServerRuntime } from "../common/module-manager/server-runtime.mjs";
 export { createClientRegistryService } from "../common/storage/client-registry-repository.mjs";
 export {
   cleanupImportArtifacts,
@@ -103,3 +102,19 @@ export {
   startCheckpointTree,
   upsertCheckpointNode
 } from "../common/data-structure/checkpoint-tree-store.mjs";
+
+import { createServerRuntime as createCommonServerRuntime } from "../common/module-manager/server-runtime.mjs";
+import { createKnowledgeBuiltinMountProviders } from "../specialized/knowledge/storage/builtin-mount-providers.mjs";
+import { createKnowledgeMetadataStoreDomainServices } from "../specialized/knowledge/storage/metadata-store-domain-services.mjs";
+
+export async function createServerRuntime(options = {}) {
+  return createCommonServerRuntime({
+    ...options,
+    metadataStoreDomainServices:
+      options.metadataStoreDomainServices || createKnowledgeMetadataStoreDomainServices(),
+    builtinMountProviders:
+      options.builtinMountProviders || createKnowledgeBuiltinMountProviders({
+        userDataPath: options.userDataPath
+      })
+  });
+}

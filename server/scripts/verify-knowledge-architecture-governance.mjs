@@ -49,7 +49,7 @@ async function assertGovernanceDoc() {
     "门禁卡",
     "楼层",
     "书架",
-    "readInPlace",
+    "controlledView",
     "checkoutAllowed",
     "不能合并成一个“可访问”布尔值",
     "外部知识库再授权",
@@ -161,9 +161,9 @@ async function assertProtocolDocs() {
     "Workspace Contribution Protocol",
     "Compatibility Strategy",
     "两个问题，一个能力，三个兼容",
-    "智能体兼容",
-    "信息源兼容",
-    "工作空间环境兼容",
+    "agent-client-mcp-compatibility",
+    "external-service-compatibility",
+    "pact-internal-compatibility",
     "Pact 管理软件",
     "assetContributionReportV0",
     "workspaceId/contributions/report",
@@ -196,7 +196,7 @@ async function assertProtocolDocs() {
     "requestedEgress",
     "denied request audit",
     "checkoutPolicy",
-    "readInPlace",
+    "controlledView",
     "checkoutAllowed",
     "canCopyToContext",
     "不能作为 hidden context",
@@ -278,9 +278,9 @@ async function assertProtocolDocs() {
     "知识库缺少面向智能体的权限管控",
     "本地智能体相对独立，难以协同",
     "工作空间管理",
-    "智能体兼容",
-    "信息源兼容",
-    "工作空间环境兼容",
+    "agent-client-mcp-compatibility",
+    "external-service-compatibility",
+    "pact-internal-compatibility",
     "资产贡献统计报表",
     "上游知识库太粗",
     "下游本地智能体太细",
@@ -323,9 +323,9 @@ async function assertProtocolDocs() {
     "两个问题，一个能力，三个兼容",
     "知识库缺少面向智能体的权限管控",
     "本地智能体相对独立，难以协同",
-    "智能体兼容",
-    "信息源兼容",
-    "工作空间环境兼容",
+    "agent-client-mcp-compatibility",
+    "external-service-compatibility",
+    "pact-internal-compatibility",
     "终端贡献型资产",
     "排行榜与统计面板",
     "资产贡献统计报表",
@@ -361,7 +361,7 @@ async function assertProtocolDocs() {
     "演示场景：上游知识库 A/B 权限再授权",
     "管控台",
     "权限错误",
-    "readInPlace",
+    "controlledView",
     "checkoutAllowed",
     "Context Compiler",
     "evidence",
@@ -606,7 +606,7 @@ function assertOperationRegistry() {
   assert.equal(byId.get("knowledge.export_docx")?.rpc?.method, "knowledge.export.docx");
   assert.equal(byId.get("agent_sessions.list")?.http?.path, "/api/agent-sessions");
   assert.equal(byId.get("agent_sessions.context.get")?.http?.path, "/api/agent-sessions/:sessionId/context");
-  assert.deepEqual(byId.get("agent_sessions.fork")?.requiredScopes, ["knowledge:write"]);
+  assert.deepEqual(byId.get("agent_sessions.fork")?.requiredScopes, ["workspace:write"]);
   assert.equal(byId.get("tool_management.execute")?.http?.path, "/api/tool-management/v1/execute");
   assert.equal(byId.get("tool_management.execute")?.safety?.risk, "safe_write");
 }
@@ -622,7 +622,7 @@ function assertToolManagementCatalog() {
   const sessionForkTool = catalog.tools.find((item) => item.id === "pact.agentSession.fork");
   assert.ok(sessionForkTool, "Tool Management catalog must include pact.agentSession.fork");
   assert.equal(sessionForkTool.operationId, "agent_sessions.fork");
-  assert.deepEqual(sessionForkTool.requiredScopes, ["knowledge:write"]);
+  assert.deepEqual(sessionForkTool.requiredScopes, ["workspace:write"]);
 }
 
 async function assertFrontendCoverage() {
@@ -674,17 +674,15 @@ async function assertFrontendCoverage() {
   ], "server-web/lib/bridge.ts");
 
   assertAllIncludes(knowledgeView, [
-    "knowledgeTab === 'chunking'",
-    "knowledgeTab === 'wordCloud'",
-    "knowledgeTab.value === \"parsing\"",
-    "knowledgeTab.value === \"retrieval\"",
-    "knowledgeTab === 'review'",
-    "knowledgeTab.value === \"rules\"",
-    "knowledgeTab === 'maintenance'",
-    "uploadFilesToKnowledge({",
-    "onIngestFilesSelected(nextFiles,",
-    "documentParsing: chunkingDocumentParsingConfig()",
-    "bridge.parseDocument"
+    "activeKnowledgeTab === 'management'",
+    "activeKnowledgeTab === 'wordCloud'",
+    "activeKnowledgeTab === 'conflicts'",
+    "activeKnowledgeTab === 'maintenance'",
+    "knowledgeManagementPanel.value === \"knowledge\"",
+    "knowledgeManagementPanel.value === \"rules\"",
+    "uploadFilesToKnowledge",
+    "onIngestFilesSelected",
+    "dynamicParsingPolicySignature"
   ], "server-web/views/KnowledgeView.vue");
 
   assertAllIncludes(knowledgeImportCard, [
@@ -737,9 +735,9 @@ async function assertFrontendCoverage() {
     "reloadRuntimeMounts",
     "enableMountModule",
     "disableMountModule",
-    "void uploadFilesToKnowledge({ ...options, trigger: \"auto\" })",
-    "documentParsing?: DocumentParsingConfig",
-    "const filesToUpload = [...ingestFiles.value]"
+    "async function uploadFilesToKnowledge()",
+    "createKnowledgeUploadSession(filesToUpload",
+    "bridge.createJob({"
   ], "server-web/composables/useConsole.ts");
 }
 

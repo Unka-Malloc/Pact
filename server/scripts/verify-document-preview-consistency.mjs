@@ -64,6 +64,10 @@ const useConsole = await readText("server-web/composables/useConsole.ts");
 const uploadSession = await readText("server-web/lib/knowledge-upload-session.ts");
 const bridge = await readText("server-web/lib/bridge.ts");
 const systemController = await readText("server/platform/common/console/http/controllers/system-controller.mjs");
+const knowledgeOperationsHandlers = await readText(
+  "server/platform/common/console/http/controllers/system-controller-knowledge-operations-handlers.mjs"
+);
+const consoleDomainExecutor = await readText("server/platform/specialized/console/console-domain-operation-executor.mjs");
 const serverWebFiles = await Promise.all(
   (await listSourceFiles("server-web")).map(async (relativePath) => ({
     path: relativePath,
@@ -147,16 +151,26 @@ assertIncludes(
 );
 assertIncludes(
   systemController,
-  "documentParsingRuntime.parseDocuments",
-  "后端文档 dry-run 必须调用真实文档解析运行时。"
+  "createSystemControllerKnowledgeOperationsHandlers",
+  "后端文档 dry-run handler 必须由主 controller 通过知识操作 handler 模块组合。"
 );
 assertIncludes(
-  systemController,
+  knowledgeOperationsHandlers,
+  'operationId: operation?.id || "knowledge.document_parse"',
+  "后端文档 dry-run 必须通过统一 console domain operation 入口。"
+);
+assertIncludes(
+  consoleDomainExecutor,
+  "runtime.parseDocuments",
+  "后端文档 dry-run 必须由 specialized executor 调用真实文档解析运行时。"
+);
+assertIncludes(
+  consoleDomainExecutor,
   "dryRun: true",
   "后端文档 dry-run 入口必须强制 dryRun。"
 );
 assertIncludes(
-  systemController,
+  consoleDomainExecutor,
   "deleteUploadSession",
   "upload session 形式的 dry-run 预览必须支持清理暂存文件。"
 );
