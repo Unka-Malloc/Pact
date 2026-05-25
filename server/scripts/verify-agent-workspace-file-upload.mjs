@@ -254,6 +254,10 @@ try {
   assert.ok(upload.stateCommit?.eventHash, "upload should return an event hash");
   assert.ok(upload.stateCommit?.afterRoot, "upload should return an afterRoot");
   assert.ok(upload.stateCommit?.contentRefs?.length >= 2, "upload should return content refs");
+  assert.equal(upload.ingestReceipt?.status, "archived");
+  assert.ok(upload.ingestReceipt?.uploadSessionId, "upload should return an LSM ingest session id");
+  assert.ok(upload.ingestReceipt?.segmentId, "upload should return an immutable ingest segment id");
+  assert.ok(upload.ingestReceipt?.manifestRootCid, "upload should return an ingest manifest root");
   assert.equal(upload.file.relativePath, `${folderPath}/a.txt`);
   assert.equal(upload.file.type, "file");
   assert.equal(upload.artifact.title, "a.txt");

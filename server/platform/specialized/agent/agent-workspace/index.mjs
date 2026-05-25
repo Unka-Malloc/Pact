@@ -1244,6 +1244,60 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
     };
   }
 
+  async function recordWorkspaceUploadIngest({
+    workspace,
+    relativePath,
+    contentBuffer,
+    operationId
+  } = {}) {
+    if (!merkleState || typeof merkleState.lsmIngest?.beginUploadSession !== "function") {
+      return null;
+    }
+    const content = Buffer.isBuffer(contentBuffer) ? contentBuffer : Buffer.from(contentBuffer || "");
+    const block = await merkleState.cas.putBlock(content, {
+      codec: "raw",
+      metadata: {
+        workspaceId: workspace.workspaceId,
+        relativePath,
+        operationId,
+        ingest: true
+      }
+    });
+    const session = await merkleState.lsmIngest.beginUploadSession({
+      scope: workspaceStateScope(workspace),
+      workspaceId: workspace.workspaceId,
+      files: [{
+        relativePath,
+        byteLength: content.length,
+        sha256: normalizeSha256(block.payloadHash)
+      }]
+    });
+    const chunkRecord = await merkleState.lsmIngest.appendChunkRecord(session.uploadSessionId, {
+      fileId: relativePath,
+      relativePath,
+      chunkIndex: 0,
+      offset: 0,
+      byteLength: content.length,
+      chunkCid: block.cid,
+      chunkHash: block.payloadHash
+    });
+    const segment = await merkleState.lsmIngest.flushMemTable(session.uploadSessionId);
+    const manifest = await merkleState.lsmIngest.materializeManifest(session.uploadSessionId);
+    return {
+      protocolVersion: merkleState.protocolVersion,
+      status: "archived",
+      uploadSessionId: session.uploadSessionId,
+      segmentId: segment.segmentId,
+      segmentRootCid: segment.rootCid,
+      manifestRootCid: manifest.rootCid,
+      chunkCid: block.cid,
+      chunkHash: block.payloadHash,
+      recordCount: segment.recordCount,
+      nextOffset: Number(chunkRecord.offset || 0) + Number(chunkRecord.byteLength || 0),
+      contentRefs: uniqueStrings([manifest.rootCid, segment.rootCid, block.cid])
+    };
+  }
+
   async function commitWorkspaceFileState({
     workspace,
     operationId,
@@ -2498,6 +2552,12 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       stat: fs.statSync(resolved.absolutePath),
       includeHash: true
     });
+    const ingestReceipt = await recordWorkspaceUploadIngest({
+      workspace: access.workspace,
+      relativePath: resolved.relativePath,
+      contentBuffer,
+      operationId: input.operationId || "workspace.file.upload"
+    });
     const archived = await archiveWorkspacePath(access.workspace, resolved.relativePath, {
       operationId: input.operationId || "workspace.file.upload"
     });
@@ -2512,13 +2572,24 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
             metadata: filePayloadMetadata(file)
           }]
         : [],
-      contentRefs: archived?.contentRefs || [],
+      contentRefs: [
+        ...(archived?.contentRefs || []),
+        ...(ingestReceipt?.contentRefs || [])
+      ],
       payload: {
         action: "file.upload",
         path: resolved.relativePath,
         overwritten,
         sizeBytes: contentBuffer.length,
-        contentSha256: file.contentSha256 || ""
+        contentSha256: file.contentSha256 || "",
+        ingestReceipt: ingestReceipt
+          ? {
+              uploadSessionId: ingestReceipt.uploadSessionId,
+              segmentId: ingestReceipt.segmentId,
+              manifestRootCid: ingestReceipt.manifestRootCid,
+              status: ingestReceipt.status
+            }
+          : null
       }
     });
     const checkpoint = await recordWorkspaceFileCheckpoint({
@@ -2550,6 +2621,7 @@ export function createAgentWorkspace({ userDataPath, merkleState = null, checkpo
       workspaceId: access.workspace.workspaceId,
       overwritten,
       stateCommit,
+      ingestReceipt,
       checkpoint,
       file,
       artifact
