@@ -25,6 +25,10 @@ import {
   normalizeLocalSecretProvider,
   resolveLocalSecretTarget
 } from "../platform/common/security/secrets/local-secret-store.mjs";
+import {
+  oauthDefaultsForProvider,
+  runLocalOAuthAuthorizationCodeFlow
+} from "../platform/common/security/secrets/oauth-local-flow.mjs";
 
 const DEFAULT_SERVER_URL = process.env.PACT_SERVER_URL || getDefaultServerUrl();
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
@@ -91,6 +95,7 @@ function usage() {
     "  pact agents delete --id AGENT_UID",
     "  pact secret gerrit init --base-url URL --username USER --http-password-stdin [--mode live]",
     "  pact secret dify init --endpoint URL --api-key-stdin",
+    "  pact secret onedrive oauth --client-id CLIENT_ID",
     "  pact secret list|status",
     "  pact tools catalog|toolsets|toolsets resolve|execute|dry-run|audit|metrics ...",
     "  pact tools grants list|create|rotate|revoke ...",
@@ -114,6 +119,8 @@ function usage() {
     "  --api-key-stdin        Read an API key from stdin for pact secret ... init",
     "  --http-password-stdin  Read a Gerrit HTTP password from stdin for pact secret ... init",
     "  --oauth-json-stdin     Read an OAuth JSON object from stdin for pact secret ... init",
+    "  --client-secret-stdin  Read OAuth client secret from stdin for pact secret ... oauth",
+    "  --no-open              Do not open browser for pact secret ... oauth",
     "",
     "Upload options:",
     "  --file FILE             Upload one file; repeatable",
@@ -754,6 +761,33 @@ async function readSecretPayload(args, target) {
   return payload;
 }
 
+async function readOAuthClientSecret(args) {
+  if (args["client-secret-stdin"]) {
+    return trimOneTrailingNewline(await readStdinText());
+  }
+  if (args["client-secret-file"]) {
+    return trimOneTrailingNewline(await fsp.readFile(path.resolve(String(args["client-secret-file"])), "utf8"));
+  }
+  return "";
+}
+
+function publicOAuthSummary(flow = {}) {
+  return {
+    provider: flow.provider,
+    redirectUri: flow.redirectUri,
+    scope: flow.scope,
+    tokenUrl: flow.tokenUrl,
+    tokenClientAuth: flow.tokenClientAuth,
+    tokenKeys: Object.entries(flow.oauth || {})
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key]) => key)
+      .filter((key) => key !== "providerResponse")
+      .sort(),
+    expiresAt: flow.oauth?.expiresAt || "",
+    hasRefreshToken: Boolean(flow.oauth?.refreshToken)
+  };
+}
+
 async function runSecretCommand(args) {
   const command = secretCommandFromArgs(args);
   if (!command.matched) {
@@ -772,6 +806,8 @@ async function runSecretCommand(args) {
           secretRef: target.secretRef,
           endpointRef: target.endpointRef,
           authType: target.authType,
+          oauthRedirect: Boolean(target.oauthRedirect),
+          oauthDefaults: target.oauthRedirect ? oauthDefaultsForProvider(target.provider) : null,
           defaultMode: target.defaultMode,
           env: target.envSecrets.map((item) => item.name)
         }))
@@ -795,7 +831,7 @@ async function runSecretCommand(args) {
     });
     return true;
   }
-  if (action !== "init") {
+  if (action !== "init" && action !== "oauth" && action !== "login") {
     throw new Error(`未知 secret 命令：${args._.join(" ")}`);
   }
 
@@ -804,12 +840,47 @@ async function runSecretCommand(args) {
   if (!target) {
     throw new Error(`Unsupported Pact secret provider: ${command.provider || args.provider || ""}`);
   }
-  const payload = await readSecretPayload(args, target);
+
+  let oauthSummary = null;
+  let payload;
+  if (action === "oauth" || action === "login") {
+    const clientSecret = await readOAuthClientSecret(args);
+    const flow = await runLocalOAuthAuthorizationCodeFlow({
+      provider,
+      clientId: args["client-id"] || args.clientId || "",
+      clientSecret,
+      authorizationUrl: args["auth-url"] || args.authorizationUrl || "",
+      tokenUrl: args["token-url"] || args.tokenUrl || "",
+      tenant: args.tenant || "",
+      scope: args.scope || "",
+      authorizeParams: args["authorize-param"] || args["authorize-params"] || args.authorizeParams || "",
+      tokenClientAuth: args["client-auth"] || args.clientAuth || "",
+      host: args.host || "127.0.0.1",
+      port: args.port || 0,
+      callbackPath: args["callback-path"] || undefined,
+      open: !args["no-open"],
+      timeoutMs: args["timeout-ms"] || args.timeoutMs || undefined,
+      stderr: process.stderr
+    });
+    payload = {
+      oauth: flow.oauth,
+      clientId: String(args["client-id"] || args.clientId || ""),
+      redirectUri: flow.redirectUri,
+      scope: flow.scope
+    };
+    if (clientSecret) {
+      payload.clientSecret = clientSecret;
+    }
+    oauthSummary = publicOAuthSummary(flow);
+  } else {
+    payload = await readSecretPayload(args, target);
+  }
   const endpoint = String(args.endpoint || args["base-url"] || args.url || "").trim();
   const metadata = {
     label: args.label || "",
     workspaceId: args["workspace-id"] || args.workspaceId || "",
-    driveRef: args["drive-ref"] || args.driveRef || ""
+    driveRef: args["drive-ref"] || args.driveRef || "",
+    oauthRedirectUri: oauthSummary?.redirectUri || ""
   };
   const result = await initializeLocalSecret({
     dataDir: args["data-dir"],
@@ -822,7 +893,15 @@ async function runSecretCommand(args) {
     payload,
     metadata
   });
-  await writeResponse({ args, result });
+  await writeResponse({
+    args,
+    result: oauthSummary
+      ? {
+          ...result,
+          oauth: oauthSummary
+        }
+      : result
+  });
   return true;
 }
 

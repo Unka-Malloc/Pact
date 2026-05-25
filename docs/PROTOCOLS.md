@@ -1044,6 +1044,7 @@ v0.0.1 本地 secret 初始化入口：
 
 - `pact secret <provider> init` 和点号别名 `pact secret.<provider>.init` 是开发/运维 bootstrap 入口，支持 `github`、`gerrit`、`dify`、`ragflow`、`onedrive`、`google-drive` 和 `dropbox`。
 - CLI 必须从 stdin、环境变量或本地 JSON body 读取真实密钥，默认写入 `ServerConfig.getDataDir()/secrets`；仓库内只保留 source、模板和默认 manifest，不保存真实 token。
+- 对 OneDrive、Google Drive 和 Dropbox，`pact secret <provider> oauth` / `pact secret.<provider>.oauth` 必须支持本机 `127.0.0.1` OAuth redirect、state 校验、PKCE、可选自动打开浏览器、`--no-open` 手动打开和 `--port` 固定回调地址；token exchange 结果只允许进入 secret store。
 - `secrets/registry.json` 只保存脱敏索引、`secretRef`、字段名和配置状态；`secrets/values/*.json` 是本机 0600 权限密钥文件；`secrets/audit.jsonl` 记录初始化/更新审计。
 - CLI 同步更新运行态 `code-management/codespace-providers.json`、`knowledge/knowledge-backends.json` 或 `agent-workspaces/cloud-drive-connections.json`，这些 manifest 只能保存 `secretRef` / `endpointRef` 和 `credentialConfigured`，不能保存 token value。
 - `server:verify:v001` 可以把本地 secret store 识别为 `credentialConfigured`，但仍不声明真实外部 E2E；只有 provider 专用 live verifier 或真实 adapter receipt 可以把某条链路提升为真实验证。

@@ -119,10 +119,32 @@ cat google-drive-oauth.json | npm run cli -- secret google-drive init --oauth-js
 cat dropbox-oauth.json | npm run cli -- secret dropbox init --oauth-json-stdin
 ```
 
+也可以直接走本机 OAuth 跳转。CLI 会监听 `127.0.0.1` 临时回调地址，打开浏览器完成授权，校验 state/PKCE，换取 token 后写入同一个运行态 secret store。云盘应用后台的 redirect URI 需要填 CLI 打印的 `oauthRedirectUri`，或用固定端口提前配置：
+
+```bash
+printf '%s' "$ONEDRIVE_CLIENT_SECRET" | npm run cli -- secret onedrive oauth \
+  --client-id "$ONEDRIVE_CLIENT_ID" \
+  --client-secret-stdin \
+  --port 7391
+
+printf '%s' "$GOOGLE_DRIVE_CLIENT_SECRET" | npm run cli -- secret google-drive oauth \
+  --client-id "$GOOGLE_DRIVE_CLIENT_ID" \
+  --client-secret-stdin \
+  --port 7392
+
+printf '%s' "$DROPBOX_CLIENT_SECRET" | npm run cli -- secret dropbox oauth \
+  --client-id "$DROPBOX_CLIENT_ID" \
+  --client-secret-stdin \
+  --port 7393
+```
+
+无桌面浏览器或 CI 环境可加 `--no-open`，再手动打开 stderr 中的 `oauthAuthorizationUrl`。如果 provider 后台不接受动态端口，使用 `--port` 固定回调地址，例如 `http://127.0.0.1:7392/oauth/callback`。
+
 等价点号命令也可用，例如：
 
 ```bash
 npm run cli -- secret.gerrit.init --base-url https://gerrit.example.com --username svc-pact --http-password-stdin
+printf '%s' "$GOOGLE_DRIVE_CLIENT_SECRET" | npm run cli -- secret.google-drive.oauth --client-id "$GOOGLE_DRIVE_CLIENT_ID" --client-secret-stdin --port 7392
 ```
 
 查看已配置的 secretRef：

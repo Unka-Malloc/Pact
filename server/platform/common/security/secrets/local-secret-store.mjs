@@ -100,6 +100,7 @@ export const LOCAL_SECRET_TARGETS = Object.freeze({
     secretRef: "secret://pact/drive/onedrive-oauth",
     endpointRef: "config://pact/drive/onedrive-endpoint",
     authType: "oauth2",
+    oauthRedirect: true,
     defaultMode: "contract",
     envSecrets: [{ name: "PACT_ONEDRIVE_OAUTH_JSON", key: "oauth" }]
   },
@@ -111,6 +112,7 @@ export const LOCAL_SECRET_TARGETS = Object.freeze({
     secretRef: "secret://pact/drive/google-drive-oauth",
     endpointRef: "config://pact/drive/google-drive-endpoint",
     authType: "oauth2",
+    oauthRedirect: true,
     defaultMode: "contract",
     envSecrets: [{ name: "PACT_GOOGLE_DRIVE_OAUTH_JSON", key: "oauth" }]
   },
@@ -122,6 +124,7 @@ export const LOCAL_SECRET_TARGETS = Object.freeze({
     secretRef: "secret://pact/drive/dropbox-oauth",
     endpointRef: "config://pact/drive/dropbox-endpoint",
     authType: "oauth2",
+    oauthRedirect: true,
     defaultMode: "contract",
     envSecrets: [{ name: "PACT_DROPBOX_OAUTH_JSON", key: "oauth" }]
   }
@@ -555,7 +558,7 @@ export async function initializeLocalSecret({
   const resolvedAuthType = text(authType || target.authType);
   const secretPayload = asObject(payload);
   if (Object.keys(secretPayload).length === 0) {
-    throw new Error("Pact secret init requires a secret payload from --json-stdin, --token-stdin, --api-key-stdin, --http-password-stdin, --body, --body-file, or --from-env.");
+    throw new Error("Pact secret init requires a secret payload from --json-stdin, --token-stdin, --api-key-stdin, --http-password-stdin, --oauth-json-stdin, OAuth redirect flow, --body, --body-file, or --from-env.");
   }
 
   const paths = localSecretStorePaths({ dataDir, secretRef: resolvedSecretRef });
