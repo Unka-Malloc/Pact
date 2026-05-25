@@ -207,6 +207,8 @@
     "client:test": "cd client-gui && flutter test",
     "client:test:coverage": "cd client-gui && flutter test --coverage",
     "client:native:test": "cargo test --manifest-path client-cli/Cargo.toml",
+    "client:verify:targets": "cargo test --manifest-path client-cli/Cargo.toml targets --quiet",
+    "client:verify:config-writes": "cargo test --manifest-path client-cli/Cargo.toml config_write --quiet",
     "client:verify": "npm run client:analyze && npm run client:test && npm run client:native:test",
     "client:verify:coverage": "npm run client:analyze && npm run client:test:coverage && npm run client:native:test",
     "client:run:macos": "cd client-gui && flutter run -d macos",

@@ -23,6 +23,7 @@ libc = "0.2"
 time = { version = "0.3", features = ["formatting"] }
 ureq = { version = "2.10", features = ["json"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
+toml = "0.8"
 
 [[bin]]
 name = "pact-clientd"
