@@ -78,6 +78,69 @@ npm run cli -- rpc --method PUT --path /api/upload-sessions/id/files/0?offset=0 
 
 `rpc` 支持原始 HTTP 调用参数：`--method`、`--path`、`--body`、`--body-file`、`--raw-file`、`--content-type`、`--header` 和 `--output`。`rpc-call` 调用服务端 JSON-RPC：`POST /api/rpc`。所有命名命令和 HTTP/RPC 映射来自服务端接口注册表。
 
+### 3.1 外部凭据初始化
+
+外部 provider 的真实 token 不写入仓库，也不交给 Agent。开发者和运维通过本地 CLI 把凭据写入 `ServerConfig.getDataDir()` 下的运行态 secret store，同时更新对应 provider manifest。默认数据目录可用以下命令确认：
+
+```bash
+node server/scripts/resolve-server-data-dir.mjs
+```
+
+Gerrit 示例：
+
+```bash
+printf '%s' "$PACT_GERRIT_HTTP_PASSWORD" | \
+  npm run cli -- secret gerrit init \
+    --base-url https://gerrit.example.com \
+    --username svc-pact \
+    --http-password-stdin \
+    --mode live
+```
+
+Dify / RAGFlow 示例：
+
+```bash
+printf '%s' "$DIFY_API_KEY" | \
+  npm run cli -- secret dify init \
+    --endpoint https://api.dify.ai \
+    --api-key-stdin
+
+printf '%s' "$RAGFLOW_API_KEY" | \
+  npm run cli -- secret ragflow init \
+    --endpoint https://ragflow.example.com \
+    --api-key-stdin
+```
+
+云盘 OAuth provider 使用 JSON stdin：
+
+```bash
+cat onedrive-oauth.json | npm run cli -- secret onedrive init --oauth-json-stdin
+cat google-drive-oauth.json | npm run cli -- secret google-drive init --oauth-json-stdin
+cat dropbox-oauth.json | npm run cli -- secret dropbox init --oauth-json-stdin
+```
+
+等价点号命令也可用，例如：
+
+```bash
+npm run cli -- secret.gerrit.init --base-url https://gerrit.example.com --username svc-pact --http-password-stdin
+```
+
+查看已配置的 secretRef：
+
+```bash
+npm run cli -- secret list
+npm run cli -- secret targets
+```
+
+CLI 只在运行态目录写入：
+
+- `secrets/registry.json`：脱敏索引和配置状态。
+- `secrets/values/*.json`：0600 权限的本机密钥值。
+- `secrets/audit.jsonl`：初始化/更新审计。
+- `code-management/codespace-providers.json`、`knowledge/knowledge-backends.json`、`agent-workspaces/cloud-drive-connections.json`：只保存 `secretRef` / `endpointRef`，不保存 token。
+
+配置了凭据只表示 `credentialConfigured=true`。除 Gerrit live verifier 等明确真实验证链路外，contract-mode provider 仍只能报告 `contractVerified`，不能说成真实上传、真实同步或 production ready。
+
 上传文件或目录时，CLI 复用服务端 upload session、checkpoint、分块上传和任务提交链路。示例：
 
 ```bash
@@ -87,7 +150,7 @@ npm run cli -- \
   --output-result result.json
 ```
 
-### 3.1 MCP 按需拉取裁剪客户端
+### 3.2 MCP 按需拉取裁剪客户端
 
 MCP 不能假设机器上已经安装了完整 `pact-client-cli` 或后台 `clientd`。正常流程是：最小 MCP connector 先完成服务端发现和握手，然后通过服务端 bootstrap 操作按需拉取裁剪后的客户端运行时。
 

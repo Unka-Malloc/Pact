@@ -4,6 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  defaultSecretRefForProvider,
+  localSecretConfigured
+} from "../platform/common/security/secrets/local-secret-store.mjs";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const DEFAULT_OUTPUT_ROOT = "reports/v001-readiness";
@@ -217,17 +221,27 @@ function statusForResults(results) {
   return "pass";
 }
 
-function externalCredentialStatus() {
-  return EXTERNAL_TARGETS.map((target) => {
+async function externalCredentialStatus() {
+  const statuses = [];
+  for (const target of EXTERNAL_TARGETS) {
     const configuredBy = target.env.filter((name) => Boolean(process.env[name]));
-    return {
+    const secretRef = defaultSecretRefForProvider(target.id);
+    const configuredByLocalSecret = await localSecretConfigured({
+      provider: target.id,
+      secretRef
+    }).catch(() => false);
+    if (configuredByLocalSecret) {
+      configuredBy.push(`local-secret-store:${secretRef}`);
+    }
+    statuses.push({
       ...target,
       credentialConfigured: configuredBy.length > 0,
       configuredBy,
       releaseStatus: configuredBy.length > 0 ? "credentialConfigured" : target.statusWithoutCredential,
       realE2EVerified: false
-    };
-  });
+    });
+  }
+  return statuses;
 }
 
 function markdownEscape(value) {
@@ -390,7 +404,7 @@ async function main() {
     stageResults.push(await runStage(stage, options, runDir));
   }
 
-  const externalProviders = externalCredentialStatus();
+  const externalProviders = await externalCredentialStatus();
   const allPass = stageResults.every((stage) => stage.status === "pass");
   const missingRealCredentials = externalProviders.filter((target) => !target.credentialConfigured);
   const report = {

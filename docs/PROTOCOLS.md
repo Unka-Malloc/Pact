@@ -1040,6 +1040,14 @@ v0.0.1 release readiness 语义：
 - `server:verify:v001` 聚合 Phase 0-4 verifier、迁移报告、Tool/Policy/MCP 注册和 renderer raw build，输出 `reports/v001-readiness/<run-id>/report.{json,md}`。
 - readiness report 的结论只能声明 v0.0.1 单机可交付；缺少真实外部凭据的 GitHub、Gerrit、Dify、RAGFlow、OneDrive、Google Drive 和 Dropbox 必须保留 `contractVerified`，不能被文案提升为真实外部 E2E、真实上传、真实同步或 production ready。
 
+v0.0.1 本地 secret 初始化入口：
+
+- `pact secret <provider> init` 和点号别名 `pact secret.<provider>.init` 是开发/运维 bootstrap 入口，支持 `github`、`gerrit`、`dify`、`ragflow`、`onedrive`、`google-drive` 和 `dropbox`。
+- CLI 必须从 stdin、环境变量或本地 JSON body 读取真实密钥，默认写入 `ServerConfig.getDataDir()/secrets`；仓库内只保留 source、模板和默认 manifest，不保存真实 token。
+- `secrets/registry.json` 只保存脱敏索引、`secretRef`、字段名和配置状态；`secrets/values/*.json` 是本机 0600 权限密钥文件；`secrets/audit.jsonl` 记录初始化/更新审计。
+- CLI 同步更新运行态 `code-management/codespace-providers.json`、`knowledge/knowledge-backends.json` 或 `agent-workspaces/cloud-drive-connections.json`，这些 manifest 只能保存 `secretRef` / `endpointRef` 和 `credentialConfigured`，不能保存 token value。
+- `server:verify:v001` 可以把本地 secret store 识别为 `credentialConfigured`，但仍不声明真实外部 E2E；只有 provider 专用 live verifier 或真实 adapter receipt 可以把某条链路提升为真实验证。
+
 Gerrit upload 的完成判定不能只看 `git push` 进程退出码。`workspace.code.change.upload` / MCP concrete operation `pact.workspace.code.change.upload` 必须在 push 退出 0 后继续通过 Gerrit REST 查询上传的 `HEAD` commit，直到 Gerrit 返回 change 且 `current_revision` 或 revisions 中包含该 commit，才能把操作标记为 `completed`。确认结果必须进入响应的 `completion` 字段，并通过 `GET /mcp` SSE 向同一 grant 推送 `notifications/pact/operation_reply`；如果确认超时或无法证明 Gerrit 已接收该 revision，则整个 upload 返回失败，不能推送 completed 回信。
 
 Agent-facing Gerrit MCP 操作：

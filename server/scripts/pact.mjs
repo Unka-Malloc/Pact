@@ -15,6 +15,16 @@ import {
   resolveFeatureRuntimeFromEnv
 } from "../platform/interactive/features/feature-manifest.mjs";
 import { getDefaultServerUrl, DEFAULT_SERVER_PORT } from "../config/ServerEnv.mjs";
+import {
+  LOCAL_SECRET_TARGETS,
+  defaultEndpointRefForProvider,
+  defaultSecretRefForProvider,
+  initializeLocalSecret,
+  listLocalSecretEntries,
+  localSecretStorePaths,
+  normalizeLocalSecretProvider,
+  resolveLocalSecretTarget
+} from "../platform/common/security/secrets/local-secret-store.mjs";
 
 const DEFAULT_SERVER_URL = process.env.PACT_SERVER_URL || getDefaultServerUrl();
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
@@ -79,6 +89,9 @@ function usage() {
     "  pact agents create --name NAME --model MODEL [--provider deepseek] [--api-key KEY]",
     "  pact agents update --id AGENT_UID [--name NAME] [--model MODEL] [--system-prompt TEXT]",
     "  pact agents delete --id AGENT_UID",
+    "  pact secret gerrit init --base-url URL --username USER --http-password-stdin [--mode live]",
+    "  pact secret dify init --endpoint URL --api-key-stdin",
+    "  pact secret list|status",
     "  pact tools catalog|toolsets|toolsets resolve|execute|dry-run|audit|metrics ...",
     "  pact tools grants list|create|rotate|revoke ...",
     "  pact tools policy preview --body preview.json",
@@ -96,6 +109,11 @@ function usage() {
     "  --confirm              Add confirm=true for repair_write operations",
     "  --output FILE           Save response body",
     "  --pretty               Pretty-print JSON responses",
+    "  --json-stdin           Read a secret JSON object from stdin for pact secret ... init",
+    "  --token-stdin          Read an opaque token from stdin for pact secret ... init",
+    "  --api-key-stdin        Read an API key from stdin for pact secret ... init",
+    "  --http-password-stdin  Read a Gerrit HTTP password from stdin for pact secret ... init",
+    "  --oauth-json-stdin     Read an OAuth JSON object from stdin for pact secret ... init",
     "",
     "Upload options:",
     "  --file FILE             Upload one file; repeatable",
@@ -606,6 +624,208 @@ function requireValue(args, key) {
   return String(value);
 }
 
+function secretCommandFromArgs(args) {
+  const first = String(args._[0] || "");
+  if (first.startsWith("secret.")) {
+    const [, provider = "", action = "init"] = first.split(".");
+    return {
+      matched: true,
+      action: action || "init",
+      provider: provider || args.provider || args._[1] || ""
+    };
+  }
+  if (first !== "secret" && first !== "secrets") {
+    return { matched: false, action: "", provider: "" };
+  }
+  const second = String(args._[1] || "");
+  const third = String(args._[2] || "");
+  if (!second || ["list", "status", "targets"].includes(second)) {
+    return {
+      matched: true,
+      action: second || "status",
+      provider: args.provider || ""
+    };
+  }
+  if (second === "init") {
+    return {
+      matched: true,
+      action: "init",
+      provider: args.provider || third || ""
+    };
+  }
+  return {
+    matched: true,
+    action: third || "init",
+    provider: second || args.provider || ""
+  };
+}
+
+async function readStdinText() {
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function trimOneTrailingNewline(value) {
+  return String(value ?? "").replace(/\r?\n$/, "");
+}
+
+function mergeIfPresent(target, key, value) {
+  if (value !== undefined && value !== null && value !== true && value !== "") {
+    target[key] = String(value);
+  }
+}
+
+function parseSecretJson(raw, label) {
+  const parsed = parseJsonText(raw, label);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
+}
+
+async function readSecretPayload(args, target) {
+  let payload = {};
+  if (args.body !== undefined || args["body-file"]) {
+    payload = await readBody(args);
+  }
+
+  const stdinFlags = [
+    ["json-stdin", "json"],
+    ["token-stdin", "token"],
+    ["api-key-stdin", "apiKey"],
+    ["http-password-stdin", "httpPassword"],
+    ["oauth-json-stdin", "oauth"]
+  ].filter(([flag]) => args[flag]);
+
+  if (stdinFlags.length > 1) {
+    throw new Error("Only one stdin secret source can be used at a time.");
+  }
+  if (stdinFlags.length === 1) {
+    const [flag, key] = stdinFlags[0];
+    const textValue = await readStdinText();
+    if (key === "json") {
+      payload = {
+        ...payload,
+        ...parseSecretJson(textValue, `--${flag}`)
+      };
+    } else if (key === "oauth") {
+      payload = {
+        ...payload,
+        oauth: parseSecretJson(textValue, `--${flag}`)
+      };
+    } else {
+      payload = {
+        ...payload,
+        [key]: trimOneTrailingNewline(textValue)
+      };
+    }
+  }
+
+  if (args["from-env"]) {
+    const envName = String(args["from-env"]);
+    const value = process.env[envName];
+    if (!value) {
+      throw new Error(`Environment variable is not set: ${envName}`);
+    }
+    const envSpec = target.envSecrets.find((item) => item.name === envName);
+    payload[envSpec?.key || "value"] = value;
+  }
+
+  if (Object.keys(payload).length === 0) {
+    const envSpec = target.envSecrets.find((item) => process.env[item.name]);
+    if (envSpec) {
+      payload[envSpec.key] = process.env[envSpec.name];
+    }
+  }
+
+  if (args["private-key-file"]) {
+    payload.privateKey = await fsp.readFile(path.resolve(String(args["private-key-file"])), "utf8");
+  }
+
+  mergeIfPresent(payload, "username", args.username);
+  mergeIfPresent(payload, "appId", args["app-id"] || args.appId);
+  mergeIfPresent(payload, "installationId", args["installation-id"] || args.installationId);
+  mergeIfPresent(payload, "clientId", args["client-id"] || args.clientId);
+  mergeIfPresent(payload, "tenantId", args["tenant-id"] || args.tenantId);
+  mergeIfPresent(payload, "scope", args.scope);
+  return payload;
+}
+
+async function runSecretCommand(args) {
+  const command = secretCommandFromArgs(args);
+  if (!command.matched) {
+    return false;
+  }
+  const action = String(command.action || "status");
+  if (action === "targets") {
+    await writeResponse({
+      args,
+      result: {
+        ok: true,
+        targets: Object.values(LOCAL_SECRET_TARGETS).map((target) => ({
+          provider: target.provider,
+          aliases: target.aliases,
+          family: target.family,
+          secretRef: target.secretRef,
+          endpointRef: target.endpointRef,
+          authType: target.authType,
+          defaultMode: target.defaultMode,
+          env: target.envSecrets.map((item) => item.name)
+        }))
+      }
+    });
+    return true;
+  }
+  if (action === "list" || action === "status") {
+    const paths = localSecretStorePaths({ dataDir: args["data-dir"] });
+    const entries = await listLocalSecretEntries({ dataDir: args["data-dir"] });
+    await writeResponse({
+      args,
+      result: {
+        ok: true,
+        protocolVersion: "pact.local-secret-store.v1",
+        dataDir: paths.dataDir,
+        registryPath: paths.registryPath,
+        count: entries.length,
+        entries
+      }
+    });
+    return true;
+  }
+  if (action !== "init") {
+    throw new Error(`未知 secret 命令：${args._.join(" ")}`);
+  }
+
+  const provider = normalizeLocalSecretProvider(command.provider || args.provider);
+  const target = resolveLocalSecretTarget(provider);
+  if (!target) {
+    throw new Error(`Unsupported Pact secret provider: ${command.provider || args.provider || ""}`);
+  }
+  const payload = await readSecretPayload(args, target);
+  const endpoint = String(args.endpoint || args["base-url"] || args.url || "").trim();
+  const metadata = {
+    label: args.label || "",
+    workspaceId: args["workspace-id"] || args.workspaceId || "",
+    driveRef: args["drive-ref"] || args.driveRef || ""
+  };
+  const result = await initializeLocalSecret({
+    dataDir: args["data-dir"],
+    provider,
+    secretRef: args["secret-ref"] || defaultSecretRefForProvider(provider),
+    endpointRef: args["endpoint-ref"] || defaultEndpointRefForProvider(provider),
+    endpoint,
+    mode: args.mode || "",
+    authType: args["auth-type"] || args.authType || "",
+    payload,
+    metadata
+  });
+  await writeResponse({ args, result });
+  return true;
+}
+
 async function runRpc(args) {
   const method = String(args.method || args.m || "GET").toUpperCase();
   const apiPath = normalizeApiPath(requireValue(args, "path"));
@@ -918,6 +1138,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help || args.h) {
     console.log(usage());
+    return;
+  }
+
+  if (await runSecretCommand(args)) {
     return;
   }
 
