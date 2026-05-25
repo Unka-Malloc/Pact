@@ -16,7 +16,7 @@
 | 协议操作定义 | 52 | 全部追加进 `SERVER_API_OPERATIONS`。 |
 | 已注册并可发现 | 52 | 已通过 HTTP/RPC/Tool Management/MCP 发现验证。 |
 | 明确空后端 | 3 | 运行时返回 `not_implemented`，只能算 `contract_registered`。 |
-| P0 旧“零实现”模块 | 0 | workspace contribution 与 knowledge access 已有执行器；code review 已有 Gerrit upload route，但仍有轻量占位操作。 |
+| P0 旧“零实现”模块 | 0 | workspace contribution、knowledge access 和 code management 均已有执行器/provider 后端；剩余空后端集中在知识导出与原始语料转换。 |
 
 ## 按子系统统计
 
@@ -25,7 +25,7 @@
 | authorization | 7 | 0 | 已统一进入 authorization engine/store。 |
 | workspace-contribution | 8 | 0 | 已接入 contribution registry，支持 submit/list/leaderboard/stats/report/permission grant。 |
 | knowledge-access | 4 | 0 | 已接入 `evaluateKnowledgeAccess` 和 authorization store receipt/loan/denied list。 |
-| code-management | 5 | 0 | `workspace.code.change.upload` 已走 Gerrit upload；target/prepare/link/status 仍偏轻量占位，未形成完整 Codespace 持久化。 |
+| code-management | 5 | 0 | `workspace.code.*` 已接入 Codespace registry/provider，覆盖 target evaluation、changeSet prepare、Gerrit upload receipt、review target link、status sync 与 fallback event。 |
 | workspace-file | 6 | 0 | upload/list/download/read/write/patch 已接入 agent workspace file backend。 |
 | checkpoint | 7 | 0 | tree/node/diff/scope/restore preview/restore 已接入 checkpoint tree backend；operation revert scope 已接入 operation audit store。 |
 | workspace-proposal | 2 | 0 | create/apply 已接入 agent workspace submission/decision 后端，proposal 必须先审核再形成 decision。 |
@@ -53,11 +53,11 @@ Checkpoint 注意事项：`workspace.checkpoint.restore` 仍由通用 checkpoint
 | --- | --- | --- | --- |
 | `pact.workspace-contribution.v1` | 有协议、零实现 | 已有 operation registry、system handler、console domain executor 和 contribution registry 后端 | 仍需更完整的资产持久化、权限生命周期验证和 workspace 视角 E2E。 |
 | `pact.knowledge-access.v1` | 有协议、零实现 | 已有 evaluate/receipt/loan/denied request 操作，并写入 authorization store | 仍需把 evidence/export/context injection 全链路纳入同一源头权限裁决。 |
-| `pact.code-review.v1` | 有协议、零实现 | Gerrit upload route 已是真实后端；target/prepare/link/status 仍是轻量协议 facade | 需要 Codespace 持久化、review target registry、状态同步后端和验收脚本。 |
+| `pact.code-review.v1` | 有协议、零实现 | 已有 Codespace registry/provider 与 Gerrit upload route；target/prepare/link/status 不再是轻量 facade | 后续风险转为真实组织策略、更多 review provider 和权限迁移，不再是 P0 注册/后端缺口。 |
 
 ## 下一步顺序
 
-1. 代码管理继续：共享空间 checkpoint/proposal/file/contribution 已完成后端和验证闭环；下一步优先补 Codespace 持久化、review target registry、状态同步后端和验收脚本。
-2. 知识转化其次：补 `raw-corpus.format.convert`、`knowledge.dossier.export`、`knowledge.distillation.export`，避免知识协议只完成检索/访问而缺少转换和导出闭环。
-3. 代码管理第三：把 target/prepare/link/status 从轻量 facade 升级为 Codespace 持久化和 Gerrit 状态同步后端。
+1. 知识转化继续：补 `raw-corpus.format.convert`、`knowledge.dossier.export`、`knowledge.distillation.export`，避免知识协议只完成检索/访问而缺少转换和导出闭环。
+2. 安全权限迁移：console/auth/tool/workspace/codespace 权限统一进入 authorization engine / policy provider。
+3. 接口封装层继续：`api-facade`、`jobs-controller` 和 MCP adapter 按 Checklist 横切任务拆分。
 4. 每补一个子系统，必须同步更新 `docs/SUBSYSTEM-REFACTOR-CHECKLIST.md`，并增加或扩展 `server:verify:*` 覆盖。

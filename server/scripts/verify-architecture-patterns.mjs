@@ -174,6 +174,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const runtimeConsoleSummaryFile = "server/platform/specialized/console/runtime-console-summary.mjs";
   const toolManagementConnectionsFile = "server/platform/specialized/console/tool-management-client-connections.mjs";
   const wordCloudFile = "server/platform/specialized/console/knowledge-word-cloud-operation-executor.mjs";
+  const codespaceModuleFile = "server/platform/specialized/capabilities/code-management/codespace/module.json";
   const dispatcher = await read(dispatcherFile);
   const apiFacade = await read(apiFacadeFile);
   const jobsController = await read(jobsControllerFile);
@@ -195,6 +196,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
   const runtimeConsoleSummary = await read(runtimeConsoleSummaryFile);
   const toolManagementConnections = await read(toolManagementConnectionsFile);
   const wordCloud = await read(wordCloudFile);
+  const codespaceModule = await read(codespaceModuleFile);
 
   for (const needle of [
     "dispatchInternalOperation",
@@ -1154,6 +1156,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "createDataConnectorGovernance",
     "runPerformanceCapacityBenchmark",
     "createContributionRegistry",
+    "createCodespaceRegistry",
     "evaluateKnowledgeAccess",
     "executeWorkspaceContributionOperation",
     "executeKnowledgeAccessOperation",
@@ -1347,6 +1350,7 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
       "tool_management.http.passthrough",
       "handleToolManagementHttpRequest",
       "__responseHandled",
+      "executeCodeManagementOperation",
       "executeProtocolFacadeOperation",
       "workspace.file.patch",
       "workspace.checkpoint.diff",
@@ -1377,6 +1381,15 @@ async function assertCommonConsoleDelegatesSpecializedOperations() {
     "executeConsoleDomainOperation"
   ]) {
     assertTextIncludes(executor, needle, `${executorFile} must own specialized console operation ${needle}`);
+  }
+  for (const needle of [
+    "CodespaceManagement",
+    "pact.codespace.v1",
+    "workspace.code.change.prepare",
+    "workspace.code.change.status.sync",
+    "code-management/codespace-registry.json"
+  ]) {
+    assertTextIncludes(codespaceModule, needle, `${codespaceModuleFile} must declare the Codespace provider contract ${needle}`);
   }
   for (const needle of [
     "executeKnowledgeWordCloudOperation",

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "name": "CodespaceManagement",
+  "version": 1,
+  "category": "application-capability",
+  "applicationSubsystem": "code-management",
+  "description": "Persistent Codespace registry for workspace code route target evaluation, change preparation, Gerrit upload receipts, review target links, and status synchronization.",
+  "defaultLoaded": true,
+  "protocol": "pact.codespace.v1",
+  "components": {
+    "codespaceRegistry": {
+      "path": "./index.mjs",
+      "factory": "createCodespaceRegistry",
+      "exports": [
+        "CODESPACE_PROTOCOL_VERSION",
+        "createCodespaceRegistry"
+      ],
+      "operations": [
+        "workspace.code.target.evaluate",
+        "workspace.code.change.prepare",
+        "workspace.code.change.upload",
+        "workspace.code.change.link",
+        "workspace.code.change.status.sync"
+      ],
+      "requiredScopes": [
+        "repo:read",
+        "repo:write",
+        "repo:maintain"
+      ],
+      "maxRisk": "repair_write",
+      "auditRequired": true
+    }
+  },
+  "providers": [
+    "gerrit"
+  ],
+  "storage": {
+    "registryFile": "code-management/codespace-registry.json"
+  },
+  "verification": [
+    "npm run server:verify:codespace --silent",
+    "npm run server:verify:gerrit-mcp --silent",
+    "npm run server:verify:protocol-operations --silent"
+  ]
+}

@@ -1355,17 +1355,22 @@ Gerrit route 的最小状态模型：
 CodeChange {
   codeChangeId
   workspaceId
+  targetId
   repositoryId
+  repositoryRef
   branch
   localWorktreeRef
+  changeSetId
   commitRefs
   changeId
+  changeRef
   gerritChangeUrl
   patchSetRefs
   reviewStatus
   submitStatus
   routeDecision
   fallbackReason
+  uploadReceipt
   auditId
   createdAt
   updatedAt
@@ -1374,7 +1379,7 @@ CodeChange {
 
 Gerrit route 必须遵守这些边界：
 
-- Gerrit 保存代码 diff 和 review 历史；Pact 保存治理元数据、引用、hash、权限裁决、审计和 checkpoint。
+- Gerrit 保存代码 diff 和 review 历史；Pact Codespace registry 保存治理元数据、target registry、changeSet、引用、hash、权限裁决、upload receipt、status projection、审计和 checkpoint。
 - Pact 可以调用本地 git 工具准备 commit、检查 diff、生成 Change-Id、执行测试和 push `refs/for/<branch>`，但不能把裸 git push 暴露给任意智能体。
 - Gerrit change 状态必须同步回 Workspace projection，让控制台能按 workspace、任务、主体、仓库、分支和 review 状态过滤。
 - Gerrit 的 review comment、submit、abandon、rebase 和 merge 结果都要形成 Operation Ledger event 和 checkpoint node。

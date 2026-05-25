@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createWorkspaceGovernanceRegistry } from "../agent/workspace-governance/index.mjs";
 import { createContributionRegistry } from "../agent/workspace-contribution/index.mjs";
+import { createCodespaceRegistry } from "../capabilities/code-management/codespace/index.mjs";
 import { createCapabilityPackageRegistry } from "../capabilities/package-lifecycle/index.mjs";
 import { createAssetLineageRegistry } from "../knowledge/assets/asset-lineage/index.mjs";
 import { evaluateKnowledgeAccess } from "../knowledge/agent-library/access-policy.mjs";
@@ -73,6 +74,7 @@ import { getBackgroundProcessStatus } from "../../common/devops/process-status/b
 import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorization/authorization-engine.mjs";
 
 const contributionRegistries = new Map();
+const codespaceRegistries = new Map();
 const knowledgeDistillationWorkbenchInstances = new Map();
 const workspaceAssetPolicies = new Map();
 const PATH_BROWSER_MAX_ENTRIES = 600;
@@ -652,6 +654,18 @@ function contributionRegistryFor(input = {}, context = {}) {
     contributionRegistries.set(registryWorkspaceId, createContributionRegistry({ workspaceId: registryWorkspaceId }));
   }
   return contributionRegistries.get(registryWorkspaceId);
+}
+
+function codespaceRegistryFor(context = {}) {
+  const key = context.userDataPath || "default";
+  if (!codespaceRegistries.has(key)) {
+    codespaceRegistries.set(key, createCodespaceRegistry({
+      userDataPath: context.userDataPath,
+      executeGerritCommonOperation,
+      uploadGerritGitChange
+    }));
+  }
+  return codespaceRegistries.get(key);
 }
 
 function requireRuntimeMethod(runtime, methodName, message) {
@@ -5999,6 +6013,57 @@ async function executeWorkspaceGovernanceOperation({ operationId, input, context
   return null;
 }
 
+async function executeCodeManagementOperation({ operationId, input = {}, context }) {
+  const id = String(operationId || "");
+  const handledOperations = new Set([
+    "workspace.code.target.evaluate",
+    "workspace.code.change.prepare",
+    "workspace.code.change.upload",
+    "workspace.code.change.link",
+    "workspace.code.change.status.sync"
+  ]);
+  if (!handledOperations.has(id)) {
+    return null;
+  }
+  const codespace = codespaceRegistryFor(context);
+  try {
+    if (id === "workspace.code.target.evaluate") {
+      return result(200, protocolPayload(await codespace.evaluateTarget({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      })));
+    }
+    if (id === "workspace.code.change.prepare") {
+      return result(200, protocolPayload(await codespace.prepareChange({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      })));
+    }
+    if (id === "workspace.code.change.upload") {
+      const operationResult = await codespace.uploadChange({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      });
+      return result(operationResult.ok ? 200 : operationResult.status || 400, operationResult);
+    }
+    if (id === "workspace.code.change.link") {
+      return result(200, protocolPayload(await codespace.linkChange({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      })));
+    }
+    if (id === "workspace.code.change.status.sync") {
+      return result(200, protocolPayload(await codespace.syncStatus({
+        ...input,
+        actorId: actorFrom(context.authSession, input)
+      })));
+    }
+  } catch (error) {
+    return result(400, errorPayload(error, "Codespace operation failed."));
+  }
+  return null;
+}
+
 async function executeProtocolFacadeOperation({ operationId, input = {} }) {
   const id = String(operationId || "");
   const notImplementedBackends = {
@@ -6006,65 +6071,6 @@ async function executeProtocolFacadeOperation({ operationId, input = {} }) {
     "knowledge.dossier.export": "knowledgeDossierExporter",
     "knowledge.distillation.export": "knowledgeDistillationExporter"
   };
-
-  if (id === "workspace.code.target.evaluate") {
-    const codeKinds = new Set(["sourceCode", "patch", "gitDiff", "repositoryChange"]);
-    const routeDecision = codeKinds.has(String(input.payloadKind || ""))
-      ? "gerritChange"
-      : "workspaceContribution";
-    return result(200, protocolPayload({
-      accepted: true,
-      routeDecision,
-      compatibleTargets: [{
-        targetKind: routeDecision,
-        repositoryId: input.repositoryHint || input.repositoryId || "",
-        branch: input.branchHint || input.branch || "main",
-        reason: routeDecision === "gerritChange"
-          ? "source code changes require review"
-          : "payload can remain a workspace contribution"
-      }],
-      policyDecision: "allow",
-      fallbackReason: "",
-      auditId: `code_route_${crypto.randomUUID()}`
-    }));
-  }
-
-  if (id === "workspace.code.change.prepare") {
-    return result(200, protocolPayload({
-      codeChangeId: input.codeChangeId || `code_change_${crypto.randomUUID()}`,
-      workspaceId: workspaceIdFrom(input),
-      repositoryId: input.repositoryId || input.repositoryHint || "",
-      branch: input.branch || input.branchHint || "main",
-      reviewStatus: "draft",
-      submitStatus: "notSubmitted",
-      operationId: "workspace.code.change.prepare",
-      checkpointNodeId: input.checkpointNodeId || "",
-      auditId: `code_prepare_${crypto.randomUUID()}`,
-      diff: input.diff || "",
-      commitPlan: input.commitPlan || []
-    }));
-  }
-
-  if (id === "workspace.code.change.link") {
-    return result(200, protocolPayload({
-      codeChangeId: input.codeChangeId || `code_change_${crypto.randomUUID()}`,
-      workspaceId: workspaceIdFrom(input),
-      changeId: input.changeId || "",
-      gerritChangeUrl: input.gerritChangeUrl || "",
-      operationId: "workspace.code.change.link",
-      auditId: `code_link_${crypto.randomUUID()}`
-    }));
-  }
-
-  if (id === "workspace.code.change.status.sync") {
-    return result(200, protocolPayload({
-      codeChangeId: input.codeChangeId || input.changeId || "",
-      reviewStatus: input.reviewStatus || "open",
-      submitStatus: input.submitStatus || "notSubmitted",
-      operationId: "workspace.code.change.status.sync",
-      auditId: `code_status_${crypto.randomUUID()}`
-    }));
-  }
 
   if (Object.prototype.hasOwnProperty.call(notImplementedBackends, id)) {
     return contractRegisteredNotImplemented(id, {
@@ -6262,6 +6268,7 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeAgentWorkspaceManagementOperation,
     executeCapabilityPackageOperation,
     executeWorkspaceGovernanceOperation,
+    executeCodeManagementOperation,
     executeProtocolFacadeOperation,
     executeGerritOperation,
     executeRepoDomainOperation,

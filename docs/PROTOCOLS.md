@@ -950,7 +950,7 @@ Skill 贡献排行榜演示：
 
 ## Code Review Route Protocol
 
-`pact.code-review.v1` 管理代码上传的目标选择、Gerrit change 创建和状态同步。它不是 Git API 的裸代理，也不是 Workspace Asset API 的替代品；它是 Workspace API 下的一条代码贡献路线。
+`pact.code-review.v1` 管理代码上传的目标选择、Gerrit change 创建和状态同步。它不是 Git API 的裸代理，也不是 Workspace Asset API 的替代品；它是 Workspace API 下的一条代码贡献路线。Pact 内部由 `pact.codespace.v1` 的 Codespace registry/provider 持久化 target、CodeChange、changeSet、review target link、upload receipt、status sync 和 fallback event。
 
 目标兼容评估请求：
 
@@ -977,25 +977,29 @@ Skill 贡献排行榜演示：
   "routeDecision": "gerritChange|workspaceAsset|workspaceContribution|proposalFallback|reject",
   "compatibleTargets": [
     {
+      "targetId": "code_target_id",
       "targetKind": "gerritChange",
+      "targetProvider": "gerrit",
       "repositoryId": "repo_id",
+      "repositoryRef": "repo_or_remote",
       "branch": "main",
       "reason": "source code changes require review"
     }
   ],
   "policyDecision": "allow|deny|needsApproval",
   "fallbackReason": null,
+  "fallback": null,
   "auditId": "audit_id"
 }
 ```
 
 公开操作：
 
-- `workspace.code.target.evaluate`：只做分类、策略和兼容目标判断，不写代码。
-- `workspace.code.change.prepare`：创建或复用本地 git worktree，应用 patch / 文件变更，生成 diff、commit plan 和 Change-Id 预检查。
-- `workspace.code.change.upload`：在策略通过后执行受控 `git push refs/for/<branch>`，创建 Gerrit change 或新的 patch set。
-- `workspace.code.change.link`：把已有 Gerrit change 与 workspace task / operation / contribution 关联。
-- `workspace.code.change.status.sync`：从 Gerrit 同步 review、submit、abandon、merge、rebase 和 conflict 状态。
+- `workspace.code.target.evaluate`：只做分类、策略和兼容目标判断，不写代码；结果进入 Codespace target registry。
+- `workspace.code.change.prepare`：创建或复用本地 git worktree，应用 patch / 文件变更，生成 diff、commit plan 和 Change-Id 预检查；结果作为 `changeSet` 进入 Codespace registry。
+- `workspace.code.change.upload`：在策略通过后执行受控 `git push refs/for/<branch>`，创建 Gerrit change 或新的 patch set；Gerrit 确认 receipt 回写到 CodeChange。
+- `workspace.code.change.link`：把已有 Gerrit change 与 workspace task / operation / contribution 关联，并追加 `code.change.linked` event。
+- `workspace.code.change.status.sync`：从 Gerrit 同步 review、submit、abandon、merge、rebase 和 conflict 状态，并追加 `code.change.status.synced` event。
 
 Gerrit upload 的完成判定不能只看 `git push` 进程退出码。`workspace.code.change.upload` / MCP concrete operation `pact.workspace.code.change.upload` 必须在 push 退出 0 后继续通过 Gerrit REST 查询上传的 `HEAD` commit，直到 Gerrit 返回 change 且 `current_revision` 或 revisions 中包含该 commit，才能把操作标记为 `completed`。确认结果必须进入响应的 `completion` 字段，并通过 `GET /mcp` SSE 向同一 grant 推送 `notifications/pact/operation_reply`；如果确认超时或无法证明 Gerrit 已接收该 revision，则整个 upload 返回失败，不能推送 completed 回信。
 
@@ -1012,16 +1016,29 @@ Agent-facing Gerrit MCP 操作：
 {
   "codeChangeId": "code_change_id",
   "workspaceId": "workspace_id",
+  "targetId": "code_target_id",
   "repositoryId": "repo_id",
+  "repositoryRef": "repo_or_remote",
   "branch": "main",
   "changeId": "I...",
+  "changeRef": "I...|42",
   "gerritChangeUrl": "http://gerrit/c/project/+/123",
   "patchSetRefs": ["patch_set_ref"],
   "reviewStatus": "draft|open|reviewed|submitted|merged|abandoned",
   "submitStatus": "notSubmitted|submitted|merged|failed",
   "operationId": "operation_id",
   "checkpointNodeId": "checkpoint_node_id",
-  "auditId": "audit_id"
+  "auditId": "audit_id",
+  "changeSet": {"changeSetId": "change_set_id"},
+  "target": {
+    "targetKind": "codespace",
+    "targetProvider": "gerrit",
+    "repositoryRef": "repo_or_remote",
+    "branch": "main",
+    "changeRef": "I...|42",
+    "reviewUrl": "http://gerrit/c/project/+/123"
+  },
+  "completion": {"confirmed": true}
 }
 ```
 
@@ -1029,7 +1046,7 @@ Agent-facing Gerrit MCP 操作：
 
 - `payloadKind=sourceCode|patch|gitDiff|repositoryChange` 默认返回 `gerritChange` 兼容目标；只有策略明确判断为知识材料、报告附件、样例或 fallback 时才走 workspace asset。
 - MCP、CLI 和控制台都不能把裸 `git push` 暴露成通用工具；它们只能调用 `workspace.code.change.upload`，由服务端注入身份、策略、目标仓库和审计。
-- Gerrit 保存 diff、patch set、review comment 和 submit 结果；Pact 保存 route decision、policyDecision、hash/reference、operation、checkpoint 和 audit。
+- Gerrit 保存 diff、patch set、review comment 和 submit 结果；Pact Codespace registry 保存 route decision、policyDecision、hash/reference、operation、checkpoint、upload receipt、status projection 和 audit event。
 - 状态同步必须追加事件，不覆盖历史：`code.route.evaluated`、`code.change.prepared`、`code.change.uploaded`、`code.change.linked`、`code.change.status.synced`、`code.change.fallback.created`。
 - fallback 只能生成受控 proposal、artifact 或 `sourceCode` workspace asset，不能把可合并代码伪装成普通文件发布。
 

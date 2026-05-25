@@ -105,43 +105,48 @@ export function createSystemControllerWorkspaceProtocolHandlers({
         errorMessage: "审核并应用 workspace 提案失败。"
       });
     },
-    async handleWorkspaceCodeTargetEvaluate({ operation, requestBody, response }) {
+    async handleWorkspaceCodeTargetEvaluate({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.code.target.evaluate",
         input: protocolPayload(requestBody),
         response,
+        context: { authSession },
         errorMessage: "评估代码变更目标失败。"
       });
     },
-    async handleWorkspaceCodeChangePrepare({ operation, requestBody, response }) {
+    async handleWorkspaceCodeChangePrepare({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.code.change.prepare",
         input: protocolPayload(requestBody),
         response,
+        context: { authSession },
         errorMessage: "准备代码变更失败。"
       });
     },
-    async handleWorkspaceCodeChangeUpload({ requestBody, response }) {
+    async handleWorkspaceCodeChangeUpload({ requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: "workspace.code.change.upload",
         input: protocolPayload(requestBody),
         response,
+        context: { authSession },
         errorMessage: "Workspace code change upload failed."
       });
     },
-    async handleWorkspaceCodeChangeLink({ operation, requestBody, response }) {
+    async handleWorkspaceCodeChangeLink({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.code.change.link",
         input: protocolPayload(requestBody),
         response,
+        context: { authSession },
         errorMessage: "关联代码变更与 workspace 失败。"
       });
     },
-    async handleWorkspaceCodeChangeStatusSync({ operation, requestBody, response }) {
+    async handleWorkspaceCodeChangeStatusSync({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.code.change.status.sync",
         input: protocolPayload(requestBody),
         response,
+        context: { authSession },
         errorMessage: "同步代码评审状态失败。"
       });
     },
