@@ -526,6 +526,21 @@ fn main() -> Result<()> {
             Ok(())
         }
         [scope, area, action, rest @ ..]
+            if scope == "mcp"
+                && area == "plugin"
+                && matches!(action.as_str(), "status" | "update" | "rollback") =>
+        {
+            let params = cli_params(rest);
+            let result = match action.as_str() {
+                "status" => pact_client_native::mcp_plugins::plugin_status(&params)?,
+                "update" => pact_client_native::mcp_plugins::plugin_update(&params)?,
+                "rollback" => pact_client_native::mcp_plugins::plugin_rollback(&params)?,
+                _ => unreachable!(),
+            };
+            print_json(&result);
+            Ok(())
+        }
+        [scope, area, action, rest @ ..]
             if scope == "mcp" && area == "config" && action == "plan" =>
         {
             let params = cli_params(rest);
@@ -736,6 +751,7 @@ fn print_usage() {
   pact-client targets scan
   pact-client targets add --target <target> [--config-path PATH] [--binary-path PATH]
   pact-client targets inspect <target>
+  pact-client mcp plugin status|update|rollback --target <target> [--config-path PATH]
   pact-client mcp config plan --target <target> [--config-path PATH]
   pact-client mcp config apply --target <target> [--config-path PATH]
   pact-client mcp config rollback --target <target> [--snapshot-id ID]
