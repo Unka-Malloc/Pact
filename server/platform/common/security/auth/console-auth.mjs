@@ -729,6 +729,46 @@ export function createConsoleAuth({ userDataPath }) {
     };
   }
 
+  function rotateSession(request) {
+    const cookies = parseCookies(request);
+    const currentToken = cookies[CONSOLE_SESSION_COOKIE] || "";
+    const currentSession = sessionFromToken(currentToken, request);
+    if (!currentSession) {
+      return { ok: false, status: 401, error: "控制台未登录。" };
+    }
+    const token = randomToken();
+    const csrfToken = computeCsrfToken(token);
+    const rotatedAt = nowIso();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+    db.prepare(`
+      UPDATE console_sessions
+      SET token_hash = ?, csrf_token = '', last_seen_at = ?, expires_at = ?
+      WHERE session_id = ?
+    `).run(
+      hashToken(token),
+      rotatedAt,
+      expiresAt,
+      currentSession.sessionId
+    );
+    const session = sessionFromToken(token, request);
+    return {
+      ok: true,
+      session,
+      csrfToken,
+      rotatedAt,
+      cookies: [
+        cookieHeader(CONSOLE_SESSION_COOKIE, token, request, {
+          httpOnly: true,
+          maxAge: Math.floor(SESSION_TTL_MS / 1000)
+        }),
+        cookieHeader(CONSOLE_CSRF_COOKIE, csrfToken, request, {
+          httpOnly: false,
+          maxAge: Math.floor(SESSION_TTL_MS / 1000)
+        })
+      ]
+    };
+  }
+
   async function updateUser(userId, patch = {}) {
     const current = getUserByIdStmt.get(String(userId || ""));
     if (!current) {
@@ -1083,6 +1123,7 @@ export function createConsoleAuth({ userDataPath }) {
     bootstrapOwner,
     login,
     logout,
+    rotateSession,
     listUsers,
     createUser,
     updateUser,

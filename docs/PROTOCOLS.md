@@ -85,6 +85,7 @@
 - `auth.audit.export` / `GET /api/auth/audit/export`：导出脱敏审计包；secret、token、cookie、API key 和本机绝对路径不得出现在导出内容中。
 - `auth.audit.retention.get|set` / `GET|POST /api/auth/audit/retention`：读取或设置审计保留策略。
 - `auth.audit.prune` / `POST /api/auth/audit/prune`：按保留策略清理过期审计。
+- `auth.sessions.rotate` / `POST /api/auth/sessions/rotate`：轮换当前控制台 session token 和 HMAC-derived CSRF token，旧 session token 立即失效，并写入审计。
 - `observability.trace.get` / `GET /api/observability/traces/:traceId`：按 traceId 聚合 operation audit span 和 authorization decision，作为本地 trace drill-down 的事实源。OpenTelemetry / OTLP 只是后续可选导出目标。
 
 ## Middle Layer Strategy

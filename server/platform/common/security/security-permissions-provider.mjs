@@ -105,6 +105,12 @@ export function createSecurityPermissionsProvider({
       }
       return consoleAuth.logout(request);
     },
+    rotateSession(request = null) {
+      if (typeof consoleAuth?.rotateSession !== "function") {
+        return { ok: false, status: 503, error: "Console session rotation provider is unavailable." };
+      }
+      return consoleAuth.rotateSession(request);
+    },
     audit(entry = {}) {
       return typeof consoleAuth?.audit === "function" ? consoleAuth.audit(entry) : null;
     },

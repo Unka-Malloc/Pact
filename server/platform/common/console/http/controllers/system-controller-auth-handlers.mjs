@@ -145,6 +145,14 @@ export function createSystemControllerAuthHandlers({
         errorMessage: "读取控制台会话失败。"
       });
     },
+    async handleAuthRotateSession({ operation, request, authSession, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "auth.sessions.rotate",
+        response,
+        context: { securityPermissions, request, authSession, appendConsoleOperationLog },
+        errorMessage: "轮换控制台会话失败。"
+      });
+    },
     async handleAuthRevokeSession({ operation, sessionId, authSession, response }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "auth.sessions.revoke",

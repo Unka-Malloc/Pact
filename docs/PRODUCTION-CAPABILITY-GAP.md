@@ -355,7 +355,7 @@
 
 ### P0-07 安全、租户、权限和密钥边界未达到生产审计标准
 
-当前差距：已有 console auth、CSRF、Tool Management grant、scope、policy、tenant/resource ABAC 基础裁决、审计保留和脱敏导出，但生产还需要更完整的 secret management、工具沙箱、外部连接器真实 OAuth、企业级 token rotation、OTel 导出和跨真实外部系统的权限证据。
+当前差距：已有 console auth、CSRF、session token rotation、Tool Management grant、scope、policy、tenant/resource ABAC 基础裁决、审计保留和脱敏导出，但生产还需要更完整的 secret management、工具沙箱、外部连接器真实 OAuth、外部 connector token rotation、OTel 导出和跨真实外部系统的权限证据。
 
 对标依据：OpenTelemetry 和 Phoenix 都强调 trace/评估中的输入输出可见性，但这也要求敏感信息治理；企业生产中工具调用和知识检索必须能证明谁在何时访问了哪些数据、通过哪个 grant、输出给了谁。
 
@@ -374,6 +374,7 @@
 当前实现入口：
 
 - `server/platform/common/security/auth/console-auth.mjs` 和 `server/scripts/console-auth.mjs` 提供 owner/admin/operator/viewer、登录、session、token rotation、审计和初始凭据治理。
+- `auth.sessions.rotate` / `POST /api/auth/sessions/rotate` / `auth sessions rotate` 提供当前控制台 session token rotation；轮换后旧 session token 立即失效，新 CSRF token 由 session token HMAC 派生，并写入审计。
 - `server/platform/common/security/authorization/authorization-engine.mjs` 支持 subject/tool grant 的 `tenantId`、workspace allowlist、dataClass allowlist 和 egress allowlist；tenant mismatch、workspace/dataClass/egress 越界会写入 authorization decision 与 denied request audit。
 - `server/platform/common/security/operation-audit.mjs` 支持 tenant/trace 查询、审计保留策略、过期清理和脱敏 JSONL 导出，导出前统一调用 redaction policy，避免 secret、token、cookie、API key 和本机绝对路径进入审计包。
 - `/api/auth/audit/export`、`/api/auth/audit/retention`、`/api/auth/audit/prune` 和 `/api/observability/traces/:traceId` 提供 API/RPC/CLI 可达的内审、保留和 trace drill-down 路径。
