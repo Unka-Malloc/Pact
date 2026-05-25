@@ -467,6 +467,46 @@ fn main() -> Result<()> {
             )?);
             Ok(())
         }
+        [scope, area, action, rest @ ..]
+            if scope == "agents"
+                && area == "pair"
+                && matches!(action.as_str(), "request" | "approve" | "revoke" | "list") =>
+        {
+            let params = cli_params(rest);
+            let result = match action.as_str() {
+                "request" => pact_client_native::skill_hub::pair_request(&params)?,
+                "approve" => pact_client_native::skill_hub::pair_approve(&params)?,
+                "revoke" => pact_client_native::skill_hub::pair_revoke(&params)?,
+                "list" => pact_client_native::skill_hub::pair_list(&params)?,
+                _ => unreachable!(),
+            };
+            print_json(&result);
+            Ok(())
+        }
+        [scope, action, rest @ ..] if scope == "skill" && action == "list" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::skill_hub::skill_list(&params)?);
+            Ok(())
+        }
+        [scope, action, rest @ ..] if scope == "skill" && action == "get" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::skill_hub::skill_get(&params)?);
+            Ok(())
+        }
+        [scope, area, action, rest @ ..]
+            if scope == "skill" && area == "visibility" && action == "set" =>
+        {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::skill_hub::skill_visibility(
+                &params,
+            )?);
+            Ok(())
+        }
+        [scope, area, action, rest @ ..] if scope == "skill" && area == "pin" && action == "set" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::skill_hub::skill_pin(&params)?);
+            Ok(())
+        }
         [scope, action] if scope == "agents" && action == "list" => {
             let backend = Backend::from_portable_data_dir()?;
             print_json(&backend.execute_method("agents.list", json!({}), None)?);
@@ -686,6 +726,11 @@ fn print_usage() {
   pact-client activity list [--type TYPE] [--target TARGET] [--limit N]
   pact-client snapshots list [--target TARGET]
   pact-client snapshots restore <snapshot-id>
+  pact-client agents pair request|approve|revoke|list --agent AGENT [--target TARGET]
+  pact-client skill list --agent AGENT
+  pact-client skill get <skill-id> --agent AGENT --json
+  pact-client skill visibility set <skill-id> --agent AGENT --hidden true|false
+  pact-client skill pin set <skill-id> --agent AGENT --version VERSION
   pact-client agents sync [--service-url URL]
   pact-client agents list
   pact-client targets scan
