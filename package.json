@@ -183,6 +183,7 @@
     "server:verify:business-scenarios": "node server/scripts/verify-business-scenarios.mjs",
     "server:verify:mcp-opencode": "node server/scripts/verify-mcp-opencode.mjs",
     "server:verify:mcp-opencode-install": "node server/scripts/verify-mcp-opencode-install.mjs",
+    "server:verify:mcp-codex-install": "node server/scripts/verify-mcp-codex-install.mjs",
     "server:pack:offline:linux:x64": "node server/scripts/pack-offline-server.mjs --target linux-x64",
     "server:pack:offline:linux:arm64": "node server/scripts/pack-offline-server.mjs --target linux-arm64",
     "feature:plan": "node server/scripts/feature-profiles.mjs plan",
