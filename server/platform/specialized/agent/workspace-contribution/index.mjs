@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import fsSync from "node:fs";
+import path from "node:path";
+import { ServerConfig } from "../../../common/config/ServerConfig.mjs";
 
 export const WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION = "pact.workspace-contribution.v1";
 
@@ -6,6 +9,7 @@ export const CONTRIBUTION_STATES = Object.freeze([
   "submitted",
   "scanned",
   "reviewed",
+  "preview",
   "published",
   "rejected",
   "needs_changes",
@@ -20,6 +24,8 @@ export const CONTRIBUTION_TYPES = Object.freeze([
   "tool",
   "script",
   "file",
+  "sourceCode",
+  "codeChange",
   "goldenRule",
   "expertOpinion"
 ]);
@@ -27,14 +33,38 @@ export const CONTRIBUTION_TYPES = Object.freeze([
 const ALLOWED_TRANSITIONS = Object.freeze({
   submitted: ["scanned", "rejected", "needs_changes"],
   scanned: ["reviewed", "rejected", "needs_changes"],
-  reviewed: ["published", "rejected", "needs_changes"],
+  reviewed: ["preview", "published", "rejected", "needs_changes"],
+  preview: ["published", "rejected", "needs_changes"],
   published: ["adopted", "deprecated", "revoked"],
-  adopted: ["deprecated", "revoked"],
+  adopted: ["adopted", "deprecated", "revoked"],
   needs_changes: ["submitted", "rejected"],
   rejected: [],
   deprecated: ["revoked"],
   revoked: []
 });
+
+const REGISTRY_FILE = path.join("workspace-contribution", "registry.json");
+const ASSET_BUCKET_BY_TYPE = Object.freeze({
+  knowledge: "knowledge",
+  skill: "skills",
+  tool: "tools",
+  script: "scripts",
+  file: "files",
+  sourceCode: "files",
+  codeChange: "files",
+  goldenRule: "rules",
+  expertOpinion: "expert-opinions"
+});
+
+const FIXED_WORKSPACE_ASSET_BUCKETS = Object.freeze([
+  "skills",
+  "tools",
+  "scripts",
+  "files",
+  "knowledge",
+  "rules",
+  "expert-opinions"
+]);
 
 function asArray(value) {
   if (Array.isArray(value)) return value;
@@ -60,6 +90,115 @@ function stableId(prefix, input) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function stableJson(value) {
+  if (value === null || value === undefined) return "null";
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function dataRoot(userDataPath = "") {
+  return userDataPath || ServerConfig.getDataDir();
+}
+
+function registryPath(userDataPath = "") {
+  return path.join(dataRoot(userDataPath), REGISTRY_FILE);
+}
+
+function safePathSegment(value) {
+  return String(value || "asset")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 120) || "asset";
+}
+
+function assetBucketForType(contributionType) {
+  return ASSET_BUCKET_BY_TYPE[normalizeContributionType(contributionType)] || "files";
+}
+
+function workspaceAssetRelativePath({ workspaceId, contributionType, contributionId, relation = "canonical" } = {}) {
+  const bucket = assetBucketForType(contributionType);
+  return path.join(
+    "workspace-contribution",
+    "workspaces",
+    safePathSegment(workspaceId || "default"),
+    bucket,
+    safePathSegment(`${relation}-${contributionId || randomUUID()}`),
+    "asset.json"
+  );
+}
+
+function ensureWorkspaceAssetBuckets(userDataPath = "", workspaceId = "default") {
+  if (!userDataPath) {
+    return [];
+  }
+  const root = path.join(dataRoot(userDataPath), "workspace-contribution", "workspaces", safePathSegment(workspaceId));
+  const paths = [];
+  for (const bucket of FIXED_WORKSPACE_ASSET_BUCKETS) {
+    const bucketPath = path.join(root, bucket);
+    fsSync.mkdirSync(bucketPath, { recursive: true });
+    paths.push(path.relative(dataRoot(userDataPath), bucketPath));
+  }
+  return paths;
+}
+
+function readJsonSync(filePath, fallback) {
+  try {
+    return JSON.parse(fsSync.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return fallback;
+    throw error;
+  }
+}
+
+function writeJsonSyncAtomic(filePath, value) {
+  fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
+  fsSync.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  fsSync.renameSync(tmpPath, filePath);
+}
+
+function emptyPersistedState() {
+  return {
+    schemaVersion: 1,
+    protocolVersion: WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION,
+    updatedAt: nowIso(),
+    contributions: {},
+    auditEvents: []
+  };
+}
+
+function normalizePersistedState(value = {}) {
+  const fallback = emptyPersistedState();
+  return {
+    ...fallback,
+    ...shallowObject(value),
+    contributions: shallowObject(value.contributions),
+    auditEvents: asArray(value.auditEvents)
+  };
+}
+
+function publicAssetRecord(record = {}) {
+  return {
+    assetId: text(record.assetId),
+    contributionId: text(record.contributionId),
+    workspaceId: text(record.workspaceId),
+    sourceWorkspaceId: text(record.sourceWorkspaceId),
+    contributionType: normalizeContributionType(record.contributionType),
+    bucket: text(record.bucket),
+    relation: text(record.relation || "canonical"),
+    lifecycleState: text(record.lifecycleState || "submitted"),
+    assetPath: text(record.assetPath),
+    manifestHash: text(record.manifestHash),
+    payloadRefs: asArray(record.payloadRefs).map(text).filter(Boolean),
+    createdAt: text(record.createdAt),
+    updatedAt: text(record.updatedAt)
+  };
 }
 
 function normalizeContributionType(value) {
@@ -104,6 +243,8 @@ function normalizeContribution(input = {}, defaults = {}) {
     toolSchemaRef: text(input.toolSchemaRef || ""),
     scriptRefs: asArray(input.scriptRefs).map(text).filter(Boolean),
     fileRefs: asArray(input.fileRefs).map(text).filter(Boolean),
+    sourceCodeRefs: asArray(input.sourceCodeRefs).map(text).filter(Boolean),
+    codeChangeRefs: asArray(input.codeChangeRefs).map(text).filter(Boolean),
     knowledgeRefs: asArray(input.knowledgeRefs).map(text).filter(Boolean),
     goldenRuleRefs: asArray(input.goldenRuleRefs).map(text).filter(Boolean),
     expertOpinionRefs: asArray(input.expertOpinionRefs).map(text).filter(Boolean),
@@ -135,6 +276,10 @@ function normalizeContribution(input = {}, defaults = {}) {
     grants: [],
     permissionRequests: [],
     usageEvents: [],
+    reviews: [],
+    adoptions: [],
+    assetRecords: [],
+    currentAssetRef: null,
     auditIds: [stableId("audit", { contributionId, event: "contribution.submitted" })],
     createdAt: nowIso(),
     updatedAt: nowIso()
@@ -148,7 +293,17 @@ function rankScoreV0(metrics = {}) {
 }
 
 function refreshMetrics(contribution) {
-  const adoptionWorkspaces = new Set(contribution.usageEvents.map((event) => event.workspaceId).filter(Boolean));
+  contribution.grants = asArray(contribution.grants);
+  contribution.permissionRequests = asArray(contribution.permissionRequests);
+  contribution.usageEvents = asArray(contribution.usageEvents);
+  contribution.reviews = asArray(contribution.reviews);
+  contribution.adoptions = asArray(contribution.adoptions);
+  contribution.assetRecords = asArray(contribution.assetRecords).map(publicAssetRecord);
+  const adoptionWorkspaces = new Set([
+    ...contribution.usageEvents.map((event) => event.workspaceId).filter(Boolean),
+    ...contribution.adoptions.map((event) => event.targetWorkspaceId).filter(Boolean),
+    ...contribution.grants.map((event) => event.targetWorkspaceId).filter(Boolean)
+  ]);
   contribution.metrics.usageCount = contribution.usageEvents.length;
   contribution.metrics.successfulUseCount = contribution.usageEvents.filter((event) => event.successful !== false).length;
   contribution.metrics.uniqueWorkspaceAdoptions = adoptionWorkspaces.size;
@@ -174,9 +329,125 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-export function createContributionRegistry({ workspaceId = "default" } = {}) {
-  const contributions = new Map();
-  const auditEvents = [];
+export function createContributionRegistry({ workspaceId = "default", userDataPath = "" } = {}) {
+  const persistenceEnabled = Boolean(userDataPath);
+  const filePath = persistenceEnabled ? registryPath(userDataPath) : "";
+  const loadedState = persistenceEnabled
+    ? normalizePersistedState(readJsonSync(filePath, emptyPersistedState()))
+    : emptyPersistedState();
+  const contributions = new Map(
+    Object.values(loadedState.contributions || {})
+      .filter((item) => item?.contributionId)
+      .map((item) => [item.contributionId, refreshMetrics(item)])
+  );
+  const auditEvents = asArray(loadedState.auditEvents);
+
+  function persistRegistry() {
+    if (!persistenceEnabled) {
+      return;
+    }
+    const next = {
+      schemaVersion: 1,
+      protocolVersion: WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION,
+      updatedAt: nowIso(),
+      contributions: Object.fromEntries([...contributions.entries()].map(([id, contribution]) => [id, contribution])),
+      auditEvents
+    };
+    writeJsonSyncAtomic(filePath, next);
+  }
+
+  function materializeAsset(contribution, {
+    lifecycleState = contribution.status || "submitted",
+    targetWorkspaceId = contribution.workspaceId,
+    relation = "canonical",
+    actorId = "",
+    reason = ""
+  } = {}) {
+    const workspaceAssetPaths = ensureWorkspaceAssetBuckets(userDataPath, targetWorkspaceId);
+    const assetPath = workspaceAssetRelativePath({
+      workspaceId: targetWorkspaceId,
+      contributionType: contribution.contributionType,
+      contributionId: contribution.contributionId,
+      relation
+    });
+    const timestamp = nowIso();
+    const manifest = {
+      schemaVersion: 1,
+      protocolVersion: WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION,
+      assetKind: "workspace_contribution_asset",
+      contributionId: contribution.contributionId,
+      workspaceId: targetWorkspaceId,
+      sourceWorkspaceId: contribution.workspaceId,
+      contributionType: contribution.contributionType,
+      bucket: assetBucketForType(contribution.contributionType),
+      relation,
+      lifecycleState,
+      contributorId: contribution.contributorId,
+      title: contribution.title,
+      payloadRefs: contribution.payloadRefs,
+      skillManifestRef: contribution.skillManifestRef,
+      toolSchemaRef: contribution.toolSchemaRef,
+      scriptRefs: contribution.scriptRefs,
+      fileRefs: contribution.fileRefs,
+      sourceCodeRefs: contribution.sourceCodeRefs,
+      codeChangeRefs: contribution.codeChangeRefs,
+      knowledgeRefs: contribution.knowledgeRefs,
+      goldenRuleRefs: contribution.goldenRuleRefs,
+      expertOpinionRefs: contribution.expertOpinionRefs,
+      license: contribution.license,
+      risk: contribution.risk,
+      requestedVisibility: contribution.requestedVisibility,
+      requestedActions: contribution.requestedActions,
+      actorId: text(actorId),
+      reason: text(reason),
+      createdAt: timestamp
+    };
+    const manifestHash = hash(stableJson(manifest), 32);
+    const record = publicAssetRecord({
+      assetId: stableId("workspace_asset", {
+        contributionId: contribution.contributionId,
+        workspaceId: targetWorkspaceId,
+        relation
+      }),
+      contributionId: contribution.contributionId,
+      workspaceId: targetWorkspaceId,
+      sourceWorkspaceId: contribution.workspaceId,
+      contributionType: contribution.contributionType,
+      bucket: assetBucketForType(contribution.contributionType),
+      relation,
+      lifecycleState,
+      assetPath,
+      manifestHash,
+      payloadRefs: contribution.payloadRefs,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    if (persistenceEnabled) {
+      writeJsonSyncAtomic(path.join(dataRoot(userDataPath), assetPath), {
+        ...manifest,
+        assetId: record.assetId,
+        assetPath,
+        manifestHash,
+        fixedWorkspaceAssetBuckets: workspaceAssetPaths
+      });
+    }
+    const existingIndex = asArray(contribution.assetRecords).findIndex((item) =>
+      item.workspaceId === record.workspaceId && item.relation === record.relation
+    );
+    if (existingIndex >= 0) {
+      contribution.assetRecords[existingIndex] = {
+        ...contribution.assetRecords[existingIndex],
+        ...record,
+        createdAt: contribution.assetRecords[existingIndex].createdAt || record.createdAt,
+        updatedAt: timestamp
+      };
+    } else {
+      contribution.assetRecords.push(record);
+    }
+    contribution.currentAssetRef = record;
+    contribution.updatedAt = timestamp;
+    return record;
+  }
 
   function appendAudit(eventType, payload = {}) {
     const audit = {
@@ -219,6 +490,14 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
     if (["published", "adopted"].includes(nextState)) {
       contribution.metrics.acceptedCount += 1;
     }
+    materializeAsset(contribution, {
+      lifecycleState: nextState,
+      targetWorkspaceId: contribution.workspaceId,
+      relation: "canonical",
+      actorId: input.actorId || "",
+      reason: input.reason || ""
+    });
+    persistRegistry();
     return {
       contribution: clone(refreshMetrics(contribution)),
       audit
@@ -229,28 +508,110 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
     protocolVersion: WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION,
     submitContribution(input = {}) {
       const contribution = normalizeContribution(input, { workspaceId });
+      materializeAsset(contribution, {
+        lifecycleState: "submitted",
+        targetWorkspaceId: contribution.workspaceId,
+        relation: "canonical",
+        actorId: contribution.contributorId,
+        reason: "initial_submission"
+      });
       contributions.set(contribution.contributionId, contribution);
-      appendAudit("contribution.submitted", {
+      const audit = appendAudit("contribution.submitted", {
         workspaceId: contribution.workspaceId,
         contributionId: contribution.contributionId,
         contributorId: contribution.contributorId,
-        contributionType: contribution.contributionType
+        contributionType: contribution.contributionType,
+        assetId: contribution.currentAssetRef?.assetId || ""
       });
+      contribution.auditIds.push(audit.auditId);
+      persistRegistry();
       return {
-        contribution: clone(contribution)
+        contribution: clone(refreshMetrics(contribution)),
+        assetRecord: clone(contribution.currentAssetRef)
       };
     },
     scanContribution(contributionId, input = {}) {
       return transition(contributionId, "scanned", input);
     },
     reviewContribution(contributionId, input = {}) {
-      return transition(contributionId, "reviewed", input);
+      const contribution = getContribution(contributionId);
+      const review = {
+        reviewId: stableId("contribution_review", {
+          contributionId,
+          reviewerId: input.reviewerId || input.actorId,
+          decision: input.decision || "approved",
+          nonce: randomUUID()
+        }),
+        contributionId,
+        reviewerId: text(input.reviewerId || input.actorId || ""),
+        decision: text(input.decision || "approved"),
+        reasons: asArray(input.reasons || input.reason).map(text).filter(Boolean),
+        qualityGate: shallowObject(input.qualityGate),
+        licenseGate: shallowObject(input.licenseGate),
+        riskGate: shallowObject(input.riskGate),
+        createdAt: nowIso()
+      };
+      contribution.reviews.push(review);
+      const transitioned = transition(contributionId, "reviewed", {
+        ...input,
+        reason: input.reason || review.decision
+      });
+      return {
+        ...transitioned,
+        review: clone(review)
+      };
+    },
+    previewContribution(contributionId, input = {}) {
+      const resultPayload = transition(contributionId, "preview", input);
+      return {
+        ...resultPayload,
+        preview: {
+          previewId: stableId("contribution_preview", {
+            contributionId,
+            assetId: resultPayload.contribution?.currentAssetRef?.assetId || ""
+          }),
+          contributionId,
+          assetRecord: resultPayload.contribution?.currentAssetRef || null,
+          createdAt: nowIso()
+        }
+      };
     },
     publishContribution(contributionId, input = {}) {
       return transition(contributionId, "published", input);
     },
     adoptContribution(contributionId, input = {}) {
-      return transition(contributionId, "adopted", input);
+      const contribution = getContribution(contributionId);
+      const targetWorkspaceId = text(input.targetWorkspaceId || input.workspaceId || contribution.workspaceId);
+      const adoption = {
+        adoptionId: stableId("contribution_adoption", {
+          contributionId,
+          targetWorkspaceId,
+          adopterId: input.adopterId || input.actorId,
+          nonce: randomUUID()
+        }),
+        contributionId,
+        sourceWorkspaceId: contribution.workspaceId,
+        targetWorkspaceId,
+        adopterId: text(input.adopterId || input.actorId || ""),
+        status: "adopted",
+        createdAt: nowIso()
+      };
+      contribution.adoptions.push(adoption);
+      const assetRecord = materializeAsset(contribution, {
+        lifecycleState: "adopted",
+        targetWorkspaceId,
+        relation: "adoption",
+        actorId: adoption.adopterId,
+        reason: input.reason || "cross_workspace_adoption"
+      });
+      const transitioned = transition(contributionId, "adopted", input);
+      refreshMetrics(contribution);
+      persistRegistry();
+      return {
+        ...transitioned,
+        adoption: clone(adoption),
+        assetRecord: clone(assetRecord)
+      };
     },
     rejectContribution(contributionId, input = {}) {
       return transition(contributionId, "rejected", input);
@@ -282,6 +643,7 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
       contribution.permissionRequests.push(permissionRequest);
       contribution.auditIds.push(audit.auditId);
       refreshMetrics(contribution);
+      persistRegistry();
       return {
         permissionRequest: clone(permissionRequest),
         audit
@@ -325,6 +687,7 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
       contribution.grants.push(grant);
       contribution.auditIds.push(audit.auditId);
       refreshMetrics(contribution);
+      persistRegistry();
       return {
         contributionGrant: clone(grant),
         loanRecord,
@@ -357,6 +720,7 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
         contributionId,
         rankScore: contribution.metrics.rankScore
       });
+      persistRegistry();
       return {
         usageEvent: clone(event),
         metrics: clone(contribution.metrics),
@@ -373,6 +737,7 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
       });
       contribution.auditIds.push(audit.auditId);
       refreshMetrics(contribution);
+      persistRegistry();
       return {
         metrics: clone(contribution.metrics),
         audit
@@ -467,6 +832,20 @@ export function createContributionRegistry({ workspaceId = "default" } = {}) {
     },
     listAuditEvents() {
       return clone(auditEvents);
+    },
+    listWorkspaceAssets(input = {}) {
+      const targetWorkspaceId = text(input.workspaceId || input.targetWorkspaceId || workspaceId);
+      const items = [...contributions.values()]
+        .flatMap((contribution) => asArray(contribution.assetRecords))
+        .map(publicAssetRecord)
+        .filter((record) => !targetWorkspaceId || record.workspaceId === targetWorkspaceId);
+      return {
+        protocolVersion: WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION,
+        workspaceId: targetWorkspaceId,
+        fixedBuckets: FIXED_WORKSPACE_ASSET_BUCKETS,
+        items,
+        count: items.length
+      };
     }
   };
 }

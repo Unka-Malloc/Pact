@@ -1,0 +1,123 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:path/path.dart' as p;
+
+class TargetCandidate {
+  final String target;
+  final String label;
+  final String kind;
+  final String status;
+  final bool configured;
+  final double confidence;
+  final String? detail;
+  final String? configPath;
+  final String? binaryPath;
+  final String adapterStatus;
+
+  TargetCandidate({
+    required this.target,
+    required this.label,
+    required this.kind,
+    required this.status,
+    required this.configured,
+    required this.confidence,
+    this.detail,
+    this.configPath,
+    this.binaryPath,
+    required this.adapterStatus,
+  });
+
+  factory TargetCandidate.fromJson(Map<String, dynamic> json) {
+    return TargetCandidate(
+      target: (json['target'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      kind: (json['kind'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      configured: json['configured'] == true,
+      confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+      detail: json['detail']?.toString(),
+      configPath: json['configPath']?.toString(),
+      binaryPath: json['binaryPath']?.toString(),
+      adapterStatus: (json['adapterStatus'] ?? '').toString(),
+    );
+  }
+}
+
+class AgentService {
+  Future<File?> _resolveCliBinary() async {
+    final suffix = Platform.isWindows ? '.exe' : '';
+    final override = Platform.environment['PACT_CLIENT_PATH'];
+    final candidates = <String>[
+      if (override != null && override.trim().isNotEmpty) override.trim(),
+      p.join(
+        File(Platform.resolvedExecutable).parent.path,
+        'pact-client$suffix',
+      ),
+      p.join(
+        Directory.current.path,
+        '..',
+        'client-cli',
+        'target',
+        'debug',
+        'pact-client$suffix',
+      ),
+      p.join(
+        Directory.current.path,
+        'client-cli',
+        'target',
+        'debug',
+        'pact-client$suffix',
+      ),
+      '/Users/unka/DevSpace/Unka-Malloc/Pact/client-cli/target/debug/pact-client',
+    ];
+    for (final candidate in candidates) {
+      final file = File(p.normalize(candidate));
+      if (await file.exists()) {
+        return file;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> _runCli(List<String> args) async {
+    final cli = await _resolveCliBinary();
+    if (cli == null) {
+      // Fallback to expecting pact-client in PATH
+      try {
+        final result = await Process.run('pact-client', args);
+        if (result.exitCode != 0) {
+          throw Exception('pact-client failed: \${result.stderr}');
+        }
+        return jsonDecode(result.stdout as String) as Map<String, dynamic>;
+      } catch (e) {
+        throw Exception('pact-client not found. Make sure it is compiled. \$e');
+      }
+    }
+
+    final result = await Process.run(cli.path, args);
+    if (result.exitCode != 0) {
+      throw Exception('pact-client failed: \${result.stderr}');
+    }
+    return jsonDecode(result.stdout as String) as Map<String, dynamic>;
+  }
+
+  Future<List<TargetCandidate>> scanTargets() async {
+    final output = await _runCli(['targets', 'scan']);
+    if (output['ok'] == true && output['candidates'] is List) {
+      final list = output['candidates'] as List;
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((json) => TargetCandidate.fromJson(json))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> inspectTarget(String target) async {
+    return _runCli(['targets', 'inspect', target]);
+  }
+
+  Future<Map<String, dynamic>> planTargetConfig(String target) async {
+    return _runCli(['mcp', 'config', 'plan', '--target', target]);
+  }
+}

@@ -13,6 +13,8 @@ const SENSITIVE_VALUE_PATTERN =
 const ABSOLUTE_PATH_PATTERN =
   /(?:[A-Za-z]:\\[^\s"'<>]+|\\\\[^\s"'<>]+|\/[a-zA-Z][a-zA-Z0-9._-]*(?:\/[^\s"',<>]+)+)/g;
 const MAX_JSON_BYTES = 12 * 1024;
+const DEFAULT_RETENTION_DAYS = 90;
+const DEFAULT_MAX_EXPORT_ITEMS = 1000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -49,6 +51,20 @@ function truncateJson(value) {
     byteLength: Buffer.byteLength(text, "utf8"),
     sha256: crypto.createHash("sha256").update(text).digest("hex")
   };
+}
+
+function asLimit(value, fallback = 100, max = 500) {
+  return Math.max(1, Math.min(Number(value || fallback) || fallback, max));
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
 }
 
 export function redactOperationAuditValue(value, depth = 0) {
@@ -123,7 +139,10 @@ function actorFrom(value = {}) {
     type: value.type || (user?.userId ? "console-user" : "anonymous"),
     userId: user?.userId || "",
     username: user?.username || "",
-    roleId: user?.roleId || ""
+    roleId: user?.roleId || "",
+    tenantId: user?.tenantId || value.tenantId || "",
+    orgId: user?.orgId || value.orgId || "",
+    teamIds: Array.isArray(user?.teamIds || value.teamIds) ? [...(user?.teamIds || value.teamIds)] : []
   };
 }
 
@@ -134,6 +153,9 @@ function ensureOperationAuditColumns(db) {
   }
   if (!cols.has("request_id")) {
     db.exec("ALTER TABLE operation_audit_log ADD COLUMN request_id TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.has("tenant_id")) {
+    db.exec("ALTER TABLE operation_audit_log ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''");
   }
 }
 
@@ -146,6 +168,7 @@ function ensureSchema(db) {
       audit_id TEXT PRIMARY KEY,
       trace_id TEXT NOT NULL DEFAULT '',
       request_id TEXT NOT NULL DEFAULT '',
+      tenant_id TEXT NOT NULL DEFAULT '',
       operation_id TEXT NOT NULL,
       transport TEXT NOT NULL,
       actor_json TEXT NOT NULL DEFAULT '{}',
@@ -178,6 +201,7 @@ function ensureSchema(db) {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_operation_audit_trace ON operation_audit_log(trace_id);
+    CREATE INDEX IF NOT EXISTS idx_operation_audit_tenant ON operation_audit_log(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_operation_audit_operation ON operation_audit_log(operation_id);
     CREATE INDEX IF NOT EXISTS idx_operation_audit_status ON operation_audit_log(status);
   `);
@@ -195,12 +219,13 @@ export function createOperationAuditStore({ userDataPath }) {
   const rootPath = path.join(userDataPath, "security");
   fs.mkdirSync(rootPath, { recursive: true });
   const db = new Database(path.join(rootPath, "operation-audit.sqlite"));
+  const retentionPolicyPath = path.join(rootPath, "audit-retention.json");
   ensureSchema(db);
   const insertStmt = db.prepare(`
     INSERT INTO operation_audit_log (
-      audit_id, trace_id, request_id, operation_id, transport, actor_json, risk, read_only, status, duration_ms,
+      audit_id, trace_id, request_id, tenant_id, operation_id, transport, actor_json, risk, read_only, status, duration_ms,
       input_hash, redacted_input_json, redacted_output_summary_json, error, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   function append(entry = {}) {
@@ -208,13 +233,15 @@ export function createOperationAuditStore({ userDataPath }) {
     const redactedInput = redactOperationAuditValue(input);
     const outputSummary = summarizeOutput(entry.output);
     const auditId = entry.auditId || `op_audit_${crypto.randomUUID()}`;
+    const actor = actorFrom(entry.actor || {});
     insertStmt.run(
       auditId,
       String(entry.traceId || ""),
       String(entry.requestId || ""),
+      firstString(entry.tenantId, entry.tenant?.tenantId, actor.tenantId, input.tenantId, input["tenant-id"]),
       String(entry.operationId || ""),
       String(entry.transport || "unknown"),
-      JSON.stringify(actorFrom(entry.actor || {})),
+      JSON.stringify(actor),
       String(entry.risk || ""),
       entry.readOnly ? 1 : 0,
       String(entry.status || ""),
@@ -228,7 +255,16 @@ export function createOperationAuditStore({ userDataPath }) {
     return { auditId };
   }
 
-  function list({ limit = 100, operationId = "", status = "", userId = "" } = {}) {
+  function list({
+    limit = 100,
+    operationId = "",
+    status = "",
+    userId = "",
+    traceId = "",
+    tenantId = "",
+    createdFrom = "",
+    createdTo = ""
+  } = {}) {
     const clauses = [];
     const params = [];
     if (operationId) {
@@ -239,18 +275,35 @@ export function createOperationAuditStore({ userDataPath }) {
       clauses.push("status = ?");
       params.push(String(status));
     }
+    if (traceId) {
+      clauses.push("trace_id = ?");
+      params.push(String(traceId));
+    }
+    if (tenantId) {
+      clauses.push("tenant_id = ?");
+      params.push(String(tenantId));
+    }
+    if (createdFrom) {
+      clauses.push("created_at >= ?");
+      params.push(String(createdFrom));
+    }
+    if (createdTo) {
+      clauses.push("created_at <= ?");
+      params.push(String(createdTo));
+    }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     const rows = db.prepare(`
       SELECT * FROM operation_audit_log
       ${where}
       ORDER BY created_at DESC
       LIMIT ?
-    `).all(...params, Math.max(1, Math.min(Number(limit || 100), 500)));
+    `).all(...params, asLimit(limit));
     return rows
       .map((row) => ({
         auditId: row.audit_id,
         traceId: row.trace_id || "",
         requestId: row.request_id || "",
+        tenantId: row.tenant_id || "",
         operationId: row.operation_id,
         transport: row.transport,
         actor: parseJson(row.actor_json, {}),
@@ -267,11 +320,129 @@ export function createOperationAuditStore({ userDataPath }) {
       .filter((entry) => !userId || entry.actor?.userId === String(userId));
   }
 
+  function getRetentionPolicy() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(retentionPolicyPath, "utf8"));
+      return {
+        policyVersion: "pact.audit-retention.v1",
+        retentionDays: Math.max(1, Math.min(Number(parsed.retentionDays || DEFAULT_RETENTION_DAYS), 3650)),
+        maxExportItems: Math.max(1, Math.min(Number(parsed.maxExportItems || DEFAULT_MAX_EXPORT_ITEMS), 10000)),
+        updatedAt: parsed.updatedAt || "",
+        updatedBy: redactOperationAuditValue(parsed.updatedBy || {})
+      };
+    } catch {
+      return {
+        policyVersion: "pact.audit-retention.v1",
+        retentionDays: DEFAULT_RETENTION_DAYS,
+        maxExportItems: DEFAULT_MAX_EXPORT_ITEMS,
+        updatedAt: "",
+        updatedBy: {}
+      };
+    }
+  }
+
+  function setRetentionPolicy(input = {}) {
+    const policy = {
+      policyVersion: "pact.audit-retention.v1",
+      retentionDays: Math.max(1, Math.min(Number(input.retentionDays || DEFAULT_RETENTION_DAYS), 3650)),
+      maxExportItems: Math.max(1, Math.min(Number(input.maxExportItems || DEFAULT_MAX_EXPORT_ITEMS), 10000)),
+      updatedAt: nowIso(),
+      updatedBy: redactOperationAuditValue(input.updatedBy || {})
+    };
+    fs.writeFileSync(retentionPolicyPath, `${JSON.stringify(policy, null, 2)}\n`, { mode: 0o600 });
+    return policy;
+  }
+
+  function pruneExpired(input = {}) {
+    const policy = input.retentionDays ? setRetentionPolicy(input) : getRetentionPolicy();
+    const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const result = db.prepare("DELETE FROM operation_audit_log WHERE created_at < ?").run(cutoff);
+    return {
+      policyVersion: policy.policyVersion,
+      retentionDays: policy.retentionDays,
+      cutoff,
+      deletedCount: Number(result.changes || 0)
+    };
+  }
+
+  function exportRedacted(input = {}) {
+    const policy = getRetentionPolicy();
+    const items = list({
+      ...input,
+      limit: asLimit(input.limit, Math.min(policy.maxExportItems, DEFAULT_MAX_EXPORT_ITEMS), policy.maxExportItems)
+    });
+    const manifest = {
+      protocolVersion: "pact.audit-export.v1",
+      exportedAt: nowIso(),
+      redactionPolicy: "operation-audit-redacted-v1",
+      retentionDays: policy.retentionDays,
+      itemCount: items.length,
+      filters: redactOperationAuditValue({
+        operationId: input.operationId || "",
+        status: input.status || "",
+        userId: input.userId || "",
+        traceId: input.traceId || "",
+        tenantId: input.tenantId || "",
+        createdFrom: input.createdFrom || "",
+        createdTo: input.createdTo || ""
+      })
+    };
+    const redactedItems = items.map((item) => redactOperationAuditValue(item));
+    return {
+      manifest,
+      items: redactedItems,
+      jsonl: [
+        JSON.stringify({ type: "manifest", ...manifest }),
+        ...redactedItems.map((item) => JSON.stringify({ type: "audit", item }))
+      ].join("\n") + "\n"
+    };
+  }
+
+  function getTrace(traceId, input = {}) {
+    const normalizedTraceId = String(traceId || input.traceId || "").trim();
+    if (!normalizedTraceId) {
+      return {
+        protocolVersion: "pact.trace-drilldown.v1",
+        traceId: "",
+        auditItems: [],
+        spans: [],
+        count: 0
+      };
+    }
+    const auditItems = list({
+      ...input,
+      traceId: normalizedTraceId,
+      limit: input.limit || 200
+    }).reverse();
+    return {
+      protocolVersion: "pact.trace-drilldown.v1",
+      traceId: normalizedTraceId,
+      count: auditItems.length,
+      auditItems,
+      spans: auditItems.map((item) => ({
+        auditId: item.auditId,
+        operationId: item.operationId,
+        transport: item.transport,
+        status: item.status,
+        risk: item.risk,
+        actor: item.actor,
+        durationMs: item.durationMs,
+        createdAt: item.createdAt,
+        inputHash: item.inputHash
+      }))
+    };
+  }
+
   return {
     db,
     rootPath,
     append,
     list,
+    getRetentionPolicy,
+    setRetentionPolicy,
+    pruneExpired,
+    exportRedacted,
+    getTrace,
     close() {
       db.close();
     }

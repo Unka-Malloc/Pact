@@ -19,9 +19,7 @@ fn unique_temp_dir(name: &str) -> PathBuf {
 fn client_bin() -> PathBuf {
     std::env::var_os("CARGO_BIN_EXE_pact-client")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-client")
-        })
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-client"))
 }
 
 fn doc_line(id: u64, subject: &str, sender: &str, mailbox: &str, taxonomy: &str) -> String {
@@ -175,8 +173,7 @@ fn cli_prints_usage_for_empty_and_unknown_commands() {
     let unknown = run_cli_output(&dir, &["does-not-exist"]);
     assert!(unknown.status.success());
     assert!(
-        String::from_utf8_lossy(&unknown.stderr)
-            .contains("pact-client daemon start|status|stop")
+        String::from_utf8_lossy(&unknown.stderr).contains("pact-client daemon start|status|stop")
     );
 
     let _ = fs::remove_dir_all(dir);

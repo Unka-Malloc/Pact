@@ -726,15 +726,11 @@ class ServerInterfaceOperation {
 }
 
 enum AppSection {
-  console,
-  queue,
-  server,
-  modules,
-  dataConnectors,
-  knowledgeGraph,
-  export,
-  checkpoints,
-  localLogs,
+  agents,
+  mcpPlugins,
+  skillHub,
+  modelForwarding,
+  activity,
   settings,
 }
 

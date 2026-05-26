@@ -228,6 +228,57 @@ const suites = [
     "cli",
     "smoke"
   ]),
+  suite("client.architecture", "Destructive client architecture gate", npm("run", "client:verify:architecture"), [
+    "client",
+    "architecture",
+    "packaging",
+    "regression"
+  ]),
+  suite("client.plan", "Client plan and verifier consistency gate", npm("run", "client:verify:plan"), [
+    "client",
+    "docs",
+    "plan",
+    "regression"
+  ]),
+  suite("client.targets", "Client target adapter contract tests", npm("run", "client:verify:targets"), [
+    "client",
+    "targets",
+    "rust",
+    "regression"
+  ]),
+  suite("client.config-writes", "Client target config write contract tests", npm("run", "client:verify:config-writes"), [
+    "client",
+    "targets",
+    "config",
+    "rust",
+    "regression"
+  ]),
+  suite("client.state-store", "Future client state store contract tests", npm("run", "client:verify:state-store"), [
+    "client",
+    "state",
+    "rust",
+    "regression"
+  ]),
+  suite("client.pairing-skill", "Pairing and passive Skill Hub CLI tests", npm("run", "client:verify:pairing-skill-cli"), [
+    "client",
+    "pairing",
+    "skill",
+    "rust",
+    "regression"
+  ]),
+  suite("client.mcp-plugins", "Peer MCP plugin lifecycle tests", npm("run", "client:verify:mcp-plugins"), [
+    "client",
+    "mcp",
+    "plugin",
+    "rust",
+    "regression"
+  ]),
+  suite("client.thin-forwarding", "Thin model forwarding tests", npm("run", "client:verify:thin-forwarding"), [
+    "client",
+    "model-forwarding",
+    "rust",
+    "regression"
+  ]),
   suite("client.flutter.analyze", "Flutter static analysis", npm("run", "client:analyze"), [
     "client",
     "flutter",
@@ -246,7 +297,7 @@ const suites = [
     "flutter",
     "coverage"
   ]),
-  suite("client.native.test", "Rust backend and CLI tests", npm("run", "client:native:test"), [
+  suite("client.native.test", "Rust future client CLI tests", npm("run", "client:native:test"), [
     "client",
     "rust",
     "unit",
@@ -295,6 +346,14 @@ const profileSuites = {
     "repo.hygiene.pre",
     "security.secret-hygiene",
     "server.frontend-feature-registry",
+    "client.architecture",
+    "client.plan",
+    "client.state-store",
+    "client.targets",
+    "client.config-writes",
+    "client.pairing-skill",
+    "client.mcp-plugins",
+    "client.thin-forwarding",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test"
@@ -330,6 +389,14 @@ const profileSuites = {
     "server.feature-profiles",
     "server.frontend-feature-registry",
     "server.business-scenarios",
+    "client.architecture",
+    "client.plan",
+    "client.state-store",
+    "client.targets",
+    "client.config-writes",
+    "client.pairing-skill",
+    "client.mcp-plugins",
+    "client.thin-forwarding",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test",
@@ -338,6 +405,14 @@ const profileSuites = {
   coverage: [
     "repo.hygiene.pre",
     "security.secret-hygiene",
+    "client.architecture",
+    "client.plan",
+    "client.state-store",
+    "client.targets",
+    "client.config-writes",
+    "client.pairing-skill",
+    "client.mcp-plugins",
+    "client.thin-forwarding",
     "client.flutter.analyze",
     "client.flutter.coverage",
     "client.native.test"
@@ -365,6 +440,8 @@ const profileSuites = {
     "server.maintenance-agent",
     "server.feature-profiles",
     "server.frontend-feature-registry",
+    "client.architecture",
+    "client.plan",
     "client.native.test",
     "repo.hygiene.post"
   ],
@@ -413,6 +490,8 @@ const profileSuites = {
     "server.frontend-feature-registry",
     "server.entity-config-layout",
     "server.singleton-boundaries",
+    "client.architecture",
+    "client.plan",
     "smoke.server.lifecycle",
     "smoke.memory.source-evidence",
     "smoke.client.cli",
@@ -448,6 +527,14 @@ const profileSuites = {
     "server.feature-profiles",
     "server.frontend-feature-registry",
     "server.business-scenarios",
+    "client.architecture",
+    "client.plan",
+    "client.state-store",
+    "client.targets",
+    "client.config-writes",
+    "client.pairing-skill",
+    "client.mcp-plugins",
+    "client.thin-forwarding",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test",
@@ -459,6 +546,14 @@ const profileSuites = {
   client: [
     "repo.hygiene.pre",
     "security.secret-hygiene",
+    "client.architecture",
+    "client.plan",
+    "client.state-store",
+    "client.targets",
+    "client.config-writes",
+    "client.pairing-skill",
+    "client.mcp-plugins",
+    "client.thin-forwarding",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test",
@@ -503,6 +598,14 @@ const profileSuites = {
     "smoke.server.lifecycle",
     "smoke.memory.source-evidence",
     "smoke.client.cli",
+    "client.architecture",
+    "client.plan",
+    "client.state-store",
+    "client.targets",
+    "client.config-writes",
+    "client.pairing-skill",
+    "client.mcp-plugins",
+    "client.thin-forwarding",
     "client.flutter.analyze",
     "client.flutter.test",
     "client.native.test",

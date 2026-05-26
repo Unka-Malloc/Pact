@@ -1,4 +1,6 @@
-pub mod agent_client;
-pub mod backend_core;
-pub mod connectors;
-pub mod upload_queue;
+pub mod client_state;
+pub mod forwarding;
+pub mod mcp_plugins;
+pub mod paths;
+pub mod skill_hub;
+pub mod targets;

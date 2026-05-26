@@ -109,7 +109,7 @@ async function main() {
   const flutterBinary = path.join(bundleDir, "flutter_client");
   const cli = path.join(bundleDir, "pact-client");
   const daemon = path.join(bundleDir, "pact-clientd");
-  const packagingManifest = path.join(bundleDir, "portable-data", "backend", "packaging-modules.json");
+  const packagingManifest = path.join(bundleDir, "portable-data", "future-client", "packaging-modules.json");
   for (const file of [flutterBinary, cli, daemon]) {
     if (!existsSync(file)) {
       throw new Error(`Bundle binary is missing: ${file}`);

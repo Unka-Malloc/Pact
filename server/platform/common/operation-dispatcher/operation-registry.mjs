@@ -915,7 +915,9 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       query: [
         { name: "limit", aliases: ["limit"] },
         { name: "userId", aliases: ["user-id", "userId"] },
-        { name: "status", aliases: ["status"] }
+        { name: "status", aliases: ["status"] },
+        { name: "traceId", aliases: ["trace-id", "traceId"] },
+        { name: "tenantId", aliases: ["tenant-id", "tenantId"] }
       ],
       coerce: { limit: "number" }
     },
@@ -924,10 +926,102 @@ const SERVER_API_OPERATION_DEFINITIONS = [
       query: [
         { name: "limit", aliases: ["limit"] },
         { name: "userId", aliases: ["user-id", "userId"] },
-        { name: "status", aliases: ["status"] }
+        { name: "status", aliases: ["status"] },
+        { name: "traceId", aliases: ["trace-id", "traceId"] },
+        { name: "tenantId", aliases: ["tenant-id", "tenantId"] }
       ]
     },
     cli: { command: ["auth", "audit"], usage: "auth audit [--limit 100]" },
+    requiredScopes: ["auth:admin"]
+  },
+  {
+    id: "auth.audit.export",
+    feature: "auth",
+    label: "导出脱敏系统审计",
+    target: { controller: "system", method: "handleAuthAuditExport" },
+    http: {
+      method: "GET",
+      path: "/api/auth/audit/export",
+      localInForwardMode: true,
+      query: [
+        { name: "limit", aliases: ["limit"] },
+        { name: "operationId", aliases: ["operation-id", "operationId"] },
+        { name: "userId", aliases: ["user-id", "userId"] },
+        { name: "status", aliases: ["status"] },
+        { name: "traceId", aliases: ["trace-id", "traceId"] },
+        { name: "tenantId", aliases: ["tenant-id", "tenantId"] }
+      ],
+      coerce: { limit: "number" }
+    },
+    rpc: {
+      method: "auth.audit.export",
+      query: [
+        { name: "limit", aliases: ["limit"] },
+        { name: "operationId", aliases: ["operation-id", "operationId"] },
+        { name: "userId", aliases: ["user-id", "userId"] },
+        { name: "status", aliases: ["status"] },
+        { name: "traceId", aliases: ["trace-id", "traceId"] },
+        { name: "tenantId", aliases: ["tenant-id", "tenantId"] }
+      ]
+    },
+    cli: { command: ["auth", "audit", "export"], usage: "auth audit export [--trace-id TRACE_ID] [--tenant-id TENANT_ID]" },
+    requiredScopes: ["auth:admin"]
+  },
+  {
+    id: "auth.audit.retention.get",
+    feature: "auth",
+    label: "读取审计保留策略",
+    target: { controller: "system", method: "handleAuthAuditRetention" },
+    http: { method: "GET", path: "/api/auth/audit/retention", localInForwardMode: true },
+    rpc: { method: "auth.audit.retention.get" },
+    cli: { command: ["auth", "audit", "retention"], usage: "auth audit retention" },
+    requiredScopes: ["auth:admin"]
+  },
+  {
+    id: "auth.audit.retention.set",
+    feature: "auth",
+    label: "设置审计保留策略",
+    target: { controller: "system", method: "handleAuthAuditRetention" },
+    http: { method: "POST", path: "/api/auth/audit/retention", localInForwardMode: true },
+    rpc: { method: "auth.audit.retention.set", body: "params" },
+    cli: { command: ["auth", "audit", "retention", "set"], usage: "auth audit retention set --body retention.json" },
+    requiredScopes: ["auth:admin"]
+  },
+  {
+    id: "auth.audit.prune",
+    feature: "auth",
+    label: "按保留策略清理审计",
+    target: { controller: "system", method: "handleAuthAuditPrune" },
+    http: { method: "POST", path: "/api/auth/audit/prune", localInForwardMode: true },
+    rpc: { method: "auth.audit.prune", body: "params" },
+    cli: { command: ["auth", "audit", "prune"], usage: "auth audit prune --body prune.json" },
+    requiredScopes: ["auth:admin"]
+  },
+  {
+    id: "observability.trace.get",
+    feature: "auth",
+    label: "读取 trace drill-down",
+    target: { controller: "system", method: "handleObservabilityTraceGet" },
+    http: {
+      method: "GET",
+      path: "/api/observability/traces/:traceId",
+      localInForwardMode: true,
+      query: [
+        { name: "limit", aliases: ["limit"] },
+        { name: "tenantId", aliases: ["tenant-id", "tenantId"] }
+      ],
+      coerce: { limit: "number" }
+    },
+    rpc: {
+      method: "observability.trace.get",
+      params: [{ name: "traceId", aliases: ["trace-id", "id"], required: true }],
+      query: [{ name: "limit", aliases: ["limit"] }, { name: "tenantId", aliases: ["tenant-id", "tenantId"] }]
+    },
+    cli: {
+      command: ["observability", "trace", "get"],
+      usage: "observability trace get --id TRACE_ID",
+      pathParams: { traceId: ["trace-id", "id"] }
+    },
     requiredScopes: ["auth:admin"]
   },
   {

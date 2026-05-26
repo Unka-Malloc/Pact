@@ -407,6 +407,23 @@ Checkpoint Tree 安全恢复演示：
 - `requestedActions`
 - `reviewPolicy`
 
+贡献资产必须物化为持久 workspace asset，而不是只停留在运行时注册表。服务端默认持久结构：
+
+```text
+workspace-contribution/
+  registry.json
+  workspaces/<workspaceId>/
+    skills/
+    tools/
+    scripts/
+    files/
+    knowledge/
+    rules/
+    expert-opinions/
+```
+
+每次提交、扫描、审核、预览、发布、采用或撤销都必须更新贡献注册表和对应 workspace bucket 下的 `asset.json` manifest。跨 workspace 复用不能只增加 usage 计数；必须生成目标 workspace 的 adoption asset record，并保留 source workspace、grant/loan、usage event 和 audit 关联。
+
 贡献状态机：
 
 ```text
@@ -477,6 +494,18 @@ rankScoreV0 =
 ```
 
 `usageCount` 统计被授权主体确认下载、安装、执行、复制到上下文或跨 workspace 采用的次数，`successRate = successfulUseCount / max(usageCount, 1)`，`uniqueWorkspaceAdoptions` 是去重后的 workspace 采用数，`rollbackCount` 是该资产导致的恢复、撤销或禁用次数。`acceptedCount` 保留为资产贡献统计报表字段，不作为排行榜主导项。
+
+## Durable Workflow Protocol
+
+`pact.workflow.v1` 是长任务 durable execution 协议。Pact 第一版不直接强依赖 Temporal，但语义向 durable workflow 对齐：
+
+- workflow 状态和 execution history 默认持久化，可恢复、可观察、可校验。
+- activity 必须带幂等 key、输入 hash、输出 hash、重试策略和补偿动作。
+- workflow 必须支持 signal、timer、human review wait、manual approval、cancel 和 compensation。
+- 外部写入必须区分 partial、committed、failed、compensated，不能把 partial write 当 completed。
+- 崩溃恢复必须能回答恢复点、上次成功 activity、待重试 activity、待人工处理事项和外部副作用状态。
+
+单机实现入口是 `server/platform/common/workflow/durable-workflow-store.mjs`。它把 workflow、activity、signal、timer、human review 和 external write 写成 hash-chain execution history；导入解析 job 通过 `job-manager` 写入 `worker-run` activity heartbeat、完成、失败和恢复信号。`server:verify:durable-workflow` 是协议语义门禁，覆盖模拟崩溃恢复、幂等 activity 复用、human review、timer firing、external partial write commit 和 history 校验。
 
 ### Device MCP Hub
 

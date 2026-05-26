@@ -166,6 +166,11 @@ export function createSecurityPermissionsProvider({
         ? resolvedAuthorizationStore.listDeniedRequests(input)
         : [];
     },
+    listDecisions(input = {}) {
+      return resolvedAuthorizationStore?.listDecisions
+        ? resolvedAuthorizationStore.listDecisions(input)
+        : [];
+    },
     appendReceipt(receipt, metadata = {}) {
       if (!receipt || typeof resolvedAuthorizationStore?.appendReceipt !== "function") {
         return null;

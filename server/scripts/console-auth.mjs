@@ -32,6 +32,7 @@ Usage:
   npm run server:auth -- create-user --username USER --role viewer --generate-password
   npm run server:auth -- set-password --username USER --generate-password
   npm run server:auth -- set-role --username USER --role operator
+  npm run server:auth -- set-tenant --username USER --tenant-id TENANT [--workspace-ids w1,w2]
   npm run server:auth -- enable --username USER
   npm run server:auth -- disable --username USER
 
@@ -41,6 +42,12 @@ Options:
   --user-id USER_ID
   --display-name NAME
   --role owner|admin|operator|viewer
+  --tenant-id TENANT
+  --org-id ORG
+  --team-ids TEAM_A,TEAM_B
+  --workspace-ids WORKSPACE_A,WORKSPACE_B
+  --data-classes public,internal
+  --egress searchResult,evidenceRead,exportFile
   --password PASSWORD
   --generate-password
 `);
@@ -56,6 +63,13 @@ function requireValue(args, key) {
 
 function randomPassword() {
   return `sap_${crypto.randomBytes(24).toString("base64url")}`;
+}
+
+function csv(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function main() {
@@ -91,6 +105,7 @@ async function main() {
             user.username,
             user.displayName,
             user.roleId,
+            user.tenantId || "default",
             user.enabled ? "enabled" : "disabled",
             user.lastLoginAt || "never"
           ].join("\t")
@@ -108,6 +123,12 @@ async function main() {
         displayName: String(args["display-name"] || args.username || "").trim(),
         password,
         roleId: String(args.role || "viewer").trim(),
+        tenantId: String(args["tenant-id"] || "default").trim(),
+        orgId: String(args["org-id"] || "").trim(),
+        teamIds: csv(args["team-ids"]),
+        allowedWorkspaceIds: csv(args["workspace-ids"]),
+        allowedDataClasses: csv(args["data-classes"]),
+        allowedEgress: csv(args.egress),
         enabled: true
       });
       console.log(`created user: ${user.username} (${user.roleId})`);
@@ -141,6 +162,19 @@ async function main() {
       const roleId = requireValue(args, "role");
       const user = await auth.updateUser(targetUser.userId, { roleId });
       console.log(`role updated: ${user.username} -> ${user.roleId}`);
+      return;
+    }
+
+    if (command === "set-tenant") {
+      const user = await auth.updateUser(targetUser.userId, {
+        tenantId: requireValue(args, "tenant-id"),
+        ...(args["org-id"] !== undefined ? { orgId: String(args["org-id"] || "").trim() } : {}),
+        ...(args["team-ids"] !== undefined ? { teamIds: csv(args["team-ids"]) } : {}),
+        ...(args["workspace-ids"] !== undefined ? { allowedWorkspaceIds: csv(args["workspace-ids"]) } : {}),
+        ...(args["data-classes"] !== undefined ? { allowedDataClasses: csv(args["data-classes"]) } : {}),
+        ...(args.egress !== undefined ? { allowedEgress: csv(args.egress) } : {})
+      });
+      console.log(`tenant updated: ${user.username} -> ${user.tenantId}`);
       return;
     }
 

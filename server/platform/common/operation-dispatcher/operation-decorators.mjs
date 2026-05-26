@@ -113,6 +113,8 @@ const SAFETY_DECORATORS = new Map([
   ["auth.roles.get", { risk: "read_only" }],
   ["auth.users.update", { risk: "repair_write" }],
   ["auth.oidc.set", { risk: "repair_write" }],
+  ["auth.audit.retention.set", { risk: "repair_write" }],
+  ["auth.audit.prune", { risk: "repair_write" }],
   ["discovery.clients.migration", { risk: "repair_write" }],
   ["discovery.set_config", { risk: "repair_write" }],
   ["runtime.set_mounts", { risk: "repair_write" }],
