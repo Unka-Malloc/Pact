@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   CONTRIBUTION_STATES,
   CONTRIBUTION_TYPES,
@@ -8,10 +11,10 @@ import {
 } from "../platform/specialized/agent/workspace-contribution/index.mjs";
 
 function assertCatalogs() {
-  for (const state of ["submitted", "scanned", "reviewed", "published", "adopted", "deprecated", "revoked"]) {
+  for (const state of ["submitted", "scanned", "reviewed", "preview", "published", "adopted", "deprecated", "revoked"]) {
     assert.ok(CONTRIBUTION_STATES.includes(state), `missing state ${state}`);
   }
-  for (const type of ["knowledge", "skill", "tool", "script", "file", "goldenRule", "expertOpinion"]) {
+  for (const type of ["knowledge", "skill", "tool", "script", "file", "sourceCode", "codeChange", "goldenRule", "expertOpinion"]) {
     assert.ok(CONTRIBUTION_TYPES.includes(type), `missing contribution type ${type}`);
   }
 }
@@ -32,10 +35,26 @@ function publishSkillContribution(registry) {
   assert.equal(submitted.protocolVersion, WORKSPACE_CONTRIBUTION_PROTOCOL_VERSION);
   assert.equal(submitted.status, "submitted");
 
+  assert.equal(submitted.assetRecords[0].lifecycleState, "submitted");
+
   registry.scanContribution(submitted.contributionId, { actorId: "scanner", reason: "license_and_risk_scan" });
-  registry.reviewContribution(submitted.contributionId, { actorId: "reviewer", reason: "approved_for_public_workspace" });
+  const reviewed = registry.reviewContribution(submitted.contributionId, {
+    actorId: "reviewer",
+    reviewerId: "reviewer",
+    decision: "approved",
+    reason: "approved_for_public_workspace"
+  });
+  assert.ok(reviewed.review.reviewId);
+  assert.equal(reviewed.contribution.status, "reviewed");
+  const preview = registry.previewContribution(submitted.contributionId, {
+    actorId: "reviewer",
+    reason: "publish_preview"
+  });
+  assert.equal(preview.contribution.status, "preview");
+  assert.equal(preview.preview.assetRecord.lifecycleState, "preview");
   const published = registry.publishContribution(submitted.contributionId, { actorId: "reviewer" }).contribution;
   assert.equal(published.status, "published");
+  assert.ok(published.currentAssetRef.assetPath.endsWith("asset.json"));
   return published;
 }
 
@@ -64,6 +83,15 @@ function assertPermissionGrantAndLoan(registry, contributionId) {
 }
 
 function assertUsageAndRanking(registry, contributionId) {
+  const adopted = registry.adoptContribution(contributionId, {
+    actorId: "agent-b",
+    targetWorkspaceId: "workspace-secondary",
+    reason: "reuse approved skill"
+  });
+  assert.equal(adopted.adoption.targetWorkspaceId, "workspace-secondary");
+  assert.equal(adopted.assetRecord.workspaceId, "workspace-secondary");
+  assert.equal(adopted.assetRecord.relation, "adoption");
+
   registry.recordUsage(contributionId, {
     actorId: "agent-b",
     workspaceId: "workspace-secondary",
@@ -87,6 +115,10 @@ function assertUsageAndRanking(registry, contributionId) {
   assert.equal(leaderboard[0].contributionId, contributionId);
   assert.equal(leaderboard[0].acceptedCount >= 1, true, "acceptedCount must remain a report dimension");
   assert.equal(leaderboard[0].rankScore, 4);
+
+  const assets = registry.listWorkspaceAssets({ workspaceId: "workspace-secondary" });
+  assert.equal(assets.count, 1);
+  assert.equal(assets.items[0].relation, "adoption");
 }
 
 function assertReport(registry) {
@@ -99,7 +131,7 @@ function assertReport(registry) {
 
   const report = registry.getContributionReport({ timeRange: "all" });
   assert.ok(report.reportId);
-  assert.equal(report.assetContributionReportV0, 6);
+  assert.equal(report.assetContributionReportV0, 7);
   assert.equal(report.topReusableAssets.length, 1);
   assert.ok(Object.hasOwn(report.permissionFlowBreakdown, "requested"));
   assert.ok(Array.isArray(report.highDemandRestrictedAssets));
@@ -118,12 +150,29 @@ function assertInvalidTransitionRejected() {
   );
 }
 
-assertCatalogs();
-const registry = createContributionRegistry({ workspaceId: "workspace-main" });
-const published = publishSkillContribution(registry);
-assertPermissionGrantAndLoan(registry, published.contributionId);
-assertUsageAndRanking(registry, published.contributionId);
-assertReport(registry);
-assertInvalidTransitionRejected();
+const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-workspace-contribution-"));
 
-console.log("workspace contribution governance verification passed");
+try {
+  assertCatalogs();
+  const registry = createContributionRegistry({ workspaceId: "workspace-main", userDataPath });
+  const published = publishSkillContribution(registry);
+  assertPermissionGrantAndLoan(registry, published.contributionId);
+  assertUsageAndRanking(registry, published.contributionId);
+  assertReport(registry);
+
+  const reloadedRegistry = createContributionRegistry({ workspaceId: "workspace-main", userDataPath });
+  const reloaded = reloadedRegistry.getContribution(published.contributionId);
+  assert.equal(reloaded.status, "adopted");
+  assert.ok(reloaded.assetRecords.some((record) => record.workspaceId === "workspace-main" && record.lifecycleState === "adopted"));
+  assert.ok(reloaded.assetRecords.some((record) => record.workspaceId === "workspace-secondary" && record.relation === "adoption"));
+  const canonicalAssetPath = path.join(userDataPath, reloaded.currentAssetRef.assetPath);
+  const canonicalAsset = JSON.parse(await fs.readFile(canonicalAssetPath, "utf8"));
+  assert.equal(canonicalAsset.contributionId, published.contributionId);
+  assert.ok(canonicalAsset.fixedWorkspaceAssetBuckets.includes(path.join("workspace-contribution", "workspaces", "workspace-main", "skills")));
+
+  assertInvalidTransitionRejected();
+
+  console.log("workspace contribution governance verification passed");
+} finally {
+  await fs.rm(userDataPath, { recursive: true, force: true });
+}

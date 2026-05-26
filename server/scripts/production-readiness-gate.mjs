@@ -242,11 +242,12 @@ const GATES = [
     owner: "workflow-runtime",
     coverage: ["durable-workflow"],
     commands: [
+      ["npm", "run", "server:verify:durable-workflow"],
       ["npm", "run", "server:verify:continuity"],
       ["npm", "run", "server:verify:checkpoints"],
       ["npm", "run", "server:verify:state-coordination"]
     ],
-    nextStep: "补齐 workflow/activity 幂等边界、重试、恢复历史和人工审批等待语义。"
+    nextStep: "继续把更多高风险长任务接入 pact.workflow.v1，并用真实外部服务演练 partial write 补偿。"
   },
   {
     id: "backup-restore",

@@ -5386,6 +5386,13 @@ function formatInstallResult(result) {
   lines.push("", "Next:");
   lines.push("  Run: pact-mcp doctor");
   lines.push("  Restart any selected agent app that was already running.");
+  if (result.targets?.includes("opencode")) {
+    lines.push("");
+    lines.push("  OpenCode quick test:");
+    lines.push(`    curl -s ${result.baseUrl}/mcp -H 'Content-Type: application/json' \\`);
+    lines.push(`      -H 'X-Pact-Api-Key: ${Object.values(result.installed || {}).find(i => i?.tokenPrefix)?.tokenPrefix || "<token>"}' \\`);
+    lines.push(`      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'`);
+  }
   if (!result.ok) {
     lines.push("  Re-run failed clients after fixing the reason above.");
   }

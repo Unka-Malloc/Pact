@@ -3268,7 +3268,9 @@ class AppController extends ChangeNotifier {
       if (!await _backendApi.ensureDaemon()) {
         throw StateError('本地客户端后台不可用。');
       }
-      final result = await _backendApi.syncDataConnector(providerId: providerId);
+      final result = await _backendApi.syncDataConnector(
+        providerId: providerId,
+      );
       final count = (result['itemCount'] as num?)?.toInt() ?? 0;
       statusMessage = '$providerId 已同步 $count 条本地镜像记录。';
       statusCaption = '连接器同步';

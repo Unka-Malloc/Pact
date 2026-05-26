@@ -30,7 +30,10 @@ export function createJobWorkflowProvider({ jobManager } = {}) {
           "jobs.get",
           "jobs.result",
           "jobs.reparse",
-          "jobs.checkpoint.lookup"
+          "jobs.checkpoint.lookup",
+          "jobs.workflow.get",
+          "jobs.workflow.list",
+          "workflow.durable_execution"
         ]
       };
     },
@@ -39,6 +42,12 @@ export function createJobWorkflowProvider({ jobManager } = {}) {
     },
     getJob(jobId = "") {
       return manager.getJob(jobId);
+    },
+    getJobWorkflow(jobId = "") {
+      return typeof manager.getJobWorkflow === "function" ? manager.getJobWorkflow(jobId) : null;
+    },
+    listJobWorkflows(input = {}) {
+      return typeof manager.listJobWorkflows === "function" ? manager.listJobWorkflows(input) : [];
     },
     getJobByCheckpointId(checkpointId = "") {
       return manager.getJobByCheckpointId(checkpointId);

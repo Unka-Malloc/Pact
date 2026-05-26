@@ -6,10 +6,12 @@ import { fileURLToPath } from "node:url";
 import PQueue from "p-queue";
 import {
   checkpointTreeId,
+  createDurableWorkflowRuntime,
   deleteCheckpointTree,
   finishCheckpointTree,
   startCheckpointTree,
-  upsertCheckpointNode
+  upsertCheckpointNode,
+  workflowId
 } from "../../../../platform/interactive/product-api.mjs";
 import {
   atomicWriteJsonThroughState,
@@ -395,6 +397,7 @@ export function createJobManager({
   const jobs = new Map();
   const checkpointJobs = new Map();
   const activeManifestJobs = new Map();
+  const durableWorkflows = createDurableWorkflowRuntime({ userDataPath });
   const workerConcurrency = normalizeWorkerConcurrency(
     runtimeOptions?.workerConcurrency || process.env.PACT_JOB_WORKER_CONCURRENCY
   );
@@ -532,6 +535,10 @@ export function createJobManager({
     return job?.queueId || (job?.id ? queueMonitorId("import_parse_job", job.id) : "");
   }
 
+  function workflowIdForJob(job) {
+    return job?.workflowId || (job?.id ? workflowId("import_parse_job", job.id) : "");
+  }
+
   function queueMonitorInputForJob(job, input = {}) {
     const queueId = queueIdForJob(job);
     return {
@@ -624,6 +631,7 @@ export function createJobManager({
       metadata: {
         jobId: job.id,
         queueId: job.queueId,
+        workflowId: workflowIdForJob(job),
         checkpointId: job.checkpointId || "",
         archiveBatchId: job.archiveBatchId || "",
         uploadSessionId: job.uploadSessionId || "",
@@ -689,6 +697,10 @@ export function createJobManager({
         job.checkpointTreeId = checkpointTreeIdForJob(job);
         await persistJobMeta(userDataPath, job);
       }
+      if (!job.workflowId && job.id) {
+        job.workflowId = workflowIdForJob(job);
+        await persistJobMeta(userDataPath, job);
+      }
       if (job.checkpointTreeId && ["queued", "running"].includes(job.status)) {
         await ensureJobCheckpointTree(job).catch(() => null);
         await updateJobCheckpointNode(job, {
@@ -709,6 +721,9 @@ export function createJobManager({
       }
       if (["queued", "running"].includes(job.status)) {
         rememberActiveManifestJob(job);
+        await durableWorkflows.recoverWorkflow(job.workflowId, {
+          reason: "job_manager_refresh_recovery"
+        }).catch(() => null);
         await registerJobQueueStarted(job, {
           phase: job.status,
           source: "function-self-check",
@@ -856,6 +871,10 @@ export function createJobManager({
         job.checkpointTreeId = checkpointTreeIdForJob(job);
         await persistJobMeta(userDataPath, job);
       }
+      if (!job.workflowId && job.id) {
+        job.workflowId = workflowIdForJob(job);
+        await persistJobMeta(userDataPath, job);
+      }
       if (job.checkpointTreeId && ["queued", "running"].includes(job.status)) {
         await ensureJobCheckpointTree(job).catch(() => null);
         await updateJobCheckpointNode(job, {
@@ -876,6 +895,9 @@ export function createJobManager({
       }
       rememberActiveManifestJob(job);
       if (["queued", "running"].includes(job.status)) {
+        await durableWorkflows.recoverWorkflow(job.workflowId, {
+          reason: "job_manager_startup_recovery"
+        }).catch(() => null);
         await registerJobQueueStarted(job, {
           phase: job.status,
           source: "function-self-check",
@@ -989,6 +1011,8 @@ export function createJobManager({
           progressPercent: Number(currentJob.progressPercent || 0)
         }
       });
+      await durableWorkflows.failActivity(currentJob.workflowId || workflowIdForJob(currentJob), "worker-run", errorMessage || stage || "Job failed.").catch(() => null);
+      await durableWorkflows.failWorkflow(currentJob.workflowId || workflowIdForJob(currentJob), errorMessage || stage || "Job failed.").catch(() => null);
     }
     logJob("error", "jobs.job.fail_requested", {
       jobId,
@@ -1038,6 +1062,30 @@ export function createJobManager({
       logJob("info", "jobs.worker.spawned", {
         jobId: currentJob.id,
         pid: worker.pid || 0
+      });
+      await durableWorkflows.scheduleActivity(currentJob.workflowId || workflowIdForJob(currentJob), {
+        activityId: "worker-run",
+        activityType: "import_parse_worker",
+        idempotencyKey: `${currentJob.id}:worker-run:${currentJob.versionNumber || 1}`,
+        inputHash: currentJob.checkpointId || currentJob.archiveBatchId || currentJob.id,
+        retryPolicy: {
+          maxAttempts: 3,
+          backoff: "job_manager_requeue"
+        },
+        compensation: {
+          action: "preserve_payload_and_requeue"
+        }
+      }).catch((error) => {
+        logJob("warn", "jobs.workflow.activity_schedule.failed", {
+          jobId: currentJob.id,
+          error: summarizeError(error)
+        });
+      });
+      await durableWorkflows.startActivity(currentJob.workflowId || workflowIdForJob(currentJob), "worker-run").catch((error) => {
+        logJob("warn", "jobs.workflow.activity_start.failed", {
+          jobId: currentJob.id,
+          error: summarizeError(error)
+        });
       });
     } catch (error) {
       const message =
@@ -1182,6 +1230,25 @@ export function createJobManager({
           progressPercent: status === "completed" ? 100 : Number(currentJob.progressPercent || 0)
         }
       });
+      if (status === "completed") {
+        await durableWorkflows.completeActivity(currentJob.workflowId || workflowIdForJob(currentJob), "worker-run", {
+          resultSummary: result
+            ? {
+                emails: result.emails?.length || 0,
+                transactions: result.transactions?.length || 0,
+                people: result.people?.length || 0,
+                warnings: result.warnings?.length || 0
+              }
+            : {}
+        }).catch(() => null);
+        await durableWorkflows.completeWorkflow(currentJob.workflowId || workflowIdForJob(currentJob), {
+          status,
+          jobId: currentJob.id
+        }).catch(() => null);
+      } else {
+        await durableWorkflows.failActivity(currentJob.workflowId || workflowIdForJob(currentJob), "worker-run", errorMessage || stage || "Job failed.").catch(() => null);
+        await durableWorkflows.failWorkflow(currentJob.workflowId || workflowIdForJob(currentJob), errorMessage || stage || "Job failed.").catch(() => null);
+      }
 
       if (currentJob.uploadSessionId) {
         await deleteUploadSession(userDataPath, currentJob.uploadSessionId);
@@ -1299,6 +1366,7 @@ export function createJobManager({
             treeId: currentJob.checkpointTreeId
           }).catch(() => null);
         }
+        await durableWorkflows.failWorkflow(currentJob.workflowId || workflowIdForJob(currentJob), "Job deleted.").catch(() => null);
         await fs.rm(getJobDirectory(userDataPath, currentJob.id), {
           recursive: true,
           force: true
@@ -1342,6 +1410,14 @@ export function createJobManager({
           finishedAt: undefined,
           eventType: "jobs.job.recovered"
         });
+        await durableWorkflows.recordSignal(currentJob.workflowId || workflowIdForJob(currentJob), "job.preserve_for_recovery", {
+          jobId: currentJob.id,
+          progressPercent: Number(currentJob.progressPercent || 0),
+          stage: currentJob.stage || ""
+        }).catch(() => null);
+        await durableWorkflows.recoverWorkflow(currentJob.workflowId || workflowIdForJob(currentJob), {
+          reason: "worker_preserved_for_recovery"
+        }).catch(() => null);
         await registerJobQueueHeartbeat(currentJob, {
           phase: "queued",
           source: "function-self-check",
@@ -1474,6 +1550,13 @@ export function createJobManager({
               : currentJob.progressPercent,
           eventType: "jobs.job.progress"
         });
+        void durableWorkflows.heartbeatActivity(currentJob.workflowId || workflowIdForJob(currentJob), "worker-run", {
+          progressPercent:
+            typeof message.progressPercent === "number"
+              ? message.progressPercent
+              : currentJob.progressPercent,
+          stage: message.stage || "处理中"
+        }).catch(() => null);
         void registerJobQueueHeartbeat(currentJob, {
           phase: "running",
           source: "function-self-check",
@@ -1646,6 +1729,7 @@ export function createJobManager({
         stage: "等待执行",
         checkpointId,
         checkpointTreeId: "",
+        workflowId: "",
         queueId: "",
         checkpointReceipt: payload?.checkpointReceipt || null,
         uploadSessionId: String(payload?.uploadSessionId || ""),
@@ -1657,7 +1741,38 @@ export function createJobManager({
       };
       job.queueId = queueIdForJob(job);
       job.checkpointTreeId = checkpointTreeIdForJob(job);
+      job.workflowId = workflowIdForJob(job);
       await ensureJobCheckpointTree(job, payload);
+      await durableWorkflows.startWorkflow({
+        workflowId: job.workflowId,
+        workflowType: "import_parse_job",
+        ownerKind: "import_parse_job",
+        ownerId: job.id,
+        idempotencyKey: checkpointId || manifestKey || archiveBatchId,
+        inputHash: manifestKey || checkpointId || archiveBatchId,
+        input: {
+          checkpointId,
+          archiveBatchId,
+          uploadSessionId: job.uploadSessionId || "",
+          manifestSha256: manifestKey
+        },
+        checkpointTreeId: job.checkpointTreeId
+      });
+      await durableWorkflows.scheduleActivity(job.workflowId, {
+        activityId: "queue-wait",
+        activityType: "queue_wait",
+        idempotencyKey: `${job.id}:queue-wait`,
+        input: {
+          queueId: job.queueId,
+          queuePosition: queuedEntries.length + 1
+        },
+        retryPolicy: {
+          maxAttempts: 1
+        }
+      });
+      await durableWorkflows.completeActivity(job.workflowId, "queue-wait", {
+        queuedAt: now
+      });
       await updateJobCheckpointNode(job, {
         nodeId: "queued",
         parentId: "import-parse-job",
@@ -1843,6 +1958,26 @@ export function createJobManager({
       return cloneJobForApi(jobs.get(jobId) || null);
     },
 
+    async getJobWorkflow(jobId) {
+      await ready;
+      if (!processingEnabled) {
+        await refreshPersistedJobs();
+      }
+      const currentJob = jobs.get(jobId);
+      if (!currentJob) {
+        return null;
+      }
+      return durableWorkflows.getWorkflow(currentJob.workflowId || workflowIdForJob(currentJob));
+    },
+
+    async listJobWorkflows(input = {}) {
+      await ready;
+      return durableWorkflows.listWorkflows({
+        ownerKind: "import_parse_job",
+        ...input
+      });
+    },
+
     async listJobs({ limit = 50 } = {}) {
       await ready;
       if (!processingEnabled) {
@@ -1956,6 +2091,9 @@ export function createJobManager({
           userDataPath,
           treeId: currentJob.checkpointTreeId
         }).catch(() => null);
+      }
+      if (currentJob.status !== "completed") {
+        await durableWorkflows.failWorkflow(currentJob.workflowId || workflowIdForJob(currentJob), "Job deleted.").catch(() => null);
       }
       await fs.rm(getJobDirectory(userDataPath, jobId), {
         recursive: true,

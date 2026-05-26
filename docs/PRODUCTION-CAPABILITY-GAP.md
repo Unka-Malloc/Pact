@@ -157,7 +157,7 @@
 
 ### P0-00-02 终端贡献型资产治理缺失
 
-当前状态：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统已具备 `pact.workspace-contribution.v1` 的内存型贡献状态机、贡献排行榜、统计面板、贡献授权和 usage / loan / audit 记录，并已通过 specialized console operation executor 绑定 `workspace.contribution.*` 与 `workspace.skill.*` 协议入口；剩余差距是把贡献资产落到持久化 workspace asset、跨 workspace 复用和发布审核流，而不是停留在控制台 runtime 内存注册表。
+当前状态：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统已具备 `pact.workspace-contribution.v1` 的持久贡献注册表、固定 workspace asset bucket、贡献状态机、发布审核流、跨 workspace adoption、贡献排行榜、统计面板、贡献授权和 usage / loan / audit 记录，并已通过 specialized console operation executor 绑定 `workspace.contribution.*` 与 `workspace.skill.*` 协议入口。剩余生产硬化方向是把更多真实客户端、真实组织策略和真实资产规模纳入持续门禁，而不是停留在控制台 runtime 内存注册表。
 
 为什么重要：人过滤和精加工的信息往往最有效。过去如果只用知识库视角看这些材料，会把专家意见、黄金规则、Skills、脚本、文件和工具都压成“知识条目”，失去可操作性。AgentLibrary 应允许下游智能体向上提交资产，并让贡献资产在公共工作空间中被发现、授权、复用和审计。
 
@@ -179,8 +179,8 @@
 
 当前实现入口：
 
-- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `pact.workspace-contribution.v1` 的贡献状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 contribution registry。
-- `npm run server:verify:workspace-contribution-governance` 验证 Skill 贡献从 submitted -> scanned -> reviewed -> published，随后授权 B 下载/安装/执行，记录 usage event，并按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 生成排行榜；`acceptedCount` 只作为报表维度。
+- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `pact.workspace-contribution.v1` 的持久贡献注册表、固定 workspace asset bucket 物化、submitted -> scanned -> reviewed -> preview -> published/adopted/revoked 发布审核状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 contribution registry。
+- `npm run server:verify:workspace-contribution-governance` 验证 Skill 贡献从 submitted -> scanned -> reviewed -> preview -> published，随后授权 B 下载/安装/执行，跨 workspace adoption 生成目标 workspace asset，重载 registry 后仍可读取持久资产记录，并按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 生成排行榜；`acceptedCount` 只作为报表维度。
 - `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
 
 补全效果：Pact 不再只从上游知识库拿信息，而是形成“终端贡献 -> 公共空间资产 -> 排行榜发现 -> 授权复用 -> 审计和撤销”的资产贡献闭环。
@@ -260,11 +260,14 @@
 当前实现入口：
 
 - `docs/PROTOCOLS.md` 已定义 `pact.workflow.v1` 和 `pact.checkpoint-tree.v1` 的协议边界。
+- `server/platform/common/workflow/durable-workflow-store.mjs` 实现单机 `pact.workflow.v1` durable workflow store：workflow/activity/signal/timer/human review/external partial write 都写入 hash-chain execution history，支持重启恢复、活动幂等复用和 partial write 补偿语义。
+- `server/services/client/work-queue-core/jobs/job-manager.mjs` 已把导入解析 job 接入 durable workflow：创建 job 时写入 workflow，worker-run 作为 activity 记录 heartbeat、完成、失败和恢复信号。
 - `server/platform/common/data-structure/checkpoint-tree-store.mjs` 提供 checkpoint tree 持久化、节点状态、事件追加、tree lock 和恢复查询基础。
+- `server/scripts/verify-durable-workflow.mjs` 验证 activity 幂等、hash-chain history、模拟崩溃恢复、timer、human review、external partial write commit 和最终 workflow completion。
 - `server/scripts/verify-checkpoint-lifecycle.mjs` 验证 upload/job checkpoint、重复提交、恢复、重启恢复、checkpoint tree 查询和失败回收。
 - `server/scripts/verify-state-coordination.mjs` 验证队列、状态和监控注册的一致性。
 - `server/scripts/verify-transaction-continuity.mjs` 验证业务事务连续性模型。
-- `npm run server:verify:production-readiness` 已把 `durable-workflow` 纳入 P0 门禁。
+- `npm run server:verify:production-readiness` 已把 `durable-workflow` 纳入 P0 门禁，并运行 `server:verify:durable-workflow`、`server:verify:continuity`、`server:verify:checkpoints` 和 `server:verify:state-coordination`。
 
 补全效果：服务重启、部署、超时、部分失败后不会丢任务；可以向生产运维解释“任务如何恢复、如何补偿、如何人工介入”。
 
