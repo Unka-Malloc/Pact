@@ -75,6 +75,19 @@
 | `pact.workspace-governance.v1` | organization/project/dataClass/retention/legalHold、外部协作者、跨空间复制、共享授权和审计。 |
 | `pact.checkpoint-tree.v1` | 统一 Checkpoint Tree：访问请求、文件变动、知识贡献、技能调用、权限裁决、diff、restore preview、restore commit 和按 operation scope 回撤。 |
 
+### Security, Audit, and Trace Hardening
+
+`pact.security-permissions.v1` 的裁决输入可以携带 `tenantId`、`workspaceId`、`dataClass` 和 `requestedEgress`。subject、console user、tool grant 或 agent profile 可以声明 `tenantId`、`allowedWorkspaceIds`、`allowedDataClasses` 和 `allowedEgress`；tenant、workspace、data class 或出口越界必须返回 denied decision，并写入 denied request audit。`owner` / `auth:admin` 可以跨 tenant 做管理操作，但普通 subject 不能借助 search、evidence、context bundle、export、tool call 或 memory write 绕过同一裁决。
+
+审计和 trace 的服务端入口固定为：
+
+- `auth.audit` / `GET /api/auth/audit`：按 operation、status、user、tenant 或 trace 查询 operation audit。
+- `auth.audit.export` / `GET /api/auth/audit/export`：导出脱敏审计包；secret、token、cookie、API key 和本机绝对路径不得出现在导出内容中。
+- `auth.audit.retention.get|set` / `GET|POST /api/auth/audit/retention`：读取或设置审计保留策略。
+- `auth.audit.prune` / `POST /api/auth/audit/prune`：按保留策略清理过期审计。
+- `auth.sessions.rotate` / `POST /api/auth/sessions/rotate`：轮换当前控制台 session token 和 HMAC-derived CSRF token，旧 session token 立即失效，并写入审计。
+- `observability.trace.get` / `GET /api/observability/traces/:traceId`：按 traceId 聚合 operation audit span 和 authorization decision，作为本地 trace drill-down 的事实源。OpenTelemetry / OTLP 只是后续可选导出目标。
+
 ## Middle Layer Strategy
 
 Pact 的协议不追求覆盖所有智能体协作场景，也不替代上游知识库。协议只把中间层两个问题做深：

@@ -3390,6 +3390,7 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
     "auth.audit.retention.set",
     "auth.audit.prune",
     "auth.sessions",
+    "auth.sessions.rotate",
     "auth.sessions.revoke",
     "observability.trace.get"
   ]);
@@ -3674,6 +3675,40 @@ async function executeConsoleAuthOperation({ operationId, input = {}, context })
   }
   if (id === "auth.sessions") {
     return result(200, { sessions: authProvider.listSessions() });
+  }
+  if (id === "auth.sessions.rotate") {
+    const operationResult = authProvider.rotateSession(request);
+    if (!operationResult.ok) {
+      return result(operationResult.status || 401, { error: operationResult.error || "会话轮换失败。" });
+    }
+    authProvider.audit({
+      user: operationResult.session?.user || authSession?.user,
+      operationId: "auth.sessions.rotate",
+      action: "rotate-session",
+      method: "POST",
+      path: "/api/auth/sessions/rotate",
+      status: "ok",
+      target: {
+        sessionId: operationResult.session?.sessionId || "",
+        rotatedAt: operationResult.rotatedAt || ""
+      }
+    });
+    appendConsoleLog(context, {
+      operationId: "auth.sessions.rotate",
+      event: "console.auth.session.rotated",
+      authSession: operationResult.session,
+      status: "ok",
+      input: {
+        sessionId: operationResult.session?.sessionId || ""
+      }
+    });
+    return result(200, {
+      __headers: { "Set-Cookie": operationResult.cookies },
+      ok: true,
+      session: operationResult.session,
+      csrfToken: operationResult.csrfToken,
+      rotatedAt: operationResult.rotatedAt
+    });
   }
   if (id === "auth.sessions.revoke") {
     const sessionId = String(input.sessionId || input["session-id"] || input.id || "").trim();

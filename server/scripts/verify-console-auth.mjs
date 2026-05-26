@@ -178,8 +178,8 @@ try {
     fs.access(path.join(userDataPath, "auth", "initial-owner-password.txt"))
   );
   const owner = await login(server.url, ownerCredentials.username, ownerPassword);
-  const ownerCookie = owner.cookie;
-  const ownerCsrf = owner.csrf;
+  let ownerCookie = owner.cookie;
+  let ownerCsrf = owner.csrf;
   assert.ok(ownerCookie.includes("pact_console_session="));
   assert.ok(ownerCsrf);
   await assert.rejects(fs.access(ownerCredentials.credentialsPath));
@@ -194,6 +194,29 @@ try {
       `owner role should include ${scope}`
     );
   }
+
+  const rotatedOwner = await postJson(
+    server.url,
+    "/api/auth/sessions/rotate",
+    {},
+    { cookie: ownerCookie, csrf: ownerCsrf }
+  );
+  assert.equal(rotatedOwner.status, 200);
+  const rotatedOwnerCookie = cookieHeaderFrom(rotatedOwner);
+  const rotatedOwnerCsrf = rotatedOwner.payload.csrfToken;
+  assert.ok(rotatedOwnerCookie.includes("pact_console_session="));
+  assert.notEqual(sessionTokenFromCookie(rotatedOwnerCookie), sessionTokenFromCookie(ownerCookie));
+  const oldOwnerSession = await getJson(server.url, "/api/auth/session", {
+    cookie: ownerCookie
+  });
+  assert.equal(oldOwnerSession.payload.session.authenticated, false);
+  const newOwnerSession = await getJson(server.url, "/api/auth/session", {
+    cookie: rotatedOwnerCookie
+  });
+  assert.equal(newOwnerSession.payload.session.authenticated, true);
+  assert.equal(newOwnerSession.payload.session.user.username, "owner");
+  ownerCookie = rotatedOwnerCookie;
+  ownerCsrf = rotatedOwnerCsrf;
 
   const headerSessionBypass = await requestJson(`${server.url}/api/knowledge/console`, {
     headers: {

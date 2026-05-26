@@ -1035,6 +1035,16 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["auth:admin"]
   },
   {
+    id: "auth.sessions.rotate",
+    feature: "auth",
+    label: "轮换当前控制台会话 token",
+    target: { controller: "system", method: "handleAuthRotateSession" },
+    http: { method: "POST", path: "/api/auth/sessions/rotate", localInForwardMode: true },
+    rpc: { method: "auth.sessions.rotate" },
+    cli: { command: ["auth", "sessions", "rotate"], usage: "auth sessions rotate" },
+    requiredScopes: ["console:read"]
+  },
+  {
     id: "auth.sessions.revoke",
     feature: "auth",
     label: "撤销控制台会话",

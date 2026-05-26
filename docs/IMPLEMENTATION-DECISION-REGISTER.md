@@ -491,7 +491,7 @@
 
 默认建议：P2 再做完整多租户；P0/P1 先让 workspace boundary 稳定。
 
-已决议：Workspace boundary 优先。
+已决议：Workspace boundary 优先。2026-05-26 起 v0.0.1 服务端增加 tenant/resource ABAC 基础层：console user、tool grant 和 policy input 可携带 `tenantId`、workspace allowlist、dataClass allowlist 和 egress allowlist；审计和 trace 支持按 tenant 查询/导出。完整 org/team 生命周期、跨租户共享审批和 SaaS 隔离仍按 P2 处理。
 
 决议后回写：`PRODUCTION-CAPABILITY-GAP.md`、`PROTOCOLS.md`。
 
