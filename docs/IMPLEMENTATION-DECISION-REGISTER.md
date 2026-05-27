@@ -105,7 +105,8 @@
 | `DEC-P3-01` 贡献生态 | 长期以资产贡献统计报表演进为主，逐步增加贡献者主页和推荐。 |
 | `DEC-P3-02` 管理驾驶舱 | 管理驾驶舱优先，第一版突出资产价值。 |
 | `DEC-P3-03` A2A/模型网关 | A2A adapter 和 OpenAI-compatible model gateway 保持可选，不进入核心闭环。 |
-| `DEC-P3-04` 联邦工作空间 | 暂不做；等单实例 workspace governance 稳定后再评估。 |
+| `DEC-P3-04` Agent Traffic Gateway | 智能体流量负载网关保持可选、可拆卸；拆除后 Pact direct mode 必须正常运行。 |
+| `DEC-P3-05` 联邦工作空间 | 暂不做；等单实例 workspace governance 稳定后再评估。 |
 
 ## P0 决策
 
@@ -617,7 +618,19 @@
 
 已决议：A2A adapter 和 OpenAI-compatible model gateway 保持可选。
 
-### DEC-P3-04 离线同步和联邦工作空间
+### DEC-P3-04 Agent Traffic Gateway
+
+需要决策：
+
+- 是否提供真正的智能体流量负载网关。
+- 网关是否可以成为 Pact 启动、发现、授权、MCP、上传或工作空间操作的硬依赖。
+- 网关是否可以替代 Pact grant、workspace policy、Tool Management 或 Operation Ledger。
+
+默认建议：提供可选 agent traffic/load gateway 作为边缘数据面，只负责 TLS/mTLS、负载均衡、限流、SSE/WebSocket 透传、上传流量保护、request id 和边缘观测。第一版直接落 Caddy 与 Nginx 两套适配，并预留异构网关 adapter registry；网关配置和可选运行时统一解析到本机 `.cache`，不进入 Pact canonical data dir。Pact direct mode 必须始终完整可用，网关拆除后不影响启动、MCP、HTTP API、client runtime bootstrap、upload session、Tool Management、workspace 操作和控制台。
+
+已决议：Agent Traffic Gateway 保持可选、可拆卸。网关只能增强入口和负载能力，不能成为 Pact canonical state、授权、审计或 operation 执行的事实源。
+
+### DEC-P3-05 离线同步和联邦工作空间
 
 需要决策：
 

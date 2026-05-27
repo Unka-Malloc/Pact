@@ -33,6 +33,7 @@
   - [10.4 SQLite 元数据库](#104-sqlite-元数据库)
 - [11. 服务发现与迁移](#11-服务发现与迁移)
 - [12. 运维工具](#12-运维工具)
+  - [Agent Traffic Gateway](#agent-traffic-gateway)
 - [13. HTTP 接口](#13-http-接口)
   - [系统与控制台](#系统与控制台)
   - [服务发现](#服务发现)
@@ -621,6 +622,75 @@ npm run server:locate -- --object-id <id>
 npm run server:reconcile
 npm run server:reconcile -- --apply
 npm run server:reconcile -- --apply --prune-orphan-objects
+```
+
+### Agent Traffic Gateway
+
+Pact 内置 Caddy 和 Nginx 两个可拆卸 agent traffic/load gateway 适配器。适配器生成网关配置、route manifest、active gateway 指针，并把网关运行时解析到本机 `.cache`；Pact 服务端不依赖网关进程、网关数据库或网关缓存，拆除网关后 direct mode 必须继续可用。
+
+查看适配器：
+
+```bash
+npm run server:gateway -- list
+```
+
+生成 Caddy / Nginx 双配置：
+
+```bash
+npm run server:gateway -- write --gateway all \
+  --direct-base-url http://127.0.0.1:7228 \
+  --public-base-url http://127.0.0.1:7330
+```
+
+查看网关运行时本地 cache 计划：
+
+```bash
+npm run server:gateway -- runtime-plan --gateway caddy
+```
+
+把已有 Caddy/Nginx 二进制拉入本机 cache：
+
+```bash
+npm run server:gateway -- runtime-pull --gateway caddy \
+  --runtime-binary /path/to/caddy
+```
+
+切换 active gateway 指针到 Nginx：
+
+```bash
+npm run server:gateway -- switch --gateway nginx \
+  --direct-base-url http://127.0.0.1:7228 \
+  --public-base-url http://127.0.0.1:7330
+```
+
+拆除网关或回到 direct mode：
+
+```bash
+npm run server:gateway -- switch --gateway direct \
+  --direct-base-url http://127.0.0.1:7228
+```
+
+默认产物写入本机 cache：`~/.cache/pact/gateway-ingress/`。可用 `PACT_GATEWAY_RUNTIME_CACHE_DIR` 或 `--runtime-cache-dir` 改写：
+
+```text
+gateway-ingress/
+  configs/
+    active-gateway.json
+    caddy/Caddyfile
+    caddy/gateway-profile.json
+    caddy/route-manifest.json
+    nginx/nginx.conf
+    nginx/gateway-profile.json
+    nginx/route-manifest.json
+  runtimes/
+    caddy/<platform>/bin/caddy
+    nginx/<platform>/bin/nginx
+```
+
+基础门禁：
+
+```bash
+npm run server:verify:gateway-ingress
 ```
 
 ## 13. HTTP 接口

@@ -43,6 +43,7 @@ export const FEATURE_MANIFEST = Object.freeze({
     "devops",
     "capabilities",
     "agent",
+    "agent-ingress",
     "client",
     "modules",
     "knowledge",
@@ -653,6 +654,25 @@ export const FEATURE_MANIFEST = Object.freeze({
         ]
       },
       tests: { suites: ["server:verify:agent-gateway"] }
+    },
+    {
+      featureId: "agent-traffic-gateway",
+      label: "Optional agent traffic gateway ingress adapters",
+      group: "agent-ingress",
+      dependsOn: ["core-platform"],
+      defaultEnabled: false,
+      package: {
+        includePaths: [
+          "server/platform/specialized/capabilities/agent-ingress/traffic-gateway",
+          "server/scripts/gateway-ingress.mjs",
+          "server/scripts/verify-gateway-ingress.mjs",
+          "docs/Architecture.md",
+          "docs/PROTOCOLS.md",
+          "docs/SERVER.md"
+        ],
+        removePaths: []
+      },
+      tests: { suites: ["server:verify:gateway-ingress"] }
     },
     {
       featureId: "agent-management",

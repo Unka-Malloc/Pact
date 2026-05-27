@@ -30,6 +30,7 @@
   - [终端贡献是第二信息源](#终端贡献是第二信息源)
   - [OpenClaw 演示闭环](#openclaw-演示闭环)
   - [协议适配不是核心抽象](#协议适配不是核心抽象)
+  - [可拆卸 Agent Traffic Gateway](#可拆卸-agent-traffic-gateway)
 - [逻辑架构](#逻辑架构)
 - [代码分层](#代码分层)
 - [公共状态模型](#公共状态模型)
@@ -76,7 +77,7 @@ Pact 的核心定位是：
 
 三个兼容层：
 
-1. 智能体客户端 MCP 插件兼容层（`agent-client-mcp-compatibility`）：不关心底层是哪个大模型、哪个 agent framework、哪个机器人体系；只要通过 Pact MCP service、MCP connector、local bridge 或 Workspace API 接入，就按同一套权限、审计和工作空间协议操作。
+1. 智能体客户端 MCP 插件兼容层（`agent-client-mcp-compatibility`）：不关心底层是哪个大模型、哪个 agent framework、哪个机器人体系；只要通过 Pact MCP service、MCP connector、local bridge、可选 agent traffic gateway 或 Workspace API 接入，就按同一套权限、审计和工作空间协议操作。
 2. 外部服务交互兼容层（`external-service-compatibility`）：不关心外部系统是 Docker、GitHub、Gerrit、Mailbox、外部知识库、模型 provider、向量库、图数据库、云盘还是业务系统；进入 Pact 后必须被转换为受控 operation、workspace asset、evidence、codeChange 或 mirror projection。
 3. Pact 内部兼容层（`pact-internal-compatibility`）：不把 Pact 应用内部的模块、mount、资源语义、运行时、状态边界和能力包生命周期散落成多套兼容概念；统一归入内部兼容层，由明确子类承载内部演进。
 
@@ -1083,6 +1084,23 @@ A2A、MCP、OpenAPI、OpenAI-compatible model endpoint、CLI SDK 都是协议适
 6. 可选 A2A adapter / OpenAI-compatible model gateway
 
 如果 OpenClaw 作为本地操作手接入，它只是 workspace operator。Pact 可以作为它的服务端上游和后端控制面，但不复制 OpenClaw 的消息网关，也不复制外部实现代码。
+
+### 可拆卸 Agent Traffic Gateway
+
+Pact 可以接入真正的智能体流量负载网关，但它必须是可拆卸的边缘数据面，不是 Pact 的生命线。第一版内置 Caddy 与 Nginx 两个适配器，后续异构网关通过同一个 adapter registry 扩展。网关配置和可选运行时解析到本机 `.cache`，不写入 Pact canonical data dir。网关负责 TLS/mTLS、负载均衡、限流、粗粒度来源策略、连接超时、SSE/WebSocket 透传、上传 body/streaming 限制、request id 注入、边缘指标和访问日志；Pact 继续负责 subject/grant/workspace policy、Tool Management、Operation Ledger、Checkpoint Tree、audit、knowledge evidence 和 canonical state。
+
+硬性规则：
+
+- 网关拆除后，Pact 服务端必须仍能用 direct mode 正常启动、发现、授权、MCP 调用、HTTP API、client runtime bootstrap、upload session、workspace 操作和控制台访问。
+- Pact 的启动、feature profile、grant 校验、operation 执行、checkpoint 写入和审计写入不得依赖网关控制面、网关数据库或网关缓存。
+- 网关只允许传递边缘事实，例如 `X-Request-Id`、边缘认证结果、来源网络、限流结果和 route id；这些事实只能作为审计上下文，不能替代 Pact 的 grant、workspace policy 或 Tool Management 裁决。
+- 可信 header 必须绑定来源约束，例如 loopback/private network allowlist、mTLS 或显式 gateway shared secret。direct mode 必须忽略或剥离外部伪造的 gateway-only header。
+- discovery 可以优先发布 gateway endpoint，但必须同时保留 direct fallback endpoint。客户端、MCP connector 和 `pact-client` 不能只知道网关地址。
+- SSE/MCP 会话需要连接级 sticky 或可恢复订阅，但 workflow、operation、upload job 和 agent session 的事实状态仍在 Pact，不在网关。
+- 大文件和目录上传仍以 client runtime、upload session、checkpoint 和 transport adapter 为数据面事实源；网关只做流量保护和流式转发，不重新实现分块、digest、重试或资产登记。
+- 验收必须覆盖三种状态：只有 Pact 无网关、Pact 经过网关、拆掉网关后回到 Pact direct mode。三种状态都必须证明 health、MCP/SSE、Tool Management execute、workspace file/upload 和 request/audit correlation 不破坏。
+
+归口上，agent traffic gateway 属于 `agent-client-mcp-compatibility` 的 ingress adapter。若它集成云 LB、service mesh、WAF 或企业 API gateway，这些外部产品的凭据、部署和同步语义再归入 `external-service-compatibility`；但对 Pact 代码和协议而言，它永远只是可选入口，不是核心抽象。
 
 ## 逻辑架构
 

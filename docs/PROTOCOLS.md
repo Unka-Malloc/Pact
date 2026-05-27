@@ -38,7 +38,7 @@
 - “两个问题，一个能力，三个兼容层”只定义产品问题域；协议边界统一使用 `agent-client-mcp-compatibility`、`external-service-compatibility` 和 `pact-internal-compatibility`。
 - 核心协议面向 workspace state，不面向某个具体 Agent。
 - 协议设计专攻中间狭窄地带：上游知识库太粗时做权限精加工，下游本地智能体太细时做共享工作空间。
-- A2A、MCP、OpenAPI、OpenAI-compatible endpoint、CLI SDK 都是 adapter，不是核心抽象。
+- A2A、MCP、agent traffic gateway、OpenAPI、OpenAI-compatible endpoint、CLI SDK 都是 adapter，不是核心抽象。
 - 本地智能体、控制台、CLI、脚本和人工操作者都必须通过公开协议操作公共空间。
 - 接口日志不等于业务状态；workspace event 和 operation ledger 才是可复用、可恢复、可审计的事实记录。
 
@@ -94,7 +94,7 @@ Pact 的协议不追求覆盖所有智能体协作场景，也不替代上游知
 
 1. `agent-client-mcp-compatibility`
    - 面向智能体客户端和本机 MCP 插件，例如 Codex、OpenClaw、Claude Code、Cursor Agent、Gemini CLI、脚本型 agent 和人工 CLI。
-   - 责任是客户端发现、MCP HTTP / stdio 兼容、grant pairing、local bridge、client runtime bootstrap、transport fallback、版本协商和工具列表稳定性。
+   - 责任是客户端发现、MCP HTTP / stdio 兼容、可选 agent traffic/load gateway、grant pairing、local bridge、client runtime bootstrap、transport fallback、版本协商和工具列表稳定性。
    - 这一层只处理“客户端如何安全调用 Pact”，不直接实现外部业务服务、不直接读写 workspace 内部状态。
 2. `external-service-compatibility`
    - 面向 Pact 进程外部的服务或系统，例如 Docker、GitHub、Gerrit、Mailbox、外部知识库、模型 provider、外部向量库、外部图数据库、业务系统和云盘。
@@ -512,6 +512,8 @@ rankScoreV0 =
 历史文档里的 MCP Demo Flows 现在收敛为本节的设备级 MCP Hub，并按 Stitch MCP 的 HTTP 接入方案落地。
 
 Pact MCP service 是 Workspace API 的设备级协议适配器，不是 agent-to-agent gateway。它必须让同一台设备上的 Codex、Gemini CLI、Kilo Code、Copilot、OpenClaw（OrbStack Kate）、Hermes Agent（OrbStack Serena）和 Antigravity 都能通过同一套发现、授权和工具边界访问 Pact，而不是为某一个 agent 单独硬编码。
+
+Pact MCP service 可以位于 agent traffic/load gateway 后面，但 gateway 只能作为可拆卸流量入口。拆除 gateway 后，HTTP MCP endpoint、stdio proxy 到 HTTP MCP 的转发、grant pairing、discovery manifest、client runtime bootstrap 和 upload session 必须继续使用 direct Pact endpoint 正常工作。gateway 注入的 request id、route id、边缘认证结果和限流结果只能进入审计上下文，不能替代 Pact grant 或 workspace policy。
 
 设备级 MCP Hub 由五部分组成：
 
@@ -1540,6 +1542,7 @@ Tool Management v1 管理公共能力，不管理智能体人格。
 Pact 可以提供协议适配，但适配层不得污染核心模型：
 
 - MCP server：属于 `agent-client-mcp-compatibility`，把 workspace/evidence/artifact/proposal 能力暴露成工具，是智能体长期正式接入面。
+- Agent traffic/load gateway：属于 `agent-client-mcp-compatibility` 的可选 ingress adapter，只做 TLS/mTLS、负载均衡、限流、SSE/WebSocket 透传、request id 和边缘观测；direct Pact endpoint 必须始终可用。
 - A2A adapter：只做兼容 agent card 和任务入口，不内嵌完整 A2A Gateway。
 - OpenAI-compatible model gateway：可选，用于 workspace-aware model routing、context injection、audit 和 redaction。
 - OpenAPI/REST：服务端、控制台和调试兼容面，不作为智能体同级正式面。
