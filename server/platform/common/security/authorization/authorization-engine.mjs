@@ -25,6 +25,34 @@ function stringSet(values = []) {
   return new Set(uniqueStrings(values));
 }
 
+function objectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function stringsFrom(...values) {
+  const output = [];
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      output.push(...value);
+    } else if (typeof value === "string" && value.includes(",")) {
+      output.push(...value.split(","));
+    } else if (value !== undefined && value !== null) {
+      output.push(value);
+    }
+  }
+  return uniqueStrings(output);
+}
+
 function riskRank(value = "read_only") {
   return RISK_RANK[String(value || "read_only")] ?? RISK_RANK.read_only;
 }
@@ -177,6 +205,99 @@ function effectDetails(effect, reasonCode, redactedReason) {
   return { effect, reasonCode, redactedReason };
 }
 
+function subjectHasTenantBypass(subject = {}) {
+  return subject.roleId === "owner" || subject.scopes?.includes("auth:admin");
+}
+
+function resolveResourceContext({ operation = {}, tool = null, input = {}, context = {} } = {}) {
+  const inputResource = objectOrNull(input.resource) || {};
+  const contextResource = objectOrNull(context.resource) || {};
+  const operationResource = objectOrNull(operation.resource) || {};
+  const toolResource = objectOrNull(tool?.resource) || {};
+  return {
+    tenantId: firstString(
+      input.tenantId,
+      input["tenant-id"],
+      inputResource.tenantId,
+      context.tenantId,
+      contextResource.tenantId,
+      operationResource.tenantId,
+      toolResource.tenantId
+    ),
+    workspaceId: firstString(
+      input.workspaceId,
+      input.workspace,
+      input["workspace-id"],
+      inputResource.workspaceId,
+      context.workspaceId,
+      context.workspace,
+      contextResource.workspaceId,
+      operationResource.workspaceId,
+      toolResource.workspaceId
+    ),
+    dataClass: firstString(
+      input.dataClass,
+      input["data-class"],
+      inputResource.dataClass,
+      context.dataClass,
+      contextResource.dataClass,
+      operationResource.dataClass,
+      toolResource.dataClass
+    ),
+    requestedEgress: firstString(
+      input.requestedEgress,
+      input["requested-egress"],
+      context.requestedEgress,
+      operationResource.requestedEgress,
+      toolResource.requestedEgress
+    )
+  };
+}
+
+function abacDenyDetails({ subject = {}, grant = null, profile = null, resource = {} } = {}) {
+  const tenantPolicy = firstString(subject.tenantId, grant?.tenantId, grant?.metadata?.tenantId, profile?.tenantId);
+  if (
+    resource.tenantId &&
+    tenantPolicy &&
+    tenantPolicy !== resource.tenantId &&
+    !subjectHasTenantBypass(subject)
+  ) {
+    return effectDetails("deny", "tenant_mismatch", "Requested tenant is outside the subject boundary.");
+  }
+
+  const allowedWorkspaceIds = stringsFrom(
+    subject.allowedWorkspaceIds,
+    grant?.allowedWorkspaceIds,
+    grant?.metadata?.allowedWorkspaceIds,
+    profile?.allowedWorkspaceIds
+  );
+  if (resource.workspaceId && allowedWorkspaceIds.length > 0 && !allowedWorkspaceIds.includes(resource.workspaceId)) {
+    return effectDetails("deny", "workspace_not_allowed", "Requested workspace is outside the allowed workspace set.");
+  }
+
+  const allowedDataClasses = stringsFrom(
+    subject.allowedDataClasses,
+    grant?.allowedDataClasses,
+    grant?.metadata?.allowedDataClasses,
+    profile?.allowedDataClasses
+  );
+  if (resource.dataClass && allowedDataClasses.length > 0 && !allowedDataClasses.includes(resource.dataClass)) {
+    return effectDetails("deny", "data_class_not_allowed", "Requested data class is outside the allowed data classes.");
+  }
+
+  const allowedEgress = stringsFrom(
+    subject.allowedEgress,
+    grant?.allowedEgress,
+    grant?.metadata?.allowedEgress,
+    profile?.allowedEgress
+  );
+  if (resource.requestedEgress && allowedEgress.length > 0 && !allowedEgress.includes(resource.requestedEgress)) {
+    return effectDetails("deny", "egress_not_allowed", "Requested egress is outside the allowed egress set.");
+  }
+
+  return null;
+}
+
 export function resolveAuthorizationSubject({
   subject = null,
   actor = null,
@@ -184,6 +305,13 @@ export function resolveAuthorizationSubject({
   grant = null
 } = {}) {
   const user = authSession?.user || actor?.user || null;
+  const metadata = objectOrNull(subject?.metadata) || objectOrNull(grant?.metadata) || {};
+  const attributes = {
+    ...(objectOrNull(user?.attributes) || {}),
+    ...(objectOrNull(actor?.attributes) || {}),
+    ...(objectOrNull(subject?.attributes) || {}),
+    ...(objectOrNull(metadata.attributes) || {})
+  };
   if (subject && typeof subject === "object" && !Array.isArray(subject)) {
     return {
       type: subject.type || subject.subjectType || (grant ? "tool-grant" : user ? "console-user" : "subject"),
@@ -192,7 +320,24 @@ export function resolveAuthorizationSubject({
       roleId: String(subject.roleId || user?.roleId || ""),
       scopes: uniqueStrings(subjectScopes(subject, actor, authSession, grant)),
       agentProfileId: String(subject.agentProfileId || subject.profileId || ""),
-      maxRisk: subject.maxRisk || ""
+      maxRisk: subject.maxRisk || "",
+      tenantId: firstString(subject.tenantId, user?.tenantId, grant?.tenantId, metadata.tenantId),
+      orgId: firstString(subject.orgId, user?.orgId, grant?.orgId, metadata.orgId),
+      teamIds: stringsFrom(subject.teamIds, user?.teamIds, grant?.teamIds, metadata.teamIds),
+      allowedWorkspaceIds: stringsFrom(
+        subject.allowedWorkspaceIds,
+        user?.allowedWorkspaceIds,
+        grant?.allowedWorkspaceIds,
+        metadata.allowedWorkspaceIds
+      ),
+      allowedDataClasses: stringsFrom(
+        subject.allowedDataClasses,
+        user?.allowedDataClasses,
+        grant?.allowedDataClasses,
+        metadata.allowedDataClasses
+      ),
+      allowedEgress: stringsFrom(subject.allowedEgress, user?.allowedEgress, grant?.allowedEgress, metadata.allowedEgress),
+      attributes
     };
   }
   if (grant) {
@@ -203,7 +348,14 @@ export function resolveAuthorizationSubject({
       roleId: "tool-grant",
       scopes: uniqueStrings(grant.scopes || []),
       agentProfileId: "",
-      maxRisk: grant.maxRisk || grant.metadata?.maxRisk || ""
+      maxRisk: grant.maxRisk || grant.metadata?.maxRisk || "",
+      tenantId: firstString(grant.tenantId, metadata.tenantId),
+      orgId: firstString(grant.orgId, metadata.orgId),
+      teamIds: stringsFrom(grant.teamIds, metadata.teamIds),
+      allowedWorkspaceIds: stringsFrom(grant.allowedWorkspaceIds, metadata.allowedWorkspaceIds),
+      allowedDataClasses: stringsFrom(grant.allowedDataClasses, metadata.allowedDataClasses),
+      allowedEgress: stringsFrom(grant.allowedEgress, metadata.allowedEgress),
+      attributes
     };
   }
   if (user) {
@@ -214,7 +366,14 @@ export function resolveAuthorizationSubject({
       roleId: String(user.roleId || ""),
       scopes: uniqueStrings(user.scopes || []),
       agentProfileId: "",
-      maxRisk: ""
+      maxRisk: "",
+      tenantId: firstString(user.tenantId),
+      orgId: firstString(user.orgId),
+      teamIds: stringsFrom(user.teamIds),
+      allowedWorkspaceIds: stringsFrom(user.allowedWorkspaceIds),
+      allowedDataClasses: stringsFrom(user.allowedDataClasses),
+      allowedEgress: stringsFrom(user.allowedEgress),
+      attributes
     };
   }
   if (actor) {
@@ -225,7 +384,14 @@ export function resolveAuthorizationSubject({
       roleId: String(actor.roleId || ""),
       scopes: uniqueStrings(actor.scopes || []),
       agentProfileId: String(actor.agentProfileId || ""),
-      maxRisk: actor.maxRisk || ""
+      maxRisk: actor.maxRisk || "",
+      tenantId: firstString(actor.tenantId),
+      orgId: firstString(actor.orgId),
+      teamIds: stringsFrom(actor.teamIds),
+      allowedWorkspaceIds: stringsFrom(actor.allowedWorkspaceIds),
+      allowedDataClasses: stringsFrom(actor.allowedDataClasses),
+      allowedEgress: stringsFrom(actor.allowedEgress),
+      attributes
     };
   }
   return {
@@ -235,7 +401,14 @@ export function resolveAuthorizationSubject({
     roleId: "",
     scopes: [],
     agentProfileId: "",
-    maxRisk: ""
+    maxRisk: "",
+    tenantId: "",
+    orgId: "",
+    teamIds: [],
+    allowedWorkspaceIds: [],
+    allowedDataClasses: [],
+    allowedEgress: [],
+    attributes: {}
   };
 }
 
@@ -258,6 +431,7 @@ export function evaluateAuthorizationPolicy({
   store = null
 } = {}) {
   const resolvedSubject = resolveAuthorizationSubject({ subject, actor, authSession, grant });
+  const resourceContext = resolveResourceContext({ operation, tool, input, context });
   const requiredScopes = requiredScopesFor(operation, tool);
   const scopeSet = stringSet(resolvedSubject.scopes);
   const missingScopes = requiredScopes.filter((scope) => !scopeSet.has(scope));
@@ -269,12 +443,22 @@ export function evaluateAuthorizationPolicy({
     tool ? "tool_catalog_policy" : "",
     grant ? "grant_policy" : "",
     profile ? "agent_profile_policy" : "",
+    resourceContext.tenantId ? "tenant_boundary_policy" : "",
+    resourceContext.workspaceId || resourceContext.dataClass || resourceContext.requestedEgress ? "abac_resource_policy" : "",
     "runtime_safety_policy"
   ]);
   let details = effectDetails("allow", "allowed", "Request allowed.");
+  const abacDetails = abacDenyDetails({
+    subject: resolvedSubject,
+    grant,
+    profile,
+    resource: resourceContext
+  });
 
   if (tool === null && context?.toolExpected === true) {
     details = effectDetails("deny", "unknown_tool", "Tool is not registered.");
+  } else if (abacDetails) {
+    details = abacDetails;
   } else if (tool && tool.status !== "active") {
     details = effectDetails("deny", "tool_inactive", "Tool is inactive.");
   } else if (grantRequired && !grant) {
@@ -335,10 +519,13 @@ export function evaluateAuthorizationPolicy({
       operationId: String(operation?.id || tool?.operationId || ""),
       toolId: String(tool?.id || ""),
       feature: String(operation?.feature || tool?.featureId || ""),
-      risk
+      risk,
+      tenantId: resourceContext.tenantId,
+      workspaceId: resourceContext.workspaceId,
+      dataClass: resourceContext.dataClass
     },
     action: String(input.requestedAction || context.requestedAction || inferOperationAction(operation, tool)),
-    requestedEgress: String(input.requestedEgress || context.requestedEgress || ""),
+    requestedEgress: resourceContext.requestedEgress,
     effect: details.effect,
     allowed: ["allow", "dry_run_only"].includes(details.effect),
     reasonCode: details.reasonCode,
@@ -350,6 +537,20 @@ export function evaluateAuthorizationPolicy({
     requiredApproval: details.effect === "require_approval",
     requiredConfirmation: details.effect === "require_confirmation",
     evaluatedLayers,
+    tenant: {
+      subjectTenantId: resolvedSubject.tenantId || "",
+      resourceTenantId: resourceContext.tenantId || "",
+      orgId: resolvedSubject.orgId || "",
+      teamIds: resolvedSubject.teamIds || []
+    },
+    abac: {
+      workspaceId: resourceContext.workspaceId || "",
+      dataClass: resourceContext.dataClass || "",
+      requestedEgress: resourceContext.requestedEgress || "",
+      allowedWorkspaceIds: resolvedSubject.allowedWorkspaceIds || [],
+      allowedDataClasses: resolvedSubject.allowedDataClasses || [],
+      allowedEgress: resolvedSubject.allowedEgress || []
+    },
     createdAt: nowIso()
   };
 

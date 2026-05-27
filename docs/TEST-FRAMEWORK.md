@@ -37,7 +37,7 @@ The runner writes machine-readable reports to `build/test-reports/`, including
 
 | Profile | Command | Purpose |
 | --- | --- | --- |
-| `fast` | `npm test` / `npm run test:fast` | Local pre-commit loop: repo hygiene, secret hygiene, Flutter analyze/tests, Rust client tests. |
+| `fast` | `npm test` / `npm run test:fast` | Local pre-commit loop: repo hygiene, secret hygiene, destructive client gates, Flutter analyze/tests, Rust client tests. |
 | `standard` | `npm run test:regression` / `npm run test:standard` | Full cross-layer regression: security, server console build, server runtime checks, client tests, hygiene after generated output. |
 | `coverage` | `npm run test:coverage` | Flutter coverage plus Rust client tests. |
 | `security` | `npm run test:security` | Secret scan, dependency audit, server smoke, client native tests. |
@@ -84,8 +84,27 @@ node tests/run.mjs --tag security
 
 ### Contract and Integration
 
-- `client.native.test` covers Rust backend core, CLI behavior, daemon-facing
-  client behavior, shared workspace files, and protocol-level contracts.
+- `client:verify:architecture` checks the destructive desktop-client boundary:
+  only six product modules, future package profile, first target adapters, no
+  default legacy daemon/connector/mail/graph/upload package, no old CLI main
+  command set, and legacy code outside the default Rust source path.
+- `client:verify:plan` checks that docs, package scripts, and `tests/run.mjs`
+  agree on the client verifier set, and that deferred Skill Hub protocol work is
+  not marked complete.
+- `client:verify:state-store` covers the future local JSON/JSONL state,
+  activity, and snapshot substrate.
+- `client:verify:targets` covers target discovery, manual target addition, and
+  first target adapter contracts.
+- `client:verify:config-writes` covers structured target-native MCP config
+  plan/apply/rollback writes.
+- `client:verify:pairing-skill-cli` covers pairing, passive Skill Hub listing,
+  hidden skill refusal, and `protocol_deferred` boundaries.
+- `client:verify:mcp-plugins` covers peer MCP plugin status/update/rollback.
+- `client:verify:thin-forwarding` covers model profiles and thin forwarding
+  without a planner, session harness, or tool loop.
+- `client.native.test` covers Rust future client unit and contract tests. Legacy
+  daemon, connector, mail, upload queue, and server bridge tests live under
+  `client-cli/legacy/dev-only/` and are not part of the default product gate.
 - `server.headless` validates the server runtime without the GUI.
 - `server.continuity`, `server.checkpoints`, `server.rebuild`, `server.ops`,
   and `server.knowledge` validate storage, upload, rebuild, and knowledge

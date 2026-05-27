@@ -18,14 +18,18 @@ function objectFromEntries(entries = []) {
 const CORE_CLIENT_REQUIRED_MODULE_IDS = new Set([
   "client-gui",
   "client-cli",
-  "client-daemon",
-  "local-rpc",
   "portable-data",
-  "file-system-adapter",
-  "server-bridge",
-  "upload-queue",
-  "checkpoint-upload"
+  "target-adapters",
+  "mcp-plugins",
+  "skill-hub",
+  "model-forwarding",
+  "activity-snapshots",
+  "settings"
 ]);
+
+function isLegacyDevOnlyClientModule(module = {}) {
+  return module?.legacyDevOnly === true || module?.profile === "legacy/dev-only";
+}
 
 export const FEATURE_MANIFEST = Object.freeze({
   schemaVersion: 1,
@@ -168,7 +172,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         includePaths: ["server/platform/common/security"],
         excludePaths: []
       },
-      tests: { suites: ["server:verify:console-auth", "server:verify:operation-policy"] }
+      tests: { suites: ["server:verify:console-auth", "server:verify:security-hardening", "server:verify:operation-policy"] }
     },
     {
       featureId: "operation-dispatcher",
@@ -1261,10 +1265,11 @@ export function buildClientPackagingConfig(baseConfig = {}, featureRuntime = {})
   const selectedModuleIds = new Set(activeClientModuleIds(featureRuntime));
   const activeFeatures = new Set(featureRuntime.activeFeatureIds || []);
   const normalizeGeneratedClientModule = (id, module = {}) => {
+    const legacyDevOnly = isLegacyDevOnlyClientModule(module);
     const next = {
       ...(module || {}),
-      required: module?.required === true && CORE_CLIENT_REQUIRED_MODULE_IDS.has(id),
-      enabled: CORE_CLIENT_REQUIRED_MODULE_IDS.has(id) || selectedModuleIds.has(id)
+      required: !legacyDevOnly && module?.required === true && CORE_CLIENT_REQUIRED_MODULE_IDS.has(id),
+      enabled: !legacyDevOnly && (CORE_CLIENT_REQUIRED_MODULE_IDS.has(id) || selectedModuleIds.has(id))
     };
     if (id === "portable-data" && Array.isArray(next.portableDirectories)) {
       next.portableDirectories = next.portableDirectories.filter((directory) => {

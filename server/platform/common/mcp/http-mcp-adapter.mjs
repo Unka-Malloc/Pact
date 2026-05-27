@@ -159,10 +159,16 @@ function publicMcpTool(tool) {
   const workspaceHint = schemaMentionsWorkspaceId(tool.inputSchema)
     ? " MCP clients should use workspaceRef, workspaceIndex, or workspaceName instead of internal workspaceId."
     : "";
+  const scopeHint = (tool.requiredScopes || []).length > 0
+    ? ` Requires scope: ${tool.requiredScopes.join(", ")}.`
+    : "";
+  const riskHint = tool.risk && tool.risk !== "read_only"
+    ? ` Risk: ${tool.risk}.`
+    : "";
   return {
     name: tool.id,
     title: tool.label || tool.id,
-    description: `${tool.description || tool.label || tool.id}${workspaceHint}`,
+    description: `${tool.description || tool.label || tool.id}${scopeHint}${riskHint}${workspaceHint}`,
     inputSchema,
     annotations: {
       readOnlyHint: tool.readOnly !== false,

@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const futureModules = [
+  "client-gui",
+  "client-cli",
+  "portable-data",
+  "target-adapters",
+  "mcp-plugins",
+  "skill-hub",
+  "model-forwarding",
+  "activity-snapshots",
+  "settings"
+];
+const firstTargets = ["codex", "opencode", "openclaw", "antigravity", "cursor", "windsurf", "gemini-cli"];
+const legacyModules = [
+  "client-daemon",
+  "local-rpc",
+  "file-system-adapter",
+  "server-bridge",
+  "upload-queue",
+  "checkpoint-upload",
+  "knowledge-mirror",
+  "data-connectors",
+  "gmail-connector",
+  "outlook-mail-connector",
+  "google-drive-connector",
+  "onedrive-connector",
+  "slack-connector",
+  "teams-connector",
+  "knowledge-agent",
+  "agent-registry",
+  "expert-vocabulary",
+  "mail-index",
+  "macos-mail-import",
+  "knowledge-graph-ui"
+];
+const forbiddenCliScopes = [
+  'scope == "daemon"',
+  'scope == "server"',
+  'scope == "mail"',
+  'scope == "upload"',
+  'scope == "connectors"',
+  'scope == "knowledge"',
+  'scope == "events"',
+  'scope == "context"',
+  'scope == "rpc"',
+  'scope == "task"',
+  'Backend::from_portable_data_dir',
+  'execute_method(',
+  'backend_core',
+  'local-agents',
+  'agent invoke'
+];
+const forbiddenShellLabels = [
+  "Console",
+  "Server",
+  "Modules",
+  "Data Connectors",
+  "Knowledge Graph",
+  "Export",
+  "Logs"
+];
+
+const failures = [];
+
+function fail(message) {
+  failures.push(message);
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    fail(message);
+  }
+}
+
+async function exists(relativePath) {
+  try {
+    await fs.access(path.join(repoRoot, relativePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readText(relativePath) {
+  return fs.readFile(path.join(repoRoot, relativePath), "utf8");
+}
+
+async function readJson(relativePath) {
+  return JSON.parse(await readText(relativePath));
+}
+
+function sameSet(actual, expected) {
+  return actual.length === expected.length && expected.every((item) => actual.includes(item));
+}
+
+function runJson(command, args) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024
+  });
+  if (result.status !== 0) {
+    fail(`${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+    return null;
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    fail(`${command} ${args.join(" ")} did not return JSON: ${error.message}`);
+    return null;
+  }
+}
+
+function collectEnumValues(source, enumName) {
+  const match = source.match(new RegExp(`enum\\s+${enumName}\\s*\\{([\\s\\S]*?)\\}`));
+  if (!match) {
+    return [];
+  }
+  return match[1]
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => item.split(/\s|\(/)[0]);
+}
+
+const packaging = await readJson("client-gui/packaging.modules.json");
+assert(packaging.packageProfile === "future-client", "default package profile must be future-client");
+const modules = packaging.modules || {};
+const enabledConfigModules = Object.entries(modules)
+  .filter(([, module]) => module.enabled !== false && module.legacyDevOnly !== true)
+  .map(([id]) => id)
+  .sort();
+assert(sameSet(enabledConfigModules, [...futureModules].sort()), `enabled config modules must be exactly ${futureModules.join(", ")}`);
+for (const moduleId of futureModules) {
+  assert(modules[moduleId]?.required === true, `future module must be required: ${moduleId}`);
+}
+for (const moduleId of legacyModules) {
+  assert(modules[moduleId]?.enabled === false, `legacy module must be disabled: ${moduleId}`);
+  assert(modules[moduleId]?.legacyDevOnly === true, `legacy module must be marked legacyDevOnly: ${moduleId}`);
+  assert(modules[moduleId]?.profile === "legacy/dev-only", `legacy module must declare legacy/dev-only profile: ${moduleId}`);
+}
+const packagedTargets = modules["target-adapters"]?.targetAdapters || [];
+assert(sameSet([...packagedTargets].sort(), [...firstTargets].sort()), "target-adapters module must list every first-batch target");
+const portableDirs = modules["portable-data"]?.portableDirectories || [];
+for (const legacyDir of ["backend", "logs", "exports", "mail-imports", "knowledge", "chat-index"]) {
+  assert(!portableDirs.includes(legacyDir), `portable data must not include legacy directory: ${legacyDir}`);
+}
+assert(!portableDirs.some((item) => String(item).startsWith("connectors/")), "portable data must not include connector directories");
+
+const packagePlan = runJson(process.execPath, ["client-gui/scripts/package-client.mjs", "--dry-run"]);
+if (packagePlan) {
+  const enabledPlanModules = packagePlan.enabledModules.map((item) => item.id).sort();
+  assert(sameSet(enabledPlanModules, [...futureModules].sort()), "package dry-run must enable only future modules");
+  assert(packagePlan.skippedModules.every((item) => item.legacyDevOnly !== true || item.status === "legacy-dev-only"), "legacy modules must be skipped as legacy-dev-only");
+}
+
+for (const relativePath of [
+  "client-cli/src/local_agents.rs",
+  "client-cli/src/agent_client.rs",
+  "client-cli/src/backend_core.rs",
+  "client-cli/src/connectors.rs",
+  "client-cli/src/upload_queue.rs",
+  "client-cli/src/bin/pact-clientd.rs"
+]) {
+  assert(!(await exists(relativePath)), `${relativePath} must not remain in the main client source path`);
+}
+for (const relativePath of [
+  "client-cli/legacy/dev-only/src/backend_core.rs",
+  "client-cli/legacy/dev-only/src/connectors.rs",
+  "client-cli/legacy/dev-only/src/upload_queue.rs",
+  "client-cli/legacy/dev-only/bin/pact-clientd.rs",
+  "client-cli/legacy/dev-only/tests/client_backend_integration.rs",
+  "client-cli/legacy/dev-only/tests/client_cli_functional.rs"
+]) {
+  assert(await exists(relativePath), `${relativePath} must retain reference-only legacy material outside the default build`);
+}
+
+const cargoToml = await readText("client-cli/Cargo.toml");
+assert(!cargoToml.includes('name = "pact-clientd"'), "Cargo package must not build pact-clientd by default");
+const libRs = await readText("client-cli/src/lib.rs");
+for (const moduleName of ["backend_core", "connectors", "upload_queue", "local_agents", "agent_client"]) {
+  assert(!libRs.includes(`pub mod ${moduleName}`), `client library must not export legacy module ${moduleName}`);
+}
+const cliSource = await readText("client-cli/src/bin/pact-client.rs");
+for (const token of forbiddenCliScopes) {
+  assert(!cliSource.includes(token), `pact-client main CLI must not contain legacy token: ${token}`);
+}
+for (const token of ["targets scan", "mcp config plan", "mcp plugin status", "forward --profile", "agents pair"]) {
+  assert(cliSource.includes(token), `pact-client usage must expose future command: ${token}`);
+}
+
+const appModels = await readText("client-gui/lib/src/models/app_models.dart");
+const appSections = collectEnumValues(appModels, "AppSection");
+assert(sameSet(appSections, ["agents", "mcpPlugins", "skillHub", "modelForwarding", "activity", "settings"]), "AppSection enum must contain only the six future modules");
+const shellSource = await readText("client-gui/lib/src/ui/client_shell.dart");
+for (const label of forbiddenShellLabels) {
+  assert(!shellSource.includes(label), `future client shell must not expose old navigation label: ${label}`);
+}
+for (const label of ["Agents", "MCP Plugins", "Skill Hub", "Model Forwarding", "Activity And Snapshots", "Settings"]) {
+  assert(shellSource.includes(label), `future client shell must expose module label: ${label}`);
+}
+
+if (failures.length > 0) {
+  console.error(JSON.stringify({ ok: false, failures }, null, 2));
+  process.exit(1);
+}
+
+console.log(JSON.stringify({
+  ok: true,
+  futureModules,
+  firstTargets,
+  legacyModulesChecked: legacyModules.length,
+  packagePlanChecked: Boolean(packagePlan)
+}, null, 2));

@@ -77,11 +77,64 @@ export function createSystemControllerAuthHandlers({
           limit: Number(url.searchParams.get("limit") || 100),
           operationId: url.searchParams.get("operationId") || url.searchParams.get("operation-id") || "",
           userId: url.searchParams.get("userId") || url.searchParams.get("user-id") || "",
-          status: url.searchParams.get("status") || ""
+          status: url.searchParams.get("status") || "",
+          traceId: url.searchParams.get("traceId") || url.searchParams.get("trace-id") || "",
+          tenantId: url.searchParams.get("tenantId") || url.searchParams.get("tenant-id") || "",
+          createdFrom: url.searchParams.get("createdFrom") || url.searchParams.get("created-from") || "",
+          createdTo: url.searchParams.get("createdTo") || url.searchParams.get("created-to") || ""
         },
         response,
         context: { securityPermissions, operationAuditStore },
         errorMessage: "读取认证审计失败。"
+      });
+    },
+    async handleAuthAuditExport({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "auth.audit.export",
+        input: {
+          limit: Number(url.searchParams.get("limit") || 100),
+          operationId: url.searchParams.get("operationId") || url.searchParams.get("operation-id") || "",
+          userId: url.searchParams.get("userId") || url.searchParams.get("user-id") || "",
+          status: url.searchParams.get("status") || "",
+          traceId: url.searchParams.get("traceId") || url.searchParams.get("trace-id") || "",
+          tenantId: url.searchParams.get("tenantId") || url.searchParams.get("tenant-id") || "",
+          createdFrom: url.searchParams.get("createdFrom") || url.searchParams.get("created-from") || "",
+          createdTo: url.searchParams.get("createdTo") || url.searchParams.get("created-to") || ""
+        },
+        response,
+        context: { securityPermissions, operationAuditStore, authSession },
+        errorMessage: "导出认证审计失败。"
+      });
+    },
+    async handleAuthAuditRetention({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || (requestBody.length > 0 ? "auth.audit.retention.set" : "auth.audit.retention.get"),
+        input: requestBody.length > 0 ? parseJsonBody(requestBody) : {},
+        response,
+        context: { securityPermissions, operationAuditStore, authSession },
+        errorMessage: "审计保留策略操作失败。"
+      });
+    },
+    async handleAuthAuditPrune({ operation, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "auth.audit.prune",
+        input: requestBody.length > 0 ? parseJsonBody(requestBody) : {},
+        response,
+        context: { securityPermissions, operationAuditStore, authSession },
+        errorMessage: "审计清理失败。"
+      });
+    },
+    async handleObservabilityTraceGet({ operation, traceId, url, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "observability.trace.get",
+        input: {
+          traceId,
+          limit: Number(url.searchParams.get("limit") || 200),
+          tenantId: url.searchParams.get("tenantId") || url.searchParams.get("tenant-id") || ""
+        },
+        response,
+        context: { securityPermissions, operationAuditStore },
+        errorMessage: "读取 trace 详情失败。"
       });
     },
     async handleAuthSessions({ operation, response }) {
@@ -90,6 +143,14 @@ export function createSystemControllerAuthHandlers({
         response,
         context: { securityPermissions },
         errorMessage: "读取控制台会话失败。"
+      });
+    },
+    async handleAuthRotateSession({ operation, request, authSession, response }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "auth.sessions.rotate",
+        response,
+        context: { securityPermissions, request, authSession, appendConsoleOperationLog },
+        errorMessage: "轮换控制台会话失败。"
       });
     },
     async handleAuthRevokeSession({ operation, sessionId, authSession, response }) {

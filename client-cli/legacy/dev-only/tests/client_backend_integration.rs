@@ -15,17 +15,13 @@ fn unique_temp_dir(name: &str) -> PathBuf {
 fn clientd_bin() -> PathBuf {
     std::env::var_os("CARGO_BIN_EXE_pact-clientd")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-clientd")
-        })
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-clientd"))
 }
 
 fn client_bin() -> PathBuf {
     std::env::var_os("CARGO_BIN_EXE_pact-client")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-client")
-        })
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/pact-client"))
 }
 
 fn doc_line(id: u64, subject: &str, sender: &str, mailbox: &str, taxonomy: &str) -> String {

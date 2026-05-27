@@ -19,6 +19,7 @@ import '../services/daemon_services.dart';
 import '../services/knowledge_graph_service.dart';
 import '../services/macos_mail_importer.dart';
 import '../services/runtime_services.dart';
+import '../services/agent_service.dart';
 
 class _MailKnowledgeGraphPreloadRequest {
   const _MailKnowledgeGraphPreloadRequest({
@@ -194,6 +195,55 @@ Future<List<MailKnowledgeDocument>> _loadMailKnowledgeDocumentsForPreload(
 }
 
 class AppController extends ChangeNotifier {
+  final AgentService agentService = AgentService();
+  List<TargetCandidate> scannedTargets = [];
+  Map<String, dynamic>? targetInspection;
+  Map<String, dynamic>? targetConfigPlan;
+  bool isScanningTargets = false;
+
+  Future<void> scanTargets() async {
+    if (isScanningTargets) return;
+    isScanningTargets = true;
+    notifyListeners();
+    try {
+      scannedTargets = await agentService.scanTargets();
+      statusMessage = '已扫描 ${scannedTargets.length} 个目标适配器。';
+      statusCaption = 'Targets';
+    } catch (e) {
+      debugPrint('Failed to scan targets: $e');
+      lastError = e.toString();
+    } finally {
+      isScanningTargets = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> inspectTarget(String target) async {
+    try {
+      targetInspection = await agentService.inspectTarget(target);
+      statusMessage = '已读取 $target 目标适配器。';
+      statusCaption = 'Target inspect';
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to inspect target: $e');
+      lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> planTargetConfig(String target) async {
+    try {
+      targetConfigPlan = await agentService.planTargetConfig(target);
+      statusMessage = '已生成 $target MCP 配置计划。';
+      statusCaption = 'MCP config plan';
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to plan target config: $e');
+      lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
   AppController({
     required PortableStorage storage,
     ClientBackendApi? backendApi,
@@ -296,7 +346,7 @@ class AppController extends ChangeNotifier {
   final inputController = TextEditingController();
   final Uuid _uuid = const Uuid();
 
-  AppSection currentSection = AppSection.console;
+  AppSection currentSection = AppSection.agents;
   ClientConfig config = const ClientConfig();
   List<QueuedFile> queuedFiles = const [];
   List<RecentRun> recentRuns = const [];
@@ -1455,25 +1505,8 @@ class AppController extends ChangeNotifier {
     }
     currentSection = section;
     _syncSelections();
-    _startUploadSessionWatch();
-    if (section == AppSection.modules && localMailIndexAvailable) {
-      _requestMailIndexStatsRefreshIfStale();
-    }
-    if (section == AppSection.server && serverOperations.isEmpty) {
-      unawaited(refreshServerCapabilities());
-    }
-    if (section == AppSection.dataConnectors) {
-      unawaited(refreshDataConnectors());
-    }
-    if (section == AppSection.knowledgeGraph && localMailIndexAvailable) {
-      _notifyKnowledgeDaemon(
-        KnowledgeDaemonEvent(
-          kind: KnowledgeDaemonEventKind.manualRefresh,
-          sourceId: 'graph-tab',
-          reason: 'section-entered',
-        ),
-        delay: const Duration(milliseconds: 350),
-      );
+    if (section == AppSection.agents && scannedTargets.isEmpty) {
+      unawaited(scanTargets());
     }
     notifyListeners();
   }
@@ -1841,7 +1874,7 @@ class AppController extends ChangeNotifier {
           );
     statusMessage = '检查点 ${shortId(node.checkpointId)} 已载入控制台。';
     statusCaption = '可继续恢复';
-    currentSection = AppSection.console;
+    currentSection = AppSection.activity;
     notifyListeners();
   }
 
@@ -2801,7 +2834,7 @@ class AppController extends ChangeNotifier {
       await _refreshClientBackendState(notify: false);
       _lastMailIndexStatsRefreshAt = DateTime.now();
       _markKnowledgeGraphDirty();
-      if (currentSection == AppSection.knowledgeGraph || !silent) {
+      if (!silent) {
         _syncKnowledgeGraph();
       }
       if (!silent) {
@@ -3235,7 +3268,9 @@ class AppController extends ChangeNotifier {
       if (!await _backendApi.ensureDaemon()) {
         throw StateError('本地客户端后台不可用。');
       }
-      final result = await _backendApi.syncDataConnector(providerId: providerId);
+      final result = await _backendApi.syncDataConnector(
+        providerId: providerId,
+      );
       final count = (result['itemCount'] as num?)?.toInt() ?? 0;
       statusMessage = '$providerId 已同步 $count 条本地镜像记录。';
       statusCaption = '连接器同步';

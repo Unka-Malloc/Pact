@@ -174,6 +174,28 @@ function stringifyJson(value, fallback = {}) {
   return JSON.stringify(value ?? fallback);
 }
 
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function stringsFrom(value = []) {
+  if (Array.isArray(value)) {
+    return uniqueStrings(value);
+  }
+  if (typeof value === "string") {
+    return uniqueStrings(value.split(","));
+  }
+  return [];
+}
+
+function normalizeTenantId(value) {
+  const tenantId = String(value || "default").trim() || "default";
+  if (!/^[a-zA-Z0-9._:-]{1,120}$/.test(tenantId)) {
+    throw new Error("tenantId 只能包含字母、数字、点、下划线、短横线、冒号，长度 1-120。");
+  }
+  return tenantId;
+}
+
 function parseCookies(request) {
   const header = String(request?.headers?.cookie || "");
   return Object.fromEntries(
@@ -286,6 +308,13 @@ function publicUser(row) {
     roleId: row.role_id,
     roleLabel: role.label,
     scopes: role.scopes,
+    tenantId: row.tenant_id || "default",
+    orgId: row.org_id || "",
+    teamIds: parseJson(row.team_ids_json, []),
+    allowedWorkspaceIds: parseJson(row.allowed_workspace_ids_json, []),
+    allowedDataClasses: parseJson(row.allowed_data_classes_json, []),
+    allowedEgress: parseJson(row.allowed_egress_json, []),
+    attributes: parseJson(row.attributes_json, {}),
     enabled: Boolean(row.enabled),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -323,6 +352,13 @@ function ensureSchema(db) {
       password_hash TEXT NOT NULL DEFAULT '',
       salt TEXT NOT NULL DEFAULT '',
       enabled INTEGER NOT NULL DEFAULT 1,
+      tenant_id TEXT NOT NULL DEFAULT 'default',
+      org_id TEXT NOT NULL DEFAULT '',
+      team_ids_json TEXT NOT NULL DEFAULT '[]',
+      allowed_workspace_ids_json TEXT NOT NULL DEFAULT '[]',
+      allowed_data_classes_json TEXT NOT NULL DEFAULT '[]',
+      allowed_egress_json TEXT NOT NULL DEFAULT '[]',
+      attributes_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       last_login_at TEXT NOT NULL DEFAULT '',
@@ -340,6 +376,27 @@ function ensureSchema(db) {
   }
   if (!existingCols.has("locked_until")) {
     db.exec("ALTER TABLE console_users ADD COLUMN locked_until TEXT NOT NULL DEFAULT ''");
+  }
+  if (!existingCols.has("tenant_id")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'");
+  }
+  if (!existingCols.has("org_id")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN org_id TEXT NOT NULL DEFAULT ''");
+  }
+  if (!existingCols.has("team_ids_json")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN team_ids_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!existingCols.has("allowed_workspace_ids_json")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN allowed_workspace_ids_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!existingCols.has("allowed_data_classes_json")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN allowed_data_classes_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!existingCols.has("allowed_egress_json")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN allowed_egress_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!existingCols.has("attributes_json")) {
+    db.exec("ALTER TABLE console_users ADD COLUMN attributes_json TEXT NOT NULL DEFAULT '{}'");
   }
 
   db.exec(`
@@ -520,6 +577,13 @@ export function createConsoleAuth({ userDataPath }) {
         roleId: row.role_id,
         roleLabel: role.label,
         scopes: role.scopes,
+        tenantId: row.tenant_id || "default",
+        orgId: row.org_id || "",
+        teamIds: parseJson(row.team_ids_json, []),
+        allowedWorkspaceIds: parseJson(row.allowed_workspace_ids_json, []),
+        allowedDataClasses: parseJson(row.allowed_data_classes_json, []),
+        allowedEgress: parseJson(row.allowed_egress_json, []),
+        attributes: parseJson(row.attributes_json, {}),
         enabled: Boolean(row.enabled),
         createdAt: row.user_created_at,
         updatedAt: row.user_updated_at,
@@ -543,8 +607,11 @@ export function createConsoleAuth({ userDataPath }) {
     const createdAt = nowIso();
     db.prepare(`
       INSERT INTO console_users (
-        user_id, username, display_name, role_id, password_hash, salt, enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        user_id, username, display_name, role_id, password_hash, salt, enabled,
+        tenant_id, org_id, team_ids_json, allowed_workspace_ids_json,
+        allowed_data_classes_json, allowed_egress_json, attributes_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userId,
       username,
@@ -553,6 +620,13 @@ export function createConsoleAuth({ userDataPath }) {
       passwordHash,
       salt,
       input.enabled === false ? 0 : 1,
+      normalizeTenantId(input.tenantId),
+      String(input.orgId || "").trim(),
+      stringifyJson(stringsFrom(input.teamIds)),
+      stringifyJson(stringsFrom(input.allowedWorkspaceIds)),
+      stringifyJson(stringsFrom(input.allowedDataClasses)),
+      stringifyJson(stringsFrom(input.allowedEgress)),
+      stringifyJson(input.attributes && typeof input.attributes === "object" ? input.attributes : {}),
       createdAt,
       createdAt
     );
@@ -655,6 +729,46 @@ export function createConsoleAuth({ userDataPath }) {
     };
   }
 
+  function rotateSession(request) {
+    const cookies = parseCookies(request);
+    const currentToken = cookies[CONSOLE_SESSION_COOKIE] || "";
+    const currentSession = sessionFromToken(currentToken, request);
+    if (!currentSession) {
+      return { ok: false, status: 401, error: "控制台未登录。" };
+    }
+    const token = randomToken();
+    const csrfToken = computeCsrfToken(token);
+    const rotatedAt = nowIso();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+    db.prepare(`
+      UPDATE console_sessions
+      SET token_hash = ?, csrf_token = '', last_seen_at = ?, expires_at = ?
+      WHERE session_id = ?
+    `).run(
+      hashToken(token),
+      rotatedAt,
+      expiresAt,
+      currentSession.sessionId
+    );
+    const session = sessionFromToken(token, request);
+    return {
+      ok: true,
+      session,
+      csrfToken,
+      rotatedAt,
+      cookies: [
+        cookieHeader(CONSOLE_SESSION_COOKIE, token, request, {
+          httpOnly: true,
+          maxAge: Math.floor(SESSION_TTL_MS / 1000)
+        }),
+        cookieHeader(CONSOLE_CSRF_COOKIE, csrfToken, request, {
+          httpOnly: false,
+          maxAge: Math.floor(SESSION_TTL_MS / 1000)
+        })
+      ]
+    };
+  }
+
   async function updateUser(userId, patch = {}) {
     const current = getUserByIdStmt.get(String(userId || ""));
     if (!current) {
@@ -667,6 +781,25 @@ export function createConsoleAuth({ userDataPath }) {
           : current.display_name,
       roleId: patch.roleId !== undefined ? normalizeRole(patch.roleId) : current.role_id,
       enabled: patch.enabled !== undefined ? (patch.enabled === false ? 0 : 1) : current.enabled,
+      tenantId: patch.tenantId !== undefined ? normalizeTenantId(patch.tenantId) : current.tenant_id,
+      orgId: patch.orgId !== undefined ? String(patch.orgId || "").trim() : current.org_id,
+      teamIds: patch.teamIds !== undefined ? stringsFrom(patch.teamIds) : parseJson(current.team_ids_json, []),
+      allowedWorkspaceIds:
+        patch.allowedWorkspaceIds !== undefined
+          ? stringsFrom(patch.allowedWorkspaceIds)
+          : parseJson(current.allowed_workspace_ids_json, []),
+      allowedDataClasses:
+        patch.allowedDataClasses !== undefined
+          ? stringsFrom(patch.allowedDataClasses)
+          : parseJson(current.allowed_data_classes_json, []),
+      allowedEgress:
+        patch.allowedEgress !== undefined
+          ? stringsFrom(patch.allowedEgress)
+          : parseJson(current.allowed_egress_json, []),
+      attributes:
+        patch.attributes && typeof patch.attributes === "object"
+          ? patch.attributes
+          : parseJson(current.attributes_json, {}),
       passwordHash: current.password_hash,
       salt: current.salt
     };
@@ -678,7 +811,9 @@ export function createConsoleAuth({ userDataPath }) {
     }
     db.prepare(`
       UPDATE console_users
-      SET display_name = ?, role_id = ?, enabled = ?, password_hash = ?, salt = ?, updated_at = ?
+      SET display_name = ?, role_id = ?, enabled = ?, password_hash = ?, salt = ?,
+          tenant_id = ?, org_id = ?, team_ids_json = ?, allowed_workspace_ids_json = ?,
+          allowed_data_classes_json = ?, allowed_egress_json = ?, attributes_json = ?, updated_at = ?
       WHERE user_id = ?
     `).run(
       updates.displayName,
@@ -686,6 +821,13 @@ export function createConsoleAuth({ userDataPath }) {
       updates.enabled,
       updates.passwordHash,
       updates.salt,
+      updates.tenantId,
+      updates.orgId,
+      stringifyJson(updates.teamIds, []),
+      stringifyJson(updates.allowedWorkspaceIds, []),
+      stringifyJson(updates.allowedDataClasses, []),
+      stringifyJson(updates.allowedEgress, []),
+      stringifyJson(updates.attributes, {}),
       nowIso(),
       current.user_id
     );
@@ -981,6 +1123,7 @@ export function createConsoleAuth({ userDataPath }) {
     bootstrapOwner,
     login,
     logout,
+    rotateSession,
     listUsers,
     createUser,
     updateUser,

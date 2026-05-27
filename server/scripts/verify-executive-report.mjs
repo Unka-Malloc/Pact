@@ -50,6 +50,7 @@ function contributionReport() {
   }).contribution;
   registry.scanContribution(contribution.contributionId, { actorId: "scanner" });
   registry.reviewContribution(contribution.contributionId, { actorId: "reviewer" });
+  registry.previewContribution(contribution.contributionId, { actorId: "reviewer" });
   registry.publishContribution(contribution.contributionId, { actorId: "reviewer" });
   registry.requestPermission(contribution.contributionId, {
     requesterId: "agent-b",

@@ -242,6 +242,15 @@ export function createSystemControllerFoundationHandlers({
         errorMessage: "生成贡献报告失败。"
       });
     },
+    async handleWorkspaceContributionAssetsList({ operation, url, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.assets.list",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        context: accessControlContext(authSession),
+        errorMessage: "读取贡献资产列表失败。"
+      });
+    },
     async handleWorkspaceContributionPermissionRequest({ operation, contributionId, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
         operationId: operation?.id || "workspace.contribution.permission.request",
@@ -264,6 +273,78 @@ export function createSystemControllerFoundationHandlers({
         response,
         context: accessControlContext(authSession, { contributionId }),
         errorMessage: "授予贡献权限失败。"
+      });
+    },
+    async handleWorkspaceContributionScan({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.scan",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "扫描贡献失败。"
+      });
+    },
+    async handleWorkspaceContributionReview({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.review",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "审核贡献失败。"
+      });
+    },
+    async handleWorkspaceContributionPreview({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.preview",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "生成贡献预览失败。"
+      });
+    },
+    async handleWorkspaceContributionPublish({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.publish",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "发布贡献失败。"
+      });
+    },
+    async handleWorkspaceContributionAdopt({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.adopt",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "采用贡献失败。"
+      });
+    },
+    async handleWorkspaceContributionReject({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.reject",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "拒绝贡献失败。"
+      });
+    },
+    async handleWorkspaceContributionRequestChanges({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.request_changes",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "要求修改贡献失败。"
+      });
+    },
+    async handleWorkspaceContributionRevoke({ operation, contributionId, requestBody, response, authSession }) {
+      await sendConsoleDomainOperation({
+        operationId: operation?.id || "workspace.contribution.revoke",
+        input: { ...protocolPayload(requestBody), contributionId },
+        response,
+        context: accessControlContext(authSession, { contributionId }),
+        errorMessage: "撤销贡献失败。"
       });
     },
     async handleKnowledgeAccessEvaluate({ operation, requestBody, response, authSession }) {

@@ -29,6 +29,16 @@ function asLimit(value, fallback = 100) {
   return Math.max(1, Math.min(Number(value || fallback) || fallback, 500));
 }
 
+function firstString(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
 function subjectIdFrom(value = {}) {
   return String(
     value.subjectId ||
@@ -39,6 +49,15 @@ function subjectIdFrom(value = {}) {
       value.subject?.id ||
       ""
   );
+}
+
+function ensureColumns(db, tableName, columns = {}) {
+  const existing = new Set(db.prepare(`PRAGMA table_info(${tableName})`).all().map((row) => row.name));
+  for (const [columnName, definition] of Object.entries(columns)) {
+    if (!existing.has(columnName)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+    }
+  }
 }
 
 function ensureSchema(db) {
@@ -54,6 +73,10 @@ function ensureSchema(db) {
       operation_id TEXT NOT NULL DEFAULT '',
       tool_id TEXT NOT NULL DEFAULT '',
       grant_id TEXT NOT NULL DEFAULT '',
+      tenant_id TEXT NOT NULL DEFAULT '',
+      workspace_id TEXT NOT NULL DEFAULT '',
+      data_class TEXT NOT NULL DEFAULT '',
+      requested_egress TEXT NOT NULL DEFAULT '',
       action TEXT NOT NULL DEFAULT '',
       effect TEXT NOT NULL DEFAULT '',
       reason_code TEXT NOT NULL DEFAULT '',
@@ -92,17 +115,36 @@ function ensureSchema(db) {
       subject_id TEXT NOT NULL DEFAULT '',
       operation_id TEXT NOT NULL DEFAULT '',
       tool_id TEXT NOT NULL DEFAULT '',
+      tenant_id TEXT NOT NULL DEFAULT '',
+      workspace_id TEXT NOT NULL DEFAULT '',
       reason_code TEXT NOT NULL DEFAULT '',
       denied_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL
     );
+  `);
 
+  ensureColumns(db, "authorization_decisions", {
+    tenant_id: "TEXT NOT NULL DEFAULT ''",
+    workspace_id: "TEXT NOT NULL DEFAULT ''",
+    data_class: "TEXT NOT NULL DEFAULT ''",
+    requested_egress: "TEXT NOT NULL DEFAULT ''"
+  });
+  ensureColumns(db, "authorization_denied_requests", {
+    tenant_id: "TEXT NOT NULL DEFAULT ''",
+    workspace_id: "TEXT NOT NULL DEFAULT ''"
+  });
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_authorization_decisions_created ON authorization_decisions(created_at);
+    CREATE INDEX IF NOT EXISTS idx_authorization_decisions_trace ON authorization_decisions(trace_id);
     CREATE INDEX IF NOT EXISTS idx_authorization_decisions_subject ON authorization_decisions(subject_id);
+    CREATE INDEX IF NOT EXISTS idx_authorization_decisions_tenant ON authorization_decisions(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_authorization_decisions_workspace ON authorization_decisions(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_authorization_decisions_operation ON authorization_decisions(operation_id);
     CREATE INDEX IF NOT EXISTS idx_authorization_receipts_created ON authorization_receipts(created_at);
     CREATE INDEX IF NOT EXISTS idx_authorization_loans_created ON authorization_loan_records(created_at);
     CREATE INDEX IF NOT EXISTS idx_authorization_denied_created ON authorization_denied_requests(created_at);
+    CREATE INDEX IF NOT EXISTS idx_authorization_denied_tenant ON authorization_denied_requests(tenant_id);
   `);
 }
 
@@ -115,6 +157,10 @@ function rowToDecision(row) {
     operationId: row.operation_id,
     toolId: row.tool_id,
     grantId: row.grant_id,
+    tenantId: row.tenant_id || "",
+    workspaceId: row.workspace_id || "",
+    dataClass: row.data_class || "",
+    requestedEgress: row.requested_egress || "",
     action: row.action,
     effect: row.effect,
     reasonCode: row.reason_code,
@@ -159,6 +205,8 @@ function rowToDeniedRequest(row) {
     subjectId: row.subject_id,
     operationId: row.operation_id,
     toolId: row.tool_id,
+    tenantId: row.tenant_id || "",
+    workspaceId: row.workspace_id || "",
     reasonCode: row.reason_code,
     deniedRequest: parseJson(row.denied_json, {}),
     createdAt: row.created_at
@@ -182,14 +230,16 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     );
     db.prepare(`
       INSERT OR REPLACE INTO authorization_denied_requests (
-        denied_request_id, decision_id, subject_id, operation_id, tool_id, reason_code, denied_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        denied_request_id, decision_id, subject_id, operation_id, tool_id, tenant_id, workspace_id, reason_code, denied_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       deniedRequestId,
       String(entry.decisionId || deniedRequest.decisionId || ""),
       String(entry.subjectId || subjectIdFrom(deniedRequest.subject || deniedRequest) || ""),
       String(entry.operationId || deniedRequest.operationId || ""),
       String(entry.toolId || deniedRequest.toolId || ""),
+      firstString(entry.tenantId, deniedRequest.tenantId, deniedRequest.tenant?.resourceTenantId, deniedRequest.resource?.tenantId),
+      firstString(entry.workspaceId, deniedRequest.workspaceId, deniedRequest.abac?.workspaceId, deniedRequest.resource?.workspaceId),
       String(entry.reasonCode || deniedRequest.reasonCode || deniedRequest.filteredReason || "denied"),
       stringifyJson(deniedRequest),
       String(entry.createdAt || deniedRequest.createdAt || nowIso())
@@ -203,9 +253,10 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     db.prepare(`
       INSERT OR REPLACE INTO authorization_decisions (
         decision_id, trace_id, subject_type, subject_id, operation_id, tool_id, grant_id, action,
-        effect, reason_code, missing_scopes_json, missing_toolsets_json, required_scopes_json,
+        tenant_id, workspace_id, data_class, requested_egress, effect, reason_code,
+        missing_scopes_json, missing_toolsets_json, required_scopes_json,
         evaluated_layers_json, decision_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       decisionId,
       String(decision.traceId || ""),
@@ -215,6 +266,10 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
       String(decision.toolId || decision.tool?.id || ""),
       String(decision.grantId || decision.grant?.id || ""),
       String(decision.action || ""),
+      firstString(decision.tenantId, decision.tenant?.resourceTenantId, decision.resource?.tenantId),
+      firstString(decision.workspaceId, decision.abac?.workspaceId, decision.resource?.workspaceId),
+      firstString(decision.dataClass, decision.abac?.dataClass, decision.resource?.dataClass),
+      firstString(decision.requestedEgress, decision.abac?.requestedEgress),
       String(decision.effect || ""),
       String(decision.reasonCode || ""),
       stringifyJson(decision.missingScopes || []),
@@ -230,6 +285,8 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
         subjectId: subject.subjectId || "",
         operationId: decision.operationId || "",
         toolId: decision.toolId || "",
+        tenantId: firstString(decision.tenantId, decision.tenant?.resourceTenantId, decision.resource?.tenantId),
+        workspaceId: firstString(decision.workspaceId, decision.abac?.workspaceId, decision.resource?.workspaceId),
         reasonCode: decision.reasonCode || "denied",
         deniedRequest: { ...decision, decisionId }
       });
@@ -274,7 +331,15 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     return { loanRecordId };
   }
 
-  function listDecisions({ limit = 100, subjectId = "", operationId = "", effect = "" } = {}) {
+  function listDecisions({
+    limit = 100,
+    subjectId = "",
+    operationId = "",
+    effect = "",
+    traceId = "",
+    tenantId = "",
+    workspaceId = ""
+  } = {}) {
     const clauses = [];
     const params = [];
     if (subjectId) {
@@ -288,6 +353,18 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     if (effect) {
       clauses.push("effect = ?");
       params.push(String(effect));
+    }
+    if (traceId) {
+      clauses.push("trace_id = ?");
+      params.push(String(traceId));
+    }
+    if (tenantId) {
+      clauses.push("tenant_id = ?");
+      params.push(String(tenantId));
+    }
+    if (workspaceId) {
+      clauses.push("workspace_id = ?");
+      params.push(String(workspaceId));
     }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     return db.prepare(`
@@ -320,9 +397,22 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     `).all(...params, asLimit(limit)).map(rowToLoanRecord);
   }
 
-  function listDeniedRequests({ limit = 100, subjectId = "" } = {}) {
-    const where = subjectId ? "WHERE subject_id = ?" : "";
-    const params = subjectId ? [String(subjectId)] : [];
+  function listDeniedRequests({ limit = 100, subjectId = "", tenantId = "", workspaceId = "" } = {}) {
+    const clauses = [];
+    const params = [];
+    if (subjectId) {
+      clauses.push("subject_id = ?");
+      params.push(String(subjectId));
+    }
+    if (tenantId) {
+      clauses.push("tenant_id = ?");
+      params.push(String(tenantId));
+    }
+    if (workspaceId) {
+      clauses.push("workspace_id = ?");
+      params.push(String(workspaceId));
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     return db.prepare(`
       SELECT * FROM authorization_denied_requests
       ${where}

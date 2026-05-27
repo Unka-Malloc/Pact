@@ -103,6 +103,12 @@ export {
   startCheckpointTree,
   upsertCheckpointNode
 } from "../common/data-structure/checkpoint-tree-store.mjs";
+export {
+  createDurableWorkflowRuntime,
+  DURABLE_WORKFLOW_PROTOCOL_VERSION,
+  verifyWorkflowHistory,
+  workflowId
+} from "../common/workflow/durable-workflow-store.mjs";
 
 import { createServerRuntime as createCommonServerRuntime } from "../common/module-manager/server-runtime.mjs";
 import { createKnowledgeBuiltinMountProviders } from "../specialized/knowledge/storage/builtin-mount-providers.mjs";

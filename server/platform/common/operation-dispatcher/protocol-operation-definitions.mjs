@@ -335,6 +335,16 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
     scopes: ["workspace:read"]
   }),
   protocolOperation({
+    id: "workspace.contribution.assets.list",
+    feature: "agent_workspace",
+    label: "列出已物化 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionAssetsList",
+    method: "GET",
+    path: "/api/workspace/contributions/assets",
+    query: WORKSPACE_ID_QUERY,
+    scopes: ["workspace:read"]
+  }),
+  protocolOperation({
     id: "workspace.contribution.permission.request",
     feature: "agent_workspace",
     label: "请求 workspace 贡献资产权限",
@@ -350,6 +360,90 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
     label: "授予 workspace 贡献资产权限",
     targetMethod: "handleWorkspaceContributionPermissionGrant",
     path: "/api/workspace/contributions/:contributionId/permission/grant",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "workspace:maintain"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.scan",
+    feature: "agent_workspace",
+    label: "扫描 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionScan",
+    path: "/api/workspace/contributions/:contributionId/scan",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "safe_write"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.review",
+    feature: "agent_workspace",
+    label: "审核 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionReview",
+    path: "/api/workspace/contributions/:contributionId/review",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "safe_write"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.preview",
+    feature: "agent_workspace",
+    label: "生成 workspace 贡献资产发布预览",
+    targetMethod: "handleWorkspaceContributionPreview",
+    path: "/api/workspace/contributions/:contributionId/preview",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "safe_write"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.publish",
+    feature: "agent_workspace",
+    label: "发布 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionPublish",
+    path: "/api/workspace/contributions/:contributionId/publish",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "workspace:maintain"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.adopt",
+    feature: "agent_workspace",
+    label: "跨 workspace 采用贡献资产",
+    targetMethod: "handleWorkspaceContributionAdopt",
+    path: "/api/workspace/contributions/:contributionId/adopt",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:write"],
+    risk: "safe_write"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.reject",
+    feature: "agent_workspace",
+    label: "拒绝 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionReject",
+    path: "/api/workspace/contributions/:contributionId/reject",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "repair_write"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.request_changes",
+    feature: "agent_workspace",
+    label: "要求修改 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionRequestChanges",
+    path: "/api/workspace/contributions/:contributionId/request-changes",
+    params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
+    scopes: ["workspace:maintain"],
+    risk: "safe_write"
+  }),
+  protocolOperation({
+    id: "workspace.contribution.revoke",
+    feature: "agent_workspace",
+    label: "撤销 workspace 贡献资产",
+    targetMethod: "handleWorkspaceContributionRevoke",
+    path: "/api/workspace/contributions/:contributionId/revoke",
     params: [{ name: "contributionId", aliases: ["contribution-id", "id"], required: true }],
     scopes: ["workspace:maintain"],
     risk: "repair_write",

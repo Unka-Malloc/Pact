@@ -157,7 +157,7 @@
 
 ### P0-00-02 终端贡献型资产治理缺失
 
-当前状态：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统已具备 `pact.workspace-contribution.v1` 的内存型贡献状态机、贡献排行榜、统计面板、贡献授权和 usage / loan / audit 记录，并已通过 specialized console operation executor 绑定 `workspace.contribution.*` 与 `workspace.skill.*` 协议入口；剩余差距是把贡献资产落到持久化 workspace asset、跨 workspace 复用和发布审核流，而不是停留在控制台 runtime 内存注册表。
+当前状态：信息源不只来自上游知识库，很多高价值资产来自终端贡献：人类或本地智能体过滤、验证、精加工后的知识、Skills、工具、脚本、文件、黄金规则和专家意见。当前系统已具备 `pact.workspace-contribution.v1` 的持久贡献注册表、固定 workspace asset bucket、贡献状态机、发布审核流、跨 workspace adoption、贡献排行榜、统计面板、贡献授权和 usage / loan / audit 记录，并已通过 specialized console operation executor 绑定 `workspace.contribution.*` 与 `workspace.skill.*` 协议入口。剩余生产硬化方向是把更多真实客户端、真实组织策略和真实资产规模纳入持续门禁，而不是停留在控制台 runtime 内存注册表。
 
 为什么重要：人过滤和精加工的信息往往最有效。过去如果只用知识库视角看这些材料，会把专家意见、黄金规则、Skills、脚本、文件和工具都压成“知识条目”，失去可操作性。AgentLibrary 应允许下游智能体向上提交资产，并让贡献资产在公共工作空间中被发现、授权、复用和审计。
 
@@ -179,8 +179,8 @@
 
 当前实现入口：
 
-- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `pact.workspace-contribution.v1` 的贡献状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 contribution registry。
-- `npm run server:verify:workspace-contribution-governance` 验证 Skill 贡献从 submitted -> scanned -> reviewed -> published，随后授权 B 下载/安装/执行，记录 usage event，并按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 生成排行榜；`acceptedCount` 只作为报表维度。
+- `server/platform/specialized/agent/workspace-contribution/index.mjs` 实现 `pact.workspace-contribution.v1` 的持久贡献注册表、固定 workspace asset bucket 物化、submitted -> scanned -> reviewed -> preview -> published/adopted/revoked 发布审核状态机、贡献授权、loan record、usage event、audit event、排行榜和资产贡献统计报表；`server/platform/specialized/console/console-domain-operation-executor.mjs` 负责控制台协议入口绑定，`common/console` 不再直接持有 contribution registry。
+- `npm run server:verify:workspace-contribution-governance` 验证 Skill 贡献从 submitted -> scanned -> reviewed -> preview -> published，随后授权 B 下载/安装/执行，跨 workspace adoption 生成目标 workspace asset，重载 registry 后仍可读取持久资产记录，并按 `rankScoreV0 = usageCount * successRate + uniqueWorkspaceAdoptions - rollbackCount` 生成排行榜；`acceptedCount` 只作为报表维度。
 - `npm run server:verify:production-readiness` 已把该能力纳入 P0 门禁。
 
 补全效果：Pact 不再只从上游知识库拿信息，而是形成“终端贡献 -> 公共空间资产 -> 排行榜发现 -> 授权复用 -> 审计和撤销”的资产贡献闭环。
@@ -234,7 +234,9 @@
 
 - `server/platform/common/observability/trace-context.mjs` 提供 `traceId/spanId/parentSpanId/operationId/actor` 上下文，并由 operation dispatcher、HTTP 请求和审计链路继承。
 - `server/platform/common/observability/runtime-logger.mjs` 提供 JSONL 运行日志、trace 字段、敏感字段脱敏、路径脱敏和日志保留策略。
+- `/api/observability/traces/:traceId`、`observability.trace.get` 和 `auth audit export --trace-id` 提供基于 operation audit 与 authorization decisions 的 trace drill-down；导出内容默认只包含脱敏输入、输出摘要和引用字段。
 - `server/scripts/verify-trace-context.mjs` 验证 HTTP header、operation audit、runtime log 和事件流都携带同一 trace。
+- `server/scripts/verify-security-hardening.mjs` 验证真实启动后的 trace drill-down API、脱敏审计导出和 trace 过滤。
 - `server/scripts/verify-runtime-logging.mjs` 验证日志文件生成、字段摘要和 token/secret 不落盘。
 - `npm run server:verify:production-readiness` 已把 `trace-observability` 纳入 P0 门禁。
 
@@ -260,11 +262,14 @@
 当前实现入口：
 
 - `docs/PROTOCOLS.md` 已定义 `pact.workflow.v1` 和 `pact.checkpoint-tree.v1` 的协议边界。
+- `server/platform/common/workflow/durable-workflow-store.mjs` 实现单机 `pact.workflow.v1` durable workflow store：workflow/activity/signal/timer/human review/external partial write 都写入 hash-chain execution history，支持重启恢复、活动幂等复用和 partial write 补偿语义。
+- `server/services/client/work-queue-core/jobs/job-manager.mjs` 已把导入解析 job 接入 durable workflow：创建 job 时写入 workflow，worker-run 作为 activity 记录 heartbeat、完成、失败和恢复信号。
 - `server/platform/common/data-structure/checkpoint-tree-store.mjs` 提供 checkpoint tree 持久化、节点状态、事件追加、tree lock 和恢复查询基础。
+- `server/scripts/verify-durable-workflow.mjs` 验证 activity 幂等、hash-chain history、模拟崩溃恢复、timer、human review、external partial write commit 和最终 workflow completion。
 - `server/scripts/verify-checkpoint-lifecycle.mjs` 验证 upload/job checkpoint、重复提交、恢复、重启恢复、checkpoint tree 查询和失败回收。
 - `server/scripts/verify-state-coordination.mjs` 验证队列、状态和监控注册的一致性。
 - `server/scripts/verify-transaction-continuity.mjs` 验证业务事务连续性模型。
-- `npm run server:verify:production-readiness` 已把 `durable-workflow` 纳入 P0 门禁。
+- `npm run server:verify:production-readiness` 已把 `durable-workflow` 纳入 P0 门禁，并运行 `server:verify:durable-workflow`、`server:verify:continuity`、`server:verify:checkpoints` 和 `server:verify:state-coordination`。
 
 补全效果：服务重启、部署、超时、部分失败后不会丢任务；可以向生产运维解释“任务如何恢复、如何补偿、如何人工介入”。
 
@@ -353,7 +358,7 @@
 
 ### P0-07 安全、租户、权限和密钥边界未达到生产审计标准
 
-当前差距：已有 console auth、CSRF、Tool Management grant、scope、policy，但生产还需要更完整的 tenant model、secret management、审计保留、敏感信息脱敏、工具沙箱、外部连接器 OAuth、RBAC/ABAC、数据导出权限、token rotation。
+当前差距：已有 console auth、CSRF、session token rotation、Tool Management grant、scope、policy、tenant/resource ABAC 基础裁决、审计保留和脱敏导出，但生产还需要更完整的 secret management、工具沙箱、外部连接器真实 OAuth、外部 connector token rotation、OTel 导出和跨真实外部系统的权限证据。
 
 对标依据：OpenTelemetry 和 Phoenix 都强调 trace/评估中的输入输出可见性，但这也要求敏感信息治理；企业生产中工具调用和知识检索必须能证明谁在何时访问了哪些数据、通过哪个 grant、输出给了谁。
 
@@ -372,11 +377,15 @@
 当前实现入口：
 
 - `server/platform/common/security/auth/console-auth.mjs` 和 `server/scripts/console-auth.mjs` 提供 owner/admin/operator/viewer、登录、session、token rotation、审计和初始凭据治理。
+- `auth.sessions.rotate` / `POST /api/auth/sessions/rotate` / `auth sessions rotate` 提供当前控制台 session token rotation；轮换后旧 session token 立即失效，新 CSRF token 由 session token HMAC 派生，并写入审计。
+- `server/platform/common/security/authorization/authorization-engine.mjs` 支持 subject/tool grant 的 `tenantId`、workspace allowlist、dataClass allowlist 和 egress allowlist；tenant mismatch、workspace/dataClass/egress 越界会写入 authorization decision 与 denied request audit。
+- `server/platform/common/security/operation-audit.mjs` 支持 tenant/trace 查询、审计保留策略、过期清理和脱敏 JSONL 导出，导出前统一调用 redaction policy，避免 secret、token、cookie、API key 和本机绝对路径进入审计包。
+- `/api/auth/audit/export`、`/api/auth/audit/retention`、`/api/auth/audit/prune` 和 `/api/observability/traces/:traceId` 提供 API/RPC/CLI 可达的内审、保留和 trace drill-down 路径。
 - `server/platform/specialized/capabilities/tools/tool-management-core/catalog.mjs` 与 Tool Management runtime 提供 tool catalog、scope、toolset、grant、policy preview/evaluate、execute、audit 和 metrics。
 - `server/platform/common/operation-dispatcher/operation-decorators.mjs`、operation policy 和 safety-confirm 约束写操作、风险等级、CSRF 和审批边界。
 - `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 提供 source-level knowledge access、checkoutPolicy、receipt、loanRecord、export/context injection 裁决。
 - `server/platform/common/observability/runtime-logger.mjs` 对 token、password、secret、API key、cookie 和绝对路径做摘要/脱敏。
-- `server/scripts/verify-console-auth.mjs`、`verify-tool-management-platform.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、知识权限、CSRF/safety 和 secret leak。
+- `server/scripts/verify-console-auth.mjs`、`verify-security-hardening.mjs`、`verify-tool-management-platform.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、知识权限、tenant/ABAC、审计脱敏导出、trace drill-down、CSRF/safety 和 secret leak。
 - `npm run server:verify:production-readiness` 已把 `tool-permission`、`agent-library-access` 和 `trace-observability` 纳入 P0 门禁。
 
 补全效果：能面向企业内审、安全团队和运维团队说明权限共享的边界；团队共享不是无审计共享。
