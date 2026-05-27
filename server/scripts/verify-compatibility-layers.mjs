@@ -59,4 +59,13 @@ assert.equal(repoManifest.internalCompatibilityKind, "resource-operation");
 assert.equal(repoManifest.providers.includes("gerrit"), true);
 assert.equal(repoManifest.providers.includes("github"), true);
 
+const trafficGatewayManifest = await readJson("server/platform/specialized/capabilities/agent-ingress/traffic-gateway/module.json");
+assert.equal(trafficGatewayManifest.category, "agent-client-mcp-compatibility");
+assert.equal(trafficGatewayManifest.compatibilityLayer, "agent-client-mcp-compatibility");
+assert.equal(trafficGatewayManifest.compatibilityBoundary, "ingress-adapter");
+assert.equal(trafficGatewayManifest.clientCompatibilityKind, "traffic-gateway");
+assert.equal(trafficGatewayManifest.adapterProviders.includes("caddy"), true);
+assert.equal(trafficGatewayManifest.adapterProviders.includes("nginx"), true);
+assert.equal(trafficGatewayManifest.components.gatewayIngressProfile.directModeRequired, true);
+
 console.log("[compatibility-layers] ok");

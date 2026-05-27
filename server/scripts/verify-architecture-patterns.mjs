@@ -2035,6 +2035,7 @@ async function assertCoreArchitectureDocsCoverMainline() {
     "denied request audit",
     "A2A adapter",
     "MCP server",
+    "Agent traffic/load gateway",
     "OpenAI-compatible model gateway"
   ]) {
     assertTextIncludes(protocols, needle, `${protocolsFile} must keep protocol adapter evidence for ${needle}`);
