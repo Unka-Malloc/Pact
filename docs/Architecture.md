@@ -83,6 +83,22 @@ Pact 的核心定位是：
 
 “两个问题，一个能力，三个兼容”的产品表达只保留为问题定义，不再作为架构分层口径；架构分层统一使用 `agent-client-mcp-compatibility`、`external-service-compatibility` 和 `pact-internal-compatibility` 三个边界。
 
+安全边界按两条外部边界和三个治理对象表达：
+
+- 客户端运行环境与 Pact 平台之间的边界：面向客户端治理，约束本地智能体、MCP connector、client runtime、上传传输、客户端 grant 和请求报文绑定。
+- 外部服务与 Pact 平台之间的边界：面向外部服务治理，约束模型 provider、代码平台、云盘、外部知识库、向量库、图数据库、邮箱和业务系统的凭据、回执、同步、镜像和状态语义。
+- Pact 系统内部边界：面向系统自我治理，约束 Capability Kernel、Binding Guard、SecretStore、Operation Ledger、Checkpoint、Audit、runtime state、模块合同和降级模式。它不是第三条外部边界，而是 Pact 平台内部为防止自我绕过、状态篡改和语义漂移而建立的治理对象。
+
+两条外部边界共用同一组治理大类，差异只在每类下面的治理对象：
+
+| 治理大类 | 客户端运行环境 <-> Pact | 外部服务 <-> Pact |
+| --- | --- | --- |
+| 准入与身份信任 | client、agent、user、device、MCP grant、opaque key 绑定 | provider account、OAuth、API key、service account、secretRef、tenant 映射 |
+| 权限与行为策略 | operation、tool、skill、workspace、dataClass、egress、高风险确认 | provider scope、读写删同步权限、外部副作用审批、Capability 到 provider scope 映射 |
+| 数据与状态语义 | 上传、下载、context、memory、export、asset 状态、路径安全 | import、export、sync、mirror、etag/version、durable id、真实持久化状态 |
+| 流量、资源与成本控制 | QPS、并发、上传速率、队列、quota、上下文大小 | provider 限流、重试、熔断、模型 token 成本、API 成本、同步频率 |
+| 审计、证据与生命周期 | receipt、loan、denied request、trace、客户端安装/撤销/过期 | provider receipt、webhook 证据、凭据轮换/撤销、解绑、mirror 清理、合规保留 |
+
 这不是横向再造知识库，也不是横向再造智能体平台。Pact 只猛攻两端之间最缺的中间层：
 
 - 对上游和外部服务：用 `external-service-compatibility` 接入外部知识库、文件库、邮箱、代码评审系统、向量库、图谱库和业务资产源，把粗粒度资源重新切分、重新标注、重新授权、重新登记。

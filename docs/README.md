@@ -48,6 +48,7 @@ graph LR
 | [IMPLEMENTATION-DECISION-REGISTER.md](IMPLEMENTATION-DECISION-REGISTER.md) | 设计决策登记表 | Pre-implementation design decisions; finalized conclusions must be merged back into core docs | 33 KB |
 | [CLIENT_ARCHITECTURE.md](CLIENT_ARCHITECTURE.md) | 客户端架构 | Destructive desktop-client architecture target and six-module product boundary | 13 KB |
 | [V0.0.1-IMPLEMENTATION-PLAN.md](V0.0.1-IMPLEMENTATION-PLAN.md) | v0.0.1 实施计划 | Single-node v0.0.1 delivery phases, checkpoints, interfaces, compatibility targets, and acceptance gates | 28 KB |
+| [2-3-5-Security-Model.md](2-3-5-Security-Model.md) | 2-3-5 安全治理模型 | Security governance reference for two boundaries, three environments, and five governance goals; authoritative decisions are mirrored in core docs | 18 KB |
 | [CLIENT-IMPLEMENTATION-PLAN.md](CLIENT-IMPLEMENTATION-PLAN.md) | 客户端实施路线 | Lightweight Pact Client refactor phases, checkpoints, interfaces, compatibility targets, and acceptance gates | 28 KB |
 | [CLIENT-DESIGN-CONFORMANCE.md](CLIENT-DESIGN-CONFORMANCE.md) | 客户端设计符合性矩阵 | Destructive keep/replace/delete/legacy-dev-only decisions for old client modules | 9 KB |
 | [CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md](CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md) | Checkpoint 算法演进方案 | Step-by-step LSM/Merkle/CAS/checkpoint algorithm evolution path from single-node contracts to distributed lossless migration | 25 KB |

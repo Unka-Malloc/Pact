@@ -70,6 +70,7 @@
 | `DEC-P0-14` 演示验收 | 四个演示全部作为 P0 验收：文档互通、Skill 贡献、A/B 权限、Checkpoint Tree 恢复。 |
 | `DEC-P0-15` 控制台页面 | 第一版控制台做闭环全量：asset browser、AgentLibrary 权限、contribution/Skill、资产贡献统计报表、Checkpoint Tree、audit/receipt。 |
 | `DEC-P0-16` 存储权威 | Ledger、permission、receipt、loan record、checkpoint metadata 是权威；文件树和索引是 projection。 |
+| `DEC-P0-18` 安全边界对象 | 安全边界分为客户端运行环境与 Pact 平台、外部服务与 Pact 平台两条边界；治理对象分为客户端治理、外部服务治理、系统自我治理。 |
 
 ### P1 已决议
 
@@ -658,6 +659,28 @@
 - 不接受旧 outlet alias 过渡期，因为会继续污染智能体工具心智模型并让验证脚本长期背兼容包袱。
 - 不接受 `capabilities.list` 返回全量目录再让智能体自行猜权限；权限事实必须由 Pact 返回。
 - 不接受上传完成后只在同步 HTTP 响应里给结果；长链路必须有主动回信，避免外部智能体轮询或误判。
+
+### DEC-P0-18 两条安全边界和三个治理对象
+
+已决议：
+
+- 安全边界按两条外部边界建模：客户端运行环境与 Pact 平台之间的边界、外部服务与 Pact 平台之间的边界。
+- 面向对象按三类治理建模：面向客户端的治理、面向外部服务的治理、Pact 系统自我治理。
+- 面向客户端的治理覆盖本地智能体、MCP connector、client runtime、上传传输、客户端 grant、请求身份绑定和客户端侧能力发现。
+- 面向外部服务的治理覆盖模型 provider、代码平台、云盘、外部知识库、向量库、图数据库、邮箱和业务系统的凭据、回执、同步、镜像、contract-mode 和真实持久化语义。
+- Pact 系统自我治理覆盖 Capability Kernel、Binding Guard、SecretStore、Operation Ledger、Checkpoint、Audit、runtime state、模块合同、降级模式和 recovery package。它不是第三条外部边界，而是服务于前两条边界，防止 Pact 内部绕过自身裁决、把普通 DB 提升为事实源，或在降级模式下误承诺强安全边界。
+
+两条外部边界共用五个治理大类：
+
+| 治理大类 | 客户端运行环境 <-> Pact | 外部服务 <-> Pact |
+| --- | --- | --- |
+| 准入与身份信任 | client、agent、user、device、MCP grant、opaque key 绑定 | provider account、OAuth、API key、service account、secretRef、tenant 映射 |
+| 权限与行为策略 | operation、tool、skill、workspace、dataClass、egress、高风险确认 | provider scope、读写删同步权限、外部副作用审批、Capability 到 provider scope 映射 |
+| 数据与状态语义 | 上传、下载、context、memory、export、asset 状态、路径安全 | import、export、sync、mirror、etag/version、durable id、真实持久化状态 |
+| 流量、资源与成本控制 | QPS、并发、上传速率、队列、quota、上下文大小 | provider 限流、重试、熔断、模型 token 成本、API 成本、同步频率 |
+| 审计、证据与生命周期 | receipt、loan、denied request、trace、客户端安装/撤销/过期 | provider receipt、webhook 证据、凭据轮换/撤销、解绑、mirror 清理、合规保留 |
+
+决议后回写：`Architecture.md`、`PRODUCTION-CAPABILITY-GAP.md`、`V0.0.1-IMPLEMENTATION-PLAN.md`。
 
 ## 原建议决策顺序
 
