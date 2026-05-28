@@ -127,11 +127,12 @@ const GATES = [
     owner: "security-tooling",
     coverage: ["tool-permission"],
     commands: [
+      ["npm", "run", "server:verify:2-3-5-security-model"],
       ["npm", "run", "server:verify:tool-management"],
       ["npm", "run", "server:verify:operation-policy"],
       ["npm", "run", "server:verify:console-auth"]
     ],
-    nextStep: "补齐 tool grant、risk policy、scope、CSRF/safety-confirm 和审计边界。"
+    nextStep: "补齐 2-3-5 安全治理架构、tool grant、risk policy、scope、CSRF/safety-confirm 和审计边界。"
   },
   {
     id: "model-routing",
