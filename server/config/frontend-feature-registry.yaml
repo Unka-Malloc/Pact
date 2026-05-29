@@ -40,14 +40,6 @@ routes:
           - sources.sync
           - sources.inspect
 
-  - routePath: /intelligence
-    viewFile: server-web/views/IntelligenceView.vue
-    features:
-      - featureId: intelligence.retrieval
-        actions:
-          - intelligence.query
-          - intelligence.result-panel
-
   - routePath: /knowledge/:tab
     viewFile: server-web/views/KnowledgeView.vue
     features:
@@ -197,6 +189,16 @@ routes:
         actions:
           - admin.agent-config.view
           - admin.agent-config.update
+
+  - routePath: /admin/context-management
+    viewFile: server-web/views/admin/ContextManagementView.vue
+    features:
+      - featureId: admin.context-management
+        actions:
+          - admin.context-management.profiles
+          - admin.context-management.preview
+          - admin.context-management.replay
+          - admin.context-management.export
 
   - routePath: /admin/maintenance-agent
     viewFile: server-web/views/admin/MaintenanceAgentView.vue

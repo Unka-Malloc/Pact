@@ -84,6 +84,12 @@ type Bridge = {
   listAuthAudit: (limit?: number) => Promise<{ items: ConsoleAuditItem[] }>;
   listAuthSessions: () => Promise<{ sessions: Array<Record<string, unknown>> }>;
   revokeAuthSession: (sessionId: string) => Promise<{ ok: boolean }>;
+  getAuthorizationGovernance: () => Promise<{ governance: Record<string, unknown> }>;
+  upsertAuthorizationGovernance: (
+    kind: "role" | "team" | "userPolicy" | "agentGroup" | "agentBinding" | "approval",
+    payload: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
+  revokeAuthorizationApproval: (approvalId: string, reason?: string) => Promise<Record<string, unknown>>;
   listMcpAuthorizationRequests: (status?: string) => Promise<{ requests: McpAuthorizationRequest[] }>;
   resolveMcpAuthorizationRequest: (
     requestId: string,
@@ -559,6 +565,24 @@ const browserBridge: Bridge = {
   listAuthSessions: () => postJson<{ sessions: Array<Record<string, unknown>> }>("/api/auth/sessions"),
   revokeAuthSession: (sessionId) =>
     postJson<{ ok: boolean }>(`/api/auth/sessions/${encodeURIComponent(sessionId)}/revoke`, {}),
+  getAuthorizationGovernance: () => getJson<{ governance: Record<string, unknown> }>("/api/authorization/governance"),
+  upsertAuthorizationGovernance: (kind, payload) => {
+    const endpoints = {
+      role: "/api/authorization/roles",
+      team: "/api/authorization/teams",
+      userPolicy: "/api/authorization/users/policy",
+      agentGroup: "/api/authorization/agent-groups",
+      agentBinding: "/api/authorization/agents/binding",
+      approval: "/api/authorization/approvals",
+    } as const;
+    return postJson<Record<string, unknown>>(endpoints[kind], payload, { safetyConfirm: true });
+  },
+  revokeAuthorizationApproval: (approvalId, reason = "") =>
+    postJson<Record<string, unknown>>(
+      `/api/authorization/approvals/${encodeURIComponent(approvalId)}/revoke`,
+      { reason },
+      { safetyConfirm: true },
+    ),
   listMcpAuthorizationRequests: (status = "pending") =>
     getJson<{ requests: McpAuthorizationRequest[] }>(`/api/console/mcp/authorization/requests?status=${status}`),
   resolveMcpAuthorizationRequest: (requestId, payload) =>

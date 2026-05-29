@@ -7126,6 +7126,11 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
         hierarchyIndex: "sqlite-fts5-coarse-to-fine"
       },
       retrievalPolicy: {
+        modes: [
+          { value: "hybrid", label: "Hybrid" },
+          { value: "keyword", label: "Keyword" }
+        ],
+        defaultMode: "hybrid",
         hierarchicalIndex: true,
         coarseToFineRequired: true,
         taxonomyPath: taxonomyRuntime?.path || "",
@@ -7139,6 +7144,10 @@ function createKnowledgeStore({ db, rootPath, taxonomyRuntime = null, outlineRun
         fineLevels: ["block", "asset"],
         agentToolsUseHierarchy: true
       },
+      retrievalModes: [
+        { value: "hybrid", label: "Hybrid" },
+        { value: "keyword", label: "Keyword" }
+      ],
       protocolModules: {
         embedding: typeof embeddingRuntime.capabilities === "function" ? embeddingRuntime.capabilities() : null,
         vector: typeof vectorStore.capabilities === "function" ? vectorStore.capabilities() : null,

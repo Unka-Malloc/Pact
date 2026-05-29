@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useConsole } from '../composables/useConsole';
+import { usePageRefreshHandler } from '../composables/usePageRefresh';
 import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import OptionBar from '../components/OptionBar.vue';
@@ -142,6 +143,7 @@ interface WsCheckpointTreeDetail extends WsCheckpointTreeSummary {
 const workspaces        = ref<WsWorkspace[]>([]);
 const sessions          = ref<WsSession[]>([]);
 const selectedId        = ref('');
+const expandedWorkspaceId = ref('');
 const selectedSessionId = ref('');
 const selectedSession   = ref<WsSessionDetail | null>(null);
 const chainData         = ref<any>(null);
@@ -201,6 +203,21 @@ const deleteFolderChecked = ref(false);
 // ─── Derived ─────────────────────────────────────────────────────────────────
 
 const selected = computed(() => workspaces.value.find(w => w.workspaceId === selectedId.value) ?? null);
+
+function workspaceExpansionSlotId(ws: WsWorkspace) {
+  return `workspace-expansion-${ws.workspaceId}`;
+}
+
+function isWorkspaceExpanded(ws: WsWorkspace) {
+  return panel.value === 'list' && expandedWorkspaceId.value === ws.workspaceId;
+}
+
+function toggleWorkspaceCard(ws: WsWorkspace) {
+  const shouldCollapse = isWorkspaceExpanded(ws);
+  selectedId.value = ws.workspaceId;
+  panel.value = 'list';
+  expandedWorkspaceId.value = shouldCollapse ? '' : ws.workspaceId;
+}
 
 const workspaceCheckpointNodes = computed<WsCheckpointNode[]>(() => {
   const nodes = Object.values(workspaceCheckpointDetail.value?.nodes ?? {});
@@ -374,7 +391,22 @@ async function loadChain(id: string) {
   } catch (e: any) { localError.value = e.message; }
 }
 
-watch(selectedId, (id) => { if (id) loadChain(id); });
+watch(selectedId, (id) => {
+  if (id) {
+    if (panel.value === 'list') expandedWorkspaceId.value = id;
+    loadChain(id);
+  } else {
+    expandedWorkspaceId.value = '';
+  }
+});
+
+watch(panel, (next) => {
+  if (next === 'list') {
+    if (selectedId.value) expandedWorkspaceId.value = selectedId.value;
+  } else {
+    expandedWorkspaceId.value = '';
+  }
+});
 
 async function loadWorkspaceCheckpoints(id: string) {
   workspaceCheckpointError.value = '';
@@ -929,6 +961,16 @@ async function copyToClipboard(event: MouseEvent, text: string) {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+usePageRefreshHandler(
+  (detail) => detail.viewId === 'workspaces',
+  async () => {
+    await load();
+    if (selectedId.value) {
+      await loadChain(selectedId.value);
+    }
+  },
+);
+
 load();
 </script>
 
@@ -959,7 +1001,7 @@ load();
     />
 
     <!-- ─── Two-column layout ────────────────────────────────────────── -->
-    <div class="ws-layout">
+    <div class="ws-layout" :class="{ 'ws-layout-expanded-cards': panel === 'list' }">
 
       <!-- List column -->
       <div class="ws-list">
@@ -971,15 +1013,26 @@ load();
           v-for="ws in workspaces"
           :key="ws.workspaceId"
           class="ws-card"
-          :class="{ selected: selectedId === ws.workspaceId }"
-          @click="selectedId = ws.workspaceId"
+          :class="{ selected: selectedId === ws.workspaceId, expanded: isWorkspaceExpanded(ws) }"
+          @click="toggleWorkspaceCard(ws)"
         >
           <div class="ws-card-head">
             <div class="ws-card-title">
               <strong>{{ ws.title || ws.workspaceId.slice(0, 12) }}</strong>
               <span v-if="ws.parentWorkspaceId" class="ws-inherited-badge">↳ 继承</span>
             </div>
-            <StatusPill :tone="statusTone(ws.status)" :label="ws.status" />
+            <div class="ws-card-head-actions">
+              <StatusPill :tone="statusTone(ws.status)" :label="ws.status" />
+              <button
+                class="ws-expand-button"
+                type="button"
+                :aria-label="isWorkspaceExpanded(ws) ? '收起工作空间详情' : '展开工作空间详情'"
+                :aria-expanded="isWorkspaceExpanded(ws)"
+                @click.stop="toggleWorkspaceCard(ws)"
+              >
+                {{ isWorkspaceExpanded(ws) ? '⌃' : '⌄' }}
+              </button>
+            </div>
           </div>
           <p v-if="ws.objective" class="ws-card-obj">{{ ws.objective }}</p>
           <div class="ws-card-meta">
@@ -995,13 +1048,22 @@ load();
             <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openLocalDir()">本机目录</button>
             <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCloudDrive()">云盘</button>
             <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCodespace()">代码库</button>
-            <button class="table-action" type="button" @click.stop="panel = 'share'; shareForm.action = 'share'">共享</button>
+            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; panel = 'share'; shareForm.action = 'share'">共享</button>
           </div>
+          <div
+            v-if="isWorkspaceExpanded(ws)"
+            :id="workspaceExpansionSlotId(ws)"
+            class="ws-card-expanded-slot"
+            @click.stop
+          ></div>
         </article>
       </div>
 
       <!-- Detail column -->
-      <div class="ws-detail">
+      <div
+        v-if="panel !== 'list' || (selected && expandedWorkspaceId === selected.workspaceId)"
+        class="ws-detail"
+      >
 
         <!-- ── Create form ──────────────────────────────────────────── -->
         <template v-if="panel === 'create'">
@@ -1322,8 +1384,10 @@ load();
         </template>
 
         <!-- ── Detail view (default) ────────────────────────────────── -->
-        <template v-else-if="selected">
-          <div class="surface-card">
+        <template v-else-if="panel === 'list' && selected && expandedWorkspaceId === selected.workspaceId">
+          <Teleport :to="`#${workspaceExpansionSlotId(selected)}`">
+          <div class="ws-card-expanded">
+          <div class="workspace-detail-body">
             <div class="section-header">
               <div>
                 <h3>{{ selected.title }}</h3>
@@ -1567,6 +1631,8 @@ load();
               </button>
             </div>
           </div>
+          </div>
+          </Teleport>
         </template>
 
         <div v-else class="empty-state">
@@ -1614,19 +1680,39 @@ load();
 .ws-layout {
   display: grid; grid-template-columns: 320px 1fr; gap: var(--space-4); min-height: 0; flex: 1;
 }
+.ws-layout.ws-layout-expanded-cards { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 900px) { .ws-layout { grid-template-columns: 1fr; } }
 .ws-list  { display: flex; flex-direction: column; gap: var(--space-2); overflow: auto; }
 .ws-detail { display: flex; flex-direction: column; gap: var(--space-3); overflow: auto; }
+.ws-layout.ws-layout-expanded-cards .ws-list { overflow: visible; }
+.ws-layout.ws-layout-expanded-cards .ws-detail { min-height: 0; overflow: visible; }
 
 .ws-card {
   border: 1px solid var(--border-subtle); border-radius: var(--radius-m);
   padding: var(--space-3); background: var(--bg-surface); cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 .ws-card:hover { border-color: var(--border-accent); }
 .ws-card.selected { border-color: var(--accent); background: var(--accent-surface); }
+.ws-card.expanded { border-color: var(--accent); background: var(--accent-surface); }
 .ws-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .ws-card-title { display: flex; align-items: center; gap: var(--space-2); }
+.ws-card-head-actions { display: flex; align-items: center; gap: var(--space-2); }
+.ws-expand-button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+}
+.ws-expand-button:hover { border-color: var(--accent); color: var(--accent); }
 .ws-inherited-badge {
   font-size: 0.7rem; color: var(--info); border: 1px solid var(--info);
   padding: 1px 6px; border-radius: 4px;
@@ -1634,6 +1720,18 @@ load();
 .ws-card-obj { font-size: 0.8rem; color: var(--text-secondary); margin: var(--space-1) 0 0; }
 .ws-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: 0.75rem; color: var(--text-secondary); margin-top: var(--space-1); }
 .ws-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.ws-card-expanded-slot { margin-top: var(--space-3); }
+.ws-card-expanded {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+  cursor: default;
+}
+.workspace-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
 
 .ws-chain { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 0.82rem; }
 .ws-chain-item { display: flex; align-items: center; gap: 4px; }

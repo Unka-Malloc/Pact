@@ -61,11 +61,57 @@ function uniqueStrings(value = []) {
   return [...new Set(asArray(value).map(text).filter(Boolean))];
 }
 
+function normalizeRetrievalModes(value = []) {
+  return asArray(value)
+    .map((item) => {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const modeValue = text(item.value || item.id || item.mode || item.name);
+        if (!modeValue) return null;
+        return {
+          value: modeValue,
+          label: text(item.label || item.title || modeValue)
+        };
+      }
+      const modeValue = text(item);
+      return modeValue ? { value: modeValue, label: modeValue } : null;
+    })
+    .filter(Boolean);
+}
+
 function normalizeProvider(value = "") {
   const provider = text(value).toLowerCase();
   if (provider === "dify") return "dify";
   if (provider === "ragflow" || provider === "rag-flow") return "ragflow";
   return provider || "dify";
+}
+
+function defaultRetrievalModesForProvider(providerId, provider = {}) {
+  if (text(provider.mode || "contract").toLowerCase() === "contract") {
+    return [{ value: "backendContract", label: "Backend Contract" }];
+  }
+  if (providerId === "dify") {
+    return [
+      { value: "semantic_search", label: "Semantic Search" },
+      { value: "full_text_search", label: "Full Text Search" },
+      { value: "hybrid_search", label: "Hybrid Search" }
+    ];
+  }
+  if (providerId === "ragflow") {
+    return [
+      { value: "naive", label: "Naive" },
+      { value: "keyword", label: "Keyword" },
+      { value: "hybrid", label: "Hybrid" }
+    ];
+  }
+  return [{ value: "backendContract", label: "Backend Contract" }];
+}
+
+function resolvedProviderRetrievalModes(providerId, provider = {}) {
+  const configured = normalizeRetrievalModes(provider.retrievalModes || provider.searchModes || provider.modes);
+  const modes = configured.length ? configured : defaultRetrievalModesForProvider(providerId, provider);
+  return modes.filter((mode, index, list) =>
+    list.findIndex((candidate) => candidate.value === mode.value) === index
+  );
 }
 
 function dataRoot(userDataPath = "") {
@@ -187,6 +233,7 @@ function publicProvider(providerId, provider = {}) {
     evidencePort: provider.evidencePort !== false,
     exportPort: provider.exportPort !== false,
     capabilities: uniqueStrings(provider.capabilities),
+    retrievalModes: resolvedProviderRetrievalModes(providerId, provider),
     contractVerified: text(provider.mode || "contract") === "contract"
   };
 }
@@ -230,6 +277,7 @@ function providerSpaces(providerId, provider = {}) {
       sensitivity: text(space.sensitivity || "normal"),
       accessMode: "metadataOnly",
       allowedEgress: ["searchResult"],
+      retrievalModes: resolvedProviderRetrievalModes(providerId, provider),
       contractVerified: text(provider.mode || "contract") === "contract",
       metadataOnly: true
     };
@@ -250,6 +298,8 @@ function sanitizeSpaces(spaces = []) {
     sensitivity: space.sensitivity,
     accessMode: space.accessMode,
     allowedEgress: space.allowedEgress,
+    retrievalModes: space.retrievalModes,
+    searchModes: space.retrievalModes,
     metadataOnly: true,
     contractVerified: space.contractVerified
   }));
@@ -538,8 +588,21 @@ export function createKnowledgeBackendPort({ userDataPath = "" } = {}) {
     const query = text(input.query || input.q || "");
     const limit = Math.max(1, Math.min(20, Number(input.limit || 10) || 10));
     const providerFilter = text(input.provider || input.backend || "");
+    const spaceFilter = text(input.spaceId || input.knowledgeSpaceId || input.space || "");
     const allSpaces = (await listSpaces({ provider: providerFilter })).spaces;
-    const selectedSpaces = allSpaces.slice(0, limit);
+    const scopedSpaces = spaceFilter
+      ? allSpaces.filter((space) =>
+          [space.spaceId, space.derivedKnowledgeSpace, space.derivedViewRef, space.upstreamKnowledgeRef]
+            .map(text)
+            .includes(spaceFilter)
+        )
+      : allSpaces;
+    const selectedSpaces = (scopedSpaces.length ? scopedSpaces : allSpaces).slice(0, limit);
+    const requestedRetrievalMode = text(input.retrievalMode || input.mode || "");
+    const firstModes = normalizeRetrievalModes(selectedSpaces[0]?.retrievalModes || selectedSpaces[0]?.searchModes || []);
+    const effectiveRetrievalMode = firstModes.some((mode) => mode.value === requestedRetrievalMode)
+      ? requestedRetrievalMode
+      : firstModes[0]?.value || "backendContract";
     const items = [];
     const decisions = [];
     for (const space of selectedSpaces) {
@@ -585,9 +648,10 @@ export function createKnowledgeBackendPort({ userDataPath = "" } = {}) {
       ok: true,
       protocolVersion: KNOWLEDGE_BACKEND_PORT_PROTOCOL_VERSION,
       query,
-      retrievalMode: "backendContract",
+      retrievalMode: effectiveRetrievalMode,
       backendPort: "KnowledgeBasePort",
       providers: providerFilter ? [normalizeProvider(providerFilter)] : [...SUPPORTED_PROVIDERS],
+      spaceId: selectedSpaces[0]?.spaceId || "",
       metadataPolicy: "safeMetadataOnly",
       externalKnowledgeBase: {
         used: true,

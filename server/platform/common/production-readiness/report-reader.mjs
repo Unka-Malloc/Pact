@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  describeCapabilityBindingGuardStatus,
+  describeCapabilityKernelStatus
+} from "../security/authorization/capability-kernel-status.mjs";
 
 export const PRODUCTION_HEALTH_REPORT_TYPE = "pact.production-health.v1";
 export const PRODUCTION_READINESS_REPORT_TYPE = "pact.production-readiness.v1";
@@ -30,8 +34,8 @@ const SECTION_DEFINITIONS = [
   {
     id: "security",
     label: "权限安全",
-    description: "AgentLibrary 源头权限、工具授权和控制台安全边界是否有效。",
-    gateIds: ["agent-library-access", "tool-permission"]
+    description: "AgentLibrary 源头权限、工具授权、Capability Kernel 和控制台安全边界是否有效。",
+    gateIds: ["agent-library-access", "tool-permission", "capability-kernel-security"]
   },
   {
     id: "observability",
@@ -255,7 +259,7 @@ export async function readProductionReadinessReports(options = {}) {
   };
 }
 
-function missingHealth(reportRoot) {
+function missingHealth(reportRoot, capabilityKernel = null, capabilityBindingGuard = null) {
   return {
     schemaVersion: 1,
     reportType: PRODUCTION_HEALTH_REPORT_TYPE,
@@ -266,6 +270,8 @@ function missingHealth(reportRoot) {
     latestReport: null,
     summary: { pass: 0, fail: 0, timeout: 0, blockedP0: 0 },
     coverage: { required: [], missing: [] },
+    capabilityKernel,
+    capabilityBindingGuard,
     sections: buildSections([]),
     gates: [],
     actions: [
@@ -281,8 +287,18 @@ function missingHealth(reportRoot) {
 export async function buildProductionHealthReport(options = {}) {
   const repoRoot = options.repoRoot || defaultRepoRoot;
   const { reportRoot, reports } = await readProductionReadinessReports({ ...options, repoRoot });
+  const capabilityKernel = await describeCapabilityKernelStatus({
+    userDataPath: options.userDataPath || options.dataDir || "",
+    backend: options.capabilityKernelBackend || "",
+    alias: options.capabilityKernelAlias || ""
+  });
+  const capabilityBindingGuard = await describeCapabilityBindingGuardStatus({
+    userDataPath: options.userDataPath || options.dataDir || "",
+    backend: options.capabilityBindingBackend || "",
+    alias: options.capabilityBindingAlias || ""
+  });
   if (reports.length === 0) {
-    return missingHealth(reportRoot);
+    return missingHealth(reportRoot, capabilityKernel, capabilityBindingGuard);
   }
   const latest = reports.find((report) => report.mode !== "quick") || reports[0];
   const status = latest.readError ? "fail" : latest.overallStatus || "unknown";
@@ -312,6 +328,8 @@ export async function buildProductionHealthReport(options = {}) {
       required: latest.coverage.required,
       missing: latest.coverage.missing
     },
+    capabilityKernel,
+    capabilityBindingGuard,
     sections: buildSections(gates),
     gates,
     history: reports.slice(0, 8).map((report) => ({

@@ -11,6 +11,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const REQUIRED_COVERAGE = [
   "architecture",
   "agent-library-access",
+  "capability-kernel-security",
   "workspace-contribution-governance",
   "document-parsing-real-sample",
   "external-knowledge-base-consistency",
@@ -130,9 +131,27 @@ const GATES = [
       ["npm", "run", "server:verify:2-3-5-security-model"],
       ["npm", "run", "server:verify:tool-management"],
       ["npm", "run", "server:verify:operation-policy"],
-      ["npm", "run", "server:verify:console-auth"]
+      ["npm", "run", "server:verify:console-auth"],
+      ["npm", "run", "server:verify:organization-model"],
+      ["npm", "run", "server:verify:authorization-governance"]
     ],
-    nextStep: "补齐 2-3-5 安全治理架构、tool grant、risk policy、scope、CSRF/safety-confirm 和审计边界。"
+    nextStep: "补齐 2-3-5 安全治理架构、tool grant、risk policy、scope、CSRF/safety-confirm、组织模型和授权治理边界。"
+  },
+  {
+    id: "capability-kernel-security",
+    title: "Capability Kernel 与密钥边界",
+    blockerLevel: "P0",
+    owner: "security-kernel",
+    coverage: ["capability-kernel-security"],
+    commands: [
+      ["npm", "run", "server:verify:authorization-capabilities"],
+      ["npm", "run", "server:verify:opaque-capability-key"],
+      ["npm", "run", "server:verify:capability-binding-guard"],
+      ["npm", "run", "server:verify:capability-security-helper"],
+      ["npm", "run", "server:verify:linux-security-backends"],
+      ["npm", "run", "server:verify:windows-security-backends"]
+    ],
+    nextStep: "补齐 Capability Kernel、opaque key、Binding Guard、helper、recovery 和 OS backend 的生产验收。"
   },
   {
     id: "model-routing",

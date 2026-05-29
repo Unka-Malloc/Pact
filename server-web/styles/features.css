@@ -629,6 +629,35 @@ textarea {
   white-space: nowrap;
 }
 
+.service-url-badge {
+  gap: var(--space-1-5);
+}
+
+.service-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--danger) 18%, transparent),
+    0 0 8px color-mix(in srgb, var(--danger) 36%, transparent);
+}
+
+.service-url-badge.is-available .service-status-dot {
+  background: var(--success);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--success) 18%, transparent),
+    0 0 8px color-mix(in srgb, var(--success) 36%, transparent);
+}
+
+.service-url-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .identity-chip {
   display: inline-flex;
   align-items: center;

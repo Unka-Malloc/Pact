@@ -67,7 +67,7 @@ const {
   selectedEvidence,
   selectedEvidenceDisplayTitle,
   selectedEvidenceId,
-  switchView,
+  openAdmin,
   updateConsoleUser,
   updateConsoleUserRole,
   currentUser,
@@ -182,9 +182,9 @@ const {
         <button
           class="inline-link"
           type="button"
-          @click="switchView('intelligence')"
+          @click="openAdmin('modules')"
         >
-          查看智能设置
+          查看接入模块
         </button>
       </div>
 

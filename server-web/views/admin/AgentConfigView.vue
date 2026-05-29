@@ -1,34 +1,22 @@
 <script setup lang="ts">
 import { useConsole } from '../../composables/useConsole';
-import AgentModelOptionBar from '../../components/AgentModelOptionBar.vue';
 import BinaryCheckbox from '../../components/BinaryCheckbox.vue';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
+import JsonConfigFileEditor from '../../components/JsonConfigFileEditor.vue';
 import OptionBar from '../../components/OptionBar.vue';
 import StatusPill from '../../components/StatusPill.vue';
 const {
   addModelProvider,
   addableModelProviderOptionBarOptions,
   adminView,
-  agentExploreForm,
-  agentExploreThinkingParameters,
   agentPermissionGroupOptionBarOptions,
-  agentSelectorOptions,
   beginCodexOAuthLogin,
   busyKey,
   codexOAuthStatus,
-  contextBuildRecordRows,
-  contextEvaluationResult,
-  contextPreviewRequiredEvidence,
-  contextPreviewResult,
-  contextPreviewTask,
-  contextProfileRows,
-  contextWindowOptionBarOptions,
   currentView,
   duplicateModelEntry,
   exportAgentModelEntryConfig,
-  exportContextBuildRecords,
   filter,
-  formatCompactDate,
   hasFeature,
   highlightedConfigTarget,
   intelligentModuleDefinitions,
@@ -47,25 +35,35 @@ const {
   modelProbeResults,
   modelProviderDefinition,
   moduleAccessModeOptionBarOptions,
-  previewContextCompiler,
   probeModelEntry,
   providerLabel,
-  refreshContextCompiler,
   removeModelProvider,
-  runContextReplayEvaluation,
   saveModelLibrarySettings,
   saveSettings,
-  selectedAgentExploreContextProfile,
-  selectedAgentExploreThinkingMode,
   selectedModelProvider,
   setModelEntryModuleAccessMode,
   setModelEntryPermissionGroup,
   settingsDraft,
-  thinkingModeOptionBarOptions,
   toggleModelEntryModuleAccess,
   toggleModelLibraryCard,
   visibleModelEntries,
 } = useConsole();
+
+async function saveLocalCommandTemplates(value: unknown) {
+  if (!Array.isArray(value)) {
+    throw new Error("本地命令模板必须是 JSON 数组。");
+  }
+  settingsDraft.value.agentToolExecution.local.commands = value as typeof settingsDraft.value.agentToolExecution.local.commands;
+  await saveSettings();
+}
+
+async function saveFunctionCallSchema(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("function call schema 必须是 JSON 对象。");
+  }
+  settingsDraft.value.agentToolExecution.functionCallSchema = value as Record<string, unknown>;
+  await saveSettings();
+}
 </script>
 
 <template>
@@ -368,338 +366,77 @@ const {
               </form>
             </article>
             <article class="surface-card">
-              <div class="drawer-panel">
-                <div class="section-header">
-                  <div>
-                    <h3>上下文编译器</h3>
-                    <p>每次调用无状态模型前，本地把记忆、证据、专家意见和工具状态编译成可审计 ContextPack。</p>
-                  </div>
-                  <div class="section-actions">
-                    <button
-                      class="tool-button tool-button-ghost compact-action"
-                      type="button"
-                      :disabled="busyKey === 'context:refresh'"
-                      @click="refreshContextCompiler()"
-                    >
-                      {{ busyKey === "context:refresh" ? "刷新中" : "刷新" }}
-                    </button>
-                    <button
-                      class="tool-button compact-action"
-                      type="button"
-                      :disabled="!contextBuildRecordRows.length"
-                      @click="exportContextBuildRecords"
-                    >
-                      导出记录
-                    </button>
-                  </div>
-                </div>
-
-                <div class="context-profile-grid">
-                  <article
-                    v-for="profile in contextProfileRows"
-                    :key="profile.profileId"
-                    class="context-profile-card"
-                  >
-                    <div>
-                      <strong>{{ profile.label || profile.profileId }}</strong>
-                      <span>{{ profile.profileId }} · {{ profile.compressionMode }} · {{ profile.strategy }}</span>
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>窗口</dt>
-                        <dd>{{ profile.contextWindowTokens.toLocaleString() }}</dd>
-                      </div>
-                      <div>
-                        <dt>知识</dt>
-                        <dd>{{ profile.knowledgeBudget.toLocaleString() }}</dd>
-                      </div>
-                      <div>
-                        <dt>历史</dt>
-                        <dd>{{ profile.historyBudget.toLocaleString() }}</dd>
-                      </div>
-                      <div>
-                        <dt>专家权重</dt>
-                        <dd>{{ Math.round(profile.expertGuidanceRatio * 100) }}%</dd>
-                      </div>
-                    </dl>
-                    <small>
-                      保护字段：{{ profile.protectedEvidenceFields.slice(0, 6).join(", ") || "默认" }}
-                    </small>
-                    <small>
-                      模型压缩：{{ profile.modelCompressionEnabled ? (profile.modelCompressionAlias || "已启用") : "关闭" }}
-                    </small>
-                  </article>
-                  <div v-if="!contextProfileRows.length" class="empty-note">
-                    尚未加载上下文 profile。
-                  </div>
-                </div>
-
-                <div class="form-grid compact-form-grid">
-                  <label class="full-row">
-                    <span>预览任务</span>
-                    <textarea v-model="contextPreviewTask" rows="3" spellcheck="false"></textarea>
-                  </label>
-                  <label>
-                    <span>必须保留的 evidenceId</span>
-                    <input v-model="contextPreviewRequiredEvidence" placeholder="ev_1, evidence::abc" autocomplete="off" />
-                  </label>
-                </div>
-                <div class="source-actions">
-                  <button
-                    class="tool-button"
-                    type="button"
-                    :disabled="busyKey === 'context:preview'"
-                    @click="previewContextCompiler"
-                  >
-                    {{ busyKey === "context:preview" ? "预览中" : "预览 ContextPack" }}
-                  </button>
-                  <button
-                    class="tool-button tool-button-ghost"
-                    type="button"
-                    :disabled="busyKey === 'context:evaluation'"
-                    @click="runContextReplayEvaluation"
-                  >
-                    {{ busyKey === "context:evaluation" ? "评估中" : "运行 Replay 评估" }}
-                  </button>
-                </div>
-
-                <ConfigFoldCard v-if="contextPreviewResult" title="本轮上下文包" open>
-                  <pre>{{ jsonPreview(contextPreviewResult) }}</pre>
-                </ConfigFoldCard>
-                <ConfigFoldCard v-if="contextEvaluationResult" title="Replay 评估结果" open>
-                  <pre>{{ jsonPreview(contextEvaluationResult) }}</pre>
-                </ConfigFoldCard>
-
-                <ConfigFoldCard
-                  title="最近上下文编译记录"
-                  data-config-target="knowledge-review-fusion-agent"
-                  :data-config-highlighted="highlightedConfigTarget === 'knowledge-review-fusion-agent'"
-                  open
-                >
-                  <div class="context-build-record-list">
-                    <article
-                      v-for="record in contextBuildRecordRows"
-                      :key="record.recordId"
-                      class="context-build-record"
-                    >
-                      <div>
-                        <strong>{{ record.profileId }}</strong>
-                        <span>{{ formatCompactDate(record.createdAt) }} · {{ record.compressionMode }} · {{ record.triggerReason }}</span>
-                      </div>
-                      <small>
-                        token {{ record.totalTokens.toLocaleString() }} / source {{ record.sourceTokens.toLocaleString() }}
-                        · 保留证据 {{ record.preservedEvidenceIds.length }}
-                        · 丢弃 {{ record.droppedKnowledgeCount }}
-                        · 专家意见 {{ record.humanExpertGuidanceCount }}
-                      </small>
-                      <code>{{ record.recordId }}</code>
-                    </article>
-                    <div v-if="!contextBuildRecordRows.length" class="empty-note">
-                      暂无上下文编译记录。
-                    </div>
-                  </div>
-                </ConfigFoldCard>
-              </div>
-            </article>
-            <article class="surface-card">
               <form class="drawer-panel" @submit.prevent="saveSettings">
                 <div class="section-header">
                   <div>
-                    <h3>智能检索参数</h3>
-                    <p>这里公开智能检索实际传给模型的默认提示词、工具策略和调用参数。</p>
-                  </div>
-                </div>
-                <label>
-                  <span>系统提示词</span>
-                  <textarea v-model="settingsDraft.agentExploreDefaults.systemPrompt" rows="5" spellcheck="false"></textarea>
-                </label>
-                <label>
-                  <span>工具策略提示词</span>
-                  <textarea v-model="settingsDraft.agentExploreDefaults.toolPolicyPrompt" rows="4" spellcheck="false"></textarea>
-                </label>
-                <label>
-                  <span>继续轮次提示词</span>
-                  <textarea v-model="settingsDraft.agentExploreDefaults.continuationPrompt" rows="3" spellcheck="false"></textarea>
-                </label>
-                <label>
-                  <span>答案模板</span>
-                  <textarea v-model="settingsDraft.agentExploreDefaults.answerTemplate" rows="18" spellcheck="false"></textarea>
-                </label>
-                <div class="form-grid compact-form-grid">
-                  <OptionBar
-                    v-model="settingsDraft.agentExploreDefaults.contextProfileId"
-                    label="上下文窗口"
-                    :options="contextWindowOptionBarOptions"
-                  />
-                  <OptionBar
-                    v-model="settingsDraft.agentExploreDefaults.thinkingMode"
-                    label="Thinking"
-                    :options="thinkingModeOptionBarOptions"
-                  />
-                  <label>
-                    <span>temperature</span>
-                    <input v-model.number="settingsDraft.agentExploreDefaults.temperature" type="number" min="0" max="2" step="0.1" />
-                  </label>
-                  <label>
-                    <span>max_tokens</span>
-                    <input v-model.number="settingsDraft.agentExploreDefaults.maxTokens" type="number" min="128" step="128" />
-                  </label>
-                  <label>
-                    <span>默认循环轮数</span>
-                    <input v-model.number="settingsDraft.agentExploreDefaults.maxIterations" type="number" min="1" max="8" />
-                  </label>
-                  <label>
-                    <span>默认每次召回</span>
-                    <input v-model.number="settingsDraft.agentExploreDefaults.limit" type="number" min="1" max="20" />
-                  </label>
-	                  <label>
-	                    <span>tool_choice</span>
-	                    <input v-model="settingsDraft.agentExploreDefaults.toolChoice" autocomplete="off" />
-	                  </label>
-	                </div>
-	                <ConfigFoldCard title="知识融合智能体" open>
-	                  <div class="form-grid compact-form-grid">
-	                    <AgentModelOptionBar
-		                      v-model="settingsDraft.agentExploreDefaults.reviewFusionModelAlias"
-		                      label="智能体"
-		                      placeholder="未分配智能体"
-		                      include-empty
-		                      :options="agentSelectorOptions"
-		                    />
-	                    <label>
-	                      <span>temperature</span>
-	                      <input
-	                        v-model.number="settingsDraft.agentExploreDefaults.reviewFusionTemperature"
-	                        type="number"
-	                        min="0"
-	                        max="2"
-	                        step="0.1"
-	                      />
-	                    </label>
-	                    <label>
-	                      <span>max_tokens</span>
-	                      <input
-	                        v-model.number="settingsDraft.agentExploreDefaults.reviewFusionMaxTokens"
-	                        type="number"
-	                        min="128"
-	                        step="128"
-	                      />
-	                    </label>
-	                  </div>
-	                  <label>
-	                    <span>融合提示词</span>
-	                    <textarea
-	                      v-model="settingsDraft.agentExploreDefaults.reviewFusionSystemPrompt"
-	                      rows="4"
-	                      spellcheck="false"
-	                    ></textarea>
-	                  </label>
-	                </ConfigFoldCard>
-	                <ConfigFoldCard title="运行时变量">
-	                  <pre>{{ jsonPreview({
-	                    modelAlias: agentExploreForm.modelAlias,
-                    contextProfileId: selectedAgentExploreContextProfile.value,
-                    thinkingMode: selectedAgentExploreThinkingMode,
-                    tools: ['knowledge_aggregate', 'keyword_search', 'open_evidence', 'http_request', 'local_command'],
-                    stateMachine: ['model_calling', 'tool_selected', 'tool_calling', 'tool_result', 'completed', 'failed'],
-	                    requestParameters: {
-	                      ...agentExploreThinkingParameters(),
-	                      temperature: settingsDraft.agentExploreDefaults.temperature,
-	                      max_tokens: settingsDraft.agentExploreDefaults.maxTokens,
-	                      max_iterations: settingsDraft.agentExploreDefaults.maxIterations,
-	                      per_search_limit: settingsDraft.agentExploreDefaults.limit,
-	                      tool_choice: settingsDraft.agentExploreDefaults.toolChoice,
-	                      stream: false
-	                    },
-	                    reviewFusionAgent: {
-	                      modelAlias: settingsDraft.agentExploreDefaults.reviewFusionModelAlias,
-	                      temperature: settingsDraft.agentExploreDefaults.reviewFusionTemperature,
-	                      max_tokens: settingsDraft.agentExploreDefaults.reviewFusionMaxTokens,
-	                      systemPrompt: settingsDraft.agentExploreDefaults.reviewFusionSystemPrompt
-	                    }
-	                  }) }}</pre>
-	                </ConfigFoldCard>
-                <div class="source-actions">
-                  <button class="tool-button" type="submit" :disabled="busyKey === 'settings'">
-                    {{ busyKey === "settings" ? "保存中" : "保存智能检索参数" }}
-                  </button>
-                </div>
-              </form>
-            </article>
-            <article class="surface-card">
-              <form class="drawer-panel" @submit.prevent="saveSettings">
-                <div class="section-header">
-                  <div>
-                    <h3>外层工具调用</h3>
+                    <h3>调用框架</h3>
                     <p>模型可输出 function call；服务端再按这里的 HTTP / 本地命令策略执行。命令使用 Node.js spawn，shell=false，跨平台。</p>
                   </div>
                 </div>
-                <div class="form-grid compact-form-grid">
-                  <BinaryCheckbox
-                    v-model="settingsDraft.agentToolExecution.http.enabled"
-                    label="启用 HTTP 工具"
-                  />
-                  <label>
-                    <span>HTTP 允许 Host（逗号分隔）</span>
-                    <input
-                      :value="settingsDraft.agentToolExecution.http.allowedHosts.join(', ')"
-                      @input="settingsDraft.agentToolExecution.http.allowedHosts = String(($event.target as HTMLInputElement).value || '').split(',').map((item) => item.trim()).filter(Boolean)"
+                <section class="settings-sub-card invocation-remote-card">
+                  <div class="settings-sub-card-header">
+                    <h4>远程调用</h4>
+                  </div>
+                  <div class="form-grid compact-form-grid">
+                    <BinaryCheckbox
+                      v-model="settingsDraft.agentToolExecution.http.enabled"
+                      label="启用 HTTP 工具"
                     />
-                  </label>
-                  <label>
-                    <span>HTTP Timeout(ms)</span>
-                    <input v-model.number="settingsDraft.agentToolExecution.http.timeoutMs" type="number" min="1000" step="1000" />
-                  </label>
-                  <label>
-                    <span>HTTP 最大响应字节</span>
-                    <input v-model.number="settingsDraft.agentToolExecution.http.maxResponseBytes" type="number" min="1024" step="1024" />
-                  </label>
-                </div>
-                <div class="form-grid compact-form-grid">
-                  <BinaryCheckbox
-                    v-model="settingsDraft.agentToolExecution.local.enabled"
-                    label="启用本地命令工具"
+                    <label>
+                      <span>HTTP 允许 Host（逗号分隔）</span>
+                      <input
+                        :value="settingsDraft.agentToolExecution.http.allowedHosts.join(', ')"
+                        @input="settingsDraft.agentToolExecution.http.allowedHosts = String(($event.target as HTMLInputElement).value || '').split(',').map((item) => item.trim()).filter(Boolean)"
+                      />
+                    </label>
+                    <label>
+                      <span>HTTP Timeout(ms)</span>
+                      <input v-model.number="settingsDraft.agentToolExecution.http.timeoutMs" type="number" min="1000" step="1000" />
+                    </label>
+                    <label>
+                      <span>HTTP 最大响应字节</span>
+                      <input v-model.number="settingsDraft.agentToolExecution.http.maxResponseBytes" type="number" min="1024" step="1024" />
+                    </label>
+                  </div>
+                </section>
+                <section class="settings-sub-card invocation-local-card">
+                  <div class="settings-sub-card-header">
+                    <h4>本地调用</h4>
+                  </div>
+                  <div class="form-grid compact-form-grid">
+                    <BinaryCheckbox
+                      v-model="settingsDraft.agentToolExecution.local.enabled"
+                      label="启用本地命令工具"
+                    />
+                    <BinaryCheckbox
+                      v-model="settingsDraft.agentToolExecution.local.allowDirectCommands"
+                      label="允许直接命令"
+                    />
+                    <label>
+                      <span>命令 Timeout(ms)</span>
+                      <input v-model.number="settingsDraft.agentToolExecution.local.timeoutMs" type="number" min="1000" step="1000" />
+                    </label>
+                    <label>
+                      <span>命令最大输出字节</span>
+                      <input v-model.number="settingsDraft.agentToolExecution.local.maxOutputBytes" type="number" min="1024" step="1024" />
+                    </label>
+                  </div>
+                  <JsonConfigFileEditor
+                    title="本地命令模板 JSON"
+                    file-key="tool-management/execution.json#agentToolExecution.local.commands"
+                    :model-value="settingsDraft.agentToolExecution.local.commands"
+                    :on-save="saveLocalCommandTemplates"
+                    open
+                    :rows="12"
                   />
-                  <BinaryCheckbox
-                    v-model="settingsDraft.agentToolExecution.local.allowDirectCommands"
-                    label="允许直接命令"
-                  />
-                  <label>
-                    <span>命令 Timeout(ms)</span>
-                    <input v-model.number="settingsDraft.agentToolExecution.local.timeoutMs" type="number" min="1000" step="1000" />
-                  </label>
-                  <label>
-                    <span>命令最大输出字节</span>
-                    <input v-model.number="settingsDraft.agentToolExecution.local.maxOutputBytes" type="number" min="1024" step="1024" />
-                  </label>
-                </div>
-                <ConfigFoldCard title="本地命令模板 JSON" open>
-                  <textarea
-                    :value="jsonPreview(settingsDraft.agentToolExecution.local.commands)"
-                    rows="10"
-                    spellcheck="false"
-                    @change="settingsDraft.agentToolExecution.local.commands = JSON.parse(($event.target as HTMLTextAreaElement).value || '[]')"
-                  ></textarea>
-                </ConfigFoldCard>
-                <ConfigFoldCard title="function call schema">
-                  <pre>{{ jsonPreview({
-                    http_request: {
-                      method: 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS',
-                      url: 'http://127.0.0.1:7228/api/tool-management/v1/execute',
-                      headers: {},
-                      query: {},
-                      body: {},
-                      timeoutMs: 30000
-                    },
-                    local_command: {
-                      commandId: 'node-version',
-                      args: [],
-                      cwd: '',
-                      stdin: '',
-                      timeoutMs: 30000
-                    }
-                  }) }}</pre>
-                </ConfigFoldCard>
+                </section>
+                <JsonConfigFileEditor
+                  title="function call schema"
+                  file-key="tool-management/execution.json#agentToolExecution.functionCallSchema"
+                  :model-value="settingsDraft.agentToolExecution.functionCallSchema || {}"
+                  :on-save="saveFunctionCallSchema"
+                  :rows="12"
+                />
                 <div class="source-actions">
                   <button class="tool-button" type="submit" :disabled="busyKey === 'settings'">
                     {{ busyKey === "settings" ? "保存中" : "保存工具调用配置" }}

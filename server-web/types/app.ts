@@ -11,6 +11,7 @@ import type {
 } from "../lib/types";
 
 export type DrawerTab =
+  | "preferences"
   | "discovery"
   | "users"
   | "modules"
@@ -21,7 +22,6 @@ export type AppView =
   | "debug"
   | "sources"
   | "knowledge"
-  | "intelligence"
   | "workspaces"
   | "admin";
 export type DebugTab = "knowledgeRecall" | "agentRetrieval";
@@ -33,13 +33,14 @@ export type AdminView =
   | "agentManagement"
   | "agentPermissions"
   | "agentConfig"
+  | "contextManagement"
   | "maintenanceAgent"
   | "opsMonitor"
   | "productionHealth"
   | "clients"
   | "storage"
   | "modules";
-export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance" | "management" | "conflicts";
+export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance" | "management";
 export type KnowledgeManagementPanel = "knowledge" | "rules" | "expert";
 export type OptionBarValue = string | number | boolean;
 export type OptionBarOption = {

@@ -31,6 +31,8 @@ import type {
   KnowledgeAssetRef,
   KnowledgeConfigSchema,
   KnowledgeConsoleState,
+  KnowledgeIngestTarget,
+  KnowledgeIngestTargetKind,
   KnowledgeReviewItem,
   KnowledgeRuleAuthoringResponse,
   KnowledgeSearchResponse,
@@ -238,6 +240,26 @@ const emptySettings: AgentSettings = {
     reviewFusionMaxTokens: 1200,
   },
   agentToolExecution: {
+    functionCallSchema: {
+      http_request: {
+        method: "GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS",
+        url: "http://127.0.0.1:7228/api/tool-management/v1/execute",
+        headers: {},
+        query: {},
+        body: {},
+        timeoutMs: 30000,
+      },
+      local_command: {
+        commandId: "node-version",
+        variables: {
+          flag: "--version",
+        },
+        args: [],
+        cwd: "",
+        stdin: "",
+        timeoutMs: 30000,
+      },
+    },
     http: {
       enabled: true,
       allowedHosts: ["127.0.0.1", "localhost"],
@@ -249,14 +271,26 @@ const emptySettings: AgentSettings = {
       allowDirectCommands: false,
       timeoutMs: 30000,
       maxOutputBytes: 65536,
+      nodeCommand: "",
       commands: [
         {
           commandId: "node-version",
           label: "Node.js version",
           command: "node",
-          args: ["--version"],
+          args: ["{{flag}}"],
           cwd: "",
           description: "跨平台 Node 运行时探测命令。",
+          variables: [
+            {
+              name: "flag",
+              label: "版本参数",
+              required: false,
+              defaultValue: "--version",
+              allowedValues: ["--version"],
+              description: "智能体通过 function call variables 填入的 Node.js 版本探测参数。",
+            },
+          ],
+          allowExtraArgs: false,
         },
       ],
     },
@@ -421,6 +455,7 @@ const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
 ];
 
 const consoleState = ref<ServerConsoleState | null>(null);
+const serverAvailable = ref(false);
 const activeConsoleFeatureIds = computed(() =>
   consoleState.value?.features?.activeFeatureIds || []
 );
@@ -453,7 +488,8 @@ const adminViewTitleMap: Partial<Record<AdminView, string>> = {
   tools: "智能体工具",
   agentManagement: "智能体管理",
   agentPermissions: "智能体权限",
-  agentConfig: "智能体配置",
+  agentConfig: "智能体仓库",
+  contextManagement: "上下文管理",
   maintenanceAgent: "智能巡检",
   opsMonitor: "运维监控",
   clients: "设备管理",
@@ -465,7 +501,6 @@ const viewTitleMap: Record<AppView, string> = {
   feed: "信息流",
   sources: "数据源",
   knowledge: "知识库",
-  intelligence: "智能分析",
   workspaces: "协作空间",
   debug: "调试面板",
   admin: "管理",
@@ -628,21 +663,18 @@ const wordCloudMessages = ref<Array<{
 }>>([]);
 const knowledgeMaintenanceDraft = ref<MaintenanceSettings>({});
 const maintenanceJson = ref("{}");
-const selectedMaintenanceTask = ref("validate_assets");
-const maintenanceConfirm = ref(false);
-const maintenanceDryRun = ref(true);
-const maintenanceResultJson = ref("");
 const knowledgeSearchForm = ref({
   query: "",
 });
 const knowledgeRecallDebugForm = ref({
   query: "",
-  topKValues: "10 20 30",
+  targetId: "internal:global",
   retrievalMode: "hybrid",
   keywordOnly: false,
   learningEnabled: true,
   explain: true,
 });
+const knowledgeRecallBackendSpacesResult = ref<Record<string, unknown> | null>(null);
 const knowledgeRecallDebugRuns = ref<KnowledgeRecallDebugRun[]>([]);
 const agentExploreForm = ref({
   query: "",
@@ -802,6 +834,16 @@ let evidenceLoadSequence = 0;
 const ingestFiles = ref<File[]>([]);
 const ingestProgress = ref("");
 const ingestJob = ref<SplitJob | null>(null);
+const knowledgeIngestTargets = ref<Record<KnowledgeIngestTargetKind, boolean>>({
+  global: true,
+  external: false,
+  team: false,
+  user: false,
+});
+const knowledgeIngestExternalProvider = ref("dify");
+const knowledgeIngestExternalRefs = ref("");
+const knowledgeIngestTeamRefs = ref("");
+const knowledgeIngestUserRefs = ref("");
 const uploadTraceEvents = ref<ProtocolEvent[]>([]);
 const normalizedManifest = ref<NormalizedDocumentsManifest | null>(null);
 const localSourceForm = ref({
@@ -1116,6 +1158,47 @@ function moduleAgentProfilesPayload() {
   return next;
 }
 
+function isAbsoluteCommandPath(value: string) {
+  return value.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(value);
+}
+
+function normalizeAgentLocalCommandsForDraft(settings: AgentSettings) {
+  const localSettings = settings.agentToolExecution?.local || emptySettings.agentToolExecution.local;
+  const nodeCommand = String(localSettings.nodeCommand || "").trim() || "node";
+  const commands = Array.isArray(localSettings.commands)
+    ? localSettings.commands
+    : emptySettings.agentToolExecution.local.commands;
+  return commands
+    .map((item, index) => {
+      const commandId = String(item.commandId || `command-${index + 1}`).trim();
+      const command = String(item.command || "").trim();
+      const isNodeVersion = commandId === "node-version";
+      const variables = Array.isArray(item.variables) && item.variables.length > 0
+        ? item.variables
+        : isNodeVersion
+          ? emptySettings.agentToolExecution.local.commands[0].variables
+          : [];
+      const rawArgs = Array.isArray(item.args) ? item.args.map((arg) => String(arg)) : [];
+      return {
+        ...item,
+        commandId,
+        label: String(item.label || item.commandId || `Command ${index + 1}`).trim(),
+        command:
+          commandId === "node-version" && (!command || isAbsoluteCommandPath(command))
+            ? nodeCommand
+            : command,
+        args: isNodeVersion && !rawArgs.some((arg) => /\{\{\s*flag\s*\}\}/.test(arg))
+          ? ["{{flag}}"]
+          : rawArgs,
+        cwd: String(item.cwd || "").trim(),
+        description: String(item.description || "").trim(),
+        variables,
+        allowExtraArgs: isNodeVersion ? item.allowExtraArgs === true : item.allowExtraArgs,
+      };
+    })
+    .filter((item) => item.commandId && item.command);
+}
+
 function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
   const adapter = {
     ...emptySettings.customHttpAdapter,
@@ -1151,6 +1234,9 @@ function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
       ...(settings.agentExploreDefaults || {}),
     },
     agentToolExecution: {
+      functionCallSchema:
+        settings.agentToolExecution?.functionCallSchema ||
+        emptySettings.agentToolExecution.functionCallSchema,
       http: {
         ...emptySettings.agentToolExecution.http,
         ...(settings.agentToolExecution?.http || {}),
@@ -1158,9 +1244,7 @@ function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
       local: {
         ...emptySettings.agentToolExecution.local,
         ...(settings.agentToolExecution?.local || {}),
-        commands: Array.isArray(settings.agentToolExecution?.local?.commands)
-          ? settings.agentToolExecution.local.commands
-          : emptySettings.agentToolExecution.local.commands,
+        commands: normalizeAgentLocalCommandsForDraft(settings),
       },
     },
     moduleAgentProfiles: normalizeModuleAgentProfilesForDraft(settings),
@@ -1540,7 +1624,7 @@ watch(
 );
 
 watch(knowledgeReviewStatus, () => {
-  if (currentView.value === "knowledge" && knowledgeTab.value === "conflicts") {
+  if (currentView.value === "dashboard") {
     void refreshKnowledgeConflicts();
   }
 });
@@ -2239,7 +2323,7 @@ function collectModelEntryBindings(entry: AgentModelConfig): ModelEntryBinding[]
       bindingId: "knowledge-review:fusion",
       category: "知识库",
       label: "知识融合智能体",
-      detail: "冲突审核中的知识融合流程显式绑定该智能体。",
+      detail: "工作台审批流中的知识融合流程显式绑定该智能体。",
       source: "settings",
     });
   }
@@ -2893,11 +2977,6 @@ const knowledgeModules = computed(() => {
     ...((health?.protocolModules || {}) as Record<string, Record<string, unknown>>),
   };
 });
-const currentMaintenanceTask = computed(() =>
-  knowledgeSchema.value?.maintenanceTasks.find((item) => item.id === selectedMaintenanceTask.value) ||
-  null,
-);
-const currentMaintenanceTaskSupportsDryRun = computed(() => currentMaintenanceTask.value?.supportsDryRun === true);
 const pendingKnowledgeReviewCount = computed(() => {
   const loadedPending = knowledgeReviewItems.value.filter((item: any) => item.status === "pending").length;
   const healthCounts = asRecord(knowledgeConsole.value?.health?.counts) || {};
@@ -2905,15 +2984,8 @@ const pendingKnowledgeReviewCount = computed(() => {
 });
 
 function knowledgeTabDisplayLabel(tab: { id: KnowledgeTab; label: string }) {
-  if (tab.id === "conflicts" && pendingKnowledgeReviewCount.value > 0) {
-    return `${tab.label} ${pendingKnowledgeReviewCount.value}`;
-  }
   return tab.label;
 }
-
-watch(selectedMaintenanceTask, () => {
-  maintenanceDryRun.value = currentMaintenanceTaskSupportsDryRun.value;
-});
 
 function knowledgeConfigGroupDescription(groupId: string) {
   switch (groupId) {
@@ -2927,31 +2999,6 @@ function knowledgeConfigGroupDescription(groupId: string) {
       return "已接入 embedding runtime，用于选择文本、图片和版本化重算索引的 provider。";
     default:
       return "服务端暴露的知识库配置组。";
-  }
-}
-
-function knowledgeMaintenanceTaskDescription(taskId: string) {
-  switch (taskId) {
-    case "validate_assets":
-      return "检查知识库资产文件、索引覆盖和基础质量，不修改知识内容。";
-    case "repair_missing_thumbnails":
-      return "尝试补齐缺失缩略图，适合图片预览异常后的轻量修复。";
-    case "delete_orphan_objects":
-      return "删除不再被索引引用的孤立对象，属于清理存储的高风险操作。";
-    case "garbage_cleanup":
-      return "清理同步日志、重复导入审核噪声、旧维护记录、旧蒸馏报告，并可选清理失败任务目录；默认仅预览，真正删除必须确认。";
-    case "compare_retrieval_profiles":
-      return "用固定查询对比不同检索 profile 的召回结果，用于调参前评估。";
-    case "learning_run":
-      return "根据近期反馈执行一次进化学习，生成候选检索 profile 或审核建议。";
-    case "validate_quality":
-      return "检查重复文档、缺少块、图片无 OCR/说明、证据缺少机器元数据等质量问题。";
-    case "reembed_by_model_version":
-      return "更新 embedding 版本并重算索引，通常在更换 Embedding provider 后使用。";
-    case "reindex":
-      return "重建全文、向量和分层索引，适合导入异常、模型切换或召回明显退化后的修复。";
-    default:
-      return "执行服务端注册的知识库维护动作。";
   }
 }
 
@@ -4469,7 +4516,7 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
       alertId: "knowledge-review-fusion-agent",
       category: "知识库",
       title: "知识融合智能体",
-      detail: "冲突审核中的融合分析需要显式绑定一个可用智能体。",
+      detail: "工作台审批流中的融合分析需要显式绑定一个可用智能体。",
       value: settingsDraft.value.agentExploreDefaults?.reviewFusionModelAlias || "",
       options: agentSelectorOptions.value,
       view: "admin",
@@ -4495,8 +4542,9 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
         detail: moduleDefinition.description,
         status: "未配置智能体",
         tone: "warning",
-        view: "intelligence",
-        targetId: `module-agent-${moduleDefinition.id}`,
+        view: "admin",
+        adminView: "agentConfig",
+        targetId: "agent-model-library",
       });
       continue;
     }
@@ -4508,8 +4556,9 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
         detail: `${moduleDefinition.description} 当前绑定的智能体不可用或未完成授权。`,
         status: "智能体不可用",
         tone: "danger",
-        view: "intelligence",
-        targetId: `module-agent-${moduleDefinition.id}`,
+        view: "admin",
+        adminView: "agentConfig",
+        targetId: "agent-model-library",
       });
     }
   }
@@ -5611,7 +5660,7 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
     exportedAt: new Date().toISOString(),
     type: "pact.agent-model-config.v1",
     source: "server-console-model-library",
-    note: "导出的是当前智能体配置；密钥和 Token 字段已脱敏，未包含其它智能体配置。",
+    note: "导出的是当前智能体仓库配置；密钥和 Token 字段已脱敏，未包含其它智能体仓库配置。",
     model: redactAgentModelEntryForExport(normalizedEntry),
     providerSettings: redactedProviderSettingsForAgentExport(normalizedEntry, payload),
   };
@@ -7552,6 +7601,147 @@ function currentKnowledgeLearningEnabled() {
   return learning.enabled !== false && retrieval.learningEnabled !== false;
 }
 
+function normalizeModeOptions(value: unknown, fallback: OptionBarOption[] = []): OptionBarOption[] {
+  const rawItems = Array.isArray(value) ? value : value ? [value] : [];
+  const options = rawItems
+    .map((item) => {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const record = item as Record<string, unknown>;
+        const optionValue = String(record.value || record.id || record.mode || record.name || "").trim();
+        if (!optionValue) {
+          return null;
+        }
+        return {
+          value: optionValue,
+          label: String(record.label || record.title || optionValue),
+        } as OptionBarOption;
+      }
+      const optionValue = String(item || "").trim();
+      return optionValue ? ({ value: optionValue, label: optionValue } as OptionBarOption) : null;
+    })
+    .filter(Boolean) as OptionBarOption[];
+  const unique = options.filter(
+    (option, index, list) => list.findIndex((candidate) => candidate.value === option.value) === index,
+  );
+  return unique.length ? unique : fallback;
+}
+
+function currentKnowledgeCoreModeOptions() {
+  const capabilities = asRecord(knowledgeConsole.value?.capabilities) || {};
+  const healthCapabilities = asRecord(knowledgeConsole.value?.health?.capabilities) || {};
+  const retrievalPolicy = asRecord(capabilities.retrievalPolicy) || asRecord(healthCapabilities.retrievalPolicy) || {};
+  return normalizeModeOptions(
+    capabilities.retrievalModes || healthCapabilities.retrievalModes || retrievalPolicy.modes,
+    [
+      { value: "hybrid", label: "Hybrid" },
+      { value: "keyword", label: "Keyword" },
+    ],
+  );
+}
+
+function externalKnowledgeSpaceModeOptions(space: Record<string, unknown>) {
+  return normalizeModeOptions(
+    space.retrievalModes || space.searchModes,
+    [{ value: "backendContract", label: "Backend Contract" }],
+  );
+}
+
+const knowledgeRecallBackendSpaces = computed<Array<Record<string, unknown>>>(() => {
+  const spaces = knowledgeRecallBackendSpacesResult.value?.spaces;
+  return Array.isArray(spaces) ? spaces as Array<Record<string, unknown>> : [];
+});
+
+type KnowledgeRecallDebugTarget = {
+  value: string;
+  label: string;
+  kind: "internal" | "source" | "external";
+  provider?: string;
+  spaceId?: string;
+  sourceId?: string;
+  modeOptions: OptionBarOption[];
+};
+
+const knowledgeRecallDebugTargets = computed<KnowledgeRecallDebugTarget[]>(() => {
+  const coreModes = currentKnowledgeCoreModeOptions();
+  const targets: KnowledgeRecallDebugTarget[] = [{
+    value: "internal:global",
+    label: "全局知识空间",
+    kind: "internal",
+    modeOptions: coreModes,
+  }];
+  for (const source of activeKnowledgeSources.value) {
+    targets.push({
+      value: `source:${source.sourceId}`,
+      label: source.label || source.directoryPath || "受管知识目录",
+      kind: "source",
+      sourceId: source.sourceId,
+      modeOptions: coreModes,
+    });
+  }
+  for (const space of knowledgeRecallBackendSpaces.value) {
+    const provider = String(space.provider || "").trim();
+    const spaceId = String(space.spaceId || "").trim();
+    if (!spaceId) {
+      continue;
+    }
+    targets.push({
+      value: `external:${spaceId}`,
+      label: `${String(space.label || provider || "外部知识库")} · ${provider || "external"}`,
+      kind: "external",
+      provider,
+      spaceId,
+      modeOptions: externalKnowledgeSpaceModeOptions(space),
+    });
+  }
+  return targets;
+});
+
+const knowledgeRecallDebugTargetOptions = computed<OptionBarOption[]>(() =>
+  knowledgeRecallDebugTargets.value.map((target) => ({
+    value: target.value,
+    label: target.label,
+  })),
+);
+
+const selectedKnowledgeRecallDebugTarget = computed<KnowledgeRecallDebugTarget>(() =>
+  knowledgeRecallDebugTargets.value.find((target) => target.value === knowledgeRecallDebugForm.value.targetId) ||
+    knowledgeRecallDebugTargets.value[0],
+);
+
+const knowledgeRecallDebugModeOptionBarOptions = computed<OptionBarOption[]>(() =>
+  selectedKnowledgeRecallDebugTarget.value?.modeOptions?.length
+    ? selectedKnowledgeRecallDebugTarget.value.modeOptions
+    : currentKnowledgeCoreModeOptions(),
+);
+
+function ensureKnowledgeRecallDebugSelection() {
+  const targets = knowledgeRecallDebugTargets.value;
+  if (!targets.length) {
+    return;
+  }
+  if (!targets.some((target) => target.value === knowledgeRecallDebugForm.value.targetId)) {
+    knowledgeRecallDebugForm.value.targetId = targets[0].value;
+  }
+  const modes = knowledgeRecallDebugModeOptionBarOptions.value;
+  if (modes.length && !modes.some((option) => option.value === knowledgeRecallDebugForm.value.retrievalMode)) {
+    knowledgeRecallDebugForm.value.retrievalMode = String(modes[0].value);
+  }
+}
+
+watch(knowledgeRecallDebugTargets, ensureKnowledgeRecallDebugSelection, { immediate: true });
+watch(() => knowledgeRecallDebugForm.value.targetId, ensureKnowledgeRecallDebugSelection);
+watch(knowledgeRecallDebugModeOptionBarOptions, ensureKnowledgeRecallDebugSelection);
+
+async function refreshKnowledgeRecallBackendSpaces() {
+  try {
+    knowledgeRecallBackendSpacesResult.value = await bridge.listKnowledgeSpaces();
+  } catch {
+    knowledgeRecallBackendSpacesResult.value = null;
+  } finally {
+    ensureKnowledgeRecallDebugSelection();
+  }
+}
+
 function currentKnowledgeSearchLimit() {
   const retrieval = currentKnowledgeRetrievalSettings();
   const topK = Number(retrieval.topK || 20);
@@ -9106,6 +9296,9 @@ async function refreshKnowledgeConsole() {
     knowledgeConsole.value = state;
     knowledgeSchema.value = schema;
     knowledgeSourceState.value = sources || state.sources || null;
+    if (debugTab.value === "knowledgeRecall") {
+      void refreshKnowledgeRecallBackendSpaces();
+    }
     if (
       reviewItems &&
       reviewRequestGeneration === knowledgeReviewRequestGeneration &&
@@ -9345,7 +9538,7 @@ async function resolveKnowledgeReview(
 async function fuseKnowledgeReview(item: KnowledgeReviewItem) {
   const model = selectedKnowledgeReviewFusionModel.value;
   if (!model?.enabled || !model.value) {
-    error.value = "知识融合智能体未配置可用模型，请先在智能体配置中选择模型。";
+    error.value = "知识融合智能体未配置可用模型，请先在智能体仓库中选择模型。";
     return;
   }
   const reviewId = String(item.reviewId || "");
@@ -9426,24 +9619,28 @@ async function searchKnowledge() {
   }
 }
 
-function parseKnowledgeRecallTopKValues(value: unknown) {
-  const values = String(value || "")
-    .split(/[,\s，、]+/)
-    .map((item) => Number(item))
-    .filter((item: any) => Number.isFinite(item) && item > 0)
-    .map((item) => Math.max(1, Math.min(Math.floor(item), 100)));
-  return [...new Set(values)].slice(0, 6);
+function currentKnowledgeRecallTopK() {
+  const settings = currentKnowledgeRetrievalSettings();
+  const topK = Number(settings.topK || 20);
+  return Math.max(1, Math.min(Number.isFinite(topK) ? Math.floor(topK) : 20, 100));
 }
 
-function buildKnowledgeRecallSearchPayload(query: string, topK: number) {
+function buildKnowledgeRecallSearchPayload(query: string) {
+  const topK = currentKnowledgeRecallTopK();
+  const target = selectedKnowledgeRecallDebugTarget.value;
+  const retrievalMode = String(
+    knowledgeRecallDebugModeOptionBarOptions.value.some((option) => option.value === knowledgeRecallDebugForm.value.retrievalMode)
+      ? knowledgeRecallDebugForm.value.retrievalMode
+      : knowledgeRecallDebugModeOptionBarOptions.value[0]?.value || "hybrid",
+  );
   const retrievalProfile = {
     ...currentKnowledgeRetrievalSettings(),
     topK,
   };
-  return {
+  const payload: Record<string, unknown> = {
     query,
     limit: topK,
-    retrievalMode: knowledgeRecallDebugForm.value.retrievalMode || "hybrid",
+    retrievalMode,
     keywordOnly: knowledgeRecallDebugForm.value.keywordOnly,
     retrievalProfile,
     profile: { retrieval: retrievalProfile },
@@ -9452,21 +9649,22 @@ function buildKnowledgeRecallSearchPayload(query: string, topK: number) {
     explain: knowledgeRecallDebugForm.value.explain,
     learningEnabled: knowledgeRecallDebugForm.value.learningEnabled,
   };
+  if (target?.kind === "external") {
+    payload.knowledgeBackend = true;
+    payload.externalKnowledgeBase = true;
+    payload.provider = target.provider || "";
+    payload.spaceId = target.spaceId || "";
+    payload.backendRef = target.spaceId || "";
+  } else if (target?.kind === "source" && target.sourceId) {
+    payload.sourceIds = [target.sourceId];
+    payload.scopeSourceIds = [target.sourceId];
+  }
+  return payload;
 }
 
 const knowledgeRecallDebugGridStyle = computed<Record<string, string>>(() => ({
   "--debug-compare-columns": String(Math.max(1, knowledgeRecallDebugRuns.value.length || 1)),
 }));
-
-const knowledgeRecallDebugParameterSummary = computed(() => {
-  const topKValues = parseKnowledgeRecallTopKValues(knowledgeRecallDebugForm.value.topKValues);
-  return [
-    `TopK ${topKValues.length ? topKValues.join(" / ") : "未设置"}`,
-    `模式 ${knowledgeRecallDebugForm.value.retrievalMode}`,
-    knowledgeRecallDebugForm.value.keywordOnly ? "仅关键词" : "混合候选",
-    knowledgeRecallDebugForm.value.learningEnabled ? "学习启用" : "学习关闭",
-  ].join(" · ");
-});
 
 async function runKnowledgeRecallDebugBatch() {
   const query = knowledgeRecallDebugForm.value.query.trim();
@@ -9478,16 +9676,12 @@ async function runKnowledgeRecallDebugBatch() {
     error.value = "当前账号没有知识库读取权限。";
     return;
   }
-  const topKValues = parseKnowledgeRecallTopKValues(knowledgeRecallDebugForm.value.topKValues);
-  if (!topKValues.length) {
-    error.value = "请至少填写一个有效 TopK，例如 10 20 30。";
-    return;
-  }
+  const topK = currentKnowledgeRecallTopK();
   setBusy("debug:knowledge-recall");
   error.value = "";
-  knowledgeRecallDebugRuns.value = topKValues.map((topK) => ({
-    runId: `knowledge-recall-${topK}-${Date.now()}`,
-    label: `TopK ${topK}`,
+  knowledgeRecallDebugRuns.value = [{
+    runId: `knowledge-recall-${Date.now()}`,
+    label: "召回结果",
     topK,
     status: "queued",
     elapsedMs: 0,
@@ -9495,14 +9689,14 @@ async function runKnowledgeRecallDebugBatch() {
     response: null,
     items: [],
     error: "",
-  }));
+  }];
   await Promise.all(
     knowledgeRecallDebugRuns.value.map(async (run) => {
       const started = performance.now();
       run.status = "running";
       run.startedAt = new Date().toISOString();
       try {
-        const response = await bridge.searchKnowledge(buildKnowledgeRecallSearchPayload(query, run.topK));
+        const response = await bridge.searchKnowledge(buildKnowledgeRecallSearchPayload(query));
         run.response = response;
         run.items = normalizeSearchResults(response);
         run.status = "completed";
@@ -10447,29 +10641,6 @@ async function saveKnowledgeMaintenance() {
   }
 }
 
-async function runKnowledgeMaintenanceTask() {
-  setBusy("knowledge:maintenance:run");
-  error.value = "";
-  try {
-    const result =
-      selectedMaintenanceTask.value === "reindex"
-        ? await bridge.reindexKnowledge({ confirm: maintenanceConfirm.value })
-        : await bridge.runKnowledgeMaintenance({
-            taskType: selectedMaintenanceTask.value,
-            confirm: maintenanceConfirm.value,
-            ...(currentMaintenanceTaskSupportsDryRun.value ? { dryRun: maintenanceDryRun.value } : {}),
-          });
-    maintenanceResultJson.value = jsonPreview(result);
-    maintenanceConfirm.value = false;
-    await refreshKnowledgeConsole();
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "执行知识库维护任务失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
 function onIngestFilesSelected(files: File[]) {
   ingestFiles.value = files;
   ingestProgress.value = ingestFiles.value.length
@@ -10477,9 +10648,80 @@ function onIngestFilesSelected(files: File[]) {
     : "";
 }
 
+function splitKnowledgeIngestRefs(value: string) {
+  return String(value || "")
+    .split(/[,，\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+const selectedKnowledgeIngestTargets = computed<KnowledgeIngestTarget[]>(() => {
+  const targets: KnowledgeIngestTarget[] = [];
+  if (knowledgeIngestTargets.value.global) {
+    targets.push({
+      kind: "global",
+      label: "全局知识空间",
+    });
+  }
+  if (knowledgeIngestTargets.value.external) {
+    const provider = knowledgeIngestExternalProvider.value || "dify";
+    const refs = splitKnowledgeIngestRefs(knowledgeIngestExternalRefs.value);
+    targets.push({
+      kind: "external",
+      label: `外部知识库 / ${provider === "ragflow" ? "RAGFlow" : "Dify"}`,
+      provider,
+      refs,
+    });
+  }
+  if (knowledgeIngestTargets.value.team) {
+    targets.push({
+      kind: "team",
+      label: "团队空间",
+      refs: splitKnowledgeIngestRefs(knowledgeIngestTeamRefs.value),
+    });
+  }
+  if (knowledgeIngestTargets.value.user) {
+    targets.push({
+      kind: "user",
+      label: "用户私有空间",
+      refs: splitKnowledgeIngestRefs(knowledgeIngestUserRefs.value),
+    });
+  }
+  return targets;
+});
+
+const knowledgeIngestTargetValidationMessage = computed(() => {
+  if (selectedKnowledgeIngestTargets.value.length === 0) {
+    return "请至少选择一个知识入库目标。";
+  }
+  if (knowledgeIngestTargets.value.external && splitKnowledgeIngestRefs(knowledgeIngestExternalRefs.value).length === 0) {
+    return "请选择外部知识库时，需要填写至少一个库或空间 ID。";
+  }
+  if (knowledgeIngestTargets.value.team && splitKnowledgeIngestRefs(knowledgeIngestTeamRefs.value).length === 0) {
+    return "请选择团队空间时，需要填写至少一个团队。";
+  }
+  if (knowledgeIngestTargets.value.user && splitKnowledgeIngestRefs(knowledgeIngestUserRefs.value).length === 0) {
+    return "请选择用户私有空间时，需要填写至少一个用户。";
+  }
+  return "";
+});
+
+const canSubmitKnowledgeIngest = computed(() => knowledgeIngestTargetValidationMessage.value === "");
+
+const knowledgeIngestTargetSummary = computed(() => {
+  if (!selectedKnowledgeIngestTargets.value.length) {
+    return "请选择入库目标";
+  }
+  return `将入库到：${selectedKnowledgeIngestTargets.value.map((target) => target.label).join("、")}`;
+});
+
 async function uploadFilesToKnowledge() {
   if (ingestFiles.value.length === 0) {
     error.value = "请先选择需要入库的文件。";
+    return;
+  }
+  if (!canSubmitKnowledgeIngest.value) {
+    error.value = knowledgeIngestTargetValidationMessage.value;
     return;
   }
   setBusy("knowledge:ingest");
@@ -10500,10 +10742,13 @@ async function uploadFilesToKnowledge() {
       filePaths: [],
       uploadedFiles: [],
       uploadSessionId: session.sessionId,
-      settings: settingsDraft.value,
+      settings: {
+        ...settingsDraft.value,
+        knowledgeIngestTargets: selectedKnowledgeIngestTargets.value,
+      },
     });
     ingestJob.value = job;
-    ingestProgress.value = "已进入处理队列，进度会在下方实时更新。";
+    ingestProgress.value = `已进入处理队列，${knowledgeIngestTargetSummary.value}。`;
     await refreshState({ silent: true });
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "上传入库失败。";
@@ -10711,12 +10956,6 @@ function switchView(view: AppView) {
     closeSideNavOverlay();
     return;
   }
-  if (view === "intelligence" && !hasFeature("agent-exploration")) {
-    currentView.value = "dashboard";
-    _appRouter?.push("/");
-    closeSideNavOverlay();
-    return;
-  }
   if (view === "debug" && visibleDebugTabs.value.length === 0) {
     currentView.value = "dashboard";
     _appRouter?.push("/");
@@ -10763,6 +11002,9 @@ function switchView(view: AppView) {
     if (adminView.value === "maintenanceAgent") {
       void refreshMaintenanceAgent();
     }
+    if (adminView.value === "contextManagement") {
+      void refreshContextCompiler({ silent: true });
+    }
     if (adminView.value === "jobs") {
       void refreshState({ silent: true });
       void refreshMaintenanceAgent({ silent: true });
@@ -10789,6 +11031,9 @@ function openDebugTab(tab: DebugTab) {
   _appRouter?.push(`/debug/${tab}`);
   closeSideNavOverlay();
   void refreshKnowledgeConsole();
+  if (tab === "knowledgeRecall") {
+    void refreshKnowledgeRecallBackendSpaces();
+  }
 }
 
 function openKnowledgeTab(tab: KnowledgeTab) {
@@ -10799,11 +11044,11 @@ function openKnowledgeTab(tab: KnowledgeTab) {
   currentView.value = "knowledge";
   _appRouter?.push(`/knowledge/${tab}`);
   closeSideNavOverlay();
-  if (tab === "conflicts") {
-    void refreshKnowledgeConflicts();
-  }
   if (tab === "wordCloud") {
     void refreshWordCloud();
+  }
+  if (tab === "conflicts") {
+    void refreshKnowledgeConflicts();
   }
   if (tab === "management" && knowledgeManagementPanel.value === "rules") {
     void refreshExpertRules();
@@ -10856,6 +11101,9 @@ function openAdmin(tab: AdminView) {
   if (tab === "agentManagement") {
     void refreshState({ silent: true });
   }
+  if (tab === "contextManagement") {
+    void refreshContextCompiler({ silent: true });
+  }
   if (tab === "maintenanceAgent") {
     void refreshMaintenanceAgent();
   }
@@ -10883,6 +11131,8 @@ function isAdminViewEnabled(tab: AdminView) {
     case "agentPermissions":
       return hasFeature("agent-management");
     case "agentConfig":
+      return hasFeature("agent-gateway");
+    case "contextManagement":
       return hasFeature("agent-gateway");
     case "maintenanceAgent":
       return hasFeature("maintenance-agent-runbooks");
@@ -11892,7 +12142,9 @@ async function performRefreshState(options: RefreshStateOptions = {}) {
       forceSettings: options.forceSettings,
       forceDrafts,
     });
+    serverAvailable.value = true;
   } catch (nextError) {
+    serverAvailable.value = false;
     error.value =
       nextError instanceof Error ? nextError.message : "加载服务端控制台失败。";
   } finally {
@@ -12739,6 +12991,11 @@ async function runMaintenanceAgentRunbook() {
   }
 }
 
+async function runMaintenanceAgentKnowledgeMaintenance() {
+  maintenanceAgentRunbook.value = "knowledge_maintenance_review";
+  await runMaintenanceAgentRunbook();
+}
+
 async function approveMaintenanceAgentRun(run: MaintenanceAgentRun) {
   setBusy(`maintenance-agent:approve:${run.runId}`);
   error.value = "";
@@ -12957,11 +13214,6 @@ const maintenanceAgentRunbooks = computed(() =>
       {},
   ),
 );
-const retrievalModeOptionBarOptions: OptionBarOption[] = [
-  { value: "hybrid", label: "hybrid" },
-  { value: "lexical", label: "lexical" },
-  { value: "vector", label: "vector" },
-];
 const enabledBooleanOptionBarOptions: OptionBarOption[] = [
   { value: true, label: "开启" },
   { value: false, label: "关闭" },
@@ -13023,12 +13275,6 @@ const knowledgeLogStatusOptionBarOptions = computed<OptionBarOption[]>(() => [
   { value: "", label: "全部状态" },
   ...knowledgeLogStatusOptions.value.map((status) => ({ value: status, label: status })),
 ]);
-const maintenanceTaskOptionBarOptions = computed<OptionBarOption[]>(() =>
-  (knowledgeSchema.value?.maintenanceTasks || []).map((task) => ({
-    value: task.id,
-    label: `${task.label} / ${task.danger}`,
-  })),
-);
 const analysisModuleOptionBarOptions = computed<OptionBarOption[]>(() =>
   (consoleState.value?.runtime?.analysisModules || []).map((item) => ({
     value: item.id,
@@ -14045,8 +14291,6 @@ onUnmounted(() => {
     currentKnowledgeLearningEnabled, 
     currentKnowledgeRetrievalSettings, 
     currentKnowledgeSearchLimit, 
-    currentMaintenanceTask, 
-    currentMaintenanceTaskSupportsDryRun, 
     currentServerEventTopics, 
     currentUser, 
     currentUserScopes, 
@@ -14252,6 +14496,7 @@ onUnmounted(() => {
     infoFeedTurnTitle, 
     infoFeedUserCardTitle, 
     infoFeedVisibleSummaryText, 
+    canSubmitKnowledgeIngest,
     ingestFiles, 
     ingestJob, 
     ingestProgress, 
@@ -14280,6 +14525,13 @@ onUnmounted(() => {
     jumpToKnowledgeFileImport, 
     knowledgeConfigGroupDescription, 
     knowledgeConsole, 
+    knowledgeIngestExternalProvider,
+    knowledgeIngestExternalRefs,
+    knowledgeIngestTargetSummary,
+    knowledgeIngestTargets,
+    knowledgeIngestTargetValidationMessage,
+    knowledgeIngestTeamRefs,
+    knowledgeIngestUserRefs,
     knowledgeFusionSummary, 
     knowledgeLogAdvancedOpen, 
     knowledgeLogColumnDividers, 
@@ -14294,13 +14546,11 @@ onUnmounted(() => {
     knowledgeLogTableScrollLeft,
     knowledgeLogTableShellRef,
     knowledgeMaintenanceDraft,
-    knowledgeMaintenanceTaskDescription,
     knowledgeManagementPanel,
     knowledgeManagementPanelOptionBarOptions,
     knowledgeModules,
     knowledgeRecallDebugForm,
     knowledgeRecallDebugGridStyle,
-    knowledgeRecallDebugParameterSummary,
     knowledgeRecallDebugRuns,
     knowledgeRecentJobs,
     knowledgeResultAssetCount,
@@ -14365,15 +14615,11 @@ onUnmounted(() => {
     maintenanceAgentStatusLabel, 
     maintenanceAgentStatusTone, 
     maintenanceAgentSummary, 
-    maintenanceConfirm, 
-    maintenanceDryRun, 
     maintenanceFieldValue, 
     maintenanceJson, 
-    maintenanceResultJson, 
     mcpAuthorizationRequests,
     mcpAuthorizationStatus,
     mcpAuthorizationStatusOptionBarOptions,
-    maintenanceTaskOptionBarOptions, 
     makeInfoFeedId, 
     markdownToSafeHtml, 
     mergeRefreshStateOptions, 
@@ -14497,7 +14743,6 @@ onUnmounted(() => {
     parseEmailRulesDraft, 
     parseFilterDate, 
     parseHeaderParams, 
-    parseKnowledgeRecallTopKValues, 
     parseModelRef, 
     parseTime, 
     patchMaintenanceAgentState, 
@@ -14613,7 +14858,8 @@ onUnmounted(() => {
     resolveWordCloudCorpusPathsForQuery, 
     restoreAgentExploreState, 
     restoreInfoFeedHistory, 
-    retrievalModeOptionBarOptions, 
+    knowledgeRecallDebugModeOptionBarOptions,
+    knowledgeRecallDebugTargetOptions,
     revokeConsoleSession, 
     rewriteInlineAssetRefs, 
     rotateGrant, 
@@ -14641,8 +14887,8 @@ onUnmounted(() => {
     runInfoFeedKeywordTrack, 
     runInfoFeedSummaryAgent, 
     runKnowledgeAgentExplore, 
-    runKnowledgeMaintenanceTask, 
     runKnowledgeRecallDebugBatch, 
+    runMaintenanceAgentKnowledgeMaintenance,
     runMaintenanceAgentRunbook, 
     runModelEntryProbe, 
     runRuleAuthoringChat, 
@@ -14697,7 +14943,6 @@ onUnmounted(() => {
     selectedKnowledgeReviewId, 
     selectedKnowledgeReviewItem, 
     selectedMaintenanceAgentRun, 
-    selectedMaintenanceTask, 
     selectedModelProvider, 
     selectedRuleAuthoringModel, 
     selectedToolManagementTool, 
@@ -14705,6 +14950,7 @@ onUnmounted(() => {
     selectedWordCloud, 
     selectedWordBagId, 
     selectedWordCloudModel, 
+    serverAvailable,
     serverEventAbortController, 
     serverEventCursor, 
     serverEventSubscriptionGeneration, 

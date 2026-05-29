@@ -248,6 +248,17 @@
   flex-shrink: 0;
 }
 
+.language-state-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  font-size: 0.72rem;
+  font-weight: var(--font-semibold);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -463,6 +474,14 @@
   color: var(--text-tertiary);
 }
 
+.auth-language-button {
+  margin-left: auto;
+}
+
+.auth-language-button + .auth-connecting {
+  margin-left: var(--space-2);
+}
+
 .auth-spinner-icon {
   display: block;
   animation: spin 0.9s linear infinite;
@@ -624,4 +643,3 @@
 .drawer-content::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
-

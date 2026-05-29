@@ -1,19 +1,36 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useConsole } from "./composables/useConsole";
+import { collectPageRefreshTasks } from "./composables/usePageRefresh";
+import { CONSOLE_LANGUAGE_KEY, consoleLocales, consoleMessages, installConsoleDomLocalizer, localizeConsoleText, setConsoleLocaleState, type ConsoleLocale } from "./i18n/console";
 
 // ─── Theme toggle ────────────────────────────────────────────────────────────
 const THEME_KEY = 'pact-theme';
+const LANGUAGE_KEY = CONSOLE_LANGUAGE_KEY;
 type ThemeMode = 'system' | 'dark' | 'light';
 const themeMode = ref<ThemeMode>('system');
+const languageMode = ref<ConsoleLocale>('zh-CN');
+let consoleDomLocalizer: ReturnType<typeof installConsoleDomLocalizer> | null = null;
+const languageOptionBarOptions = computed(() =>
+  consoleLocales.map((locale) => ({
+    value: locale.value,
+    label:
+      languageMode.value === 'en'
+        ? locale.value === 'en'
+          ? 'English'
+          : 'Simplified Chinese'
+        : locale.label,
+  })),
+);
+const msg = computed(() => consoleMessages[languageMode.value]);
 
 function applyTheme(mode: ThemeMode) {
   const html = document.documentElement;
   html.classList.remove('theme-dark', 'theme-light');
   if (mode === 'dark') html.classList.add('theme-dark');
   if (mode === 'light') html.classList.add('theme-light');
-  try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+  try { window.localStorage.setItem(THEME_KEY, mode); } catch (e) {}
   themeMode.value = mode;
 }
 
@@ -22,11 +39,53 @@ function cycleTheme() {
   applyTheme(next[themeMode.value]);
 }
 
+function applyLanguage(mode: ConsoleLocale) {
+  document.documentElement.lang = mode === 'en' ? 'en' : 'zh-CN';
+  document.title = consoleMessages[mode].appTitle;
+  try { window.localStorage.setItem(LANGUAGE_KEY, mode); } catch (e) {}
+  setConsoleLocaleState(mode);
+  languageMode.value = mode;
+  void nextTick(() => consoleDomLocalizer?.refresh());
+}
+
+function setLanguage(value: string | number | boolean) {
+  applyLanguage(value === 'en' ? 'en' : 'zh-CN');
+}
+
+function toggleLanguage() {
+  applyLanguage(languageMode.value === 'en' ? 'zh-CN' : 'en');
+}
+
+function tt(text: string) {
+  return localizeConsoleText(text, languageMode.value);
+}
+
 onMounted(() => {
   try {
-    const saved = localStorage.getItem(THEME_KEY) as ThemeMode | null;
+    const saved = window.localStorage.getItem(THEME_KEY) as ThemeMode | null;
     if (saved === 'dark' || saved === 'light') themeMode.value = saved;
   } catch (e) {}
+  try {
+    const savedLanguage = window.localStorage.getItem(LANGUAGE_KEY) as ConsoleLocale | null;
+    if (savedLanguage === 'en' || savedLanguage === 'zh-CN') {
+      applyLanguage(savedLanguage);
+    } else {
+      applyLanguage(languageMode.value);
+    }
+  } catch (e) {
+    applyLanguage(languageMode.value);
+  }
+  consoleDomLocalizer = installConsoleDomLocalizer(() => languageMode.value);
+});
+
+watch(languageMode, async () => {
+  await nextTick();
+  consoleDomLocalizer?.refresh();
+});
+
+onBeforeUnmount(() => {
+  consoleDomLocalizer?.disconnect();
+  consoleDomLocalizer = null;
 });
 import AgentModelOptionBar from "./components/AgentModelOptionBar.vue";
 import BinaryCheckbox from "./components/BinaryCheckbox.vue";
@@ -48,6 +107,7 @@ const {
   closeDrawer,
   closeServerPathPicker,
   consoleState,
+  serverAvailable,
   currentUser,
   currentView,
   debugTab,
@@ -82,7 +142,23 @@ const {
   openDrawer,
   openKnowledgeTab,
   pathPicker,
+  refreshAuthAdmin,
+  refreshAuthState,
+  refreshBackgroundProcesses,
+  refreshClientRuntimeStatus,
+  refreshCodexOAuthStatus,
+  refreshContextCompiler,
+  refreshDashboardAlertsSnapshot,
+  refreshExpertRules,
+  refreshKnowledgeConflicts,
+  refreshKnowledgeConsole,
+  refreshKnowledgeSources,
+  refreshMaintenanceAgent,
+  refreshMcpAuthorizationRequests,
+  refreshMonitorAlerts,
   refreshState,
+  refreshToolManagement,
+  refreshWordCloud,
   rulesDraftDirty,
   rulesText,
   saveDiscovery,
@@ -129,9 +205,7 @@ const {
   currentModulePathPlaceholder,
   isMountPathEditing,
   toggleMountPathEdit,
-  refreshAuthAdmin,
   refreshKnowledgeSource,
-  refreshKnowledgeSources,
   refreshServerPathBrowser,
   reloadModules,
   revokeConsoleSession,
@@ -161,6 +235,209 @@ const activeRouteView = computed(() => String(route.meta?.viewId || currentView.
 const activeRouteKnowledgeTab = computed(() => String(route.params.tab || knowledgeTab.value));
 const activeRouteDebugTab = computed(() => String(route.params.tab || debugTab.value));
 const activeRouteAdminView = computed(() => String(route.meta?.adminView || adminView.value));
+const serviceUrl = computed(() => consoleState.value?.server.url || msg.value.connecting);
+const serviceStatusLabel = computed(() =>
+  serverAvailable.value ? msg.value.topbar.serverAvailable : msg.value.topbar.serverUnavailable
+);
+const pageRefreshBusy = ref(false);
+const pageRefreshTitle = computed(() =>
+  pageRefreshBusy.value ? `${msg.value.actions.refreshing}...` : msg.value.actions.refresh
+);
+const pageRefreshAriaLabel = computed(() =>
+  pageRefreshBusy.value ? msg.value.actions.refreshing : msg.value.actions.refresh
+);
+
+async function waitForPageRefreshTasks(tasks: Promise<unknown>[]) {
+  const results = await Promise.allSettled(tasks);
+  const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failed) {
+    throw failed.reason;
+  }
+}
+
+async function refreshAdminRoute() {
+  switch (activeRouteAdminView.value) {
+    case 'storage':
+      await Promise.all([
+        refreshAuthAdmin(),
+        reloadModules(),
+        refreshState({ silent: true, forceDrafts: false }),
+      ]);
+      return;
+    case 'jobs':
+      await Promise.all([
+        refreshState({ silent: true }),
+        refreshMaintenanceAgent({ silent: true }),
+        refreshMonitorAlerts({ silent: true }),
+      ]);
+      return;
+    case 'logs':
+      await Promise.all([
+        refreshState({ silent: true }),
+        hasFeature('knowledge-core') ? refreshKnowledgeConsole() : Promise.resolve(),
+        hasFeature('maintenance-agent-runbooks') ? refreshMaintenanceAgent({ silent: true }) : Promise.resolve(),
+        hasFeature('agent-gateway') || hasFeature('agent-management') ? refreshToolManagement({ silent: true }) : Promise.resolve(),
+        refreshBackgroundProcesses({ silent: true }),
+        refreshMonitorAlerts({ silent: true }),
+        refreshAuthAdmin(),
+      ]);
+      return;
+    case 'opsMonitor':
+      await Promise.all([
+        refreshBackgroundProcesses({ silent: true }),
+        refreshClientRuntimeStatus({ silent: true }),
+        refreshMonitorAlerts({ silent: true }),
+      ]);
+      return;
+    case 'productionHealth':
+      return;
+    case 'clients':
+      await refreshState({ silent: true });
+      return;
+    case 'tools':
+      await refreshToolManagement();
+      return;
+    case 'modules':
+      await reloadModules();
+      return;
+    case 'agentManagement':
+      await Promise.all([
+        refreshState({ silent: true }),
+        refreshAuthAdmin(),
+      ]);
+      return;
+    case 'agentPermissions':
+      await Promise.all([
+        refreshAuthAdmin(),
+        refreshToolManagement(),
+      ]);
+      return;
+    case 'agentConfig':
+      await refreshCodexOAuthStatus();
+      return;
+    case 'contextManagement':
+      await refreshContextCompiler();
+      return;
+    case 'maintenanceAgent':
+      await refreshMaintenanceAgent();
+      return;
+    default:
+      await refreshState({ silent: true });
+  }
+}
+
+async function refreshCurrentRouteDefaults() {
+  switch (activeRouteView.value) {
+    case 'dashboard':
+      await Promise.all([
+        refreshDashboardAlertsSnapshot({ silent: false }),
+        refreshMcpAuthorizationRequests(),
+      ]);
+      return;
+    case 'feed':
+      await refreshState({ silent: true });
+      return;
+    case 'sources':
+      await refreshKnowledgeSources();
+      return;
+    case 'workspaces':
+      await refreshAuthState();
+      return;
+    case 'knowledge':
+      if (activeRouteKnowledgeTab.value === 'wordCloud') {
+        await refreshWordCloud();
+        return;
+      }
+      if (activeRouteKnowledgeTab.value === 'conflicts') {
+        await refreshKnowledgeConflicts();
+        return;
+      }
+      if (activeRouteKnowledgeTab.value === 'maintenance') {
+        await refreshExpertRules({ forceDrafts: true });
+        return;
+      }
+      await refreshKnowledgeConsole();
+      return;
+    case 'debug':
+      await refreshKnowledgeConsole();
+      return;
+    case 'admin':
+      await refreshAdminRoute();
+      return;
+    default:
+      await refreshState({ silent: true });
+  }
+}
+
+async function refreshCurrentPage() {
+  if (pageRefreshBusy.value) {
+    return;
+  }
+  pageRefreshBusy.value = true;
+  try {
+    const pageTasks = collectPageRefreshTasks({
+      viewId: activeRouteView.value,
+      adminView: activeRouteAdminView.value,
+      knowledgeTab: activeRouteKnowledgeTab.value,
+      debugTab: activeRouteDebugTab.value,
+      routePath: route.fullPath,
+    });
+    await waitForPageRefreshTasks([
+      refreshCurrentRouteDefaults(),
+      ...pageTasks,
+    ]);
+  } finally {
+    pageRefreshBusy.value = false;
+  }
+}
+
+const localizedViewTitle = computed(() => {
+  const m = msg.value;
+  if (activeRouteView.value === 'admin') {
+    switch (activeRouteAdminView.value) {
+      case 'agentPermissions': return m.nav.permissionGroups;
+      case 'agentManagement': return m.nav.agentManagement;
+      case 'tools': return m.nav.agentTools;
+      case 'agentConfig': return m.nav.agentConfig;
+      case 'contextManagement': return m.nav.contextManagement;
+      case 'maintenanceAgent': return m.nav.maintenanceAgent;
+      case 'clients': return m.nav.devices;
+      case 'jobs': return m.nav.jobs;
+      case 'logs': return m.nav.logs;
+      case 'opsMonitor': return m.nav.opsMonitor;
+      case 'productionHealth': return m.nav.productionHealth;
+      case 'modules': return m.title.modules;
+      case 'storage': return m.title.storage;
+      default: return m.title.admin;
+    }
+  }
+  switch (activeRouteView.value) {
+    case 'dashboard': return m.nav.dashboard;
+    case 'feed': return m.nav.feed;
+    case 'sources': return m.nav.sources;
+    case 'knowledge': return m.nav.knowledge;
+    case 'workspaces': return m.nav.workspaces;
+    case 'debug': return m.nav.debugPanel;
+    default: return '';
+  }
+});
+
+function localizedKnowledgeTabLabel(tab: { id: string; label: string }) {
+  switch (tab.id) {
+    case 'management': return msg.value.nav.knowledgeManagement;
+    case 'wordCloud': return msg.value.nav.wordCloud;
+    case 'maintenance': return msg.value.nav.knowledgeConfig;
+    default: return tab.label;
+  }
+}
+
+function localizedDebugTabLabel(tab: { id: string; label: string }) {
+  switch (tab.id) {
+    case 'knowledgeRecall': return msg.value.nav.knowledgeRecall;
+    case 'agentRetrieval': return msg.value.nav.agentRetrieval;
+    default: return tab.label;
+  }
+}
 </script>
 
 <template>
@@ -172,7 +449,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           <h1>Pact</h1>
           <p class="brand-subtitle">
             <span v-if="!consoleState" class="brand-loading-label" aria-live="polite">
-              正在初始化
+              {{ msg.loading }}
               <span class="brand-loading-dots" aria-hidden="true">
                 <span></span><span></span><span></span>
               </span>
@@ -193,7 +470,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           @click="switchView('dashboard')"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-          工作台
+          {{ msg.nav.dashboard }}
         </button>
         <button
           class="side-link"
@@ -202,7 +479,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           @click="switchView('feed')"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m3 15 2 2 4-4"/></svg>
-          信息流
+          {{ msg.nav.feed }}
         </button>
         <button
           class="side-link"
@@ -211,61 +488,27 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           @click="switchView('sources')"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-          数据源
+          {{ msg.nav.sources }}
         </button>
 
-        <button
-          class="side-link"
-          :class="{ active: activeRouteView === 'workspaces' }"
-          type="button"
-          @click="switchView('workspaces')"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-          工作空间
-        </button>
-
-        <section v-if="hasFeature('knowledge-core')" class="side-nav-section" aria-label="知识库">
-          <p class="side-nav-section-title">知识库</p>
+        <section class="side-nav-section" :aria-label="msg.nav.teamPanel">
+          <p class="side-nav-section-title">{{ msg.nav.teamPanel }}</p>
           <button
-            v-for="tab in visibleKnowledgeTabs"
-            :key="tab.id"
+            v-if="hasFeature('agent-management')"
             class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'knowledge' && activeRouteKnowledgeTab === tab.id }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentPermissions' }"
             type="button"
-            @click="openKnowledgeTab(tab.id)"
+            @click="openAdmin('agentPermissions')"
           >
-            {{ knowledgeTabDisplayLabel(tab) }}
+            {{ msg.nav.permissionGroups }}
           </button>
-        </section>
-
-        <section v-if="visibleDebugTabs.length > 0" class="side-nav-section" aria-label="调试面板">
-          <p class="side-nav-section-title">调试面板</p>
           <button
-            v-for="tab in visibleDebugTabs"
-            :key="tab.id"
             class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'debug' && activeRouteDebugTab === tab.id }"
+            :class="{ active: activeRouteView === 'workspaces' }"
             type="button"
-            @click="openDebugTab(tab.id)"
+            @click="switchView('workspaces')"
           >
-            {{ tab.label }}
-          </button>
-        </section>
-
-        <section
-          v-if="hasAnyFeature(['agent-gateway', 'agent-management', 'agent-exploration', 'maintenance-agent-runbooks'])"
-          class="side-nav-section"
-          aria-label="智能体"
-        >
-          <p class="side-nav-section-title">智能体</p>
-          <button
-            v-if="hasFeature('agent-exploration')"
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'intelligence' }"
-            type="button"
-            @click="switchView('intelligence')"
-          >
-            智能分析
+            {{ msg.nav.workspaces }}
           </button>
           <button
             v-if="hasFeature('agent-management')"
@@ -274,25 +517,113 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             type="button"
             @click="openAdmin('agentManagement')"
           >
-            智能体管理
+            {{ msg.nav.agentManagement }}
           </button>
           <button
-            v-if="hasFeature('agent-gateway') || hasFeature('agent-management')"
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'clients' }"
+            type="button"
+            @click="openAdmin('clients')"
+          >
+            {{ msg.nav.devices }}
+          </button>
+        </section>
+
+        <section v-if="hasFeature('knowledge-core')" class="side-nav-section" :aria-label="msg.nav.knowledge">
+          <p class="side-nav-section-title">{{ msg.nav.knowledge }}</p>
+          <button
+            v-for="tab in visibleKnowledgeTabs"
+            :key="tab.id"
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'knowledge' && activeRouteKnowledgeTab === tab.id }"
+            type="button"
+            @click="openKnowledgeTab(tab.id)"
+          >
+            {{ localizedKnowledgeTabLabel(tab) }}
+          </button>
+        </section>
+
+        <section v-if="visibleDebugTabs.length > 0" class="side-nav-section" :aria-label="msg.nav.debugPanel">
+          <p class="side-nav-section-title">{{ msg.nav.debugPanel }}</p>
+          <button
+            v-for="tab in visibleDebugTabs"
+            :key="tab.id"
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'debug' && activeRouteDebugTab === tab.id }"
+            type="button"
+            @click="openDebugTab(tab.id)"
+          >
+            {{ localizedDebugTabLabel(tab) }}
+          </button>
+        </section>
+
+        <section
+          v-if="hasAnyFeature(['agent-gateway', 'agent-exploration'])"
+          class="side-nav-section"
+          :aria-label="msg.nav.agents"
+        >
+          <p class="side-nav-section-title">{{ msg.nav.agents }}</p>
+          <button
+            v-if="hasFeature('agent-gateway')"
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentConfig' }"
+            type="button"
+            @click="openAdmin('agentConfig')"
+          >
+            {{ msg.nav.agentConfig }}
+          </button>
+          <button
+            v-if="hasFeature('agent-gateway')"
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'contextManagement' }"
+            type="button"
+            @click="openAdmin('contextManagement')"
+          >
+            {{ msg.nav.contextManagement }}
+          </button>
+        </section>
+
+        <section
+          v-if="hasFeature('agent-gateway') || hasFeature('agent-management')"
+          class="side-nav-section"
+          :aria-label="msg.nav.skillHub"
+        >
+          <p class="side-nav-section-title">{{ msg.nav.skillHub }}</p>
+          <button
             class="side-link side-link-subtle"
             :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'tools' }"
             type="button"
             @click="openAdmin('tools')"
           >
-            智能体工具
+            {{ msg.nav.agentTools }}
+          </button>
+        </section>
+
+        <section class="side-nav-section" :aria-label="msg.nav.systemStatus">
+          <p class="side-nav-section-title">{{ msg.nav.systemStatus }}</p>
+          <button
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'storage' }"
+            type="button"
+            @click="openAdmin('storage')"
+          >
+            {{ msg.nav.overview }}
           </button>
           <button
-            v-if="hasFeature('agent-management')"
             class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentPermissions' }"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'jobs' }"
             type="button"
-            @click="openAdmin('agentPermissions')"
+            @click="openAdmin('jobs')"
           >
-            智能体权限
+            {{ msg.nav.jobs }}
+          </button>
+          <button
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'opsMonitor' }"
+            type="button"
+            @click="openAdmin('opsMonitor')"
+          >
+            {{ msg.nav.opsMonitor }}
           </button>
           <button
             v-if="hasFeature('maintenance-agent-runbooks')"
@@ -301,56 +632,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             type="button"
             @click="openAdmin('maintenanceAgent')"
           >
-            智能巡检
-          </button>
-          <button
-            v-if="hasFeature('agent-gateway')"
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentConfig' }"
-            type="button"
-            @click="openAdmin('agentConfig')"
-          >
-            智能体配置
-          </button>
-        </section>
-
-        <section class="side-nav-section" aria-label="客户端">
-          <p class="side-nav-section-title">客户端</p>
-          <button
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'clients' }"
-            type="button"
-            @click="openAdmin('clients')"
-          >
-            设备管理
-          </button>
-        </section>
-
-        <section class="side-nav-section" aria-label="系统状态">
-          <p class="side-nav-section-title">系统状态</p>
-          <button
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'storage' }"
-            type="button"
-            @click="openAdmin('storage')"
-          >
-            概览
-          </button>
-          <button
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'jobs' }"
-            type="button"
-            @click="openAdmin('jobs')"
-          >
-            工作队列
-          </button>
-          <button
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'opsMonitor' }"
-            type="button"
-            @click="openAdmin('opsMonitor')"
-          >
-            运维监控
+            {{ msg.nav.maintenanceAgent }}
           </button>
           <button
             class="side-link side-link-subtle"
@@ -358,7 +640,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             type="button"
             @click="openAdmin('productionHealth')"
           >
-            生产健康
+            {{ msg.nav.productionHealth }}
           </button>
           <button
             class="side-link side-link-subtle"
@@ -366,15 +648,15 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             type="button"
             @click="openAdmin('logs')"
           >
-            日志记录
+            {{ msg.nav.logs }}
           </button>
         </section>
 
       </nav>
 
       <div class="side-nav-footer">
-        <button class="side-cta" type="button" @click="sideNavOpen = false; openDrawer('discovery')">
-          系统配置
+        <button class="side-cta" type="button" @click="sideNavOpen = false; openDrawer('preferences')">
+          {{ msg.nav.systemConfig }}
         </button>
       </div>
     </aside>
@@ -392,7 +674,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           class="topbar-hamburger"
           type="button"
           :aria-expanded="sideNavOpen"
-          aria-label="切换导航"
+          :aria-label="msg.topbar.toggleNav"
           @click="sideNavOpen = !sideNavOpen"
         >
           <span></span>
@@ -400,31 +682,34 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           <span></span>
         </button>
         <div class="topbar-heading">
-          <h2 class="topbar-page-title">{{ viewTitle }}</h2>
+          <h2 class="topbar-page-title">{{ localizedViewTitle }}</h2>
           <div class="identity-row">
-            <span class="url-badge">{{
-              consoleState?.server.url || "正在连接服务端…"
-            }}</span>
-              <span class="identity-chip">{{
-	              consoleState?.discovery?.value?.mode || "active"
-	            }}</span>
+            <span
+              class="url-badge service-url-badge"
+              :class="serverAvailable ? 'is-available' : 'is-unavailable'"
+              :title="serviceStatusLabel"
+              :aria-label="`${serviceStatusLabel}: ${serviceUrl}`"
+            >
+              <span class="service-status-dot" aria-hidden="true"></span>
+              <span class="service-url-text">{{ serviceUrl }}</span>
+            </span>
           </div>
         </div>
 
         <div class="topbar-tools">
           <span v-if="currentUser" class="identity-chip">
-            {{ currentUser.displayName }} / {{ currentUser.roleLabel }}
+            {{ currentUser.displayName }}
           </span>
           <button
             class="tool-button tool-button-ghost tool-button-icon"
             type="button"
-            :title="busyKey === 'refresh' ? '同步中…' : '刷新'"
-            :disabled="busyKey === 'refresh'"
-            :aria-label="busyKey === 'refresh' ? '同步中' : '刷新'"
-            @click="refreshState({ forceDrafts: true })"
+            :title="pageRefreshTitle"
+            :disabled="pageRefreshBusy"
+            :aria-label="pageRefreshAriaLabel"
+            @click="refreshCurrentPage"
           >
             <!-- refresh/rotate icon -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :style="busyKey === 'refresh' ? 'animation:spin 1s linear infinite' : ''" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :style="pageRefreshBusy ? 'animation:spin 1s linear infinite' : ''" aria-hidden="true">
               <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
               <path d="M21 3v5h-5"/>
               <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
@@ -434,8 +719,8 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           <button
             class="tool-button tool-button-ghost tool-button-icon"
             type="button"
-            :title="themeMode === 'dark' ? '当前：深色模式（点击切换浅色）' : themeMode === 'light' ? '当前：浅色模式（点击切换跟随系统）' : '当前：跟随系统（点击切换深色）'"
-            :aria-label="themeMode === 'dark' ? '深色模式' : themeMode === 'light' ? '浅色模式' : '跟随系统'"
+            :title="themeMode === 'dark' ? msg.topbar.themeDarkTitle : themeMode === 'light' ? msg.topbar.themeLightTitle : msg.topbar.themeSystemTitle"
+            :aria-label="themeMode === 'dark' ? msg.topbar.themeDarkLabel : themeMode === 'light' ? msg.topbar.themeLightLabel : msg.topbar.themeSystemLabel"
             @click="cycleTheme"
           >
             <!-- moon: forced dark -->
@@ -453,12 +738,24 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
               <path d="M8 21h8M12 17v4"/>
             </svg>
           </button>
+          <button
+            class="tool-button tool-button-ghost tool-button-icon"
+            type="button"
+            :title="languageMode === 'en' ? msg.topbar.languageEnTitle : msg.topbar.languageZhTitle"
+            :aria-label="languageMode === 'en' ? msg.topbar.languageEnLabel : msg.topbar.languageZhLabel"
+            @click="toggleLanguage"
+          >
+            <span
+              class="language-state-text"
+              aria-hidden="true"
+            >{{ languageMode === 'en' ? 'EN' : '中' }}</span>
+          </button>
         </div>
       </header>
 
       <div class="view-content">
         <div v-if="error" class="status-strip danger">
-          <strong>错误</strong>
+          <strong>{{ msg.error }}</strong>
           <span>{{ error }}</span>
           <button
             v-if="errorNeedsKnowledgeImportAction"
@@ -466,7 +763,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             type="button"
             @click="jumpToKnowledgeFileImport"
           >
-            去导入文件
+            {{ msg.actions.goImport }}
           </button>
         </div>
 
@@ -477,10 +774,19 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
                 <div class="brand-mark" aria-hidden="true">S</div>
                 <div>
                   <h1 class="auth-brand-name">Pact</h1>
-                  <p class="brand-subtitle">知识管理控制台</p>
+                  <p class="brand-subtitle">{{ tt('知识管理控制台') }}</p>
                 </div>
+                <button
+                  class="tool-button tool-button-ghost tool-button-icon auth-language-button"
+                  type="button"
+                  :title="languageMode === 'en' ? msg.topbar.languageEnTitle : msg.topbar.languageZhTitle"
+                  :aria-label="languageMode === 'en' ? msg.topbar.languageEnLabel : msg.topbar.languageZhLabel"
+                  @click="toggleLanguage"
+                >
+                  <span class="language-state-text" aria-hidden="true">{{ languageMode === 'en' ? 'EN' : '中' }}</span>
+                </button>
                 <!-- connecting spinner -->
-                <div v-if="authBootstrapping" class="auth-connecting" title="正在连接服务端…" aria-label="正在连接">
+                <div v-if="authBootstrapping" class="auth-connecting" :title="tt('正在连接服务端…')" :aria-label="tt('正在连接')">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="auth-spinner-icon">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                   </svg>
@@ -488,22 +794,22 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
               </div>
               <div class="section-header">
                 <div>
-                  <h3>{{ authBootstrapping ? '正在连接…' : '控制台登录' }}</h3>
-                  <p>{{ authBootstrapping ? '正在确认登录状态，请稍候。' : '首次启动时服务端会自动创建 owner 并生成初始密码；账号创建和密码修改仅允许通过服务端命令行执行。' }}</p>
+                  <h3>{{ tt(authBootstrapping ? '正在连接…' : '控制台登录') }}</h3>
+                  <p>{{ tt(authBootstrapping ? '正在确认登录状态，请稍候。' : '首次启动时服务端会自动创建 owner 并生成初始密码；账号创建和密码修改仅允许通过服务端命令行执行。') }}</p>
                 </div>
               </div>
 
               <form class="form-grid auth-form" @submit.prevent="submitLoginAuth" :inert="authBootstrapping">
                 <label>
-                  <span>用户名</span>
+                  <span>{{ tt('用户名') }}</span>
                   <input v-model="loginForm.username" type="text" autocomplete="username" :disabled="authBootstrapping" />
                 </label>
                 <label>
-                  <span>密码</span>
+                  <span>{{ tt('密码') }}</span>
                   <input v-model="loginForm.password" type="password" autocomplete="current-password" :disabled="authBootstrapping" />
                 </label>
                 <button class="primary-action" type="submit" :disabled="authBootstrapping || busyKey === 'auth:login'">
-                  {{ busyKey === "auth:login" ? "登录中" : "登录" }}
+                  {{ tt(busyKey === "auth:login" ? "登录中" : "登录") }}
                 </button>
               </form>
             </article>
@@ -520,25 +826,33 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
     <aside v-if="isAuthenticated" class="config-drawer" :class="{ open: drawerOpen }">
       <header class="drawer-header">
         <div>
-          <h3>控制台选项</h3>
+          <h3>{{ msg.drawer.title }}</h3>
         </div>
         <button
           class="tool-button tool-button-ghost"
           type="button"
           @click="closeDrawer()"
         >
-          关闭
+          {{ msg.close }}
         </button>
       </header>
 
       <div class="drawer-tabs">
         <button
           class="drawer-tab"
+          :class="{ active: drawerTab === 'preferences' }"
+          type="button"
+          @click="openDrawer('preferences')"
+        >
+          {{ msg.drawer.preferences }}
+        </button>
+        <button
+          class="drawer-tab"
           :class="{ active: drawerTab === 'discovery' }"
           type="button"
           @click="openDrawer('discovery')"
         >
-          服务发现
+          {{ msg.drawer.serviceDiscovery }}
         </button>
         <button
           v-if="hasFeature('analysis-runtime')"
@@ -547,7 +861,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           type="button"
           @click="openDrawer('users')"
         >
-          用户管理
+          {{ msg.drawer.users }}
         </button>
         <button
           class="drawer-tab"
@@ -555,7 +869,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           type="button"
           @click="openDrawer('modules')"
         >
-          模块管理
+          {{ msg.drawer.modules }}
         </button>
         <button
           v-if="hasFeature('knowledge-core')"
@@ -564,52 +878,73 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
           type="button"
           @click="openDrawer('syncDirectories')"
         >
-          目录管理
+          {{ msg.drawer.directories }}
         </button>
       </div>
 
       <div class="drawer-content">
+        <section v-if="drawerTab === 'preferences'" class="drawer-panel">
+          <div class="panel-header">
+            <h4>{{ msg.drawer.preferencesTitle }}</h4>
+            <p>{{ msg.drawer.preferencesDescription }}</p>
+          </div>
+          <section class="module-panel">
+            <div class="module-panel-heading">
+              <strong>{{ msg.drawer.language }}</strong>
+              <span>{{ languageMode === 'en' ? 'English' : '简体中文' }}</span>
+            </div>
+            <OptionBar
+              :model-value="languageMode"
+              :label="msg.drawer.language"
+              :options="languageOptionBarOptions"
+              :teleported="false"
+              @update:model-value="setLanguage"
+              @change="setLanguage"
+            />
+          </section>
+        </section>
+
         <form
-          v-if="drawerTab === 'discovery'"
+          v-else-if="drawerTab === 'discovery'"
           class="drawer-panel"
           @submit.prevent="saveDiscovery"
         >
           <div class="panel-header">
-            <h4>服务发现</h4>
+            <h4>{{ msg.drawer.serviceDiscovery }}</h4>
           </div>
 
           <div class="form-grid">
             <label>
-              <span>服务 ID</span>
+              <span>{{ msg.drawer.serviceId }}</span>
               <input v-model="discoveryDraft.serverId" autocomplete="off" />
             </label>
             <label>
-              <span>服务标签</span>
+              <span>{{ msg.drawer.serviceLabel }}</span>
               <input v-model="discoveryDraft.serverLabel" autocomplete="off" />
             </label>
             <label>
-              <span>引导地址</span>
+              <span>{{ msg.drawer.bootstrapUrl }}</span>
               <input
                 v-model="discoveryDraft.bootstrapBaseUrl"
                 autocomplete="off"
               />
             </label>
             <label>
-              <span>对外服务地址</span>
+              <span>{{ msg.drawer.advertisedUrl }}</span>
               <input
                 v-model="discoveryDraft.advertisedBaseUrl"
                 autocomplete="off"
               />
             </label>
             <label>
-              <span>活跃服务地址</span>
+              <span>{{ msg.drawer.activeUrl }}</span>
               <input
                 v-model="discoveryDraft.activeServiceUrl"
                 autocomplete="off"
               />
             </label>
             <label>
-              <span>转发目标地址</span>
+              <span>{{ msg.drawer.forwardUrl }}</span>
               <input
                 v-model="discoveryDraft.forwardBaseUrl"
                 autocomplete="off"
@@ -617,18 +952,18 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             </label>
             <OptionBar
               v-model="discoveryDraft.mode"
-              label="运行模式"
+              :label="msg.drawer.mode"
               :options="discoveryModeOptionBarOptions"
             />
             <label>
-              <span>配置版本</span>
+              <span>{{ msg.drawer.configVersion }}</span>
               <input
                 v-model="discoveryDraft.configVersion"
                 autocomplete="off"
               />
             </label>
             <label>
-              <span>刷新周期（秒）</span>
+              <span>{{ msg.drawer.refreshSeconds }}</span>
               <input
                 v-model.number="discoveryDraft.refreshIntervalSeconds"
                 min="5"
@@ -636,7 +971,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
               />
             </label>
             <label>
-              <span>签到周期（秒）</span>
+              <span>{{ msg.drawer.checkInSeconds }}</span>
               <input
                 v-model.number="discoveryDraft.checkInIntervalSeconds"
                 min="5"
@@ -644,7 +979,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
               />
             </label>
             <label>
-              <span>离线判定（秒）</span>
+              <span>{{ msg.drawer.offlineSeconds }}</span>
               <input
                 v-model.number="discoveryDraft.offlineAfterSeconds"
                 min="30"
@@ -658,7 +993,7 @@ const activeRouteAdminView = computed(() => String(route.meta?.adminView || admi
             type="submit"
             :disabled="busyKey === 'discovery'"
           >
-            {{ busyKey === "discovery" ? "保存中" : "保存服务发现" }}
+            {{ busyKey === "discovery" ? msg.drawer.saving : msg.drawer.saveDiscovery }}
           </button>
         </form>
 

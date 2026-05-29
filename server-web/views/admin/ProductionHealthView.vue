@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import StatusPill from "../../components/StatusPill.vue";
+import { usePageRefreshHandler } from "../../composables/usePageRefresh";
 import { bridge } from "../../lib/bridge";
 import type { ProductionHealthGate, ProductionHealthResponse, V001BaselineStatus } from "../../lib/types";
 
@@ -27,6 +28,8 @@ const latestCommit = computed(() => {
   const commit = health.value?.latestReport?.git?.commit || "";
   return commit ? commit.slice(0, 12) : "unknown";
 });
+const capabilityKernel = computed(() => health.value?.capabilityKernel || null);
+const capabilityBindingGuard = computed(() => health.value?.capabilityBindingGuard || null);
 const failedGates = computed(() => (health.value?.gates || []).filter((gate) => gate.status !== "pass"));
 const baselinePortLabels = computed(() => (baseline.value?.ports || []).map((port) => ({
   id: port.port,
@@ -91,6 +94,11 @@ async function refreshProductionHealth() {
 onMounted(() => {
   void refreshProductionHealth();
 });
+
+usePageRefreshHandler(
+  (detail) => detail.viewId === "admin" && detail.adminView === "productionHealth",
+  refreshProductionHealth,
+);
 </script>
 
 <template>
@@ -143,6 +151,16 @@ onMounted(() => {
         </div>
       </div>
 
+      <div v-if="capabilityKernel" :class="['status-strip', capabilityKernel.degraded ? 'warning' : capabilityKernel.ok ? 'success' : 'danger']">
+        <strong>Capability Kernel</strong>
+        <span>{{ capabilityKernel.securityMode || capabilityKernel.status }} · {{ capabilityKernel.message }}</span>
+      </div>
+
+      <div v-if="capabilityBindingGuard" :class="['status-strip', capabilityBindingGuard.degraded ? 'warning' : capabilityBindingGuard.ok ? 'success' : 'danger']">
+        <strong>Binding Guard</strong>
+        <span>{{ capabilityBindingGuard.securityMode || capabilityBindingGuard.status }} · {{ capabilityBindingGuard.message }}</span>
+      </div>
+
       <dl class="module-status-list production-health-meta">
         <div>
           <dt>报告目录</dt>
@@ -160,6 +178,30 @@ onMounted(() => {
           <dt>脏文件</dt>
           <dd>{{ health?.latestReport?.git.dirtyFileCount ?? 0 }}</dd>
         </div>
+        <div>
+          <dt>权限内核</dt>
+          <dd>{{ capabilityKernel?.provider || "unknown" }} / {{ capabilityKernel?.securityMode || "unknown" }}</dd>
+        </div>
+        <div>
+          <dt>权限状态</dt>
+          <dd>{{ capabilityKernel?.degraded ? "degraded" : capabilityKernel?.status || "unknown" }}</dd>
+        </div>
+        <div>
+          <dt>权限绑定</dt>
+          <dd>{{ capabilityKernel?.bindingCount ?? 0 }} keys / {{ capabilityKernel?.permissionBindingCount ?? 0 }} bindings</dd>
+        </div>
+        <div>
+          <dt>恢复能力</dt>
+          <dd>{{ capabilityKernel?.recoverySupported ? "recovery package" : "unavailable" }}</dd>
+        </div>
+        <div>
+          <dt>绑定守卫</dt>
+          <dd>{{ capabilityBindingGuard?.provider || "unknown" }} / {{ capabilityBindingGuard?.securityMode || "unknown" }}</dd>
+        </div>
+        <div>
+          <dt>绑定状态</dt>
+          <dd>{{ capabilityBindingGuard?.activeBindingCount ?? 0 }} active / {{ capabilityBindingGuard?.bindingCount ?? 0 }} total</dd>
+        </div>
       </dl>
     </article>
 
@@ -169,11 +211,22 @@ onMounted(() => {
           <h3>v0.0.1 基线</h3>
           <p>展示单机运行基线、五类 MCP 出口和本地通用切面状态。</p>
         </div>
-        <div class="section-tags">
+      </div>
+      <div class="production-baseline-summary">
+        <div class="production-baseline-status">
+          <span>基线状态</span>
           <StatusPill :tone="statusTone(baseline?.status === 'ready' ? 'pass' : 'missing')" :label="baseline?.status || '未读取'" />
-          <span>{{ baseline?.protocolVersion || "pact.v001.baseline.v1" }}</span>
-          <span>{{ baseline?.verificationMode || "unknown" }}</span>
         </div>
+        <dl>
+          <div>
+            <dt>协议版本</dt>
+            <dd>{{ baseline?.protocolVersion || "pact.v001.baseline.v1" }}</dd>
+          </div>
+          <div>
+            <dt>验证模式</dt>
+            <dd>{{ baseline?.verificationMode || "等待加载" }}</dd>
+          </div>
+        </dl>
       </div>
       <div v-if="baselineError" class="status-strip danger">
         <strong>读取失败</strong>
@@ -376,6 +429,63 @@ onMounted(() => {
   background: var(--warning-surface);
 }
 
+.production-baseline-summary {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+.production-baseline-status,
+.production-baseline-summary dl {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.production-baseline-status {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.production-baseline-status > span,
+.production-baseline-summary dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.production-baseline-summary dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.42fr);
+  overflow: hidden;
+}
+
+.production-baseline-summary dl > div {
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.production-baseline-summary dl > div + div {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.production-baseline-summary dd {
+  min-width: 0;
+  margin: var(--space-1) 0 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
 .production-token-list,
 .production-gate-chips,
 .production-action-list,
@@ -534,6 +644,10 @@ onMounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .production-baseline-summary {
+    grid-template-columns: 1fr;
+  }
+
   .production-gate-table {
     overflow-x: auto;
   }
@@ -548,6 +662,15 @@ onMounted(() => {
   .production-health-metrics,
   .production-health-meta {
     grid-template-columns: 1fr;
+  }
+
+  .production-baseline-summary dl {
+    grid-template-columns: 1fr;
+  }
+
+  .production-baseline-summary dl > div + div {
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .production-history-list div,

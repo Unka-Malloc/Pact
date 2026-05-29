@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { currentConsoleLocale, localizeConsoleText } from "../i18n/console";
 
 const props = withDefaults(defineProps<{
   label: string | number;
@@ -28,7 +29,7 @@ const normalizedTone = computed(() => {
   return "neutral";
 });
 
-const displayLabel = computed(() => String(props.label ?? ""));
+const displayLabel = computed(() => localizeConsoleText(String(props.label ?? ""), currentConsoleLocale.value));
 const accessibleLabel = computed(() => props.ariaLabel || displayLabel.value);
 </script>
 

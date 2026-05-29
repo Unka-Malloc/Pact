@@ -18,6 +18,7 @@ export type AdminSection =
   | "agent-management"
   | "agent-permissions"
   | "agent-config"
+  | "context-management"
   | "maintenance-agent";
 
 /** Maps AppView to its canonical route path. */
@@ -30,7 +31,6 @@ export function viewToPath(
     case "feed":        return "/feed";
     case "sources":     return "/sources";
     case "workspaces":  return "/workspaces";
-    case "intelligence": return "/intelligence";
     case "knowledge":
       return `/knowledge/${opts?.tab ?? "management"}`;
     case "debug":
@@ -55,6 +55,7 @@ export function adminSectionToSlug(section: string): string {
     agentManagement: "agent-management",
     agentPermissions: "agent-permissions",
     agentConfig: "agent-config",
+    contextManagement: "context-management",
     maintenanceAgent: "maintenance-agent",
   };
   return map[section] ?? "storage";
@@ -74,6 +75,7 @@ export function slugToAdminView(slug: string): string {
     "agent-management": "agentManagement",
     "agent-permissions": "agentPermissions",
     "agent-config": "agentConfig",
+    "context-management": "contextManagement",
     "maintenance-agent": "maintenanceAgent",
   };
   return map[slug] ?? "storage";

@@ -5,11 +5,12 @@ import ConfigFoldCard from "./ConfigFoldCard.vue";
 import FeatureToggle from "./FeatureToggle.vue";
 import HistorySessionPanel from "./HistorySessionPanel.vue";
 import InfoFeedResultRow from "./InfoFeedResultRow.vue";
+import JsonConfigFileEditor from "./JsonConfigFileEditor.vue";
 import OptionBar from "./OptionBar.vue";
 import SegmentedToggle from "./SegmentedToggle.vue";
 import StatusPill from "./StatusPill.vue";
 
-export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, OptionBar, SegmentedToggle, StatusPill };
+export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, JsonConfigFileEditor, OptionBar, SegmentedToggle, StatusPill };
 
 export type CommonComponentRegistration = {
   name: string;
@@ -74,6 +75,13 @@ export const commonComponentRegistry: CommonComponentRegistration[] = [
     category: "config",
     description: "配置、JSON、运行结构和诊断信息的标准折叠卡片。",
     usageRule: "页面需要展开/收起配置、JSON、诊断结构或详情时使用；具体表单、JSON 和数据内容由调用方通过 slot 提供。",
+  },
+  {
+    name: "JsonConfigFileEditor",
+    file: "server-web/components/JsonConfigFileEditor.vue",
+    category: "config",
+    description: "真实配置文件 JSON 的标准单例编辑框，统一展示、编辑、取消、保存和 JSON 校验。",
+    usageRule: "页面需要展示或编辑 JSON/配置文件内容时使用；必须传入稳定 fileKey 和保存回调，不在业务页面手写 textarea/pre 保存按钮。",
   },
   {
     name: "HistorySessionPanel",

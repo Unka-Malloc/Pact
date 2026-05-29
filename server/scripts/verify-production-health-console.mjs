@@ -79,11 +79,18 @@ async function verifyReportReader() {
   try {
     const missing = await buildProductionHealthReport({
       repoRoot: tempRoot,
-      reportRoot: path.join(tempRoot, "missing")
+      reportRoot: path.join(tempRoot, "missing"),
+      userDataPath: tempRoot,
+      capabilityKernelBackend: "local-file",
+      capabilityBindingBackend: "local-file"
     });
     assert.equal(missing.reportType, PRODUCTION_HEALTH_REPORT_TYPE);
     assert.equal(missing.status, "missing");
     assert.equal(missing.latestReport, null);
+    assert.equal(missing.capabilityKernel.securityMode, "degraded_file_fallback");
+    assert.equal(missing.capabilityKernel.degraded, true);
+    assert.equal(missing.capabilityBindingGuard.securityMode, "degraded_file_fallback");
+    assert.equal(missing.capabilityBindingGuard.degraded, true);
 
     await writeSampleReport(reportRoot, "20260521T000000Z", {
       generatedAt: "2026-05-21T00:00:00.000Z",
@@ -131,15 +138,33 @@ async function verifyReportReader() {
       ]
     });
 
-    const health = await buildProductionHealthReport({ repoRoot: tempRoot, reportRoot });
+    const health = await buildProductionHealthReport({
+      repoRoot: tempRoot,
+      reportRoot,
+      userDataPath: tempRoot,
+      capabilityKernelBackend: "local-file",
+      capabilityBindingBackend: "local-file"
+    });
     assert.equal(health.reportType, PRODUCTION_HEALTH_REPORT_TYPE);
     assert.equal(health.status, "pass");
     assert.equal(health.latestReport.runId, "20260522T000000Z");
     assert.equal(health.summary.pass, 3);
     assert.ok(health.sections.some((section) => section.id === "observability" && section.status === "pass"));
+    assert.ok(
+      health.sections.some(
+        (section) =>
+          section.id === "security" &&
+          section.total === 3 &&
+          section.missingGateIds.includes("capability-kernel-security")
+      )
+    );
     assert.ok(health.gates.some((gate) => gate.id === "backup-restore" && gate.commandSummary.total === 1));
     assert.equal(health.history.length, 3);
     assert.equal(health.history[0].runId, "20260523T000000Z");
+    assert.equal(health.capabilityKernel.securityMode, "degraded_file_fallback");
+    assert.equal(health.capabilityKernel.recoverySupported, true);
+    assert.equal(health.capabilityBindingGuard.securityMode, "degraded_file_fallback");
+    assert.equal(health.capabilityBindingGuard.degraded, true);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
@@ -163,6 +188,7 @@ async function verifyFrontendWiring() {
     bridge: await fs.readFile(path.join(repoRoot, "server-web/lib/bridge.ts"), "utf8"),
     registry: await fs.readFile(path.join(repoRoot, "server/config/frontend-feature-registry.yaml"), "utf8"),
     nav: await fs.readFile(path.join(repoRoot, "server-web/ServerConsoleApp.vue"), "utf8"),
+    i18n: await fs.readFile(path.join(repoRoot, "server-web/i18n/console.ts"), "utf8"),
     view: await fs.readFile(path.join(repoRoot, "server-web/views/admin/ProductionHealthView.vue"), "utf8")
   };
   assert.match(files.router, /ProductionHealthView/);
@@ -171,8 +197,13 @@ async function verifyFrontendWiring() {
   assert.match(files.bridge, /getProductionHealth/);
   assert.match(files.bridge, /\/api\/production\/health/);
   assert.match(files.registry, /admin\.production-health/);
-  assert.match(files.nav, /生产健康/);
+  assert.match(files.nav, /msg\.nav\.productionHealth/);
+  assert.match(files.i18n, /productionHealth:\s*"生产健康"/);
   assert.match(files.view, /bridge\.getProductionHealth/);
+  assert.match(files.view, /Capability Kernel/);
+  assert.match(files.view, /capabilityKernel/);
+  assert.match(files.view, /Binding Guard/);
+  assert.match(files.view, /capabilityBindingGuard/);
   assert.match(files.view, /门禁明细/);
 }
 
@@ -180,8 +211,20 @@ async function main() {
   await verifyReportReader();
   verifyOperationRegistry();
   await verifyFrontendWiring();
-  const current = await buildProductionHealthReport({ repoRoot });
-  assert.equal(current.reportType, PRODUCTION_HEALTH_REPORT_TYPE);
+  const currentDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-production-health-current-"));
+  try {
+    const current = await buildProductionHealthReport({
+      repoRoot,
+      userDataPath: currentDataDir,
+      capabilityKernelBackend: "local-file",
+      capabilityBindingBackend: "local-file"
+    });
+    assert.equal(current.reportType, PRODUCTION_HEALTH_REPORT_TYPE);
+    assert.ok(current.capabilityKernel);
+    assert.ok(current.capabilityBindingGuard);
+  } finally {
+    await fs.rm(currentDataDir, { recursive: true, force: true });
+  }
   console.log("[production-health-console] ok");
 }
 

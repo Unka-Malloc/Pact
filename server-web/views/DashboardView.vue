@@ -17,16 +17,34 @@ const {
   mcpAuthorizationRequests,
   mcpAuthorizationStatus,
   mcpAuthorizationStatusOptionBarOptions,
+  fuseKnowledgeReview,
+  knowledgeReviewCanResolveWithDocument,
+  knowledgeReviewItems,
+  knowledgeReviewReasonLabel,
+  knowledgeReviewSimilarity,
+  knowledgeReviewStatus,
+  knowledgeReviewStatusLabel,
+  knowledgeReviewStatusOptionBarOptions,
+  knowledgeReviewTitle,
+  knowledgeReviewTone,
   refreshMcpAuthorizationRequests,
+  refreshKnowledgeConflicts,
+  resolveKnowledgeReview,
   resolveMcpAuthorizationRequest,
+  selectedKnowledgeReviewFusionModel,
 } = useConsole();
 
 watch(mcpAuthorizationStatus, () => {
   refreshMcpAuthorizationRequests();
 });
 
+watch(knowledgeReviewStatus, () => {
+  refreshKnowledgeConflicts();
+});
+
 onMounted(() => {
   refreshMcpAuthorizationRequests();
+  refreshKnowledgeConflicts();
 });
 </script>
 
@@ -128,14 +146,14 @@ onMounted(() => {
     <article class="surface-card">
       <div class="section-header">
         <div>
-          <h3>MCP 客户端授权</h3>
-          <p>来自外部 MCP 客户端的授权请求，批准后将为其自动创建工具授权 (Grant)。</p>
+          <h3>全平台审批流</h3>
+          <p>统一处理 MCP 授权、知识入库冲突等需要人工决策的事项。</p>
         </div>
         <div class="source-actions">
           <SegmentedToggle
             v-model="mcpAuthorizationStatus"
             :options="mcpAuthorizationStatusOptionBarOptions"
-            aria-label="授权请求状态"
+            aria-label="MCP 授权请求状态"
             size="small"
           />
           <button
@@ -144,11 +162,18 @@ onMounted(() => {
             :disabled="busyKey === 'mcp-authorization-requests:refresh'"
             @click="refreshMcpAuthorizationRequests"
           >
-            {{ busyKey === "mcp-authorization-requests:refresh" ? "刷新中" : "刷新列表" }}
+            {{ busyKey === "mcp-authorization-requests:refresh" ? "刷新中" : "刷新授权" }}
           </button>
         </div>
       </div>
 
+      <section class="approval-flow-section">
+        <div class="section-header compact-section-header">
+          <div>
+            <h4>MCP 客户端授权</h4>
+            <p>外部 MCP 客户端请求工具授权时，在这里统一批准或拒绝。</p>
+          </div>
+        </div>
       <div v-if="mcpAuthorizationRequests.length" class="configuration-alert-list">
         <article
           v-for="req in mcpAuthorizationRequests"
@@ -188,6 +213,99 @@ onMounted(() => {
         <strong>没有待处理的授权请求</strong>
         <span>目前没有客户端发起新的 MCP 授权请求。</span>
       </div>
+      </section>
+
+      <section class="approval-flow-section">
+        <div class="section-header compact-section-header">
+          <div>
+            <h4>知识入库冲突</h4>
+            <p>知识录入发现重复来源、路径内容冲突或结构化版本冲突时，在工作台统一决策。</p>
+          </div>
+          <div class="source-actions">
+            <SegmentedToggle
+              v-model="knowledgeReviewStatus"
+              :options="knowledgeReviewStatusOptionBarOptions"
+              aria-label="知识冲突审批状态"
+              size="small"
+            />
+            <button
+              class="tool-button"
+              type="button"
+              :disabled="busyKey === 'knowledge:review-items'"
+              @click="() => refreshKnowledgeConflicts()"
+            >
+              {{ busyKey === "knowledge:review-items" ? "刷新中" : "刷新冲突" }}
+            </button>
+          </div>
+        </div>
+        <div v-if="knowledgeReviewItems.length" class="configuration-alert-list">
+          <article
+            v-for="item in knowledgeReviewItems"
+            :key="item.reviewId"
+            class="configuration-alert-item"
+            :data-tone="knowledgeReviewTone(item)"
+          >
+            <span class="configuration-alert-category">Knowledge Review</span>
+            <strong>{{ knowledgeReviewTitle(item) }}</strong>
+            <span>{{ item.summary || "系统检测到该知识录入需要人工确认。" }}</span>
+            <em>
+              {{ knowledgeReviewStatusLabel(item.status) }}
+              · {{ knowledgeReviewReasonLabel(item.reason) }}
+              · {{ knowledgeReviewSimilarity(item).label }}
+            </em>
+            <div v-if="item.status === 'pending'" class="configuration-alert-actions">
+              <template v-if="knowledgeReviewCanResolveWithDocument(item)">
+                <button
+                  v-if="item.reason === 'source_path_content_conflict'"
+                  class="configuration-alert-action"
+                  type="button"
+                  :disabled="busyKey.startsWith(`knowledge:review:${item.reviewId}:`)"
+                  @click="resolveKnowledgeReview(item, 'replace')"
+                >
+                  覆盖旧知识
+                </button>
+                <button
+                  class="configuration-alert-action"
+                  type="button"
+                  :disabled="knowledgeReviewSimilarity(item).disableKeepBoth || busyKey.startsWith(`knowledge:review:${item.reviewId}:`)"
+                  @click="resolveKnowledgeReview(item, 'keep_both')"
+                >
+                  保留两者
+                </button>
+                <button
+                  class="configuration-alert-action"
+                  type="button"
+                  :disabled="busyKey.startsWith(`knowledge:review:${item.reviewId}:`) || !selectedKnowledgeReviewFusionModel.enabled"
+                  @click="fuseKnowledgeReview(item)"
+                >
+                  知识融合
+                </button>
+              </template>
+              <button
+                v-else
+                class="configuration-alert-action"
+                type="button"
+                :disabled="busyKey.startsWith(`knowledge:review:${item.reviewId}:`)"
+                @click="resolveKnowledgeReview(item, 'accept')"
+              >
+                接受
+              </button>
+              <button
+                class="configuration-alert-action danger-action"
+                type="button"
+                :disabled="busyKey.startsWith(`knowledge:review:${item.reviewId}:`)"
+                @click="resolveKnowledgeReview(item, 'reject')"
+              >
+                放弃
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-else class="configuration-alert-empty">
+          <strong>没有待处理的知识冲突</strong>
+          <span>知识入库当前没有等待人工决策的记录。</span>
+        </div>
+      </section>
     </article>
   </section>
 </template>

@@ -1,16 +1,21 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useConsole } from '../composables/useConsole';
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
+import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import InfoFeedResultRow from '../components/InfoFeedResultRow.vue';
 import OptionBar from '../components/OptionBar.vue';
 import StatusPill from '../components/StatusPill.vue';
 const {
+  agentSelectorOptions,
   agentExploreStepSummary,
   chooseInfoFeedClarification,
   continueInfoFeedAfterModelSelection,
   continueInfoFeedAfterRetry,
+  busyKey,
+  contextWindowOptionBarOptions,
   copyInfoFeedSummary,
   currentView,
   deleteInfoFeedHistoryItem,
@@ -65,10 +70,23 @@ const {
   removeInfoFeedAttachment,
   runInfoFeed,
   runInfoFeedSummaryAgent,
+  saveSettings,
   selectInfoFeedHistoryItem,
   selectedInfoFeedModel,
+  settingsDraft,
+  thinkingModeOptionBarOptions,
   truncateInfoFeedText,
 } = useConsole();
+
+const infoFeedAdvancedOptionsOpen = ref(false);
+
+function openInfoFeedAdvancedOptions() {
+  infoFeedAdvancedOptionsOpen.value = true;
+}
+
+function closeInfoFeedAdvancedOptions() {
+  infoFeedAdvancedOptionsOpen.value = false;
+}
 </script>
 
 <template>
@@ -627,6 +645,13 @@ const {
                       </svg>
                       附件
                     </BrowseSelectButton>
+                    <button
+                      class="tool-button tool-button-ghost info-feed-advanced-button"
+                      type="button"
+                      @click="openInfoFeedAdvancedOptions"
+                    >
+                      高级选项
+                    </button>
                     <AgentModelOptionBar
 	                      v-model="infoFeedForm.modelAlias"
 	                      label="智能体"
@@ -643,6 +668,125 @@ const {
                   </div>
                 </form>
               </div>
+            </div>
+            <div
+              v-if="infoFeedAdvancedOptionsOpen"
+              class="info-feed-advanced-backdrop"
+              @click.self="closeInfoFeedAdvancedOptions"
+            >
+              <section
+                class="info-feed-advanced-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="info-feed-advanced-title"
+              >
+                <header class="info-feed-advanced-header">
+                  <div>
+                    <h3 id="info-feed-advanced-title">高级选项</h3>
+                    <span>配置用于信息流智能检索、知识融合和总结前置检索的默认参数。</span>
+                  </div>
+                  <button
+                    class="tool-button tool-button-ghost"
+                    type="button"
+                    @click="closeInfoFeedAdvancedOptions"
+                  >
+                    关闭
+                  </button>
+                </header>
+                <form class="drawer-panel info-feed-advanced-form" @submit.prevent="saveSettings">
+                  <label>
+                    <span>系统提示词</span>
+                    <textarea v-model="settingsDraft.agentExploreDefaults.systemPrompt" rows="5" spellcheck="false"></textarea>
+                  </label>
+                  <label>
+                    <span>工具策略提示词</span>
+                    <textarea v-model="settingsDraft.agentExploreDefaults.toolPolicyPrompt" rows="4" spellcheck="false"></textarea>
+                  </label>
+                  <label>
+                    <span>继续轮次提示词</span>
+                    <textarea v-model="settingsDraft.agentExploreDefaults.continuationPrompt" rows="3" spellcheck="false"></textarea>
+                  </label>
+                  <label>
+                    <span>答案模板</span>
+                    <textarea v-model="settingsDraft.agentExploreDefaults.answerTemplate" rows="14" spellcheck="false"></textarea>
+                  </label>
+                  <div class="form-grid compact-form-grid">
+                    <OptionBar
+                      v-model="settingsDraft.agentExploreDefaults.contextProfileId"
+                      label="上下文窗口"
+                      :options="contextWindowOptionBarOptions"
+                    />
+                    <OptionBar
+                      v-model="settingsDraft.agentExploreDefaults.thinkingMode"
+                      label="Thinking"
+                      :options="thinkingModeOptionBarOptions"
+                    />
+                    <label>
+                      <span>temperature</span>
+                      <input v-model.number="settingsDraft.agentExploreDefaults.temperature" type="number" min="0" max="2" step="0.1" />
+                    </label>
+                    <label>
+                      <span>max_tokens</span>
+                      <input v-model.number="settingsDraft.agentExploreDefaults.maxTokens" type="number" min="128" step="128" />
+                    </label>
+                    <label>
+                      <span>默认循环轮数</span>
+                      <input v-model.number="settingsDraft.agentExploreDefaults.maxIterations" type="number" min="1" max="8" />
+                    </label>
+                    <label>
+                      <span>默认每次召回</span>
+                      <input v-model.number="settingsDraft.agentExploreDefaults.limit" type="number" min="1" max="20" />
+                    </label>
+                    <label>
+                      <span>tool_choice</span>
+                      <input v-model="settingsDraft.agentExploreDefaults.toolChoice" autocomplete="off" />
+                    </label>
+                  </div>
+                  <ConfigFoldCard title="知识融合智能体" open>
+                    <div class="form-grid compact-form-grid">
+                      <AgentModelOptionBar
+                        v-model="settingsDraft.agentExploreDefaults.reviewFusionModelAlias"
+                        label="智能体"
+                        placeholder="未分配智能体"
+                        include-empty
+                        :options="agentSelectorOptions"
+                      />
+                      <label>
+                        <span>temperature</span>
+                        <input
+                          v-model.number="settingsDraft.agentExploreDefaults.reviewFusionTemperature"
+                          type="number"
+                          min="0"
+                          max="2"
+                          step="0.1"
+                        />
+                      </label>
+                      <label>
+                        <span>max_tokens</span>
+                        <input
+                          v-model.number="settingsDraft.agentExploreDefaults.reviewFusionMaxTokens"
+                          type="number"
+                          min="128"
+                          step="128"
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      <span>融合提示词</span>
+                      <textarea
+                        v-model="settingsDraft.agentExploreDefaults.reviewFusionSystemPrompt"
+                        rows="4"
+                        spellcheck="false"
+                      ></textarea>
+                    </label>
+                  </ConfigFoldCard>
+                  <div class="source-actions">
+                    <button class="tool-button" type="submit" :disabled="busyKey === 'settings'">
+                      {{ busyKey === "settings" ? "保存中" : "保存高级选项" }}
+                    </button>
+                  </div>
+                </form>
+              </section>
             </div>
           </section>
 </template>

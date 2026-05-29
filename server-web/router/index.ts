@@ -7,13 +7,13 @@ import WorkspacesView from "../views/WorkspacesView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DebugView from "../views/DebugView.vue";
 import FeedView from "../views/FeedView.vue";
-import IntelligenceView from "../views/IntelligenceView.vue";
 import KnowledgeView from "../views/KnowledgeView.vue";
 import SourcesView from "../views/SourcesView.vue";
 import AgentConfigView from "../views/admin/AgentConfigView.vue";
 import AgentManagementView from "../views/admin/AgentManagementView.vue";
 import AgentPermissionsView from "../views/admin/AgentPermissionsView.vue";
 import ClientsView from "../views/admin/ClientsView.vue";
+import ContextManagementView from "../views/admin/ContextManagementView.vue";
 import JobsView from "../views/admin/JobsView.vue";
 import LogsView from "../views/admin/LogsView.vue";
 import MaintenanceAgentView from "../views/admin/MaintenanceAgentView.vue";
@@ -34,7 +34,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/", component: DashboardView, meta: { viewId: "dashboard" } },
   { path: "/feed", component: FeedView, meta: { viewId: "feed" } },
   { path: "/sources", component: SourcesView, meta: { viewId: "sources" } },
-  { path: "/intelligence", component: IntelligenceView, meta: { viewId: "intelligence" } },
+  { path: "/intelligence", redirect: "/" },
 
   // Knowledge sub-tabs
   { path: "/knowledge", redirect: "/knowledge/management" },
@@ -72,6 +72,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/admin/agent-management", component: AgentManagementView, meta: { viewId: "admin", adminView: "agentManagement" } },
   { path: "/admin/agent-permissions", component: AgentPermissionsView, meta: { viewId: "admin", adminView: "agentPermissions" } },
   { path: "/admin/agent-config", component: AgentConfigView, meta: { viewId: "admin", adminView: "agentConfig" } },
+  { path: "/admin/context-management", component: ContextManagementView, meta: { viewId: "admin", adminView: "contextManagement" } },
   { path: "/admin/maintenance-agent", component: MaintenanceAgentView, meta: { viewId: "admin", adminView: "maintenanceAgent" } },
 
   // Catch-all → dashboard

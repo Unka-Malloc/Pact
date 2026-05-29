@@ -58,13 +58,13 @@ const {
   knowledgeFusionSummary,
   knowledgeRecallDebugForm,
   knowledgeRecallDebugGridStyle,
-  knowledgeRecallDebugParameterSummary,
+  knowledgeRecallDebugModeOptionBarOptions,
   knowledgeRecallDebugRuns,
+  knowledgeRecallDebugTargetOptions,
   knowledgeSourceState,
   knowledgeStatus,
   openAgentEvidencePreview,
   resetKnowledgeAgentExplore,
-  retrievalModeOptionBarOptions,
   runKnowledgeAgentExplore,
   runKnowledgeRecallDebugBatch,
   selectAgentExploreHistoryItem,
@@ -89,7 +89,7 @@ const activeDebugTab = computed<DebugTab>(() => {
               <div class="section-header">
                 <div>
                   <h3>知识库召回</h3>
-                  <p>只调试底层知识库召回，不调用大模型。适合对比 TopK、融合策略、学习开关和证据可读性。</p>
+                  <p>只调试底层知识库召回，不调用大模型。适合检查融合策略、学习开关和证据可读性。</p>
                 </div>
                 <div class="section-tags">
                   <span>{{ knowledgeConsole?.available ? "KnowledgeCore 可用" : "KnowledgeCore 未启用" }}</span>
@@ -107,18 +107,15 @@ const activeDebugTab = computed<DebugTab>(() => {
                     placeholder="例如：HSBC 账单"
                   />
                 </label>
-                <label>
-                  <span>TopK 对比</span>
-                  <input
-                    v-model="knowledgeRecallDebugForm.topKValues"
-                    type="text"
-                    placeholder="10 20 30"
-                  />
-                </label>
+                <OptionBar
+                  v-model="knowledgeRecallDebugForm.targetId"
+                  label="知识库"
+                  :options="knowledgeRecallDebugTargetOptions"
+                />
                 <OptionBar
                   v-model="knowledgeRecallDebugForm.retrievalMode"
                   label="召回模式"
-                  :options="retrievalModeOptionBarOptions"
+                  :options="knowledgeRecallDebugModeOptionBarOptions"
                 />
                 <BinaryCheckbox
                   v-model="knowledgeRecallDebugForm.keywordOnly"
@@ -137,14 +134,9 @@ const activeDebugTab = computed<DebugTab>(() => {
                   type="submit"
                   :disabled="busyKey === 'debug:knowledge-recall' || !knowledgeRecallDebugForm.query.trim()"
                 >
-                  {{ busyKey === "debug:knowledge-recall" ? "批量召回中" : "批量对比召回" }}
+                  {{ busyKey === "debug:knowledge-recall" ? "召回中" : "执行召回" }}
                 </button>
               </form>
-
-              <div class="debug-parameter-summary">
-                <strong>参数说明</strong>
-                <span>{{ knowledgeRecallDebugParameterSummary }}</span>
-              </div>
 
               <div
                 v-if="knowledgeRecallDebugRuns.length"

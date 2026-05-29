@@ -45,6 +45,16 @@ export type AgentSettings = {
   retrievalHalfLifeDays: number;
   staleAfterDays: number;
   transactionWindowDays: number;
+  knowledgeIngestTargets?: KnowledgeIngestTarget[];
+};
+
+export type KnowledgeIngestTargetKind = "global" | "external" | "team" | "user";
+
+export type KnowledgeIngestTarget = {
+  kind: KnowledgeIngestTargetKind;
+  label: string;
+  provider?: string;
+  refs?: string[];
 };
 
 export type ModelProbeResponse = {
@@ -194,6 +204,7 @@ export type AgentExploreDefaults = {
 };
 
 export type AgentToolExecutionConfig = {
+  functionCallSchema?: Record<string, unknown>;
   http: {
     enabled: boolean;
     allowedHosts: string[];
@@ -205,6 +216,7 @@ export type AgentToolExecutionConfig = {
     allowDirectCommands: boolean;
     timeoutMs: number;
     maxOutputBytes: number;
+    nodeCommand?: string;
     commands: Array<{
       commandId: string;
       label: string;
@@ -212,6 +224,15 @@ export type AgentToolExecutionConfig = {
       args: string[];
       cwd: string;
       description: string;
+      variables?: Array<{
+        name: string;
+        label?: string;
+        required?: boolean;
+        defaultValue?: string;
+        allowedValues?: string[];
+        description?: string;
+      }>;
+      allowExtraArgs?: boolean;
     }>;
   };
 };
@@ -1641,6 +1662,7 @@ export type KnowledgeHealth = {
 export type KnowledgeCapabilities = {
   protocol?: string;
   methods?: string[];
+  retrievalModes?: Array<{ value: string; label: string }>;
   modules?: Record<string, KnowledgeProtocolModule>;
   [key: string]: unknown;
 };
@@ -2551,6 +2573,42 @@ export type ProductionHealthResponse = {
     required: string[];
     missing: string[];
   };
+  capabilityKernel?: {
+    ok: boolean;
+    protocolVersion: string;
+    status: string;
+    tone: string;
+    alias: string;
+    provider: string;
+    configuredBackend: string;
+    securityMode: string;
+    degraded: boolean;
+    runtimeLookupLoaded: boolean;
+    runtimeLookupGeneration: number;
+    bindingCount: number;
+    permissionBindingCount: number;
+    stateRoot: string;
+    statePath: string;
+    linuxDetectedBackends: string[];
+    recoverySupported: boolean;
+    message: string;
+  } | null;
+  capabilityBindingGuard?: {
+    ok: boolean;
+    protocolVersion: string;
+    status: string;
+    tone: string;
+    alias: string;
+    provider: string;
+    configuredBackend: string;
+    securityMode: string;
+    degraded: boolean;
+    bindingCount: number;
+    activeBindingCount: number;
+    stateRoot: string;
+    statePath: string;
+    message: string;
+  } | null;
   sections: ProductionHealthSection[];
   gates: ProductionHealthGate[];
   history?: Array<{

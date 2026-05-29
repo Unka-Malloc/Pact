@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useConsole, type KnowledgeTab } from '../composables/useConsole';
 import { bridge } from '../lib/bridge';
 import { createKnowledgeUploadedFilesPayload } from '../lib/knowledge-upload-session';
+import type { KnowledgeSource } from '../lib/types';
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
 import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
@@ -13,6 +14,7 @@ import OptionBar from '../components/OptionBar.vue';
 import SegmentedToggle from '../components/SegmentedToggle.vue';
 import StatusPill from '../components/StatusPill.vue';
 const {
+  activeKnowledgeSources,
   addChildWordCloud,
   addManualWordCloud,
   autoFillCloudWithAgent,
@@ -29,8 +31,6 @@ const {
   clearRemovedTermsFromCloud,
   clearWordCloudCorpusPaths,
   collapsedWordBagIds,
-  currentMaintenanceTask,
-  currentMaintenanceTaskSupportsDryRun,
   currentView,
   deleteVocabularyEntry,
   displayedVocabularyEntries,
@@ -46,12 +46,12 @@ const {
   formatCompactDate,
   formatMachineDate,
   formatWordCloudThreshold,
-  fuseKnowledgeReview,
   goldenRuleItems,
   goldenRulePackageTitle,
   goldenRulePackages,
   hasFeature,
   hiddenVocabularyEntryCount,
+  canSubmitKnowledgeIngest,
   ingestFiles,
   ingestJob,
   ingestProgress,
@@ -60,7 +60,6 @@ const {
   jobStatusTone,
   jsonPreview,
   knowledgeConfigGroupDescription,
-  knowledgeMaintenanceTaskDescription,
   knowledgeManagementPanel,
   knowledgeManagementPanelOptionBarOptions,
   knowledgeReviewCanResolveWithDocument,
@@ -81,14 +80,18 @@ const {
   knowledgeReviewStatusOptionBarOptions,
   knowledgeReviewTitle,
   knowledgeReviewTone,
+  knowledgeIngestExternalProvider,
+  knowledgeIngestExternalRefs,
+  knowledgeIngestTargetSummary,
+  knowledgeIngestTargets,
+  knowledgeIngestTargetValidationMessage,
+  knowledgeIngestTeamRefs,
+  knowledgeIngestUserRefs,
+  knowledgeConsole,
   knowledgeSchema,
   knowledgeTab,
-  maintenanceConfirm,
-  maintenanceDryRun,
   maintenanceFieldValue,
   maintenanceJson,
-  maintenanceResultJson,
-  maintenanceTaskOptionBarOptions,
   normalizedManifest,
   onIngestFilesSelected,
   openWordCloudCorpusDirectoryPicker,
@@ -98,12 +101,12 @@ const {
   refreshIngestJob,
   refreshKnowledgeConflicts,
   refreshKnowledgeConsole,
+  refreshKnowledgeSource,
   refreshWordCloud,
   removeTermFromCloud,
   removeWordCloudCorpusPath,
   resolveKnowledgeReview,
   rulesText,
-  runKnowledgeMaintenanceTask,
   saveExpertVocabulary,
   saveKnowledgeMaintenance,
   saveRules,
@@ -113,7 +116,6 @@ const {
   selectWordCloud,
   selectedKnowledgeReviewFusionModel,
   selectedKnowledgeReviewItem,
-  selectedMaintenanceTask,
   selectedWordCloud,
   selectedWordCloudModel,
   setEmailRuleEntryEnabled,
@@ -121,8 +123,11 @@ const {
   setMaintenanceFieldValue,
   setVocabularyEntryEnabled,
   setWordCloudTermInput,
-  shortId,
   showAllVocabularyEntries,
+  sourceDownloadStatusLabel,
+  sourceIndexStatusLabel,
+  sourceSyncLabel,
+  sourceSyncTone,
   syncLocalSourceLabelFromPath,
   toggleGoldenRuleEnabled,
   toggleWordCloudActionMenu,
@@ -164,7 +169,9 @@ const {
   ruleCreationMode,
   ruleMatchStrategyOptionBarOptions,
   ruleScopeOptionBarOptions,
+  fuseKnowledgeReview,
   runRuleAuthoringChat,
+  shortId,
 } = useConsole();
 
 const route = useRoute();
@@ -232,33 +239,355 @@ const dynamicParsingPreviewConfig = {
 };
 const dynamicParsingPolicySignature = JSON.stringify(dynamicParsingPreviewConfig);
 const documentPreviewResult = ref<Record<string, unknown> | null>(null);
-const knowledgeBackendProvider = ref("dify");
-const knowledgeBackendQuery = ref("policy receipt");
-const knowledgeBackendBusy = ref("");
-const knowledgeBackendError = ref("");
-const knowledgeBackendManifest = ref<Record<string, unknown> | null>(null);
 const knowledgeBackendSpacesResult = ref<Record<string, unknown> | null>(null);
-const knowledgeBackendSearchResult = ref<Record<string, unknown> | null>(null);
+const knowledgeLibraryBusy = ref("");
+const knowledgeLibraryError = ref("");
+const knowledgeLibraryActionValues = ref<Record<string, string>>({});
 const knowledgeBackendProviderOptions = [
   { value: "dify", label: "Dify" },
   { value: "ragflow", label: "RAGFlow" },
 ];
+const knowledgeBackendProviderForms = ref<Record<string, {
+  mode: string;
+  secretRef: string;
+  endpointRef: string;
+}>>({
+  dify: {
+    mode: "contract",
+    secretRef: "secret://pact/knowledge/dify-api-key",
+    endpointRef: "config://pact/knowledge/dify-endpoint",
+  },
+  ragflow: {
+    mode: "contract",
+    secretRef: "secret://pact/knowledge/ragflow-api-key",
+    endpointRef: "config://pact/knowledge/ragflow-endpoint",
+  },
+});
+
+type KnowledgeLibraryDetail = {
+  label: string;
+  value: string;
+};
+
+type KnowledgeLibraryCard = {
+  id: string;
+  title: string;
+  description: string;
+  statusLabel: string;
+  statusTone: string;
+  boundaryLabel: string;
+  boundaryTone: string;
+  providerLabel: string;
+  meta: string[];
+  details: KnowledgeLibraryDetail[];
+  source?: KnowledgeSource;
+  externalSpace?: Record<string, unknown>;
+};
+
+type KnowledgeBackendProviderCard = {
+  provider: string;
+  title: string;
+  description: string;
+  statusLabel: string;
+  statusTone: string;
+  meta: string[];
+  details: KnowledgeLibraryDetail[];
+};
+
+const expandedKnowledgeLibraryCards = ref<Record<string, boolean>>({ "library:global": true });
+const expandedKnowledgeBackendCards = ref<Record<string, boolean>>({ builtin: true });
+
 const knowledgeBackendSpaces = computed<Array<Record<string, unknown>>>(() => {
   const items = knowledgeBackendSpacesResult.value?.spaces;
   return Array.isArray(items) ? items as Array<Record<string, unknown>> : [];
 });
-const knowledgeBackendProviders = computed<Array<Record<string, unknown>>>(() => {
-  const providers = knowledgeBackendManifest.value?.manifest &&
-    typeof knowledgeBackendManifest.value.manifest === "object" &&
-    !Array.isArray(knowledgeBackendManifest.value.manifest)
-    ? (knowledgeBackendManifest.value.manifest as Record<string, unknown>).providers
-    : knowledgeBackendManifest.value?.providers;
-  return Object.entries(
-    providers && typeof providers === "object" && !Array.isArray(providers) ? providers as Record<string, unknown> : {},
-  ).map(([id, provider]) => ({
-    id,
-    ...(provider && typeof provider === "object" && !Array.isArray(provider) ? provider as Record<string, unknown> : {}),
-  }));
+
+function isKnowledgeLibraryCardExpanded(id: string) {
+  return Boolean(expandedKnowledgeLibraryCards.value[id]);
+}
+
+function toggleKnowledgeLibraryCard(id: string) {
+  expandedKnowledgeLibraryCards.value = {
+    ...expandedKnowledgeLibraryCards.value,
+    [id]: !expandedKnowledgeLibraryCards.value[id],
+  };
+}
+
+function isKnowledgeBackendCardExpanded(id: string) {
+  return Boolean(expandedKnowledgeBackendCards.value[id]);
+}
+
+function toggleKnowledgeBackendCard(id: string) {
+  expandedKnowledgeBackendCards.value = {
+    ...expandedKnowledgeBackendCards.value,
+    [id]: !expandedKnowledgeBackendCards.value[id],
+  };
+}
+
+function textField(record: Record<string, unknown>, key: string, fallback = "") {
+  const value = record[key];
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  return String(value);
+}
+
+function compactNumber(value: unknown) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number.toLocaleString("zh-CN") : "0";
+}
+
+function compactDate(value: unknown) {
+  return value ? formatCompactDate(String(value)) : "-";
+}
+
+function externalProviderLabel(provider: unknown) {
+  const id = String(provider || "").toLowerCase();
+  return knowledgeBackendProviderOptions.find((option) => option.value === id)?.label || String(provider || "外部");
+}
+
+function metadataPolicyLabel(value: unknown) {
+  return String(value || knowledgeBackendSpacesResult.value?.metadataPolicy || "safeMetadataOnly");
+}
+
+const knowledgeLibraryCards = computed<KnowledgeLibraryCard[]>(() => {
+  const healthCounts = knowledgeConsole.value?.health?.counts || {};
+  const recentJobs = knowledgeConsole.value?.recentJobs || [];
+  const globalAvailable = Boolean(knowledgeConsole.value?.available);
+  const cards: KnowledgeLibraryCard[] = [
+    {
+      id: "library:global",
+      title: "全局知识空间",
+      description: "Pact 内置知识库，承载统一入库、索引、证据和全平台审批后的知识。",
+      statusLabel: globalAvailable ? "可用" : "不可用",
+      statusTone: globalAvailable ? "success" : "danger",
+      boundaryLabel: "内部",
+      boundaryTone: "info",
+      providerLabel: "Pact",
+      meta: [
+        `${compactNumber(healthCounts.documents)} 个文档`,
+        `${compactNumber(healthCounts.evidence)} 条证据`,
+        `${activeKnowledgeSources.value.length} 个受管目录`,
+      ],
+      details: [
+        { label: "协议", value: knowledgeConsole.value?.health?.protocol || knowledgeConsole.value?.capabilities?.protocol || "-" },
+        { label: "最近任务", value: `${recentJobs.length} 个` },
+        { label: "受管目录", value: `${activeKnowledgeSources.value.length} 个` },
+        { label: "可用能力", value: `${knowledgeConsole.value?.capabilities?.methods?.length || 0} 项` },
+      ],
+    },
+  ];
+
+  for (const source of activeKnowledgeSources.value) {
+    cards.push({
+      id: `source:${source.sourceId}`,
+      title: source.label || source.directoryPath || "受管知识目录",
+      description: source.directoryPath || "本地受管目录",
+      statusLabel: sourceSyncLabel(source),
+      statusTone: sourceSyncTone(source),
+      boundaryLabel: "内部",
+      boundaryTone: "info",
+      providerLabel: source.autoSync ? "自动同步" : "手动同步",
+      meta: [
+        `${compactNumber(source.lastFileCount)} 个文件`,
+        formatBytes(source.lastTotalBytes),
+        source.watcherStatus === "watching" ? "监听中" : `监听 ${source.watcherStatus || "未知"}`,
+      ],
+      details: [
+        { label: "目录路径", value: source.directoryPath || "-" },
+        { label: "下载状态", value: sourceDownloadStatusLabel(source) },
+        { label: "索引状态", value: sourceIndexStatusLabel(source) },
+        { label: "上次同步", value: compactDate(source.lastSyncedAt || source.lastScanAt) },
+        { label: "最近任务", value: source.lastJobId ? `${source.lastJobStatus || "-"} · ${source.lastJobStage || source.lastJobId}` : "-" },
+        { label: "错误", value: source.error || source.lastIndexError || "-" },
+      ],
+      source,
+    });
+  }
+
+  for (const space of knowledgeBackendSpaces.value) {
+    const providerLabel = externalProviderLabel(space.provider);
+    const contractVerified = Boolean(space.contractVerified || knowledgeBackendSpacesResult.value?.contractVerified);
+    cards.push({
+      id: `external:${textField(space, "spaceId", providerLabel)}`,
+      title: textField(space, "label", `${providerLabel} 知识空间`),
+      description: textField(space, "description", `由 ${providerLabel} 暴露的派生知识空间。`),
+      statusLabel: contractVerified ? "已验证" : "元数据可见",
+      statusTone: contractVerified ? "success" : "info",
+      boundaryLabel: "外部",
+      boundaryTone: "warning",
+      providerLabel,
+      meta: [
+        textField(space, "accessMode", "read"),
+        textField(space, "dataClass", "knowledge"),
+        metadataPolicyLabel(space.metadataPolicy),
+      ],
+      details: [
+        { label: "Space ID", value: textField(space, "spaceId", "-") },
+        { label: "Provider", value: providerLabel },
+        { label: "派生空间", value: textField(space, "derivedKnowledgeSpace", "-") },
+        { label: "上游引用", value: textField(space, "upstreamRef", "-") },
+        { label: "元数据策略", value: metadataPolicyLabel(space.metadataPolicy) },
+        { label: "敏感级别", value: textField(space, "sensitivity", "-") },
+      ],
+      externalSpace: space,
+    });
+  }
+  return cards;
+});
+
+const knowledgeBackendProviderCards = computed<KnowledgeBackendProviderCard[]>(() =>
+  knowledgeBackendProviderOptions.map((provider) => {
+    const spaces = knowledgeBackendSpaces.value.filter(
+      (space) => String(space.provider || "").toLowerCase() === provider.value,
+    );
+    const form = knowledgeBackendProviderForms.value[provider.value];
+    const contractVerified = spaces.some((space) => space.contractVerified) || form?.mode === "contract";
+    return {
+      provider: provider.value,
+      title: `${provider.label} 后端知识库`,
+      description: `${provider.label} 可作为 Pact 的外部后端知识库，按派生空间暴露给召回和入库链路。`,
+      statusLabel: spaces.length ? `${spaces.length} 个空间` : "待连接",
+      statusTone: spaces.length ? "success" : "warning",
+      meta: [
+        contractVerified ? "contract verified" : "live",
+        "secretRef only",
+        "可选后端",
+      ],
+      details: [
+        { label: "Provider", value: provider.label },
+        { label: "模式", value: form?.mode || "contract" },
+        { label: "Secret Ref", value: form?.secretRef || "-" },
+        { label: "Endpoint Ref", value: form?.endpointRef || "-" },
+        { label: "派生空间", value: `${spaces.length} 个` },
+        { label: "检索模式", value: spaces[0]?.retrievalModes ? JSON.stringify(spaces[0].retrievalModes) : "-" },
+      ],
+    };
+  }),
+);
+
+async function refreshKnowledgeLibrarySpaces() {
+  knowledgeLibraryBusy.value = "spaces";
+  knowledgeLibraryError.value = "";
+  try {
+    knowledgeBackendSpacesResult.value = await bridge.listKnowledgeSpaces();
+  } catch (caught) {
+    knowledgeLibraryError.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    knowledgeLibraryBusy.value = "";
+  }
+}
+
+async function refreshKnowledgeLibraryBoard() {
+  knowledgeLibraryBusy.value = "board";
+  knowledgeLibraryError.value = "";
+  try {
+    await Promise.all([
+      refreshKnowledgeConsole(),
+      bridge.listKnowledgeSpaces().then((result) => {
+        knowledgeBackendSpacesResult.value = result;
+      }),
+    ]);
+  } catch (caught) {
+    knowledgeLibraryError.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    knowledgeLibraryBusy.value = "";
+  }
+}
+
+async function connectKnowledgeBackendProvider(provider: string) {
+  const form = knowledgeBackendProviderForms.value[provider];
+  if (!form) {
+    return;
+  }
+  if (!canMaintainKnowledge.value) {
+    knowledgeLibraryError.value = "当前账号没有知识库维护权限。";
+    return;
+  }
+  knowledgeLibraryBusy.value = `backend:${provider}`;
+  knowledgeLibraryError.value = "";
+  try {
+    const result = await bridge.connectKnowledgeBackend({
+      provider,
+      mode: form.mode,
+      secretRef: form.secretRef,
+      endpointRef: form.endpointRef,
+    });
+    const publicProvider = result.provider && typeof result.provider === "object"
+      ? result.provider as Record<string, unknown>
+      : null;
+    if (publicProvider) {
+      knowledgeBackendProviderForms.value = {
+        ...knowledgeBackendProviderForms.value,
+        [provider]: {
+          mode: String(publicProvider.mode || form.mode || "contract"),
+          secretRef: String(publicProvider.secretRef || form.secretRef || ""),
+          endpointRef: String(publicProvider.endpointRef || form.endpointRef || ""),
+        },
+      };
+    }
+    await refreshKnowledgeLibrarySpaces();
+  } catch (caught) {
+    knowledgeLibraryError.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    if (knowledgeLibraryBusy.value === `backend:${provider}`) {
+      knowledgeLibraryBusy.value = "";
+    }
+  }
+}
+
+async function handleKnowledgeLibraryAction(library: KnowledgeLibraryCard, event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  knowledgeLibraryActionValues.value = {
+    ...knowledgeLibraryActionValues.value,
+    [library.id]: "",
+  };
+  if (!value) {
+    return;
+  }
+  if (value === "open-ingest") {
+    document
+      .getElementById("knowledge-file-import")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  try {
+    if (value === "refresh-source" && library.source) {
+      await refreshKnowledgeSource(library.source);
+    } else if (value === "force-refresh-source" && library.source) {
+      await refreshKnowledgeSource(library.source, true);
+    } else if (value === "refresh-spaces") {
+      await refreshKnowledgeLibrarySpaces();
+    } else if (value === "refresh-board") {
+      await refreshKnowledgeLibraryBoard();
+    }
+  } catch (caught) {
+    knowledgeLibraryError.value = caught instanceof Error ? caught.message : String(caught);
+  }
+}
+
+async function handleKnowledgeLibraryBoardAction(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  knowledgeLibraryActionValues.value = {
+    ...knowledgeLibraryActionValues.value,
+    board: "",
+  };
+  if (!value) {
+    return;
+  }
+  try {
+    if (value === "refresh-spaces") {
+      await refreshKnowledgeLibrarySpaces();
+    } else if (value === "refresh-board") {
+      await refreshKnowledgeLibraryBoard();
+    }
+  } catch (caught) {
+    knowledgeLibraryError.value = caught instanceof Error ? caught.message : String(caught);
+  }
+}
+
+onMounted(() => {
+  void refreshKnowledgeLibrarySpaces();
 });
 
 async function previewKnowledgeDocumentParsing() {
@@ -278,34 +607,6 @@ async function previewKnowledgeDocumentParsing() {
   });
 }
 
-async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search") {
-  knowledgeBackendBusy.value = action;
-  knowledgeBackendError.value = "";
-  try {
-    if (action === "connect") {
-      knowledgeBackendManifest.value = await bridge.connectKnowledgeBackend({
-        provider: knowledgeBackendProvider.value,
-        secretRef: `secret://pact/knowledge/${knowledgeBackendProvider.value}-api-key`,
-        mode: "contract",
-      });
-    } else if (action === "spaces") {
-      knowledgeBackendSpacesResult.value = await bridge.listKnowledgeSpaces({
-        provider: knowledgeBackendProvider.value,
-      });
-    } else {
-      knowledgeBackendSearchResult.value = await bridge.searchKnowledge({
-        provider: knowledgeBackendProvider.value,
-        knowledgeBackend: true,
-        query: knowledgeBackendQuery.value,
-        limit: 2,
-      }) as unknown as Record<string, unknown>;
-    }
-  } catch (caught) {
-    knowledgeBackendError.value = caught instanceof Error ? caught.message : String(caught);
-  } finally {
-    knowledgeBackendBusy.value = "";
-  }
-}
 </script>
 
 <template>
@@ -668,78 +969,116 @@ async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search"
 
             <article
               v-if="isManagementKnowledgePanel"
-              class="surface-card knowledge-backend-card"
+              class="surface-card knowledge-library-board"
             >
               <div class="section-header">
                 <div>
-                  <h3>外部知识库</h3>
-                  <p>Dify / RAGFlow 通过 KnowledgeBasePort 进入 Pact，配置只保存 secret ref 和派生空间元数据。</p>
+                  <h3>知识库</h3>
+                  <p>当前账号可见的内部与外部知识库。内部或外部是知识库状态，不作为配置选项。</p>
                 </div>
-                <StatusPill tone="info" label="contractVerified" />
-              </div>
-              <div class="maintenance-runner">
-                <OptionBar
-                  v-model="knowledgeBackendProvider"
-                  label="后端"
-                  :options="knowledgeBackendProviderOptions"
-                />
-                <label>
-                  <span>检索词</span>
-                  <input v-model="knowledgeBackendQuery" type="text" />
+                <label class="knowledge-library-board-action">
+                  <span>列表操作</span>
+                  <select
+                    :disabled="knowledgeLibraryBusy === 'board' || knowledgeLibraryBusy === 'spaces'"
+                    :value="knowledgeLibraryActionValues.board || ''"
+                    @change="handleKnowledgeLibraryBoardAction"
+                  >
+                    <option value="">选择操作</option>
+                    <option value="refresh-board">刷新全部</option>
+                    <option value="refresh-spaces">刷新外部空间</option>
+                  </select>
                 </label>
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="knowledgeBackendBusy === 'connect'"
-                  @click="runKnowledgeBackendAction('connect')"
-                >
-                  {{ knowledgeBackendBusy === "connect" ? "测试中" : "测试连接" }}
-                </button>
-                <button
-                  class="tool-button tool-button-ghost"
-                  type="button"
-                  :disabled="knowledgeBackendBusy === 'spaces'"
-                  @click="runKnowledgeBackendAction('spaces')"
-                >
-                  {{ knowledgeBackendBusy === "spaces" ? "读取中" : "列出空间" }}
-                </button>
-                <button
-                  class="tool-button tool-button-ghost"
-                  type="button"
-                  :disabled="knowledgeBackendBusy === 'search'"
-                  @click="runKnowledgeBackendAction('search')"
-                >
-                  {{ knowledgeBackendBusy === "search" ? "检索中" : "检索预览" }}
-                </button>
               </div>
-              <p v-if="knowledgeBackendError" class="module-note">{{ knowledgeBackendError }}</p>
-              <div v-if="knowledgeBackendProviders.length" class="job-table compact-job-table normalized-table">
-                <div class="job-table-header">
-                  <span>Provider</span>
-                  <span>Mode</span>
-                  <span>Secret</span>
-                </div>
-                <div v-for="provider in knowledgeBackendProviders" :key="String(provider.id)" class="job-row">
-                  <span>{{ provider.id }}</span>
-                  <span>{{ provider.mode }}</span>
-                  <span>{{ provider.secretRef }}</span>
-                </div>
+              <p v-if="knowledgeLibraryError" class="module-note warning-note">{{ knowledgeLibraryError }}</p>
+              <div class="knowledge-library-list">
+                <section
+                  v-for="library in knowledgeLibraryCards"
+                  :key="library.id"
+                  class="knowledge-library-card"
+                  :data-open="isKnowledgeLibraryCardExpanded(library.id)"
+                >
+                  <div class="knowledge-card-header">
+                    <div class="knowledge-card-toggle-content">
+                      <span class="knowledge-library-card-main">
+                        <strong>{{ library.title }}</strong>
+                        <small>{{ library.description }}</small>
+                        <span class="knowledge-library-card-meta">
+                          <span>{{ library.providerLabel }}</span>
+                          <span v-for="item in library.meta" :key="item">{{ item }}</span>
+                        </span>
+                      </span>
+                      <span class="knowledge-library-card-status">
+                        <StatusPill :tone="library.boundaryTone" :label="library.boundaryLabel" />
+                        <StatusPill :tone="library.statusTone" :label="library.statusLabel" />
+                      </span>
+                    </div>
+                    <button
+                      class="knowledge-card-icon-button"
+                      type="button"
+                      :aria-label="isKnowledgeLibraryCardExpanded(library.id) ? '收起知识库详情' : '展开知识库详情'"
+                      :title="isKnowledgeLibraryCardExpanded(library.id) ? '收起' : '展开'"
+                      :aria-expanded="isKnowledgeLibraryCardExpanded(library.id)"
+                      @click="toggleKnowledgeLibraryCard(library.id)"
+                    >
+                      <svg
+                        v-if="isKnowledgeLibraryCardExpanded(library.id)"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                  <div v-if="isKnowledgeLibraryCardExpanded(library.id)" class="knowledge-library-card-body">
+                    <div class="knowledge-library-detail-grid">
+                      <div
+                        v-for="detail in library.details"
+                        :key="`${library.id}:${detail.label}`"
+                      >
+                        <span>{{ detail.label }}</span>
+                        <strong>{{ detail.value }}</strong>
+                      </div>
+                    </div>
+                    <label class="knowledge-library-action-field">
+                      <span>操作</span>
+                      <select
+                        :disabled="knowledgeLibraryBusy !== ''"
+                        :value="knowledgeLibraryActionValues[library.id] || ''"
+                        @change="handleKnowledgeLibraryAction(library, $event)"
+                      >
+                        <option value="">选择操作</option>
+                        <option v-if="library.id === 'library:global'" value="open-ingest">知识入库</option>
+                        <option v-if="library.source" value="refresh-source">刷新同步</option>
+                        <option v-if="library.source" value="force-refresh-source">强制刷新</option>
+                        <option v-if="library.externalSpace" value="refresh-spaces">刷新外部空间</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
               </div>
-              <div v-if="knowledgeBackendSpaces.length" class="job-table compact-job-table normalized-table">
-                <div class="job-table-header">
-                  <span>派生空间</span>
-                  <span>Provider</span>
-                  <span>访问</span>
-                </div>
-                <div v-for="space in knowledgeBackendSpaces" :key="String(space.spaceId)" class="job-row">
-                  <span>{{ space.label }}</span>
-                  <span>{{ space.provider }}</span>
-                  <span>{{ space.accessMode }}</span>
-                </div>
-              </div>
-              <ConfigFoldCard v-if="knowledgeBackendSearchResult" title="检索预览 JSON">
-                <pre>{{ jsonPreview(knowledgeBackendSearchResult) }}</pre>
-              </ConfigFoldCard>
             </article>
 
             <article
@@ -749,9 +1088,85 @@ async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search"
             >
               <div class="section-header">
                 <div>
-                  <h3>临时上传</h3>
-                  <p>适合一次性导入少量文件。会持续更新的文件夹请使用系统配置中的“目录管理”。</p>
+                  <h3>知识入库</h3>
+                  <p>上传知识并选择入库目标，可同时进入全局知识空间、外部知识库、团队空间或用户私有空间。</p>
                 </div>
+              </div>
+              <div class="knowledge-ingest-target-panel">
+                <div class="knowledge-ingest-target-header">
+                  <strong>入库目标</strong>
+                  <span>{{ knowledgeIngestTargetSummary }}</span>
+                </div>
+                <div class="knowledge-ingest-target-grid">
+                  <div class="knowledge-ingest-target-option" :data-active="knowledgeIngestTargets.global">
+                    <div class="knowledge-ingest-check">
+                      <BinaryCheckbox v-model="knowledgeIngestTargets.global" label="全局知识空间" />
+                    </div>
+                    <small>平台级共享知识，面向具备权限的团队、用户和智能体使用。</small>
+                  </div>
+                  <div class="knowledge-ingest-target-option" :data-active="knowledgeIngestTargets.external">
+                    <div class="knowledge-ingest-check">
+                      <BinaryCheckbox v-model="knowledgeIngestTargets.external" label="外部知识库" />
+                    </div>
+                    <small>同步到 Dify、RAGFlow 等外部知识库空间。</small>
+                  </div>
+                  <div class="knowledge-ingest-target-option" :data-active="knowledgeIngestTargets.team">
+                    <div class="knowledge-ingest-check">
+                      <BinaryCheckbox v-model="knowledgeIngestTargets.team" label="团队空间" />
+                    </div>
+                    <small>指定一个或多个团队可见，团队权限继续作为上限。</small>
+                  </div>
+                  <div class="knowledge-ingest-target-option" :data-active="knowledgeIngestTargets.user">
+                    <div class="knowledge-ingest-check">
+                      <BinaryCheckbox v-model="knowledgeIngestTargets.user" label="用户私有空间" />
+                    </div>
+                    <small>仅给指定用户独立使用，可多选用户。</small>
+                  </div>
+                </div>
+                <div
+                  v-if="knowledgeIngestTargets.external || knowledgeIngestTargets.team || knowledgeIngestTargets.user"
+                  class="knowledge-ingest-target-detail-grid"
+                >
+                  <label v-if="knowledgeIngestTargets.external">
+                    <span>外部库类型</span>
+                    <select v-model="knowledgeIngestExternalProvider">
+                      <option
+                        v-for="provider in knowledgeBackendProviderOptions"
+                        :key="provider.value"
+                        :value="provider.value"
+                      >
+                        {{ provider.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label v-if="knowledgeIngestTargets.external" class="wide-field">
+                    <span>库 / 空间 ID</span>
+                    <input
+                      v-model="knowledgeIngestExternalRefs"
+                      autocomplete="off"
+                      placeholder="dataset-a, knowledge-base-b"
+                    />
+                  </label>
+                  <label v-if="knowledgeIngestTargets.team" class="wide-field">
+                    <span>团队空间</span>
+                    <input
+                      v-model="knowledgeIngestTeamRefs"
+                      autocomplete="off"
+                      placeholder="平台团队, 安全团队"
+                    />
+                  </label>
+                  <label v-if="knowledgeIngestTargets.user" class="wide-field">
+                    <span>用户</span>
+                    <input
+                      v-model="knowledgeIngestUserRefs"
+                      autocomplete="off"
+                      placeholder="owner, alice@example.com"
+                    />
+                  </label>
+                </div>
+                <p v-if="knowledgeIngestTargetValidationMessage" class="module-note warning-note">
+                  {{ knowledgeIngestTargetValidationMessage }}
+                </p>
               </div>
               <div class="ingest-upload-grid">
                 <div class="ingest-choice">
@@ -777,10 +1192,10 @@ async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search"
                 <button
                   class="primary-action"
                   type="button"
-                  :disabled="!canWriteJobs || busyKey === 'knowledge:ingest'"
+                  :disabled="!canWriteJobs || busyKey === 'knowledge:ingest' || ingestFiles.length === 0 || !canSubmitKnowledgeIngest"
                   @click="uploadFilesToKnowledge"
                 >
-                  {{ busyKey === "knowledge:ingest" ? "上传中" : "开始整理" }}
+                  {{ busyKey === "knowledge:ingest" ? "入库中" : "开始入库" }}
                 </button>
                 <button
                   class="tool-button tool-button-ghost"
@@ -791,7 +1206,7 @@ async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search"
                   预览解析
                 </button>
               </div>
-              <p class="module-note">{{ ingestProgress || "选择文件后，处理进度会显示在这里。" }}</p>
+              <p class="module-note">{{ ingestProgress || "选择文件并配置入库目标后，处理进度会显示在这里。" }}</p>
               <pre v-if="documentPreviewResult" class="module-json-preview">{{ jsonPreview(documentPreviewResult) }}</pre>
               <div v-if="ingestJob" class="ingest-queue-card">
                 <div>
@@ -845,323 +1260,480 @@ async function runKnowledgeBackendAction(action: "connect" | "spaces" | "search"
                   >
                     {{ busyKey === "knowledge:review-items" ? "刷新中" : "刷新列表" }}
                   </button>
-	                </div>
-	              </div>
-	              <section
-	                v-if="selectedKnowledgeReviewItem"
-	                class="knowledge-review-decision-card"
-	              >
-	                <header class="knowledge-review-decision-header">
-	                  <div>
-	                    <h4>{{ knowledgeReviewTitle(selectedKnowledgeReviewItem) }}</h4>
-	                    <span>{{ selectedKnowledgeReviewItem.reviewId }}</span>
-	                  </div>
-		                  <StatusPill
-		                    :tone="knowledgeReviewTone(selectedKnowledgeReviewItem)"
-		                    :label="knowledgeReviewStatusLabel(selectedKnowledgeReviewItem.status)"
-		                  />
-	                </header>
+                </div>
+              </div>
 
-	                <div class="knowledge-review-compare-grid">
-	                  <article class="knowledge-review-compare-panel">
-	                    <header>
-	                      <strong>原始内容</strong>
-	                      <code>{{ shortId(knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).sourceHash) }}</code>
-	                    </header>
-	                    <h5>{{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).title }}</h5>
-	                    <p>{{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).text }}</p>
-	                    <dl>
-	                      <div>
-	                        <dt>路径</dt>
-	                        <dd :title="knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).sourcePath">
-	                          {{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).sourcePath || "无" }}
-	                        </dd>
-	                      </div>
-	                      <div>
-	                        <dt>文档</dt>
-	                        <dd>{{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).documentId || "无" }}</dd>
-	                      </div>
-	                    </dl>
-	                  </article>
-	                  <article class="knowledge-review-compare-panel">
-	                    <header>
-	                      <strong>新的内容</strong>
-	                      <code>{{ shortId(knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).sourceHash) }}</code>
-	                    </header>
-	                    <h5>{{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).title }}</h5>
-	                    <p>{{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).text }}</p>
-	                    <dl>
-	                      <div>
-	                        <dt>路径</dt>
-	                        <dd :title="knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).sourcePath">
-	                          {{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).sourcePath || "无" }}
-	                        </dd>
-	                      </div>
-	                      <div>
-	                        <dt>文档</dt>
-	                        <dd>{{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).documentId || "无" }}</dd>
-	                      </div>
-	                    </dl>
-	                  </article>
-	                </div>
+              <section
+                v-if="selectedKnowledgeReviewItem"
+                class="knowledge-review-decision-card"
+              >
+                <header class="knowledge-review-decision-header">
+                  <div>
+                    <h4>{{ knowledgeReviewTitle(selectedKnowledgeReviewItem) }}</h4>
+                    <span>{{ selectedKnowledgeReviewItem.reviewId }}</span>
+                  </div>
+                  <StatusPill
+                    :tone="knowledgeReviewTone(selectedKnowledgeReviewItem)"
+                    :label="knowledgeReviewStatusLabel(selectedKnowledgeReviewItem.status)"
+                  />
+                </header>
 
-	                <div class="knowledge-review-analysis">
-	                  <div>
-	                    <span>冲突原因</span>
-	                    <strong>{{ knowledgeReviewReasonLabel(selectedKnowledgeReviewItem.reason) }}</strong>
-	                    <p>{{ selectedKnowledgeReviewItem.summary || "系统检测到该知识录入需要人工确认。" }}</p>
-	                  </div>
-	                  <div>
-	                    <span>初步分析建议</span>
-	                    <strong :data-tone="knowledgeReviewSimilarity(selectedKnowledgeReviewItem).tone">
-	                      {{ knowledgeReviewSimilarity(selectedKnowledgeReviewItem).label }}
-	                      · 相似度 {{ knowledgeReviewSimilarity(selectedKnowledgeReviewItem).percent }}
-	                    </strong>
-	                    <p>{{ knowledgeReviewSimilarity(selectedKnowledgeReviewItem).suggestion }}</p>
-	                  </div>
-	                </div>
+                <div class="knowledge-review-compare-grid">
+                  <article class="knowledge-review-compare-panel">
+                    <header>
+                      <strong>原始内容</strong>
+                      <code>{{ shortId(knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).sourceHash) }}</code>
+                    </header>
+                    <h5>{{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).title }}</h5>
+                    <p>{{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).text }}</p>
+                    <dl>
+                      <div>
+                        <dt>路径</dt>
+                        <dd :title="knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).sourcePath">
+                          {{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).sourcePath || "无" }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>文档</dt>
+                        <dd>{{ knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(selectedKnowledgeReviewItem)).documentId || "无" }}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                  <article class="knowledge-review-compare-panel">
+                    <header>
+                      <strong>新的内容</strong>
+                      <code>{{ shortId(knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).sourceHash) }}</code>
+                    </header>
+                    <h5>{{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).title }}</h5>
+                    <p>{{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).text }}</p>
+                    <dl>
+                      <div>
+                        <dt>路径</dt>
+                        <dd :title="knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).sourcePath">
+                          {{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).sourcePath || "无" }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>文档</dt>
+                        <dd>{{ knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(selectedKnowledgeReviewItem)).documentId || "无" }}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                </div>
 
-	                <footer class="knowledge-review-decision-footer">
-	                  <button
-	                    class="tool-button tool-button-ghost"
-	                    type="button"
-	                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || knowledgeReviewSimilarity(selectedKnowledgeReviewItem).disableKeepBoth || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`)"
-	                    @click="resolveKnowledgeReview(selectedKnowledgeReviewItem, 'keep_both')"
-	                  >
-	                    保留两者
-	                  </button>
-	                  <button
-	                    class="tool-button"
-	                    type="button"
-	                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`)"
-	                    @click="resolveKnowledgeReview(selectedKnowledgeReviewItem, 'replace')"
-	                  >
-	                    覆盖旧知识
-	                  </button>
-	                  <button
-	                    class="tool-button danger-action"
-	                    type="button"
-	                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`)"
-	                    @click="resolveKnowledgeReview(selectedKnowledgeReviewItem, 'reject')"
-	                  >
-	                    放弃新知识
-	                  </button>
-	                  <button
-	                    class="tool-button"
-	                    type="button"
-	                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`) || !selectedKnowledgeReviewFusionModel.enabled"
-	                    @click="fuseKnowledgeReview(selectedKnowledgeReviewItem)"
-	                  >
-	                    知识融合
-	                  </button>
-	                </footer>
-	              </section>
-	              <div class="responsive-table-wrap knowledge-conflict-table-wrap">
-	                <el-table
-	                  :data="knowledgeReviewItems"
-	                  row-key="reviewId"
-	                  border
-	                  stripe
-	                  size="small"
-	                  class="knowledge-conflict-table"
-	                  empty-text="暂无知识冲突"
-	                  :row-class-name="knowledgeReviewRowClassName"
-	                  @row-click="selectKnowledgeReviewItem"
-	                >
-	                <el-table-column type="expand">
-                  <template #default="{ row }">
-                    <div class="knowledge-conflict-expanded">
-                      <dl class="meta-list evidence-summary-list">
-                        <div>
-                          <dt>审核 ID</dt>
-                          <dd>{{ row.reviewId }}</dd>
-                        </div>
-                        <div>
-                          <dt>批次</dt>
-                          <dd>{{ row.batchId || "无" }}</dd>
-                        </div>
-                        <div>
-                          <dt>决策</dt>
-                          <dd>{{ knowledgeReviewResolvedAction(row) || "未决策" }}</dd>
-                        </div>
-                      </dl>
-                      <pre>{{ knowledgeReviewDetailText(row) }}</pre>
-                      <ConfigFoldCard title="机器结构">
-                        <pre>{{ jsonPreview(row) }}</pre>
-                      </ConfigFoldCard>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="类型" width="150" resizable>
-                  <template #default="{ row }">
-                    <div class="knowledge-conflict-kind">
-                      <StatusPill :tone="knowledgeReviewTone(row)" :label="knowledgeReviewStatusLabel(row.status)" />
-                      <small>{{ knowledgeReviewSourceLabel(row) }} / {{ knowledgeReviewReasonLabel(row.reason) }}</small>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="冲突对象" min-width="260" show-overflow-tooltip resizable>
-                  <template #default="{ row }">
-                    <div class="knowledge-log-target">
-                      <strong>{{ knowledgeReviewTitle(row) }}</strong>
-                      <small>{{ row.summary || row.entityId }}</small>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="当前记录" min-width="260" show-overflow-tooltip resizable>
-                  <template #default="{ row }">
-                    {{ knowledgeReviewDocumentLine(knowledgeReviewCurrentDocuments(row)[0]) }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="新录入记录" min-width="260" show-overflow-tooltip resizable>
-                  <template #default="{ row }">
-                    {{ knowledgeReviewDocumentLine(knowledgeReviewIncomingDocument(row)) }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="时间" width="142" resizable>
-                  <template #default="{ row }">
-                    <span :title="formatMachineDate(row.updatedAt, 'full')">
-                      {{ formatMachineDate(row.updatedAt, 'compact') }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="250" fixed="right" resizable>
-                  <template #default="{ row }">
-                    <div v-if="row.status === 'pending'" class="conflict-actions">
-                      <template v-if="knowledgeReviewCanResolveWithDocument(row)">
+                <div class="knowledge-review-analysis">
+                  <div>
+                    <span>冲突原因</span>
+                    <strong>{{ knowledgeReviewReasonLabel(selectedKnowledgeReviewItem.reason) }}</strong>
+                    <p>{{ selectedKnowledgeReviewItem.summary || "系统检测到该知识录入需要人工确认。" }}</p>
+                  </div>
+                  <div>
+                    <span>初步分析建议</span>
+                    <strong :data-tone="knowledgeReviewSimilarity(selectedKnowledgeReviewItem).tone">
+                      {{ knowledgeReviewSimilarity(selectedKnowledgeReviewItem).label }}
+                      · 相似度 {{ knowledgeReviewSimilarity(selectedKnowledgeReviewItem).percent }}
+                    </strong>
+                    <p>{{ knowledgeReviewSimilarity(selectedKnowledgeReviewItem).suggestion }}</p>
+                  </div>
+                </div>
+
+                <footer class="knowledge-review-decision-footer">
+                  <button
+                    class="tool-button tool-button-ghost"
+                    type="button"
+                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || knowledgeReviewSimilarity(selectedKnowledgeReviewItem).disableKeepBoth || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`)"
+                    @click="resolveKnowledgeReview(selectedKnowledgeReviewItem, 'keep_both')"
+                  >
+                    保留两者
+                  </button>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`)"
+                    @click="resolveKnowledgeReview(selectedKnowledgeReviewItem, 'replace')"
+                  >
+                    覆盖旧知识
+                  </button>
+                  <button
+                    class="tool-button danger-action"
+                    type="button"
+                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`)"
+                    @click="resolveKnowledgeReview(selectedKnowledgeReviewItem, 'reject')"
+                  >
+                    放弃新知识
+                  </button>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    :disabled="selectedKnowledgeReviewItem.status !== 'pending' || busyKey.startsWith(`knowledge:review:${selectedKnowledgeReviewItem.reviewId}:`) || !selectedKnowledgeReviewFusionModel.enabled"
+                    @click="fuseKnowledgeReview(selectedKnowledgeReviewItem)"
+                  >
+                    知识融合
+                  </button>
+                </footer>
+              </section>
+
+              <div class="responsive-table-wrap knowledge-conflict-table-wrap">
+                <el-table
+                  :data="knowledgeReviewItems"
+                  row-key="reviewId"
+                  border
+                  stripe
+                  size="small"
+                  class="knowledge-conflict-table"
+                  empty-text="暂无知识冲突"
+                  :row-class-name="knowledgeReviewRowClassName"
+                  @row-click="selectKnowledgeReviewItem"
+                >
+                  <el-table-column type="expand">
+                    <template #default="{ row }">
+                      <div class="knowledge-conflict-expanded">
+                        <dl class="meta-list evidence-summary-list">
+                          <div>
+                            <dt>审核 ID</dt>
+                            <dd>{{ row.reviewId }}</dd>
+                          </div>
+                          <div>
+                            <dt>批次</dt>
+                            <dd>{{ row.batchId || "无" }}</dd>
+                          </div>
+                          <div>
+                            <dt>决策</dt>
+                            <dd>{{ knowledgeReviewResolvedAction(row) || "未决策" }}</dd>
+                          </div>
+                        </dl>
+                        <pre>{{ knowledgeReviewDetailText(row) }}</pre>
+                        <ConfigFoldCard title="机器结构">
+                          <pre>{{ jsonPreview(row) }}</pre>
+                        </ConfigFoldCard>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="150" resizable>
+                    <template #default="{ row }">
+                      <div class="knowledge-conflict-kind">
+                        <StatusPill :tone="knowledgeReviewTone(row)" :label="knowledgeReviewStatusLabel(row.status)" />
+                        <small>{{ knowledgeReviewSourceLabel(row) }} / {{ knowledgeReviewReasonLabel(row.reason) }}</small>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="冲突对象" min-width="260" show-overflow-tooltip resizable>
+                    <template #default="{ row }">
+                      <div class="knowledge-log-target">
+                        <strong>{{ knowledgeReviewTitle(row) }}</strong>
+                        <small>{{ row.summary || row.entityId }}</small>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="当前记录" min-width="260" show-overflow-tooltip resizable>
+                    <template #default="{ row }">
+                      {{ knowledgeReviewDocumentLine(knowledgeReviewCurrentDocuments(row)[0]) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="新录入记录" min-width="260" show-overflow-tooltip resizable>
+                    <template #default="{ row }">
+                      {{ knowledgeReviewDocumentLine(knowledgeReviewIncomingDocument(row)) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="时间" width="142" resizable>
+                    <template #default="{ row }">
+                      <span :title="formatMachineDate(row.updatedAt, 'full')">
+                        {{ formatMachineDate(row.updatedAt, 'compact') }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="250" fixed="right" resizable>
+                    <template #default="{ row }">
+                      <div v-if="row.status === 'pending'" class="conflict-actions">
+                        <template v-if="knowledgeReviewCanResolveWithDocument(row)">
+                          <button
+                            v-if="row.reason === 'source_path_content_conflict'"
+                            class="table-action"
+                            type="button"
+                            :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
+                            @click="resolveKnowledgeReview(row, 'replace')"
+                          >
+                            覆盖旧知识
+                          </button>
+                          <button
+                            class="table-action"
+                            type="button"
+                            :disabled="knowledgeReviewSimilarity(row).disableKeepBoth || busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
+                            @click="resolveKnowledgeReview(row, 'keep_both')"
+                          >
+                            保留两者
+                          </button>
+                          <button
+                            class="table-action"
+                            type="button"
+                            :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`) || !selectedKnowledgeReviewFusionModel.enabled"
+                            @click="fuseKnowledgeReview(row)"
+                          >
+                            融合
+                          </button>
+                        </template>
                         <button
-                          v-if="row.reason === 'source_path_content_conflict'"
+                          v-else
                           class="table-action"
                           type="button"
-	                          :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
-	                          @click="resolveKnowledgeReview(row, 'replace')"
-	                        >
-	                          覆盖旧知识
-	                        </button>
-	                        <button
-	                          class="table-action"
-	                          type="button"
-	                          :disabled="knowledgeReviewSimilarity(row).disableKeepBoth || busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
-	                          @click="resolveKnowledgeReview(row, 'keep_both')"
-	                        >
-	                          保留两者
-	                        </button>
-	                        <button
-	                          class="table-action"
-	                          type="button"
-	                          :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`) || !selectedKnowledgeReviewFusionModel.enabled"
-	                          @click="fuseKnowledgeReview(row)"
-	                        >
-	                          融合
-	                        </button>
-	                      </template>
-                      <button
-                        v-else
-                        class="table-action"
-                        type="button"
-                        :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
-                        @click="resolveKnowledgeReview(row, 'accept')"
-                      >
-                        接受
-                      </button>
-                      <button
-                        class="table-action danger-action"
-                        type="button"
-                        :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
-                        @click="resolveKnowledgeReview(row, 'reject')"
-                      >
-	                        放弃
-	                      </button>
-	                    </div>
-	                    <span v-else>{{ knowledgeReviewStatusLabel(row.status) }}</span>
-	                  </template>
-	                </el-table-column>
-	                </el-table>
-	              </div>
-	            </article>
+                          :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
+                          @click="resolveKnowledgeReview(row, 'accept')"
+                        >
+                          接受
+                        </button>
+                        <button
+                          class="table-action danger-action"
+                          type="button"
+                          :disabled="busyKey.startsWith(`knowledge:review:${row.reviewId}:`)"
+                          @click="resolveKnowledgeReview(row, 'reject')"
+                        >
+                          放弃
+                        </button>
+                      </div>
+                      <span v-else>{{ knowledgeReviewStatusLabel(row.status) }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </article>
 
             <article v-if="activeKnowledgeTab === 'maintenance'" class="surface-card knowledge-maintenance">
               <div class="section-header">
                 <div>
-                  <h3>知识库配置</h3>
-                  <p>调整检索、索引、衰减策略和维护任务。危险操作会要求二次确认。</p>
+                  <h3>后端知识库配置</h3>
+                  <p>内建 KnowledgeCore 和外部知识库都作为可选后端提供，按卡片顺序配置。</p>
                 </div>
                 <button class="tool-button" type="button" @click="refreshKnowledgeConsole">
                   重新加载
                 </button>
               </div>
-              <div v-for="group in knowledgeSchema?.groups || []" :key="group.id" class="config-group">
-                <div class="config-group-header">
-                  <h4>{{ group.label }}</h4>
-                  <p>{{ knowledgeConfigGroupDescription(group.id) }}</p>
-                </div>
-                <div class="form-grid compact-form-grid">
-                  <label v-for="field in group.fields" :key="field.name">
-                    <span>{{ field.label }}</span>
-                    <input
-                      v-if="field.type === 'number'"
-                      :value="maintenanceFieldValue(field.name, field.defaultValue)"
-                      type="number"
-                      :min="field.min"
-                      :max="field.max"
-                      :step="field.step || 1"
-                      @input="setMaintenanceFieldFromEvent(field.name, $event, 'number')"
-                    />
-                    <OptionBar
-                      v-else-if="field.type === 'boolean'"
-                      :model-value="maintenanceFieldValue(field.name, field.defaultValue) ? 'true' : 'false'"
-                      :options="enabledStringOptionBarOptions"
-                      @update:model-value="setMaintenanceFieldValue(field.name, $event === 'true')"
-                    />
-                    <input
-                      v-else
-                      :value="String(maintenanceFieldValue(field.name, field.defaultValue) ?? '')"
-                      type="text"
-                      @input="setMaintenanceFieldFromEvent(field.name, $event, 'string')"
-                    />
-                    <small v-if="field.description" class="field-hint">{{ field.description }}</small>
-                  </label>
-                </div>
-              </div>
-              <ConfigFoldCard title="高级 JSON Diff">
-                <label class="json-editor">
-                  <span>只在需要精确修改服务端配置对象时展开</span>
-                  <textarea v-model="maintenanceJson" rows="10" spellcheck="false" />
-                </label>
-              </ConfigFoldCard>
-              <div class="source-actions">
-                <button class="primary-action" type="button" :disabled="!canAdminKnowledge" @click="saveKnowledgeMaintenance">
-                  保存配置
-                </button>
-              </div>
-              <div class="maintenance-task-section">
-                <div class="config-group-header">
-                  <h4>手动维护任务</h4>
-                  <p>这不是配置项，而是一次性执行的知识库维护动作；用于校验、修复、清理、重建索引或触发进化学习。</p>
-                </div>
-                <div class="maintenance-runner">
-                  <OptionBar
-                    v-model="selectedMaintenanceTask"
-                    :options="maintenanceTaskOptionBarOptions"
-                  />
-                  <BinaryCheckbox
-                    v-model="maintenanceConfirm"
-                    label="确认执行"
-                  />
-                  <BinaryCheckbox
-                    v-if="currentMaintenanceTaskSupportsDryRun"
-                    v-model="maintenanceDryRun"
-                    label="仅预览"
-                  />
-                  <button class="tool-button" type="button" :disabled="!canMaintainKnowledge" @click="runKnowledgeMaintenanceTask">
-                    执行维护任务
-                  </button>
-                </div>
-                <small class="field-hint">{{ knowledgeMaintenanceTaskDescription(selectedMaintenanceTask) }}</small>
-                <p class="module-note" v-if="currentMaintenanceTask?.requiresConfirm">
-                  当前任务需要 confirm=true，可能重建索引或删除对象。
-                </p>
-                <pre v-if="maintenanceResultJson">{{ maintenanceResultJson }}</pre>
+              <p v-if="knowledgeLibraryError" class="module-note warning-note">{{ knowledgeLibraryError }}</p>
+
+              <div class="knowledge-backend-config-list">
+                <section
+                  class="knowledge-backend-config-card"
+                  :data-open="isKnowledgeBackendCardExpanded('builtin')"
+                >
+                  <div class="knowledge-card-header">
+                    <div class="knowledge-card-toggle-content">
+                      <span class="knowledge-library-card-main">
+                        <strong>内建知识库 / Pact KnowledgeCore</strong>
+                        <small>这是平台内建知识库，承载统一入库、索引、证据读取、权限和审计链路。</small>
+                        <span class="knowledge-library-card-meta">
+                          <span>Pact</span>
+                          <span>internal</span>
+                          <span>{{ knowledgeConsole?.available ? "available" : "unavailable" }}</span>
+                        </span>
+                      </span>
+                      <span class="knowledge-library-card-status">
+                        <StatusPill tone="info" label="内建" />
+                        <StatusPill :tone="knowledgeConsole?.available ? 'success' : 'danger'" :label="knowledgeConsole?.available ? '可用' : '不可用'" />
+                      </span>
+                    </div>
+                    <button
+                      class="knowledge-card-icon-button"
+                      type="button"
+                      :aria-label="isKnowledgeBackendCardExpanded('builtin') ? '收起后端知识库配置' : '展开后端知识库配置'"
+                      :title="isKnowledgeBackendCardExpanded('builtin') ? '收起' : '展开'"
+                      :aria-expanded="isKnowledgeBackendCardExpanded('builtin')"
+                      @click="toggleKnowledgeBackendCard('builtin')"
+                    >
+                      <svg
+                        v-if="isKnowledgeBackendCardExpanded('builtin')"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                  <div v-if="isKnowledgeBackendCardExpanded('builtin')" class="knowledge-backend-config-card-body">
+                    <div v-for="group in knowledgeSchema?.groups || []" :key="group.id" class="config-group">
+                      <div class="config-group-header">
+                        <h4>{{ group.label }}</h4>
+                        <p>{{ knowledgeConfigGroupDescription(group.id) }}</p>
+                      </div>
+                      <div class="form-grid compact-form-grid">
+                        <label v-for="field in group.fields" :key="field.name">
+                          <span>{{ field.label }}</span>
+                          <input
+                            v-if="field.type === 'number'"
+                            :value="maintenanceFieldValue(field.name, field.defaultValue)"
+                            type="number"
+                            :min="field.min"
+                            :max="field.max"
+                            :step="field.step || 1"
+                            @input="setMaintenanceFieldFromEvent(field.name, $event, 'number')"
+                          />
+                          <OptionBar
+                            v-else-if="field.type === 'boolean'"
+                            :model-value="maintenanceFieldValue(field.name, field.defaultValue) ? 'true' : 'false'"
+                            :options="enabledStringOptionBarOptions"
+                            @update:model-value="setMaintenanceFieldValue(field.name, $event === 'true')"
+                          />
+                          <input
+                            v-else
+                            :value="String(maintenanceFieldValue(field.name, field.defaultValue) ?? '')"
+                            type="text"
+                            @input="setMaintenanceFieldFromEvent(field.name, $event, 'string')"
+                          />
+                          <small v-if="field.description" class="field-hint">{{ field.description }}</small>
+                        </label>
+                      </div>
+                    </div>
+                    <ConfigFoldCard title="高级 JSON Diff">
+                      <label class="json-editor">
+                        <span>只在需要精确修改服务端配置对象时展开</span>
+                        <textarea v-model="maintenanceJson" rows="10" spellcheck="false" />
+                      </label>
+                    </ConfigFoldCard>
+                    <div class="source-actions">
+                      <button class="primary-action" type="button" :disabled="!canAdminKnowledge" @click="saveKnowledgeMaintenance">
+                        保存内建知识库配置
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <section
+                  v-for="backend in knowledgeBackendProviderCards"
+                  :key="backend.provider"
+                  class="knowledge-backend-config-card"
+                  :data-open="isKnowledgeBackendCardExpanded(backend.provider)"
+                >
+                  <div class="knowledge-card-header">
+                    <div class="knowledge-card-toggle-content">
+                      <span class="knowledge-library-card-main">
+                        <strong>{{ backend.title }}</strong>
+                        <small>{{ backend.description }}</small>
+                        <span class="knowledge-library-card-meta">
+                          <span v-for="item in backend.meta" :key="`${backend.provider}:${item}`">{{ item }}</span>
+                        </span>
+                      </span>
+                      <span class="knowledge-library-card-status">
+                        <StatusPill tone="warning" label="外部" />
+                        <StatusPill :tone="backend.statusTone" :label="backend.statusLabel" />
+                      </span>
+                    </div>
+                    <button
+                      class="knowledge-card-icon-button"
+                      type="button"
+                      :aria-label="isKnowledgeBackendCardExpanded(backend.provider) ? '收起后端知识库配置' : '展开后端知识库配置'"
+                      :title="isKnowledgeBackendCardExpanded(backend.provider) ? '收起' : '展开'"
+                      :aria-expanded="isKnowledgeBackendCardExpanded(backend.provider)"
+                      @click="toggleKnowledgeBackendCard(backend.provider)"
+                    >
+                      <svg
+                        v-if="isKnowledgeBackendCardExpanded(backend.provider)"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                  <div v-if="isKnowledgeBackendCardExpanded(backend.provider)" class="knowledge-backend-config-card-body">
+                    <div class="knowledge-library-detail-grid">
+                      <div
+                        v-for="detail in backend.details"
+                        :key="`${backend.provider}:${detail.label}`"
+                      >
+                        <span>{{ detail.label }}</span>
+                        <strong>{{ detail.value }}</strong>
+                      </div>
+                    </div>
+                    <div class="form-grid compact-form-grid knowledge-backend-provider-form">
+                      <label>
+                        <span>连接模式</span>
+                        <select v-model="knowledgeBackendProviderForms[backend.provider].mode">
+                          <option value="contract">contract</option>
+                          <option value="live">live</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Secret Ref</span>
+                        <input
+                          v-model="knowledgeBackendProviderForms[backend.provider].secretRef"
+                          autocomplete="off"
+                          placeholder="secret://pact/knowledge/provider-api-key"
+                        />
+                        <small class="field-hint">只允许 secret:// 引用，不在管控台保存明文密钥。</small>
+                      </label>
+                      <label>
+                        <span>Endpoint Ref</span>
+                        <input
+                          v-model="knowledgeBackendProviderForms[backend.provider].endpointRef"
+                          autocomplete="off"
+                          placeholder="config://pact/knowledge/provider-endpoint"
+                        />
+                      </label>
+                    </div>
+                    <div class="source-actions">
+                      <button
+                        class="primary-action"
+                        type="button"
+                        :disabled="!canMaintainKnowledge || knowledgeLibraryBusy !== ''"
+                        @click="connectKnowledgeBackendProvider(backend.provider)"
+                      >
+                        {{ knowledgeLibraryBusy === `backend:${backend.provider}` ? "连接中" : "保存并连接" }}
+                      </button>
+                      <button
+                        class="tool-button tool-button-ghost"
+                        type="button"
+                        :disabled="knowledgeLibraryBusy !== ''"
+                        @click="refreshKnowledgeLibrarySpaces"
+                      >
+                        刷新派生空间
+                      </button>
+                    </div>
+                  </div>
+                </section>
               </div>
             </article>
 
