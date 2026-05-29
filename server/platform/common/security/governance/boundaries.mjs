@@ -5,21 +5,21 @@ import {
 
 export const SECURITY_BOUNDARIES = Object.freeze([
   {
-    id: SECURITY_BOUNDARY_IDS.CLIENT_RUNTIME_PACT_PLATFORM,
-    label: "客户端运行环境与 Pact 平台之间的边界",
-    shortLabel: "客户端边界",
-    fromEnvironmentId: SECURITY_ENVIRONMENT_IDS.CLIENT_RUNTIME,
-    toEnvironmentId: SECURITY_ENVIRONMENT_IDS.PACT_PLATFORM,
-    governanceObject: "面向客户端的治理",
-    trustAssumption: "客户端运行环境是部分可信或不可信环境；客户端声明必须由 Pact 重新验证。"
+    id: SECURITY_BOUNDARY_IDS.CLIENT_MCP_INGRESS,
+    label: "客户端 MCP 入口",
+    shortLabel: "客户端 MCP 入口",
+    fromEnvironmentId: SECURITY_ENVIRONMENT_IDS.TERMINAL_AGENT,
+    toEnvironmentId: SECURITY_ENVIRONMENT_IDS.PLATFORM_RUNTIME,
+    governanceScope: "面向客户端 MCP 入口的治理",
+    trustAssumption: "终端智能体是部分可信或不可信环境；通过客户端 MCP 入口进入平台运行时的声明必须被重新验证。"
   },
   {
-    id: SECURITY_BOUNDARY_IDS.EXTERNAL_SERVICE_PACT_PLATFORM,
-    label: "外部服务与 Pact 平台之间的边界",
-    shortLabel: "外部服务边界",
-    fromEnvironmentId: SECURITY_ENVIRONMENT_IDS.PACT_PLATFORM,
-    toEnvironmentId: SECURITY_ENVIRONMENT_IDS.EXTERNAL_SERVICE,
-    governanceObject: "面向外部服务的治理",
-    trustAssumption: "外部服务是 Pact 管控之外的系统；provider 返回状态必须被校验、归一化、登记和审计。"
+    id: SECURITY_BOUNDARY_IDS.SERVER_API_EGRESS,
+    label: "服务端 API 出口",
+    shortLabel: "服务端 API 出口",
+    fromEnvironmentId: SECURITY_ENVIRONMENT_IDS.PLATFORM_RUNTIME,
+    toEnvironmentId: SECURITY_ENVIRONMENT_IDS.APPLICATION_SERVER,
+    governanceScope: "面向服务端 API 出口的治理",
+    trustAssumption: "应用服务器是平台运行时管控之外的系统；服务端 API 出口返回的状态必须被校验、归一化、登记和审计。"
   }
 ]);

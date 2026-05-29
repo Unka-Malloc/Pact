@@ -6,5 +6,5 @@ export function describePlatformSelfGovernance() {
 }
 
 export function listPlatformSelfGovernanceControls() {
-  return describePlatformSelfGovernance().controlsByGoal;
+  return describePlatformSelfGovernance().controlsByObject;
 }

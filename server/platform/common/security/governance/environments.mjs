@@ -2,9 +2,9 @@ import { SECURITY_ENVIRONMENT_IDS } from "./security-governance-constants.mjs";
 
 export const SECURITY_ENVIRONMENTS = Object.freeze([
   {
-    id: SECURITY_ENVIRONMENT_IDS.CLIENT_RUNTIME,
-    label: "客户端运行环境",
-    role: "Pact 之外、主动向 Pact 发起操作的一侧。",
+    id: SECURITY_ENVIRONMENT_IDS.TERMINAL_AGENT,
+    label: "终端智能体",
+    role: "平台运行时之外、通过客户端 MCP 入口主动发起操作的一侧。",
     typicalComponents: Object.freeze([
       "本地智能体",
       "MCP connector",
@@ -15,8 +15,8 @@ export const SECURITY_ENVIRONMENTS = Object.freeze([
     ])
   },
   {
-    id: SECURITY_ENVIRONMENT_IDS.PACT_PLATFORM,
-    label: "Pact 平台环境",
+    id: SECURITY_ENVIRONMENT_IDS.PLATFORM_RUNTIME,
+    label: "平台运行时",
     role: "安全治理中心，负责 Operation、Capability 裁决、状态提交、审计证据和恢复事实。",
     typicalComponents: Object.freeze([
       "MCP service",
@@ -30,9 +30,9 @@ export const SECURITY_ENVIRONMENTS = Object.freeze([
     ])
   },
   {
-    id: SECURITY_ENVIRONMENT_IDS.EXTERNAL_SERVICE,
-    label: "外部服务环境",
-    role: "Pact 之外、被 Pact 调用或向 Pact 回调的 provider 环境。",
+    id: SECURITY_ENVIRONMENT_IDS.APPLICATION_SERVER,
+    label: "应用服务器",
+    role: "平台运行时之外、通过服务端 API 出口被调用、写入、同步或回调的一侧。",
     typicalComponents: Object.freeze([
       "模型 provider",
       "GitHub/Gerrit",

@@ -358,11 +358,11 @@
 
 ### P0-07 安全、租户、权限和密钥边界未达到生产审计标准
 
-当前差距：已有 console auth、CSRF、session token rotation、Tool Management grant、scope、policy、tenant/resource ABAC 基础裁决、审计保留和脱敏导出，但生产还需要更完整的 secret management、工具沙箱、外部连接器真实 OAuth、外部 connector token rotation、OTel 导出和跨真实外部系统的权限证据。
+当前差距：已有 console auth、CSRF、session token rotation、Tool Management grant、scope、policy、tenant/resource ABAC 基础裁决、审计保留和脱敏导出，但生产还需要更完整的 secret management、工具沙箱、外部连接器真实 OAuth、外部 connector token rotation、OTel 导出、跨真实外部系统的权限证据，以及不依赖普通业务数据库的 Capability Key 内核边界。
 
-对标依据：OpenTelemetry 和 Phoenix 都强调 trace/评估中的输入输出可见性，但这也要求敏感信息治理；企业生产中工具调用和知识检索必须能证明谁在何时访问了哪些数据、通过哪个 grant、输出给了谁。
+对标依据：OpenTelemetry 和 Phoenix 都强调 trace/评估中的输入输出可见性，但这也要求敏感信息治理；企业生产中工具调用和知识检索必须能证明谁在何时访问了哪些数据、通过哪个 grant、输出给了谁。密钥设计参考 OAuth opaque token / introspection、Vault service token、Linux kernel key retention service、OS Keychain / KMS / HSM，以及 Macaroons、Biscuit、UCAN、SD-JWT、Merkle proof、cryptographic accumulator 和 ZK set membership 等主流授权凭据方案的取舍。
 
-为什么缺：当前实现偏本地团队共享和研发验证，尚未把企业安全审计作为一级能力建模。
+为什么缺：当前实现偏本地团队共享和研发验证，尚未把企业安全审计作为一级能力建模。更关键的是，Pact 后续会提供智能巡检、维护 worker 和运维智能体；这些智能体极可能运行在用户部署设备上，并具备检查、修复、写文件或写运行态数据的能力。因此普通 SQLite、JSON 状态文件、业务数据库和智能体可写 data dir 都必须按可见、可泄漏、可篡改处理，不能作为权限最终事实源。
 
 能否补全：可以。
 
@@ -373,20 +373,229 @@
 - 工具执行必须按风险等级分层：read、write、repair、external side effect、shell/process。
 - 密钥只保存 secret ref，不进入 settings JSON、trace、export、bundle。
 - 增加安全门禁：越权检索、越权导出、工具越权、secret leak、trace leak。
+- 建立 Capability Key Kernel：调用者只持有一个 opaque key；内核只接受 `opaqueKey + requestedCapability` 并返回 allow/deny；普通业务 DB 只能做审计投影、展示、申请单或缓存，不能参与最终裁决。
+
+#### Capability Key 设计要求
+
+上层安全边界固定为两条：
+
+1. 客户端 MCP 入口。
+2. 服务端 API 出口。
+
+环境固定为三个：
+
+- 终端智能体。
+- 平台运行时。
+- 应用服务器。
+
+两条边界共用五个对象：
+
+| 对象 | 终端智能体 -> 平台运行时（客户端 MCP 入口） | 平台运行时 -> 应用服务器（服务端 API 出口） |
+| --- | --- | --- |
+| 身份与准入认证 | client、agent、user、device、MCP grant、opaque key 绑定 | provider account、OAuth、API key、service account、secretRef、tenant 映射 |
+| 权限与行为策略 | operation、tool、skill、workspace、dataClass、egress、高风险确认 | provider scope、读写删同步权限、外部副作用审批、Capability 到 provider scope 映射 |
+| 数据与状态语义 | 上传、下载、context、memory、export、asset 状态、client lifecycle、路径安全 | import、export、sync、mirror、credential lifecycle、connector lifecycle、etag/version、durable id、真实持久化状态 |
+| 流量与资源管理 | QPS、并发、上传速率、队列、quota、上下文大小 | provider 限流、重试、熔断、模型 token 成本、API 成本、同步频率 |
+| 审计与事实验证 | receipt、loan、denied request、trace、checkpoint、recovery evidence | provider receipt、webhook 证据、external failure evidence、合规保留 |
+
+生命周期状态归入“数据与状态语义”，不作为第五类对象。审计与事实验证只负责证明状态迁移、权限裁决、外部副作用和拒绝结果。
+
+已确认硬约束：
+
+- 调用者只拿一个密钥。密钥不是 JWT，不是 `header.payload.signature`，不暴露 capability 列表，不携带用户、组织、角色或智能体身份。
+- 内核只验证指定 Capability。调用形态固定为 `verify(opaqueKey, requestedCapability)`，默认只返回 allow/deny、reasonCode 和最小 credential 摘要；不提供“列出这个 key 的全部权限”接口，也不在默认裁决响应中暴露 keyHash、capabilitySetHash、完整 capability 数量、metadata 或 constraints。授权审计落盘时同样必须脱敏：decision 和直接 denied request 入口都不能保存原始 opaque key、keyHash、capabilitySetHash、lookup key 或完整 subject capability 集合。
+- `ock_` 密钥不能被当成 legacy bearer token 使用。只要请求携带 opaque capability key，执行路径必须进入 Capability Kernel；Kernel provider 不可用或不支持 `verify()` 时必须拒绝并返回 `capability_kernel_unavailable`，不能回退到 token hash、scope、toolset 或普通 grant 策略。
+- denied request 审计必须可精确取证。存储和控制台/RPC 查询至少支持按 `reasonCode`、`operationId`、`toolId`、`subjectId`、`tenantId` 和 `workspaceId` 组合过滤，避免只能靠最新记录或全文扫描判断拒绝原因。
+- 权限内核只认 Capability。组织、用户、Owner、智能体、角色和 namespace binding 都不能进入内核权限模型；这些只能由内核外的绑定层验证。
+- Capability 必须细粒度、稳定、写死到内核 manifest。调用凭据只和 Capability 关联，不能和业务身份字段混用。
+- Capability manifest 是强约束，不是提示列表。签发、轮换或 Tool Management grant 中出现未知 Capability 必须拒绝；不能静默过滤，也不能降级为 legacy token、scope 或业务 DB 裁决。
+- 普通数据库不是安全边界。业务 DB、可见 DB、智能体可写 DB、JSON 运行态文件都不能作为权限事实源。
+- 权限事实源必须被封装在 Capability Kernel 和 OS Keychain、Secure Enclave、TPM、DPAPI/CNG、KMS、HSM、TEE 或远端权限服务边界内。默认个人版不创建独立系统用户；增强模式才启用独立 helper / service user。
+- 不允许 Root 权限密钥、Owner 万能密钥或业务级内核万能 key。内核可以有本地 cryptographic secret，但它只能用于索引、完整性或 sealed state，不代表任何权限主体。
+
+不可满足性边界：
+
+```text
+如果只有一个随机 opaque key，
+且 key 本身不携带权限证明，
+且内核没有任何可信状态，
+那么 verify(key, requestedCapability) 无法区分 allow / deny。
+```
+
+因此可行路线只能二选一：
+
+1. 有可信封装状态：key 本身只是随机句柄，权限关系在 Capability Kernel 的 sealed state 中。
+2. 无状态凭据：key/token 自带权限声明、权限承诺或成员证明。
+
+Pact 的当前硬约束排除了普通 DB 状态，也排除了暴露权限列表；因此推荐基线是第一类，但状态必须封装在智能体不可直接读写的安全边界内，而不是普通业务数据库。
+
+#### 推荐基线方案
+
+```text
+caller
+  -> opaqueKey
+  -> namespace/user/agent binding guard
+  -> requestedCapability
+  -> Capability Kernel verify(opaqueKey, requestedCapability)
+  -> allow / deny
+```
+
+Capability Kernel 内部可以使用如下结构，但这些结构不得出现在普通业务 DB 中：
+
+```text
+keyIndex        = HMAC(kernelIndexSecret, opaqueKey)
+bindingIndex    = HMAC(kernelIndexSecret, opaqueKey || requestedCapability || epoch)
+recordStatus    = valid | invalid
+stateRoot       = hash-chain / Merkle root / sealed epoch
+```
+
+验证时只计算当前 `requestedCapability` 的绑定索引，不读取、不返回、不暴露该 key 的完整 capability 集合。轮换时生成新 opaque key 并把旧 key 置为 invalid；撤销只产生 invalid 状态，不引入 active / verify-only / signing 等多重业务状态。
+
+`kernelIndexSecret` / runtime lookup key 只用于本地 HMAC 索引，不是 Root key，也不代表任何权限。因为内核不保存明文 opaque key，已有 Capability binding 后不能单独轮换 runtime lookup key；否则无法重算旧 key 的索引。密钥滚动必须发生在调用密钥层：`rotateCapabilityKey` 新发 `ock_`，旧 key 立即置为 invalid，Capability 集合按新签发记录写入 sealed state。
+
+Binding Guard 是内核外层，不属于权限内核模型。它的输入是 `opaqueKey + namespace + userId + agentId + clientId`，输出也是 allow/deny；它不能返回某个 key 绑定了哪些用户或智能体。内部只保存 HMAC 后的 key/user/agent/client/namespace 索引和 `valid | invalid` 状态，普通 Tool Management DB 里的 grant metadata 只能作为展示、申请单和审计投影，不能作为错绑放行依据。这样可以满足：
+
+- 同一个 Capability Key 仍然只和 Capability Kernel 内的 Capability 关联。
+- 用户、智能体和 namespace 不进入 Capability Kernel。
+- 如果请求报文声称的 user/agent 与签发时 sealed binding 不一致，即使普通 DB metadata 被改成匹配，也必须拒绝。
+- 未迁移的旧 key 没有 sealed binding 时可按兼容策略标记 `capability_binding_not_registered`，不把普通 DB 提升为事实源。
+
+默认存储模型：
+
+```text
+OS keyring:
+  pact.capability.kernel.state = AEAD({
+    epoch,
+    validKeyIndexes,
+    validBindingIndexes,
+    revokedKeyIndexes,
+    stateRoot
+  })
+
+fallback file:
+  <dataDir>/security/capability-kernel/state.sealed
+  仅在 OS keyring 不可用时使用；必须在 UI/doctor/audit 中标记为 degraded。
+
+  <dataDir>/security/capability-binding-guard/state.sealed
+  保存 key/user/agent/client/namespace 的 HMAC binding；同样只能作为 degraded fallback。
+
+process memory:
+  validKeyIndexes
+  validBindingIndexes
+  revokedKeyIndexes
+  epoch
+```
+
+默认模式下，Capability Kernel 启动时优先从 OS keyring 读取 sealed state blob，解密校验后构建内存索引；高频 `verify(opaqueKey, requestedCapability)` 只查内存，不在每次请求中访问 keyring。`issue/revoke/rotate` 修改内存后，重新封装 state blob 并写回当前后端。
+
+可用性优先。OS keyring 不可用时允许降级到本机文件后端，使用 `ServerConfig.getDataDir()/security/capability-kernel/*.sealed.json` 这类路径保存 sealed state，并把本机 sealing key 拆到同目录 `*.sealing-key` sidecar。两个文件都必须在私有目录下以 `0600` 权限原子写入；主状态文件不得嵌入 sealing key、明文 capability、opaque key、userId 或 agentId。文件后端不是生产安全边界，不能伪装成 keyring-backed；doctor、控制台和审计必须标记 `securityMode=degraded_file_fallback`。文件后端仍然不能使用业务 DB、Tool Management DB 或普通配置 JSON 作为权限事实源。
+
+sealed state 写入必须串行化。Capability Kernel 和 Binding Guard 都维护内部 mutation queue；跨 helper / CLI / server 进程再使用 data dir 下的私有 lock file。并发签发、绑定、撤销、恢复导入和调用密钥轮换按顺序提交，首次 runtime lookup key 初始化也必须在锁内完成并持久化；读路径在当前写入完成后再返回裁决或 recovery package。这样保证 file fallback 和 keyring-backed 模式不会在高并发本机调用下出现后写覆盖先写的权限状态丢失。
+
+增强模式的第一步是命令级安全 helper，而不是立即要求用户安装长期驻留 daemon 或独立系统用户。`pact.capability-security-helper.v1` 接收一次 JSON 请求，在独立子进程内加载 Capability Kernel 与 Binding Guard，完成 `issueCapabilityKey`、`verifyCapability`、`verifyBinding`、`verifyCapabilityAndBinding` 和撤销操作，只返回当前请求的 allow/deny、reasonCode 与必要 credential 摘要；它不提供列出某个 key 全部 Capability 或绑定身份集合的接口。这个模式仍然继承当前后端的安全边界：keyring-backed 时可防普通业务 DB 和 grant projection 篡改，file fallback 时只保证可用和语义一致，不承诺同 OS 用户恶意进程隔离。
+
+恢复和迁移必须支持 recovery package：
+
+```text
+pact security recovery export
+pact security recovery import
+```
+
+recovery package 用于换机器、重装系统、keyring 损坏或从 file fallback 升级到 keyring。导出必须有用户确认，默认加密，可包含 sealed state、epoch、stateRoot、后端类型和迁移元数据；不得进入普通 trace、bundle、checkpoint node 或审计导出。
+
+`pact security recovery export` 输出统一安全恢复包 `pact.security-recovery.v1`，其中包含两个互相独立的加密组件：
+
+- `capabilityKernel`：恢复 opaque key 与 Capability 的 sealed binding。
+- `capabilityBindingGuard`：恢复 opaque key 与 namespace/user/agent/client 的 sealed binding。
+
+两个组件都使用 recovery passphrase 单独派生密钥并 AEAD 封装；包外只暴露 protocol、alias、epoch 和 stateRoot 摘要，不暴露 runtime lookup key、binding lookup key、明文 capability、opaque key、userId 或 agentId。`import` 必须同时恢复两个组件；为兼容早期本地包，也允许导入旧的 kernel-only recovery package，但导入结果必须明确只恢复了 `capabilityKernel`。
+
+Linux 后端按可用性从高到低探测，实际 `auto` 只会选择当前实现可读写的后端：
+
+1. TPM2 / systemd-creds / systemd-cryptenroll 可用时，作为增强本机版候选；当前默认 `auto` 不会选择未实现的 systemd/TPM 路径。
+2. Linux kernel keyring 可用时，使用 `keyctl` 把 sealed state 写入用户 keyring。
+3. Secret Service / libsecret 可用时，使用 `secret-tool` 把 sealed state 写入桌面密钥环。
+4. pass / GnuPG 用户密钥仓库可用时，使用 `pass` 作为用户态兼容后端。
+5. 本机文件后端作为最后兜底，必须标记 degraded。
+
+Windows 默认使用 DPAPI / CNG 保护的本机文件后端：`windows-dpapi` 会把 Capability Kernel 和 Binding Guard 的 sealed record 先通过当前 Windows 用户的 DPAPI `ProtectedData` 加密，再写入 data dir 下的 `.dpapi` 文件。该文件不是普通明文 fallback；迁移、备份和恢复仍应使用统一 recovery package，而不是直接复制 DPAPI 文件到其它用户或其它机器。
+
+部署档位：
+
+- 默认个人版 / 本机版：优先 OS keyring-backed Capability Kernel，keyring 不可用时自动降级到 file fallback。不创建独立系统用户，不安装额外私有权限数据库；最多在 `pact security init` 时触发一次系统钥匙串授权。适合推广、个人和小团队本机使用。
+- 增强本机版：先提供命令级安全 helper，把签发、Capability 裁决和 Binding Guard 裁决移出业务进程；后续再演进为长期驻留 `capabilityd`、可选独立 OS 用户、私有 sealed state 文件、Keychain/TPM/DPAPI 只保存 sealing key 和回滚锚点。适合高敏感本机部署。
+- 企业 / 云端版：远端权限服务、KMS/HSM 或可远程证明的 TEE。AWS Nitro Enclaves、Google Confidential Space、Azure Secure Key Release 这类方案可把关键材料只释放给 attested workload。
+
+默认模式安全边界必须标注清楚：keyring-backed 可以防普通业务 DB 泄漏、业务 DB 篡改和智能体直接改运行态文件提权；file fallback 只保证系统可用和权限模型语义一致，不承诺强安全隔离。同一 OS 用户下的恶意本机进程、恶意插件、已获得 keyring 访问授权的代码或可直接改 fallback 文件的代码不在个人版强防范围内。需要该级别隔离时必须启用增强本机版或企业 / 云端版。
+
+#### 算法和方案调研矩阵
+
+| 方案 | 核心做法 | 满足项 | 不满足或风险 | Pact 结论 |
+| --- | --- | --- | --- | --- |
+| Opaque random token + sealed kernel store | key 是高熵随机句柄；权限关系在安全服务内部状态。类似 OAuth opaque token introspection、Vault service token。 | 单 key、不暴露权限、可验证指定 capability、可即时撤销、可滚动。 | 必须有可信封装状态；普通 DB 不能当状态源。 | 推荐基线。 |
+| 远端授权服务 / KMS / HSM 状态 | 本机只转发 verify 请求，权限事实源在远端安全服务。 | 避免本机运维智能体改权限状态，支持集中轮换和审计。 | 离线能力差，部署复杂度高。 | 企业/云部署推荐。 |
+| Opaque token + 普通 DB + HMAC 索引 | DB 存 HMAC 后的 key/capability 索引。 | 防只读泄漏，查询快。 | 智能体能写 DB 时可回滚、删改、拒绝服务或干扰裁决；不是最终边界。 | 只能作为原型、缓存或审计投影，不能生产裁决。 |
+| JWT / PASETO public claims | token 内含 claims / scope / exp，并签名。 | 无状态、跨服务验证容易。 | 暴露权限集合；服务端能解出全部权限；撤销困难。 | 排除为主凭据。 |
+| JWE / PASETO local / Vault batch-like encrypted blob | token 内加密携带权限和有效期。 | 调用者看不到明文权限，可无状态。 | 内核解密后仍得到权限集合；即时撤销弱；token 变成自包含授权包。 | 不符合“内核不解出全部权限”。 |
+| Macaroons | HMAC 链和 caveats 支持委派、衰减和上下文限制。 | 细粒度、可衰减、适合分布式授权。 | caveats/限制通常随凭据暴露；验证仍要解释授权内容；撤销需要状态。 | 可参考 caveat 思想，不作为主凭据。 |
+| Biscuit | 公钥签名 bearer token，Datalog 表达权限和检查，支持 offline attenuation。 | 表达力强，适合工具/资源策略。 | token 携带 facts/rules；验证会解释权限逻辑；不满足隐藏全部权限。 | 可参考策略语言，不作为主凭据。 |
+| UCAN / ZCAP-LD | 基于 capability chain 的签名授权和委派。 | 去中心化委派强，能力模型清晰。 | capability 链、controller、target 和 caveat 是显式结构；身份和委派关系进入凭据。 | 不符合 Pact 内核只认 Capability 的简化目标。 |
+| SD-JWT / selective disclosure | token 含 claim digest，调用时只披露指定 claim。 | 可选择性披露，不必暴露全部 claims。 | 需要 `token + disclosure/proof`，不是单 opaque key；撤销仍需状态。 | 只有放宽“只用一个 key”时才考虑。 |
+| Merkle commitment + inclusion proof | token 或内核持有 capability set root；调用者提交 requestedCapability 的 inclusion proof。 | 可隐藏完整集合，只证明单项成员关系。 | 需要额外 proof；动态撤销和 witness 更新复杂；proof 泄漏结构信息。 | 可作为远期研究，不进 v0.0.1。 |
+| Cryptographic accumulator / ZK set membership | 用 accumulator 承诺集合，用 ZK proof 证明 capability 在集合中。 | 理论上可证明单项成员且隐藏集合。 | 实现复杂、审计难、依赖曲线/配对/ZK 库，撤销和 witness 更新成本高；仍需要 proof。 | 研究项，不作为近期实现。 |
+| 单 Capability 单 key / 派生子密钥 | 每个能力发一个 key，或由 master 派生 capability-specific key。 | 服务端只验这个 key 是否对应该 capability。 | 违反“一个密钥承载多个能力”的使用诉求；key 管理爆炸。 | 仅适合极高风险单能力，不作为默认。 |
+| 硬件绑定 possession key | 私钥在 Secure Enclave/TPM/HSM，调用时签 challenge。 | 防止 key 被复制，适合高价值凭据。 | 只证明持有私钥，不证明 capability；仍需要 sealed state 或签名授权声明。 | 作为增强项，不替代授权模型。 |
+
+#### 外部绑定层边界
+
+用户、智能体和 namespace 绑定必须在权限内核外做，但“内核外”不等于“普通业务 DB”。如果绑定错误会导致越权，则绑定层本身也必须是受控服务或 sealed policy：
+
+```text
+request(userId, agentId, namespace, operation, opaqueKey)
+  -> Binding Guard 验证 key 是否允许被该 user/agent/namespace 使用
+  -> operation 映射为 requestedCapability
+  -> Capability Kernel 验证 opaqueKey 是否允许 requestedCapability
+```
+
+绑定层可以引用业务 DB 作为展示或申请单来源，但最终 allow/deny 必须由受控绑定状态、签名配置、审批事件链或 Capability Kernel API 决定。
+
+#### 参考资料
+
+- OAuth 2.0 Token Introspection, RFC 7662: <https://datatracker.ietf.org/doc/html/rfc7662>
+- OAuth 2.0 Token Revocation, RFC 7009: <https://www.rfc-editor.org/rfc/rfc7009>
+- JSON Web Token Best Current Practices, RFC 8725: <https://www.rfc-editor.org/rfc/rfc8725>
+- SD-JWT selective disclosure, RFC 9901: <https://www.ietf.org/ietf-ftp/rfc/rfc9901.html>
+- PASETO specification: <https://github.com/paseto-standard/paseto-spec>
+- HashiCorp Vault tokens: <https://developer.hashicorp.com/vault/docs/concepts/tokens>
+- Macaroons paper: <https://research.google/pubs/macaroons-cookies-with-contextual-caveats-for-decentralized-authorization-in-the-cloud/>
+- Biscuit specification: <https://doc.biscuitsec.org/reference/specifications>
+- UCAN specification: <https://github.com/ucan-wg/spec>
+- Linux Kernel Key Retention Service: <https://www.kernel.org/doc/html/v4.20/security/keys/core.html>
+- Apple Secure Enclave keys: <https://developer.apple.com/documentation/Security/protecting-keys-with-the-secure-enclave>
+- Microsoft DPAPI: <https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata>
+- Microsoft TPM usage: <https://learn.microsoft.com/en-us/windows/security/hardware-security/tpm/how-windows-uses-the-tpm>
+- AWS KMS cryptographic attestation for Nitro Enclaves: <https://docs.aws.amazon.com/kms/latest/developerguide/cryptographic-attestation.html>
+- Google Confidential Space security overview: <https://docs.cloud.google.com/docs/security/confidential-space>
 
 当前实现入口：
 
 - `server/platform/common/security/auth/console-auth.mjs` 和 `server/scripts/console-auth.mjs` 提供 owner/admin/operator/viewer、登录、session、token rotation、审计和初始凭据治理。
 - `auth.sessions.rotate` / `POST /api/auth/sessions/rotate` / `auth sessions rotate` 提供当前控制台 session token rotation；轮换后旧 session token 立即失效，新 CSRF token 由 session token HMAC 派生，并写入审计。
-- `server/platform/common/security/authorization/authorization-engine.mjs` 支持 subject/tool grant 的 `tenantId`、workspace allowlist、dataClass allowlist 和 egress allowlist；tenant mismatch、workspace/dataClass/egress 越界会写入 authorization decision 与 denied request audit。
+- `server/platform/common/security/authorization/organization-model.mjs` 提供独立组织模型 `pact.organization-model.v1`：根节点固定为 `Pact Root`，组织可以挂 Root 或其它组织，用户可以挂 Root 或组织，Owner 默认挂 Root；该模型只提供身份归属和治理上下文，不提供 Root 权限，也不进入 Capability Kernel。
+- `server/platform/common/security/authorization/authorization-engine.mjs` 维护硬编码 Capability manifest，支持 subject/tool grant 的 `tenantId`、workspace allowlist、dataClass allowlist 和 egress allowlist；tenant mismatch、workspace/dataClass/egress 越界会写入 authorization decision 与 denied request audit；未知 Capability 在签发和 grant 创建时会被拒绝，不能静默降级。
+- `server/platform/common/security/authorization/opaque-capability-key.mjs` 提供 Capability Key Kernel 的本机封装：新发 key 为 `ock_` opaque key；验证只接受 `opaqueKey + requestedCapability`；sealed state 优先走 OS keyring，keyring 不可用时可用 file fallback 并标记 degraded；macOS 使用 Keychain，Linux 已实现 `keyctl`、`secret-tool` 和 `pass` 三类后端，Windows 已实现 DPAPI-protected file 后端；支持 recovery package 导出/导入。
+- `server/platform/common/security/authorization/capability-binding-guard.mjs` 提供内核外 Binding Guard：签发时把 `opaqueKey + namespace/user/agent/client` 写入 sealed binding；执行时只验证当前请求上下文是否匹配，不返回、不暴露绑定身份集合；普通 grant metadata 被篡改后不能改变 sealed binding 裁决；Linux 与 Capability Kernel 共用 `keyctl`、`secret-tool`、`pass` 后端排序，Windows 共用 DPAPI-protected file 后端。
+- `server/scripts/pact-capability-security-helper.mjs` 和 `server/platform/common/security/authorization/capability-security-helper-client.mjs` 提供 `pact.capability-security-helper.v1` 命令级 helper：调用方可以把 opaque key 签发、指定 Capability 验证、Binding Guard 验证和 credential 撤销交给独立子进程完成；Tool Management 可通过 `PACT_TOOL_GRANT_CAPABILITY_SECURITY_HELPER=1` 进入该路径；helper 响应不包含完整 capability 列表、metadata、constraints、runtime lookup key、binding lookup key 或明文身份集合。
+- `server/platform/common/security/authorization/capability-kernel-status.mjs` 把 provider、securityMode、degraded、stateRoot、bindingCount 和 recoverySupported 汇总为脱敏状态；`server/scripts/doctor.mjs` 和 production health console 都会显示 `degraded_file_fallback`，避免文件降级被静默隐藏。
+- `server/scripts/pact.mjs` 提供 `pact security capability-kernel status`、`pact security binding-guard status`、`pact security recovery export` 和 `pact security recovery import`；recovery package 写出文件默认 `0600`，统一包同时包含 Capability Kernel 与 Binding Guard 两个加密组件，CLI 输出只返回 epoch、stateRoot、路径和状态摘要，不输出 passphrase、runtime lookup key、binding lookup key、明文 key、明文 capability 或明文身份。
 - `server/platform/common/security/operation-audit.mjs` 支持 tenant/trace 查询、审计保留策略、过期清理和脱敏 JSONL 导出，导出前统一调用 redaction policy，避免 secret、token、cookie、API key 和本机绝对路径进入审计包。
 - `/api/auth/audit/export`、`/api/auth/audit/retention`、`/api/auth/audit/prune` 和 `/api/observability/traces/:traceId` 提供 API/RPC/CLI 可达的内审、保留和 trace drill-down 路径。
-- `server/platform/specialized/capabilities/tools/tool-management-core/catalog.mjs` 与 Tool Management runtime 提供 tool catalog、scope、toolset、grant、policy preview/evaluate、execute、audit 和 metrics。
+- `server/platform/specialized/capabilities/tools/tool-management-core/catalog.mjs` 与 Tool Management runtime 提供 tool catalog、scope、toolset、grant、policy preview/evaluate、execute、audit 和 metrics；新 grant 默认发放 opaque capability key，Tool Management DB 只保存 credential 摘要，工具执行前按 `cap:tool:<toolId>:execute` 进入 Capability Key Kernel 裁决；携带 `ock_` 凭据但 Kernel provider 不可用或缺少 `verify()` 时拒绝为 `capability_kernel_unavailable`，不退回 legacy grant。
 - `server/platform/common/operation-dispatcher/operation-decorators.mjs`、operation policy 和 safety-confirm 约束写操作、风险等级、CSRF 和审批边界。
 - `server/platform/specialized/knowledge/agent-library/access-policy.mjs` 提供 source-level knowledge access、checkoutPolicy、receipt、loanRecord、export/context injection 裁决。
 - `server/platform/common/observability/runtime-logger.mjs` 对 token、password、secret、API key、cookie 和绝对路径做摘要/脱敏。
-- `server/scripts/verify-console-auth.mjs`、`verify-security-hardening.mjs`、`verify-tool-management-platform.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、知识权限、tenant/ABAC、审计脱敏导出、trace drill-down、CSRF/safety 和 secret leak。
-- `npm run server:verify:production-readiness` 已把 `tool-permission`、`agent-library-access` 和 `trace-observability` 纳入 P0 门禁。
+- `server/scripts/verify-console-auth.mjs`、`verify-security-hardening.mjs`、`verify-tool-management-platform.mjs`、`verify-organization-model.mjs`、`verify-authorization-governance.mjs`、`verify-authorization-capabilities.mjs`、`verify-opaque-capability-key.mjs`、`verify-capability-binding-guard.mjs`、`verify-capability-security-helper.mjs`、`verify-production-health-console.mjs`、`verify-operation-policy.mjs`、`verify-agent-library-access.mjs` 和 `verify-runtime-logging.mjs` 覆盖越权、工具风险、组织树边界、用户/智能体治理、知识权限、tenant/ABAC、opaque key 发放/验证/轮换/撤销、Binding Guard 错绑拒绝、helper 子进程内联合裁决、grant projection 篡改不提权、统一 security recovery 导出/导入并同时恢复 Capability Kernel 与 Binding Guard、doctor/production health 降级可见性、审计脱敏导出、trace drill-down、CSRF/safety 和 secret leak。
+- `npm run server:verify:production-readiness` 已把 `tool-permission`、`agent-library-access`、`capability-kernel-security` 和 `trace-observability` 纳入 P0 门禁，其中 `capability-kernel-security` 固定运行 Capability manifest、opaque key、Binding Guard、security helper、Linux backend 和 Windows backend 验收。
 
 补全效果：能面向企业内审、安全团队和运维团队说明权限共享的边界；团队共享不是无审计共享。
 

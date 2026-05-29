@@ -48,7 +48,6 @@ graph LR
 | [IMPLEMENTATION-DECISION-REGISTER.md](IMPLEMENTATION-DECISION-REGISTER.md) | 设计决策登记表 | Pre-implementation design decisions; finalized conclusions must be merged back into core docs | 33 KB |
 | [CLIENT_ARCHITECTURE.md](CLIENT_ARCHITECTURE.md) | 客户端架构 | Destructive desktop-client architecture target and six-module product boundary | 13 KB |
 | [V0.0.1-IMPLEMENTATION-PLAN.md](V0.0.1-IMPLEMENTATION-PLAN.md) | v0.0.1 实施计划 | Single-node v0.0.1 delivery phases, checkpoints, interfaces, compatibility targets, and acceptance gates | 28 KB |
-| [2-3-5-Security-Model.md](2-3-5-Security-Model.md) | 2-3-5 安全治理模型 | Security governance reference for two boundaries, three environments, and five governance goals; authoritative decisions are mirrored in core docs | 18 KB |
 | [CLIENT-IMPLEMENTATION-PLAN.md](CLIENT-IMPLEMENTATION-PLAN.md) | 客户端实施路线 | Lightweight Pact Client refactor phases, checkpoints, interfaces, compatibility targets, and acceptance gates | 28 KB |
 | [CLIENT-DESIGN-CONFORMANCE.md](CLIENT-DESIGN-CONFORMANCE.md) | 客户端设计符合性矩阵 | Destructive keep/replace/delete/legacy-dev-only decisions for old client modules | 9 KB |
 | [CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md](CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md) | Checkpoint 算法演进方案 | Step-by-step LSM/Merkle/CAS/checkpoint algorithm evolution path from single-node contracts to distributed lossless migration | 25 KB |
@@ -56,7 +55,18 @@ graph LR
 | [TEST-FRAMEWORK.md](TEST-FRAMEWORK.md) | 测试框架 | Unified test framework contract | 6 KB |
 | [DEVELOPER-GUIDELINES.md](DEVELOPER-GUIDELINES.md) | 开发者核心守则 | Coding conventions, architecture principles, and design philosophy | 5 KB |
 | [GIT-COLLAB.md](GIT-COLLAB.md) | Git 协作约定 | Local collaboration conventions | 2 KB |
+| [scenarios/README.md](scenarios/README.md) | 场景链路草案 | Client-to-backend scenario drafts; finalized decisions must be merged back into core docs | < 1 KB |
 | [testing/memory-and-smoke-framework.md](testing/memory-and-smoke-framework.md) | 记忆与 Smoke 测试 | Memory and smoke test framework guide | < 1 KB |
+
+---
+
+## 边界文档 / Boundary Documents
+
+| Document | 文档 | Description | Size |
+| --- | --- | --- | --- |
+| [boundary/2-3-5-Security-Model.md](boundary/2-3-5-Security-Model.md) | 2-3-5 安全治理模型 | Security governance reference for two boundaries, three environments, and five governance objects; authoritative decisions are mirrored in core docs | 27 KB |
+| [boundary/N-2-N-Interfaces.md](boundary/N-2-N-Interfaces.md) | N-2-N 接口边界 | External-service and downstream-client boundaries, with in-Pact adapters/gateways and out-of-Pact services/clients split explicitly | 11 KB |
+| [boundary/U-1-Data.md](boundary/U-1-Data.md) | U-1 数据边界 | Unified vocabulary for data, resources, state, evidence, receipts, ledgers, checkpoints, projections, and external refs | 12 KB |
 
 ---
 

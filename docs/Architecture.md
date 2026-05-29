@@ -83,21 +83,23 @@ Pact 的核心定位是：
 
 “两个问题，一个能力，三个兼容”的产品表达只保留为问题定义，不再作为架构分层口径；架构分层统一使用 `agent-client-mcp-compatibility`、`external-service-compatibility` 和 `pact-internal-compatibility` 三个边界。
 
-安全边界按两条外部边界和三个治理对象表达：
+安全模型按两条边界、三个环境、五个对象表达：
 
-- 客户端运行环境与 Pact 平台之间的边界：面向客户端治理，约束本地智能体、MCP connector、client runtime、上传传输、客户端 grant 和请求报文绑定。
-- 外部服务与 Pact 平台之间的边界：面向外部服务治理，约束模型 provider、代码平台、云盘、外部知识库、向量库、图数据库、邮箱和业务系统的凭据、回执、同步、镜像和状态语义。
-- Pact 系统内部边界：面向系统自我治理，约束 Capability Kernel、Binding Guard、SecretStore、Operation Ledger、Checkpoint、Audit、runtime state、模块合同和降级模式。它不是第三条外部边界，而是 Pact 平台内部为防止自我绕过、状态篡改和语义漂移而建立的治理对象。
+- 两条边界：客户端 MCP 入口、服务端 API 出口。
+- 三个环境：终端智能体、平台运行时、应用服务器。
+- 平台运行时自我治理约束 Capability Kernel、Binding Guard、SecretStore、Operation Ledger、Checkpoint、Audit、runtime state、模块合同和降级模式。它不是第三条外部边界，而是平台运行时内部为防止自我绕过、状态篡改和语义漂移而建立的治理能力。
 
-两条外部边界共用同一组治理大类，差异只在每类下面的治理对象：
+两条边界共用同一组对象，差异只在每个对象下面的治理项：
 
-| 治理大类 | 客户端运行环境 <-> Pact | 外部服务 <-> Pact |
+| 对象 | 终端智能体 -> 平台运行时（客户端 MCP 入口） | 平台运行时 -> 应用服务器（服务端 API 出口） |
 | --- | --- | --- |
-| 准入与身份信任 | client、agent、user、device、MCP grant、opaque key 绑定 | provider account、OAuth、API key、service account、secretRef、tenant 映射 |
+| 身份与准入认证 | client、agent、user、device、MCP grant、opaque key 绑定 | provider account、OAuth、API key、service account、secretRef、tenant 映射 |
 | 权限与行为策略 | operation、tool、skill、workspace、dataClass、egress、高风险确认 | provider scope、读写删同步权限、外部副作用审批、Capability 到 provider scope 映射 |
-| 数据与状态语义 | 上传、下载、context、memory、export、asset 状态、路径安全 | import、export、sync、mirror、etag/version、durable id、真实持久化状态 |
-| 流量、资源与成本控制 | QPS、并发、上传速率、队列、quota、上下文大小 | provider 限流、重试、熔断、模型 token 成本、API 成本、同步频率 |
-| 审计、证据与生命周期 | receipt、loan、denied request、trace、客户端安装/撤销/过期 | provider receipt、webhook 证据、凭据轮换/撤销、解绑、mirror 清理、合规保留 |
+| 数据与状态语义 | 上传、下载、context、memory、export、asset 状态、client lifecycle、路径安全 | import、export、sync、mirror、credential lifecycle、connector lifecycle、etag/version、durable id、真实持久化状态 |
+| 流量与资源管理 | QPS、并发、上传速率、队列、quota、上下文大小 | provider 限流、重试、熔断、模型 token 成本、API 成本、同步频率 |
+| 审计与事实验证 | receipt、loan、denied request、trace、checkpoint、recovery evidence | provider receipt、webhook 证据、external failure evidence、合规保留 |
+
+生命周期不是独立审计分类，属于数据与状态语义。安装、授权、升级、禁用、撤销、过期、解绑、清理、恢复和迁移必须表达为可查询状态迁移；审计与事实验证负责证明这些迁移。
 
 这不是横向再造知识库，也不是横向再造智能体平台。Pact 只猛攻两端之间最缺的中间层：
 
@@ -697,6 +699,10 @@ Tool Management 负责外部工具和 Skill 执行授权：
 - catalog 定义工具。
 - toolset 聚合权限。
 - grant 表达主体可用范围。
+- 新发 grant 的调用凭据是 `ock_` opaque capability key；Tool Management DB 只保存 grant 展示、限流、审计投影和 credential 摘要，不保存明文 capability 列表作为最终权限事实源。
+- execute 在运行工具前必须调用 Capability Key Kernel 校验 `opaqueKey + cap:tool:<toolId>:execute`；scope/toolset/risk policy 只能进一步收紧，不能绕过 kernel 放行。
+- execute 看到 `ock_` 调用凭据但 Capability Kernel provider 不可用或缺少 `verify()` 时必须拒绝为 `capability_kernel_unavailable`，不能退回 legacy token hash、scope 或 toolset grant 裁决。
+- 如果 grant 在签发时绑定了 namespace、用户、智能体或客户端，execute 还必须调用 Binding Guard 校验当前请求报文中的 `namespace/userId/agentId/clientId`；该绑定不进入 Capability Kernel，且普通 DB metadata 被篡改不能改变绑定裁决。
 - policy evaluate / preview 表达执行前裁决。
 - execute 只在授权通过后运行，并写 audit、usage event 和 checkpoint node。
 
@@ -866,6 +872,21 @@ C0 -> C1(A change) -> C2(B change) -> R1(restore to C1) -> R2(restore to C0)
 - secret 只以 secret ref 存储和传递。
 - 日志、trace、评估样本和导出必须执行 redaction policy。
 - tenant、workspace、dataClass 和 requestedEgress 是统一 ABAC 裁决字段；普通 subject 不能跨 tenant 或越过 allowlist 读取、导出、写 memory 或调用工具。
+- Capability Key Kernel 只接受 `opaqueKey + requestedCapability` 并返回最小 allow/deny 裁决；默认响应不能暴露 keyHash、capabilitySetHash、完整 capability 数量、metadata 或 constraints，也不能提供列出某个 key 全部权限的接口；授权 decision 和直接 denied request 落盘都必须脱敏 opaque key、keyHash、capabilitySetHash、lookup key 和完整 subject capability 集合。
+- `ock_` opaque capability key 进入执行路径后必须由 Capability Kernel 验证；Kernel provider 不可用或缺少 `verify()` 时必须拒绝为 `capability_kernel_unavailable`，不能回退到 token hash、scope、toolset 或普通 grant 策略。
+- runtime lookup key 只用于本地 HMAC 索引，不代表任何权限主体；一旦已有 Capability binding，不能单独轮换 lookup key，因为内核不保存明文 opaque key，无法重算现有索引。调用密钥滚动必须走 `rotateCapabilityKey`：新发 `ock_`，旧 key 置为 invalid。
+- denied request 审计查询必须支持按 `reasonCode`、`operationId`、`toolId`、`subjectId`、`tenantId` 和 `workspaceId` 组合过滤，用于事后证明拒绝原因和影响范围。
+- Capability 必须来自内核硬编码 manifest；未知 Capability 在 opaque key 签发、轮换和 Tool Management grant 创建时必须拒绝，不能静默过滤或退回 legacy token / scope 裁决。
+- 普通业务数据库、JSON 运行态文件和智能体可写 data dir 不能作为权限事实源，只能作为审计投影、展示、申请单或缓存。
+- 默认本机部署使用 OS keyring-backed Capability Kernel：sealed state 优先存 Keychain / Linux keyring / Linux Secret Service / pass-GPG / DPAPI-CNG，启动后加载到内存，高频验证只查内存；不默认创建独立系统用户。
+- OS keyring 不可用时允许降级到 file fallback，保持系统可用；该模式必须在 doctor、控制台和审计中标记为 degraded，且仍不得使用业务 DB 作为权限事实源。file fallback 的 sealed state 和本地 sealing-key sidecar 必须使用私有目录、`0600` 文件权限和原子写入，主状态文件不得嵌入 sealing key、明文 capability、opaque key 或明文绑定身份。
+- Capability Kernel 与 Binding Guard 的 sealed state 写入必须串行化：同一进程内使用 mutation queue，跨 helper / CLI / server 进程使用 data dir 下的私有 lock file。并发签发、绑定、撤销、恢复导入和调用密钥轮换不能互相覆盖；首次 runtime lookup key 初始化也必须在锁内完成并持久化。读路径必须等待当前写入完成后再返回裁决或 recovery package。
+- Capability state 和 Binding Guard state 必须支持统一 recovery package，用于换机、重装、keyring 损坏和 file fallback 到 keyring 的迁移；recovery package 必须显式导出、默认加密、不得进入普通 trace/export/bundle，且包外不得暴露 runtime lookup key、binding lookup key、明文 capability、opaque key 或明文身份。
+- `pact.capability-security-helper.v1` 是增强本机模式的第一层 helper 协议：业务进程可以通过命令子进程完成 opaque key 签发、指定 Capability 裁决、Binding Guard 裁决和撤销，只返回当前请求的 allow/deny 与必要摘要，不返回完整 capability 列表、绑定身份集合或 lookup key。
+- 独立长期驻留 `capabilityd`、专用 OS 用户、TPM/HSM/KMS/TEE 是后续增强或企业模式，不是个人版默认安装前提。
+- 用户、组织、角色、Owner、智能体和 namespace binding 不进入权限内核模型；它们只能在内核外的受控绑定层完成校验。
+- 组织模型独立于权限内核：`pact.organization-model.v1` 固定根节点为 `Pact Root`，组织可以挂到 Root 或其它组织下，用户可以挂到 Root 或组织下；Owner 默认挂到 Root 下。Root 不是权限主体，也没有可授予的 Root capability；组织树只提供身份归属和治理上下文，不作为 Capability Kernel 的事实源。
+- Binding Guard 的状态也必须是 sealed state：只保存 HMAC 后的 key/user/agent/client/namespace 索引和 `valid | invalid` 状态；验证接口只回答“当前 key 是否允许被当前 namespace/user/agent/client 使用”，不能列出绑定身份集合。
 - 直连受管工作空间文件系统视为未受管操作，不能进入 canonical workspace state。
 
 ### 可观测性设计
