@@ -328,6 +328,14 @@ try {
           timeoutMs: 11000,
           maxResponseBytes: 4096
         },
+        functionCallSchema: {
+          local_command: {
+            commandId: "node-version",
+            variables: {
+              flag: "--version"
+            }
+          }
+        },
         local: {
           enabled: true,
           allowDirectCommands: false,
@@ -337,7 +345,7 @@ try {
             {
               commandId: "node-version-test",
               label: "Node version test",
-              command: process.execPath,
+              command: "node",
               args: ["--version"],
               cwd: "",
               description: "test command"
@@ -388,7 +396,86 @@ try {
   assert.equal(settings.modelLibraryAgents[0].agentName, "Flash Analyst");
   assert.equal(settings.modelLibraryAgents[1].agentName, "HTTP Analyst");
   assert.equal(settings.agentToolExecution.http.timeoutMs, 11000);
+  assert.equal(
+    settings.agentToolExecution.functionCallSchema.local_command.variables.flag,
+    "--version"
+  );
   assert.equal(settings.agentToolExecution.local.commands[0].commandId, "node-version-test");
+  assert.equal(settings.agentToolExecution.local.commands[0].command, "node");
+
+  const originalNodeCommandEnv = process.env.PACT_AGENT_LOCAL_NODE_COMMAND;
+  try {
+    delete process.env.PACT_AGENT_LOCAL_NODE_COMMAND;
+
+    const migratedNodeTemplate = normalizeSettings({
+      agentToolExecution: {
+        local: {
+          commands: [
+            {
+              commandId: "node-version",
+              label: "Node.js version",
+              command: process.execPath,
+              args: ["--version"],
+              cwd: "",
+              description: "legacy generated template"
+            }
+          ]
+        }
+      }
+    }).agentToolExecution.local.commands[0];
+    assert.equal(migratedNodeTemplate.command, "node");
+    assert.deepEqual(migratedNodeTemplate.args, ["{{flag}}"]);
+    assert.equal(migratedNodeTemplate.variables[0].name, "flag");
+    assert.equal(migratedNodeTemplate.variables[0].defaultValue, "--version");
+    assert.equal(migratedNodeTemplate.allowExtraArgs, false);
+
+    const configuredNodeTemplate = normalizeSettings({
+      agentToolExecution: {
+        local: {
+          nodeCommand: "node-from-config",
+          commands: [
+            {
+              commandId: "node-version",
+              label: "Node.js version",
+              command: process.execPath,
+              args: ["--version"],
+              cwd: "",
+              description: "config controlled template"
+            }
+          ]
+        }
+      }
+    }).agentToolExecution.local.commands[0];
+    assert.equal(configuredNodeTemplate.command, "node-from-config");
+    assert.deepEqual(configuredNodeTemplate.args, ["{{flag}}"]);
+
+    process.env.PACT_AGENT_LOCAL_NODE_COMMAND = "node-from-env";
+    const envNodeTemplate = normalizeSettings({
+      agentToolExecution: {
+        local: {
+          nodeCommand: "node-from-config",
+          commands: [
+            {
+              commandId: "node-version",
+              label: "Node.js version",
+              command: process.execPath,
+              args: ["--version"],
+              cwd: "",
+              description: "env controlled template"
+            }
+          ]
+        }
+      }
+    }).agentToolExecution.local.commands[0];
+    assert.equal(envNodeTemplate.command, "node-from-env");
+    assert.deepEqual(envNodeTemplate.args, ["{{flag}}"]);
+  } finally {
+    if (originalNodeCommandEnv === undefined) {
+      delete process.env.PACT_AGENT_LOCAL_NODE_COMMAND;
+    } else {
+      process.env.PACT_AGENT_LOCAL_NODE_COMMAND = originalNodeCommandEnv;
+    }
+  }
 
   const rootSettingsPath = getSettingsPath(userDataPath);
   const deepSeekSettingsPath = getModelProviderSettingsPath(userDataPath, "deepseek");
@@ -406,9 +493,11 @@ try {
   assert.equal(customHttpSettings.customHttpAdapter.alias, "kb-http");
   assert.equal(customHttpSettings.customHttpAdapter.token, "secret-token");
   assert.equal(agentToolExecutionSettings.http.timeoutMs, 11000);
+  assert.equal(agentToolExecutionSettings.functionCallSchema.local_command.variables.flag, "--version");
   assert.equal(agentToolExecutionSettings.local.commands[0].commandId, "node-version-test");
   const loadedSettings = await loadSettings(userDataPath);
-  assert.equal(loadedSettings.agentToolExecution.local.commands[0].command, process.execPath);
+  assert.equal(loadedSettings.agentToolExecution.local.commands[0].command, "node");
+  assert.equal(loadedSettings.agentToolExecution.functionCallSchema.local_command.variables.flag, "--version");
 
   const registry = await fetchJson(`${server.url}/api/agents`);
   assert.equal(registry.defaultAlias, "kb-http");

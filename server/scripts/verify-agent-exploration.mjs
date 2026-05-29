@@ -214,7 +214,10 @@ const runtime = createAgentExplorationRuntime({
             type: "function",
             function: {
               name: "local_command",
-              arguments: JSON.stringify({ commandId: "node-version" })
+              arguments: JSON.stringify({
+                commandId: "node-version",
+                variables: { flag: "--version" }
+              })
             }
           }
         ]
@@ -266,6 +269,7 @@ try {
   assert.equal(result.toolResults[1].tool, "open_evidence");
   assert.equal(result.toolResults[2].tool, "local_command");
   assert.equal(result.toolResults[2].result.ok, true);
+  assert.deepEqual(result.toolResults[2].result.args, ["--version"]);
   assert.equal(result.toolResults[3].tool, "http_request");
   assert.equal(result.toolResults[3].result.status, 200);
   assert.match(result.answer, /123\.45/);
@@ -669,6 +673,114 @@ try {
   assert.equal(ruleAuthoringResult.toolResults[0].result.status, "pending_human_confirmation");
   assert.equal(ruleAuthoringResult.toolResults[0].result.humanConfirmationRequired, true);
   assert.ok(ruleAuthoringResult.evidenceRefs.includes("ev_1"));
+
+  let deniedCallCount = 0;
+  const deniedRuntime = createAgentExplorationRuntime({
+    userDataPath: tempRoot,
+    runtime: {
+      mounts: {
+        knowledgeBase: fakeKnowledgeCore
+      }
+    },
+    agentWorkspace,
+    contextRuntime,
+    securityPermissions: {
+      evaluatePolicy(input = {}) {
+        if (input.tool?.id === "agent-exploration.local_command") {
+          return {
+            protocolVersion: "pact.authorization.v1",
+            decisionId: "authz_verify_local_command_denied",
+            auditId: "authz_audit_verify_local_command_denied",
+            toolExecutionId: input.toolExecutionId || "",
+            traceId: input.traceId || "",
+            toolId: input.tool.id,
+            grantId: input.grant?.id || "",
+            subject: input.subject || null,
+            effect: "deny",
+            allowed: false,
+            reasonCode: "risk_exceeds_policy",
+            redactedReason: "Requested risk exceeds effective policy.",
+            deniedLayer: "risk",
+            missingScopes: [],
+            missingToolsets: [],
+            evaluatedLayers: ["tool_catalog_policy", "runtime_safety_policy"],
+            createdAt: new Date().toISOString()
+          };
+        }
+        return {
+          protocolVersion: "pact.authorization.v1",
+          decisionId: `authz_verify_allow_${input.tool?.id || "tool"}`,
+          auditId: "authz_audit_verify_allow",
+          toolExecutionId: input.toolExecutionId || "",
+          traceId: input.traceId || "",
+          toolId: input.tool?.id || "",
+          grantId: input.grant?.id || "",
+          subject: input.subject || null,
+          effect: input.dryRun ? "dry_run_only" : "allow",
+          allowed: true,
+          reasonCode: input.dryRun ? "dry_run" : "allowed",
+          missingScopes: [],
+          missingToolsets: [],
+          evaluatedLayers: ["tool_catalog_policy"],
+          createdAt: new Date().toISOString()
+        };
+      }
+    },
+    agentGatewayCall: async (input = {}) => {
+      deniedCallCount += 1;
+      if (deniedCallCount === 1) {
+        assert.equal(
+          input.parameters.tools.some((tool) => tool.function?.name === "local_command"),
+          false,
+          "unauthorized function-call tools must not be exposed to the model"
+        );
+        return {
+          ok: true,
+          answer: "",
+          finish: true,
+          upstream: { provider: "mock", status: 200, contentType: "application/json" },
+          toolCalls: [
+            {
+              id: "call_denied_local",
+              type: "function",
+              function: {
+                name: "local_command",
+                arguments: JSON.stringify({ commandId: "node-version" })
+              }
+            }
+          ]
+        };
+      }
+      assert.match(JSON.stringify(input.messages), /authorization_denied/);
+      return {
+        ok: true,
+        answer: "本地命令调用已被统一权限治理拦截。",
+        finish: true,
+        upstream: { provider: "mock", status: 200, contentType: "application/json" }
+      };
+    }
+  });
+  const deniedResult = await deniedRuntime.run({
+    query: "尝试执行本地命令",
+    modelAlias: "deepseek",
+    contextProfileId: "small-context",
+    maxIterations: 2,
+    limit: 2,
+    authSession: {
+      user: {
+        userId: "verify-owner",
+        username: "verify-owner",
+        roleId: "owner",
+        scopes: ["knowledge:read", "knowledge:write", "knowledge:admin"]
+      }
+    }
+  });
+  assert.equal(deniedCallCount, 2);
+  assert.equal(deniedResult.toolResults[0].tool, "local_command");
+  assert.equal(deniedResult.toolResults[0].result.ok, false);
+  assert.equal(deniedResult.toolResults[0].result.error, "authorization_denied");
+  assert.equal(deniedResult.toolResults[0].result.reasonCode, "risk_exceeds_policy");
+  assert.equal(deniedResult.steps[0].toolResults[0].status, "failed");
 
   callCount = 0;
   const asyncResult = await runtime.run({

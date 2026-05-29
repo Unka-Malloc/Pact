@@ -45,6 +45,7 @@ client-cli/target/
 *.msi
 *.zip
 *.tar.gz
+*.tar.xz
 *.rar
 
 # Local module runtimes and heavy assets

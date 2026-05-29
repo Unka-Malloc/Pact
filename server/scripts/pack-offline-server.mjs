@@ -251,6 +251,10 @@ async function ensureDirectory(targetPath) {
   await fs.mkdir(targetPath, { recursive: true });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -1030,13 +1034,19 @@ async function prepareSourceTree(stagingPath, targetKey, target, nodeVersion, pa
 
 async function installLinuxNodeModules(stagingPath, target) {
   console.log("Installing production node_modules inside Ubuntu without apt...");
-  await run("docker", [
+  const installArgs = [
     "run",
     "--rm",
     "--platform",
     target.dockerPlatform,
     "--env",
     `PATH=${DOCKER_PATH}`,
+    "--env",
+    "npm_config_fetch_retries=5",
+    "--env",
+    "npm_config_fetch_retry_mintimeout=10000",
+    "--env",
+    "npm_config_fetch_retry_maxtimeout=120000",
     "-v",
     `${stagingPath}:/pkg`,
     "-w",
@@ -1048,7 +1058,25 @@ async function installLinuxNodeModules(stagingPath, target) {
     "--package-lock=true",
     "--no-audit",
     "--no-fund"
-  ]);
+  ];
+  const maxAttempts = 3;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await run("docker", installArgs);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) {
+        break;
+      }
+      console.warn(`Production node_modules install failed; retrying ${attempt + 1}/${maxAttempts} after clean staging install...`);
+      await fs.rm(path.join(stagingPath, "node_modules"), { recursive: true, force: true });
+      await fs.rm(path.join(stagingPath, "package-lock.json"), { force: true });
+      await sleep(1000 * attempt);
+    }
+  }
+  throw lastError;
 }
 
 async function writeOfflineManifest(stagingPath, targetKey, nodeVersion, packagingPlan) {

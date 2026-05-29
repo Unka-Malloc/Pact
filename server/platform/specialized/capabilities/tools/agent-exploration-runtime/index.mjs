@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadSettings } from "../../../../common/platform-core/settings.mjs";
+import { createToolCatalog } from "../tool-management-core/catalog.mjs";
 import { createToolManagementStore } from "../tool-management-core/store.mjs";
 
 export const AGENT_EXPLORATION_PROTOCOL_VERSION = "pact.agent-exploration.v1";
@@ -79,6 +80,115 @@ function safeJsonParse(value, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+const LOCAL_COMMAND_TEMPLATE_VARIABLE_PATTERN = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\}\}/g;
+
+function collectLocalCommandTemplateVariables(value, output = new Set()) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectLocalCommandTemplateVariables(item, output);
+    }
+    return output;
+  }
+  const text = String(value ?? "");
+  for (const match of text.matchAll(LOCAL_COMMAND_TEMPLATE_VARIABLE_PATTERN)) {
+    output.add(match[1]);
+  }
+  return output;
+}
+
+function normalizeLocalCommandVariableDefinition(value = {}) {
+  const definition = asObject(value);
+  const name = normalizeText(definition.name || definition.key || "");
+  if (!name) {
+    return null;
+  }
+  const hasDefault = Object.hasOwn(definition, "defaultValue") || Object.hasOwn(definition, "default");
+  return {
+    name,
+    required: definition.required === true,
+    ...(hasDefault
+      ? { defaultValue: String(definition.defaultValue ?? definition.default ?? "") }
+      : {}),
+    allowedValues: uniqueStrings(definition.allowedValues || definition.enum || definition.options || [], 100)
+  };
+}
+
+function replaceLocalCommandTemplateVariables(value, variables = {}) {
+  return String(value ?? "").replace(
+    LOCAL_COMMAND_TEMPLATE_VARIABLE_PATTERN,
+    (_match, name) => String(variables[name] ?? "")
+  );
+}
+
+function resolveLocalCommandTemplate(template = {}, args = {}) {
+  const commandTemplate = asObject(template);
+  const suppliedVariables = asObject(args.variables || args.params || args.templateVariables);
+  const definitions = asArray(commandTemplate.variables)
+    .map((item) => normalizeLocalCommandVariableDefinition(item))
+    .filter(Boolean);
+  const definitionByName = new Map(definitions.map((item) => [item.name, item]));
+  const placeholderNames = collectLocalCommandTemplateVariables([
+    commandTemplate.command,
+    commandTemplate.args,
+    commandTemplate.cwd,
+    commandTemplate.stdin
+  ]);
+  const requiredNames = new Set([
+    ...placeholderNames,
+    ...definitions.filter((item) => item.required).map((item) => item.name)
+  ]);
+  const resolvedVariables = {};
+
+  for (const name of requiredNames) {
+    const definition = definitionByName.get(name);
+    if (!definition) {
+      return {
+        ok: false,
+        error: "local_command_variable_not_declared",
+        variable: name,
+        commandId: normalizeText(commandTemplate.commandId || commandTemplate.id || "")
+      };
+    }
+    const supplied = Object.hasOwn(suppliedVariables, name);
+    const hasDefault = Object.hasOwn(definition, "defaultValue");
+    if (!supplied && !hasDefault) {
+      return {
+        ok: false,
+        error: "local_command_variable_required",
+        variable: name,
+        commandId: normalizeText(commandTemplate.commandId || commandTemplate.id || "")
+      };
+    }
+    const rawValue = supplied ? suppliedVariables[name] : definition.defaultValue;
+    const value = String(rawValue ?? "");
+    if (definition.allowedValues.length > 0 && !definition.allowedValues.includes(value)) {
+      return {
+        ok: false,
+        error: "local_command_variable_not_allowed",
+        variable: name,
+        allowedValues: definition.allowedValues,
+        commandId: normalizeText(commandTemplate.commandId || commandTemplate.id || "")
+      };
+    }
+    resolvedVariables[name] = value;
+  }
+
+  return {
+    ok: true,
+    command: replaceLocalCommandTemplateVariables(commandTemplate.command, resolvedVariables),
+    args: asArray(commandTemplate.args).map((item) =>
+      replaceLocalCommandTemplateVariables(item, resolvedVariables)
+    ),
+    cwd: replaceLocalCommandTemplateVariables(commandTemplate.cwd, resolvedVariables),
+    stdin: commandTemplate.stdin === undefined
+      ? undefined
+      : replaceLocalCommandTemplateVariables(commandTemplate.stdin, resolvedVariables),
+    allowExtraArgs: commandTemplate.allowExtraArgs === true,
+    allowedVariables: definitions.map((item) => item.name),
+    variables: resolvedVariables
+  };
 }
 
 function stableHash(...parts) {
@@ -371,6 +481,11 @@ function toolDefinitions() {
             args: {
               type: "array",
               items: { type: "string" }
+            },
+            variables: {
+              type: "object",
+              description:
+                "Template variables declared by the selected commandId. Values replace {{variableName}} placeholders in command, args, cwd, or stdin."
             },
             cwd: { type: "string" },
             stdin: { type: "string" },
@@ -935,6 +1050,108 @@ function normalizeToolName(value) {
   return name;
 }
 
+const AGENT_EXPLORATION_TOOL_CATALOG = createToolCatalog({
+  activeFeatureIds: ["agent-exploration"]
+});
+const AGENT_EXPLORATION_CATALOG_TOOLS_BY_NAME = new Map(
+  AGENT_EXPLORATION_TOOL_CATALOG.tools
+    .filter((tool) => String(tool.id || "").startsWith("agent-exploration."))
+    .map((tool) => [
+      normalizeToolName(String(tool.id || "").replace(/^agent-exploration\./, "")),
+      {
+        ...tool,
+        status: tool.status === "internal" ? "active" : tool.status
+      }
+    ])
+);
+const MANAGED_GRANT_REQUIRED_TOOLS = new Set([
+  "knowledge_skill_propose",
+  "golden_rule_authoring",
+  "http_request",
+  "local_command"
+]);
+
+function catalogToolForAgentExplorationTool(toolName) {
+  return AGENT_EXPLORATION_CATALOG_TOOLS_BY_NAME.get(normalizeToolName(toolName)) || null;
+}
+
+function inferToolRequestedAction(toolName, args = {}, tool = null) {
+  return firstNonEmpty(
+    args.requestedAction,
+    args.action,
+    args.operationId,
+    tool?.operationId,
+    tool?.id,
+    toolName
+  );
+}
+
+function inferToolResourceType(args = {}, context = {}) {
+  const resource = asObject(args.resource);
+  if (args.resourceType || args["resource-type"] || resource.resourceType || resource.type) {
+    return firstNonEmpty(args.resourceType, args["resource-type"], resource.resourceType, resource.type);
+  }
+  if (args.repoId || args.repository || args.repositoryRef || context.repoId) {
+    return "repo";
+  }
+  if (args.codespaceId || args.workspaceId || context.workspaceId) {
+    return "codespace";
+  }
+  return "";
+}
+
+function inferToolResourceId(args = {}, context = {}) {
+  const resource = asObject(args.resource);
+  return firstNonEmpty(
+    args.resourceId,
+    args.repoId,
+    args.repositoryRef,
+    args.repository,
+    resource.resourceId,
+    resource.id,
+    args.codespaceId,
+    args.workspaceId,
+    context.repoId,
+    context.workspaceId,
+    args.commandId,
+    args.id,
+    args.url,
+    "*"
+  );
+}
+
+function inferToolTargetProvider(args = {}) {
+  const resource = asObject(args.resource);
+  return firstNonEmpty(
+    args.targetProvider,
+    args.provider,
+    args.reviewProvider,
+    resource.targetProvider,
+    String(args.url || "").startsWith("http") ? "http" : ""
+  );
+}
+
+function inferRequestedEgress(args = {}) {
+  if (!args.url) {
+    return "";
+  }
+  try {
+    const url = new URL(String(args.url));
+    return url.hostname;
+  } catch {
+    return "";
+  }
+}
+
+function toolRequiresManagedGrant(toolName, args = {}, tool = null) {
+  const name = normalizeToolName(toolName);
+  if (MANAGED_GRANT_REQUIRED_TOOLS.has(name)) {
+    return true;
+  }
+  const resourceType = inferToolResourceType(args);
+  return resourceType === "repo" || resourceType === "codespace" || Boolean(tool?.destructive);
+}
+
 function limitTextBytes(value, maxBytes = 65536) {
   const text = String(value ?? "");
   const buffer = Buffer.from(text, "utf8");
@@ -986,7 +1203,8 @@ export function createAgentExplorationRuntime({
   agentGatewayCall,
   knowledgeSkillRuntime = null,
   knowledgeRuleAuthoringRuntime = null,
-  clientRuntimeAllocator = null
+  clientRuntimeAllocator = null,
+  securityPermissions = null
 } = {}) {
   const auditLogPath = userDataPath ? path.join(userDataPath, "logs", "agent-exploration.jsonl") : "";
 
@@ -1008,6 +1226,246 @@ export function createAgentExplorationRuntime({
     }
   }
 
+  function loadToolGrant(grantId = "") {
+    const id = normalizeText(grantId);
+    if (!id || !userDataPath) {
+      return null;
+    }
+    const store = createToolManagementStore({ userDataPath });
+    try {
+      return store.getGrant(id) || null;
+    } finally {
+      store.close();
+    }
+  }
+
+  function buildAuthorizationIdentity(options = {}, grant = null) {
+    const authSession = options.authSession || null;
+    const user = authSession?.user || {};
+    const agentId = firstNonEmpty(
+      options.agentId,
+      options.agentProfileId,
+      options.profileId,
+      grant?.metadata?.agentId,
+      grant?.metadata?.agentProfileId,
+      EXPLORER_AGENT_ID
+    );
+    const boundUserId = firstNonEmpty(
+      options.boundUserId,
+      options.userId,
+      user.userId,
+      user.username,
+      grant?.metadata?.boundUserId,
+      grant?.metadata?.userId
+    );
+    return {
+      subject: {
+        type: "agent-profile",
+        subjectId: agentId,
+        username: agentId,
+        roleId: user.roleId || "",
+        scopes: uniqueStrings([
+          ...asArray(options.scopes),
+          ...asArray(grant?.scopes)
+        ]),
+        capabilities: asArray(options.capabilities),
+        agentProfileId: agentId,
+        maxRisk: firstNonEmpty(options.maxRisk, grant?.maxRisk, grant?.metadata?.maxRisk, user.maxRisk),
+        tenantId: user.tenantId || grant?.tenantId || grant?.metadata?.tenantId || "",
+        orgId: user.orgId || grant?.orgId || grant?.metadata?.orgId || "",
+        teamIds: uniqueStrings([
+          ...asArray(options.teamIds),
+          ...asArray(options.workspaceContext?.teamIds),
+          ...asArray(grant?.teamIds),
+          ...asArray(grant?.metadata?.teamIds)
+        ]),
+        allowedWorkspaceIds: asArray(options.allowedWorkspaceIds),
+        allowedDataClasses: asArray(options.allowedDataClasses),
+        allowedEgress: asArray(options.allowedEgress),
+        metadata: {
+          boundUserId,
+          userId: boundUserId,
+          teamIds: uniqueStrings([
+            ...asArray(options.teamIds),
+            ...asArray(options.workspaceContext?.teamIds),
+            ...asArray(grant?.metadata?.teamIds)
+          ])
+        }
+      },
+      agentId,
+      boundUserId
+    };
+  }
+
+  function buildAuthorizationInput(toolName, args = {}, options = {}, tool = null) {
+    const resourceType = inferToolResourceType(args, options);
+    const resourceId = inferToolResourceId(args, options);
+    const targetProvider = inferToolTargetProvider(args);
+    const requestedEgress = inferRequestedEgress(args);
+    return {
+      ...args,
+      operationId: firstNonEmpty(args.operationId, tool?.operationId, tool?.id),
+      requestedAction: inferToolRequestedAction(toolName, args, tool),
+      resourceType,
+      resourceId,
+      targetProvider,
+      requestedEgress
+    };
+  }
+
+  function buildDeniedAuthorizationDecision({
+    toolName,
+    toolExecutionId = "",
+    traceId = "",
+    reasonCode = "authorization_denied",
+    redactedReason = "Tool call is not authorized.",
+    effect = "deny"
+  } = {}) {
+    return {
+      protocolVersion: "pact.authorization.v1",
+      decisionId: `authz_decision_${crypto.randomUUID()}`,
+      auditId: `authz_audit_${crypto.randomUUID()}`,
+      toolExecutionId,
+      traceId,
+      toolId: `agent-exploration.${normalizeToolName(toolName)}`,
+      effect,
+      allowed: false,
+      reasonCode,
+      redactedReason,
+      deniedLayer: "tool",
+      requiredApproval: null,
+      missingScopes: [],
+      missingToolsets: [],
+      evaluatedLayers: ["agent_exploration_runtime", "tool_catalog_policy"],
+      createdAt: nowIso()
+    };
+  }
+
+  async function evaluateToolAuthorization({
+    toolName,
+    args = {},
+    options = {},
+    traceId = "",
+    toolExecutionId = "",
+    preflight = false
+  } = {}) {
+    const normalizedToolName = normalizeToolName(toolName);
+    const tool = catalogToolForAgentExplorationTool(normalizedToolName);
+    if (!tool) {
+      const decision = buildDeniedAuthorizationDecision({
+        toolName: normalizedToolName,
+        toolExecutionId,
+        traceId,
+        reasonCode: "unknown_tool",
+        redactedReason: "Tool is not registered in the unified tool catalog."
+      });
+      return { allowed: false, decision, tool: null, grant: null };
+    }
+    if (!securityPermissions || typeof securityPermissions.evaluatePolicy !== "function") {
+      return { allowed: true, decision: null, tool, grant: null };
+    }
+    const requestedGrantId = firstNonEmpty(args.toolGrantId, options.toolGrantId, options.grantId);
+    const grant = loadToolGrant(requestedGrantId);
+    const { subject, agentId, boundUserId } = buildAuthorizationIdentity(options, grant);
+    const authorizationInput = buildAuthorizationInput(normalizedToolName, args, options, tool);
+    const grantRequired = toolRequiresManagedGrant(normalizedToolName, args, tool) || Boolean(requestedGrantId);
+    try {
+      const decision = await securityPermissions.evaluatePolicy({
+        tool,
+        grant,
+        subject,
+        authSession: options.authSession || null,
+        input: authorizationInput,
+        context: {
+          surface: "agent-exploration-runtime",
+          toolExpected: true,
+          preflight,
+          agentId,
+          agentProfileId: agentId,
+          profileId: agentId,
+          boundUserId,
+          userId: boundUserId,
+          teamIds: uniqueStrings([
+            ...asArray(options.teamIds),
+            ...asArray(options.workspaceContext?.teamIds),
+            ...asArray(grant?.metadata?.teamIds)
+          ]),
+          workspaceId: options.workspaceId || "",
+          toolGrantId: requestedGrantId,
+          resourceType: authorizationInput.resourceType,
+          resourceId: authorizationInput.resourceId,
+          repoId: authorizationInput.repoId,
+          targetProvider: authorizationInput.targetProvider,
+          requestedAction: authorizationInput.requestedAction,
+          requestedEgress: authorizationInput.requestedEgress
+        },
+        dryRun: preflight,
+        traceId,
+        toolExecutionId,
+        grantRequired,
+        governanceRequired: true,
+        enforceConfirmation: false
+      });
+      return {
+        allowed: decision?.allowed === true,
+        decision,
+        tool,
+        grant
+      };
+    } catch (error) {
+      const decision = buildDeniedAuthorizationDecision({
+        toolName: normalizedToolName,
+        toolExecutionId,
+        traceId,
+        reasonCode: "authorization_evaluation_failed",
+        redactedReason: error instanceof Error ? error.message : "Authorization evaluation failed."
+      });
+      return { allowed: false, decision, tool, grant };
+    }
+  }
+
+  function deniedToolExecution(name, args = {}, decision = null) {
+    const needsApproval = decision?.effect === "needsApproval";
+    return {
+      tool: name,
+      arguments: args,
+      result: {
+        ok: false,
+        error: needsApproval ? "authorization_needs_approval" : "authorization_denied",
+        reasonCode: decision?.reasonCode || "authorization_denied",
+        deniedLayer: decision?.deniedLayer || "tool",
+        requiredApproval: decision?.requiredApproval || null,
+        decisionId: decision?.decisionId || "",
+        auditId: decision?.auditId || "",
+        missingScopes: decision?.missingScopes || [],
+        missingToolsets: decision?.missingToolsets || []
+      }
+    };
+  }
+
+  async function authorizedToolDefinitions(options = {}) {
+    const definitions = toolDefinitions();
+    if (!securityPermissions || typeof securityPermissions.evaluatePolicy !== "function") {
+      return definitions;
+    }
+    const output = [];
+    for (const definition of definitions) {
+      const toolName = normalizeToolName(definition.function?.name);
+      const authorization = await evaluateToolAuthorization({
+        toolName,
+        args: {},
+        options,
+        traceId: options.traceId || "",
+        toolExecutionId: "",
+        preflight: true
+      });
+      if (authorization.allowed) {
+        output.push(definition);
+      }
+    }
+    return output;
+  }
+
   function appendToolManagementToolExecution({
     toolExecutionId,
     traceId,
@@ -1016,44 +1474,59 @@ export function createAgentExplorationRuntime({
     result,
     status,
     errorCode,
-    durationMs
+    durationMs,
+    authorizationDecision = null,
+    toolDefinition = null,
+    grant = null
   }) {
     if (!userDataPath) {
       return;
     }
     const store = createToolManagementStore({ userDataPath });
+    const decisionEffect = authorizationDecision?.effect || (status === "ok" ? "allow" : "deny");
+    const executionDecision = ["allow", "dry_run_only"].includes(decisionEffect)
+      ? "allow"
+      : decisionEffect === "needsApproval"
+        ? "needsApproval"
+        : "deny";
+    const normalizedToolName = normalizeToolName(tool);
+    const fallbackRisk = ["knowledge_skill_propose", "golden_rule_authoring", "http_request"].includes(normalizedToolName)
+      ? "safe_write"
+      : normalizedToolName === "local_command"
+        ? "repair_write"
+        : "read_only";
     try {
       store.appendExecution({
         toolExecutionId,
         traceId,
-        toolId: `agent-exploration.${tool}`,
-        toolVersion: AGENT_EXPLORATION_PROTOCOL_VERSION,
-        toolsetIds: ["pact.knowledge.read"],
-        subjectType: "agent-profile",
-        subjectId: "agent-exploration",
-        grantId: "",
-        agentId: EXPLORER_AGENT_ID,
-        profileId: "agent-exploration",
-        operationId: "",
-        risk: ["knowledge_skill_propose", "golden_rule_authoring"].includes(tool) ? "safe_write" : "read_only",
-        decision: "allow",
+        toolId: toolDefinition?.id || `agent-exploration.${normalizedToolName}`,
+        toolVersion: toolDefinition?.version || AGENT_EXPLORATION_PROTOCOL_VERSION,
+        toolsetIds: toolDefinition?.toolsets || ["pact.knowledge.read"],
+        subjectType: authorizationDecision?.subject?.type || "agent-profile",
+        subjectId: authorizationDecision?.subject?.subjectId || EXPLORER_AGENT_ID,
+        grantId: authorizationDecision?.grantId || grant?.id || "",
+        agentId: authorizationDecision?.subject?.agentProfileId || EXPLORER_AGENT_ID,
+        profileId: authorizationDecision?.subject?.agentProfileId || "agent-exploration",
+        operationId: toolDefinition?.operationId || authorizationDecision?.operationId || "",
+        risk: toolDefinition?.risk || fallbackRisk,
+        decision: executionDecision,
         input,
         result,
         status,
         errorCode,
         durationMs,
-        policyDecisionId: "",
+        policyDecisionId: authorizationDecision?.decisionId || "",
         startedAt: new Date(Date.now() - durationMs).toISOString(),
         finishedAt: nowIso()
       });
       store.appendMetric({
         traceId,
-        toolId: `agent-exploration.${tool}`,
-        profileId: "agent-exploration",
+        toolId: toolDefinition?.id || `agent-exploration.${normalizedToolName}`,
+        profileId: authorizationDecision?.subject?.agentProfileId || "agent-exploration",
         status,
-        risk: ["knowledge_skill_propose", "golden_rule_authoring"].includes(tool) ? "safe_write" : "read_only",
+        risk: toolDefinition?.risk || fallbackRisk,
         durationMs,
-        reasonCode: errorCode || ""
+        reasonCode: authorizationDecision?.reasonCode || errorCode || ""
       });
     } finally {
       store.close();
@@ -1399,14 +1872,30 @@ export function createAgentExplorationRuntime({
     if (!template && config.allowDirectCommands !== true) {
       return { ok: false, error: "direct_local_command_not_allowed" };
     }
-    const command = normalizeText(template?.command || args.command || "");
+    const resolvedTemplate = template ? resolveLocalCommandTemplate(template, args) : null;
+    if (resolvedTemplate?.ok === false) {
+      return resolvedTemplate;
+    }
+    const command = normalizeText(resolvedTemplate?.command || args.command || "");
     if (!command) {
       return { ok: false, error: "local_command_required" };
     }
-    const baseArgs = asArray(template?.args).map((item) => String(item));
+    const baseArgs = asArray(resolvedTemplate?.args).map((item) => String(item));
     const incomingArgs = asArray(args.args).map((item) => String(item));
-    const finalArgs = template ? [...baseArgs, ...incomingArgs] : incomingArgs;
-    const cwd = normalizeText(args.cwd || template?.cwd || "") || process.cwd();
+    const allowExtraArgs = template ? resolvedTemplate.allowExtraArgs === true : true;
+    if (template && incomingArgs.length > 0 && !allowExtraArgs) {
+      return {
+        ok: false,
+        error: "local_command_extra_args_not_allowed",
+        commandId,
+        allowedVariables: resolvedTemplate.allowedVariables || []
+      };
+    }
+    const finalArgs = template ? [...baseArgs, ...(allowExtraArgs ? incomingArgs : [])] : incomingArgs;
+    const cwd = normalizeText(args.cwd || resolvedTemplate?.cwd || "") || process.cwd();
+    const stdin = args.stdin === undefined && resolvedTemplate?.stdin !== undefined
+      ? resolvedTemplate.stdin
+      : args.stdin;
     const timeoutMs = Math.max(1000, Math.min(Number(args.timeoutMs || config.timeoutMs || 30000), 120000));
     const maxBytes = Number(config.maxOutputBytes || 65536);
     return new Promise((resolve) => {
@@ -1445,8 +1934,8 @@ export function createAgentExplorationRuntime({
           stderr: limitTextBytes(stderr, maxBytes)
         });
       });
-      if (args.stdin) {
-        child.stdin.write(String(args.stdin));
+      if (stdin) {
+        child.stdin.write(String(stdin));
       }
       child.stdin.end();
     });
@@ -1536,6 +2025,36 @@ export function createAgentExplorationRuntime({
     const traceId = options.traceId || `trace_${crypto.randomUUID()}`;
     const toolExecutionId = `tool_exec_${crypto.randomUUID()}`;
     try {
+      const authorization = await evaluateToolAuthorization({
+        toolName: name,
+        args,
+        options,
+        traceId,
+        toolExecutionId,
+        preflight: false
+      });
+      if (!authorization.allowed) {
+        const denied = deniedToolExecution(name, args, authorization.decision);
+        appendToolManagementToolExecution({
+          toolExecutionId,
+          traceId,
+          tool: name,
+          input: args,
+          result: denied.result,
+          status: "denied",
+          errorCode: denied.result.error,
+          durationMs: Date.now() - startedAtMs,
+          authorizationDecision: authorization.decision,
+          toolDefinition: authorization.tool,
+          grant: authorization.grant
+        });
+        return {
+          ...denied,
+          toolExecutionId,
+          traceId,
+          authorizationDecision: authorization.decision
+        };
+      }
       const executed = await runAgentExplorationTool(name, args, options);
       const status = executed?.result?.ok === false ? "failed" : "ok";
       const errorCode = status === "ok" ? "" : String(executed?.result?.error || "agent_exploration_tool_failed");
@@ -1547,12 +2066,16 @@ export function createAgentExplorationRuntime({
         result: executed?.result,
         status,
         errorCode,
-        durationMs: Date.now() - startedAtMs
+        durationMs: Date.now() - startedAtMs,
+        authorizationDecision: authorization.decision,
+        toolDefinition: authorization.tool,
+        grant: authorization.grant
       });
       return {
         ...executed,
         toolExecutionId,
-        traceId
+        traceId,
+        authorizationDecision: authorization.decision
       };
     } catch (error) {
       appendToolManagementToolExecution({
@@ -1699,6 +2222,39 @@ export function createAgentExplorationRuntime({
         (callerSelectedWorkspace ? workspaceToolGrantId || allocatedToolGrantId : allocatedToolGrantId || workspaceToolGrantId) ||
         ""
     );
+    const effectiveAuthSession = input.authSession || callerInput.authSession || null;
+    const effectiveAgentId = firstNonEmpty(
+      callerInput.agentId,
+      callerInput.agentProfileId,
+      input.agentId,
+      input.agentProfileId,
+      EXPLORER_AGENT_ID
+    );
+    const effectiveBoundUserId = firstNonEmpty(
+      callerInput.boundUserId,
+      callerInput.userId,
+      input.boundUserId,
+      input.userId,
+      effectiveAuthSession?.user?.userId,
+      effectiveAuthSession?.user?.username
+    );
+    const effectiveTeamIds = uniqueStrings([
+      ...asArray(callerInput.teamIds),
+      ...asArray(input.teamIds),
+      ...asArray(workspaceContext?.teamIds),
+      ...asArray(effectiveAuthSession?.user?.teamIds)
+    ]);
+    const authorizationOptions = {
+      authSession: effectiveAuthSession,
+      agentId: effectiveAgentId,
+      agentProfileId: effectiveAgentId,
+      boundUserId: effectiveBoundUserId,
+      userId: effectiveBoundUserId,
+      teamIds: effectiveTeamIds,
+      workspaceId,
+      toolGrantId: effectiveToolGrantId,
+      workspaceContext
+    };
     const runResult = agentWorkspace.createRun({
       workspaceId,
       runType: "knowledge_agent_exploration",
@@ -1825,6 +2381,10 @@ export function createAgentExplorationRuntime({
         }
       });
       try {
+        const synthesisTools = await authorizedToolDefinitions({
+          ...authorizationOptions,
+          traceId: `trace_${runId}_final_synthesis`
+        });
         const synthesisResult = await agentGatewayCall({
           alias: effectiveModelAlias,
           modelAlias: effectiveModelAlias,
@@ -1863,7 +2423,7 @@ export function createAgentExplorationRuntime({
             temperature: Number(input.temperature ?? explorationDefaults.temperature ?? 0.2),
             max_tokens: Number(input.maxTokens || explorationDefaults.maxTokens || 1800),
             stream: false,
-            tools: toolDefinitions(),
+            tools: synthesisTools,
             tool_choice: "none"
           }
         });
@@ -2062,6 +2622,10 @@ export function createAgentExplorationRuntime({
             activePhase: "model_calling"
           }
         });
+        const availableTools = await authorizedToolDefinitions({
+          ...authorizationOptions,
+          traceId: `trace_${runId}_${iteration}_tool_preflight`
+        });
         const agentResult = await agentGatewayCall({
           alias: effectiveModelAlias,
           modelAlias: effectiveModelAlias,
@@ -2081,7 +2645,7 @@ export function createAgentExplorationRuntime({
             temperature: Number(input.temperature ?? explorationDefaults.temperature ?? 0.2),
             max_tokens: Number(input.maxTokens || explorationDefaults.maxTokens || 1800),
             stream: false,
-            tools: toolDefinitions(),
+            tools: availableTools,
             tool_choice: input.toolChoice || explorationDefaults.toolChoice || "auto"
           }
         });
@@ -2187,6 +2751,12 @@ export function createAgentExplorationRuntime({
             workspaceId,
             modelAlias: effectiveModelAlias,
             toolGrantId: effectiveToolGrantId,
+            authSession: effectiveAuthSession,
+            agentId: effectiveAgentId,
+            agentProfileId: effectiveAgentId,
+            boundUserId: effectiveBoundUserId,
+            userId: effectiveBoundUserId,
+            teamIds: effectiveTeamIds,
             workspaceContext,
             keywordSearchAlreadyRun: toolResults.some((entry) => entry.tool === "keyword_search"),
             aggregateAlreadyRun: toolResults.some((entry) => entry.tool === "knowledge_aggregate"),

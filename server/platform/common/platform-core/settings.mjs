@@ -32,6 +32,42 @@ const DEFAULT_DEEPSEEK_MODEL =
   process.env.PACT_DEEPSEEK_MODEL || "deepseek-v4-pro";
 const DEFAULT_MODEL_PROVIDER = process.env.PACT_DEFAULT_MODEL_PROVIDER || "";
 const DEFAULT_MODEL = process.env.PACT_DEFAULT_MODEL || "";
+const DEFAULT_AGENT_LOCAL_NODE_COMMAND = "node";
+const AGENT_LOCAL_NODE_COMMAND_ENV_KEYS = [
+  "PACT_AGENT_LOCAL_NODE_COMMAND",
+  "PACT_NODE_COMMAND",
+  "NODE_BINARY"
+];
+const DEFAULT_NODE_VERSION_VARIABLES = [
+  {
+    name: "flag",
+    label: "Version flag",
+    required: false,
+    defaultValue: "--version",
+    allowedValues: ["--version"],
+    description: "Node.js version probe flag supplied by the agent through function-call variables."
+  }
+];
+const DEFAULT_AGENT_TOOL_FUNCTION_CALL_SCHEMA = {
+  http_request: {
+    method: "GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS",
+    url: "http://127.0.0.1:7228/api/tool-management/v1/execute",
+    headers: {},
+    query: {},
+    body: {},
+    timeoutMs: 30000
+  },
+  local_command: {
+    commandId: "node-version",
+    variables: {
+      flag: "--version"
+    },
+    args: [],
+    cwd: "",
+    stdin: "",
+    timeoutMs: 30000
+  }
+};
 const DEFAULT_CUSTOM_HTTP_ADAPTER = {
   alias:
     process.env.PACT_CUSTOM_HTTP_ADAPTER_ALIAS ||
@@ -103,6 +139,7 @@ const DEFAULT_AGENT_EXPLORE_DEFAULTS = {
 };
 
 const DEFAULT_AGENT_TOOL_EXECUTION = {
+  functionCallSchema: DEFAULT_AGENT_TOOL_FUNCTION_CALL_SCHEMA,
   http: {
     enabled: true,
     allowedHosts: ["127.0.0.1", "localhost"],
@@ -114,14 +151,17 @@ const DEFAULT_AGENT_TOOL_EXECUTION = {
     allowDirectCommands: false,
     timeoutMs: 30000,
     maxOutputBytes: 65536,
+    nodeCommand: "",
     commands: [
       {
         commandId: "node-version",
         label: "Node.js version",
-        command: process.execPath,
-        args: ["--version"],
+        command: DEFAULT_AGENT_LOCAL_NODE_COMMAND,
+        args: ["{{flag}}"],
         cwd: "",
-        description: "Cross-platform Node runtime smoke command."
+        description: "Cross-platform Node runtime smoke command.",
+        variables: DEFAULT_NODE_VERSION_VARIABLES,
+        allowExtraArgs: false
       }
     ]
   }
@@ -631,6 +671,100 @@ function normalizePlainObject(value, fallback = {}) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
 }
 
+function firstEnvironmentValue(keys = []) {
+  for (const key of keys) {
+    const value = String(process.env[key] || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function resolveAgentLocalNodeCommandOverride(local = {}) {
+  const configuredNodeCommand = String(local.nodeCommand || local.nodePath || "").trim();
+  return firstEnvironmentValue(AGENT_LOCAL_NODE_COMMAND_ENV_KEYS) || configuredNodeCommand;
+}
+
+function shouldResolveBuiltInNodeCommand(commandId, command, hasNodeCommandOverride) {
+  if (String(commandId || "").trim() !== "node-version") {
+    return false;
+  }
+  if (hasNodeCommandOverride) {
+    return true;
+  }
+  const normalizedCommand = String(command || "").trim();
+  if (!normalizedCommand) {
+    return true;
+  }
+  if (normalizedCommand === DEFAULT_AGENT_LOCAL_NODE_COMMAND) {
+    return false;
+  }
+  return normalizedCommand === process.execPath || path.isAbsolute(normalizedCommand);
+}
+
+function normalizeAgentLocalCommandVariables(value) {
+  const variables = Array.isArray(value) ? value : [];
+  return variables
+    .map((item) => {
+      const variable = normalizePlainObject(item);
+      const name = String(variable.name || variable.key || "").trim();
+      if (!name) {
+        return null;
+      }
+      const hasDefault = Object.hasOwn(variable, "defaultValue") || Object.hasOwn(variable, "default");
+      return {
+        name,
+        label: String(variable.label || variable.title || name).trim(),
+        required: variable.required === true,
+        ...(hasDefault
+          ? { defaultValue: String(variable.defaultValue ?? variable.default ?? "") }
+          : {}),
+        allowedValues: normalizeStringList(variable.allowedValues || variable.enum || variable.options),
+        description: String(variable.description || variable.help || "").trim()
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeAgentLocalCommandTemplate(
+  command,
+  index,
+  resolvedNodeCommand,
+  hasNodeCommandOverride
+) {
+  const commandId = String(command.commandId || command.id || `command-${index + 1}`).trim();
+  const commandValue = String(command.command || "").trim();
+  const isBuiltInNodeVersion = commandId === "node-version";
+  const variables = normalizeAgentLocalCommandVariables(
+    isBuiltInNodeVersion ? command.variables || DEFAULT_NODE_VERSION_VARIABLES : command.variables
+  );
+  const rawArgs = normalizeStringList(command.args);
+  const usesTemplateVariables = variables.length > 0;
+  return {
+    commandId,
+    label: String(command.label || command.name || command.commandId || `Command ${index + 1}`).trim(),
+    command: shouldResolveBuiltInNodeCommand(commandId, commandValue, hasNodeCommandOverride)
+      ? resolvedNodeCommand
+      : commandValue,
+    args: isBuiltInNodeVersion && !rawArgs.some((arg) => /\{\{\s*flag\s*\}\}/.test(arg))
+      ? ["{{flag}}"]
+      : rawArgs,
+    cwd: String(command.cwd || "").trim(),
+    description: String(command.description || "").trim(),
+    variables,
+    allowExtraArgs: Object.hasOwn(command, "allowExtraArgs")
+      ? command.allowExtraArgs === true
+      : !usesTemplateVariables
+  };
+}
+
+function defaultAgentLocalCommandTemplates(resolvedNodeCommand, hasNodeCommandOverride) {
+  return DEFAULT_AGENT_TOOL_EXECUTION.local.commands.map((command, index) =>
+    normalizeAgentLocalCommandTemplate(command, index, resolvedNodeCommand, hasNodeCommandOverride)
+  );
+}
+
 function safeModelAgentFileId(value) {
   return String(value || "")
     .trim()
@@ -844,11 +978,19 @@ function normalizeAgentToolExecution(value = {}) {
   const incoming = normalizePlainObject(value);
   const http = normalizePlainObject(incoming.http);
   const local = normalizePlainObject(incoming.local);
+  const configuredNodeCommand = String(local.nodeCommand || local.nodePath || "").trim();
+  const nodeCommandOverride = resolveAgentLocalNodeCommandOverride(local);
+  const resolvedNodeCommand = nodeCommandOverride || DEFAULT_AGENT_LOCAL_NODE_COMMAND;
+  const hasNodeCommandOverride = Boolean(nodeCommandOverride);
   const httpTimeoutMs = Number(http.timeoutMs || DEFAULT_AGENT_TOOL_EXECUTION.http.timeoutMs);
   const maxResponseBytes = Number(http.maxResponseBytes || DEFAULT_AGENT_TOOL_EXECUTION.http.maxResponseBytes);
   const localTimeoutMs = Number(local.timeoutMs || DEFAULT_AGENT_TOOL_EXECUTION.local.timeoutMs);
   const maxOutputBytes = Number(local.maxOutputBytes || DEFAULT_AGENT_TOOL_EXECUTION.local.maxOutputBytes);
   return {
+    functionCallSchema: normalizePlainObject(
+      incoming.functionCallSchema,
+      DEFAULT_AGENT_TOOL_EXECUTION.functionCallSchema
+    ),
     http: {
       ...DEFAULT_AGENT_TOOL_EXECUTION.http,
       ...http,
@@ -864,19 +1006,17 @@ function normalizeAgentToolExecution(value = {}) {
       allowDirectCommands: local.allowDirectCommands === true,
       timeoutMs: Number.isFinite(localTimeoutMs) && localTimeoutMs > 0 ? localTimeoutMs : 30000,
       maxOutputBytes: Number.isFinite(maxOutputBytes) && maxOutputBytes > 0 ? maxOutputBytes : 65536,
+      nodeCommand: configuredNodeCommand,
       commands: Array.isArray(local.commands)
-        ? local.commands.map((item, index) => {
-            const command = normalizePlainObject(item);
-            return {
-              commandId: String(command.commandId || command.id || `command-${index + 1}`).trim(),
-              label: String(command.label || command.name || command.commandId || `Command ${index + 1}`).trim(),
-              command: String(command.command || "").trim(),
-              args: normalizeStringList(command.args),
-              cwd: String(command.cwd || "").trim(),
-              description: String(command.description || "").trim()
-            };
-          }).filter((item) => item.commandId && item.command)
-        : DEFAULT_AGENT_TOOL_EXECUTION.local.commands
+        ? local.commands.map((item, index) =>
+            normalizeAgentLocalCommandTemplate(
+              normalizePlainObject(item),
+              index,
+              resolvedNodeCommand,
+              hasNodeCommandOverride
+            )
+          ).filter((item) => item.commandId && item.command)
+        : defaultAgentLocalCommandTemplates(resolvedNodeCommand, hasNodeCommandOverride)
     }
   };
 }
