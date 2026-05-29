@@ -450,6 +450,7 @@ export async function startHttpServer({
     queueMonitor: queueMonitorAdapter,
     runtimeLogger,
     clientRuntimeAllocator,
+    securityPermissions,
     getToolManagementPlatform: () => toolManagementPlatformRef,
     getToolSkillManagementProvider: () => toolSkillManagementProviderRef,
     isFeatureActive,

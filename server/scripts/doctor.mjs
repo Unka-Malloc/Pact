@@ -2,6 +2,10 @@ import path from "node:path";
 import process from "node:process";
 import { runStorageDoctor } from "../platform/common/storage/ops-tools.mjs";
 import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
+import {
+  describeCapabilityBindingGuardStatus,
+  describeCapabilityKernelStatus
+} from "../platform/common/security/authorization/capability-kernel-status.mjs";
 
 function parseArgs(argv) {
   const args = {
@@ -16,6 +20,22 @@ function parseArgs(argv) {
       args.userDataPath = path.resolve(process.cwd(), next);
       index += 1;
     }
+    if (current === "--capability-backend" && next) {
+      args.capabilityKernelBackend = next;
+      index += 1;
+    }
+    if (current === "--capability-alias" && next) {
+      args.capabilityKernelAlias = next;
+      index += 1;
+    }
+    if (current === "--binding-backend" && next) {
+      args.capabilityBindingBackend = next;
+      index += 1;
+    }
+    if (current === "--binding-alias" && next) {
+      args.capabilityBindingAlias = next;
+      index += 1;
+    }
   }
 
   return args;
@@ -24,6 +44,16 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const report = await runStorageDoctor({
   userDataPath: args.userDataPath
+});
+report.capabilityKernel = await describeCapabilityKernelStatus({
+  userDataPath: args.userDataPath,
+  backend: args.capabilityKernelBackend,
+  alias: args.capabilityKernelAlias
+});
+report.capabilityBindingGuard = await describeCapabilityBindingGuardStatus({
+  userDataPath: args.userDataPath,
+  backend: args.capabilityBindingBackend,
+  alias: args.capabilityBindingAlias
 });
 
 console.log(JSON.stringify(report, null, 2));

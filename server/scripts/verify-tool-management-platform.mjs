@@ -28,6 +28,8 @@ function bearerHeaders(token) {
 }
 
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-tool-management-"));
+process.env.PACT_TOOL_GRANT_CAPABILITY_KEY_PROVIDER = "local-file";
+process.env.PACT_TOOL_GRANT_BINDING_GUARD_PROVIDER = "local-file";
 const server = await startHttpServer({
   userDataPath,
   distPath: "",
@@ -66,9 +68,10 @@ try {
     })
   });
   assert.equal(grantResult.status, 201);
-  assert.ok(grantResult.payload.token);
+  assert.match(grantResult.payload.token, /^ock_[A-Za-z0-9_-]+$/);
   assert.equal(grantResult.payload.grant.hasToken, true);
   assert.equal(grantResult.payload.grant.scopes.includes("knowledge:read"), true);
+  assert.equal(grantResult.payload.grant.credential.protocolVersion, "pact.opaque-capability-key.v1");
 
   const narrowGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
@@ -100,7 +103,7 @@ try {
     })
   });
   assert.equal(toolsetDenied.status, 403);
-  assert.equal(toolsetDenied.payload.error.code, "missing_toolsets");
+  assert.equal(toolsetDenied.payload.error.code, "missing_capabilities");
 
   const rateLimitedGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
@@ -164,6 +167,49 @@ try {
     })
   });
   assert.equal(originAllowed.status, 200);
+
+  const boundGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: "verify-bound-agent-user",
+      scopes: ["knowledge:read"],
+      metadata: {
+        agentId: "agent-a",
+        boundUserId: "user-a"
+      }
+    })
+  });
+  assert.equal(boundGrant.status, 201);
+  assert.equal(boundGrant.payload.grant.credential.bindingProtocol, "pact.capability-binding-guard.v1");
+  assert.equal(boundGrant.payload.grant.credential.bindingStrength, "user+agent");
+  const boundAllowed = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(boundGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "pact.knowledge.health",
+      context: {
+        agentId: "agent-a",
+        userId: "user-a"
+      },
+      input: {}
+    })
+  });
+  assert.equal(boundAllowed.status, 200);
+  const boundWrongUser = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
+    method: "POST",
+    headers: bearerHeaders(boundGrant.payload.token),
+    body: JSON.stringify({
+      toolId: "pact.knowledge.health",
+      context: {
+        agentId: "agent-a",
+        userId: "user-b"
+      },
+      input: {}
+    })
+  });
+  assert.equal(boundWrongUser.status, 403);
+  assert.equal(boundWrongUser.payload.error.code, "binding_user_mismatch");
 
   const executed = await fetchJson(`${server.url}/api/tool-management/v1/execute`, {
     method: "POST",
@@ -273,7 +319,7 @@ try {
     })
   });
   assert.equal(runtimeSetDeniedForReadGrant.status, 403);
-  assert.equal(runtimeSetDeniedForReadGrant.payload.error.code, "missing_scopes");
+  assert.equal(runtimeSetDeniedForReadGrant.payload.error.code, "missing_capabilities");
 
   const runtimeMaintainGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",

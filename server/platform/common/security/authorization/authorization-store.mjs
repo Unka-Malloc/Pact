@@ -39,6 +39,47 @@ function firstString(...values) {
   return "";
 }
 
+function redactAuthorizationDecisionValue(value, depth = 0, path = []) {
+  if (depth > 8) {
+    return "<redacted-depth>";
+  }
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value
+      .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+      .replace(/ock_[A-Za-z0-9_-]+/g, "<redacted-capability-key>");
+  }
+  if (typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactAuthorizationDecisionValue(item, depth + 1, path));
+  }
+  const output = {};
+  for (const [key, nested] of Object.entries(value)) {
+    const nextPath = [...path, key];
+    const lowerKey = key.toLowerCase();
+    if (/token|secret|password|authorization|cookie|api[-_]?key|csrf/i.test(key)) {
+      output[key] = "<redacted>";
+    } else if (["keyhash", "capabilitysethash", "runtimelookupkeybase64", "bindinglookupkeybase64"].includes(lowerKey)) {
+      output[key] = "<redacted>";
+    } else if (
+      key === "subjectCapabilities" ||
+      (key === "capabilities" && nextPath.includes("subject"))
+    ) {
+      output[key] = {
+        redacted: true,
+        count: Array.isArray(nested) ? nested.length : 0
+      };
+    } else {
+      output[key] = redactAuthorizationDecisionValue(nested, depth + 1, nextPath);
+    }
+  }
+  return output;
+}
+
 function subjectIdFrom(value = {}) {
   return String(
     value.subjectId ||
@@ -222,6 +263,7 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
 
   function appendDeniedRequest(entry = {}) {
     const deniedRequest = entry.deniedRequest || entry;
+    const storedDeniedRequest = redactAuthorizationDecisionValue(deniedRequest);
     const deniedRequestId = String(
       entry.deniedRequestId ||
         deniedRequest.deniedRequestId ||
@@ -241,7 +283,7 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
       firstString(entry.tenantId, deniedRequest.tenantId, deniedRequest.tenant?.resourceTenantId, deniedRequest.resource?.tenantId),
       firstString(entry.workspaceId, deniedRequest.workspaceId, deniedRequest.abac?.workspaceId, deniedRequest.resource?.workspaceId),
       String(entry.reasonCode || deniedRequest.reasonCode || deniedRequest.filteredReason || "denied"),
-      stringifyJson(deniedRequest),
+      stringifyJson(storedDeniedRequest),
       String(entry.createdAt || deniedRequest.createdAt || nowIso())
     );
     return { deniedRequestId };
@@ -250,6 +292,7 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
   function appendDecision(decision = {}) {
     const decisionId = String(decision.decisionId || randomId("authz_decision"));
     const subject = decision.subject || {};
+    const storedDecision = redactAuthorizationDecisionValue({ ...decision, decisionId });
     db.prepare(`
       INSERT OR REPLACE INTO authorization_decisions (
         decision_id, trace_id, subject_type, subject_id, operation_id, tool_id, grant_id, action,
@@ -276,10 +319,11 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
       stringifyJson(decision.missingToolsets || []),
       stringifyJson(decision.requiredScopes || []),
       stringifyJson(decision.evaluatedLayers || []),
-      stringifyJson({ ...decision, decisionId }),
+      stringifyJson(storedDecision),
       String(decision.createdAt || nowIso())
     );
     if (decision.allowed === false || decision.effect === "deny") {
+      const storedDeniedRequest = redactAuthorizationDecisionValue({ ...decision, decisionId });
       appendDeniedRequest({
         decisionId,
         subjectId: subject.subjectId || "",
@@ -288,7 +332,7 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
         tenantId: firstString(decision.tenantId, decision.tenant?.resourceTenantId, decision.resource?.tenantId),
         workspaceId: firstString(decision.workspaceId, decision.abac?.workspaceId, decision.resource?.workspaceId),
         reasonCode: decision.reasonCode || "denied",
-        deniedRequest: { ...decision, decisionId }
+        deniedRequest: storedDeniedRequest
       });
     }
     return { decisionId };
@@ -397,7 +441,15 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     `).all(...params, asLimit(limit)).map(rowToLoanRecord);
   }
 
-  function listDeniedRequests({ limit = 100, subjectId = "", tenantId = "", workspaceId = "" } = {}) {
+  function listDeniedRequests({
+    limit = 100,
+    subjectId = "",
+    tenantId = "",
+    workspaceId = "",
+    operationId = "",
+    toolId = "",
+    reasonCode = ""
+  } = {}) {
     const clauses = [];
     const params = [];
     if (subjectId) {
@@ -411,6 +463,18 @@ export function createAuthorizationStore({ userDataPath = "", rootPath = "" } = 
     if (workspaceId) {
       clauses.push("workspace_id = ?");
       params.push(String(workspaceId));
+    }
+    if (operationId) {
+      clauses.push("operation_id = ?");
+      params.push(String(operationId));
+    }
+    if (toolId) {
+      clauses.push("tool_id = ?");
+      params.push(String(toolId));
+    }
+    if (reasonCode) {
+      clauses.push("reason_code = ?");
+      params.push(String(reasonCode));
     }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     return db.prepare(`

@@ -404,10 +404,11 @@ export function createToolExecutionRuntime({
     });
     await publishEvent("tools.execution", { toolExecutionId, traceId, toolId: tool.id, status: "started" }, { type: "tools.execution.started" });
 
-    const authorization = store.authorizeRequest({
+    const authorization = await store.authorizeRequest({
       request,
       requiredScopes: tool.requiredScopes,
-      tool
+      tool,
+      context
     });
     if (!authorization.ok) {
       const durationMs = Date.now() - startedAtMs;
@@ -445,12 +446,14 @@ export function createToolExecutionRuntime({
               type: "tool-grant",
               subjectId: authorization.grant.id,
               username: authorization.grant.label || authorization.grant.id,
-              scopes: authorization.grant.scopes || []
+              scopes: authorization.grant.scopes || [],
+              capabilities: authorization.grant.capabilities || []
             }
           : {
               type: "anonymous",
               subjectId: "",
-              scopes: []
+              scopes: [],
+              capabilities: []
             },
         resource: {
           toolId: tool.id,
@@ -458,6 +461,7 @@ export function createToolExecutionRuntime({
           risk: tool.risk
         },
         missingScopes: authorization.missingScopes || [],
+        missingCapabilities: authorization.missingCapabilities || [],
         redactedReason: authorization.error || "Tool token authorization denied."
       });
       store.appendExecution({
@@ -505,7 +509,8 @@ export function createToolExecutionRuntime({
             code: decision.reasonCode,
             message: authorization.error || "Tool call denied.",
             details: {
-              missingScopes: authorization.missingScopes || []
+              missingScopes: authorization.missingScopes || [],
+              missingCapabilities: authorization.missingCapabilities || []
             }
           }
         }
@@ -582,6 +587,7 @@ export function createToolExecutionRuntime({
             details: {
               decisionId: policy.decisionId,
               missingScopes: policy.missingScopes,
+              missingCapabilities: policy.missingCapabilities,
               missingToolsets: policy.missingToolsets
             }
           }

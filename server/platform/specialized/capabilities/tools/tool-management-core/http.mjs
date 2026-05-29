@@ -255,7 +255,7 @@ export function createToolManagementHttpRouter({
       if (!requireSafetyConfirm(request, response)) {
         return true;
       }
-      const result = platform.store.createGrant(parseJsonBody(requestBody));
+      const result = await platform.store.createGrant(parseJsonBody(requestBody));
       return complete(201, {
         schemaVersion: 1,
         grant: result.grant,
@@ -271,7 +271,7 @@ export function createToolManagementHttpRouter({
       if (!requireSafetyConfirm(request, response)) {
         return true;
       }
-      const result = platform.store.rotateGrantToken(decodeURIComponent(grantRotateMatch[1]));
+      const result = await platform.store.rotateGrantToken(decodeURIComponent(grantRotateMatch[1]));
       if (!result) {
         return complete(404, { schemaVersion: 1, error: { code: "grant_not_found", message: "Grant not found." } });
       }
@@ -287,7 +287,7 @@ export function createToolManagementHttpRouter({
         return true;
       }
       const payload = parseJsonBody(requestBody);
-      const grant = platform.store.revokeGrant(decodeURIComponent(grantRevokeMatch[1]), payload.reason || "");
+      const grant = await platform.store.revokeGrant(decodeURIComponent(grantRevokeMatch[1]), payload.reason || "");
       if (!grant) {
         return complete(404, { schemaVersion: 1, error: { code: "grant_not_found", message: "Grant not found." } });
       }

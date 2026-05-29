@@ -9,6 +9,24 @@ export function createSystemControllerFoundationHandlers({
   agentWorkspace,
   runtime
 }) {
+  async function sendAuthorizationOperation({
+    operation,
+    operationId,
+    input = {},
+    response,
+    authSession,
+    request = null,
+    errorMessage
+  }) {
+    await sendConsoleDomainOperation({
+      operationId: operation?.id || operationId,
+      input,
+      response,
+      context: authorizationFacadeContext(authSession, request ? { request } : {}),
+      errorMessage
+    });
+  }
+
   return {
     async handleAuthorizationSubjectResolve({ operation, requestBody, response, authSession }) {
       await sendConsoleDomainOperation({
@@ -26,6 +44,143 @@ export function createSystemControllerFoundationHandlers({
         response,
         context: authorizationFacadeContext(authSession, { request }),
         errorMessage: "统一授权策略裁决失败。"
+      });
+    },
+    async handleAuthorizationGovernanceSummary({ operation, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.governance.summary",
+        response,
+        authSession,
+        errorMessage: "读取统一权限治理摘要失败。"
+      });
+    },
+    async handleAuthorizationRolesList({ operation, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.roles.list",
+        response,
+        authSession,
+        errorMessage: "读取权限角色失败。"
+      });
+    },
+    async handleAuthorizationRoleUpsert({ operation, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.roles.upsert",
+        input: protocolPayload(requestBody),
+        response,
+        authSession,
+        errorMessage: "保存权限角色失败。"
+      });
+    },
+    async handleAuthorizationTeamsList({ operation, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.teams.list",
+        response,
+        authSession,
+        errorMessage: "读取权限团队失败。"
+      });
+    },
+    async handleAuthorizationTeamUpsert({ operation, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.teams.upsert",
+        input: protocolPayload(requestBody),
+        response,
+        authSession,
+        errorMessage: "保存权限团队失败。"
+      });
+    },
+    async handleAuthorizationUserPoliciesList({ operation, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.users.policies.list",
+        response,
+        authSession,
+        errorMessage: "读取用户授权策略失败。"
+      });
+    },
+    async handleAuthorizationUserPolicyUpsert({ operation, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.users.policy.upsert",
+        input: protocolPayload(requestBody),
+        response,
+        authSession,
+        errorMessage: "保存用户授权策略失败。"
+      });
+    },
+    async handleAuthorizationAgentGroupsList({ operation, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.agent_groups.list",
+        response,
+        authSession,
+        errorMessage: "读取智能体分组失败。"
+      });
+    },
+    async handleAuthorizationAgentGroupUpsert({ operation, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.agent_groups.upsert",
+        input: protocolPayload(requestBody),
+        response,
+        authSession,
+        errorMessage: "保存智能体分组失败。"
+      });
+    },
+    async handleAuthorizationAgentBindingsList({ operation, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.agents.bindings.list",
+        response,
+        authSession,
+        errorMessage: "读取智能体绑定失败。"
+      });
+    },
+    async handleAuthorizationAgentBindingUpsert({ operation, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.agents.binding.upsert",
+        input: protocolPayload(requestBody),
+        response,
+        authSession,
+        errorMessage: "保存智能体绑定失败。"
+      });
+    },
+    async handleAuthorizationApprovalsList({ operation, url, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.approvals.list",
+        input: protocolPayload(Buffer.alloc(0), url),
+        response,
+        authSession,
+        errorMessage: "读取智能体审批失败。"
+      });
+    },
+    async handleAuthorizationApprovalUpsert({ operation, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.approvals.upsert",
+        input: protocolPayload(requestBody),
+        response,
+        authSession,
+        errorMessage: "保存智能体审批失败。"
+      });
+    },
+    async handleAuthorizationApprovalRevoke({ operation, approvalId, requestBody, response, authSession }) {
+      await sendAuthorizationOperation({
+        operation,
+        operationId: "authorization.approvals.revoke",
+        input: {
+          ...protocolPayload(requestBody),
+          approvalId
+        },
+        response,
+        authSession,
+        errorMessage: "撤销智能体审批失败。"
       });
     },
     async handleAuthorizationReceiptsList({ operation, url, response, authSession }) {

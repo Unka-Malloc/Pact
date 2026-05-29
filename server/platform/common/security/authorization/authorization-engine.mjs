@@ -2,6 +2,793 @@ import crypto from "node:crypto";
 
 export const AUTHORIZATION_PROTOCOL_VERSION = "pact.authorization.v1";
 
+function hardcodedCapabilityLines(block) {
+  return Object.freeze(
+    String(block || "")
+      .trim()
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+}
+
+export const KERNEL_API_OPERATION_IDS = hardcodedCapabilityLines(`
+agent_gateway.call
+agent_gateway.config.get
+agent_gateway.config.set
+agent_sessions.archive
+agent_sessions.compare
+agent_sessions.context.get
+agent_sessions.events.append
+agent_sessions.fork
+agent_sessions.get
+agent_sessions.list
+agent_sessions.merge_proposal
+agent_sync.config.get
+agent_sync.config.set
+agent_sync.publish
+agent_sync.subscribe
+agent_workspaces.chain.get
+agent_workspaces.context.get
+agent_workspaces.context_bundle.export
+agent_workspaces.context_bundle.restore
+agent_workspaces.create
+agent_workspaces.delete
+agent_workspaces.file.delete
+agent_workspaces.file.download
+agent_workspaces.file.move
+agent_workspaces.file.stat
+agent_workspaces.file.upload
+agent_workspaces.file.write
+agent_workspaces.files.list
+agent_workspaces.folder.create
+agent_workspaces.get
+agent_workspaces.issues.resolve
+agent_workspaces.list
+agent_workspaces.locks.list
+agent_workspaces.locks.write
+agent_workspaces.parent.set
+agent_workspaces.profile.hotswap
+agent_workspaces.share
+agent_workspaces.sources.set
+agent_workspaces.submissions.resolve
+agent_workspaces.unshare
+agents.create
+agents.delete
+agents.list
+agents.update
+architecture.live_map
+asset_lineage.describe
+asset_lineage.record
+asset_lineage.reparse_plan
+asset_lineage.trace
+auth.audit
+auth.audit.export
+auth.audit.prune
+auth.audit.retention.get
+auth.audit.retention.set
+auth.login
+auth.logout
+auth.oidc.get
+auth.oidc.set
+auth.roles.get
+auth.session
+auth.sessions
+auth.sessions.revoke
+auth.sessions.rotate
+auth.users
+auth.users.create
+auth.users.update
+authorization.agent_groups.list
+authorization.agent_groups.upsert
+authorization.agents.binding.upsert
+authorization.agents.bindings.list
+authorization.approvals.list
+authorization.approvals.revoke
+authorization.approvals.upsert
+authorization.denied_requests.list
+authorization.governance.summary
+authorization.grants.create
+authorization.grants.revoke
+authorization.loan_records.list
+authorization.policy.evaluate
+authorization.receipts.list
+authorization.roles.list
+authorization.roles.upsert
+authorization.subject.resolve
+authorization.teams.list
+authorization.teams.upsert
+authorization.users.policies.list
+authorization.users.policy.upsert
+capability_packages.lifecycle
+capability_packages.list
+capability_packages.plan
+capability_packages.submit
+client_runtime.bootstrap.plan
+client_runtime.bootstrap.pull
+client_runtime.profiles.get
+client_runtime.profiles.set
+client_runtime.resolve
+client_runtime.status
+codespace.change.prepare
+codespace.change.upload
+codespace.diff.read
+codespace.file.read
+codespace.providers.manifest
+codespace.repository.status
+codespace.review.approve
+codespace.review.comment
+codespace.review.requestChanges
+codespace.review.status.sync
+codespace.tree.list
+context.build_records
+context.compaction.preview
+context.compaction.records
+context.compaction.run
+context.evaluation.runs.create
+context.preview
+context.profiles.get
+context.profiles.set
+context.session_memory.clear
+context.session_memory.get
+data_connectors.governance.conformance
+data_connectors.governance.describe
+data_connectors.governance.plan
+discovery.check_in
+discovery.clients
+discovery.clients.migration
+discovery.get_config
+discovery.set_config
+email_rules.get
+email_rules.set
+events.subscribe
+executive_report.generate
+executive_report.list
+executive_report.preview
+expert_vocabulary.get
+expert_vocabulary.set
+expert_vocabulary.versions
+gerrit.git_upload
+gerrit.maintain
+gerrit.read
+gerrit.write
+jobs.create
+jobs.delete
+jobs.failed_review
+jobs.get
+jobs.list
+jobs.normalized_document.get
+jobs.normalized_documents
+jobs.reparse
+jobs.result
+knowledge.access.denied_request.list
+knowledge.access.evaluate
+knowledge.access.loan_record.list
+knowledge.access.receipt.list
+knowledge.affair_taxonomy
+knowledge.agent_explore.runs.create
+knowledge.agent_explore.runs.get
+knowledge.agent_skill.describe
+knowledge.agent_skill.plan
+knowledge.agent_skill.run
+knowledge.asset
+knowledge.backend.connect
+knowledge.capabilities
+knowledge.changes
+knowledge.config_schema
+knowledge.console
+knowledge.contribution.submit
+knowledge.corpus.significant_terms
+knowledge.distillation.export
+knowledge.distillation.runs.create
+knowledge.distillation.runs.get
+knowledge.distillation.workbench.runs.archive
+knowledge.distillation.workbench.runs.cancel
+knowledge.distillation.workbench.runs.compare
+knowledge.distillation.workbench.runs.create
+knowledge.distillation.workbench.runs.delete
+knowledge.distillation.workbench.runs.get
+knowledge.distillation.workbench.runs.list
+knowledge.distillation.workbench.runs.package
+knowledge.distillation.workbench.runs.resume
+knowledge.distillation.workbench.stage.export
+knowledge.distillation.workbench.stage.rerun
+knowledge.document_parse
+knowledge.document_structure
+knowledge.dossier.export
+knowledge.evaluation.runs.create
+knowledge.evaluation.runs.get
+knowledge.evaluation.runs.list
+knowledge.evidence
+knowledge.evidence.get
+knowledge.evidence_gate.evaluate
+knowledge.evolution.deployments.list
+knowledge.evolution.deployments.promote
+knowledge.evolution.deployments.rollback
+knowledge.evolution.describe
+knowledge.evolution.runs.create
+knowledge.evolution.runs.get
+knowledge.evolution.runs.list
+knowledge.export.request
+knowledge.export_docx
+knowledge.export_html
+knowledge.export_markdown
+knowledge.feedback
+knowledge.gold_cases.list
+knowledge.gold_cases.save
+knowledge.golden_rules.list
+knowledge.golden_rules.publish
+knowledge.golden_rules.rollback
+knowledge.golden_rules.save
+knowledge.graph
+knowledge.health
+knowledge.hierarchy.audit
+knowledge.item
+knowledge.learning.health
+knowledge.learning.jobs
+knowledge.maintenance.get
+knowledge.maintenance.run
+knowledge.maintenance.set
+knowledge.maintenance.settings
+knowledge.model_decision
+knowledge.model_roles
+knowledge.permission.request
+knowledge.reindex
+knowledge.render_markdown
+knowledge.review_items
+knowledge.review_resolve
+knowledge.rule_authoring.chat
+knowledge.rule_authoring.runs.get
+knowledge.search
+knowledge.search.get
+knowledge.skills.deployments.create
+knowledge.skills.deployments.rollback
+knowledge.skills.evaluation.runs.create
+knowledge.skills.framework
+knowledge.skills.framework_save
+knowledge.skills.generate
+knowledge.skills.get
+knowledge.skills.list
+knowledge.skills.propose
+knowledge.skills.resolve
+knowledge.sources.create
+knowledge.sources.delete
+knowledge.sources.list
+knowledge.sources.refresh
+knowledge.sources.refresh_all
+knowledge.sources.update
+knowledge.space.list
+knowledge.suggestion_resolve
+knowledge.suggestions
+knowledge.summarization.runs.approve
+knowledge.summarization.runs.create
+knowledge.summarization.runs.get
+knowledge.sync
+knowledge.training_sets.export
+knowledge.word_bags.add
+knowledge.word_bags.delete
+knowledge.word_bags.terms
+knowledge.word_bags.update
+knowledge.word_clouds.export
+knowledge.word_clouds.get
+knowledge.word_clouds.import
+knowledge.word_clouds.propose
+knowledge.word_clouds.save
+knowledge_taxonomy.get
+knowledge_taxonomy.set
+knowledge_taxonomy.versions
+maintenance_agent.chat
+maintenance_agent.config.get
+maintenance_agent.config.set
+maintenance_agent.runs.approve
+maintenance_agent.runs.cancel
+maintenance_agent.runs.create
+maintenance_agent.runs.get
+maintenance_agent.runs.list
+model_routing.health
+module_ecosystem.contract_test
+module_ecosystem.plan
+module_ecosystem.scaffold
+module_ecosystem.templates
+oauth.codex_login
+oauth.codex_return
+oauth.codex_status
+observability.trace.get
+performance.capacity.benchmark
+performance.capacity.targets
+production.health
+raw-corpus.format.convert
+raw_objects.get
+repo.branch.checkout
+repo.branch.create
+repo.change.abandon
+repo.commit.create
+repo.commit.read
+repo.diff.read
+repo.file.create
+repo.file.delete
+repo.file.move
+repo.file.read
+repo.file.update
+repo.member.set
+repo.merge
+repo.proposal.close
+repo.proposal.create
+repo.protection.set
+repo.push
+repo.rebase
+repo.revert
+repo.review.approve
+repo.review.comment
+repo.review.requestChanges
+repo.status
+repo.submit
+repo.tree.list
+repo.webhook.set
+runtime.info
+runtime.mounts
+runtime.path_browse
+runtime.reload_mounts
+runtime.set_mounts
+sample_business_pack.get
+sample_business_pack.list
+sample_business_pack.materialize
+search.query
+settings.get
+settings.model_probe
+settings.set
+sharedspace.drive.connect
+sharedspace.drive.file.download
+sharedspace.drive.file.upload
+sharedspace.drive.item.list
+sharedspace.drive.permission.list
+sharedspace.drive.status
+sharedspace.drive.sync.apply
+sharedspace.drive.sync.plan
+sharedspace.file.read
+sharedspace.file.write
+sharedspace.item.delete
+sharedspace.item.list
+sharedspace.localDir.connect
+sharedspace.localDir.list
+sharedspace.sync.apply
+sharedspace.sync.plan
+storage.backups.create
+storage.backups.list
+storage.backups.restore
+storage.backups.restore_preview
+storage.doctor
+storage.reconcile
+storage.source_vocabulary.rebuild
+storage.summary
+strategy.agent_policy.evaluate
+strategy.describe
+strategy.tool_policy.preview
+strategy.workflow_policy.evaluate
+system.background_processes
+system.bootstrap
+system.checkpoint_trees.get
+system.checkpoint_trees.list
+system.console_state
+system.health
+system.interfaces
+system.monitor_alerts.ack
+system.monitor_alerts.get
+system.monitor_alerts.set
+tool_management.audit
+tool_management.audit_item
+tool_management.batch
+tool_management.catalog
+tool_management.catalog_item
+tool_management.create_grant
+tool_management.dry_run
+tool_management.events
+tool_management.execute
+tool_management.grants
+tool_management.mcp.list_requests
+tool_management.mcp.request_authorization
+tool_management.mcp.resolve_request
+tool_management.metrics_summary
+tool_management.policy_evaluate
+tool_management.policy_preview
+tool_management.profiles
+tool_management.revoke_grant
+tool_management.rotate_grant
+tool_management.toolsets
+tool_management.toolsets_resolve
+tool_management.update_grant
+uploads.create_session
+uploads.get_session
+uploads.upload_chunk
+v001.baseline.status
+workspace.asset.permission.check
+workspace.asset.policy.set
+workspace.audit.query
+workspace.checkpoint.diff
+workspace.checkpoint.node.get
+workspace.checkpoint.restore
+workspace.checkpoint.restore.preview
+workspace.checkpoint.scope.query
+workspace.checkpoint.tree.list
+workspace.code.change.link
+workspace.code.change.prepare
+workspace.code.change.status.sync
+workspace.code.change.upload
+workspace.code.target.evaluate
+workspace.contribution.adopt
+workspace.contribution.assets.list
+workspace.contribution.leaderboard
+workspace.contribution.list
+workspace.contribution.permission.grant
+workspace.contribution.permission.request
+workspace.contribution.preview
+workspace.contribution.publish
+workspace.contribution.reject
+workspace.contribution.report
+workspace.contribution.request_changes
+workspace.contribution.review
+workspace.contribution.revoke
+workspace.contribution.scan
+workspace.contribution.stats
+workspace.contribution.submit
+workspace.file.download
+workspace.file.list
+workspace.file.patch
+workspace.file.read
+workspace.file.upload
+workspace.file.write
+workspace.info
+workspace.operation.history
+workspace.operation.revert.scope
+workspace.proposal.apply
+workspace.proposal.create
+workspace.skill.download
+workspace.skill.list
+workspace.skill.upload
+workspace.skill.usage.report
+workspace_governance.describe
+workspace_governance.evaluate
+workspace_governance.policy.set
+workspace_governance.share_grant
+`);
+
+export const KERNEL_TOOL_IDS = hardcodedCapabilityLines(`
+agent-exploration.http_request
+agent-exploration.golden_rule_authoring
+agent-exploration.keyword_search
+agent-exploration.knowledge_aggregate
+agent-exploration.knowledge_skill_propose
+agent-exploration.knowledge_skill_search
+agent-exploration.local_command
+agent-exploration.open_evidence
+maintenance-agent.jobs.failed_review
+maintenance-agent.jobs.list
+maintenance-agent.knowledge.health
+maintenance-agent.knowledge.maintenance.run
+maintenance-agent.knowledge.maintenance.settings
+maintenance-agent.knowledge.reindex
+maintenance-agent.runtime.info
+maintenance-agent.runtime.reload_mounts
+maintenance-agent.storage.doctor
+maintenance-agent.storage.reconcile
+maintenance-agent.storage.summary
+maintenance-agent.system.health
+pact.agentMemory.sessionMemory.clear
+pact.agentMemory.sessionMemory.get
+pact.agentSession.archive
+pact.agentSession.compare
+pact.agentSession.context
+pact.agentSession.events.append
+pact.agentSession.fork
+pact.agentSession.get
+pact.agentSession.list
+pact.agentSession.mergeProposal
+pact.agentSync.publish
+pact.agentWorkspace.chain
+pact.agentWorkspace.context
+pact.agentWorkspace.contextBundle.export
+pact.agentWorkspace.contextBundle.restore
+pact.agentWorkspace.create
+pact.agentWorkspace.file.delete
+pact.agentWorkspace.file.download
+pact.agentWorkspace.file.move
+pact.agentWorkspace.file.stat
+pact.agentWorkspace.file.upload
+pact.agentWorkspace.file.write
+pact.agentWorkspace.files.list
+pact.agentWorkspace.folder.create
+pact.agentWorkspace.get
+pact.agentWorkspace.issueResolve
+pact.agentWorkspace.list
+pact.agentWorkspace.lock
+pact.agentWorkspace.locks
+pact.agentWorkspace.parent.set
+pact.agentWorkspace.profile.hotswap
+pact.agentWorkspace.share
+pact.agentWorkspace.sources.set
+pact.agentWorkspace.submissionResolve
+pact.agentWorkspace.unshare
+pact.architecture.liveMap
+pact.assetLineage.describe
+pact.assetLineage.record
+pact.assetLineage.reparsePlan
+pact.assetLineage.trace
+pact.authorization.agentGroups.list
+pact.authorization.agentGroups.upsert
+pact.authorization.agents.binding.upsert
+pact.authorization.agents.bindings.list
+pact.authorization.approvals.list
+pact.authorization.approvals.revoke
+pact.authorization.approvals.upsert
+pact.authorization.deniedRequests.list
+pact.authorization.governance.summary
+pact.authorization.grants.create
+pact.authorization.grants.revoke
+pact.authorization.loanRecords.list
+pact.authorization.policy.evaluate
+pact.authorization.receipts.list
+pact.authorization.roles.list
+pact.authorization.roles.upsert
+pact.authorization.subject.resolve
+pact.authorization.teams.list
+pact.authorization.teams.upsert
+pact.authorization.users.policies.list
+pact.authorization.users.policy.upsert
+pact.capabilityPackages.lifecycle
+pact.capabilityPackages.list
+pact.capabilityPackages.plan
+pact.capabilityPackages.submit
+pact.clientRuntime.bootstrapPlan
+pact.clientRuntime.bootstrapPull
+pact.clientRuntime.profiles
+pact.clientRuntime.profiles.set
+pact.clientRuntime.resolve
+pact.clientRuntime.status
+pact.codespace.change.prepare
+pact.codespace.change.upload
+pact.codespace.diff.read
+pact.codespace.file.read
+pact.codespace.providers.manifest
+pact.codespace.repository.status
+pact.codespace.review.approve
+pact.codespace.review.comment
+pact.codespace.review.requestChanges
+pact.codespace.review.status.sync
+pact.codespace.tree.list
+pact.context.profiles
+pact.context.profiles.set
+pact.dataConnectors.governance
+pact.dataConnectors.governance.conformance
+pact.dataConnectors.governance.plan
+pact.executiveReport.generate
+pact.executiveReport.list
+pact.executiveReport.preview
+pact.gerrit.gitUpload
+pact.gerrit.maintain
+pact.gerrit.read
+pact.gerrit.write
+pact.jobs.get
+pact.jobs.list
+pact.knowledge.access.deniedRequest.list
+pact.knowledge.access.evaluate
+pact.knowledge.access.loanRecord.list
+pact.knowledge.access.receipt.list
+pact.knowledge.affairTaxonomy
+pact.knowledge.agentSkill
+pact.knowledge.agentSkill.plan
+pact.knowledge.agentSkill.run
+pact.knowledge.asset
+pact.knowledge.backend.connect
+pact.knowledge.capabilities
+pact.knowledge.changes
+pact.knowledge.configSchema
+pact.knowledge.console
+pact.knowledge.contribution.submit
+pact.knowledge.distillation.export
+pact.knowledge.distillation.runs.create
+pact.knowledge.distillation.runs.get
+pact.knowledge.documentStructure
+pact.knowledge.dossier.export
+pact.knowledge.evaluation.runs.create
+pact.knowledge.evaluation.runs.get
+pact.knowledge.evaluation.runs.list
+pact.knowledge.evidence
+pact.knowledge.evidence.get
+pact.knowledge.evidenceGate.evaluate
+pact.knowledge.evolution
+pact.knowledge.evolution.deployments.list
+pact.knowledge.evolution.deployments.promote
+pact.knowledge.evolution.deployments.rollback
+pact.knowledge.evolution.runs.create
+pact.knowledge.evolution.runs.get
+pact.knowledge.evolution.runs.list
+pact.knowledge.export.request
+pact.knowledge.exportDocx
+pact.knowledge.feedback
+pact.knowledge.goldCases.list
+pact.knowledge.goldCases.set
+pact.knowledge.goldenRules.list
+pact.knowledge.goldenRules.publish
+pact.knowledge.goldenRules.rollback
+pact.knowledge.goldenRules.set
+pact.knowledge.graph
+pact.knowledge.health
+pact.knowledge.hierarchy.audit
+pact.knowledge.item
+pact.knowledge.learning.health
+pact.knowledge.learning.jobs
+pact.knowledge.maintenance.get
+pact.knowledge.maintenance.run
+pact.knowledge.maintenance.set
+pact.knowledge.modelDecision
+pact.knowledge.modelRoles
+pact.knowledge.permission.request
+pact.knowledge.reindex
+pact.knowledge.renderMarkdown
+pact.knowledge.reviewItems
+pact.knowledge.reviewResolve
+pact.knowledge.ruleAuthoring.chat
+pact.knowledge.ruleAuthoring.run
+pact.knowledge.search
+pact.knowledge.skillFramework
+pact.knowledge.skillFramework.set
+pact.knowledge.skills.deployments.create
+pact.knowledge.skills.deployments.rollback
+pact.knowledge.skills.evaluation.runs.create
+pact.knowledge.skills.generate
+pact.knowledge.skills.get
+pact.knowledge.skills.list
+pact.knowledge.skills.propose
+pact.knowledge.skills.resolve
+pact.knowledge.space.list
+pact.knowledge.suggestionResolve
+pact.knowledge.suggestions
+pact.knowledge.summarization.runs.approve
+pact.knowledge.summarization.runs.create
+pact.knowledge.summarization.runs.get
+pact.knowledge.sync
+pact.knowledge.trainingSets.export
+pact.modules.contractTest
+pact.modules.plan
+pact.modules.scaffold
+pact.modules.templates
+pact.performance.capacity.benchmark
+pact.performance.capacity.targets
+pact.rawCorpus.format.convert
+pact.repo.branch.checkout
+pact.repo.branch.create
+pact.repo.change.abandon
+pact.repo.commit.create
+pact.repo.commit.read
+pact.repo.diff.read
+pact.repo.file.create
+pact.repo.file.delete
+pact.repo.file.move
+pact.repo.file.read
+pact.repo.file.update
+pact.repo.member.set
+pact.repo.merge
+pact.repo.proposal.close
+pact.repo.proposal.create
+pact.repo.protection.set
+pact.repo.push
+pact.repo.rebase
+pact.repo.revert
+pact.repo.review.approve
+pact.repo.review.comment
+pact.repo.review.requestChanges
+pact.repo.status
+pact.repo.submit
+pact.repo.tree.list
+pact.repo.webhook.set
+pact.runtime.info
+pact.runtime.mounts
+pact.runtime.mounts.reload
+pact.runtime.mounts.set
+pact.sampleBusinessPack.get
+pact.sampleBusinessPack.list
+pact.sampleBusinessPack.materialize
+pact.sharedspace.drive.connect
+pact.sharedspace.drive.file.download
+pact.sharedspace.drive.file.upload
+pact.sharedspace.drive.item.list
+pact.sharedspace.drive.permission.list
+pact.sharedspace.drive.status
+pact.sharedspace.drive.sync.apply
+pact.sharedspace.drive.sync.plan
+pact.sharedspace.file.read
+pact.sharedspace.file.write
+pact.sharedspace.item.delete
+pact.sharedspace.item.list
+pact.sharedspace.localDir.connect
+pact.sharedspace.localDir.list
+pact.sharedspace.sync.apply
+pact.sharedspace.sync.plan
+pact.storageBackups.create
+pact.storageBackups.list
+pact.storageBackups.restore
+pact.storageBackups.restorePreview
+pact.storageSummary
+pact.v001.baseline.status
+pact.workspace.asset.permission.check
+pact.workspace.asset.policy.set
+pact.workspace.audit.query
+pact.workspace.checkpoint.diff
+pact.workspace.checkpoint.node.get
+pact.workspace.checkpoint.restore
+pact.workspace.checkpoint.restore.preview
+pact.workspace.checkpoint.scope.query
+pact.workspace.checkpoint.tree.list
+pact.workspace.code.change.link
+pact.workspace.code.change.prepare
+pact.workspace.code.change.status.sync
+pact.workspace.code.change.upload
+pact.workspace.code.target.evaluate
+pact.workspace.contribution.adopt
+pact.workspace.contribution.assets.list
+pact.workspace.contribution.leaderboard
+pact.workspace.contribution.list
+pact.workspace.contribution.permission.grant
+pact.workspace.contribution.permission.request
+pact.workspace.contribution.preview
+pact.workspace.contribution.publish
+pact.workspace.contribution.reject
+pact.workspace.contribution.report
+pact.workspace.contribution.requestChanges
+pact.workspace.contribution.review
+pact.workspace.contribution.revoke
+pact.workspace.contribution.scan
+pact.workspace.contribution.stats
+pact.workspace.contribution.submit
+pact.workspace.create
+pact.workspace.file.delete
+pact.workspace.file.download
+pact.workspace.file.list
+pact.workspace.file.move
+pact.workspace.file.patch
+pact.workspace.file.read
+pact.workspace.file.stat
+pact.workspace.file.upload
+pact.workspace.file.write
+pact.workspace.files.list
+pact.workspace.folder.create
+pact.workspace.info
+pact.workspace.operation.history
+pact.workspace.operation.revert.scope
+pact.workspace.proposal.apply
+pact.workspace.proposal.create
+pact.workspace.skill.download
+pact.workspace.skill.list
+pact.workspace.skill.upload
+pact.workspace.skill.usage.report
+pact.workspaceGovernance.describe
+pact.workspaceGovernance.evaluate
+pact.workspaceGovernance.policy.set
+pact.workspaceGovernance.shareGrant
+system.health
+`);
+
+export function apiCapabilityId(operationId) {
+  return `cap:api:${String(operationId || "").trim()}`;
+}
+
+export function toolExecuteCapabilityId(toolId) {
+  return `cap:tool:${String(toolId || "").trim()}:execute`;
+}
+
+export const KERNEL_API_CAPABILITY_PERMISSIONS = Object.freeze(KERNEL_API_OPERATION_IDS.map(apiCapabilityId));
+export const KERNEL_TOOL_CAPABILITY_PERMISSIONS = Object.freeze(KERNEL_TOOL_IDS.map(toolExecuteCapabilityId));
+export const KERNEL_CAPABILITY_WILDCARDS = Object.freeze(["cap:*", "cap:api:*", "cap:tool:*"]);
+export const KERNEL_CAPABILITY_PERMISSIONS = Object.freeze([
+  ...KERNEL_API_CAPABILITY_PERMISSIONS,
+  ...KERNEL_TOOL_CAPABILITY_PERMISSIONS
+]);
+
+const KERNEL_API_OPERATION_ID_SET = new Set(KERNEL_API_OPERATION_IDS);
+const KERNEL_TOOL_ID_SET = new Set(KERNEL_TOOL_IDS);
+const KERNEL_CAPABILITY_PERMISSION_SET = new Set(KERNEL_CAPABILITY_PERMISSIONS);
+const KERNEL_CAPABILITY_WILDCARD_SET = new Set(KERNEL_CAPABILITY_WILDCARDS);
+
 const RISK_RANK = Object.freeze({
   read_only: 0,
   safe_write: 1,
@@ -51,6 +838,79 @@ function stringsFrom(...values) {
     }
   }
   return uniqueStrings(output);
+}
+
+export function isKernelCapabilityPermission(value) {
+  const capability = String(value || "").trim();
+  return KERNEL_CAPABILITY_PERMISSION_SET.has(capability) || KERNEL_CAPABILITY_WILDCARD_SET.has(capability);
+}
+
+export function unknownKernelCapabilities(...values) {
+  return uniqueStrings(stringsFrom(...values).filter((capability) => !isKernelCapabilityPermission(capability)));
+}
+
+export function assertKnownKernelCapabilities(...values) {
+  const unknown = unknownKernelCapabilities(...values);
+  if (unknown.length > 0) {
+    throw new Error(`Unknown kernel capability permission: ${unknown.join(", ")}`);
+  }
+  return normalizeKernelCapabilities(...values);
+}
+
+export function normalizeKernelCapabilities(...values) {
+  return uniqueStrings(stringsFrom(...values).filter(isKernelCapabilityPermission));
+}
+
+export function listKernelCapabilityPermissions() {
+  return [...KERNEL_CAPABILITY_PERMISSIONS];
+}
+
+function requiredCapabilitiesFor(operation = {}, tool = null) {
+  const toolId = String(tool?.id || "").trim();
+  if (toolId && KERNEL_TOOL_ID_SET.has(toolId)) {
+    return [toolExecuteCapabilityId(toolId)];
+  }
+  const operationId = String(operation?.id || tool?.operationId || "").trim();
+  return operationId && KERNEL_API_OPERATION_ID_SET.has(operationId)
+    ? [apiCapabilityId(operationId)]
+    : [];
+}
+
+function subjectCapabilities(subject = {}, actor = null, authSession = null, grant = null) {
+  return normalizeKernelCapabilities(
+    subject.capabilities,
+    subject.capabilityIds,
+    subject.permissions,
+    actor?.capabilities,
+    actor?.capabilityIds,
+    actor?.permissions,
+    actor?.user?.capabilities,
+    actor?.user?.capabilityIds,
+    authSession?.user?.capabilities,
+    authSession?.user?.capabilityIds,
+    grant?.capabilities,
+    grant?.capabilityIds,
+    grant?.metadata?.capabilities,
+    grant?.metadata?.capabilityIds
+  );
+}
+
+function hasCapability(capabilities = [], capability = "") {
+  const capabilityId = String(capability || "").trim();
+  if (!capabilityId) {
+    return true;
+  }
+  const capabilitySet = stringSet(capabilities);
+  if (capabilitySet.has("cap:*") || capabilitySet.has(capabilityId)) {
+    return true;
+  }
+  if (capabilityId.startsWith("cap:api:") && capabilitySet.has("cap:api:*")) {
+    return true;
+  }
+  if (capabilityId.startsWith("cap:tool:") && capabilitySet.has("cap:tool:*")) {
+    return true;
+  }
+  return false;
 }
 
 function riskRank(value = "read_only") {
@@ -201,8 +1061,8 @@ function toolsetMisses(grant = null, tool = null) {
   return uniqueStrings(tool.toolsets || []).filter((toolset) => !grantToolsets.has(toolset));
 }
 
-function effectDetails(effect, reasonCode, redactedReason) {
-  return { effect, reasonCode, redactedReason };
+function effectDetails(effect, reasonCode, redactedReason, extra = {}) {
+  return { effect, reasonCode, redactedReason, ...extra };
 }
 
 function subjectHasTenantBypass(subject = {}) {
@@ -319,6 +1179,7 @@ export function resolveAuthorizationSubject({
       username: String(subject.username || user?.username || grant?.label || ""),
       roleId: String(subject.roleId || user?.roleId || ""),
       scopes: uniqueStrings(subjectScopes(subject, actor, authSession, grant)),
+      capabilities: subjectCapabilities(subject, actor, authSession, grant),
       agentProfileId: String(subject.agentProfileId || subject.profileId || ""),
       maxRisk: subject.maxRisk || "",
       tenantId: firstString(subject.tenantId, user?.tenantId, grant?.tenantId, metadata.tenantId),
@@ -347,6 +1208,7 @@ export function resolveAuthorizationSubject({
       username: String(grant.label || grant.id || ""),
       roleId: "tool-grant",
       scopes: uniqueStrings(grant.scopes || []),
+      capabilities: subjectCapabilities({}, actor, authSession, grant),
       agentProfileId: "",
       maxRisk: grant.maxRisk || grant.metadata?.maxRisk || "",
       tenantId: firstString(grant.tenantId, metadata.tenantId),
@@ -365,6 +1227,7 @@ export function resolveAuthorizationSubject({
       username: String(user.username || user.userId || ""),
       roleId: String(user.roleId || ""),
       scopes: uniqueStrings(user.scopes || []),
+      capabilities: subjectCapabilities({}, actor, authSession, grant),
       agentProfileId: "",
       maxRisk: "",
       tenantId: firstString(user.tenantId),
@@ -383,6 +1246,7 @@ export function resolveAuthorizationSubject({
       username: String(actor.username || actor.label || ""),
       roleId: String(actor.roleId || ""),
       scopes: uniqueStrings(actor.scopes || []),
+      capabilities: subjectCapabilities({}, actor, authSession, grant),
       agentProfileId: String(actor.agentProfileId || ""),
       maxRisk: actor.maxRisk || "",
       tenantId: firstString(actor.tenantId),
@@ -400,6 +1264,7 @@ export function resolveAuthorizationSubject({
     username: "",
     roleId: "",
     scopes: [],
+    capabilities: [],
     agentProfileId: "",
     maxRisk: "",
     tenantId: "",
@@ -428,17 +1293,26 @@ export function evaluateAuthorizationPolicy({
   toolExecutionId = "",
   grantRequired = false,
   enforceConfirmation = true,
-  store = null
+  store = null,
+  governanceStore = null,
+  governanceRequired = false
 } = {}) {
   const resolvedSubject = resolveAuthorizationSubject({ subject, actor, authSession, grant });
   const resourceContext = resolveResourceContext({ operation, tool, input, context });
   const requiredScopes = requiredScopesFor(operation, tool);
+  const requiredCapabilities = requiredCapabilitiesFor(operation, tool);
   const scopeSet = stringSet(resolvedSubject.scopes);
   const missingScopes = requiredScopes.filter((scope) => !scopeSet.has(scope));
+  const capabilityMode = requiredCapabilities.length > 0 && resolvedSubject.capabilities.length > 0;
+  const missingCapabilities = capabilityMode
+    ? requiredCapabilities.filter((capability) => !hasCapability(resolvedSubject.capabilities, capability))
+    : [];
+  const effectiveMissingScopes = capabilityMode ? [] : missingScopes;
   const missingToolsets = toolsetMisses(grant, tool);
   const risk = operationRisk(operation, tool);
   const evaluatedLayers = uniqueStrings([
     "authorization_subject",
+    requiredCapabilities.length > 0 ? "operation_capability_policy" : "",
     "operation_scope_policy",
     tool ? "tool_catalog_policy" : "",
     grant ? "grant_policy" : "",
@@ -448,6 +1322,19 @@ export function evaluateAuthorizationPolicy({
     "runtime_safety_policy"
   ]);
   let details = effectDetails("allow", "allowed", "Request allowed.");
+  const governanceDecision = governanceStore && typeof governanceStore.evaluateGovernance === "function"
+    ? governanceStore.evaluateGovernance({
+        operation,
+        tool,
+        grant,
+        profile,
+        subject: resolvedSubject,
+        input,
+        request,
+        context,
+        governanceRequired
+      })
+    : null;
   const abacDetails = abacDenyDetails({
     subject: resolvedSubject,
     grant,
@@ -455,7 +1342,22 @@ export function evaluateAuthorizationPolicy({
     resource: resourceContext
   });
 
-  if (tool === null && context?.toolExpected === true) {
+  if (governanceDecision?.applicable && governanceDecision.effect === "deny") {
+    details = effectDetails("deny", governanceDecision.reasonCode, governanceDecision.redactedReason, {
+      deniedLayer: governanceDecision.deniedLayer || "governance",
+      effectivePolicySnapshot: governanceDecision.effectivePolicySnapshot || null
+    });
+  } else if (governanceDecision?.applicable && governanceDecision.effect === "needsApproval") {
+    details = effectDetails("needsApproval", governanceDecision.reasonCode, governanceDecision.redactedReason, {
+      deniedLayer: governanceDecision.deniedLayer || "governance",
+      requiredApproval: governanceDecision.requiredApproval || null,
+      effectivePolicySnapshot: governanceDecision.effectivePolicySnapshot || null
+    });
+  } else if (governanceDecision?.applicable && governanceDecision.effect === "allow") {
+    details = effectDetails("allow", governanceDecision.reasonCode || "governance_allowed", "Request allowed by governance policy.", {
+      effectivePolicySnapshot: governanceDecision.effectivePolicySnapshot || null
+    });
+  } else if (tool === null && context?.toolExpected === true) {
     details = effectDetails("deny", "unknown_tool", "Tool is not registered.");
   } else if (abacDetails) {
     details = abacDetails;
@@ -481,7 +1383,9 @@ export function evaluateAuthorizationPolicy({
     details = effectDetails("deny", "rate_limited", "Grant rate limit has been exceeded.");
   } else if (operation?.public === true || operation?.externalAuth === true) {
     details = effectDetails("allow", "allowed_public_or_external", "Public or externally authenticated operation.");
-  } else if (missingScopes.length > 0) {
+  } else if (missingCapabilities.length > 0) {
+    details = effectDetails("deny", "missing_capabilities", "Credential is missing required capabilities.");
+  } else if (effectiveMissingScopes.length > 0) {
     details = effectDetails("deny", "missing_scopes", "Subject is missing required scopes.");
   } else if (!grantHasToolset(grant, tool)) {
     details = effectDetails("deny", "missing_toolsets", "Grant is missing a toolset that contains this tool.");
@@ -509,6 +1413,7 @@ export function evaluateAuthorizationPolicy({
   const decision = {
     protocolVersion: AUTHORIZATION_PROTOCOL_VERSION,
     decisionId: randomId("authz_decision"),
+    auditId: randomId("authz_audit"),
     toolExecutionId,
     traceId,
     operationId: String(operation?.id || tool?.operationId || ""),
@@ -530,11 +1435,16 @@ export function evaluateAuthorizationPolicy({
     allowed: ["allow", "dry_run_only"].includes(details.effect),
     reasonCode: details.reasonCode,
     redactedReason: details.redactedReason,
+    deniedLayer: details.deniedLayer || "",
+    effectivePolicySnapshot: details.effectivePolicySnapshot || governanceDecision?.effectivePolicySnapshot || null,
+    requiredCapabilities,
+    subjectCapabilities: resolvedSubject.capabilities,
+    missingCapabilities: uniqueStrings(missingCapabilities),
     requiredScopes,
     subjectScopes: resolvedSubject.scopes,
-    missingScopes: uniqueStrings(missingScopes),
+    missingScopes: uniqueStrings(effectiveMissingScopes),
     missingToolsets: details.effect === "deny" ? uniqueStrings(missingToolsets) : [],
-    requiredApproval: details.effect === "require_approval",
+    requiredApproval: details.requiredApproval || (details.effect === "require_approval" ? { reasonCode: details.reasonCode } : null),
     requiredConfirmation: details.effect === "require_confirmation",
     evaluatedLayers,
     tenant: {
@@ -560,10 +1470,12 @@ export function evaluateAuthorizationPolicy({
   return decision;
 }
 
-export function createAuthorizationEngine({ store = null } = {}) {
+export function createAuthorizationEngine({ store = null, governanceStore = null } = {}) {
   return {
     protocolVersion: AUTHORIZATION_PROTOCOL_VERSION,
+    capabilityPermissions: KERNEL_CAPABILITY_PERMISSIONS,
+    listCapabilityPermissions: listKernelCapabilityPermissions,
     resolveSubject: resolveAuthorizationSubject,
-    evaluate: (input = {}) => evaluateAuthorizationPolicy({ ...input, store })
+    evaluate: (input = {}) => evaluateAuthorizationPolicy({ ...input, store, governanceStore })
   };
 }

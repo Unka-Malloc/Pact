@@ -25,17 +25,27 @@ function workspaceAssetPolicyKey(workspaceId, policyId) {
 export function createSecurityPermissionsProvider({
   consoleAuth = null,
   authorizationEngine = null,
-  authorizationStore = null
+  authorizationStore = null,
+  authorizationGovernanceStore = null
 } = {}) {
   const workspaceAssetPolicies = new Map();
   const resolvedAuthorizationStore =
     authorizationStore ||
     consoleAuth?.authorizationStore ||
     null;
+  const resolvedAuthorizationGovernanceStore =
+    authorizationGovernanceStore ||
+    consoleAuth?.authorizationGovernanceStore ||
+    null;
   const resolvedAuthorizationEngine =
     authorizationEngine ||
     consoleAuth?.authorizationEngine ||
-    (resolvedAuthorizationStore ? createAuthorizationEngine({ store: resolvedAuthorizationStore }) : null);
+    (resolvedAuthorizationStore
+      ? createAuthorizationEngine({
+          store: resolvedAuthorizationStore,
+          governanceStore: resolvedAuthorizationGovernanceStore
+        })
+      : null);
 
   async function authorizeOperation(input = {}) {
     if (typeof consoleAuth?.authorizeOperation === "function") {
@@ -70,7 +80,9 @@ export function createSecurityPermissionsProvider({
       : {
           ok: false,
           status: 403,
-          error: decision.missingScopes?.length
+          error: decision.missingCapabilities?.length
+            ? `权限不足：${decision.missingCapabilities.join(", ")}。`
+            : decision.missingScopes?.length
             ? `权限不足：${decision.missingScopes.join(", ")}。`
             : `权限不足：${decision.reasonCode || "authorization_denied"}。`,
           session: input.authSession || null,
@@ -82,6 +94,7 @@ export function createSecurityPermissionsProvider({
     protocolVersion: SECURITY_PERMISSIONS_PROTOCOL_VERSION,
     authorizationEngine: resolvedAuthorizationEngine,
     authorizationStore: resolvedAuthorizationStore,
+    authorizationGovernanceStore: resolvedAuthorizationGovernanceStore,
     authorizeOperation,
     getConsoleSummary(request = null) {
       return typeof consoleAuth?.getSummary === "function"
@@ -156,6 +169,86 @@ export function createSecurityPermissionsProvider({
       return resolvedAuthorizationEngine?.evaluate
         ? resolvedAuthorizationEngine.evaluate(input)
         : null;
+    },
+    getGovernanceSummary() {
+      if (!resolvedAuthorizationGovernanceStore) {
+        return {
+          roles: [],
+          teams: [],
+          userPolicies: [],
+          agentBindings: [],
+          agentGroups: [],
+          approvals: []
+        };
+      }
+      return {
+        roles: resolvedAuthorizationGovernanceStore.listRoles?.() || [],
+        teams: resolvedAuthorizationGovernanceStore.listTeams?.() || [],
+        userPolicies: resolvedAuthorizationGovernanceStore.listUserPolicies?.() || [],
+        agentBindings: resolvedAuthorizationGovernanceStore.listAgentBindings?.() || [],
+        agentGroups: resolvedAuthorizationGovernanceStore.listAgentGroups?.() || [],
+        approvals: resolvedAuthorizationGovernanceStore.listApprovals?.({ includeRevoked: true }) || []
+      };
+    },
+    listGovernanceRoles(input = {}) {
+      return resolvedAuthorizationGovernanceStore?.listRoles?.(input) || [];
+    },
+    upsertGovernanceRole(input = {}) {
+      if (!resolvedAuthorizationGovernanceStore?.upsertRole) {
+        throw new Error("Authorization governance role store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.upsertRole(input);
+    },
+    listGovernanceTeams(input = {}) {
+      return resolvedAuthorizationGovernanceStore?.listTeams?.(input) || [];
+    },
+    upsertGovernanceTeam(input = {}) {
+      if (!resolvedAuthorizationGovernanceStore?.upsertTeam) {
+        throw new Error("Authorization governance team store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.upsertTeam(input);
+    },
+    listGovernanceUserPolicies() {
+      return resolvedAuthorizationGovernanceStore?.listUserPolicies?.() || [];
+    },
+    upsertGovernanceUserPolicy(input = {}) {
+      if (!resolvedAuthorizationGovernanceStore?.upsertUserPolicy) {
+        throw new Error("Authorization governance user policy store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.upsertUserPolicy(input);
+    },
+    listGovernanceAgentGroups(input = {}) {
+      return resolvedAuthorizationGovernanceStore?.listAgentGroups?.(input) || [];
+    },
+    upsertGovernanceAgentGroup(input = {}) {
+      if (!resolvedAuthorizationGovernanceStore?.upsertAgentGroup) {
+        throw new Error("Authorization governance agent group store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.upsertAgentGroup(input);
+    },
+    listGovernanceAgentBindings() {
+      return resolvedAuthorizationGovernanceStore?.listAgentBindings?.() || [];
+    },
+    upsertGovernanceAgentBinding(input = {}) {
+      if (!resolvedAuthorizationGovernanceStore?.upsertAgentBinding) {
+        throw new Error("Authorization governance agent binding store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.upsertAgentBinding(input);
+    },
+    listGovernanceApprovals(input = {}) {
+      return resolvedAuthorizationGovernanceStore?.listApprovals?.(input) || [];
+    },
+    upsertGovernanceApproval(input = {}) {
+      if (!resolvedAuthorizationGovernanceStore?.upsertApproval) {
+        throw new Error("Authorization governance approval store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.upsertApproval(input);
+    },
+    revokeGovernanceApproval(approvalId, reason = "") {
+      if (!resolvedAuthorizationGovernanceStore?.revokeApproval) {
+        throw new Error("Authorization governance approval store is unavailable.");
+      }
+      return resolvedAuthorizationGovernanceStore.revokeApproval(approvalId, reason);
     },
     listReceipts(input = {}) {
       return resolvedAuthorizationStore?.listReceipts

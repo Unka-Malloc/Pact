@@ -38,7 +38,7 @@ export function createToolManagementPlatform({
     operations,
     activeFeatureIds: featureRuntime?.activeFeatureIds || null
   });
-  const store = createToolManagementStore({ userDataPath });
+  const store = createToolManagementStore({ userDataPath, registry });
   const authorizationStore = effectiveSecurityPermissions?.authorizationStore || null;
   const policyEngine = createToolPolicyEngine({
     registry,

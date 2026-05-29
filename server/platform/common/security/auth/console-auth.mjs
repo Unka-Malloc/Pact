@@ -5,7 +5,9 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { createAuthorizationEngine } from "../authorization/authorization-engine.mjs";
+import { createAuthorizationGovernanceStore } from "../authorization/authorization-governance-store.mjs";
 import { createAuthorizationStore } from "../authorization/authorization-store.mjs";
+import { PACT_ROOT_ORGANIZATION_ID } from "../authorization/organization-model.mjs";
 
 const scryptAsync = promisify(crypto.scrypt);
 
@@ -152,14 +154,6 @@ function normalizePassword(value) {
     throw new Error("密码长度需为 10-256 位。");
   }
   return password;
-}
-
-function normalizeRole(value) {
-  const roleId = String(value || "viewer").trim();
-  if (!CONSOLE_ROLES[roleId]) {
-    throw new Error(`未知角色：${roleId}`);
-  }
-  return roleId;
 }
 
 function parseJson(value, fallback) {
@@ -309,7 +303,7 @@ function publicUser(row) {
     roleLabel: role.label,
     scopes: role.scopes,
     tenantId: row.tenant_id || "default",
-    orgId: row.org_id || "",
+    orgId: row.org_id || PACT_ROOT_ORGANIZATION_ID,
     teamIds: parseJson(row.team_ids_json, []),
     allowedWorkspaceIds: parseJson(row.allowed_workspace_ids_json, []),
     allowedDataClasses: parseJson(row.allowed_data_classes_json, []),
@@ -459,7 +453,14 @@ export function createConsoleAuth({ userDataPath }) {
   const db = new Database(path.join(rootPath, "console-auth.sqlite"));
   ensureSchema(db);
   const authorizationStore = createAuthorizationStore({ userDataPath });
-  const authorizationEngine = createAuthorizationEngine({ store: authorizationStore });
+  const authorizationGovernanceStore = createAuthorizationGovernanceStore({
+    userDataPath,
+    builtinRoles: CONSOLE_ROLES
+  });
+  const authorizationEngine = createAuthorizationEngine({
+    store: authorizationStore,
+    governanceStore: authorizationGovernanceStore
+  });
 
   // M-3: HMAC-derived CSRF tokens — never stored in the DB, cannot be extracted
   // from a DB backup.  The HMAC secret is generated once and persisted.
@@ -486,6 +487,35 @@ export function createConsoleAuth({ userDataPath }) {
     return Number(countUsersStmt.get()?.count || 0) > 0;
   }
 
+  function resolveRole(roleId = "viewer") {
+    return authorizationGovernanceStore.getRole(roleId) ||
+      CONSOLE_ROLES[roleId] ||
+      authorizationGovernanceStore.getRole("viewer") ||
+      CONSOLE_ROLES.viewer;
+  }
+
+  function normalizeConsoleRole(value) {
+    const roleId = String(value || "viewer").trim();
+    const role = resolveRole(roleId);
+    if (!role || role.roleId !== roleId || role.enabled === false) {
+      throw new Error(`未知角色：${roleId}`);
+    }
+    return roleId;
+  }
+
+  function publicUserWithGovernanceRole(row) {
+    const user = publicUser(row);
+    if (!user) {
+      return null;
+    }
+    const role = resolveRole(user.roleId);
+    return {
+      ...user,
+      roleLabel: role.label,
+      scopes: role.scopes || []
+    };
+  }
+
   async function ensureInitialOwner() {
     if (hasUsers()) {
       return { created: false };
@@ -498,6 +528,7 @@ export function createConsoleAuth({ userDataPath }) {
       displayName: "Owner",
       password,
       roleId: "owner",
+      orgId: PACT_ROOT_ORGANIZATION_ID,
       enabled: true
     });
     return {
@@ -519,7 +550,7 @@ export function createConsoleAuth({ userDataPath }) {
   }
 
   function roleList() {
-    return Object.values(CONSOLE_ROLES);
+    return authorizationGovernanceStore.listRoles();
   }
 
   function sessionFromToken(token, request = null) {
@@ -548,7 +579,7 @@ export function createConsoleAuth({ userDataPath }) {
         return null;
       }
     }
-    const role = CONSOLE_ROLES[row.role_id] || CONSOLE_ROLES.viewer;
+    const role = resolveRole(row.role_id);
     const now = nowIso();
     db.prepare("UPDATE console_sessions SET last_seen_at = ? WHERE session_id = ?").run(
       now, row.session_id
@@ -578,7 +609,7 @@ export function createConsoleAuth({ userDataPath }) {
         roleLabel: role.label,
         scopes: role.scopes,
         tenantId: row.tenant_id || "default",
-        orgId: row.org_id || "",
+        orgId: row.org_id || PACT_ROOT_ORGANIZATION_ID,
         teamIds: parseJson(row.team_ids_json, []),
         allowedWorkspaceIds: parseJson(row.allowed_workspace_ids_json, []),
         allowedDataClasses: parseJson(row.allowed_data_classes_json, []),
@@ -601,7 +632,7 @@ export function createConsoleAuth({ userDataPath }) {
   async function createUser(input = {}) {
     const username = normalizeUsername(input.username);
     const password = normalizePassword(input.password || input.newPassword);
-    const roleId = normalizeRole(input.roleId || "viewer");
+    const roleId = normalizeConsoleRole(input.roleId || "viewer");
     const userId = stableId("console_user", username, Date.now(), crypto.randomUUID());
     const { salt, passwordHash } = await hashPassword(password);
     const createdAt = nowIso();
@@ -621,7 +652,7 @@ export function createConsoleAuth({ userDataPath }) {
       salt,
       input.enabled === false ? 0 : 1,
       normalizeTenantId(input.tenantId),
-      String(input.orgId || "").trim(),
+      String(input.orgId || PACT_ROOT_ORGANIZATION_ID).trim(),
       stringifyJson(stringsFrom(input.teamIds)),
       stringifyJson(stringsFrom(input.allowedWorkspaceIds)),
       stringifyJson(stringsFrom(input.allowedDataClasses)),
@@ -630,7 +661,7 @@ export function createConsoleAuth({ userDataPath }) {
       createdAt,
       createdAt
     );
-    return publicUser(getUserByIdStmt.get(userId));
+    return publicUserWithGovernanceRole(getUserByIdStmt.get(userId));
   }
 
   async function bootstrapOwner(input = {}) {
@@ -779,10 +810,10 @@ export function createConsoleAuth({ userDataPath }) {
         patch.displayName !== undefined
           ? String(patch.displayName || current.username).trim()
           : current.display_name,
-      roleId: patch.roleId !== undefined ? normalizeRole(patch.roleId) : current.role_id,
+      roleId: patch.roleId !== undefined ? normalizeConsoleRole(patch.roleId) : current.role_id,
       enabled: patch.enabled !== undefined ? (patch.enabled === false ? 0 : 1) : current.enabled,
       tenantId: patch.tenantId !== undefined ? normalizeTenantId(patch.tenantId) : current.tenant_id,
-      orgId: patch.orgId !== undefined ? String(patch.orgId || "").trim() : current.org_id,
+      orgId: patch.orgId !== undefined ? String(patch.orgId || PACT_ROOT_ORGANIZATION_ID).trim() : current.org_id,
       teamIds: patch.teamIds !== undefined ? stringsFrom(patch.teamIds) : parseJson(current.team_ids_json, []),
       allowedWorkspaceIds:
         patch.allowedWorkspaceIds !== undefined
@@ -831,11 +862,11 @@ export function createConsoleAuth({ userDataPath }) {
       nowIso(),
       current.user_id
     );
-    return publicUser(getUserByIdStmt.get(current.user_id));
+    return publicUserWithGovernanceRole(getUserByIdStmt.get(current.user_id));
   }
 
   function listUsers() {
-    return listUsersStmt.all().map(publicUser);
+    return listUsersStmt.all().map(publicUserWithGovernanceRole);
   }
 
   function listSessions() {
@@ -1049,7 +1080,12 @@ export function createConsoleAuth({ userDataPath }) {
         error: authorizationDecision.reasonCode || "authorization denied"
       });
       const missingScopes = authorizationDecision.missingScopes || [];
-      const scopeSuffix = missingScopes.length > 0 ? `：${missingScopes.join(", ")}` : "";
+      const missingCapabilities = authorizationDecision.missingCapabilities || [];
+      const scopeSuffix = missingCapabilities.length > 0
+        ? `：${missingCapabilities.join(", ")}`
+        : missingScopes.length > 0
+        ? `：${missingScopes.join(", ")}`
+        : "";
       return {
         ok: false,
         status: 403,
@@ -1112,6 +1148,7 @@ export function createConsoleAuth({ userDataPath }) {
     rootPath,
     db,
     authorizationStore,
+    authorizationGovernanceStore,
     authorizationEngine,
     ensureInitialOwner,
     ensureBootstrapToken,
@@ -1135,6 +1172,7 @@ export function createConsoleAuth({ userDataPath }) {
     audit,
     listAudit,
     close() {
+      authorizationGovernanceStore.close?.();
       authorizationStore.close?.();
       db.close();
     }

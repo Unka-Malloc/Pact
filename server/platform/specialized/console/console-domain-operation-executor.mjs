@@ -58,6 +58,7 @@ import {
   saveDiscoveryConfig
 } from "../../common/platform-core/discovery/config.mjs";
 import { AUTHORIZATION_PROTOCOL_VERSION } from "../../common/security/authorization/authorization-engine.mjs";
+import { SECURITY_PERMISSIONS_PROTOCOL_VERSION } from "../../common/security/security-permissions-provider.mjs";
 
 const contributionRegistries = new Map();
 const codespaceRegistries = new Map();
@@ -789,7 +790,7 @@ async function loadAgentSyncPolicy(context = {}) {
   return import("../../../protocols/agent-sync/policy.mjs");
 }
 
-function authorizeToolSkillScopes({ provider, request, scopes }) {
+async function authorizeToolSkillScopes({ provider, request, scopes }) {
   if (!provider?.authorizeRequest) {
     return {
       ok: false,
@@ -2646,7 +2647,9 @@ async function executeProductionReadinessOperation({ operationId, input = {}, co
   }
 
   if (id === "production.health") {
-    return result(200, await buildProductionHealthReport());
+    return result(200, await buildProductionHealthReport({
+      userDataPath: context.userDataPath
+    }));
   }
   if (id === "architecture.live_map") {
     return result(200, await buildArchitectureLiveMap());
@@ -3784,6 +3787,20 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
   const handledOperations = new Set([
     "authorization.subject.resolve",
     "authorization.policy.evaluate",
+    "authorization.governance.summary",
+    "authorization.roles.list",
+    "authorization.roles.upsert",
+    "authorization.teams.list",
+    "authorization.teams.upsert",
+    "authorization.users.policies.list",
+    "authorization.users.policy.upsert",
+    "authorization.agent_groups.list",
+    "authorization.agent_groups.upsert",
+    "authorization.agents.bindings.list",
+    "authorization.agents.binding.upsert",
+    "authorization.approvals.list",
+    "authorization.approvals.upsert",
+    "authorization.approvals.revoke",
     "authorization.receipts.list",
     "authorization.loan_records.list",
     "authorization.denied_requests.list",
@@ -3829,7 +3846,19 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
       authSession: context.authSession,
       request: context.request,
       input,
+      governanceRequired: input.governanceRequired === true,
       context: {
+        resource: input.resource,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        repoId: input.repoId,
+        targetProvider: input.targetProvider || input.provider,
+        agentId: input.agentId,
+        profileId: input.profileId || input.agentProfileId,
+        agentProfileId: input.agentProfileId || input.profileId,
+        boundUserId: input.boundUserId,
+        userId: input.userId,
+        teamIds: input.teamIds,
         requestedAction: input.requestedAction,
         requestedEgress: input.requestedEgress
       }
@@ -3838,6 +3867,108 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
       protocolVersion: AUTHORIZATION_PROTOCOL_VERSION,
       decision
     }));
+  }
+
+  if (id === "authorization.governance.summary") {
+    if (!securityPermissions || typeof securityPermissions.getGovernanceSummary !== "function") {
+      return result(503, { error: "统一权限治理存储不可用。" });
+    }
+    return result(200, protocolPayload({
+      protocolVersion: SECURITY_PERMISSIONS_PROTOCOL_VERSION,
+      governance: securityPermissions.getGovernanceSummary()
+    }));
+  }
+
+  if (id === "authorization.roles.list") {
+    const items = securityPermissions?.listGovernanceRoles?.() || [];
+    return result(200, protocolPayload({ items, count: items.length }));
+  }
+
+  if (id === "authorization.roles.upsert") {
+    if (!securityPermissions?.upsertGovernanceRole) {
+      return result(503, { error: "权限角色存储不可用。" });
+    }
+    const role = securityPermissions.upsertGovernanceRole(input);
+    return result(200, protocolPayload({ role }));
+  }
+
+  if (id === "authorization.teams.list") {
+    const items = securityPermissions?.listGovernanceTeams?.() || [];
+    return result(200, protocolPayload({ items, count: items.length }));
+  }
+
+  if (id === "authorization.teams.upsert") {
+    if (!securityPermissions?.upsertGovernanceTeam) {
+      return result(503, { error: "权限团队存储不可用。" });
+    }
+    const team = securityPermissions.upsertGovernanceTeam(input);
+    return result(200, protocolPayload({ team }));
+  }
+
+  if (id === "authorization.users.policies.list") {
+    const items = securityPermissions?.listGovernanceUserPolicies?.() || [];
+    return result(200, protocolPayload({ items, count: items.length }));
+  }
+
+  if (id === "authorization.users.policy.upsert") {
+    if (!securityPermissions?.upsertGovernanceUserPolicy) {
+      return result(503, { error: "用户授权策略存储不可用。" });
+    }
+    const userPolicy = securityPermissions.upsertGovernanceUserPolicy(input);
+    return result(200, protocolPayload({ userPolicy }));
+  }
+
+  if (id === "authorization.agent_groups.list") {
+    const items = securityPermissions?.listGovernanceAgentGroups?.() || [];
+    return result(200, protocolPayload({ items, count: items.length }));
+  }
+
+  if (id === "authorization.agent_groups.upsert") {
+    if (!securityPermissions?.upsertGovernanceAgentGroup) {
+      return result(503, { error: "智能体分组存储不可用。" });
+    }
+    const agentGroup = securityPermissions.upsertGovernanceAgentGroup(input);
+    return result(200, protocolPayload({ agentGroup }));
+  }
+
+  if (id === "authorization.agents.bindings.list") {
+    const items = securityPermissions?.listGovernanceAgentBindings?.() || [];
+    return result(200, protocolPayload({ items, count: items.length }));
+  }
+
+  if (id === "authorization.agents.binding.upsert") {
+    if (!securityPermissions?.upsertGovernanceAgentBinding) {
+      return result(503, { error: "智能体绑定存储不可用。" });
+    }
+    const agentBinding = securityPermissions.upsertGovernanceAgentBinding(input);
+    return result(200, protocolPayload({ agentBinding }));
+  }
+
+  if (id === "authorization.approvals.list") {
+    const items = securityPermissions?.listGovernanceApprovals?.({
+      userId: input.userId || input["user-id"] || "",
+      agentId: input.agentId || input["agent-id"] || "",
+      includeRevoked: input.includeRevoked === true || input.includeRevoked === "true" || input["include-revoked"] === "true"
+    }) || [];
+    return result(200, protocolPayload({ items, count: items.length }));
+  }
+
+  if (id === "authorization.approvals.upsert") {
+    if (!securityPermissions?.upsertGovernanceApproval) {
+      return result(503, { error: "审批授权存储不可用。" });
+    }
+    const approval = securityPermissions.upsertGovernanceApproval(input);
+    return result(200, protocolPayload({ approval }));
+  }
+
+  if (id === "authorization.approvals.revoke") {
+    if (!securityPermissions?.revokeGovernanceApproval) {
+      return result(503, { error: "审批授权存储不可用。" });
+    }
+    const approval = securityPermissions.revokeGovernanceApproval(input.approvalId || input.id, input.reason || "");
+    return approval
+      ? result(200, protocolPayload({ approval }))
+      : result(404, { error: "审批授权不存在。" });
   }
 
   if (id === "authorization.receipts.list") {
@@ -3868,7 +3999,12 @@ async function executeAuthorizationFacadeOperation({ operationId, input = {}, co
     }
     const items = securityPermissions.listDeniedRequests({
       limit: input.limit || 100,
-      subjectId: input.subjectId || input["subject-id"] || ""
+      subjectId: input.subjectId || input["subject-id"] || "",
+      tenantId: input.tenantId || input["tenant-id"] || "",
+      workspaceId: input.workspaceId || input["workspace-id"] || "",
+      operationId: input.operationId || input["operation-id"] || "",
+      toolId: input.toolId || input["tool-id"] || "",
+      reasonCode: input.reasonCode || input["reason-code"] || ""
     });
     return result(200, protocolPayload({ items, count: items.length }));
   }
@@ -3936,7 +4072,7 @@ async function executeAgentSyncOperation({ operationId, input = {}, context }) {
   }
 
   if (id === "agent_sync.publish") {
-    const authorization = authorizeToolSkillScopes({
+    const authorization = await authorizeToolSkillScopes({
       provider: context.toolSkillManagementProvider,
       request: context.request,
       scopes: ["agent_sync:publish"]
@@ -4054,7 +4190,7 @@ async function executeToolManagementAuthorizationOperation({ operationId, input 
   }
 
   if (id === "authorization.grants.create") {
-    const grantResult = provider.createAuthorizationGrant(input);
+    const grantResult = await provider.createAuthorizationGrant(input);
     return result(201, protocolPayload({
       protocolVersion: AUTHORIZATION_PROTOCOL_VERSION,
       grant: grantResult.grant,
@@ -4063,7 +4199,7 @@ async function executeToolManagementAuthorizationOperation({ operationId, input 
   }
 
   if (id === "authorization.grants.revoke") {
-    const grant = provider.revokeAuthorizationGrant(input);
+    const grant = await provider.revokeAuthorizationGrant(input);
     if (!grant) {
       return result(404, { error: "授权 grant 不存在。" });
     }
@@ -4086,7 +4222,7 @@ async function executeToolManagementAuthorizationOperation({ operationId, input 
   }
 
   if (id === "tool_management.mcp.resolve_request") {
-    const { success, grantId } = provider.resolveMcpAuthorizationRequest(input);
+    const { success, grantId } = await provider.resolveMcpAuthorizationRequest(input);
     if (!success) {
       return result(404, { error: "Request not found or already resolved." });
     }
@@ -5280,8 +5416,14 @@ async function executeAgentExplorationOperation({ operationId, input, context })
     return result(503, { error: "智能探索运行时不可用。" });
   }
   if (id === "knowledge.agent_explore.runs.create") {
-    const operationResult = await runtime.run(input);
-    return result(operationResult?.ok === false ? 500 : 201, operationResult);
+    const operationResult = await runtime.run({
+      ...input,
+      authSession: context.authSession || null,
+      boundUserId: context.authSession?.user?.userId || input.boundUserId || input.userId || "",
+      userId: context.authSession?.user?.userId || input.userId || input.boundUserId || "",
+      teamIds: context.authSession?.user?.teamIds || input.teamIds || []
+    });
+    return result(operationResult?.ok === false ? operationResult.status || 500 : 201, operationResult);
   }
   const operationResult = runtime.getRun({
     runId: input.runId || input["run-id"] || input.id || "",

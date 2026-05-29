@@ -627,7 +627,7 @@ export function createToolSkillManagementProvider({
     return platform;
   }
 
-  function authorizeRequest({ request, requiredScopes = [] } = {}) {
+  async function authorizeRequest({ request, requiredScopes = [] } = {}) {
     const current = requirePlatform();
     if (!current.store?.authorizeRequest) {
       return {
@@ -637,7 +637,7 @@ export function createToolSkillManagementProvider({
       };
     }
     normalizeApiKeyHeader(request);
-    const authorization = current.store.authorizeRequest({
+    const authorization = await current.store.authorizeRequest({
       request,
       requiredScopes
     });
@@ -792,7 +792,7 @@ export function createToolSkillManagementProvider({
       return elevationDenied;
     }
     const label = String(body.label || `Pact MCP ${targets.join(", ") || "local agent"}`).trim();
-    const result = current.store.createGrant({
+    const result = await current.store.createGrant({
       label,
       type: "machine",
       toolsets: resolved.toolsets,
@@ -929,12 +929,12 @@ export function createToolSkillManagementProvider({
     };
   }
 
-  function createAuthorizationGrant(input = {}) {
+  async function createAuthorizationGrant(input = {}) {
     const current = requirePlatform();
     return current.store.createGrant(input.grant || input);
   }
 
-  function revokeAuthorizationGrant(input = {}) {
+  async function revokeAuthorizationGrant(input = {}) {
     const current = requirePlatform();
     return current.store.revokeGrant(input.grantId || input["grant-id"] || input.id || "", input.reason || "");
   }
@@ -957,14 +957,14 @@ export function createToolSkillManagementProvider({
     });
   }
 
-  function resolveMcpAuthorizationRequest(input = {}) {
+  async function resolveMcpAuthorizationRequest(input = {}) {
     const current = requirePlatform();
     const requestId = String(input.requestId || input["request-id"] || input.id || "").trim();
     const resolution = String(input.resolution || "").trim();
     let grantId = "";
     if (resolution === "approved") {
       const clientName = String(input.clientName || "MCP Client");
-      const grantResult = current.store.createGrant({
+      const grantResult = await current.store.createGrant({
         label: `${clientName} (MCP Client)`,
         type: "mcp-client",
         scopes: Array.isArray(input.scopes) ? input.scopes : [],

@@ -181,7 +181,7 @@ const request = {
   socket: { remoteAddress: "127.0.0.1" },
   __pactRequestId: "verify-tool-skill"
 };
-const authorization = provider.authorizeRequest({ request });
+const authorization = await provider.authorizeRequest({ request });
 assert.equal(authorization.ok, true);
 assert.equal(authorization.sawApiKeyAlias, true);
 assert.deepEqual(provider.visibleGrantSummary({ authorization }).toolsets, ["pact.knowledge.read"]);

@@ -128,6 +128,159 @@ export const PROTOCOL_OPERATION_DEFINITIONS = Object.freeze([
     })
   }),
   protocolOperation({
+    id: "authorization.governance.summary",
+    feature: "auth",
+    label: "统一权限治理摘要",
+    targetMethod: "handleAuthorizationGovernanceSummary",
+    method: "GET",
+    path: "/api/authorization/governance",
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.roles.list",
+    feature: "auth",
+    label: "列出权限角色",
+    targetMethod: "handleAuthorizationRolesList",
+    method: "GET",
+    path: "/api/authorization/roles",
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.roles.upsert",
+    feature: "auth",
+    label: "保存权限角色",
+    targetMethod: "handleAuthorizationRoleUpsert",
+    method: "POST",
+    path: "/api/authorization/roles",
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
+    id: "authorization.teams.list",
+    feature: "auth",
+    label: "列出权限团队",
+    targetMethod: "handleAuthorizationTeamsList",
+    method: "GET",
+    path: "/api/authorization/teams",
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.teams.upsert",
+    feature: "auth",
+    label: "保存权限团队",
+    targetMethod: "handleAuthorizationTeamUpsert",
+    method: "POST",
+    path: "/api/authorization/teams",
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
+    id: "authorization.users.policies.list",
+    feature: "auth",
+    label: "列出用户授权策略",
+    targetMethod: "handleAuthorizationUserPoliciesList",
+    method: "GET",
+    path: "/api/authorization/users/policies",
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.users.policy.upsert",
+    feature: "auth",
+    label: "保存用户授权策略",
+    targetMethod: "handleAuthorizationUserPolicyUpsert",
+    method: "POST",
+    path: "/api/authorization/users/policy",
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
+    id: "authorization.agent_groups.list",
+    feature: "auth",
+    label: "列出智能体分组",
+    targetMethod: "handleAuthorizationAgentGroupsList",
+    method: "GET",
+    path: "/api/authorization/agent-groups",
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.agent_groups.upsert",
+    feature: "auth",
+    label: "保存智能体分组",
+    targetMethod: "handleAuthorizationAgentGroupUpsert",
+    method: "POST",
+    path: "/api/authorization/agent-groups",
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
+    id: "authorization.agents.bindings.list",
+    feature: "auth",
+    label: "列出智能体绑定",
+    targetMethod: "handleAuthorizationAgentBindingsList",
+    method: "GET",
+    path: "/api/authorization/agents/bindings",
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.agents.binding.upsert",
+    feature: "auth",
+    label: "保存智能体绑定",
+    targetMethod: "handleAuthorizationAgentBindingUpsert",
+    method: "POST",
+    path: "/api/authorization/agents/binding",
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
+    id: "authorization.approvals.list",
+    feature: "auth",
+    label: "列出智能体审批",
+    targetMethod: "handleAuthorizationApprovalsList",
+    method: "GET",
+    path: "/api/authorization/approvals",
+    query: [
+      { name: "userId", aliases: ["user-id", "userId"] },
+      { name: "agentId", aliases: ["agent-id", "agentId"] },
+      { name: "includeRevoked", aliases: ["include-revoked", "includeRevoked"] }
+    ],
+    scopes: ["auth:admin"]
+  }),
+  protocolOperation({
+    id: "authorization.approvals.upsert",
+    feature: "auth",
+    label: "保存智能体审批",
+    targetMethod: "handleAuthorizationApprovalUpsert",
+    method: "POST",
+    path: "/api/authorization/approvals",
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
+    id: "authorization.approvals.revoke",
+    feature: "auth",
+    label: "撤销智能体审批",
+    targetMethod: "handleAuthorizationApprovalRevoke",
+    method: "POST",
+    path: "/api/authorization/approvals/:approvalId/revoke",
+    params: [{ name: "approvalId", aliases: ["approval-id", "id"], required: true }],
+    scopes: ["auth:admin"],
+    risk: "repair_write",
+    requiresConfirmation: true,
+    approvalScope: "auth:admin"
+  }),
+  protocolOperation({
     id: "authorization.receipts.list",
     feature: "auth",
     label: "列出授权回执",

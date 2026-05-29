@@ -1003,9 +1003,9 @@ function broadcastMcpOperationReply({ envelope, operation, status, target, paylo
   }), { grantId });
 }
 
-function sendMcpSseVersionEvent(request, response, toolSkillManagementProvider) {
+async function sendMcpSseVersionEvent(request, response, toolSkillManagementProvider) {
   const authorization = hasMcpAuthToken(request)
-    ? toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] })
+    ? await toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] })
     : { ok: false };
   const payload = jsonRpcNotification("notifications/tools/list_changed", {
     ...mcpVersionInfo(),
@@ -1064,7 +1064,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
   }
 
   if (method === "tools/list") {
-    const authorization = toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] });
+    const authorization = await toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] });
     if (!authorization.ok) {
       return {
         httpStatus: authorization.status || 401,
@@ -1094,7 +1094,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
       });
     }
 
-    const authorization = toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] });
+    const authorization = await toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] });
     if (!authorization.ok) {
       return {
         httpStatus: authorization.status || 401,
@@ -1143,7 +1143,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
       client: request?.headers?.["user-agent"] || "",
       traceId: parsedCall.envelope.traceId,
       operatorId: parsedCall.envelope.operatorId,
-      agentId: parsedCall.envelope.operatorId,
+      agentId: parsedCall.envelope.agentProfileId || parsedCall.envelope.operatorId,
       profileId: parsedCall.envelope.agentProfileId,
       agentProfileId: parsedCall.envelope.agentProfileId,
       subject: parsedCall.envelope.subject,
@@ -1386,7 +1386,7 @@ export async function handlePactMcpHttpRequest({
   }
 
   if (method === "GET") {
-    sendMcpSseVersionEvent(request, response, toolSkillManagementProvider);
+    await sendMcpSseVersionEvent(request, response, toolSkillManagementProvider);
     return true;
   }
 

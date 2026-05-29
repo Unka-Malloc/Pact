@@ -71,6 +71,7 @@ export async function createServerRuntimeProviders({
   queueMonitor,
   runtimeLogger,
   clientRuntimeAllocator,
+  securityPermissions,
   getToolManagementPlatform = () => null,
   isFeatureActive,
   isAnyFeatureActive
@@ -280,7 +281,8 @@ export async function createServerRuntimeProviders({
       }),
       knowledgeSkillRuntime,
       knowledgeRuleAuthoringRuntime,
-      clientRuntimeAllocator
+      clientRuntimeAllocator,
+      securityPermissions
     }]
   );
 

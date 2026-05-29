@@ -160,6 +160,25 @@ try {
     deniedRequests.some((item) => item.reasonCode === "missing_scopes"),
     "denied authorization decisions must be recorded in unified store"
   );
+  const missingScopeDeniedRequests = authorizationStore.listDeniedRequests({
+    reasonCode: "missing_scopes",
+    operationId: writeOperation.id,
+    subjectId: "viewer-1",
+    limit: 20
+  });
+  assert.equal(missingScopeDeniedRequests.length, 2);
+  assert.ok(missingScopeDeniedRequests.every((item) => item.reasonCode === "missing_scopes"));
+  assert.ok(missingScopeDeniedRequests.every((item) => item.operationId === writeOperation.id));
+  assert.ok(missingScopeDeniedRequests.every((item) => item.subjectId === "viewer-1"));
+  assert.equal(
+    authorizationStore.listDeniedRequests({
+      reasonCode: "missing_scopes",
+      operationId: repairOperation.id,
+      subjectId: "viewer-1",
+      limit: 20
+    }).length,
+    0
+  );
 
   const policyStore = {
     decisions: [],

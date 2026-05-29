@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
+import { createToolCatalogRegistry } from "../platform/specialized/capabilities/tools/tool-management-core/catalog.mjs";
 import { createToolManagementStore } from "../platform/specialized/capabilities/tools/tool-management-core/store.mjs";
 import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 
@@ -228,15 +230,16 @@ function defaultGrantInput(target) {
   };
 }
 
-function createOrRotateGrant({ dataDir, target }) {
-  const store = createToolManagementStore({ userDataPath: dataDir });
+async function createOrRotateGrant({ dataDir, target }) {
+  const registry = createToolCatalogRegistry({ operations: SERVER_API_OPERATIONS });
+  const store = createToolManagementStore({ userDataPath: dataDir, registry });
   try {
     const existing = store.listGrants({ includeRevoked: false }).find((grant) =>
       grant.metadata?.mcpServer === MCP_SERVER_NAME && grant.metadata?.mcpTarget === target
     );
     const result = existing
-      ? store.rotateGrantToken(existing.id)
-      : store.createGrant(defaultGrantInput(target));
+      ? await store.rotateGrantToken(existing.id)
+      : await store.createGrant(defaultGrantInput(target));
     if (!result?.token) {
       throw new Error(`Failed to create or rotate MCP grant for ${target}.`);
     }
@@ -760,7 +763,7 @@ await ensureService(baseUrl);
 
 const installed = {};
 for (const target of targets) {
-  const grantResult = createOrRotateGrant({ dataDir, target });
+  const grantResult = await createOrRotateGrant({ dataDir, target });
   let clientResult = null;
   if (target === "codex") {
     clientResult = await installCodex({ baseUrl, token: grantResult.token, tokenEnv, codexBin, marketplaceRoot });
