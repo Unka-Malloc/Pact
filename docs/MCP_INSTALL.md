@@ -1,5 +1,7 @@
 # Pact MCP Release Install
 
+[中文安装说明](MCP_INSTALL.zh-CN.md)
+
 Pact MCP is distributed as a GitHub Release connector package. A normal
 user does not need to clone the Pact repository. If Node.js 20+ is already
 installed, the one-command installer uses the small source package; if Node.js is
@@ -9,6 +11,12 @@ missing, it falls back to the portable package with its own runtime.
 
 ```bash
 /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+```
+
+A localized Chinese installer script is also published:
+
+```bash
+/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
 ```
 
 The command downloads the latest connector from GitHub Releases, verifies its

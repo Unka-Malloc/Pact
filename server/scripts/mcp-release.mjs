@@ -410,8 +410,13 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
   const scriptPath = path.join(outputDir, scriptName);
   const uninstallScriptName = "pact-mcp-uninstall.sh";
   const uninstallScriptPath = path.join(outputDir, uninstallScriptName);
+  const zhCnScriptName = "pact-mcp-install.zh-CN.sh";
+  const zhCnScriptPath = path.join(outputDir, zhCnScriptName);
+  const zhCnUninstallScriptName = "pact-mcp-uninstall.zh-CN.sh";
+  const zhCnUninstallScriptPath = path.join(outputDir, zhCnUninstallScriptName);
   const repo = githubOwnerRepo(packageJson);
   const minimumNodeMajor = Number(String(packageJson.engines?.node || ">=20").match(/\d+/)?.[0] || 20);
+  const portablePlatformList = portables.map(p => p.platform).join(', ');
   const content = [
     "#!/usr/bin/env sh",
     "set -eu",
@@ -528,7 +533,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     }),
     "    *)",
     "      echo \"No usable Node.js runtime was found and this release has no portable archive for: $platform\" >&2",
-    `      echo "This release contains ${portables.map(p => p.platform).join(', ')}. Build and upload the matching portable archive for this platform." >&2`,
+    `      echo "This release contains ${portablePlatformList}. Build and upload the matching portable archive for this platform." >&2`,
     "      exit 1",
     "      ;;",
     "  esac",
@@ -582,6 +587,40 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     .replaceAll(" install \"$@\"", " uninstall \"$@\"");
   await fs.writeFile(uninstallScriptPath, uninstallContent);
   await fs.chmod(uninstallScriptPath, 0o755);
+  const zhCnContent = localizeBootstrapShell(content, [
+    ["Missing required command: $1", "缺少必需命令: $1"],
+    ["Missing shasum or sha256sum for release verification.", "缺少用于校验发布包的 shasum 或 sha256sum。"],
+    ["Downloading Pact MCP connector $VERSION source package...", "正在下载 Pact MCP connector $VERSION 源码包..."],
+    ["Checksum mismatch for $SOURCE_TARBALL", "校验和不匹配: $SOURCE_TARBALL"],
+    ["expected: $SOURCE_TARBALL_SHA256", "预期: $SOURCE_TARBALL_SHA256"],
+    ["actual:   $actual_sha256", "实际:   $actual_sha256"],
+    ["Installed Pact MCP connector at $target_dir", "Pact MCP connector 已安装到 $target_dir"],
+    ["Opening Pact MCP client selector...", "正在打开 Pact MCP 客户端选择器..."],
+    [
+      "No usable Node.js runtime was found and this release has no portable archive for: $platform",
+      "未找到可用的 Node.js 运行时，并且此发布版本没有适用于该平台的便携包: $platform"
+    ],
+    [
+      `This release contains ${portablePlatformList}. Build and upload the matching portable archive for this platform.`,
+      `此发布版本包含 ${portablePlatformList}。请为该平台构建并上传匹配的便携包。`
+    ],
+    [
+      "Downloading Pact MCP connector $VERSION portable runtime for $platform...",
+      "正在下载 Pact MCP connector $VERSION 适用于 $platform 的便携运行时..."
+    ],
+    ["Checksum mismatch for $archive", "校验和不匹配: $archive"],
+    ["expected: $archive_sha256", "预期: $archive_sha256"],
+    ["No usable Node.js $MINIMUM_NODE_MAJOR+ runtime found; falling back to the portable connector.", "未找到可用的 Node.js $MINIMUM_NODE_MAJOR+ 运行时，正在回退到便携版 connector。"]
+  ]);
+  await fs.writeFile(zhCnScriptPath, zhCnContent);
+  await fs.chmod(zhCnScriptPath, 0o755);
+  const zhCnUninstallContent = zhCnContent
+    .replaceAll("正在打开 Pact MCP 客户端选择器...", "正在打开 Pact MCP 客户端移除选择器...")
+    .replaceAll(" install \"$@\"", " uninstall \"$@\"");
+  await fs.writeFile(zhCnUninstallScriptPath, zhCnUninstallContent);
+  await fs.chmod(zhCnUninstallScriptPath, 0o755);
+  const zhCnSha256 = await sha256(zhCnScriptPath);
+  const zhCnUninstallSha256 = await sha256(zhCnUninstallScriptPath);
   return {
     scriptName,
     scriptPath,
@@ -592,8 +631,30 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     uninstallScriptPath,
     uninstallSha256: await sha256(uninstallScriptPath),
     githubLatestUninstallUrl: `https://github.com/${repo}/releases/latest/download/${uninstallScriptName}`,
-    oneLineUninstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${uninstallScriptName})"`
+    oneLineUninstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${uninstallScriptName})"`,
+    localized: {
+      zhCN: {
+        scriptName: zhCnScriptName,
+        scriptPath: zhCnScriptPath,
+        sha256: zhCnSha256,
+        githubLatestUrl: `https://github.com/${repo}/releases/latest/download/${zhCnScriptName}`,
+        oneLineCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${zhCnScriptName})"`,
+        uninstallScriptName: zhCnUninstallScriptName,
+        uninstallScriptPath: zhCnUninstallScriptPath,
+        uninstallSha256: zhCnUninstallSha256,
+        githubLatestUninstallUrl: `https://github.com/${repo}/releases/latest/download/${zhCnUninstallScriptName}`,
+        oneLineUninstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${zhCnUninstallScriptName})"`
+      }
+    }
   };
+}
+
+function localizeBootstrapShell(content, replacements) {
+  let result = content;
+  for (const [source, localized] of replacements) {
+    result = result.replaceAll(source, localized);
+  }
+  return result;
 }
 
 function releaseManifest({ channel, packageJson, tarballName, tarballPath, checksum, sizeBytes, portables, bootstrap }) {
@@ -646,7 +707,9 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
     },
     install: {
       githubOneLineCommand: bootstrap.oneLineCommand,
+      githubOneLineCommandZhCN: bootstrap.localized.zhCN.oneLineCommand,
       githubOneLineUninstallCommand: bootstrap.oneLineUninstallCommand,
+      githubOneLineUninstallCommandZhCN: bootstrap.localized.zhCN.oneLineUninstallCommand,
       registryCommand: `npx ${packageJson.name}@latest register`,
       tarballCommand: `npm exec --package ./build/release/mcp/${tarballName} -- pact-mcp register`,
       portableCommand: `./${portable.executable} register`,
@@ -677,6 +740,18 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       uninstallSha256: bootstrap.uninstallSha256,
       uninstallGithubLatestUrl: bootstrap.githubLatestUninstallUrl,
       uninstallCommand: bootstrap.oneLineUninstallCommand,
+      localized: {
+        zhCN: {
+          scriptName: bootstrap.localized.zhCN.scriptName,
+          sha256: bootstrap.localized.zhCN.sha256,
+          githubLatestUrl: bootstrap.localized.zhCN.githubLatestUrl,
+          command: bootstrap.localized.zhCN.oneLineCommand,
+          uninstallScriptName: bootstrap.localized.zhCN.uninstallScriptName,
+          uninstallSha256: bootstrap.localized.zhCN.uninstallSha256,
+          uninstallGithubLatestUrl: bootstrap.localized.zhCN.githubLatestUninstallUrl,
+          uninstallCommand: bootstrap.localized.zhCN.oneLineUninstallCommand
+        }
+      },
       strategy: "installed-node-source-tarball-with-portable-runtime-fallback",
       preferredDownload: tarballName,
       fallbackDownload,
@@ -695,6 +770,8 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
         ...portables.map((p) => p.zipArchiveName).filter(Boolean),
         bootstrap.scriptName,
         bootstrap.uninstallScriptName,
+        bootstrap.localized.zhCN.scriptName,
+        bootstrap.localized.zhCN.uninstallScriptName,
         "pact-mcp-release.json",
         "latest.json"
       ]
@@ -776,8 +853,14 @@ async function main() {
     bootstrapInstallerSha256: bootstrap.sha256,
     bootstrapUninstallerPath: bootstrap.uninstallScriptPath,
     bootstrapUninstallerSha256: bootstrap.uninstallSha256,
+    bootstrapInstallerZhCNPath: bootstrap.localized.zhCN.scriptPath,
+    bootstrapInstallerZhCNSha256: bootstrap.localized.zhCN.sha256,
+    bootstrapUninstallerZhCNPath: bootstrap.localized.zhCN.uninstallScriptPath,
+    bootstrapUninstallerZhCNSha256: bootstrap.localized.zhCN.uninstallSha256,
     githubOneLineCommand: bootstrap.oneLineCommand,
     githubOneLineUninstallCommand: bootstrap.oneLineUninstallCommand,
+    githubOneLineCommandZhCN: bootstrap.localized.zhCN.oneLineCommand,
+    githubOneLineUninstallCommandZhCN: bootstrap.localized.zhCN.oneLineUninstallCommand,
     publishCommand: manifest.publish.npmCommand,
     installCommand: manifest.install.registryCommand,
     published: Boolean(publishResult),

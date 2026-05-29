@@ -176,9 +176,13 @@ try {
   }
   assert.ok(manifest.install.registryCommand.includes("npx pact-mcp-connector@latest register"));
   assert.ok(manifest.install.githubOneLineCommand.includes("pact-mcp-install.sh"));
+  assert.ok(manifest.install.githubOneLineCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
+  assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
   assert.ok(manifest.install.githubOneLineCommand.startsWith("/bin/sh -c"));
+  assert.ok(manifest.install.githubOneLineCommandZhCN.startsWith("/bin/sh -c"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.startsWith("/bin/sh -c"));
+  assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.startsWith("/bin/sh -c"));
   assert.ok(manifest.install.portableCommand.includes("pact-mcp register"));
   assert.ok(manifest.install.interactiveInstallCommand.includes("pact-mcp-connector@latest install"));
   assert.ok(manifest.install.interactiveUninstallCommand.includes("pact-mcp-connector@latest uninstall"));
@@ -189,6 +193,8 @@ try {
   assert.ok(manifest.install.scanCommand.includes("pact-mcp-connector@latest scan"));
   assert.equal(manifest.bootstrap.scriptName, "pact-mcp-install.sh");
   assert.equal(manifest.bootstrap.uninstallScriptName, "pact-mcp-uninstall.sh");
+  assert.equal(manifest.bootstrap.localized.zhCN.scriptName, "pact-mcp-install.zh-CN.sh");
+  assert.equal(manifest.bootstrap.localized.zhCN.uninstallScriptName, "pact-mcp-uninstall.zh-CN.sh");
   assert.equal(manifest.bootstrap.startsInteractiveInstaller, true);
   assert.equal(manifest.bootstrap.startsInteractiveUninstaller, true);
   assert.equal(manifest.bootstrap.supportsMultiSelect, true);
@@ -201,17 +207,29 @@ try {
   assert.equal(manifest.bootstrap.fallbackSizeBytes, fallbackArchive.sizeBytes);
   assert.equal(manifest.bootstrap.sha256, await sha256(result.bootstrapInstallerPath));
   assert.equal(manifest.bootstrap.uninstallSha256, await sha256(result.bootstrapUninstallerPath));
+  assert.equal(manifest.bootstrap.localized.zhCN.sha256, await sha256(result.bootstrapInstallerZhCNPath));
+  assert.equal(manifest.bootstrap.localized.zhCN.uninstallSha256, await sha256(result.bootstrapUninstallerZhCNPath));
   assert.ok(manifest.publish.npmCommand.includes("npm publish"));
   assert.ok(manifest.publish.releaseFiles.includes("pact-mcp-install.sh"));
   assert.ok(manifest.publish.releaseFiles.includes("pact-mcp-uninstall.sh"));
+  assert.ok(manifest.publish.releaseFiles.includes("pact-mcp-install.zh-CN.sh"));
+  assert.ok(manifest.publish.releaseFiles.includes("pact-mcp-uninstall.zh-CN.sh"));
   assert.equal(result.bootstrapInstallerSha256, await sha256(result.bootstrapInstallerPath));
   assert.equal(result.bootstrapUninstallerSha256, await sha256(result.bootstrapUninstallerPath));
+  assert.equal(result.bootstrapInstallerZhCNSha256, await sha256(result.bootstrapInstallerZhCNPath));
+  assert.equal(result.bootstrapUninstallerZhCNSha256, await sha256(result.bootstrapUninstallerZhCNPath));
   assert.ok(result.githubOneLineCommand.includes("pact-mcp-install.sh"));
   assert.ok(result.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
+  assert.ok(result.githubOneLineCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
+  assert.ok(result.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
   await run("sh", ["-n", result.bootstrapInstallerPath]);
   await run("sh", ["-n", result.bootstrapUninstallerPath]);
+  await run("sh", ["-n", result.bootstrapInstallerZhCNPath]);
+  await run("sh", ["-n", result.bootstrapUninstallerZhCNPath]);
   const bootstrapScript = await fs.readFile(result.bootstrapInstallerPath, "utf8");
   const bootstrapUninstallScript = await fs.readFile(result.bootstrapUninstallerPath, "utf8");
+  const bootstrapScriptZhCN = await fs.readFile(result.bootstrapInstallerZhCNPath, "utf8");
+  const bootstrapUninstallScriptZhCN = await fs.readFile(result.bootstrapUninstallerZhCNPath, "utf8");
   assert.match(bootstrapScript, /curl -fL --retry 3/);
   assert.match(bootstrapScript, /node_is_usable/);
   assert.match(bootstrapScript, /install_from_source_tarball/);
@@ -228,6 +246,11 @@ try {
   assert.match(bootstrapUninstallScript, /pact-mcp" uninstall/);
   assert.match(bootstrapUninstallScript, /node "\$target_dir\/bin\/pact-mcp\.mjs" uninstall/);
   assert.match(bootstrapUninstallScript, /client removal selector/);
+  assert.match(bootstrapScriptZhCN, /正在下载 Pact MCP connector/);
+  assert.match(bootstrapScriptZhCN, /正在打开 Pact MCP 客户端选择器/);
+  assert.match(bootstrapScriptZhCN, /pact-mcp" install/);
+  assert.match(bootstrapUninstallScriptZhCN, /正在打开 Pact MCP 客户端移除选择器/);
+  assert.match(bootstrapUninstallScriptZhCN, /pact-mcp" uninstall/);
 
   const list = await run("tar", ["-tzf", result.tarballPath]);
   assert.match(list.stdout, /package\/bin\/pact-mcp\.mjs/);
