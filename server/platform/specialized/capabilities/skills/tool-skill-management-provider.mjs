@@ -580,7 +580,7 @@ function mcpGrantClientRows(grant, { offlineAfterSeconds = 300 } = {}) {
         configVersion: "",
         migrationState: connection.migrationState,
         connectionKind: "mcp-plugin",
-        connectionMethod: "MCP 插件连接",
+        connectionMethod: "MCP 服务",
         connectionState: connection.state,
         connectionStatusLabel: connection.label,
         connectionDetail: "Tool Management 授权",
