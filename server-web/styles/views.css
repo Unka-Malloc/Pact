@@ -6968,3 +6968,49 @@ progress::-moz-progress-bar {
     min-height: 88px;
   }
 }
+
+.distillation-result-file-list.upload-file-list-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  container-type: inline-size;
+}
+
+.distillation-result-file-list .upload-file-list-body,
+.distillation-result-file-list .upload-file-row[data-mode="download"] {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.distillation-result-file-list .upload-file-row[data-mode="download"] {
+  grid-template-columns: minmax(0, 52%) minmax(0, 28%) minmax(0, 20%);
+  gap: clamp(8px, 2cqi, 16px);
+}
+
+.distillation-result-file-list .upload-file-download-actions {
+  width: 100%;
+  justify-content: stretch;
+}
+
+.distillation-result-file-list .upload-file-download-actions .tool-button {
+  width: 100%;
+  max-width: 100%;
+  justify-content: center;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+@container (max-width: 640px) {
+  .distillation-result-file-list .upload-file-row[data-mode="download"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .distillation-result-file-list .upload-file-result-meta,
+  .distillation-result-file-list .upload-file-download-actions {
+    justify-self: stretch;
+  }
+}
