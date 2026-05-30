@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import BridgeDownloadButton from "./BridgeDownloadButton.vue";
 import BrowseSelectButton from "./BrowseSelectButton.vue";
 import StatusPill from "./StatusPill.vue";
 import { bridge } from "../lib/bridge";
@@ -161,13 +162,11 @@ function onDrop(event: DragEvent) {
         :key="doc.documentId"
         class="job-row"
       >
-        <a
+        <BridgeDownloadButton
           :href="bridge.normalizedDocumentUrl(normalizedManifest.batchId, doc.documentId)"
-          target="_blank"
-          rel="noreferrer"
-        >
-          {{ doc.title }}
-        </a>
+          :label="doc.title"
+          button-class="bridge-download-link"
+        />
         <span>{{ doc.granularity }}</span>
         <span>{{ formatBytes(doc.byteSize) }}</span>
       </div>
@@ -179,15 +178,12 @@ function onDrop(event: DragEvent) {
         <option value="markdown">Markdown</option>
         <option value="html">HTML</option>
       </select>
-      <a
+      <BridgeDownloadButton
         v-if="canReadKnowledge"
-        class="tool-button tool-button-ghost"
         :href="exportUrl"
-        target="_blank"
-        rel="noreferrer"
-      >
-        导出知识库
-      </a>
+        label="导出知识库"
+        button-class="tool-button tool-button-ghost"
+      />
       <button v-else class="tool-button tool-button-ghost" type="button" disabled>
         导出知识库
       </button>

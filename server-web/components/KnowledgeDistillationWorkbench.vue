@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AgentModelOptionBar from "./AgentModelOptionBar.vue";
+import BridgeDownloadButton from "./BridgeDownloadButton.vue";
 import StatusPill from "./StatusPill.vue";
 import { usePageRefreshHandler } from "../composables/usePageRefresh";
 import { bridge } from "../lib/bridge";
@@ -709,14 +710,11 @@ onBeforeUnmount(() => {
           >
             {{ busy === "delete" ? "删除中" : "删除" }}
           </button>
-          <a
-            class="tool-button tool-button-ghost"
+          <BridgeDownloadButton
             :href="packageUrl()"
-            target="_blank"
-            rel="noreferrer"
-          >
-            下载工作台产物包
-          </a>
+            label="下载工作台产物包"
+            button-class="tool-button tool-button-ghost"
+          />
         </div>
       </div>
       <div class="ingest-queue-progress">
@@ -806,17 +804,14 @@ onBeforeUnmount(() => {
                 >
                   {{ busy === `rerun:${stage.stageId}` ? "重跑中" : "重跑本阶段" }}
                 </button>
-                <a
+                <BridgeDownloadButton
                   v-for="format in (stage.exportFormats || ['markdown', 'docx', 'html', 'json'])"
                   :key="`${stage.stageId}:${format}`"
-                  class="tool-button tool-button-ghost"
-                  :class="{ disabled: stage.status !== 'completed' }"
                   :href="exportUrl(stage, format)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  导出 {{ format.toUpperCase() }}
-                </a>
+                  :label="`导出 ${format.toUpperCase()}`"
+                  button-class="tool-button tool-button-ghost"
+                  :disabled="stage.status !== 'completed'"
+                />
               </div>
             </div>
             <pre>{{ stage.preview || (stage.status === "completed" ? "该阶段已完成，暂无预览文本。" : "等待阶段完成后展示结果预览。") }}</pre>

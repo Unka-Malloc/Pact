@@ -70,6 +70,17 @@ import type {
   V001BaselineStatus
 } from "./types";
 
+export type BridgeDownloadOptions = {
+  fileName?: string;
+  signal?: AbortSignal;
+};
+
+export type BridgeDownloadResult = {
+  fileName: string;
+  contentType: string;
+  byteLength: number;
+};
+
 type Bridge = {
   getAuthSession: () => Promise<ConsoleAuthSummary>;
   loginAuth: (payload: { username: string; password: string }) => Promise<ConsoleAuthSummary & { ok: boolean }>;
@@ -108,6 +119,7 @@ type Bridge = {
     modelAlias?: string;
     settings?: AgentSettings;
   }) => Promise<ModelProbeResponse>;
+  downloadFile: (url: string, options?: BridgeDownloadOptions) => Promise<BridgeDownloadResult>;
   getAgentGatewayConfig: () => Promise<{ config: AgentGatewayConfig }>;
   saveAgentGatewayConfig: (config: Partial<AgentGatewayConfig>) => Promise<{ config: AgentGatewayConfig }>;
   callAgentGateway: (payload: AgentGatewayCallRequest) => Promise<AgentGatewayCallResponse>;
@@ -441,6 +453,75 @@ async function parseJsonResponse<T>(response: Response, url: string): Promise<T>
   }
 }
 
+function trimQuotedHeaderValue(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+    return trimmed.slice(1, -1).replace(/\\"/g, "\"");
+  }
+  return trimmed;
+}
+
+function sanitizeDownloadFileName(value: string) {
+  return String(value || "download.bin")
+    .replace(/[\\/:*?<>|"\r\n]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim() || "download.bin";
+}
+
+function decodeContentDispositionValue(value: string) {
+  const trimmed = trimQuotedHeaderValue(value);
+  const match = /^[^']*'[^']*'(.*)$/i.exec(trimmed);
+  const encoded = match ? match[1] : trimmed;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+}
+
+function fileNameFromContentDisposition(value: string | null) {
+  if (!value) return "";
+  const parts = value.split(";").map((part) => part.trim()).filter(Boolean);
+  const encoded = parts.find((part) => /^filename\*/i.test(part));
+  if (encoded) {
+    const [, ...rest] = encoded.split("=");
+    const decoded = decodeContentDispositionValue(rest.join("="));
+    if (decoded) return sanitizeDownloadFileName(decoded);
+  }
+  const plain = parts.find((part) => /^filename=/i.test(part));
+  if (plain) {
+    const [, ...rest] = plain.split("=");
+    const decoded = trimQuotedHeaderValue(rest.join("="));
+    if (decoded) return sanitizeDownloadFileName(decoded);
+  }
+  return "";
+}
+
+function fileNameFromUrl(url: string) {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const segment = parsed.pathname.split("/").filter(Boolean).pop() || "";
+    return sanitizeDownloadFileName(decodeURIComponent(segment || "download.bin"));
+  } catch {
+    const [pathPart] = String(url || "").split("?");
+    const segment = pathPart.split("/").filter(Boolean).pop() || "download.bin";
+    return sanitizeDownloadFileName(segment);
+  }
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string) {
+  const objectUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  anchor.rel = "noreferrer";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 30_000);
+}
+
 type SafetyRequestOptions = {
   safetyConfirm?: boolean;
 };
@@ -451,6 +532,43 @@ type BridgeRequestOptions = SafetyRequestOptions & {
 
 function safetyHeaders(options: SafetyRequestOptions = {}): Record<string, string> {
   return options.safetyConfirm ? { "x-pact-safety-confirm": "true" } : {};
+}
+
+async function downloadFile(url: string, options: BridgeDownloadOptions = {}): Promise<BridgeDownloadResult> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "*/*",
+      ...(csrfToken ? { "x-pact-csrf": csrfToken } : {}),
+    },
+    credentials: "same-origin",
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response);
+    throw new Error(message || `下载失败：${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  const disposition = response.headers.get("content-disposition") || "";
+  if (/text\/html/i.test(contentType) && !/filename|attachment/i.test(disposition)) {
+    const htmlPreview = (await response.text()).trim().slice(0, 160);
+    throw new Error(`下载接口返回了 HTML 页面，请检查接口路径或登录状态。响应片段：${htmlPreview}`);
+  }
+
+  const blob = await response.blob();
+  const fileName = sanitizeDownloadFileName(
+    options.fileName ||
+      fileNameFromContentDisposition(disposition) ||
+      fileNameFromUrl(url),
+  );
+  triggerBrowserDownload(blob, fileName);
+  return {
+    fileName,
+    contentType,
+    byteLength: blob.size,
+  };
 }
 
 async function postJson<T>(url: string, payload?: unknown, options: BridgeRequestOptions = {}): Promise<T> {
@@ -550,6 +668,7 @@ const browserBridge: Bridge = {
   getAuthSession: () => getJson<ConsoleAuthSummary>("/api/auth/session"),
   loginAuth: (payload) => postJson<ConsoleAuthSummary & { ok: boolean }>("/api/auth/login", payload),
   logoutAuth: () => postJson<{ ok: boolean }>("/api/auth/logout", {}),
+  downloadFile,
   listAuthUsers: () => getJson<{ users: ConsoleUser[]; roles: ConsoleAuthSummary["roles"] }>("/api/auth/users"),
   updateAuthUser: (userId, payload) =>
     postJson<{ user: ConsoleUser; users: ConsoleUser[] }>(

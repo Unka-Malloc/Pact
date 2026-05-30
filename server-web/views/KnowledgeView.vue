@@ -7,6 +7,7 @@ import { createKnowledgeUploadedFilesPayload } from '../lib/knowledge-upload-ses
 import type { KnowledgeSource } from '../lib/types';
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
 import BinaryCheckbox from '../components/BinaryCheckbox.vue';
+import BridgeDownloadButton from '../components/BridgeDownloadButton.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import FeatureToggle from '../components/FeatureToggle.vue';
@@ -1233,9 +1234,11 @@ async function previewKnowledgeDocumentParsing() {
                   :key="doc.documentId"
                   class="job-row"
                 >
-                  <a :href="bridge.normalizedDocumentUrl(normalizedManifest.batchId, doc.documentId)" target="_blank" rel="noreferrer">
-                    {{ doc.title }}
-                  </a>
+                  <BridgeDownloadButton
+                    :href="bridge.normalizedDocumentUrl(normalizedManifest.batchId, doc.documentId)"
+                    :label="doc.title"
+                    button-class="bridge-download-link"
+                  />
                   <span>{{ doc.granularity }}</span>
                   <span>{{ formatBytes(doc.byteSize) }}</span>
                 </div>
