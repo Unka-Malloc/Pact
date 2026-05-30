@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, execSync } from "node:child_process";
 import { createPublicKey, randomBytes, verify } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -8,6 +8,33 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await fs.readFile(new URL("../package.json", import.meta.url), "utf8"));
+
+const isChinese = (() => {
+  const lang = String(process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || "").toLowerCase();
+  if (lang.includes("zh")) {
+    return true;
+  }
+  try {
+    if (os.platform() === "darwin") {
+      const output = execSync("defaults read -g AppleLanguages 2>/dev/null", { encoding: "utf8" });
+      if (output && /zh-/i.test(output)) {
+        return true;
+      }
+    } else if (os.platform() === "win32") {
+      const output = execSync("powershell -NoProfile -Command \"[System.Globalization.CultureInfo]::CurrentCulture.Name\" 2>$null", { encoding: "utf8" });
+      if (output && /zh-/i.test(output)) {
+        return true;
+      }
+    }
+  } catch (error) {
+    // Silently ignore command failures and fall back
+  }
+  return false;
+})();
+
+function msg(en, zh) {
+  return isChinese ? zh : en;
+}
 
 const DEFAULT_TOKEN_ENV = "PACT_MCP_TOKEN";
 const DEFAULT_CODEX_BIN = "codex";
@@ -4046,20 +4073,20 @@ function selectionGlyph(selected) {
 
 function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = "", mode = "install" }) {
   const action = mode === "uninstall" ? "uninstall" : "install";
-  const title = mode === "uninstall" ? "Pact MCP uninstall" : "Pact MCP install";
-  const mcpLine = baseUrl ? `MCP: ${baseUrl}/mcp` : "MCP: no server URL required for local client removal";
+  const title = mode === "uninstall" ? msg("Pact MCP uninstall", "Pact MCP 卸载") : msg("Pact MCP install", "Pact MCP 安装");
+  const mcpLine = baseUrl ? `MCP: ${baseUrl}/mcp` : msg("MCP: no server URL required for local client removal", "MCP: 本地卸载无需服务端 URL");
   const rows = [
     "\x1b[2J\x1b[H",
     title,
     "",
     mcpLine,
-    `Use Up/Down or j/k, Space to toggle, a to toggle detected, Enter to ${action}, q to cancel.`,
+    msg(`Use Up/Down or j/k, Space to toggle, a to toggle detected, Enter to ${action}, q to cancel.`, `使用上下键或 j/k 移动，空格键选择/取消，按 a 全选检测到的客户端，Enter 键确认${action === "uninstall" ? "卸载" : "安装"}，q 键取消。`),
     "",
     ...candidates.map((candidate, candidateIndex) => {
       const pointer = candidateIndex === index ? ">" : " ";
       const selected = selectedIds.has(candidate.id);
       const label = `${candidate.label}`.padEnd(28, " ");
-      const installed = candidate.installed ? "[installed] " : "";
+      const installed = candidate.installed ? msg("[installed] ", "[已安装] ") : "";
       return `${pointer} [${selectionGlyph(selected)}] ${installed}${label} ${candidate.detail || ""}`;
     }),
     "",
@@ -4070,21 +4097,21 @@ function renderInstallMenu({ candidates, index, selectedIds, baseUrl, message = 
 function renderAutoUpdateMenu({ enabled }) {
   const rows = [
     "\x1b[2J\x1b[H",
-    "Pact MCP Auto-Update Preference",
+    msg("Pact MCP Auto-Update Preference", "Pact MCP 自动推送更新设置"),
     "",
-    "Do you want to enable automatic push updates?",
-    "If enabled, your local AI agent will automatically download and install updates when the server pushes them.",
-    "(This is disabled by default for security).",
+    msg("Do you want to enable automatic push updates?", "您是否希望启用自动推送更新？"),
+    msg("If enabled, your local AI agent will automatically download and install updates when the server pushes them.", "如果启用，当服务端推送更新时，您的本地 AI 智能体将自动下载并安装更新。"),
+    msg("(This is disabled by default for security).", "（出于安全考虑，此功能默认禁用）。"),
     "",
-    `  [${enabled ? "x" : " "}] Enable automatic push updates`,
-    `> [${enabled ? " " : "x"}] Disable automatic push updates (Recommended)`,
+    enabled
+      ? msg("> [x] Enable automatic push updates", "> [x] 启用自动推送更新")
+      : msg("  [ ] Enable automatic push updates", "  [ ] 启用自动推送更新"),
+    enabled
+      ? msg("  [ ] Disable automatic push updates (Recommended)", "  [ ] 禁用自动推送更新 (推荐)")
+      : msg("> [x] Disable automatic push updates (Recommended)", "> [x] 禁用自动推送更新 (推荐)"),
     "",
-    "Use Up/Down to toggle, Enter to confirm."
+    msg("Use Up/Down to toggle, Enter to confirm.", "使用上下键切换，Enter 键确认。")
   ];
-  if (enabled) {
-    rows[7] = `> [x] Enable automatic push updates`;
-    rows[8] = `  [ ] Disable automatic push updates (Recommended)`;
-  }
   process.stdout.write(rows.join("\n") + "\n");
 }
 
@@ -4143,7 +4170,7 @@ async function chooseInstallCandidates({ candidates, baseUrl }) {
     index = 0;
   }
   const selectedIds = new Set();
-  let message = "Space selects one or more clients. Enter installs selected clients.";
+  let message = msg("Space selects one or more clients. Enter installs selected clients.", "空格键选择一个或多个客户端，Enter 键确认安装。");
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
@@ -4170,7 +4197,7 @@ async function chooseInstallCandidates({ candidates, baseUrl }) {
       if (key === "\r" || key === "\n") {
         const selected = candidates.filter((candidate) => selectedIds.has(candidate.id));
         if (selected.length === 0) {
-          message = "No clients selected. Press Space to select at least one client.";
+          message = msg("No clients selected. Press Space to select at least one client.", "未选中任何客户端，请按空格键至少选择一个。");
           renderInstallMenu({ candidates, index, selectedIds, baseUrl, message });
           return;
         }
@@ -4185,7 +4212,7 @@ async function chooseInstallCandidates({ candidates, baseUrl }) {
         } else {
           selectedIds.add(selected.id);
         }
-        message = selectedIds.size === 1 ? "1 client selected." : `${selectedIds.size} clients selected.`;
+        message = selectedIds.size === 1 ? msg("1 client selected.", "已选择 1 个客户端。") : msg(`${selectedIds.size} clients selected.`, `已选择 ${selectedIds.size} 个客户端。`);
       } else if (key === "a" || key === "A") {
         const detected = candidates.filter((candidate) => candidate.status === "detected");
         const shouldSelect = detected.some((candidate) => !selectedIds.has(candidate.id));
@@ -4197,8 +4224,8 @@ async function chooseInstallCandidates({ candidates, baseUrl }) {
           }
         }
         message = shouldSelect
-          ? `${detected.length} detected clients selected.`
-          : "Detected clients cleared.";
+          ? msg(`${detected.length} detected clients selected.`, `已选择检测到的 ${detected.length} 个客户端。`)
+          : msg("Detected clients cleared.", "已清除选中的检测客户端。");
       }
       if (key === "\u001b[A" || key === "k" || key === "K") {
         index = (index - 1 + candidates.length) % candidates.length;
@@ -4227,7 +4254,7 @@ async function chooseUninstallCandidates({ candidates, baseUrl }) {
     index = 0;
   }
   const selectedIds = new Set();
-  let message = "Space selects one or more clients. Enter removes Pact MCP from selected clients.";
+  let message = msg("Space selects one or more clients. Enter removes Pact MCP from selected clients.", "空格键选择一个或多个客户端，Enter 键确认移除所选客户端的 Pact MCP 服务。");
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
@@ -4254,7 +4281,7 @@ async function chooseUninstallCandidates({ candidates, baseUrl }) {
       if (key === "\r" || key === "\n") {
         const selected = candidates.filter((candidate) => selectedIds.has(candidate.id));
         if (selected.length === 0) {
-          message = "No clients selected. Press Space to select at least one client.";
+          message = msg("No clients selected. Press Space to select at least one client.", "未选中任何客户端，请按空格键至少选择一个。");
           renderInstallMenu({ candidates, index, selectedIds, baseUrl, message, mode: "uninstall" });
           return;
         }
@@ -4269,7 +4296,7 @@ async function chooseUninstallCandidates({ candidates, baseUrl }) {
         } else {
           selectedIds.add(selected.id);
         }
-        message = selectedIds.size === 1 ? "1 client selected for removal." : `${selectedIds.size} clients selected for removal.`;
+        message = selectedIds.size === 1 ? msg("1 client selected for removal.", "已选择 1 个客户端用于移除。") : msg(`${selectedIds.size} clients selected for removal.`, `已选择 ${selectedIds.size} 个客户端用于移除。`);
       } else if (key === "a" || key === "A") {
         const detected = candidates.filter((candidate) => candidate.status === "detected");
         const shouldSelect = detected.some((candidate) => !selectedIds.has(candidate.id));
@@ -4281,8 +4308,8 @@ async function chooseUninstallCandidates({ candidates, baseUrl }) {
           }
         }
         message = shouldSelect
-          ? `${detected.length} detected clients selected for removal.`
-          : "Detected clients cleared.";
+          ? msg(`${detected.length} detected clients selected for removal.`, `已选择检测到的 ${detected.length} 个客户端用于移除。`)
+          : msg("Detected clients cleared.", "已清除选中的检测客户端。");
       }
       if (key === "\u001b[A" || key === "k" || key === "K") {
         index = (index - 1 + candidates.length) % candidates.length;
