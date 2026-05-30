@@ -11,7 +11,6 @@ import {
   importReadableTextDetection,
   inferZipContainerExtension,
   isImportArchiveDescriptor,
-  isImportExtensionSupported,
   isImportFilePathSupported,
   isImportImageDescriptor,
   isImportTextDescriptor,
@@ -122,65 +121,257 @@ function inferZipDocumentExtension(buffer, fallbackExtension = "") {
   }
 }
 
-function inferUploadedFileType(buffer) {
-  const signatureExtension = detectExtensionBySignature(buffer);
-  if (isImportArchiveDescriptor(importFileDescriptorForExtension(signatureExtension))) {
-    return {
-      extension: inferZipDocumentExtension(buffer, signatureExtension),
-      source: "zip-container"
-    };
+function normalizeRoutingExtension(value = "") {
+  const trimmed = String(value || "").trim().toLowerCase();
+  if (!trimmed) {
+    return "";
   }
-  if (signatureExtension) {
-    return {
-      extension: signatureExtension,
-      source: "binary-signature"
-    };
-  }
-  if (looksLikeText(buffer)) {
-    const text = buffer.subarray(0, Math.min(buffer.length, 8192)).toString("utf8");
-    const sniffedExtension = sniffTextExtension(text);
-    return {
-      extension: sniffedExtension || importPlainTextFallbackExtension(),
-      source: sniffedExtension ? "text-sniff" : "text-fallback"
-    };
-  }
-  return {
-    extension: "",
-    source: "unknown"
-  };
+  return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
 }
 
-function shouldPreserveDeclaredTextExtension(declaredDescriptor) {
+function routeFileNameWithExtension(fileName = "", extension = "") {
+  const normalizedExtension = normalizeRoutingExtension(extension);
+  const rawFileName = String(fileName || "").trim();
+  if (!rawFileName || !normalizedExtension) {
+    return rawFileName;
+  }
+  const currentExtension = path.extname(rawFileName).toLowerCase();
+  if (currentExtension === normalizedExtension) {
+    return rawFileName;
+  }
+  if (!currentExtension) {
+    return `${rawFileName}${normalizedExtension}`;
+  }
+  return `${rawFileName.slice(0, -currentExtension.length)}${normalizedExtension}`;
+}
+
+function descriptorKind(descriptor, mediaType = "") {
+  return String(descriptor?.kind || (String(mediaType || "").startsWith("text/") ? "text" : "")).trim();
+}
+
+function descriptorSupportsMediaType(descriptor, mediaType = "") {
+  const normalizedMediaType = String(mediaType || "").trim().toLowerCase();
+  if (!descriptor || !normalizedMediaType) {
+    return false;
+  }
   return (
-    isImportTextDescriptor(declaredDescriptor) ||
-    String(declaredDescriptor?.kind || "").trim() === "email"
+    String(descriptor.mediaType || "").trim().toLowerCase() === normalizedMediaType ||
+    asArray(descriptor.mediaTypes).some((entry) => String(entry || "").trim().toLowerCase() === normalizedMediaType)
   );
 }
 
-function chooseUploadedExtension({ detectedExtension, declaredExtension, detectedSource = "" }) {
-  if (!declaredExtension || !isImportExtensionSupported(declaredExtension)) {
-    return detectedExtension;
+function createRoutingCandidate({
+  extension = "",
+  descriptor = null,
+  mediaType = "",
+  source = "",
+  confidence = 0,
+  fileName = ""
+}) {
+  const normalizedExtension = normalizeRoutingExtension(extension || descriptor?.extension || "");
+  const normalizedMediaType = String(mediaType || "").trim().toLowerCase();
+  const resolvedDescriptor =
+    descriptor ||
+    importFileDescriptorForExtension(normalizedExtension) ||
+    importFileDescriptorForMediaType(normalizedMediaType) ||
+    importFileDescriptorForPath(fileName);
+  const resolvedExtension = normalizedExtension || normalizeRoutingExtension(resolvedDescriptor?.extension || "");
+
+  if (!resolvedDescriptor) {
+    return null;
   }
 
-  if (!detectedExtension) {
-    return declaredExtension;
-  }
+  return {
+    extension: resolvedExtension,
+    descriptor: resolvedDescriptor,
+    mediaType: normalizedMediaType,
+    source,
+    confidence,
+    fileName: String(fileName || "").trim(),
+    kind: descriptorKind(resolvedDescriptor, normalizedMediaType)
+  };
+}
 
-  const declaredDescriptor = importFileDescriptorForExtension(declaredExtension);
-  if (
-    (detectedSource === "text-sniff" || detectedSource === "text-fallback") &&
-    shouldPreserveDeclaredTextExtension(declaredDescriptor)
-  ) {
-    return declaredExtension;
-  }
-
-  if (detectedExtension === importPlainTextFallbackExtension()) {
-    if (declaredDescriptor && !isImportImageDescriptor(declaredDescriptor)) {
-      return declaredExtension;
+function collectFileRoutingCandidates({
+  buffer,
+  fileName = "",
+  filePath = "",
+  declaredFileNames = [],
+  mediaTypeHint = "",
+  allowTextFallback = true
+}) {
+  const candidates = [];
+  const pushCandidate = (candidate) => {
+    if (candidate) {
+      candidates.push(candidate);
     }
+  };
+  const signatureExtension = detectExtensionBySignature(buffer);
+  if (isImportArchiveDescriptor(importFileDescriptorForExtension(signatureExtension))) {
+    pushCandidate(createRoutingCandidate({
+      extension: inferZipDocumentExtension(buffer, signatureExtension),
+      source: "zip-container",
+      confidence: 100,
+      fileName: fileName || filePath
+    }));
+  } else if (signatureExtension) {
+    pushCandidate(createRoutingCandidate({
+      extension: signatureExtension,
+      source: "binary-signature",
+      confidence: 100,
+      fileName: fileName || filePath
+    }));
   }
 
-  return detectedExtension;
+  const declaredPaths = [
+    ...declaredFileNames,
+    fileName,
+    filePath
+  ].map((entry) => String(entry || "").trim()).filter(Boolean);
+  const seenDeclaredPaths = new Set();
+  for (const declaredPath of declaredPaths) {
+    const normalizedPath = declaredPath.toLowerCase();
+    if (seenDeclaredPaths.has(normalizedPath)) {
+      continue;
+    }
+    seenDeclaredPaths.add(normalizedPath);
+    const descriptor = importFileDescriptorForPath(declaredPath);
+    pushCandidate(createRoutingCandidate({
+      extension: path.extname(declaredPath),
+      descriptor,
+      source: "declared-path",
+      confidence: 80,
+      fileName: declaredPath
+    }));
+  }
+
+  pushCandidate(createRoutingCandidate({
+    descriptor: importFileDescriptorForMediaType(mediaTypeHint),
+    mediaType: mediaTypeHint,
+    source: "media-type",
+    confidence: 70,
+    fileName: fileName || filePath
+  }));
+
+  const isReadableText = looksLikeText(buffer);
+  if (isReadableText && allowTextFallback) {
+    const text = buffer.subarray(0, Math.min(buffer.length, 8192)).toString("utf8");
+    const sniffedExtension = sniffTextExtension(text);
+    pushCandidate(createRoutingCandidate({
+      extension: sniffedExtension || importPlainTextFallbackExtension(),
+      source: sniffedExtension ? "text-sniff" : "text-fallback",
+      confidence: sniffedExtension ? 35 : 10,
+      fileName: fileName || filePath
+    }));
+  }
+
+  return {
+    candidates,
+    isReadableText
+  };
+}
+
+function pickFileRoutingCandidate(candidates = []) {
+  const orderedCandidates = asArray(candidates).filter(Boolean);
+  return (
+    orderedCandidates.find((candidate) => candidate.source === "zip-container") ||
+    orderedCandidates.find((candidate) => candidate.source === "binary-signature") ||
+    orderedCandidates.find((candidate) => candidate.source === "declared-path") ||
+    orderedCandidates.find((candidate) => candidate.source === "media-type") ||
+    orderedCandidates.find((candidate) => candidate.source === "text-sniff") ||
+    orderedCandidates.find((candidate) => candidate.source === "text-fallback") ||
+    orderedCandidates.sort((left, right) => right.confidence - left.confidence)[0] ||
+    null
+  );
+}
+
+function resolveRoutingMediaType({ selectedCandidate, descriptor, extension, mediaTypeHint }) {
+  if (descriptor?.mediaType) {
+    return descriptor.mediaType;
+  }
+  if (descriptorSupportsMediaType(descriptor, selectedCandidate?.mediaType)) {
+    return selectedCandidate.mediaType;
+  }
+  if (descriptorSupportsMediaType(descriptor, mediaTypeHint)) {
+    return String(mediaTypeHint || "").trim().toLowerCase();
+  }
+  return mediaTypeForImportExtension(extension) ||
+    (isImportTextDescriptor(descriptor) ? mediaTypeForImportExtension(importPlainTextFallbackExtension()) : "");
+}
+
+export function createFileRoutingDecision({
+  buffer = Buffer.alloc(0),
+  fileName = "",
+  filePath = "",
+  declaredFileNames = [],
+  mediaTypeHint = "",
+  allowTextFallback = shouldIncludeUnknownReadableText()
+} = {}) {
+  const { candidates, isReadableText } = collectFileRoutingCandidates({
+    buffer,
+    fileName,
+    filePath,
+    declaredFileNames,
+    mediaTypeHint,
+    allowTextFallback
+  });
+  const selectedCandidate = pickFileRoutingCandidate(candidates);
+  const descriptor =
+    selectedCandidate?.descriptor ||
+    importFileDescriptorForExtension(selectedCandidate?.extension) ||
+    importFileDescriptorForMediaType(selectedCandidate?.mediaType) ||
+    importFileDescriptorForPath(selectedCandidate?.fileName || fileName || filePath);
+  const extension = normalizeRoutingExtension(
+    selectedCandidate?.extension ||
+      descriptor?.extension ||
+      ""
+  );
+  const resolvedMediaType = resolveRoutingMediaType({
+    selectedCandidate,
+    descriptor,
+    extension,
+    mediaTypeHint
+  });
+  const kind = descriptorKind(descriptor, resolvedMediaType) ||
+    (extension ? "document" : isReadableText ? "text" : "");
+
+  return {
+    extension,
+    descriptor,
+    kind,
+    mediaTypeHint: resolvedMediaType,
+    selectedSource: selectedCandidate?.source || "unsupported",
+    selectedConfidence: selectedCandidate?.confidence || 0,
+    isReadableText,
+    routedFileName: routeFileNameWithExtension(fileName || path.basename(filePath || ""), extension),
+    signals: candidates.map((candidate) => ({
+      source: candidate.source,
+      extension: candidate.extension,
+      kind: candidate.kind,
+      mediaType: candidate.mediaType,
+      confidence: candidate.confidence,
+      fileName: candidate.fileName
+    }))
+  };
+}
+
+function hasResolvedImportRoute(routeDecision = {}) {
+  if (routeDecision.descriptor || routeDecision.extension) {
+    return true;
+  }
+  return Boolean(shouldIncludeUnknownReadableText() && routeDecision.isReadableText);
+}
+
+function effectiveFileNameForRouting(name = "", filePath = "", extension = "") {
+  const rawName = name || filePath;
+  if (!rawName || !extension) {
+    return rawName;
+  }
+  const descriptor = importFileDescriptorForPath(rawName);
+  if (descriptor && !descriptor.extension && descriptor.fileName) {
+    return rawName;
+  }
+  return routeFileNameWithExtension(rawName, extension);
 }
 
 function mediaTypeForExtension(extension) {
@@ -516,20 +707,23 @@ async function readStructuredBuffer({
   buffer,
   filePath,
   name,
+  extension = "",
   mediaTypeHint,
   settings,
   userDataPath,
   runtime
 }) {
-  const extension = path.extname(name || filePath).toLowerCase();
-  const descriptor = importFileDescriptorForPath(name || filePath) ||
-    importFileDescriptorForExtension(extension) ||
+  const resolvedExtension = normalizeRoutingExtension(extension || path.extname(name || filePath));
+  const routedFileName = effectiveFileNameForRouting(name || filePath, filePath, resolvedExtension);
+  const descriptor =
+    importFileDescriptorForExtension(resolvedExtension) ||
+    importFileDescriptorForPath(name || filePath) ||
     importFileDescriptorForMediaType(mediaTypeHint);
   const sourceKind = descriptor?.kind || (mediaTypeHint?.startsWith("text/") ? "text" : "document");
   const route = resolveDocumentRoute({
     runtime,
     sourceKind,
-    extension,
+    extension: resolvedExtension,
     mediaTypeHint
   });
 
@@ -538,7 +732,7 @@ async function readStructuredBuffer({
     route,
     buffer,
     filePath,
-    fileName: name || filePath,
+    fileName: routedFileName,
     mediaTypeHint,
     settings,
     userDataPath,
@@ -609,8 +803,15 @@ async function parseArchiveInput({
       continue;
     }
 
-    const extension = path.posix.extname(entryPath).toLowerCase();
+    const entryBufferObject = Buffer.from(entryBuffer);
+    const routeDecision = createFileRoutingDecision({
+      buffer: entryBufferObject,
+      fileName: entryPath,
+      filePath: entryPath
+    });
+    const extension = routeDecision.extension || path.posix.extname(entryPath).toLowerCase();
     if (
+      !hasResolvedImportRoute(routeDecision) &&
       !isImportFilePathSupported(entryPath) &&
       !hasConfiguredRoute({
         runtime,
@@ -625,7 +826,7 @@ async function parseArchiveInput({
       id: `${id}::${entryPath}`,
       name: entryPath,
       filePath: `${filePath || name}#${entryPath}`,
-      buffer: Buffer.from(entryBuffer),
+      buffer: entryBufferObject,
       mediaTypeHint: "",
       sourceTimes,
       settings,
@@ -772,8 +973,10 @@ async function parseStructuredInput({
   sourceContainerPath = "",
   checkpointMaterialPath = ""
 }) {
-  const descriptor = importFileDescriptorForPath(name || filePath) ||
-    importFileDescriptorForExtension(extension) ||
+  const resolvedExtension = normalizeRoutingExtension(extension || path.extname(name || filePath));
+  const descriptor =
+    (resolvedExtension ? importFileDescriptorForExtension(resolvedExtension) : null) ||
+    importFileDescriptorForPath(name || filePath) ||
     importFileDescriptorForMediaType(mediaTypeHint);
   const descriptorKind = descriptor?.kind || (mediaTypeHint?.startsWith("text/") ? "text" : "document");
   const isEmailDocument = descriptorKind === "email";
@@ -789,6 +992,7 @@ async function parseStructuredInput({
     buffer,
     filePath,
     name,
+    extension: resolvedExtension,
     mediaTypeHint,
     settings,
     userDataPath,
@@ -829,7 +1033,7 @@ async function parseStructuredInput({
       mediaType:
         mediaTypeHint ||
         descriptor?.mediaType ||
-        mediaTypeForImportExtension(extension),
+        mediaTypeForImportExtension(resolvedExtension),
       ingestOrigin,
       clientUid,
       sourceType: sourceType || kind || ingestOrigin,
@@ -869,7 +1073,7 @@ async function parseStructuredInput({
     }),
     ...buildOriginalPayload({
       buffer,
-      extension,
+      extension: resolvedExtension,
       originalRelativePath,
       ingestOrigin,
       sourceContainerPath,
@@ -906,15 +1110,22 @@ async function parseBufferInput({
   depth = 0
 }) {
   const sourcePath = name || filePath;
-  const descriptor = importFileDescriptorForPath(sourcePath) ||
-    importFileDescriptorForMediaType(mediaTypeHint);
-  const extension = descriptor?.extension || path.extname(sourcePath).toLowerCase();
-  const mediaType = resolveImageMediaType(extension, mediaTypeHint);
+  const routeDecision = createFileRoutingDecision({
+    buffer,
+    fileName: name,
+    filePath,
+    mediaTypeHint
+  });
+  const descriptor = routeDecision.descriptor;
+  const extension = routeDecision.extension || path.extname(sourcePath).toLowerCase();
+  const effectiveMediaTypeHint = routeDecision.mediaTypeHint || mediaTypeHint;
+  const routedName = effectiveFileNameForRouting(name, filePath, extension);
+  const mediaType = resolveImageMediaType(extension, effectiveMediaTypeHint);
 
-  if (isZipArchive(extension, mediaTypeHint)) {
+  if (isZipArchive(extension, effectiveMediaTypeHint)) {
     return parseArchiveInput({
       id,
-      name,
+      name: routedName || name,
       filePath,
       buffer,
       sourceTimes,
@@ -938,7 +1149,7 @@ async function parseBufferInput({
   if (mediaType) {
     return [await parseImageInput({
       id,
-      name,
+      name: routedName || name,
       filePath,
       buffer,
       mediaType,
@@ -964,17 +1175,17 @@ async function parseBufferInput({
 
   if (
     isImportTextDescriptor(descriptor) ||
-    mediaTypeHint?.startsWith("text/") ||
-    (shouldIncludeUnknownReadableText() && looksLikeText(buffer))
+    effectiveMediaTypeHint?.startsWith("text/") ||
+    (shouldIncludeUnknownReadableText() && routeDecision.isReadableText)
   ) {
     return [await parseStructuredInput({
       id,
-      name,
+      name: routedName || name,
       filePath,
       buffer,
       extension,
       mediaTypeHint:
-        mediaTypeHint ||
+        effectiveMediaTypeHint ||
         descriptor?.mediaType ||
         mediaTypeForImportPath(sourcePath) ||
         mediaTypeForImportExtension(importPlainTextFallbackExtension()),
@@ -1000,17 +1211,17 @@ async function parseBufferInput({
   }
 
   if (
-    descriptor ||
-    hasConfiguredRoute({ runtime, extension, mediaTypeHint, sourceKind: "document" }) ||
-    documentParserSupports({ extension, mediaTypeHint, runtime })
+    hasResolvedImportRoute(routeDecision) ||
+    hasConfiguredRoute({ runtime, extension, mediaTypeHint: effectiveMediaTypeHint, sourceKind: "document" }) ||
+    documentParserSupports({ extension, mediaTypeHint: effectiveMediaTypeHint, runtime })
   ) {
     return [await parseStructuredInput({
       id,
-      name,
+      name: routedName || name,
       filePath,
       buffer,
       extension,
-      mediaTypeHint,
+      mediaTypeHint: effectiveMediaTypeHint,
       sourceTimes,
       settings,
       userDataPath,
@@ -1073,23 +1284,28 @@ async function parseUploadedFile(uploadedFile, index, options) {
   const serverTokenName = path.basename(
     String(uploadedFile.relativePath || uploadedFile.name || originalFileName)
   );
-  const detectedFileType = inferUploadedFileType(buffer);
-  const declaredExtension = path.extname(serverTokenName).toLowerCase();
-  const originalExtension = path.extname(originalFileName).toLowerCase();
-  const extension = chooseUploadedExtension({
-    detectedExtension: detectedFileType.extension,
-    detectedSource: detectedFileType.source,
-    declaredExtension: originalExtension || declaredExtension
+  const uploadedMediaType = String(
+    uploadedFile.mediaType ||
+      uploadedFile.mimeType ||
+      uploadedFile.contentType ||
+      uploadedFile.type ||
+      ""
+  ).trim();
+  const routeDecision = createFileRoutingDecision({
+    buffer,
+    fileName: originalFileName,
+    filePath: serverTokenName,
+    declaredFileNames: [originalFileName, serverTokenName],
+    mediaTypeHint: uploadedMediaType
   });
-  const name = extension
-    ? `${originalFileName.replace(/\.[a-z0-9]+$/i, "")}${extension}`
-    : originalFileName;
+  const extension = routeDecision.extension;
+  const name = routeDecision.routedFileName || originalFileName;
   return parseBufferInput({
     id: serverTokenName || `upload-${index + 1}`,
     name,
     filePath: name,
     buffer,
-    mediaTypeHint: mediaTypeForExtension(extension),
+    mediaTypeHint: routeDecision.mediaTypeHint || mediaTypeForExtension(extension),
     originalRelativePath: originalFileName || name,
     ingestOrigin: "upload",
     ...options,
@@ -1119,16 +1335,19 @@ export async function isSupportedImportFilePath(filePath) {
   if (isSupportedImportPath(filePath)) {
     return true;
   }
-  if (!shouldIncludeUnknownReadableText()) {
-    return false;
-  }
   try {
     const handle = await fs.open(filePath, "r");
     try {
       const detection = importReadableTextDetection();
-      const buffer = Buffer.alloc(detection.sampleBytes);
-      const { bytesRead } = await handle.read(buffer, 0, detection.sampleBytes, 0);
-      return looksLikeText(buffer.subarray(0, bytesRead));
+      const sampleBytes = Math.max(detection.sampleBytes, 64 * 1024);
+      const buffer = Buffer.alloc(sampleBytes);
+      const { bytesRead } = await handle.read(buffer, 0, sampleBytes, 0);
+      const routeDecision = createFileRoutingDecision({
+        buffer: buffer.subarray(0, bytesRead),
+        fileName: path.basename(filePath),
+        filePath
+      });
+      return hasResolvedImportRoute(routeDecision);
     } finally {
       await handle.close();
     }
