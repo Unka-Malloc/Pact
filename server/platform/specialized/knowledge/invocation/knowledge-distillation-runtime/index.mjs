@@ -1,10 +1,15 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createEmbeddingRuntime } from "../../retrieval/embedding-runtime/index.mjs";
 import { DEFAULT_INDUSTRIAL_DISTILLATION_MODEL } from "./industrial-benchmark.mjs";
 
 export const KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION = "pact.knowledge-distillation.v1";
 export const PORTABLE_DISTILLATION_DOCUMENT_PROTOCOL_VERSION = "portable.knowledge-distillation.v1";
+export const KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION = "pact.knowledge-distillation.algorithm.v2";
+export const KNOWLEDGE_DISTILLATION_EXTERNAL_EVALUATION_VERSION = "pact.knowledge-distillation.external-evaluation.v1";
+const DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS = 90;
+const DEFAULT_TEMPORAL_DECAY_FLOOR = 0.35;
 const PORTABLE_DOCUMENT_FORBIDDEN_KEYS = new Set([
   "evidenceRefs",
   "evidenceId",
@@ -181,13 +186,21 @@ function sourceFingerprintForLocator(locator = {}) {
 }
 
 function tokenize(value) {
-  return [
-    ...new Set(
-      String(value || "")
-        .toLowerCase()
-        .match(/[\p{L}\p{N}_-]+/gu) || []
-    )
-  ].filter((token) => token.length >= 2 && token.length <= 64);
+  const normalized = String(value || "").toLowerCase();
+  const lexicalTokens = normalized.match(/[\p{L}\p{N}_-]+/gu) || [];
+  const cjkTokens = [];
+  for (const segment of normalized.match(/[\u3400-\u9fff]{2,}/gu) || []) {
+    const chars = [...segment];
+    for (let index = 0; index < chars.length - 1; index += 1) {
+      cjkTokens.push(chars.slice(index, index + 2).join(""));
+    }
+    for (let index = 0; index < chars.length - 2; index += 1) {
+      cjkTokens.push(chars.slice(index, index + 3).join(""));
+    }
+  }
+  return [...new Set([...lexicalTokens, ...cjkTokens])]
+    .filter((token) => token.length >= 2 && token.length <= 64)
+    .slice(0, 512);
 }
 
 function jaccard(left = [], right = []) {
@@ -385,16 +398,17 @@ function rawCorpusDocumentsFromInput(input = {}) {
     .filter((item) => item.title || item.snippet || asArray(item.blocks).some((block) => block.text));
 }
 
-function buildRawCorpusBatches(items = [], maxCharacters = 24000) {
+function buildRawCorpusBatchPlan(items = [], maxCharacters = 24000) {
   const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 24000), 200000));
   const batches = [];
   let current = {
     batchNumber: 1,
     documentCount: 0,
     characterCount: 0,
-    sources: []
+    sources: [],
+    itemIndexes: []
   };
-  for (const item of asArray(items)) {
+  for (const [index, item] of asArray(items).entries()) {
     const characterCount = asArray(item.blocks).reduce((sum, block) => sum + String(block.text || "").length, 0);
     if (current.documentCount > 0 && current.characterCount + characterCount > safeMax) {
       batches.push(current);
@@ -402,11 +416,13 @@ function buildRawCorpusBatches(items = [], maxCharacters = 24000) {
         batchNumber: batches.length + 1,
         documentCount: 0,
         characterCount: 0,
-        sources: []
+        sources: [],
+        itemIndexes: []
       };
     }
     current.documentCount += 1;
     current.characterCount += characterCount;
+    current.itemIndexes.push(index);
     current.sources.push(compactObject({
       title: item.title,
       sourceType: item.sourceLocator?.sourceType || "",
@@ -421,6 +437,723 @@ function buildRawCorpusBatches(items = [], maxCharacters = 24000) {
   return batches;
 }
 
+function publicRawCorpusBatch(batch = {}) {
+  const { itemIndexes, ...publicBatch } = asObject(batch);
+  return publicBatch;
+}
+
+function textForDistillationItem(item = {}) {
+  return normalizeDocumentText(
+    asArray(item.blocks).map((block) => block.text || block.snippet || block.title).filter(Boolean).join("\n\n") ||
+      item.markdown ||
+      item.snippet ||
+      item.summary ||
+      item.text
+  );
+}
+
+function compactDistillationItemForModel(item = {}, maxCharacters = 2400) {
+  const text = textForDistillationItem(item);
+  const safeMax = Math.max(500, Math.min(Number(maxCharacters || 2400), 20000));
+  return compactObject({
+    evidenceId: item.evidenceId,
+    documentId: item.documentId,
+    title: item.title,
+    snippet: item.snippet || text.slice(0, 700),
+    text: text.slice(0, safeMax),
+    textTruncated: text.length > safeMax,
+    characterCount: text.length,
+    sourceLocator: compactObject({
+      sourceType: item.sourceLocator?.sourceType || "",
+      sourcePath: item.sourceLocator?.sourcePath || "",
+      capturedAt: item.sourceLocator?.capturedAt || "",
+      originalFileName: item.sourceLocator?.originalFileName || "",
+      contentHash: item.sourceLocator?.contentHash || ""
+    }),
+    assets: asArray(item.assets).slice(0, 8).map((asset) => compactObject({
+      assetType: asset.assetType,
+      mediaType: asset.mediaType,
+      title: asset.title,
+      caption: asset.caption,
+      ocrText: normalizeText(asset.ocrText || "").slice(0, 600)
+    }))
+  });
+}
+
+function truncateForModel(value = "", maxCharacters = 400) {
+  const normalized = normalizeText(value);
+  const safeMax = Math.max(80, Math.min(Number(maxCharacters || 400), 4000));
+  return normalized.length > safeMax ? `${normalized.slice(0, safeMax)}...` : normalized;
+}
+
+function decisionFallbackReason(decision = {}) {
+  return normalizeText(decision?.audit?.fallbackReason || "");
+}
+
+function decisionInputOverBudget(decision = {}) {
+  return decision?.usedModel !== true && decisionFallbackReason(decision) === "input_over_budget";
+}
+
+function compactCitationForModel(citation = {}, maxCharacters = 220) {
+  const entry = asObject(citation);
+  return compactObject({
+    citationKey: entry.citationKey,
+    title: truncateForModel(entry.title, 160),
+    excerpt: truncateForModel(entry.excerpt || entry.snippet || entry.text, maxCharacters),
+    source: compactObject({
+      sourceType: entry.source?.sourceType || "",
+      provider: entry.source?.provider || entry.source?.providerId || "",
+      originalFileName: truncateForModel(entry.source?.originalFileName, 120),
+      sourcePath: truncateForModel(entry.source?.sourcePath, 180),
+      contentHash: entry.source?.contentHash || ""
+    })
+  });
+}
+
+function compactSourceTraceForModel(sourceTrace = {}, {
+  evidenceLimit = 12,
+  sourceLimit = 6
+} = {}) {
+  const trace = asObject(sourceTrace);
+  return compactObject({
+    evidenceRefs: asArray(trace.evidenceRefs).slice(0, evidenceLimit),
+    sourceCount: Number(trace.sourceCount || asArray(trace.sources).length || 0),
+    sourceTypes: asArray(trace.sourceTypes).slice(0, 8),
+    providerIds: asArray(trace.providerIds).slice(0, 8),
+    syncBatchIds: asArray(trace.syncBatchIds).slice(0, 8),
+    sources: asArray(trace.sources).slice(0, sourceLimit).map((source) => compactObject({
+      sourceType: source.sourceType || "",
+      providerId: source.providerId || "",
+      externalId: truncateForModel(source.externalId, 120),
+      originalFileName: truncateForModel(source.originalFileName, 120),
+      sourcePath: truncateForModel(source.sourcePath, 180),
+      contentHash: source.contentHash || "",
+      documentIds: asArray(source.documentIds).slice(0, 8),
+      evidenceRefs: asArray(source.evidenceRefs).slice(0, 8)
+    }))
+  });
+}
+
+function compactRawCorpusBatchForModel(batch = {}, sourceLimit = 8) {
+  const item = asObject(batch);
+  return compactObject({
+    batchNumber: item.batchNumber,
+    documentCount: item.documentCount,
+    characterCount: item.characterCount,
+    modelCharacterCount: item.modelCharacterCount,
+    truncatedForModel: item.truncatedForModel,
+    sources: asArray(item.sources).slice(0, sourceLimit).map((source) => compactObject({
+      title: truncateForModel(source.title, 120),
+      sourceType: source.sourceType || "",
+      sourcePath: truncateForModel(source.sourcePath, 180),
+      capturedAt: source.capturedAt || "",
+      contentHash: source.contentHash || ""
+    }))
+  });
+}
+
+function compactRawCorpusBatchExtractForModel(extract = {}, {
+  findingLimit = 6,
+  riskLimit = 4
+} = {}) {
+  const item = asObject(extract);
+  return compactObject({
+    batchNumber: item.batchNumber,
+    summary: truncateForModel(item.summary, 600),
+    coreFindings: asArray(item.coreFindings).slice(0, findingLimit).map((finding) => compactObject({
+      findingId: finding.findingId || finding.id || "",
+      statement: truncateForModel(finding.statement || finding.text || finding.summary, 420),
+      importance: finding.importance || "",
+      confidence: Number(finding.confidence || 0),
+      citations: asArray(finding.citations).slice(0, 6)
+    })),
+    coverage: compactObject({
+      documentCount: item.coverage?.documentCount,
+      characterCount: item.coverage?.characterCount,
+      modelCharacterCount: item.coverage?.modelCharacterCount,
+      truncatedForModel: item.coverage?.truncatedForModel,
+      documentTitles: asArray(item.coverage?.documentTitles).slice(0, 10).map((title) => truncateForModel(title, 120))
+    }),
+    risks: asArray(item.risks).slice(0, riskLimit).map((risk) => truncateForModel(risk, 240)),
+    model: compactObject({
+      usedModel: item.model?.usedModel === true,
+      degraded: item.model?.degraded === true,
+      roleId: item.model?.roleId || ""
+    })
+  });
+}
+
+function compactRawCorpusBatchExtractsForModel(extracts = [], options = {}) {
+  return asArray(extracts).slice(0, Number(options.batchLimit || 16)).map((extract) =>
+    compactRawCorpusBatchExtractForModel(extract, options)
+  );
+}
+
+function compactRuleCandidateForModel(rule = {}) {
+  const item = asObject(rule);
+  return compactObject({
+    title: truncateForModel(item.title, 180),
+    condition: truncateForModel(item.condition, 260),
+    action: truncateForModel(item.action, 220),
+    evidenceRefs: asArray(item.evidenceRefs).slice(0, 10),
+    citations: asArray(item.citations).slice(0, 4).map((citation) => compactCitationForModel(citation, 180)),
+    sourceTrace: compactSourceTraceForModel(item.sourceTrace, { evidenceLimit: 10, sourceLimit: 3 })
+  });
+}
+
+function compactEntityRelationForModel(relation = {}) {
+  const item = asObject(relation);
+  return compactObject({
+    sourceTerm: truncateForModel(item.sourceTerm, 120),
+    targetTerm: truncateForModel(item.targetTerm, 120),
+    relationType: item.relationType || "",
+    confidence: Number(item.confidence || 0),
+    evidenceRefs: asArray(item.evidenceRefs).slice(0, 10),
+    citations: asArray(item.citations).slice(0, 4).map((citation) => compactCitationForModel(citation, 180)),
+    sourceTrace: compactSourceTraceForModel(item.sourceTrace, { evidenceLimit: 10, sourceLimit: 3 })
+  });
+}
+
+function compactRawCorpusProvenanceForModel(provenance = {}) {
+  const item = asObject(provenance);
+  return compactObject({
+    primaryInput: item.primaryInput || "",
+    source: item.source || "",
+    clusterEvidenceRefs: asArray(item.clusterEvidenceRefs).slice(0, 12),
+    validationEvidenceRefs: asArray(item.validationEvidenceRefs).slice(0, 12),
+    batchExtraction: item.batchExtraction
+      ? {
+          processedBatchCount: item.batchExtraction.processedBatchCount,
+          batchCount: item.batchExtraction.batchCount,
+          documentCount: item.batchExtraction.documentCount,
+          findingCount: item.batchExtraction.findingCount,
+          truncatedForModel: item.batchExtraction.truncatedForModel,
+          usedModelCount: item.batchExtraction.usedModelCount
+        }
+      : null
+  });
+}
+
+function compactQualityReportForModel(report = {}) {
+  const item = asObject(report);
+  return compactObject({
+    passed: item.passed === true,
+    evidenceCoverage: item.evidenceCoverage || {},
+    unifiedEvidence: item.unifiedEvidence || {},
+    semanticSupport: item.semanticSupport || {},
+    hierarchy: item.hierarchy || {},
+    duplicate: item.duplicate || {},
+    goldenRule: item.goldenRule || {},
+    recommendations: asArray(item.recommendations).slice(0, 8).map((entry) => truncateForModel(entry, 260))
+  });
+}
+
+function compactEvidenceGateForModel(gate = {}) {
+  const item = asObject(gate);
+  return compactObject({
+    ok: item.ok === true,
+    decision: item.decision || "",
+    evidenceCount: item.evidenceCount,
+    sourceCount: item.sourceCount,
+    distinctDocumentCount: item.distinctDocumentCount,
+    semanticSupport: item.semanticSupport
+      ? {
+          verdict: item.semanticSupport.verdict,
+          supportedClaimCount: item.semanticSupport.supportedClaimCount,
+          unsupportedClaimCount: item.semanticSupport.unsupportedClaimCount
+        }
+      : null,
+    recommendations: asArray(item.recommendations).slice(0, 6).map((entry) => truncateForModel(entry, 220))
+  });
+}
+
+function compactGoldenRuleForModel(decision = {}) {
+  const item = asObject(decision);
+  return compactObject({
+    decision: item.decision || "",
+    selectedRule: item.selectedRule
+      ? {
+          ruleId: item.selectedRule.ruleId,
+          title: truncateForModel(item.selectedRule.title, 180)
+        }
+      : null,
+    recommendations: asArray(item.recommendations).slice(0, 6).map((entry) => truncateForModel(entry, 220)),
+    reasons: asArray(item.reasons).slice(0, 6).map((entry) => truncateForModel(entry, 220))
+  });
+}
+
+function rawCorpusBatchPayload(batch = {}, items = [], maxCharacters = 16000) {
+  const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 16000), 50000));
+  const indexes = asArray(batch.itemIndexes);
+  const selectedItems = indexes.length
+    ? indexes.map((index) => items[index]).filter(Boolean)
+    : [];
+  const perDocumentMax = Math.max(1000, Math.min(8000, Math.floor(safeMax / Math.max(1, selectedItems.length))));
+  let remaining = safeMax;
+  const documents = [];
+  for (const item of selectedItems) {
+    const compact = compactDistillationItemForModel(item, perDocumentMax);
+    const text = String(compact.text || "").slice(0, Math.max(0, remaining));
+    remaining -= text.length;
+    documents.push({
+      ...compact,
+      text,
+      textTruncated: compact.textTruncated || text.length < String(compact.text || "").length
+    });
+    if (remaining <= 0) {
+      break;
+    }
+  }
+  return {
+    batchNumber: batch.batchNumber,
+    documentCount: batch.documentCount,
+    characterCount: batch.characterCount,
+    itemIndexes: indexes,
+    modelCharacterCount: documents.reduce((sum, document) => sum + String(document.text || "").length, 0),
+    sources: asArray(batch.sources),
+    documents,
+    truncatedForModel: documents.length < selectedItems.length || documents.some((document) => document.textTruncated)
+  };
+}
+
+function normalizeBatchFinding(value = {}, index = 0) {
+  const finding = asObject(value);
+  const statement = normalizeText(
+    finding.statement ||
+      finding.text ||
+      finding.summary ||
+      finding.fact ||
+      finding.claim ||
+      value
+  );
+  return compactObject({
+    findingId: normalizeText(finding.findingId || finding.id) || `finding_${index + 1}`,
+    statement,
+    importance: normalizeText(finding.importance || finding.priority || ""),
+    confidence: Number(finding.confidence || 0),
+    citations: asArray(finding.citations || finding.sources).map((entry) => normalizeText(entry)).filter(Boolean).slice(0, 8)
+  });
+}
+
+function normalizeRawCorpusBatchExtract({ decision, batchPayload, fallbackSummary = "" } = {}) {
+  const output = asObject(decision?.decision || decision);
+  const findings = asArray(
+    output.coreFindings ||
+      output.findings ||
+      output.facts ||
+      output.claims ||
+      output.keyPoints
+  )
+    .map(normalizeBatchFinding)
+    .filter((finding) => finding.statement);
+  const documentTitles = asArray(batchPayload.documents)
+    .map((document) => normalizeText(document.title))
+    .filter(Boolean);
+  const summary = normalizeText(
+    output.summary ||
+      output.batchSummary ||
+      fallbackSummary ||
+      `批次 ${batchPayload.batchNumber} 覆盖 ${batchPayload.documentCount} 份原始材料。`
+  );
+  return compactObject({
+    batchNumber: batchPayload.batchNumber,
+    sourceIndexes: asArray(batchPayload.itemIndexes).map(Number),
+    summary,
+    coreFindings: findings.slice(0, 12),
+    coverage: {
+      documentCount: batchPayload.documentCount,
+      characterCount: batchPayload.characterCount,
+      modelCharacterCount: batchPayload.modelCharacterCount,
+      truncatedForModel: batchPayload.truncatedForModel,
+      documentTitles: documentTitles.slice(0, 20)
+    },
+    risks: asArray(output.risks || output.gaps || output.openQuestions)
+      .map((entry) => normalizeText(entry.text || entry.summary || entry))
+      .filter(Boolean)
+      .slice(0, 8),
+    model: {
+      usedModel: decision?.usedModel === true,
+      degraded: decision?.degraded === true,
+      roleId: decision?.roleId || "knowledge_raw_batch_extractor",
+      audit: decision?.audit || null
+    }
+  });
+}
+
+function summarizeRawBatchExtracts(batchExtracts = []) {
+  const extracts = asArray(batchExtracts);
+  const processedBatchCount = extracts.length;
+  const documentCount = extracts.reduce((sum, item) => sum + Number(item.coverage?.documentCount || 0), 0);
+  const characterCount = extracts.reduce((sum, item) => sum + Number(item.coverage?.characterCount || 0), 0);
+  const findingCount = extracts.reduce((sum, item) => sum + asArray(item.coreFindings).length, 0);
+  return {
+    processedBatchCount,
+    documentCount,
+    characterCount,
+    findingCount,
+    truncatedForModel: extracts.some((item) => item.coverage?.truncatedForModel === true),
+    usedModelCount: extracts.filter((item) => item.model?.usedModel === true).length
+  };
+}
+
+async function mapConcurrent(items, mapper, concurrency = 3) {
+  const limit = Math.max(1, concurrency);
+  const results = [];
+  const executing = new Set();
+  for (const item of items) {
+    const p = Promise.resolve().then(() => mapper(item));
+    results.push(p);
+    executing.add(p);
+    const clean = () => executing.delete(p);
+    p.then(clean, clean);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}
+
+function clamp01(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(1, number));
+}
+
+function parseTemporalTimestamp(value = "") {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return 0;
+  }
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function temporalCandidatesForItem(item = {}) {
+  const locator = asObject(item.sourceLocator);
+  const metadata = asObject(item.metadata || item.documentMetadata || item.sourceMetadata);
+  return [
+    locator.capturedAt,
+    locator.sourceUpdatedAt,
+    locator.sourceCreatedAt,
+    locator.sourceCollectedAt,
+    locator.createdAt,
+    locator.updatedAt,
+    item.capturedAt,
+    item.sourceUpdatedAt,
+    item.sourceCreatedAt,
+    item.sourceCollectedAt,
+    item.createdAt,
+    item.updatedAt,
+    metadata.capturedAt,
+    metadata.sourceUpdatedAt,
+    metadata.sourceCreatedAt,
+    metadata.createdAt,
+    metadata.updatedAt
+  ].map(normalizeText).filter(Boolean);
+}
+
+function temporalMetadataForItem(item = {}, index = 0, referenceTimestamp = 0, options = {}) {
+  const candidates = temporalCandidatesForItem(item);
+  const timestamp = candidates.map(parseTemporalTimestamp).find((value) => value > 0) || 0;
+  const halfLifeDays = Math.max(
+    1,
+    Number(options.halfLifeDays || DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS)
+  );
+  const floor = clamp01(options.floor ?? DEFAULT_TEMPORAL_DECAY_FLOOR, DEFAULT_TEMPORAL_DECAY_FLOOR);
+  const effectiveReference = referenceTimestamp > 0 ? referenceTimestamp : timestamp;
+  const ageDays = timestamp > 0 && effectiveReference > 0
+    ? Math.max(0, (effectiveReference - timestamp) / 86400000)
+    : null;
+  const rawWeight = ageDays === null ? floor : Math.pow(0.5, ageDays / halfLifeDays);
+  const temporalWeight = Number((floor + (1 - floor) * rawWeight).toFixed(6));
+  return {
+    timestamp,
+    iso: timestamp ? new Date(timestamp).toISOString() : "",
+    detected: timestamp > 0,
+    candidates,
+    sourceOrder: index + 1,
+    ageDays: ageDays === null ? null : Number(ageDays.toFixed(4)),
+    halfLifeDays,
+    floor,
+    temporalWeight
+  };
+}
+
+function estimateImportanceScore(item = {}, text = "", query = "") {
+  const haystack = normalizeText([
+    item.title,
+    item.snippet,
+    text,
+    asArray(item.reasons).join(" ")
+  ].filter(Boolean).join(" "));
+  const tokens = tokenize(haystack);
+  const queryTokens = tokenize(query);
+  const queryOverlap = queryTokens.length ? jaccard(tokens, queryTokens) : 0;
+  const lengthScore = Math.min(1, Math.log10(Math.max(10, haystack.length)) / 5);
+  const evidenceDensity = Math.min(1, asArray(item.blocks).length / 8 + asArray(item.assets).length / 12);
+  const decisionLanguage = /(must|should|required|decision|risk|impact|blocker|critical|accepted|rejected|必须|应当|需要|决策|结论|风险|影响|阻断|关键|验收|失败|通过)/i.test(haystack)
+    ? 0.22
+    : 0;
+  const titleBoost = /(design|protocol|decision|scenario|requirement|audit|plan|设计|协议|决策|场景|需求|审计|计划)/i.test(item.title || "")
+    ? 0.12
+    : 0;
+  return Number(clamp01(0.22 + lengthScore * 0.24 + queryOverlap * 0.24 + evidenceDensity * 0.18 + decisionLanguage + titleBoost).toFixed(6));
+}
+
+function cosineSimilarity(left = [], right = []) {
+  const length = Math.min(asArray(left).length, asArray(right).length);
+  if (!length) {
+    return 0;
+  }
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (let index = 0; index < length; index += 1) {
+    const a = Number(left[index] || 0);
+    const b = Number(right[index] || 0);
+    dot += a * b;
+    leftNorm += a * a;
+    rightNorm += b * b;
+  }
+  const denominator = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
+  return denominator > 0 ? dot / denominator : 0;
+}
+
+function mergeCentroid(current = [], next = [], currentCount = 1) {
+  const length = Math.max(asArray(current).length, asArray(next).length);
+  if (!length) {
+    return [];
+  }
+  const merged = [];
+  for (let index = 0; index < length; index += 1) {
+    const left = Number(current[index] || 0);
+    const right = Number(next[index] || 0);
+    merged.push((left * currentCount + right) / (currentCount + 1));
+  }
+  const norm = Math.sqrt(merged.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return merged.map((value) => Number((value / norm).toFixed(6)));
+}
+
+function temporalAffinity(left = {}, right = {}) {
+  const leftTimestamp = Number(left.timestamp || 0);
+  const rightTimestamp = Number(right.timestamp || 0);
+  if (!leftTimestamp || !rightTimestamp) {
+    return 0.5;
+  }
+  const distanceDays = Math.abs(leftTimestamp - rightTimestamp) / 86400000;
+  return Number(Math.exp(-distanceDays / 180).toFixed(6));
+}
+
+function pathAffinity(left = {}, right = {}) {
+  const leftPath = normalizeText(left.sourceLocator?.sourcePath || left.title || "");
+  const rightPath = normalizeText(right.sourceLocator?.sourcePath || right.title || "");
+  if (!leftPath || !rightPath) {
+    return 0;
+  }
+  const leftParts = leftPath.split(/[\\/]+/).filter(Boolean);
+  const rightParts = rightPath.split(/[\\/]+/).filter(Boolean);
+  let shared = 0;
+  const length = Math.min(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      break;
+    }
+    shared += 1;
+  }
+  return shared ? Math.min(1, shared / Math.max(leftParts.length, rightParts.length)) : 0;
+}
+
+function embeddingForDistillationItem(embeddingRuntime, item = {}) {
+  const text = textForDistillationItem(item);
+  try {
+    const embedded = embeddingRuntime?.embedJointEvidence
+      ? embeddingRuntime.embedJointEvidence({ ...item, text, content: text })
+      : embeddingRuntime?.embedText?.({ ...item, text, content: text });
+    return {
+      vector: asArray(embedded?.vector).map(Number),
+      providerId: embedded?.providerId || embedded?.provider || "",
+      dimension: Number(embedded?.dimension || asArray(embedded?.vector).length || 0),
+      offlineFallback: embedded?.offlineFallback === true
+    };
+  } catch {
+    return {
+      vector: [],
+      providerId: "",
+      dimension: 0,
+      offlineFallback: false
+    };
+  }
+}
+
+function buildSourcePlan(items = [], {
+  query = "",
+  embeddingRuntime = null,
+  mergeStrategy = "timeline_then_topic",
+  halfLifeDays = DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS,
+  floor = DEFAULT_TEMPORAL_DECAY_FLOOR
+} = {}) {
+  const inputItems = asArray(items);
+  const timestamps = inputItems
+    .flatMap((item) => temporalCandidatesForItem(item).map(parseTemporalTimestamp))
+    .filter((value) => value > 0);
+  const referenceTimestamp = timestamps.length ? Math.max(...timestamps) : Date.now();
+  const enriched = inputItems.map((item, index) => {
+    const text = textForDistillationItem(item);
+    const temporal = temporalMetadataForItem(item, index, referenceTimestamp, { halfLifeDays, floor });
+    const importanceScore = estimateImportanceScore(item, text, query);
+    const decayedImportanceScore = Number((importanceScore * temporal.temporalWeight).toFixed(6));
+    const embedding = embeddingForDistillationItem(embeddingRuntime, item);
+    return {
+      ...item,
+      __distillation: {
+        originalIndex: index,
+        textLength: text.length,
+        temporal,
+        importanceScore,
+        decayedImportanceScore,
+        embeddingVector: embedding.vector,
+        embeddingProviderId: embedding.providerId,
+        embeddingDimension: embedding.dimension,
+        embeddingOfflineFallback: embedding.offlineFallback
+      }
+    };
+  });
+  const orderedItems = enriched.slice().sort((left, right) => {
+    const leftTemporal = left.__distillation?.temporal || {};
+    const rightTemporal = right.__distillation?.temporal || {};
+    if (mergeStrategy === "source_order") {
+      return Number(leftTemporal.sourceOrder || 0) - Number(rightTemporal.sourceOrder || 0);
+    }
+    const leftTimestamp = Number(leftTemporal.timestamp || 0) || Number.MAX_SAFE_INTEGER;
+    const rightTimestamp = Number(rightTemporal.timestamp || 0) || Number.MAX_SAFE_INTEGER;
+    return (
+      leftTimestamp - rightTimestamp ||
+      String(left.sourceLocator?.sourcePath || left.title || "").localeCompare(String(right.sourceLocator?.sourcePath || right.title || "")) ||
+      Number(leftTemporal.sourceOrder || 0) - Number(rightTemporal.sourceOrder || 0)
+    );
+  });
+  const knownTimeline = orderedItems
+    .map((item) => item.__distillation?.temporal)
+    .filter((temporal) => temporal?.detected);
+  const chronological = knownTimeline.every((temporal, index) =>
+    index === 0 || Number(knownTimeline[index - 1].timestamp || 0) <= Number(temporal.timestamp || 0)
+  );
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION,
+    strategy: mergeStrategy,
+    referenceTimestamp: new Date(referenceTimestamp).toISOString(),
+    halfLifeDays,
+    floor,
+    items: orderedItems,
+    publicItems: orderedItems.map((item, index) => {
+      const meta = item.__distillation || {};
+      const temporal = meta.temporal || {};
+      return compactObject({
+        sourceOrder: index + 1,
+        originalIndex: meta.originalIndex,
+        title: item.title,
+        evidenceId: item.evidenceId,
+        documentId: item.documentId,
+        sourcePath: item.sourceLocator?.sourcePath || "",
+        capturedAt: temporal.iso,
+        timestampDetected: temporal.detected === true,
+        ageDays: temporal.ageDays,
+        importanceScore: meta.importanceScore,
+        temporalWeight: temporal.temporalWeight,
+        decayedImportanceScore: meta.decayedImportanceScore,
+        embeddingProviderId: meta.embeddingProviderId,
+        embeddingDimension: meta.embeddingDimension,
+        textLength: meta.textLength
+      });
+    }),
+    timeline: {
+      knownTimestampCount: knownTimeline.length,
+      unknownTimestampCount: orderedItems.length - knownTimeline.length,
+      chronological,
+      oldestAt: knownTimeline[0]?.iso || "",
+      newestAt: knownTimeline.at(-1)?.iso || ""
+    }
+  };
+}
+
+function distillationItemSimilarity(item = {}, cluster = {}) {
+  const vector = item.__distillation?.embeddingVector || [];
+  const centroid = cluster.centroid || [];
+  const semantic = cosineSimilarity(vector, centroid);
+  const lexical = jaccard(item.tokens, cluster.tokens);
+  const sameDocument = item.documentId && cluster.documentIds.includes(item.documentId) ? 0.12 : 0;
+  const sourcePath = Math.max(...asArray(cluster.items).map((entry) => pathAffinity(item, entry)), 0);
+  const temporal = Math.max(...asArray(cluster.items).map((entry) =>
+    temporalAffinity(item.__distillation?.temporal, entry.__distillation?.temporal)
+  ), 0.5);
+  const combined = semantic > 0
+    ? semantic * 0.62 + lexical * 0.2 + temporal * 0.1 + sourcePath * 0.08 + sameDocument
+    : lexical * 0.55 + temporal * 0.2 + sourcePath * 0.13 + sameDocument;
+  return {
+    semantic: Number(semantic.toFixed(6)),
+    lexical: Number(lexical.toFixed(6)),
+    temporal: Number(temporal.toFixed(6)),
+    sourcePath: Number(sourcePath.toFixed(6)),
+    combined: Number(Math.min(1, combined).toFixed(6))
+  };
+}
+
+function timelineForItems(items = []) {
+  const ordered = asArray(items).slice().sort((left, right) => {
+    const leftTimestamp = Number(left.__distillation?.temporal?.timestamp || 0) || Number.MAX_SAFE_INTEGER;
+    const rightTimestamp = Number(right.__distillation?.temporal?.timestamp || 0) || Number.MAX_SAFE_INTEGER;
+    return (
+      leftTimestamp - rightTimestamp ||
+      Number(left.__distillation?.temporal?.sourceOrder || 0) - Number(right.__distillation?.temporal?.sourceOrder || 0)
+    );
+  });
+  const entries = ordered.map((item, index) => {
+    const temporal = item.__distillation?.temporal || {};
+    return compactObject({
+      order: index + 1,
+      title: item.title,
+      evidenceId: item.evidenceId,
+      sourcePath: item.sourceLocator?.sourcePath || "",
+      capturedAt: temporal.iso,
+      timestampDetected: temporal.detected === true,
+      importanceScore: item.__distillation?.importanceScore,
+      temporalWeight: temporal.temporalWeight,
+      decayedImportanceScore: item.__distillation?.decayedImportanceScore
+    });
+  });
+  const known = entries.filter((entry) => entry.timestampDetected);
+  return {
+    knownTimestampCount: known.length,
+    unknownTimestampCount: entries.length - known.length,
+    chronological: known.every((entry, index) =>
+      index === 0 || String(known[index - 1].capturedAt || "") <= String(entry.capturedAt || "")
+    ),
+    firstAt: known[0]?.capturedAt || "",
+    lastAt: known.at(-1)?.capturedAt || "",
+    entries
+  };
+}
+
+function finalizeDistillationCluster(cluster = {}) {
+  const terms = representativeTerms(cluster.items, 8);
+  const timeline = timelineForItems(cluster.items);
+  const decayedImportanceScore = Number(
+    (asArray(cluster.items).reduce((sum, item) => sum + Number(item.__distillation?.decayedImportanceScore || 0), 0) /
+      Math.max(1, asArray(cluster.items).length)).toFixed(6)
+  );
+  return {
+    ...cluster,
+    label: terms.slice(0, 4).map((item) => item.term).join(" ") || cluster.items[0]?.title || cluster.clusterId,
+    terms,
+    timeline,
+    decayedImportanceScore,
+    evidenceRefs: [...new Set(cluster.items.map((item) => item.evidenceId).filter(Boolean))],
+    sourceTrace: sourceTraceForItems(cluster.items)
+  };
+}
+
 function representativeTerms(items = [], limit = 6) {
   const counts = new Map();
   for (const item of items) {
@@ -431,78 +1164,142 @@ function representativeTerms(items = [], limit = 6) {
       counts.set(token, (counts.get(token) || 0) + 1);
     }
   }
-  return [...counts.entries()]
+
+  // Cross-document co-reference / entity alignment
+  const sortedTerms = [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  const canonicalMap = new Map();
+
+  for (let i = 0; i < sortedTerms.length; i++) {
+    const [termA] = sortedTerms[i];
+    if (canonicalMap.has(termA)) continue;
+
+    let canonical = termA;
+    for (let j = i + 1; j < sortedTerms.length; j++) {
+      const [termB] = sortedTerms[j];
+      if (canonicalMap.has(termB)) continue;
+
+      // Singular/plural matching (trailing s)
+      const isPluralMatch = termA === termB + "s" || termB === termA + "s";
+
+      // Suffix/prefix/substring matching for compounds
+      const isSubstringMatch = (termA.length > 4 && termB.length > 4) &&
+        (termA.includes(termB) || termB.includes(termA));
+
+      if (isPluralMatch || isSubstringMatch) {
+        canonical = termA.length >= termB.length ? termA : termB;
+        canonicalMap.set(termB, canonical);
+        canonicalMap.set(termA, canonical);
+      }
+    }
+    if (!canonicalMap.has(termA)) {
+      canonicalMap.set(termA, termA);
+    }
+  }
+
+  const consolidatedCounts = new Map();
+  for (const [term, count] of counts.entries()) {
+    const canonical = canonicalMap.get(term) || term;
+    consolidatedCounts.set(canonical, (consolidatedCounts.get(canonical) || 0) + count);
+  }
+
+  return [...consolidatedCounts.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
     .slice(0, limit)
     .map(([term, count]) => ({ term, count }));
 }
 
 function clusterEvidenceItems(items = [], options = {}) {
-  const threshold = Number(options.threshold ?? 0.18);
+  const threshold = Number(options.threshold ?? 0.58);
+  const rejectThreshold = Number(options.rejectThreshold ?? 0.42);
   const maxClusters = Math.max(1, Math.min(Number(options.maxClusters || 8), 50));
+  const mergeStrategy = normalizeText(options.mergeStrategy || "timeline_then_topic");
   const clusters = [];
   for (const item of items) {
     let bestCluster = null;
-    let bestScore = 0;
+    let bestScore = { combined: 0 };
     for (const cluster of clusters) {
-      const sameDocument = item.documentId && cluster.documentIds.includes(item.documentId);
-      const score = sameDocument ? Math.max(0.35, jaccard(item.tokens, cluster.tokens)) : jaccard(item.tokens, cluster.tokens);
-      if (score > bestScore) {
+      const score = distillationItemSimilarity(item, cluster);
+      if (score.combined > bestScore.combined) {
         bestScore = score;
         bestCluster = cluster;
       }
     }
-    if (bestCluster && bestScore >= threshold) {
+    if (bestCluster && bestScore.combined >= threshold) {
       bestCluster.items.push(item);
       bestCluster.tokens = [...new Set([...bestCluster.tokens, ...(item.tokens || [])])].slice(0, 256);
+      bestCluster.centroid = mergeCentroid(bestCluster.centroid, item.__distillation?.embeddingVector || [], bestCluster.items.length - 1);
       if (item.documentId && !bestCluster.documentIds.includes(item.documentId)) {
         bestCluster.documentIds.push(item.documentId);
       }
-      bestCluster.score = Number(Math.max(bestCluster.score, bestScore).toFixed(6));
+      bestCluster.score = Number(Math.max(bestCluster.score, bestScore.combined).toFixed(6));
+      bestCluster.similarity = bestScore;
       continue;
     }
     if (clusters.length >= maxClusters) {
-      clusters.sort((left, right) => left.items.length - right.items.length)[0].items.push(item);
+      const target = bestCluster && bestScore.combined >= rejectThreshold
+        ? bestCluster
+        : clusters.slice().sort((left, right) => left.items.length - right.items.length)[0];
+      target.items.push(item);
+      target.tokens = [...new Set([...target.tokens, ...(item.tokens || [])])].slice(0, 256);
+      target.centroid = mergeCentroid(target.centroid, item.__distillation?.embeddingVector || [], target.items.length - 1);
+      target.score = Number(Math.max(target.score, bestScore.combined || 0).toFixed(6));
       continue;
     }
     clusters.push({
       clusterId: stableId("skill_cluster", item.evidenceId || item.title, clusters.length),
       score: 1,
       tokens: asArray(item.tokens).slice(0, 128),
+      centroid: asArray(item.__distillation?.embeddingVector),
       documentIds: item.documentId ? [item.documentId] : [],
       items: [item]
     });
   }
   return clusters
-    .map((cluster) => {
-      const terms = representativeTerms(cluster.items, 8);
-      return {
-        ...cluster,
-        label: terms.slice(0, 4).map((item) => item.term).join(" ") || cluster.items[0]?.title || cluster.clusterId,
-        terms,
-        evidenceRefs: [...new Set(cluster.items.map((item) => item.evidenceId).filter(Boolean))],
-        sourceTrace: sourceTraceForItems(cluster.items)
-      };
+    .map(finalizeDistillationCluster)
+    .sort((left, right) => {
+      if (mergeStrategy === "topic_then_timeline") {
+        return (
+          right.decayedImportanceScore - left.decayedImportanceScore ||
+          (Date.parse(left.timeline.firstAt || "") || Number.MAX_SAFE_INTEGER) - (Date.parse(right.timeline.firstAt || "") || Number.MAX_SAFE_INTEGER)
+        );
+      }
+      if (mergeStrategy === "source_order") {
+        return (
+          Number(left.items[0]?.__distillation?.originalIndex || 0) -
+          Number(right.items[0]?.__distillation?.originalIndex || 0)
+        );
+      }
+      return (
+        (Date.parse(left.timeline.firstAt || "") || Number.MAX_SAFE_INTEGER) - (Date.parse(right.timeline.firstAt || "") || Number.MAX_SAFE_INTEGER) ||
+        right.decayedImportanceScore - left.decayedImportanceScore ||
+        right.items.length - left.items.length
+      );
     })
-    .sort((left, right) => right.items.length - left.items.length || right.score - left.score);
 }
 
-function clusterRawCorpusItems(items = [], query = "") {
+function clusterRawCorpusItems(items = [], query = "", options = {}) {
   const corpusItems = asArray(items);
-  const terms = representativeTerms(corpusItems, 12);
-  return [
-    {
-      clusterId: stableId("raw_corpus_cluster", query, corpusItems.map((item) => item.evidenceId || item.title).join("\n")),
-      score: 1,
-      tokens: [...new Set(corpusItems.flatMap((item) => asArray(item.tokens)))].slice(0, 256),
-      documentIds: [...new Set(corpusItems.map((item) => item.documentId).filter(Boolean))],
-      items: corpusItems,
-      label: normalizeText(query || terms.slice(0, 4).map((item) => item.term).join(" ") || "原始语料蒸馏"),
-      terms,
-      evidenceRefs: [...new Set(corpusItems.map((item) => item.evidenceId).filter(Boolean))],
-      sourceTrace: sourceTraceForItems(corpusItems)
-    }
-  ];
+  if (options.singleDocumentBundle === true) {
+    const terms = representativeTerms(corpusItems, 12);
+    return [
+      finalizeDistillationCluster({
+        clusterId: stableId("raw_corpus_cluster", query, corpusItems.map((item) => item.evidenceId || item.title).join("\n")),
+        score: 1,
+        tokens: [...new Set(corpusItems.flatMap((item) => asArray(item.tokens)))].slice(0, 256),
+        centroid: [],
+        documentIds: [...new Set(corpusItems.map((item) => item.documentId).filter(Boolean))],
+        items: corpusItems,
+        label: normalizeText(query || terms.slice(0, 4).map((item) => item.term).join(" ") || "原始语料蒸馏"),
+        terms
+      })
+    ];
+  }
+  return clusterEvidenceItems(corpusItems, {
+    threshold: options.threshold ?? 0.54,
+    rejectThreshold: options.rejectThreshold ?? 0.38,
+    maxClusters: options.maxClusters || Math.min(12, Math.max(2, Math.ceil(Math.sqrt(Math.max(1, corpusItems.length))))),
+    mergeStrategy: options.mergeStrategy || "timeline_then_topic"
+  });
 }
 
 async function readJson(filePath, fallback) {
@@ -544,7 +1341,7 @@ function sourceOrderForItem(item = {}, index = 0) {
       ? sourceRangeStart
       : Number(item.rank || index + 1);
   return {
-    capturedAt: normalizeText(item.sourceLocator?.capturedAt || ""),
+    capturedAt: normalizeText(item.__distillation?.temporal?.iso || item.sourceLocator?.capturedAt || ""),
     document: normalizeText(item.sourceLocator?.sourcePath || item.title || item.sourceKey || ""),
     position: Number.isFinite(position) ? position : index + 1,
     rank: Number(item.rank || index + 1)
@@ -666,7 +1463,16 @@ function portableAssetBlock(asset = {}, citationKey = "", order = 1) {
   });
 }
 
-function buildOrderedDocumentBlocks({ title, summaryText, orderedItems, citations, portableRules, portableRelations } = {}) {
+function buildOrderedDocumentBlocks({
+  title,
+  summaryText,
+  orderedItems,
+  citations,
+  portableRules,
+  portableRelations,
+  rawCorpusBatchExtracts,
+  timeline
+} = {}) {
   const blocks = [];
   const push = (block) => {
     blocks.push(compactObject({
@@ -680,6 +1486,42 @@ function buildOrderedDocumentBlocks({ title, summaryText, orderedItems, citation
       type: "paragraph",
       text: summaryText,
       citations: asArray(citations).map((citation) => citation.citationKey)
+    });
+  }
+  const timelineEntries = asArray(timeline?.entries).filter((entry) => entry.timestampDetected);
+  if (timelineEntries.length) {
+    push({ type: "heading", level: 2, text: "时间线" });
+    push({
+      type: "list",
+      items: timelineEntries.slice(0, 40).map((entry) =>
+        [
+          entry.capturedAt,
+          entry.title || entry.sourcePath || entry.evidenceId,
+          `重要度 ${Number(entry.importanceScore || 0).toFixed(2)}`,
+          `时间衰减后 ${Number(entry.decayedImportanceScore || 0).toFixed(2)}`
+        ].filter(Boolean).join(" - ")
+      )
+    });
+  }
+  const batchExtractLines = asArray(rawCorpusBatchExtracts)
+    .map((extract) => {
+      const findings = asArray(extract.coreFindings)
+        .map((finding) => normalizeText(finding.statement))
+        .filter(Boolean)
+        .slice(0, 4);
+      const summary = normalizeText(extract.summary);
+      return [
+        `批次 ${extract.batchNumber || "?"}`,
+        summary,
+        findings.length ? `核心点：${findings.join("；")}` : ""
+      ].filter(Boolean).join(" - ");
+    })
+    .filter(Boolean);
+  if (batchExtractLines.length) {
+    push({ type: "heading", level: 2, text: "分批核心提炼" });
+    push({
+      type: "list",
+      items: batchExtractLines
     });
   }
   for (const [index, item] of asArray(orderedItems).entries()) {
@@ -749,6 +1591,27 @@ function buildOrderedDocumentBlocks({ title, summaryText, orderedItems, citation
   return blocks;
 }
 
+function portableTimelineForDocument(timeline = {}) {
+  const source = asObject(timeline);
+  return compactObject({
+    knownTimestampCount: Number(source.knownTimestampCount || 0),
+    unknownTimestampCount: Number(source.unknownTimestampCount || 0),
+    chronological: source.chronological === true,
+    firstAt: normalizeText(source.firstAt || ""),
+    lastAt: normalizeText(source.lastAt || ""),
+    entries: asArray(source.entries).map((entry, index) => compactObject({
+      order: Number(entry.order || index + 1),
+      title: normalizeText(entry.title || ""),
+      sourcePath: normalizeText(entry.sourcePath || ""),
+      capturedAt: normalizeText(entry.capturedAt || ""),
+      timestampDetected: entry.timestampDetected === true,
+      importanceScore: Number(entry.importanceScore || 0),
+      temporalWeight: Number(entry.temporalWeight || 0),
+      decayedImportanceScore: Number(entry.decayedImportanceScore || 0)
+    }))
+  });
+}
+
 function findPortableDocumentFrameworkDependencies(value, pathParts = []) {
   const findings = [];
   if (Array.isArray(value)) {
@@ -770,7 +1633,15 @@ function findPortableDocumentFrameworkDependencies(value, pathParts = []) {
   return findings;
 }
 
-function buildPortableDistillationDocument({ query, title, cluster, summaryText, ruleCandidates, entityRelationCandidates } = {}) {
+function buildPortableDistillationDocument({
+  query,
+  title,
+  cluster,
+  summaryText,
+  ruleCandidates,
+  entityRelationCandidates,
+  rawCorpusBatchExtracts
+} = {}) {
   const safeTitle = normalizeText(title || cluster?.label || query || "Distilled Knowledge");
   const orderedItems = asArray(cluster?.items)
     .slice()
@@ -788,6 +1659,7 @@ function buildPortableDistillationDocument({ query, title, cluster, summaryText,
     .map(portableCitationForItem)
     .filter((citation) => citation.excerpt || citation.title);
   const citationKeys = citations.map((citation) => citation.citationKey);
+  const portableTimeline = portableTimelineForDocument(cluster?.timeline || {});
   const portableRules = asArray(ruleCandidates).map((rule, index) => ({
     ruleKey: `R${index + 1}`,
     title: normalizeText(rule.title || ""),
@@ -808,9 +1680,11 @@ function buildPortableDistillationDocument({ query, title, cluster, summaryText,
     summaryText,
     orderedItems,
     citations,
-    portableRules,
-    portableRelations
-  });
+      portableRules,
+      portableRelations,
+      rawCorpusBatchExtracts,
+      timeline: portableTimeline
+    });
   const markdown = renderPortableMarkdown(contentBlocks);
   return {
     protocolVersion: PORTABLE_DISTILLATION_DOCUMENT_PROTOCOL_VERSION,
@@ -825,6 +1699,13 @@ function buildPortableDistillationDocument({ query, title, cluster, summaryText,
     summary: {
       text: normalizeText(summaryText || ""),
       citations: citationKeys
+    },
+    timeline: portableTimeline,
+    temporalImportance: {
+      clusterDecayedImportanceScore: Number(cluster?.decayedImportanceScore || 0),
+      knownTimestampCount: Number(cluster?.timeline?.knownTimestampCount || 0),
+      unknownTimestampCount: Number(cluster?.timeline?.unknownTimestampCount || 0),
+      chronological: cluster?.timeline?.chronological === true
     },
     ruleCandidates: portableRules,
     entityRelationCandidates: portableRelations,
@@ -846,6 +1727,7 @@ function buildPortableDistillationDocument({ query, title, cluster, summaryText,
     integrity: {
       citationCount: citations.length,
       contentBlockCount: contentBlocks.length,
+      rawCorpusBatchExtractCount: asArray(rawCorpusBatchExtracts).length,
       evidenceDigest: stableHash(...citations.map((citation) => `${citation.title}\n${citation.excerpt}`))
     }
   };
@@ -900,7 +1782,7 @@ function validatePortableDocument(document = {}) {
   };
 }
 
-function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
+function buildDistilledOutputs({ query, cluster, title = "", rawCorpusBatchExtracts = [] } = {}) {
   const safeTitle = normalizeText(title || cluster?.label || query || "Knowledge");
   const items = asArray(cluster?.items);
   const evidenceRefs = [...new Set(asArray(cluster?.evidenceRefs).filter(Boolean))];
@@ -910,8 +1792,12 @@ function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
   const leadSources = sourceTrace.providerIds.length
     ? sourceTrace.providerIds.join("、")
     : sourceTrace.sourceTypes.join("、") || "已入库来源";
+  const batchExtractSummary = summarizeRawBatchExtracts(rawCorpusBatchExtracts);
   const summaryText = [
     `“${safeTitle}”由 ${evidenceRefs.length} 条原始语料/证据支撑。`,
+    batchExtractSummary.processedBatchCount
+      ? `已完成 ${batchExtractSummary.processedBatchCount} 个原始语料批次的核心提炼，覆盖 ${batchExtractSummary.documentCount} 份材料。`
+      : "",
     leadSources ? `来源覆盖：${leadSources}。` : "",
     evidenceRefs.slice(0, 4).map((id) => `[${id}]`).join(" ")
   ].filter(Boolean).join(" ");
@@ -947,7 +1833,8 @@ function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
       text: summaryText,
       evidenceRefs,
       citations,
-      sourceTrace
+      sourceTrace,
+      batchExtraction: batchExtractSummary
     },
     ruleCandidates,
     entityRelationCandidates,
@@ -957,7 +1844,8 @@ function buildDistilledOutputs({ query, cluster, title = "" } = {}) {
       cluster,
       summaryText,
       ruleCandidates,
-      entityRelationCandidates
+      entityRelationCandidates,
+      rawCorpusBatchExtracts
     })
   };
 }
@@ -1005,6 +1893,77 @@ function validateDistilledOutputs(outputs = {}) {
   };
 }
 
+function contentBlocksFromMarkdown(markdown = "", fallbackTitle = "知识蒸馏文档") {
+  const lines = normalizeDocumentText(markdown).split("\n");
+  const blocks = [];
+  const push = (block) => {
+    blocks.push(compactObject({
+      order: blocks.length + 1,
+      ...block
+    }));
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      push({ type: "heading", level: heading[1].length, text: heading[2] });
+      continue;
+    }
+    const bullet = /^[-*+]\s+(.+)$/.exec(line);
+    if (bullet) {
+      const previous = blocks.at(-1);
+      if (previous?.type === "list") {
+        previous.items = [...asArray(previous.items), bullet[1]];
+      } else {
+        push({ type: "list", items: [bullet[1]] });
+      }
+      continue;
+    }
+    push({ type: "paragraph", text: line });
+  }
+  if (!blocks.length) {
+    push({ type: "heading", level: 1, text: fallbackTitle });
+  }
+  return blocks;
+}
+
+function portableDocumentFromModelCandidate(candidate = {}, fallbackDocument = {}) {
+  const input = asObject(candidate);
+  const markdown = normalizeDocumentText(input.markdown || input.content || input.text || "");
+  if (!markdown) {
+    return null;
+  }
+  const title = normalizeText(input.title || fallbackDocument.title || "知识蒸馏文档");
+  const contentBlocks = contentBlocksFromMarkdown(markdown, title);
+  const document = {
+    ...fallbackDocument,
+    protocolVersion: PORTABLE_DISTILLATION_DOCUMENT_PROTOCOL_VERSION,
+    artifactType: "portable-distilled-knowledge-document",
+    selfContained: true,
+    runtimeDependencies: [],
+    outputFormats: ["markdown", "docx"],
+    title,
+    markdown,
+    contentBlocks,
+    summary: {
+      ...asObject(fallbackDocument.summary),
+      text: normalizeText(input.summary || fallbackDocument.summary?.text || ""),
+      citations: asArray(fallbackDocument.summary?.citations)
+    },
+    citations: asArray(fallbackDocument.citations),
+    evidenceAppendix: asArray(fallbackDocument.evidenceAppendix),
+    sourceBibliography: asArray(fallbackDocument.sourceBibliography),
+    integrity: {
+      ...asObject(fallbackDocument.integrity),
+      modelAuthoredMarkdown: true,
+      contentBlockCount: contentBlocks.length,
+      evidenceDigest: stableHash(markdown, ...asArray(fallbackDocument.citations).map((citation) => `${citation.title}\n${citation.excerpt}`))
+    }
+  };
+  return validatePortableDocument(document).passed ? document : null;
+}
+
 function mergeModelBackedSkill(fallback = {}, modelSkill = {}) {
   const skill = asObject(modelSkill);
   if (!Object.keys(skill).length) {
@@ -1033,19 +1992,96 @@ function mergeModelBackedSkill(fallback = {}, modelSkill = {}) {
       merged[key] = value;
     }
   }
+  const fallbackOutputs = asObject(fallback.distilledOutputs);
+  const modelOutputs = asObject(skill.distilledOutputs || skill.outputs);
+  const modelPortableDocument = portableDocumentFromModelCandidate(
+    modelOutputs.portableDocument || skill.portableDocument || skill.document || {},
+    fallbackOutputs.portableDocument || {}
+  );
+  const distilledOutputs = Object.keys(modelOutputs).length || modelPortableDocument
+    ? {
+        ...fallbackOutputs,
+        summary: modelOutputs.summary
+          ? {
+              ...asObject(fallbackOutputs.summary),
+              ...asObject(modelOutputs.summary),
+              evidenceRefs: asArray(fallbackOutputs.summary?.evidenceRefs),
+              citations: asArray(fallbackOutputs.summary?.citations),
+              sourceTrace: fallbackOutputs.summary?.sourceTrace
+            }
+          : fallbackOutputs.summary,
+        ruleCandidates: asArray(modelOutputs.ruleCandidates).length
+          ? asArray(modelOutputs.ruleCandidates)
+          : fallbackOutputs.ruleCandidates,
+        entityRelationCandidates: asArray(modelOutputs.entityRelationCandidates).length
+          ? asArray(modelOutputs.entityRelationCandidates)
+          : fallbackOutputs.entityRelationCandidates,
+        portableDocument: modelPortableDocument || fallbackOutputs.portableDocument
+      }
+    : fallbackOutputs;
   return {
     ...merged,
     evidenceRefs: fallback.evidenceRefs,
     rawCorpusProvenance: fallback.rawCorpusProvenance,
     sourceTrace: fallback.sourceTrace,
-    distilledOutputs: fallback.distilledOutputs
+    distilledOutputs
   };
 }
 
-function makeCandidateSkill({ query, cluster, title = "" } = {}) {
+function compactSkillForModel(skill = {}) {
+  const raw = asObject(skill);
+  const distilledOutputs = asObject(raw.distilledOutputs);
+  const portableDocument = asObject(distilledOutputs.portableDocument);
+  return compactObject({
+    title: raw.title,
+    sourceQuery: raw.sourceQuery,
+    summary: truncateForModel(raw.summary, 700),
+    applicability: raw.applicability,
+    coreConcepts: asArray(raw.coreConcepts).slice(0, 20),
+    decisionHeuristics: asArray(raw.decisionHeuristics).slice(0, 12),
+    antiPatterns: asArray(raw.antiPatterns).slice(0, 12),
+    honestBoundaries: asArray(raw.honestBoundaries).slice(0, 12),
+    verificationQuestions: asArray(raw.verificationQuestions).slice(0, 12),
+    evidenceRefs: asArray(raw.evidenceRefs).slice(0, 24),
+    sourceTrace: compactSourceTraceForModel(raw.sourceTrace, { evidenceLimit: 24, sourceLimit: 6 }),
+    rawCorpusProvenance: compactRawCorpusProvenanceForModel(raw.rawCorpusProvenance),
+    distilledOutputs: compactObject({
+      summary: compactObject({
+        text: truncateForModel(distilledOutputs.summary?.text || distilledOutputs.summary, 700),
+        evidenceRefs: asArray(distilledOutputs.summary?.evidenceRefs).slice(0, 16),
+        citations: asArray(distilledOutputs.summary?.citations).slice(0, 6).map((citation) => compactCitationForModel(citation, 180)),
+        sourceTrace: compactSourceTraceForModel(distilledOutputs.summary?.sourceTrace, { evidenceLimit: 16, sourceLimit: 4 })
+      }),
+      ruleCandidates: asArray(distilledOutputs.ruleCandidates).slice(0, 5).map(compactRuleCandidateForModel),
+      entityRelationCandidates: asArray(distilledOutputs.entityRelationCandidates).slice(0, 5).map(compactEntityRelationForModel),
+      portableDocument: compactObject({
+        protocolVersion: portableDocument.protocolVersion,
+        title: portableDocument.title,
+        summary: truncateForModel(portableDocument.summary, 700),
+        integrity: portableDocument.integrity,
+        citations: asArray(portableDocument.citations).slice(0, 8).map((citation) => compactCitationForModel(citation, 160)),
+        sourceBibliography: asArray(portableDocument.sourceBibliography).slice(0, 8).map((source) => compactObject({
+          sourceLabel: source.sourceLabel,
+          sourceType: source.sourceType,
+          originalFileName: truncateForModel(source.originalFileName, 120),
+          sourcePath: truncateForModel(source.sourcePath, 180),
+          contentHash: source.contentHash
+        }))
+      })
+    }),
+    evidenceDigest: asArray(raw.evidenceDigest).slice(0, 8).map((item) => compactObject({
+      evidenceId: item.evidenceId,
+      title: truncateForModel(item.title, 160),
+      snippet: truncateForModel(item.snippet, 260),
+      score: item.score
+    }))
+  });
+}
+
+function makeCandidateSkill({ query, cluster, title = "", rawCorpusBatchExtracts = [] } = {}) {
   const safeTitle = normalizeText(title || cluster.label || query || "Knowledge Skill");
   const sourceTrace = cluster.sourceTrace || sourceTraceForItems(cluster.items);
-  const distilledOutputs = buildDistilledOutputs({ query, cluster, title: safeTitle });
+  const distilledOutputs = buildDistilledOutputs({ query, cluster, title: safeTitle, rawCorpusBatchExtracts });
   const coreConcepts = cluster.terms.slice(0, 10).map((item) => ({
     term: item.term,
     weight: item.count,
@@ -1146,6 +2182,310 @@ function qualityReportV2({ proposalResult, evidenceGate, goldenRuleDecision, clu
   };
 }
 
+function extractReadableClaimsFromMarkdown(markdown = "", limit = 80) {
+  const lines = normalizeDocumentText(markdown)
+    .split(/\n+/)
+    .map((line) => line.replace(/^#{1,6}\s+/, "").replace(/^[-*+]\s+/, "").replace(/^>\s?/, "").trim())
+    .filter((line) => line.length >= 12 && !/^!\[/.test(line));
+  const claims = [];
+  for (const line of lines) {
+    for (const part of line.split(/[。；;.!?！？]\s*/)) {
+      const claim = normalizeText(part);
+      if (claim.length >= 12) {
+        claims.push(claim.slice(0, 400));
+      }
+      if (claims.length >= limit) {
+        return [...new Set(claims)];
+      }
+    }
+  }
+  return [...new Set(claims)].slice(0, limit);
+}
+
+function expectedClaimsFromBatchExtracts(rawCorpusBatchExtracts = [], cluster = {}) {
+  const clusterEvidence = new Set(asArray(cluster.evidenceRefs));
+  const claims = [];
+  for (const extract of asArray(rawCorpusBatchExtracts)) {
+    const sourceIndexes = new Set(asArray(extract.sourceIndexes || extract.itemIndexes).map(Number));
+    const relevantToCluster = !clusterEvidence.size || asArray(cluster.items).some((item) =>
+      sourceIndexes.has(Number(item.__distillation?.originalIndex))
+    );
+    if (!relevantToCluster) {
+      continue;
+    }
+    const summary = normalizeText(extract.summary);
+    if (summary) {
+      claims.push({
+        kind: "batch_summary",
+        batchNumber: extract.batchNumber,
+        statement: summary
+      });
+    }
+    for (const finding of asArray(extract.coreFindings)) {
+      const statement = normalizeText(finding.statement || finding.text || finding.summary);
+      if (statement) {
+        claims.push({
+          kind: "batch_finding",
+          batchNumber: extract.batchNumber,
+          findingId: normalizeText(finding.findingId || ""),
+          statement,
+          importance: normalizeText(finding.importance || "")
+        });
+      }
+    }
+  }
+  if (!claims.length) {
+    for (const item of asArray(cluster.items)) {
+      const statement = normalizeText(item.snippet || textForDistillationItem(item).slice(0, 400));
+      if (statement) {
+        claims.push({
+          kind: "source_excerpt",
+          sourceOrder: item.__distillation?.temporal?.sourceOrder,
+          statement
+        });
+      }
+    }
+  }
+  return claims.slice(0, 80);
+}
+
+function semanticSimilarityForTexts(embeddingRuntime, left = "", right = "") {
+  try {
+    const leftVector = embeddingRuntime?.embedText?.(left)?.vector || [];
+    const rightVector = embeddingRuntime?.embedText?.(right)?.vector || [];
+    return cosineSimilarity(leftVector, rightVector);
+  } catch {
+    return 0;
+  }
+}
+
+function bestClaimCoverage({ embeddingRuntime, expectedClaims = [], actualClaims = [] } = {}) {
+  return asArray(expectedClaims).map((expected, index) => {
+    let bestSemantic = 0;
+    let bestLexical = 0;
+    let bestActual = "";
+    for (const actual of asArray(actualClaims)) {
+      const semantic = semanticSimilarityForTexts(embeddingRuntime, expected.statement, actual);
+      const lexical = jaccard(tokenize(expected.statement), tokenize(actual));
+      const combined = Math.max(semantic, lexical);
+      if (combined > Math.max(bestSemantic, bestLexical)) {
+        bestSemantic = semantic;
+        bestLexical = lexical;
+        bestActual = actual;
+      }
+    }
+    const covered = bestSemantic >= 0.55 || bestLexical >= 0.18;
+    return {
+      claimId: stableId("distillation_claim", expected.kind || "claim", expected.statement, index),
+      ...expected,
+      bestMatchedOutput: truncateForModel(bestActual, 260),
+      semanticScore: Number(bestSemantic.toFixed(6)),
+      lexicalScore: Number(bestLexical.toFixed(6)),
+      covered
+    };
+  });
+}
+
+function evaluateDistillationExternally({
+  embeddingRuntime,
+  distilledOutputs = {},
+  rawCorpusBatchExtracts = [],
+  cluster = {},
+  qualityV2 = {}
+} = {}) {
+  const portableDocument = asObject(distilledOutputs.portableDocument);
+  const markdown = portableDocument.markdown || distilledOutputs.summary?.text || "";
+  const expectedClaims = expectedClaimsFromBatchExtracts(rawCorpusBatchExtracts, cluster);
+  const actualClaims = extractReadableClaimsFromMarkdown(markdown);
+  const claimCoverage = bestClaimCoverage({ embeddingRuntime, expectedClaims, actualClaims });
+  const coveredCount = claimCoverage.filter((claim) => claim.covered).length;
+  const semanticCoverageScore = expectedClaims.length ? coveredCount / expectedClaims.length : 0;
+  const avgSemantic = claimCoverage.length
+    ? claimCoverage.reduce((sum, claim) => sum + Number(claim.semanticScore || 0), 0) / claimCoverage.length
+    : 0;
+  const citationCount = asArray(portableDocument.citations).length;
+  const sourceCount = Number(cluster.sourceTrace?.sourceCount || 0);
+  const sourceCoverageScore = sourceCount > 0
+    ? Math.min(1, asArray(cluster.items).length / Math.max(1, sourceCount))
+    : 0;
+  const citationDensity = actualClaims.length ? Math.min(1, citationCount / actualClaims.length) : 0;
+  const timelineOrderScore = cluster.timeline?.chronological === true ? 1 : 0;
+  const unsupportedClaimCount = Number(qualityV2.semanticSupport?.unsupportedClaimCount || 0);
+  const unsupportedClaimRate = actualClaims.length ? Math.min(1, unsupportedClaimCount / actualClaims.length) : 0;
+  const temporalScores = asArray(cluster.items).map((item) => Number(item.__distillation?.decayedImportanceScore || 0));
+  const timeDecayCalibrationScore = temporalScores.length
+    ? Math.min(1, temporalScores.reduce((sum, value) => sum + value, 0) / temporalScores.length)
+    : 0;
+  const overallScore = Number((
+    semanticCoverageScore * 0.34 +
+    Math.min(1, avgSemantic) * 0.18 +
+    citationDensity * 0.14 +
+    timelineOrderScore * 0.14 +
+    sourceCoverageScore * 0.1 +
+    timeDecayCalibrationScore * 0.1 -
+    unsupportedClaimRate * 0.2
+  ).toFixed(6));
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_EXTERNAL_EVALUATION_VERSION,
+    method: "data_driven_semantic_claim_coverage_v1",
+    evaluatorType: "external_to_distiller_prompt",
+    passed: overallScore >= 0.55 && timelineOrderScore >= 1 && unsupportedClaimRate <= 0.15,
+    overallScore,
+    metrics: {
+      expectedClaimCount: expectedClaims.length,
+      actualClaimCount: actualClaims.length,
+      coveredClaimCount: coveredCount,
+      semanticCoverageScore: Number(semanticCoverageScore.toFixed(6)),
+      averageSemanticSimilarity: Number(avgSemantic.toFixed(6)),
+      sourceCoverageScore: Number(sourceCoverageScore.toFixed(6)),
+      citationDensity: Number(citationDensity.toFixed(6)),
+      timelineOrderScore,
+      unsupportedClaimRate: Number(unsupportedClaimRate.toFixed(6)),
+      timeDecayCalibrationScore: Number(timeDecayCalibrationScore.toFixed(6))
+    },
+    claimCoverage: claimCoverage.slice(0, 40)
+  };
+}
+
+function buildClaimLedger({ externalEvaluation = {}, distilledOutputs = {}, cluster = {} } = {}) {
+  const actualClaims = extractReadableClaimsFromMarkdown(asObject(distilledOutputs.portableDocument).markdown || "");
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION,
+    clusterId: cluster.clusterId || "",
+    expectedClaims: asArray(externalEvaluation.claimCoverage).map((claim) => compactObject({
+      claimId: claim.claimId,
+      kind: claim.kind,
+      statement: claim.statement,
+      covered: claim.covered === true,
+      semanticScore: claim.semanticScore,
+      lexicalScore: claim.lexicalScore,
+      bestMatchedOutput: claim.bestMatchedOutput
+    })),
+    generatedClaims: actualClaims.map((statement, index) => ({
+      claimId: stableId("generated_distillation_claim", cluster.clusterId || "", statement, index),
+      statement
+    })),
+    summary: {
+      expectedClaimCount: Number(externalEvaluation.metrics?.expectedClaimCount || 0),
+      generatedClaimCount: actualClaims.length,
+      coveredClaimCount: Number(externalEvaluation.metrics?.coveredClaimCount || 0),
+      unsupportedClaimRate: Number(externalEvaluation.metrics?.unsupportedClaimRate || 0)
+    }
+  };
+}
+
+function qualityReportV3({ qualityV2 = {}, externalEvaluation = {}, cluster = {}, sourcePlan = {} } = {}) {
+  const timeline = cluster.timeline || {};
+  const sourcePlanTimeline = sourcePlan.timeline || {};
+  const metrics = asObject(externalEvaluation.metrics);
+  const duplicateScore = Number(qualityV2.duplicate?.score || 0);
+  const passed =
+    qualityV2.passed === true &&
+    externalEvaluation.passed === true &&
+    timeline.chronological === true &&
+    duplicateScore < 0.92;
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION,
+    passed,
+    overallScore: Number(externalEvaluation.overallScore || 0),
+    sourceCoverage: {
+      sourcePlanItemCount: asArray(sourcePlan.publicItems).length,
+      clusterSourceCount: Number(cluster.sourceTrace?.sourceCount || 0),
+      score: Number(metrics.sourceCoverageScore || 0)
+    },
+    semanticCoverage: {
+      expectedClaimCount: Number(metrics.expectedClaimCount || 0),
+      coveredClaimCount: Number(metrics.coveredClaimCount || 0),
+      score: Number(metrics.semanticCoverageScore || 0),
+      averageSimilarity: Number(metrics.averageSemanticSimilarity || 0)
+    },
+    citations: {
+      density: Number(metrics.citationDensity || 0),
+      unsupportedClaimRate: Number(metrics.unsupportedClaimRate || 0)
+    },
+    timeline: {
+      clusterChronological: timeline.chronological === true,
+      sourcePlanChronological: sourcePlanTimeline.chronological === true,
+      knownTimestampCount: Number(timeline.knownTimestampCount || 0),
+      unknownTimestampCount: Number(timeline.unknownTimestampCount || 0),
+      score: Number(metrics.timelineOrderScore || 0)
+    },
+    temporalImportanceDecay: {
+      halfLifeDays: Number(sourcePlan.halfLifeDays || DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS),
+      floor: Number(sourcePlan.floor || DEFAULT_TEMPORAL_DECAY_FLOOR),
+      calibrationScore: Number(metrics.timeDecayCalibrationScore || 0),
+      clusterDecayedImportanceScore: Number(cluster.decayedImportanceScore || 0)
+    },
+    duplicate: {
+      score: duplicateScore,
+      passed: duplicateScore < 0.92
+    },
+    previousGate: {
+      passed: qualityV2.passed === true,
+      semanticUnsupportedClaims: Number(qualityV2.semanticSupport?.unsupportedClaimCount || 0)
+    },
+    recommendations: passed
+      ? []
+      : [
+          timeline.chronological === true ? "" : "修正输出时间线顺序，确保按检测到的时间先后组织。",
+          externalEvaluation.passed === true ? "" : "提高源语料核心 claim 覆盖率和引用密度。",
+          duplicateScore < 0.92 ? "" : "蒸馏结果与已有知识过于相似，需要合并或降重。"
+        ].filter(Boolean)
+  };
+}
+
+function averageNumbers(values = []) {
+  const numbers = asArray(values).map(Number).filter(Number.isFinite);
+  return numbers.length
+    ? Number((numbers.reduce((sum, value) => sum + value, 0) / numbers.length).toFixed(6))
+    : 0;
+}
+
+function aggregateExternalEvaluation(candidates = []) {
+  const evaluations = asArray(candidates).map((candidate) => candidate.externalEvaluation).filter(Boolean);
+  const metrics = evaluations.map((evaluation) => asObject(evaluation.metrics));
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_EXTERNAL_EVALUATION_VERSION,
+    method: "aggregate_data_driven_semantic_claim_coverage_v1",
+    passed: evaluations.length > 0 && evaluations.every((evaluation) => evaluation.passed === true),
+    overallScore: averageNumbers(evaluations.map((evaluation) => evaluation.overallScore)),
+    metrics: {
+      expectedClaimCount: metrics.reduce((sum, item) => sum + Number(item.expectedClaimCount || 0), 0),
+      actualClaimCount: metrics.reduce((sum, item) => sum + Number(item.actualClaimCount || 0), 0),
+      coveredClaimCount: metrics.reduce((sum, item) => sum + Number(item.coveredClaimCount || 0), 0),
+      semanticCoverageScore: averageNumbers(metrics.map((item) => item.semanticCoverageScore)),
+      averageSemanticSimilarity: averageNumbers(metrics.map((item) => item.averageSemanticSimilarity)),
+      sourceCoverageScore: averageNumbers(metrics.map((item) => item.sourceCoverageScore)),
+      citationDensity: averageNumbers(metrics.map((item) => item.citationDensity)),
+      timelineOrderScore: averageNumbers(metrics.map((item) => item.timelineOrderScore)),
+      unsupportedClaimRate: averageNumbers(metrics.map((item) => item.unsupportedClaimRate)),
+      timeDecayCalibrationScore: averageNumbers(metrics.map((item) => item.timeDecayCalibrationScore))
+    }
+  };
+}
+
+function aggregateQualityReportV3(candidates = [], sourcePlan = {}) {
+  const reports = asArray(candidates).map((candidate) => candidate.qualityReportV3).filter(Boolean);
+  const aggregateExternal = aggregateExternalEvaluation(candidates);
+  return {
+    protocolVersion: KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION,
+    passed: reports.length > 0 && reports.every((report) => report.passed === true),
+    overallScore: averageNumbers(reports.map((report) => report.overallScore)),
+    clusterCount: reports.length,
+    sourcePlan: {
+      itemCount: asArray(sourcePlan.publicItems).length,
+      knownTimestampCount: Number(sourcePlan.timeline?.knownTimestampCount || 0),
+      unknownTimestampCount: Number(sourcePlan.timeline?.unknownTimestampCount || 0),
+      chronological: sourcePlan.timeline?.chronological === true
+    },
+    externalEvaluation: aggregateExternal,
+    semanticCoverageScore: Number(aggregateExternal.metrics.semanticCoverageScore || 0),
+    timelineOrderScore: Number(aggregateExternal.metrics.timelineOrderScore || 0),
+    timeDecayCalibrationScore: Number(aggregateExternal.metrics.timeDecayCalibrationScore || 0),
+    recommendations: reports.flatMap((report) => asArray(report.recommendations)).slice(0, 12)
+  };
+}
+
 export function createKnowledgeDistillationRuntime({
   userDataPath,
   runtime,
@@ -1153,10 +2493,16 @@ export function createKnowledgeDistillationRuntime({
   knowledgeSkillRuntime,
   goldenRuleRuntime,
   evidenceGate,
-  modelDecisionRuntime = null
+  modelDecisionRuntime = null,
+  defaultModelAlias = null,
+  modelRoutingMap = null
 } = {}) {
   const rootPath = path.join(userDataPath, "knowledge-distillation");
   const runsPath = path.join(rootPath, "runs.json");
+  const resolvedDefaultModel = defaultModelAlias || DEFAULT_INDUSTRIAL_DISTILLATION_MODEL;
+  const embeddingRuntime = createEmbeddingRuntime({
+    settings: runtime?.settings || {}
+  });
 
   async function readRuns() {
     return readJson(runsPath, {
@@ -1291,7 +2637,8 @@ export function createKnowledgeDistillationRuntime({
       });
     }
     const limit = Math.max(1, Math.min(Number(input.limit || 30), 200));
-    const modelAlias = normalizeText(input.modelAlias || input.model || input.modelId || DEFAULT_INDUSTRIAL_DISTILLATION_MODEL);
+    const modelAliasRaw = normalizeText(input.modelAlias || input.model || input.modelId || resolvedDefaultModel);
+    const modelAlias = modelRoutingMap?.[modelAliasRaw] || modelAliasRaw;
     const modelRequiredFailure = (roleId, decision = null, fallbackReason = "") =>
       persistRun({
         protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
@@ -1364,13 +2711,104 @@ export function createKnowledgeDistillationRuntime({
         finishedAt: nowIso()
       });
     }
-    const rawCorpusBatches = buildRawCorpusBatches(primaryItems, input.rawCorpusBatchMaxCharacters);
+    const sourcePlan = buildSourcePlan(primaryItems, {
+      query,
+      embeddingRuntime,
+      mergeStrategy: input.mergeStrategy || "timeline_then_topic",
+      halfLifeDays: input.timeDecayHalfLifeDays || input.temporalDecayHalfLifeDays || DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS,
+      floor: input.timeDecayFloor || input.temporalDecayFloor || DEFAULT_TEMPORAL_DECAY_FLOOR
+    });
+    const plannedItems = sourcePlan.items;
+    const rawCorpusBatchPlan = buildRawCorpusBatchPlan(plannedItems, input.rawCorpusBatchMaxCharacters);
+    const rawCorpusBatches = rawCorpusBatchPlan.map(publicRawCorpusBatch);
+    const batchModelCallLimit = Math.max(
+      1,
+      Math.min(Number(input.maxRawCorpusBatchModelCalls || rawCorpusBatchPlan.length || 1), 100)
+    );
+    const rawCorpusBatchExtracts = [];
+    const extractsResult = await mapConcurrent(
+      rawCorpusBatchPlan.slice(0, batchModelCallLimit),
+      async (batch) => {
+        let batchPayload = rawCorpusBatchPayload(
+          batch,
+          plannedItems,
+          input.rawCorpusBatchModelMaxCharacters || input.batchModelMaxCharacters || 16000
+        );
+        const rawBatchDecisionInput = () => ({
+          roleId: "knowledge_raw_batch_extractor",
+          modelEnabled: true,
+          modelAlias: input.batchExtractorModelAlias || input.rawCorpusBatchModelAlias || modelAlias,
+          input: {
+            query,
+            runId,
+            batch: batchPayload,
+            totalBatchCount: rawCorpusBatchPlan.length,
+            extractionPolicy: {
+              output: "core_findings",
+              preserveSourceOrder: true,
+              noCanonicalMutation: true,
+              useAsDistillationBackgroundOnly: true
+            },
+            modelEnabled: true
+          }
+        });
+        let batchDecision = await modelDecisionRuntime.decide(rawBatchDecisionInput());
+        if (decisionInputOverBudget(batchDecision)) {
+          batchPayload = rawCorpusBatchPayload(
+            batch,
+            plannedItems,
+            input.rawCorpusBatchRetryModelMaxCharacters || 8000
+          );
+          batchDecision = await modelDecisionRuntime.decide(rawBatchDecisionInput());
+        }
+        if (batchDecision?.usedModel !== true && !allowDeterministicModelFallback) {
+          return {
+            ok: false,
+            batchDecision,
+            batchNumber: batch.batchNumber
+          };
+        }
+        return {
+          ok: true,
+          extract: normalizeRawCorpusBatchExtract({
+            decision: batchDecision,
+            batchPayload
+          })
+        };
+      },
+      input.batchExtractorConcurrency || 3
+    );
+
+    for (const res of extractsResult) {
+      if (!res.ok) {
+        return modelRequiredFailure(
+          "knowledge_raw_batch_extractor",
+          res.batchDecision,
+          res.batchDecision?.audit?.fallbackReason || `第 ${res.batchNumber} 个原始语料批次未获得模型输出。`
+        );
+      }
+      rawCorpusBatchExtracts.push(res.extract);
+    }
+    const rawCorpusBatchExtraction = {
+      ...summarizeRawBatchExtracts(rawCorpusBatchExtracts),
+      batchCount: rawCorpusBatchPlan.length,
+      skippedBatchCount: Math.max(0, rawCorpusBatchPlan.length - rawCorpusBatchExtracts.length),
+      complete: rawCorpusBatchExtracts.length === rawCorpusBatchPlan.length
+    };
     const validationEvidenceRefs = [...new Set(evidenceItems.map((item) => item.evidenceId).filter(Boolean))];
-    const clusters = rawCorpusLoad.items.length && input.rawCorpusSemanticClusters !== true
-      ? clusterRawCorpusItems(primaryItems, query)
-      : clusterEvidenceItems(primaryItems, {
-          threshold: input.clusterThreshold,
-          maxClusters: input.maxClusters || 8
+    const clusters = rawCorpusLoad.items.length
+      ? clusterRawCorpusItems(plannedItems, query, {
+          singleDocumentBundle: input.mergeStrategy === "single_document_bundle",
+          threshold: input.semanticClusterThreshold || input.clusterThreshold,
+          rejectThreshold: input.clusterRejectThreshold,
+          maxClusters: input.maxClusters || 8,
+          mergeStrategy: input.mergeStrategy || "timeline_then_topic"
+        })
+      : clusterEvidenceItems(plannedItems, {
+          threshold: input.semanticClusterThreshold || input.clusterThreshold,
+          rejectThreshold: input.clusterRejectThreshold,
+          maxClusters: input.maxClusters || 8,
+          mergeStrategy: input.mergeStrategy || "timeline_then_topic"
         });
     const candidates = [];
     for (const [index, cluster] of clusters.entries()) {
@@ -1390,21 +2828,42 @@ export function createKnowledgeDistillationRuntime({
       const baseProposal = makeCandidateSkill({
         query,
         cluster,
-        title: clusterName.title
+        title: clusterName.title,
+        rawCorpusBatchExtracts
       });
       const skillEvidenceRefs = validationEvidenceRefs.length ? validationEvidenceRefs : cluster.evidenceRefs;
-      const modelDistiller = await modelDecisionRuntime.decide({
+      const distillerModelInput = (mode = "default") => {
+        const minimal = mode === "minimal";
+        return {
+          query,
+          fallbackSkill: compactSkillForModel(baseProposal),
+          evidenceItems: cluster.items
+            .slice(0, minimal ? 2 : Number(input.modelEvidenceMaxItems || 8))
+            .map((item) =>
+              compactDistillationItemForModel(item, minimal ? 450 : input.modelEvidenceMaxCharacters || 900)
+            ),
+          rawCorpusBatches: rawCorpusBatches
+            .slice(0, minimal ? 4 : Number(input.modelRawBatchMaxItems || 12))
+            .map((batch) => compactRawCorpusBatchForModel(batch, minimal ? 3 : 8)),
+          rawCorpusBatchExtracts: compactRawCorpusBatchExtractsForModel(rawCorpusBatchExtracts, {
+            batchLimit: minimal ? 4 : input.modelRawBatchExtractMaxItems || 12,
+            findingLimit: minimal ? 3 : input.modelRawBatchFindingMaxItems || 5,
+            riskLimit: minimal ? 2 : 4
+          }),
+          batchExtraction: rawCorpusBatchExtraction,
+          modelEnabled: true
+        };
+      };
+      const distillerDecisionInput = (mode = "default") => ({
         roleId: "knowledge_skill_distiller",
         modelEnabled: true,
         modelAlias: input.skillDistillerModelAlias || modelAlias,
-        input: {
-          query,
-          fallbackSkill: baseProposal,
-          evidenceItems: cluster.items,
-          rawCorpusBatches: rawCorpusBatches.slice(0, 2),
-          modelEnabled: true
-        }
+        input: distillerModelInput(mode)
       });
+      let modelDistiller = await modelDecisionRuntime.decide(distillerDecisionInput());
+      if (decisionInputOverBudget(modelDistiller)) {
+        modelDistiller = await modelDecisionRuntime.decide(distillerDecisionInput("minimal"));
+      }
       if (modelDistiller?.usedModel !== true && !allowDeterministicModelFallback) {
         return modelRequiredFailure(
           "knowledge_skill_distiller",
@@ -1421,7 +2880,8 @@ export function createKnowledgeDistillationRuntime({
           primaryInput: rawCorpusLoad.items.length ? "raw-corpus-fulltext" : "knowledge-evidence-fallback",
           source: rawCorpusLoad.source,
           clusterEvidenceRefs: cluster.evidenceRefs,
-          validationEvidenceRefs
+          validationEvidenceRefs,
+          batchExtraction: rawCorpusBatchExtraction
         }
       };
       const proposed = knowledgeSkillRuntime
@@ -1485,19 +2945,63 @@ export function createKnowledgeDistillationRuntime({
         cluster,
         distilledOutputs: proposal.distilledOutputs
       });
-      let reviewer = null;
-      reviewer = await modelDecisionRuntime.decide({
+      const externalEvaluation = evaluateDistillationExternally({
+        embeddingRuntime,
+        distilledOutputs: proposal.distilledOutputs,
+        rawCorpusBatchExtracts,
+        cluster,
+        qualityV2
+      });
+      const claimLedger = buildClaimLedger({
+        externalEvaluation,
+        distilledOutputs: proposal.distilledOutputs,
+        cluster
+      });
+      const qualityV3 = qualityReportV3({
+        qualityV2,
+        externalEvaluation,
+        cluster,
+        sourcePlan
+      });
+      const reviewerModelInput = (mode = "default") => {
+        const minimal = mode === "minimal";
+        return {
+          proposal: compactSkillForModel(proposal),
+          rawCorpusBatchExtracts: compactRawCorpusBatchExtractsForModel(rawCorpusBatchExtracts, {
+            batchLimit: minimal ? 4 : input.modelRawBatchExtractMaxItems || 10,
+            findingLimit: minimal ? 3 : input.modelRawBatchFindingMaxItems || 5,
+            riskLimit: minimal ? 2 : 4
+          }),
+          batchExtraction: rawCorpusBatchExtraction,
+          qualityReportV2: compactQualityReportForModel(qualityV2),
+          qualityReportV3: {
+            passed: qualityV3.passed,
+            overallScore: qualityV3.overallScore,
+            semanticCoverage: qualityV3.semanticCoverage,
+            timeline: qualityV3.timeline,
+            temporalImportanceDecay: qualityV3.temporalImportanceDecay
+          },
+          externalEvaluation: {
+            method: externalEvaluation.method,
+            passed: externalEvaluation.passed,
+            overallScore: externalEvaluation.overallScore,
+            metrics: externalEvaluation.metrics
+          },
+          goldenRule: compactGoldenRuleForModel(goldenRule),
+          evidenceGate: compactEvidenceGateForModel(gate),
+          modelEnabled: true
+        };
+      };
+      const reviewerDecisionInput = (mode = "default") => ({
         roleId: "skill_reviewer",
         modelEnabled: true,
         modelAlias: input.skillReviewerModelAlias || modelAlias,
-        input: {
-          proposal,
-          qualityReportV2: qualityV2,
-          goldenRule,
-          evidenceGate: gate,
-          modelEnabled: true
-        }
+        input: reviewerModelInput(mode)
       });
+      let reviewer = await modelDecisionRuntime.decide(reviewerDecisionInput());
+      if (decisionInputOverBudget(reviewer)) {
+        reviewer = await modelDecisionRuntime.decide(reviewerDecisionInput("minimal"));
+      }
       if (reviewer?.usedModel !== true && !allowDeterministicModelFallback) {
         return modelRequiredFailure(
           "skill_reviewer",
@@ -1508,7 +3012,7 @@ export function createKnowledgeDistillationRuntime({
       const candidateStatus =
         goldenRule?.decision === "auto_reject"
           ? "auto_rejected"
-          : goldenRule?.decision === "canary_allowed"
+          : goldenRule?.decision === "canary_allowed" && qualityV3.passed
             ? "canary_allowed"
             : "needs_human_review";
       candidates.push({
@@ -1522,7 +3026,9 @@ export function createKnowledgeDistillationRuntime({
           documentIds: cluster.documentIds,
           evidenceRefs: cluster.evidenceRefs,
           itemCount: cluster.items.length,
-          sourceTrace: cluster.sourceTrace
+          sourceTrace: cluster.sourceTrace,
+          timeline: cluster.timeline,
+          decayedImportanceScore: cluster.decayedImportanceScore
         },
         skill: proposed?.skill || null,
         proposal: proposalForSkill,
@@ -1549,10 +3055,14 @@ export function createKnowledgeDistillationRuntime({
           citation: citationForItem(item)
         })),
         qualityReportV2: qualityV2,
+        qualityReportV3: qualityV3,
+        externalEvaluation,
+        claimLedger,
         evidenceGate: gate,
         goldenRule,
         modelDecisions: {
           topicClusterNamer: clusterName.modelDecision,
+          rawBatchExtracts: rawCorpusBatchExtracts.map((extract) => extract.model).filter(Boolean),
           skillReviewer: reviewer,
           skillDistiller: modelDistiller
         }
@@ -1560,6 +3070,7 @@ export function createKnowledgeDistillationRuntime({
     }
     return persistRun({
       protocolVersion: KNOWLEDGE_DISTILLATION_PROTOCOL_VERSION,
+      algorithmVersion: KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION,
       ok: true,
       runId,
       status: "completed",
@@ -1569,7 +3080,17 @@ export function createKnowledgeDistillationRuntime({
         clusterCount: clusters.length,
         evidenceCount: primaryItems.length,
         modelEnabled: input.modelEnabled === true,
-        modelAlias
+        modelAlias,
+        strategyVersion: input.strategyVersion || input.mergeStrategy || "timeline_then_topic_v2"
+      },
+      sourcePlan: {
+        protocolVersion: sourcePlan.protocolVersion,
+        strategy: sourcePlan.strategy,
+        referenceTimestamp: sourcePlan.referenceTimestamp,
+        halfLifeDays: sourcePlan.halfLifeDays,
+        floor: sourcePlan.floor,
+        timeline: sourcePlan.timeline,
+        items: sourcePlan.publicItems
       },
       rawCorpus: {
         primary: rawCorpusLoad.items.length > 0,
@@ -1579,7 +3100,9 @@ export function createKnowledgeDistillationRuntime({
           (sum, item) => sum + asArray(item.blocks).reduce((inner, block) => inner + String(block.text || "").length, 0),
           0
         ),
-        batches: rawCorpusBatches
+        batches: rawCorpusBatches,
+        batchExtraction: rawCorpusBatchExtraction,
+        batchExtracts: rawCorpusBatchExtracts
       },
       searchResult: {
         query: searchResult.query,
@@ -1593,8 +3116,26 @@ export function createKnowledgeDistillationRuntime({
         terms: cluster.terms,
         documentIds: cluster.documentIds,
         itemCount: cluster.items.length,
+        sourceTrace: cluster.sourceTrace,
+        timeline: cluster.timeline,
+        decayedImportanceScore: cluster.decayedImportanceScore
+      })),
+      semanticClusters: clusters.map((cluster) => ({
+        clusterId: cluster.clusterId,
+        label: cluster.label,
+        score: cluster.score,
+        itemCount: cluster.items.length,
+        terms: cluster.terms,
+        timeline: cluster.timeline,
+        decayedImportanceScore: cluster.decayedImportanceScore,
         sourceTrace: cluster.sourceTrace
       })),
+      qualityReportV3: aggregateQualityReportV3(candidates, sourcePlan),
+      externalEvaluation: aggregateExternalEvaluation(candidates),
+      claimLedger: {
+        protocolVersion: KNOWLEDGE_DISTILLATION_ALGORITHM_VERSION,
+        clusters: candidates.map((candidate) => candidate.claimLedger).filter(Boolean)
+      },
       candidates,
       portableDocuments: candidates.map((candidate) => ({
         candidateId: candidate.candidateId,
@@ -1656,7 +3197,7 @@ export function createKnowledgeDistillationRuntime({
         canonicalWritesAllowed: false,
         modelOutputIsCandidateOnly: true,
         goldenRuleRequired: true,
-        industrialBaselineModelAlias: DEFAULT_INDUSTRIAL_DISTILLATION_MODEL
+        industrialBaselineModelAlias: resolvedDefaultModel
       }
     };
   }

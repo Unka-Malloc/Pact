@@ -634,6 +634,8 @@ function timelineOrderReport(sources = []) {
 
 function qualityReport({ sources = [], manifest = {}, distillation = null, markdown = "" } = {}) {
   const docs = asArray(manifest.documents);
+  const qualityV3 = asObject(distillation?.qualityReportV3);
+  const externalEvaluation = asObject(distillation?.externalEvaluation);
   const sourceTextCount = sources.filter((source) => source.text).length;
   const citationCount = asArray(distillation?.portableDocuments)
     .map((item) => item.document || item.portableDocument || item)
@@ -675,6 +677,24 @@ function qualityReport({ sources = [], manifest = {}, distillation = null, markd
       passed: timeline.newestToOldest || timeline.timestampedSourceCount <= 1,
       actual: timeline,
       expected: "dossier order is newest-to-oldest when timestamps exist"
+    },
+    {
+      id: "distillation_quality_v3_available",
+      passed: qualityV3.protocolVersion === "pact.knowledge-distillation.algorithm.v2",
+      actual: qualityV3.protocolVersion || "",
+      expected: "qualityReportV3 is emitted by the distillation runtime"
+    },
+    {
+      id: "external_data_evaluation_available",
+      passed: externalEvaluation.protocolVersion === "pact.knowledge-distillation.external-evaluation.v1",
+      actual: externalEvaluation.protocolVersion || "",
+      expected: "data-driven external evaluation is emitted"
+    },
+    {
+      id: "semantic_clusters_available",
+      passed: asArray(distillation?.semanticClusters).length > 0,
+      actual: asArray(distillation?.semanticClusters).length,
+      expected: "semantic clusters are available"
     }
   ];
   return {
@@ -692,6 +712,16 @@ function qualityReport({ sources = [], manifest = {}, distillation = null, markd
       unsupportedConclusionCount: citationCount > 0 ? 0 : Math.max(0, text(markdown).split(/\n#{1,3}\s+/).length - 2)
     },
     timeline,
+    algorithm: {
+      version: qualityV3.protocolVersion || "",
+      qualityPassed: qualityV3.passed === true,
+      overallScore: Number(qualityV3.overallScore || 0),
+      semanticCoverageScore: Number(qualityV3.semanticCoverageScore || 0),
+      timelineOrderScore: Number(qualityV3.timelineOrderScore || 0),
+      timeDecayCalibrationScore: Number(qualityV3.timeDecayCalibrationScore || 0),
+      externalEvaluationScore: Number(externalEvaluation.overallScore || 0),
+      semanticClusterCount: asArray(distillation?.semanticClusters).length
+    },
     checks
   };
 }
@@ -1327,7 +1357,12 @@ export function createKnowledgeDistillationWorkbench({
             maxRounds: Number(run.maxRounds || 3),
             prompt: run.prompt || "",
             mergeStrategy: run.mergeStrategy || "timeline_then_topic",
-            semanticSupportRequired: false,
+            strategyVersion: run.strategyVersion || "timeline_then_topic_v2",
+            semanticSupportRequired: run.semanticSupportRequired !== false,
+            semanticClusterThreshold: run.semanticClusterThreshold,
+            clusterRejectThreshold: run.clusterRejectThreshold,
+            timeDecayHalfLifeDays: Number(run.timeDecayHalfLifeDays || 90),
+            timeDecayFloor: Number(run.timeDecayFloor || 0.35),
             modelAlias: run.modelAlias || "",
             modelEnabled: run.modelEnabled === true
           });
@@ -1350,15 +1385,26 @@ export function createKnowledgeDistillationWorkbench({
               tokenBudget: Number(run.tokenBudget || 0),
               rawCorpusBatchMaxCharacters: Number(run.rawCorpusBatchMaxCharacters || 64000),
               mergeStrategy: run.mergeStrategy || "timeline_then_topic",
-              maxRounds: Number(run.maxRounds || 3)
+              maxRounds: Number(run.maxRounds || 3),
+              strategyVersion: run.strategyVersion || "timeline_then_topic_v2",
+              semanticClusterThreshold: run.semanticClusterThreshold,
+              clusterRejectThreshold: run.clusterRejectThreshold,
+              timeDecayHalfLifeDays: Number(run.timeDecayHalfLifeDays || 90),
+              timeDecayFloor: Number(run.timeDecayFloor || 0.35)
             }
           }),
           {
             rawDocumentCount: rawDocuments.length,
             candidateCount: asArray(distillation?.candidates).length,
             portableDocumentCount: asArray(distillation?.portableDocuments).length,
+            semanticClusterCount: asArray(distillation?.semanticClusters).length,
             modelEnabled: run.modelEnabled === true,
             qualityPassed: quality.passed,
+            qualityScore: Number(quality.algorithm.overallScore || 0),
+            externalEvaluationScore: Number(quality.algorithm.externalEvaluationScore || 0),
+            semanticCoverageScore: Number(quality.algorithm.semanticCoverageScore || 0),
+            timelineOrderScore: Number(quality.algorithm.timelineOrderScore || 0),
+            timeDecayCalibrationScore: Number(quality.algorithm.timeDecayCalibrationScore || 0),
             citationCount: quality.citations.citationCount,
             unsupportedConclusionCount: quality.citations.unsupportedConclusionCount
           }
@@ -1467,6 +1513,16 @@ export function createKnowledgeDistillationWorkbench({
       rawCorpusBatchMaxCharacters: clampNumber(input.rawCorpusBatchMaxCharacters, 64000, 4096, 1000000),
       mergeStrategy: text(input.mergeStrategy || "timeline_then_topic"),
       maxRounds: clampNumber(input.maxRounds, 3, 1, 20),
+      strategyVersion: text(input.strategyVersion || "timeline_then_topic_v2"),
+      semanticSupportRequired: input.semanticSupportRequired !== false,
+      semanticClusterThreshold: input.semanticClusterThreshold == null
+        ? undefined
+        : clampNumber(input.semanticClusterThreshold, 0.58, 0, 1),
+      clusterRejectThreshold: input.clusterRejectThreshold == null
+        ? undefined
+        : clampNumber(input.clusterRejectThreshold, 0.42, 0, 1),
+      timeDecayHalfLifeDays: clampNumber(input.timeDecayHalfLifeDays || input.temporalDecayHalfLifeDays, 90, 1, 3650),
+      timeDecayFloor: clampNumber(input.timeDecayFloor || input.temporalDecayFloor, 0.35, 0, 1),
       rawDocuments: asArray(input.rawDocuments),
       storage: {
         durable: true,
