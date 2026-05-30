@@ -1,5 +1,5 @@
 import {
-  contentDispositionFileName,
+  contentDispositionHeader,
   sendJson
 } from "../http-utils.mjs";
 import { createSystemControllerAgentSettingsHandlers } from "./system-controller-agent-settings-handlers.mjs";
@@ -156,7 +156,7 @@ export function createSystemController({
         const disposition = operationResult.payload.disposition || "inline";
         response.writeHead(operationResult.status || 200, {
           "Content-Type": operationResult.payload.contentType || "application/octet-stream",
-          "Content-Disposition": `${disposition}; filename="${contentDispositionFileName(operationResult.payload.fileName || "asset.bin")}"`,
+          "Content-Disposition": contentDispositionHeader(disposition, operationResult.payload.fileName || "asset.bin"),
           "Cache-Control": "no-store",
           ...(operationResult.payload.headers || {})
         });

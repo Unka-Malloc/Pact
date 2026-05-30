@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { contentDispositionHeader } from "../platform/common/console/http/http-utils.mjs";
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
 import { createModelDecisionRuntime } from "../platform/specialized/agent/agent-gateway/model-decision-runtime/index.mjs";
 import { createKnowledgeDistillationRuntime } from "../platform/specialized/knowledge/invocation/knowledge-distillation-runtime/index.mjs";
@@ -275,6 +277,9 @@ const markdown = await workbench.exportStage({
 });
 assert.equal(markdown.contentType.includes("text/markdown"), true);
 assert.ok(markdown.buffer.toString("utf8").includes("Project distilled document"));
+const unicodeDisposition = contentDispositionHeader("attachment", "verify-project-distillation-知识蒸馏.md");
+assert.doesNotThrow(() => http.validateHeaderValue("Content-Disposition", unicodeDisposition));
+assert.match(unicodeDisposition, /filename\*=UTF-8''.*%E7%9F%A5%E8%AF%86/);
 
 const docx = await workbench.exportStage({
   runId: created.runId,
