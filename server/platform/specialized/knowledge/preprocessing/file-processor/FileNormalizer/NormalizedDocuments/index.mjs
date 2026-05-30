@@ -883,8 +883,13 @@ async function fallbackAdapter({ rootPath, sourceFolder, source, chunks }) {
 }
 
 function participantLabel(participant = {}) {
-  return [participant.name, participant.address].map(scalar).filter(Boolean).join(" <") +
-    (participant.name && participant.address ? ">" : "");
+  const normalizedParticipant =
+    participant && typeof participant === "object" && !Array.isArray(participant)
+      ? participant
+      : {};
+  const name = scalar(normalizedParticipant.name);
+  const address = scalar(normalizedParticipant.address);
+  return [name, address].filter(Boolean).join(" <") + (name && address ? ">" : "");
 }
 
 function emailMetadata(email = {}, adapterId, granularity) {

@@ -122,22 +122,42 @@ function inferZipDocumentExtension(buffer, fallbackExtension = "") {
   }
 }
 
-function inferUploadedExtension(buffer) {
+function inferUploadedFileType(buffer) {
   const signatureExtension = detectExtensionBySignature(buffer);
   if (isImportArchiveDescriptor(importFileDescriptorForExtension(signatureExtension))) {
-    return inferZipDocumentExtension(buffer, signatureExtension);
+    return {
+      extension: inferZipDocumentExtension(buffer, signatureExtension),
+      source: "zip-container"
+    };
   }
   if (signatureExtension) {
-    return signatureExtension;
+    return {
+      extension: signatureExtension,
+      source: "binary-signature"
+    };
   }
   if (looksLikeText(buffer)) {
     const text = buffer.subarray(0, Math.min(buffer.length, 8192)).toString("utf8");
-    return sniffTextExtension(text) || importPlainTextFallbackExtension();
+    const sniffedExtension = sniffTextExtension(text);
+    return {
+      extension: sniffedExtension || importPlainTextFallbackExtension(),
+      source: sniffedExtension ? "text-sniff" : "text-fallback"
+    };
   }
-  return "";
+  return {
+    extension: "",
+    source: "unknown"
+  };
 }
 
-function chooseUploadedExtension({ detectedExtension, declaredExtension }) {
+function shouldPreserveDeclaredTextExtension(declaredDescriptor) {
+  return (
+    isImportTextDescriptor(declaredDescriptor) ||
+    String(declaredDescriptor?.kind || "").trim() === "email"
+  );
+}
+
+function chooseUploadedExtension({ detectedExtension, declaredExtension, detectedSource = "" }) {
   if (!declaredExtension || !isImportExtensionSupported(declaredExtension)) {
     return detectedExtension;
   }
@@ -146,8 +166,15 @@ function chooseUploadedExtension({ detectedExtension, declaredExtension }) {
     return declaredExtension;
   }
 
+  const declaredDescriptor = importFileDescriptorForExtension(declaredExtension);
+  if (
+    (detectedSource === "text-sniff" || detectedSource === "text-fallback") &&
+    shouldPreserveDeclaredTextExtension(declaredDescriptor)
+  ) {
+    return declaredExtension;
+  }
+
   if (detectedExtension === importPlainTextFallbackExtension()) {
-    const declaredDescriptor = importFileDescriptorForExtension(declaredExtension);
     if (declaredDescriptor && !isImportImageDescriptor(declaredDescriptor)) {
       return declaredExtension;
     }
@@ -1046,11 +1073,12 @@ async function parseUploadedFile(uploadedFile, index, options) {
   const serverTokenName = path.basename(
     String(uploadedFile.relativePath || uploadedFile.name || originalFileName)
   );
-  const detectedExtension = inferUploadedExtension(buffer);
+  const detectedFileType = inferUploadedFileType(buffer);
   const declaredExtension = path.extname(serverTokenName).toLowerCase();
   const originalExtension = path.extname(originalFileName).toLowerCase();
   const extension = chooseUploadedExtension({
-    detectedExtension,
+    detectedExtension: detectedFileType.extension,
+    detectedSource: detectedFileType.source,
     declaredExtension: originalExtension || declaredExtension
   });
   const name = extension

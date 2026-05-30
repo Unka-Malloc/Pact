@@ -58,7 +58,20 @@ async function assertNormalizedHumanDocxAndYamlMachineState() {
       }
     ],
     analysis: {
-      emails: [],
+      emails: [
+        {
+          id: "email-null-sender",
+          sourceId: "email-null-sender",
+          subject: "Null sender metadata",
+          from: null,
+          to: [null, { name: "Ops", address: "ops@example.test" }],
+          cc: [null],
+          sentAt: "2026-05-17T01:00:00.000Z",
+          messageIdHeader: "<null-sender@example.test>",
+          excerpt: "Email metadata can contain null participants.",
+          body: "Email metadata can contain null participants."
+        }
+      ],
       threads: [],
       transactions: [],
       timeline: []
@@ -72,8 +85,16 @@ async function assertNormalizedHumanDocxAndYamlMachineState() {
   assert.equal(manifest.machineReadable.format, "yaml");
   assert.equal(manifest.architecture.agentContext.interface.includes("knowledge.search"), true);
   assert.ok(manifest.documents.length > 0);
+  assert.ok(
+    manifest.documents.some((document) =>
+      document.adapterId === "builtin/mail-adapter" && document.title.includes("Null sender metadata")
+    ),
+    "normalized package should render email docs with null participant metadata"
+  );
 
-  const firstDocx = manifest.documents.find((document) => document.artifactType === "docx");
+  const firstDocx = manifest.documents.find((document) =>
+    document.artifactType === "docx" && document.sourceId === "source-md"
+  );
   assert.ok(firstDocx, "normalized package must contain DOCX documents");
   const buffer = await fs.readFile(path.join(userDataPath, "jobs", jobId, "normalized-documents", firstDocx.relativePath));
   assertDocxIncludes(buffer, "客户续费", "human DOCX must keep Markdown title text");
