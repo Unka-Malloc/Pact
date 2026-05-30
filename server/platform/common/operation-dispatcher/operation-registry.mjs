@@ -1132,6 +1132,41 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["console:read"]
   },
   {
+    id: "runtime.dependencies.list",
+    feature: "runtime",
+    label: "运行时依赖状态",
+    target: { controller: "system", method: "handleListRuntimeDependencies" },
+    http: { method: "GET", path: "/api/runtime/dependencies" },
+    rpc: { method: "runtime.dependencies.list" },
+    cli: { command: ["runtime", "dependencies"], usage: "runtime dependencies" },
+    requiredScopes: ["console:read"],
+    readOnly: true,
+    safety: { risk: "read_only", requiresConfirmation: false }
+  },
+  {
+    id: "runtime.dependencies.download",
+    feature: "runtime",
+    label: "按需准备运行时依赖",
+    target: { controller: "system", method: "handleDownloadRuntimeDependency" },
+    http: { method: "POST", path: "/api/runtime/dependencies/download" },
+    rpc: { method: "runtime.dependencies.download", body: "params" },
+    cli: { command: ["runtime", "dependencies", "download"], usage: "runtime dependencies download --body request.json" },
+    requiredScopes: ["runtime:admin"],
+    concurrencyGroup: "runtime.dependencies.download",
+    inputSchema: {
+      type: "object",
+      required: ["targetId"],
+      properties: {
+        targetId: { type: "string" },
+        version: { type: "string" },
+        root: { type: "string" },
+        dryRun: { type: "boolean" },
+        confirm: { type: "boolean" }
+      }
+    },
+    safety: { risk: "repair_write", requiresConfirmation: true, approvalScope: "runtime:admin" }
+  },
+  {
     id: "runtime.path_browse",
     feature: "runtime",
     label: "服务端路径浏览",
@@ -2175,7 +2210,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
   {
     id: "system.background_processes",
     feature: "system",
-    label: "后台守护进程状态",
+    label: "后台 Worker 管理进程状态",
     target: { controller: "system", method: "handleGetBackgroundProcesses" },
     http: { method: "GET", path: "/api/system/background-processes", localInForwardMode: true },
     rpc: { method: "system.background_processes" },

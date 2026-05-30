@@ -150,7 +150,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         ]
       },
       web: {
-        navItems: ["dashboard", "admin.storage", "admin.clients", "drawer.discovery", "drawer.users", "drawer.modules"],
+        navItems: ["dashboard", "approval", "admin.storage", "admin.clients", "drawer.discovery", "drawer.users", "drawer.modules"],
         panels: ["ConsoleShell", "StoragePanel", "ClientPanel", "SettingsDrawer", "ModulesDrawer"]
       },
       package: {
@@ -263,7 +263,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         webPanels: ["tool-management-core"]
       },
       web: {
-        navItems: ["admin.tools", "admin.agentPermissions"],
+        navItems: ["admin.toolList", "admin.toolStats", "admin.agentPermissions"],
         panels: ["ToolManagementPanel", "AgentPermissionPanel"]
       },
       package: {
@@ -504,7 +504,7 @@ export const FEATURE_MANIFEST = Object.freeze({
         webPanels: ["knowledge-core-ui", "knowledge-word-cloud", "knowledge-recall-debug"]
       },
       web: {
-        navItems: ["knowledge.management", "knowledge.wordCloud", "knowledge.conflicts", "knowledge.logs", "knowledge.maintenance", "debug.knowledgeRecall"],
+        navItems: ["knowledge.management", "knowledge.wordCloud", "knowledge.logs", "knowledge.maintenance", "debug.knowledgeRecall"],
         panels: ["KnowledgeManagementPanel", "KnowledgeWordCloudPanel", "KnowledgeRecallDebugPanel"]
       },
       client: { modules: ["knowledge-mirror", "expert-vocabulary"] },
@@ -555,8 +555,8 @@ export const FEATURE_MANIFEST = Object.freeze({
         webPanels: ["knowledge-distillation", "knowledge-distillation-workbench"]
       },
       web: {
-        navItems: ["knowledge.distillation"],
-        panels: ["KnowledgeDistillationWorkbench"]
+        navItems: ["knowledge.distillation", "debug.knowledgeDistillation"],
+        panels: ["KnowledgeDistillationWorkbench", "KnowledgeDistillationDebugPanel"]
       },
       package: {
         includePaths: ["server/platform/specialized/knowledge/storage/knowledge-core"],
@@ -573,6 +573,7 @@ export const FEATURE_MANIFEST = Object.freeze({
           "server/scripts/distill-existing-knowledge-skills.mjs",
           "server/scripts/knowledge-distillation-industrial-benchmark.mjs",
           "server/scripts/verify-knowledge-golden-distillation.mjs",
+          "server/scripts/verify-knowledge-distillation-workbench.mjs",
           "server/scripts/verify-knowledge-industrial-distillation.mjs",
           "server/scripts/verify-knowledge-rule-authoring.mjs",
           "server/scripts/verify-knowledge-skillization.mjs",
@@ -681,12 +682,7 @@ export const FEATURE_MANIFEST = Object.freeze({
       dependsOn: ["agent-gateway", "tool-management-core"],
       defaultEnabled: false,
       server: {
-        operations: ["agents.list", "agents.create", "agents.update", "agents.delete"],
-        webPanels: ["agent-management"]
-      },
-      web: {
-        navItems: ["admin.agentManagement"],
-        panels: ["AgentManagementPanel"]
+        operations: ["agents.list", "agents.create", "agents.update", "agents.delete"]
       },
       client: { modules: ["agent-registry"] },
       tests: { suites: ["server:verify:agent-management"] }

@@ -26,6 +26,10 @@ import {
   runPerformanceCapacityBenchmark
 } from "../knowledge/performance/capacity-benchmark/index.mjs";
 import {
+  downloadRuntimeDependency,
+  listRuntimeDependencies
+} from "../capabilities/runtime-dependencies/index.mjs";
+import {
   getSourceFileEvidence,
   isSourceEvidenceId,
   searchSourceFiles
@@ -6845,6 +6849,27 @@ async function executePerformanceCapacityOperation({ operationId, input, context
   return null;
 }
 
+async function executeRuntimeDependencyOperation({ operationId, input, context }) {
+  if (operationId === "runtime.dependencies.list") {
+    return result(200, await listRuntimeDependencies({
+      ...input,
+      userDataPath: context.userDataPath
+    }));
+  }
+  if (operationId === "runtime.dependencies.download") {
+    try {
+      const operationResult = await downloadRuntimeDependency({
+        ...input,
+        userDataPath: context.userDataPath
+      });
+      return result(operationResult.ok ? 200 : 400, operationResult);
+    } catch (error) {
+      return result(400, errorPayload(error, "Runtime dependency download failed."));
+    }
+  }
+  return null;
+}
+
 export async function executeConsoleDomainOperation({ operationId, input = {}, context = {} } = {}) {
   for (const executor of [
     executeWorkspaceContributionOperation,
@@ -6902,7 +6927,8 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeRepoDomainOperation,
     executeAssetLineageOperation,
     executeDataConnectorOperation,
-    executePerformanceCapacityOperation
+    executePerformanceCapacityOperation,
+    executeRuntimeDependencyOperation
   ]) {
     const operationResult = await executor({ operationId, input, context });
     if (operationResult) {

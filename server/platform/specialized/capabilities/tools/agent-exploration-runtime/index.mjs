@@ -471,7 +471,7 @@ function toolDefinitions() {
       function: {
         name: "local_command",
         description:
-          "Run an allowlisted local command using Node.js spawn with shell=false. Prefer commandId templates; direct commands require explicit configuration.",
+          "Run a permission-governed allowlisted local command template using Node.js spawn with shell=false. Direct commands are not accepted.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -1869,8 +1869,12 @@ export function createAgentExplorationRuntime({
     if (commandId && !template) {
       return { ok: false, error: "local_command_not_registered", commandId };
     }
-    if (!template && config.allowDirectCommands !== true) {
-      return { ok: false, error: "direct_local_command_not_allowed" };
+    if (!template) {
+      return {
+        ok: false,
+        error: "local_command_template_required",
+        reasonCode: "permission_governed_template_required"
+      };
     }
     const resolvedTemplate = template ? resolveLocalCommandTemplate(template, args) : null;
     if (resolvedTemplate?.ok === false) {

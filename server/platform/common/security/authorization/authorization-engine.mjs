@@ -326,6 +326,8 @@ repo.submit
 repo.tree.list
 repo.webhook.set
 runtime.info
+runtime.dependencies.list
+runtime.dependencies.download
 runtime.mounts
 runtime.path_browse
 runtime.reload_mounts

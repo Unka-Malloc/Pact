@@ -538,7 +538,7 @@ try {
     }, 19))
   });
   assert.equal(deniedUpload.status, 403);
-  assert.equal(deniedUpload.payload.error.data.code, "missing_scopes");
+  assert.equal(deniedUpload.payload.error.data.code, "missing_capabilities");
 
   console.log("agent-workspace-file-upload verification passed");
 } finally {

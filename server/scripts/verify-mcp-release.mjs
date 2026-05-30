@@ -419,17 +419,20 @@ try {
   }
   const plainAppGemini = path.join(layeredHome, "Applications", "Plain.app", "Contents", "Resources", "gemini");
   const agentAppGemini = path.join(layeredHome, "Applications", "Gemini Agent.app", "Contents", "Resources", "gemini");
+  const fakeAppGeminiHelper = path.join(layeredHome, "app-helper-bin", "gemini");
+  await fs.mkdir(path.dirname(fakeAppGeminiHelper), { recursive: true });
+  await fs.writeFile(fakeAppGeminiHelper, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+    "  printf 'Usage: gemini mcp add list remove\\n'",
+    "  exit 0",
+    "fi",
+    "exit 1",
+    ""
+  ].join("\n"), { mode: 0o755 });
   for (const appGemini of [plainAppGemini, agentAppGemini]) {
     await fs.mkdir(path.dirname(appGemini), { recursive: true });
-    await fs.writeFile(appGemini, [
-      "#!/bin/sh",
-      "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
-      "  printf 'Usage: gemini mcp add list remove\\n'",
-      "  exit 0",
-      "fi",
-      "exit 1",
-      ""
-    ].join("\n"), { mode: 0o755 });
+    await fs.symlink(fakeAppGeminiHelper, appGemini);
   }
   const layeredScan = await run(process.execPath, [
     path.join(extractDir, "package", "bin", "pact-mcp.mjs"),

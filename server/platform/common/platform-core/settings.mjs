@@ -170,27 +170,27 @@ const DEFAULT_AGENT_TOOL_EXECUTION = {
 export const MODEL_USAGE_DEFINITIONS = [
   {
     id: "knowledgeTaxonomy",
-    label: "事务归类",
-    description: "邮件和文档进入知识图谱前的领域、关键词和意图抽象。",
-    requiresIntelligence: true
+    label: "文档分类智能体",
+    description: "邮件和文档进入知识图谱前的领域、关键词和意图分类。",
+    requiresIntelligence: false
   },
   {
     id: "graphInsight",
-    label: "知识图谱增强",
+    label: "知识图谱智能体",
     description: "节点聚合、关系解释和高频实体抽象。",
     requiresIntelligence: true
   },
   {
     id: "timelineDistillation",
-    label: "时间线提炼",
+    label: "时序提炼智能体",
     description: "围绕具体事务提炼阶段、事件和关键节点。",
     requiresIntelligence: true
   },
   {
     id: "agentTools",
     label: "智能体工具调用",
-    description: "智能体使用服务端工具前的意图理解和结果整理。",
-    requiresIntelligence: true
+    description: "智能体可使用服务端工具的权限范围，不需要单独绑定智能体。",
+    requiresIntelligence: false
   },
   {
     id: "localOcr",
@@ -642,18 +642,23 @@ function normalizeModuleAgentProfiles(value = {}, modelLibraryAgents = [], modul
   return normalized;
 }
 
-function normalizeModuleIntelligence(moduleIntelligence) {
+function normalizeModuleIntelligence(moduleIntelligence, moduleModelAssignments = {}) {
   const defaults = defaultModuleIntelligence();
   const incoming =
     moduleIntelligence && typeof moduleIntelligence === "object" ? moduleIntelligence : {};
 
   return Object.fromEntries(
-    MODEL_USAGE_DEFINITIONS.map((definition) => [
-      definition.id,
-      incoming[definition.id] === undefined
-        ? defaults[definition.id]
-        : incoming[definition.id] !== false
-    ])
+    MODEL_USAGE_DEFINITIONS.map((definition) => {
+      const hasAssignment = Boolean(moduleModelAssignments?.[definition.id]);
+      return [
+        definition.id,
+        hasAssignment
+          ? true
+          : incoming[definition.id] === undefined
+            ? defaults[definition.id]
+            : incoming[definition.id] !== false
+      ];
+    })
   );
 }
 
@@ -1003,7 +1008,7 @@ function normalizeAgentToolExecution(value = {}) {
       ...DEFAULT_AGENT_TOOL_EXECUTION.local,
       ...local,
       enabled: local.enabled !== false,
-      allowDirectCommands: local.allowDirectCommands === true,
+      allowDirectCommands: false,
       timeoutMs: Number.isFinite(localTimeoutMs) && localTimeoutMs > 0 ? localTimeoutMs : 30000,
       maxOutputBytes: Number.isFinite(maxOutputBytes) && maxOutputBytes > 0 ? maxOutputBytes : 65536,
       nodeCommand: configuredNodeCommand,
@@ -1100,7 +1105,10 @@ export function normalizeSettings(settings) {
     modelLibraryAgents,
     moduleModelAssignments
   );
-  const moduleIntelligence = normalizeModuleIntelligence(settings?.moduleIntelligence);
+  const moduleIntelligence = normalizeModuleIntelligence(
+    settings?.moduleIntelligence,
+    moduleModelAssignments
+  );
 
   return {
     ...DEFAULT_SETTINGS,
@@ -1197,7 +1205,7 @@ export function resolveModelForModule(settings = {}, moduleId = "") {
 
   if (!requiresIntelligence) {
     return {
-      provider: "local-model",
+      provider: "",
       model: "",
       enabled: false,
       moduleId

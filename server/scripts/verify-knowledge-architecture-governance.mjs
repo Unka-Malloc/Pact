@@ -630,6 +630,7 @@ async function assertFrontendCoverage() {
   const router = await read("server-web/router/index.ts");
   const bridge = await read("server-web/lib/bridge.ts");
   const knowledgeView = await read("server-web/views/KnowledgeView.vue");
+  const approvalFlowView = await read("server-web/views/ApprovalFlowView.vue");
   const knowledgeImportCard = await read("server-web/components/KnowledgeImportCard.vue");
   const workspacesView = await read("server-web/views/WorkspacesView.vue");
   const debugView = await read("server-web/views/DebugView.vue");
@@ -640,6 +641,7 @@ async function assertFrontendCoverage() {
   assertAllIncludes(registry, [
     "workspace.knowledge-context",
     "knowledge.governance-console",
+    "approval.workflow",
     "debug.knowledge-governance",
     "admin.tool-management-governance",
     "admin.knowledge-mount-governance",
@@ -647,6 +649,8 @@ async function assertFrontendCoverage() {
     "knowledge.document-chunking",
     "knowledge.docx-export.download",
     "knowledge.normalized-docx.download",
+    "approval.knowledge-conflict.review",
+    "approval.mcp-authorize.review",
     "knowledge.console.inspect",
     "debug.knowledge-recall.compare",
     "admin.tools.policy.evaluate",
@@ -655,6 +659,7 @@ async function assertFrontendCoverage() {
 
   assertAllIncludes(router, [
     'path: "/knowledge/:tab"',
+    'path: "/approval"',
     'path: "/workspaces"',
     'path: "/debug/:tab"',
     'path: "/admin/tools"',
@@ -676,7 +681,6 @@ async function assertFrontendCoverage() {
   assertAllIncludes(knowledgeView, [
     "activeKnowledgeTab === 'management'",
     "activeKnowledgeTab === 'wordCloud'",
-    "activeKnowledgeTab === 'conflicts'",
     "activeKnowledgeTab === 'maintenance'",
     "knowledgeManagementPanel.value === \"knowledge\"",
     "knowledgeManagementPanel.value === \"rules\"",
@@ -684,6 +688,16 @@ async function assertFrontendCoverage() {
     "onIngestFilesSelected",
     "dynamicParsingPolicySignature"
   ], "server-web/views/KnowledgeView.vue");
+
+  assertAllIncludes(approvalFlowView, [
+    "全平台审批流",
+    "MCP 客户端授权",
+    "知识入库冲突",
+    "refreshMcpAuthorizationRequests",
+    "refreshKnowledgeConflicts",
+    "resolveMcpAuthorizationRequest",
+    "resolveKnowledgeReview"
+  ], "server-web/views/ApprovalFlowView.vue");
 
   assertAllIncludes(knowledgeImportCard, [
     "knowledgeDocxExportUrl",

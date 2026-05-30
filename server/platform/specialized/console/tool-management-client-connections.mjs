@@ -1,6 +1,6 @@
 const MCP_PLUGIN_CONNECTION = {
   kind: "mcp-plugin",
-  method: "MCP 插件连接"
+  method: "MCP 服务"
 };
 
 function asArray(value) {
