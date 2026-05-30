@@ -3,9 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SERVER_API_OPERATIONS } from "../platform/common/operation-dispatcher/operation-registry.mjs";
+import { createModelDecisionRuntime } from "../platform/specialized/agent/agent-gateway/model-decision-runtime/index.mjs";
+import { createKnowledgeDistillationRuntime } from "../platform/specialized/knowledge/invocation/knowledge-distillation-runtime/index.mjs";
 import { createKnowledgeDistillationWorkbench } from "../platform/specialized/knowledge/invocation/knowledge-distillation-workbench/index.mjs";
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pact-distillation-workbench-"));
+const algorithmVersion = "pact.knowledge-distillation.algorithm.v2";
+const externalEvaluationVersion = "pact.knowledge-distillation.external-evaluation.v1";
 
 const fakeResult = {
   generatedAt: "2026-05-20T00:00:00.000Z",
@@ -110,8 +114,85 @@ const workbench = createKnowledgeDistillationWorkbench({
       assert.ok(input.rawDocuments.length >= 1);
       assert.equal(input.modelEnabled, true);
       assert.equal(input.modelAlias, "deepseek-v4-flash");
+      assert.equal(input.strategyVersion, "timeline_then_topic_v2");
+      assert.equal(input.semanticSupportRequired, true);
+      assert.equal(input.timeDecayHalfLifeDays, 90);
+      assert.equal(input.timeDecayFloor, 0.35);
       return {
         status: "completed",
+        algorithmVersion,
+        sourcePlan: {
+          protocolVersion: algorithmVersion,
+          strategy: "timeline_then_topic",
+          referenceTimestamp: "2026-05-20T00:00:00.000Z",
+          halfLifeDays: 90,
+          floor: 0.35,
+          timeline: {
+            knownTimestampCount: 2,
+            unknownTimestampCount: 0,
+            chronological: true,
+            oldestAt: "2026-05-19T00:00:00.000Z",
+            newestAt: "2026-05-20T00:00:00.000Z"
+          },
+          items: [
+            {
+              sourceOrder: 1,
+              title: "ARCH",
+              capturedAt: "2026-05-19T00:00:00.000Z",
+              importanceScore: 0.8,
+              temporalWeight: 0.992,
+              decayedImportanceScore: 0.7936
+            },
+            {
+              sourceOrder: 2,
+              title: "README",
+              capturedAt: "2026-05-20T00:00:00.000Z",
+              importanceScore: 0.86,
+              temporalWeight: 1,
+              decayedImportanceScore: 0.86
+            }
+          ]
+        },
+        semanticClusters: [
+          {
+            clusterId: "cluster-1",
+            label: "项目知识蒸馏",
+            itemCount: 2,
+            decayedImportanceScore: 0.8268,
+            timeline: {
+              knownTimestampCount: 2,
+              chronological: true,
+              firstAt: "2026-05-19T00:00:00.000Z",
+              lastAt: "2026-05-20T00:00:00.000Z"
+            }
+          }
+        ],
+        qualityReportV3: {
+          protocolVersion: algorithmVersion,
+          passed: true,
+          overallScore: 0.92,
+          semanticCoverageScore: 0.9,
+          timelineOrderScore: 1,
+          timeDecayCalibrationScore: 0.82
+        },
+        externalEvaluation: {
+          protocolVersion: externalEvaluationVersion,
+          method: "aggregate_data_driven_semantic_claim_coverage_v1",
+          passed: true,
+          overallScore: 0.91,
+          metrics: {
+            expectedClaimCount: 2,
+            actualClaimCount: 2,
+            coveredClaimCount: 2,
+            semanticCoverageScore: 1,
+            timelineOrderScore: 1,
+            timeDecayCalibrationScore: 0.82
+          }
+        },
+        claimLedger: {
+          protocolVersion: algorithmVersion,
+          clusters: []
+        },
         candidates: [{ candidateId: "candidate-1" }],
         portableDocuments: [
           {
@@ -178,6 +259,10 @@ for (let attempt = 0; attempt < 60; attempt += 1) {
 assert.equal(run?.status, "completed", run?.error || "workbench run should complete");
 assert.equal(run.stages.length, 5);
 assert.equal(run.stages.every((stage) => stage.status === "completed"), true);
+const coreStage = run.stages.find((stage) => stage.stageId === "knowledge-distillation");
+assert.equal(coreStage?.metrics?.semanticClusterCount, 1);
+assert.equal(coreStage?.metrics?.timelineOrderScore, 1);
+assert.ok(Number(coreStage?.metrics?.externalEvaluationScore || 0) > 0.8);
 assert.ok(run.storage.rootRelativePath.includes("knowledge-distillation-workbench"));
 assert.equal(run.taskManagement.queue, "queue-monitor");
 assert.equal(queueEvents.some((event) => event.type === "started"), true);
@@ -198,6 +283,163 @@ const docx = await workbench.exportStage({
 });
 assert.equal(docx.contentType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 assert.ok(docx.buffer.length > 1000);
+
+const gatewayCalls = [];
+const modelDecisionRuntime = createModelDecisionRuntime({
+  agentGatewayCall: async ({ question, modelAlias, modelRouting }) => {
+    const roleId = /Role:\s*([^\n]+)/.exec(question)?.[1] || "";
+    gatewayCalls.push({
+      roleId,
+      questionLength: question.length,
+      modelAlias,
+      routeId: modelRouting?.routeId || ""
+    });
+    if (roleId === "topic_cluster_namer") {
+      return { answer: JSON.stringify({ title: "上传文档核心提炼" }) };
+    }
+    if (roleId === "knowledge_raw_batch_extractor") {
+      return {
+        answer: JSON.stringify({
+          summary: "上传语料批次已经提炼为核心事实。",
+          coreFindings: [
+            {
+              findingId: "finding-1",
+              statement: "用户上传文件后，蒸馏链路必须生成可下载的 Markdown 结果文档。",
+              importance: "critical",
+              confidence: 0.96
+            }
+          ],
+          risks: ["不能把无结果文档的运行标记为完成。"]
+        })
+      };
+    }
+    if (roleId === "knowledge_skill_distiller") {
+      return {
+        answer: JSON.stringify({
+          skill: {
+            title: "上传文档核心提炼",
+            summary: "上传文档蒸馏必须保留来源证据，并在运行结束后返回可下载结果。",
+            coreConcepts: [{ term: "结果文档", weight: 1 }],
+            decisionHeuristics: ["完成态必须同时满足核心阶段完成和 Markdown 产物存在。"],
+            honestBoundaries: ["不生成小模型，只生成知识提炼文档。"]
+          }
+        })
+      };
+    }
+    if (roleId === "skill_reviewer") {
+      return { answer: JSON.stringify({ decision: "approved", notes: ["payload stayed within model budget"] }) };
+    }
+    return { answer: JSON.stringify({ title: "上传文档核心提炼" }) };
+  }
+});
+const realRuntime = createKnowledgeDistillationRuntime({
+  userDataPath: tempRoot,
+  runtime: {},
+  modelDecisionRuntime
+});
+const budgetWorkbench = createKnowledgeDistillationWorkbench({
+  userDataPath: tempRoot,
+  knowledgeDistillationRuntime: realRuntime
+});
+const longUploadText = Array.from({ length: 100 }, (_, index) =>
+  [
+    `第 ${index + 1} 段：知识蒸馏调试面板接收上传文件后，必须经过解析、核心提炼、复核和导出阶段。`,
+    "核心提炼结果需要包含关键事实、时间线、实体、决策依据、结论边界和不确定项。",
+    "任务完成时必须提供 Markdown 结果文档，不能只显示完成状态。"
+  ].join("")
+).join("\n\n");
+const budgetRawDocuments = [
+  {
+    title: "2026-05-01-upload-distillation-flow.md",
+    text: longUploadText,
+    sourcePath: "flow/upload-distillation.md",
+    capturedAt: "2026-05-01T09:00:00.000Z"
+  },
+  {
+    title: "2026-05-03-export-artifact-contract.md",
+    text: [
+      "Export artifact contract requires Markdown, HTML, JSON, DOCX, and package formats.",
+      "The console workflow must expose a downloadable file after knowledge distillation completes.",
+      "Result JSON must preserve algorithm metrics, source plan, semantic clusters, claim ledger, and external evaluation."
+    ].join("\n"),
+    sourcePath: "contracts/export-artifact.md",
+    capturedAt: "2026-05-03T10:00:00.000Z"
+  },
+  {
+    title: "2026-04-20-operational-risk-review.md",
+    text: [
+      "Risk review focuses on permissions, audit logs, failed parse jobs, missing model responses, and unsupported claims.",
+      "A run cannot be marked completed when the distillation result file is absent or external evaluation data is missing.",
+      "Operators need explicit failure states for parse, model, reviewer, and export stages."
+    ].join("\n"),
+    sourcePath: "risk/operational-review.md",
+    capturedAt: "2026-04-20T08:00:00.000Z"
+  }
+];
+const budgetCreated = await budgetWorkbench.createRun({
+  rawDocuments: budgetRawDocuments,
+  title: "Large upload distillation",
+  query: "上传文件核心知识提炼",
+  modelAlias: "deepseek-v4-flash",
+  modelEnabled: true,
+  strategyVersion: "timeline_then_topic_v2",
+  timeDecayHalfLifeDays: 30,
+  timeDecayFloor: 0.4,
+  semanticClusterThreshold: 0.9,
+  clusterRejectThreshold: 0.55,
+  rawCorpusBatchMaxCharacters: 64000,
+  tokenBudget: 24000
+});
+let budgetRun = null;
+for (let attempt = 0; attempt < 80; attempt += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  budgetRun = await budgetWorkbench.getRun({ runId: budgetCreated.runId });
+  if (budgetRun?.status === "completed" || budgetRun?.status === "failed") {
+    break;
+  }
+}
+assert.equal(budgetRun?.status, "completed", budgetRun?.error || "long upload distillation should complete");
+for (const roleId of [
+  "knowledge_raw_batch_extractor",
+  "knowledge_skill_distiller",
+  "skill_reviewer"
+]) {
+  assert.equal(gatewayCalls.some((call) => call.roleId === roleId), true, `${roleId} must call the model gateway`);
+}
+const budgetCoreStage = budgetRun.stages.find((stage) => stage.stageId === "knowledge-distillation");
+assert.equal(budgetCoreStage?.status, "completed");
+assert.ok(Number(budgetCoreStage?.output?.markdownLength || 0) > 500);
+assert.ok(Number(budgetCoreStage?.metrics?.semanticClusterCount || 0) >= 2);
+assert.equal(Number(budgetCoreStage?.metrics?.timelineOrderScore || 0), 1);
+assert.ok(Number(budgetCoreStage?.metrics?.timeDecayCalibrationScore || 0) >= 0);
+const budgetMarkdown = await budgetWorkbench.exportStage({
+  runId: budgetCreated.runId,
+  stageId: "knowledge-distillation",
+  format: "markdown"
+});
+assert.equal(budgetMarkdown.contentType.includes("text/markdown"), true);
+assert.ok(budgetMarkdown.buffer.toString("utf8").includes("上传文档核心提炼"));
+const budgetJsonExport = await budgetWorkbench.exportStage({
+  runId: budgetCreated.runId,
+  stageId: "knowledge-distillation",
+  format: "json"
+});
+assert.equal(budgetJsonExport.contentType.includes("application/json"), true);
+const budgetJson = JSON.parse(budgetJsonExport.buffer.toString("utf8"));
+const distillation = budgetJson.distillation;
+assert.equal(distillation.algorithmVersion, algorithmVersion);
+assert.equal(distillation.sourcePlan.protocolVersion, algorithmVersion);
+assert.equal(distillation.sourcePlan.timeline.chronological, true);
+assert.ok(distillation.sourcePlan.timeline.knownTimestampCount >= 3);
+assert.equal(distillation.sourcePlan.halfLifeDays, 30);
+assert.equal(distillation.sourcePlan.floor, 0.4);
+assert.ok(distillation.sourcePlan.items.every((item) => Number.isFinite(Number(item.decayedImportanceScore))));
+assert.ok(distillation.semanticClusters.length >= 2);
+assert.equal(distillation.qualityReportV3.protocolVersion, algorithmVersion);
+assert.equal(distillation.externalEvaluation.protocolVersion, externalEvaluationVersion);
+assert.equal(distillation.externalEvaluation.method, "aggregate_data_driven_semantic_claim_coverage_v1");
+assert.ok(Number(distillation.externalEvaluation.metrics.expectedClaimCount || 0) > 0);
+assert.ok(Array.isArray(distillation.claimLedger.clusters));
 
 const stagePackage = await workbench.exportStage({
   runId: created.runId,
