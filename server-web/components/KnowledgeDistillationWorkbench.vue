@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AgentModelOptionBar from "./AgentModelOptionBar.vue";
 import StatusPill from "./StatusPill.vue";
+import { usePageRefreshHandler } from "../composables/usePageRefresh";
 import { bridge } from "../lib/bridge";
 import type { AgentModelConfig, AgentSettings, ModelProbeResponse, NormalizedDocumentsManifest, SplitJob } from "../lib/types";
 
@@ -51,6 +52,9 @@ type WorkbenchRun = {
   rawCorpusBatchMaxCharacters?: number;
   mergeStrategy?: string;
   maxRounds?: number;
+  strategyVersion?: string;
+  timeDecayHalfLifeDays?: number;
+  timeDecayFloor?: number;
   taskManagement?: Record<string, unknown>;
   stages: WorkbenchStage[];
   storage?: {
@@ -95,6 +99,9 @@ const createOptions = ref({
   rawCorpusBatchMaxCharacters: 64000,
   mergeStrategy: "timeline_then_topic",
   maxRounds: 3,
+  strategyVersion: "timeline_then_topic_v2",
+  timeDecayHalfLifeDays: 90,
+  timeDecayFloor: 0.35,
   priority: "normal",
 });
 const compareRightRunId = ref("");
@@ -170,6 +177,9 @@ function asRun(value: unknown): WorkbenchRun {
     rawCorpusBatchMaxCharacters: Number(record.rawCorpusBatchMaxCharacters || 0),
     mergeStrategy: String(record.mergeStrategy || ""),
     maxRounds: Number(record.maxRounds || 0),
+    strategyVersion: String(record.strategyVersion || ""),
+    timeDecayHalfLifeDays: Number(record.timeDecayHalfLifeDays || 0),
+    timeDecayFloor: Number(record.timeDecayFloor || 0),
     taskManagement: record.taskManagement && typeof record.taskManagement === "object" ? record.taskManagement as Record<string, unknown> : undefined,
     stages: Array.isArray(record.stages) ? record.stages.map((stage) => stage as WorkbenchStage) : [],
     storage: record.storage && typeof record.storage === "object" ? record.storage as WorkbenchRun["storage"] : undefined,
@@ -528,6 +538,19 @@ onMounted(() => {
   refreshModelProbeStatus().catch(() => undefined);
 });
 
+usePageRefreshHandler(
+  (detail) =>
+    (detail.viewId === "debug" && detail.debugTab === "knowledgeDistillation") ||
+    detail.viewId === "knowledge",
+  async () => {
+    await Promise.all([
+      refreshRuns(),
+      refreshModelProbeStatus(),
+      selectedRunId.value ? refreshSelectedRun() : Promise.resolve(),
+    ]);
+  },
+);
+
 onBeforeUnmount(() => {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -549,14 +572,6 @@ onBeforeUnmount(() => {
           <p>把项目目录的所有文档按阶段转化、导出、索引，再生成一个自包含的大文档。</p>
         </div>
         <div class="source-actions">
-          <button
-            class="tool-button tool-button-ghost"
-            type="button"
-            :disabled="busy === 'refresh'"
-            @click="refreshRuns"
-          >
-            刷新任务
-          </button>
           <button
             class="primary-action"
             type="button"
@@ -621,6 +636,14 @@ onBeforeUnmount(() => {
         <label class="config-field">
           <span>多轮上限</span>
           <input v-model.number="createOptions.maxRounds" type="number" min="1" max="20" />
+        </label>
+        <label class="config-field">
+          <span>时间半衰期（天）</span>
+          <input v-model.number="createOptions.timeDecayHalfLifeDays" type="number" min="1" max="3650" />
+        </label>
+        <label class="config-field">
+          <span>时间衰减下限</span>
+          <input v-model.number="createOptions.timeDecayFloor" type="number" min="0" max="1" step="0.05" />
         </label>
         <label class="config-field prompt-field">
           <span>蒸馏 Prompt</span>

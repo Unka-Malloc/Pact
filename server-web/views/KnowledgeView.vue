@@ -10,6 +10,7 @@ import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import FeatureToggle from '../components/FeatureToggle.vue';
+import KnowledgeDistillationWorkbench from '../components/KnowledgeDistillationWorkbench.vue';
 import OptionBar from '../components/OptionBar.vue';
 import SegmentedToggle from '../components/SegmentedToggle.vue';
 import StatusPill from '../components/StatusPill.vue';
@@ -26,6 +27,7 @@ const {
   canAdminKnowledge,
   canBrowseServerPaths,
   canMaintainKnowledge,
+  canReadKnowledge,
   canWriteJobs,
   canWriteKnowledge,
   clearRemovedTermsFromCloud,
@@ -55,6 +57,7 @@ const {
   ingestFiles,
   ingestJob,
   ingestProgress,
+  infoFeedModelOptions,
   isAuthenticated,
   jobStatusLabels,
   jobStatusTone,
@@ -1238,6 +1241,16 @@ async function previewKnowledgeDocumentParsing() {
                 </div>
               </div>
             </article>
+
+            <KnowledgeDistillationWorkbench
+              v-if="isManagementKnowledgePanel && hasFeature('knowledge-distillation')"
+              :can-read-knowledge="canReadKnowledge"
+              :can-maintain-knowledge="canMaintainKnowledge"
+              :ingest-job="ingestJob"
+              :normalized-manifest="normalizedManifest"
+              :format-compact-date="formatCompactDate"
+              :model-options="infoFeedModelOptions"
+            />
 
             <article v-if="activeKnowledgeTab === 'conflicts'" class="surface-card knowledge-conflict-report">
               <div class="section-header">
