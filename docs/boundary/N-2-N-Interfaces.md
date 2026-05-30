@@ -111,6 +111,151 @@ Pact MCP service 是 Workspace API 的设备级协议适配器，不是 agent-to
 | OpenCode | connector install target |
 | Claude Code、Cursor Agent、脚本型 agent、人工 CLI | 架构文档列入 agent-client 兼容对象；是否等同 install target 需看 connector 目标实现 |
 
+## 统一 API 注册切面设计稿
+
+统一 API 注册切面负责把平台内部 API、外部服务 API 和 adapter 暴露的 API 统一登记为安全内核可识别的 Capability。注册只表达“这个 API 存在、如何调用、属于谁、有什么风险和权限语义”；纳管表达“安全内核是否已经为它配置治理策略、授权关系和可授予状态”。两者必须分离：只要 API 已注册，就必须进入管控台 API 列表，即使它尚未被安全内核纳管。
+
+### 设计目标
+
+- 所有跨边界调用面都进入同一个 API Registry，包括平台服务 API、外部服务 API、adapter/port/mount API、Tool Management 包装 API 和 MCP/Workspace 可见 API。
+- 每个已注册 API 都能稳定映射到一个 Capability，默认形态为 `cap:api:<apiId>`；现有 `apiCapabilityId(operation.id)` 继续作为平台 API 的规范生成方式。
+- HTTP、RPC、CLI 是同一 API 的 transport 投影，而不是三份权限对象。内部平台 API 优先保持 HTTP/RPC/CLI 三面一致；外部远程服务 API 只需要声明真实可用的 HTTP 和 RPC，或者其中之一，CLI 不作为必填项。
+- API Registry 是安全内核的 Capability manifest 输入源，但注册不自动授权、不自动可授予、不自动进入 toolset。安全内核只基于已注册 Capability 进行权限配置、裁决、审计和未知 Capability 拒绝。
+- 管控台新增 `API 列表`，展示所有已注册 API。列表必须同时展示 `注册状态` 和 `纳管状态`，不能因为 API 未纳管而隐藏它。
+
+### 概念边界
+
+| 概念 | 责任 | 不是 |
+| --- | --- | --- |
+| API Registry | 登记 API 的身份、调用 transport、来源、风险、权限语义、Capability 映射和生命周期。 | 不是授权结果，也不保存 provider secret value。 |
+| Capability Kernel | 消费 API Registry 的 Capability manifest，对 subject/grant/policy 做 allow/deny/needsApproval 裁决。 | 不维护 HTTP path、provider SDK 细节或 UI 展示排序。 |
+| Tool Catalog | 面向智能体的工具目录，可包装一个或多个 API，并有自己的 `cap:tool:<toolId>:execute`。 | 不是 API 的唯一事实源。 |
+| `system.interfaces` | 当前平台操作注册表的接口投影，偏 HTTP/RPC/CLI 调用清单。 | 不等同于完整 API Registry，后者还包含外部 API、纳管状态和 Capability 状态。 |
+| 外部 provider manifest | 外部服务或 mount 声明 provider API、scope、secretRef 需求、readiness 和 contract 状态。 | 不得绕过 Pact adapter、policy、audit 和状态语义直接放行。 |
+
+### API 描述模型
+
+API Registry 的规范记录建议使用 `pact.api-registry.v1`：
+
+| 字段 | 说明 |
+| --- | --- |
+| `apiId` | 稳定 ID。平台 API 复用 `operation.id`，外部服务 API 使用 `external.<serviceId>.<operation>` 或 `<adapterId>.<provider>.<operation>`。 |
+| `label` / `description` | 管控台展示名称和边界说明。 |
+| `sourceKind` | `platform-service`、`external-service`、`adapter`、`mount`、`tool-management`、`mcp-gateway`。 |
+| `owner` | 负责该 API 的平台模块、adapter、mount、provider 或外部服务。 |
+| `domain` | `system`、`knowledge`、`repo`、`drive`、`model`、`tool_management`、`storage` 等业务域。 |
+| `transports` | 支持的调用方式列表。元素包含 `kind=http|rpc|cli|webhook`、`method`、`path`、`rpcMethod`、`command`、`implemented`、`required`、`notes`。 |
+| `target` | 平台 controller/method、adapter operation、provider method 或 mount operation。 |
+| `security` | `requiredScopes`、`requiredCapabilities`、`risk`、`approvalScope`、`providerScopes`、`dataClasses`、`requestedEgress`、`sideEffects`、`credentialPolicy`。 |
+| `capability` | `capabilityId`、`grantable`、`managed`、`aliases`、`derivedFrom`。注册后即可生成 capabilityId，但 `grantable=false` 直到纳管策略允许授予。 |
+| `readiness` | `registered`、`wired`、`implemented`、`contractVerified`、`realE2EVerified`、`productionReady`、`deprecated`。 |
+| `governance` | `state=unmanaged|managed|disabled|pending|denied`、`policyRefs`、`lastDecisionAt`、`missingControls`。 |
+| `evidence` | source file、module manifest、verifier、lastVerifiedAt、contract test receipt、provider receipt。 |
+
+最小注册记录必须包含 `apiId`、`sourceKind`、`owner`、至少一个 `transports`、`security.risk`、`capability.capabilityId` 和 `governance.state`。没有真实 secret 的外部 API 只能登记 `credentialPolicy.secretRefRequired=true` 或 `endpointRefRequired=true`，不得登记明文凭据。
+
+### 注册来源
+
+| 来源 | 进入 API Registry 的方式 | 备注 |
+| --- | --- | --- |
+| `SERVER_API_OPERATIONS` | 通过 platform operation adapter 转成 API record。 | 现有 HTTP/RPC/CLI 定义、scope、risk、audit、inputSchema 直接成为平台 API 投影。 |
+| `PROTOCOL_OPERATION_DEFINITIONS` | 作为平台协议 API 的子集进入 Registry。 | 继续由 `server:verify:protocol-operations` 保护。 |
+| Tool Management catalog | 只登记工具包装出的 API 关系，不替代底层 API。 | 工具仍有 `cap:tool:<toolId>:execute`。 |
+| 外部服务 adapter/port | adapter manifest 或 provider manifest 声明 `apis`。 | 例如 knowledge backend、model gateway、repo/code review、cloud drive、data connector。 |
+| mount/module ecosystem | `module.json` 或 contract test 输出声明可注册 API。 | scaffold/template 必须标记 `readiness=scaffold` 或 `contractVerified`，不能标成生产可用。 |
+| 动态 discovery | 运行时发现的 provider API 可登记为 `discovered`。 | 默认 `governance.state=unmanaged`、`grantable=false`，直到 operator 确认。 |
+
+### 注册流程
+
+```text
+source registry / manifest / discovery
+  -> ApiRegistrationCollector
+  -> ApiRegistrationNormalizer
+  -> ApiRegistrationValidator
+  -> CapabilityManifestBuilder
+  -> SecurityKernel Capability Universe
+  -> Console API List Projection
+```
+
+1. `Collector` 从平台 operation registry、外部 adapter manifest、mount manifest、Tool Catalog 和动态 discovery 收集原始 API。
+2. `Normalizer` 生成统一 `apiId`、transport 投影、风险字段、provider scope 映射和 capabilityId。
+3. `Validator` 校验 transport、secretRef、scope、risk、readiness、source anchor 和重复 ID。
+4. `CapabilityManifestBuilder` 输出安全内核可消费的 Capability universe：所有已注册 API 都进入已知 Capability 集合，但未纳管 API 标记 `managed=false`、`grantable=false`。
+5. 安全内核基于该 manifest 做权限配置和裁决。未知 Capability 一律拒绝；已注册但未纳管 Capability 可以展示、审计和申请纳管，但不能被普通 grant 放行。
+6. 管控台读取 API List projection，显示所有注册 API 和纳管状态。
+
+### Transport 规则
+
+- 内部平台 API：如果面向客户端或 operator，默认要求 HTTP、RPC、CLI 三个 transport 都有注册项。确实不需要 CLI 的 API 必须写 `transportException.reason`，并由 verifier 报出为可审查例外。
+- 外部远程服务 API：允许只实现 HTTP、RPC 或两者。CLI 只是 operator 工具投影，不是外部服务 API 的达标条件。
+- Webhook/callback：作为 `kind=webhook` transport 登记，但它表示外部服务回调进入 Pact，不替代 Pact 主动调用的 HTTP/RPC API。
+- MCP tool：作为下游客户端调用投影登记到关联关系中，底层 Capability 仍区分 `cap:api:*` 和 `cap:tool:*`。
+- 同一个 `apiId` 可以有多个 transport，但只能有一个 canonical Capability。transport 变化不应导致 Capability ID 变化。
+
+### Capability 映射规则
+
+| API 类型 | Capability ID | 纳管口径 |
+| --- | --- | --- |
+| 平台 Operation API | `cap:api:<operation.id>` | 现有 `KERNEL_API_OPERATION_IDS` 迁移为 Registry 生成或校验产物。 |
+| 外部服务 API | `cap:api:<apiId>` | 注册后已知，默认未纳管、不可授予；纳管后才能进入策略和 grant。 |
+| Adapter API | `cap:api:<adapterId>.<operation>` | adapter 对 provider scope 和 Pact capability 做一对一或一对多映射。 |
+| Tool API 包装 | `cap:tool:<toolId>:execute` + 关联的 `cap:api:<apiId>` | tool 执行权限不自动等于底层外部 API 权限；策略可要求二者同时满足。 |
+| 管控台 API 列表 | `cap:api:api_registry.apis.list` | 默认需要 `console:read` 或后续专用 `api_registry:read`。 |
+
+安全内核的 grant 只存 Capability，不存 HTTP path、RPC method 或 provider secret。scope 继续保留为兼容和分组维度，但新的强约束应优先使用 Capability。
+
+### API 列表页面
+
+管控台新增管理页面 `API 列表`，建议路径为 `/admin/api-list`。列表读取 `GET /api/api-registry/apis`，同一能力提供 RPC `api_registry.apis.list` 和 CLI `api-registry apis`，用于满足统一 API 层自己的 HTTP/RPC/CLI 投影。
+
+列表字段：
+
+| 列 | 内容 |
+| --- | --- |
+| API | `label`、`apiId`、描述和来源文件。 |
+| 来源 | `platform-service`、`external-service`、`adapter`、`mount`、`tool-management`。 |
+| 所属服务 | owner、provider、adapter 或模块名。 |
+| 调用方式 | HTTP/RPC/CLI/Webhook tag；缺失项显示原因，不隐藏。 |
+| Capability | `capabilityId`、`grantable`、`managed`。 |
+| 权限语义 | required scopes、provider scopes、risk、approval scope、egress/dataClass。 |
+| 注册状态 | registered/wired/implemented/contractVerified/realE2EVerified/productionReady/deprecated。 |
+| 纳管状态 | unmanaged/managed/disabled/pending/denied。 |
+| 验证证据 | lastVerifiedAt、verifier、contract receipt 或 provider receipt。 |
+
+筛选项：来源、业务域、外部服务、transport、风险、注册状态、纳管状态、是否可授予、是否存在 transport 例外。详情抽屉展示完整 JSON、transport 路由、provider scope 映射、相关 tool、相关 grant、最近拒绝原因和 source anchors。
+
+### 与现有代码的落点
+
+- `server/platform/common/operation-dispatcher/operation-registry.mjs`：继续作为平台 API 的主要注册来源。
+- `server/platform/common/platform-core/core-platform-provider.mjs`：当前 `buildSystemInterfaces()` 可成为 API Registry 平台来源 adapter。
+- `server/platform/common/security/authorization/authorization-engine.mjs`：`apiCapabilityId()` 保持规范；`KERNEL_API_OPERATION_IDS` 后续改成由 Registry verifier 生成或双向校验。
+- `server/platform/specialized/capabilities/tools/tool-management-core/catalog.mjs`：Tool Catalog 增加 `apiIds` 关联，不作为 API Registry 主事实源。
+- `server/platform/common/devops/unified-registration-core/unified-registration.mjs`：保留系统状态统一注册；API Registry 不复用 `process/queue/task/monitor/alert` 的运行状态 bucket，避免 API 列表和运行状态混淆。
+- `server-web/views/admin/ToolsView.vue`：工具列表继续展示 tool；新增 API 列表展示 API。两者可以通过 `operationId/apiId` 互链。
+
+### 验证门禁
+
+- `server:verify:api-registration`：校验 API Registry schema、重复 ID、transport 合法性、secretRef 安全、risk/scope/capability 完整性。
+- `server:verify:authorization-capabilities`：校验所有已注册 API 都能映射到已知 Capability，未知 Capability 被拒绝，未纳管 API 不可被普通 grant 放行。
+- `server:verify:protocol-operation-registration`：继续校验平台 operation 的 HTTP/RPC/CLI 注册一致性。
+- `server:verify:tool-management`：校验 tool 到 apiId 的引用存在，tool capability 和 API capability 不混用。
+- `client:verify` 或前端 smoke：校验 `API 列表` 能显示已注册但未纳管 API，且筛选不会把 unmanaged API 当成 missing。
+
+### 分阶段落地
+
+1. 文档和 schema：固定 `pact.api-registry.v1` 字段、Capability 映射、transport 例外口径。
+2. 平台来源 adapter：把 `SERVER_API_OPERATIONS` 转成 API Registry projection，并保持 `/api/interfaces` 兼容。
+3. 安全内核对接：让 Capability universe 从 API Registry projection 生成或被 verifier 强制校验。
+4. 外部服务 manifest：给 knowledge/model/repo/drive/data connector/mount 增加 `apis` 声明。
+5. 管控台 API 列表：新增页面、桥接 API、筛选、详情抽屉和 tool/API 互链。
+6. 纳管操作闭环：在 API 详情中加入申请纳管、禁用、策略绑定和 grantable 开关，但不把这些操作混入注册流程。
+
+### 待确认问题
+
+- 外部 provider 原生 API 是否需要和 Pact adapter API 同时显示？本设计建议同时显示，并用 parent/child 关系说明 “provider 原生能力” 和 “Pact 受控 adapter 能力” 的区别。
+- RPC 的命名是否只指 Pact JSON-RPC，还是也要覆盖 provider 的 gRPC/JSON-RPC？本设计建议 transport 用 `kind=rpc`，再用 `protocol=json-rpc|grpc|provider-rpc` 细分。
+- 未纳管 API 是否进入安全内核已知 Capability 集合但 `grantable=false`？本设计建议进入，原因是这样管控台能展示、申请纳管，安全内核也能明确拒绝未知和未纳管的差异。
+
 ## Source anchors
 
 - 兼容层定义：`docs/PROTOCOLS.md` 的 `Compatibility Strategy`。

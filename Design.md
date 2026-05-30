@@ -191,6 +191,14 @@ surfaces. Reserve stronger shadows for drawers, popovers, and modals.
 - Tables are the default for operational records, grants, jobs, tools, resources,
   service targets, and audit events.
 - Use sticky or stable headers where lists are long.
+- Use one semantic value per column. Do not combine independent values such as
+  execution IDs and trace IDs, PID and response time, status and timestamp,
+  count and rate, or name and identifier in the same cell. If two values may be
+  scanned, sorted, filtered, copied, audited, or compared separately, they must
+  be rendered as separate labeled columns.
+- Secondary text inside a table cell is allowed only when it describes the same
+  primary value and never needs independent comparison. Operational report
+  fields must favor explicit columns over stacked mixed metadata.
 - Actions should be right-aligned and predictable.
 - Empty states should say what is missing and provide the next valid action when
   one exists.
