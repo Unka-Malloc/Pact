@@ -15,7 +15,6 @@ const {
   highlightedConfigTarget,
   jsonPreview,
   previewContextCompiler,
-  refreshContextCompiler,
   runContextReplayEvaluation,
 } = useConsole();
 </script>
@@ -27,17 +26,8 @@ const {
                 <div class="section-header">
                   <div>
                     <h3>上下文编译器</h3>
-                    <p>每次调用无状态模型前，本地把记忆、证据、专家意见和工具状态编译成可审计 ContextPack。</p>
                   </div>
                   <div class="section-actions">
-                    <button
-                      class="tool-button tool-button-ghost compact-action"
-                      type="button"
-                      :disabled="busyKey === 'context:refresh'"
-                      @click="refreshContextCompiler()"
-                    >
-                      {{ busyKey === "context:refresh" ? "刷新中" : "刷新" }}
-                    </button>
                     <button
                       class="tool-button compact-action"
                       type="button"

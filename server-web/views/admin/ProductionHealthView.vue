@@ -22,7 +22,6 @@ const statusLabels: Record<string, string> = {
   unknown: "未知"
 };
 
-const overallLabel = computed(() => statusLabel(health.value?.status || "missing"));
 const reportGeneratedAt = computed(() => formatDateTime(health.value?.latestReport?.generatedAt || health.value?.generatedAt || ""));
 const latestCommit = computed(() => {
   const commit = health.value?.latestReport?.git?.commit || "";
@@ -110,21 +109,9 @@ usePageRefreshHandler(
           <p>汇总生产准入报告、质量门禁、运行时治理、权限安全、备份恢复和发版连续性状态。</p>
         </div>
         <div class="section-tags">
-          <StatusPill :tone="statusTone(health?.status || 'missing')" :label="overallLabel" />
           <span>{{ health?.latestReport?.runId || "无报告" }}</span>
           <span>{{ reportGeneratedAt }}</span>
         </div>
-      </div>
-
-      <div class="source-actions">
-        <button
-          class="tool-button tool-button-ghost"
-          type="button"
-          :disabled="loading"
-          @click="refreshProductionHealth"
-        >
-          {{ loading ? "刷新中" : "刷新" }}
-        </button>
       </div>
 
       <div v-if="loadError" class="status-strip danger">

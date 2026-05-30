@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useConsole } from '../../composables/useConsole';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import StatusPill from '../../components/StatusPill.vue';
+import type { MonitorAlertItem } from '../../lib/types';
+
 const {
   acknowledgeMonitorAlert,
   activeMonitorAlerts,
@@ -15,12 +18,10 @@ const {
   busyKey,
   canAdminMaintenanceAgent,
   clientRuntimeCoolingLabel,
-  clientRuntimeCoolingPolicyText,
   clientRuntimeCoolingTone,
   clientRuntimeHeatRows,
   clientRuntimeHeatStyle,
   clientRuntimeReasonLabel,
-  clientRuntimeStatus,
   clientRuntimeSummary,
   clientRuntimeSurfaceText,
   clientRuntimeTaskText,
@@ -35,11 +36,84 @@ const {
   processRelationText,
   processTypeLabel,
   recentMonitorAlertHistory,
-  refreshBackgroundProcesses,
-  refreshClientRuntimeStatus,
-  refreshMonitorAlerts,
   saveMonitorAlertConfig,
 } = useConsole();
+
+type MonitorAlertDetailBullet = {
+  label: string;
+  text: string;
+};
+
+function splitMonitorAlertMessage(message: string) {
+  return String(message || "")
+    .replace(/\s+/g, " ")
+    .split(/(?<=[。；;])\s*/u)
+    .map((item) => item.replace(/[。；;]+$/u, "").trim())
+    .filter(Boolean);
+}
+
+function monitorAlertMessageLabel(text: string, index: number) {
+  if (/^(请|建议|检查|确认|修复|处理)/u.test(text)) {
+    return "处理";
+  }
+  if (/(PID|当前状态|未运行|离线|失败|中断|超时|stopped|missing)/iu.test(text)) {
+    return "状态";
+  }
+  if (/(负责|影响|导致|依赖|关联|拉起|管理)/u.test(text)) {
+    return "影响";
+  }
+  return index === 0 ? "详情" : "补充";
+}
+
+function monitorAlertLifecycleText(alert: MonitorAlertItem) {
+  if (alert.ackRequired || alert.active === false || alert.status === "recovered") {
+    return "已恢复";
+  }
+  return alert.status || monitorAlertSeverityLabel(alert.severity);
+}
+
+function monitorAlertDetailBullets(alert: MonitorAlertItem, includeLifecycle = false): MonitorAlertDetailBullet[] {
+  const bullets: MonitorAlertDetailBullet[] = [];
+  if (includeLifecycle) {
+    bullets.push({ label: "状态", text: monitorAlertLifecycleText(alert) });
+  }
+  if (alert.queueId) {
+    bullets.push({ label: "队列 ID", text: alert.queueId });
+  }
+  splitMonitorAlertMessage(alert.message).forEach((text, index) => {
+    bullets.push({ label: monitorAlertMessageLabel(text, index), text });
+  });
+  const sourceParts = [alert.source, alert.role].filter((item, index, list) => item && list.indexOf(item) === index);
+  if (sourceParts.length > 0) {
+    bullets.push({ label: "来源", text: sourceParts.join(" / ") });
+  }
+  return bullets.length > 0 ? bullets : [{ label: "详情", text: "—" }];
+}
+
+function monitorAlertMergeKey(alert: MonitorAlertItem) {
+  return [
+    alert.alertId,
+    alert.resolvedAt || "",
+    alert.acknowledgedAt || "",
+    alert.ackRequired || alert.active === false ? "recovered" : "active",
+  ].join(":");
+}
+
+function shouldIncludeMonitorAlertLifecycle(alert: MonitorAlertItem) {
+  return alert.ackRequired || alert.active === false || alert.status === "recovered";
+}
+
+const mergedMonitorAlerts = computed(() => {
+  const seen = new Set<string>();
+  return [...activeMonitorAlerts.value, ...recentMonitorAlertHistory.value].filter((alert) => {
+    const key = monitorAlertMergeKey(alert);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+});
 </script>
 
 <template>
@@ -48,7 +122,6 @@ const {
               <div class="section-header">
                 <div>
                   <h3>运维监控</h3>
-                  <p>统一查看服务端进程状态、守护巡检和报警队列。</p>
                 </div>
                 <div class="section-tags">
                   <span>{{ backgroundSupervisorLabel }}</span>
@@ -56,39 +129,12 @@ const {
                   <span>报警 {{ monitorAlertSummary.activeCount }}</span>
                 </div>
               </div>
-              <div class="source-actions">
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="busyKey === 'background-processes:refresh'"
-                  @click="refreshBackgroundProcesses()"
-                >
-                  {{ busyKey === "background-processes:refresh" ? "刷新中" : "刷新进程" }}
-                </button>
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="busyKey === 'client-runtime:refresh'"
-                  @click="refreshClientRuntimeStatus()"
-                >
-                  {{ busyKey === "client-runtime:refresh" ? "刷新中" : "刷新热力图" }}
-                </button>
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="busyKey === 'monitor-alerts:refresh'"
-                  @click="refreshMonitorAlerts()"
-                >
-                  {{ busyKey === "monitor-alerts:refresh" ? "刷新中" : "刷新报警" }}
-                </button>
-              </div>
             </article>
 
             <article class="surface-card client-runtime-card">
               <div class="section-header">
                 <div>
                   <h3>客户端热力图</h3>
-                  <p>按协议层 clientUid 收敛工作空间、上下文和使用热度，低频连接会进入冷却状态。</p>
                 </div>
                 <div class="section-tags">
                   <span>客户端 {{ clientRuntimeSummary.totalClients }}</span>
@@ -143,9 +189,6 @@ const {
                 <strong>暂无客户端运行时热度</strong>
                 <span>带 clientUid 的标准调用进入协议层后会在这里出现。</span>
               </div>
-              <p class="module-note">
-                冷却策略：{{ clientRuntimeCoolingPolicyText }}；状态文件：{{ clientRuntimeStatus?.usagePath || "未生成" }}
-              </p>
             </article>
 
             <article class="surface-card">
@@ -163,7 +206,8 @@ const {
                   <span>进程</span>
                   <span>类型</span>
                   <span>状态</span>
-                  <span>PID / 心跳</span>
+                  <span>PID</span>
+                  <span>最后响应时间</span>
                   <span>作用和关联</span>
                 </div>
                 <div
@@ -179,7 +223,9 @@ const {
                   <StatusPill :tone="backgroundProcessTone(processItem.status)" :label="backgroundProcessLabel(processItem.status)" />
                   <span>
                     <strong>{{ processItem.pid || "—" }}</strong>
-                    <small>{{ formatCompactDate(processItem.lastHeartbeatAt || "") }}</small>
+                  </span>
+                  <span>
+                    <strong>{{ formatCompactDate(processItem.lastHeartbeatAt || "") }}</strong>
                   </span>
                   <span>
                     <strong>{{ processItem.responsibility || processItem.description }}</strong>
@@ -187,10 +233,7 @@ const {
                   </span>
                 </div>
               </div>
-              <p v-if="backgroundProcessStatus?.statePath" class="module-note">
-                状态文件：{{ backgroundProcessStatus.statePath }}
-              </p>
-              <div v-if="backgroundProcesses.length === 0" class="empty-state">
+	              <div v-if="backgroundProcesses.length === 0" class="empty-state">
                 <strong>暂无进程状态</strong>
               </div>
             </article>
@@ -223,18 +266,27 @@ const {
                   <span>状态</span>
                 </div>
                 <div
-                  v-for="alert in activeMonitorAlerts"
-                  :key="alert.alertId"
+                  v-for="alert in mergedMonitorAlerts"
+                  :key="monitorAlertMergeKey(alert)"
                   class="job-row"
                 >
                   <StatusPill
+                    class="monitor-alert-severity-pill"
                     :tone="alert.ackRequired ? 'success' : monitorAlertSeverityTone(alert.severity)"
                     :label="alert.ackRequired ? '已恢复' : monitorAlertSeverityLabel(alert.severity)"
                   />
-                  <span>
+                  <div class="monitor-alert-detail">
                     <strong>{{ alert.title }}</strong>
-                    <small>{{ alert.queueId ? `队列 ID：${alert.queueId} · ` : "" }}{{ alert.message }}</small>
-                  </span>
+                    <ul class="monitor-alert-detail-list">
+                      <li
+                        v-for="(bullet, bulletIndex) in monitorAlertDetailBullets(alert, shouldIncludeMonitorAlertLifecycle(alert))"
+                        :key="`${alert.alertId}:${bullet.label}:${bulletIndex}`"
+                      >
+                        <span>{{ bullet.label }}：</span>
+                        <span>{{ bullet.text }}</span>
+                      </li>
+                    </ul>
+                  </div>
                   <span>
                     {{ formatCompactDate(alert.recoveredAt || alert.lastSeenAt || alert.firstSeenAt) }}
                     <button
@@ -249,39 +301,14 @@ const {
                   </span>
                 </div>
               </div>
-              <div v-if="activeMonitorAlerts.length === 0" class="empty-state">
-                <strong>暂无活跃报警</strong>
+              <div v-if="mergedMonitorAlerts.length === 0" class="empty-state">
+                <strong>暂无报警</strong>
               </div>
               <ConfigFoldCard title="报警报文配置 JSON" open>
                 <label class="json-editor">
-                  <span>配置会保存到后台文件，守护巡检下一轮自动读取</span>
                   <textarea v-model="monitorAlertConfigText" rows="14" spellcheck="false" />
                 </label>
               </ConfigFoldCard>
-              <ConfigFoldCard title="最近报警历史">
-                <div class="job-table compact-job-table monitor-alert-table">
-                  <div class="job-table-header">
-                    <span>级别</span>
-                    <span>报警</span>
-                    <span>时间</span>
-                  </div>
-                  <div
-                    v-for="alert in recentMonitorAlertHistory"
-                    :key="`${alert.alertId}:${alert.lastSeenAt}:${alert.resolvedAt || ''}`"
-                    class="job-row"
-                  >
-                    <StatusPill :tone="monitorAlertSeverityTone(alert.severity)" :label="monitorAlertSeverityLabel(alert.severity)" />
-                    <span>
-                      <strong>{{ alert.title }}</strong>
-                      <small>{{ alert.active ? "活跃" : "已恢复" }} · {{ alert.message }}</small>
-                    </span>
-                    <span>{{ formatCompactDate(alert.lastSeenAt || alert.resolvedAt || alert.firstSeenAt) }}</span>
-                  </div>
-                </div>
-              </ConfigFoldCard>
-              <p v-if="monitorAlertState?.configPath" class="module-note">
-                配置文件：{{ monitorAlertState.configPath }}；sh 配置：{{ monitorAlertState.shellConfigPath || "未生成" }}；状态文件：{{ monitorAlertState.statePath }}
-              </p>
             </article>
           </section>
 </template>

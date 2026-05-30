@@ -310,7 +310,6 @@
   }
 
   /* Code / pre blocks */
-  .rule-authoring-sync-preview pre,
   .evidence-rendered-content,
   .agent-function-call pre,
   .agent-tool-result pre,
@@ -873,6 +872,5 @@ html.theme-light .el-dropdown-menu { background: var(--bg-surface) !important; b
 html.theme-light .el-dropdown-menu__item { color: var(--text-primary) !important; }
 html.theme-light select { background: var(--bg-surface); color: var(--text-primary); border-color: var(--border-subtle); }
 html.theme-light select option { background: var(--bg-surface); color: var(--text-primary); }
-
 
 

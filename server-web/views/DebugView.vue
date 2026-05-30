@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useConsole } from '../composables/useConsole';
 import type { DebugTab } from '../composables/useConsole';
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
 import BinaryCheckbox from '../components/BinaryCheckbox.vue';
+import BrowseSelectButton from '../components/BrowseSelectButton.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import InfoFeedResultRow from '../components/InfoFeedResultRow.vue';
 import OptionBar from '../components/OptionBar.vue';
+import UploadFileListCard, { type FileListResultEntry } from '../components/UploadFileListCard.vue';
+import { bridge } from '../lib/bridge';
+import { createKnowledgeUploadSession } from '../lib/knowledge-upload-session';
+import type { SplitJob } from '../lib/types';
 const {
   agentExploreActiveTabId,
   agentExploreAgentOptions,
@@ -51,6 +56,7 @@ const {
   handleAgentExploreSplitKeydown,
   handleAgentExploreTraceToggle,
   highlightedConfigTarget,
+  infoFeedModelOptions,
   isAgentExploreDraftSession,
   isAuthenticated,
   jsonPreview,
@@ -79,7 +85,377 @@ const {
 const route = useRoute();
 const activeDebugTab = computed<DebugTab>(() => {
   const tab = String(route.params.tab ?? "");
-  return tab === "knowledgeRecall" || tab === "agentRetrieval" ? tab : debugTab.value;
+  return tab === "knowledgeRecall" || tab === "agentRetrieval" || tab === "knowledgeDistillation"
+    ? tab
+    : debugTab.value;
+});
+
+type DistillationStep = "idle" | "uploading" | "parsing" | "distilling" | "completed" | "failed";
+type DistillationRun = Record<string, unknown> & {
+  runId?: string;
+  status?: string;
+  progressPercent?: number;
+  error?: string;
+  stages?: Array<Record<string, unknown>>;
+};
+
+const distillationFile = ref<File | null>(null);
+const distillationStep = ref<DistillationStep>("idle");
+const distillationUploadPercent = ref(0);
+const distillationJob = ref<SplitJob | null>(null);
+const distillationRun = ref<DistillationRun | null>(null);
+const distillationError = ref("");
+const distillationStatusMessage = ref("等待文件");
+const distillationModelAlias = ref("");
+let distillationSequence = 0;
+
+const defaultDistillationPrompt = [
+  "对上传文件做核心知识提炼。",
+  "优先保留关键事实、时间线、实体、决策依据、结论边界和不确定项。",
+  "不要做小模型训练，不要扩写原文没有的信息。"
+].join("\n");
+
+const distillationBusy = computed(() =>
+  distillationStep.value === "uploading" ||
+  distillationStep.value === "parsing" ||
+  distillationStep.value === "distilling"
+);
+
+const distillationFileLabel = computed(() => {
+  if (!distillationFile.value) return "未选择文件";
+  return `${distillationFile.value.name} · ${formatFileSize(distillationFile.value.size)}`;
+});
+
+const distillationRunId = computed(() => String(distillationRun.value?.runId || ""));
+const distillationCoreStage = computed(() =>
+  (distillationRun.value?.stages || []).find((stage) => String(stage.stageId || "") === "knowledge-distillation") || null
+);
+const distillationCoreOutput = computed<Record<string, unknown>>(() => {
+  const output = distillationCoreStage.value?.output;
+  return output && typeof output === "object" && !Array.isArray(output)
+    ? output as Record<string, unknown>
+    : {};
+});
+const distillationResultMarkdown = computed(() => String(distillationCoreOutput.value.markdown || ""));
+const distillationResultMarkdownLength = computed(() => {
+  return Number(distillationCoreOutput.value.markdownLength || distillationResultMarkdown.value.length || 0);
+});
+const distillationDownloadUrl = computed(() => {
+  if (
+    !distillationRunId.value ||
+    distillationCoreStage.value?.status !== "completed" ||
+    distillationResultMarkdownLength.value <= 0
+  ) return "";
+  return bridge.knowledgeDistillationWorkbenchExportUrl(distillationRunId.value, "knowledge-distillation", "markdown");
+});
+const distillationPackageUrl = computed(() =>
+  distillationRunId.value &&
+    distillationRun.value?.status === "completed" &&
+    distillationResultMarkdownLength.value > 0
+    ? bridge.knowledgeDistillationWorkbenchPackageUrl(distillationRunId.value)
+    : ""
+);
+const distillationResultBaseName = computed(() => {
+  const sourceName = distillationFile.value?.name || String(distillationRun.value?.title || "知识蒸馏结果");
+  return safeDownloadFileName(stripFileExtension(sourceName) || "知识蒸馏结果");
+});
+const distillationResultFiles = computed<FileListResultEntry[]>(() => {
+  if (!distillationDownloadUrl.value) {
+    return [];
+  }
+  const runId = distillationRunId.value;
+  const baseName = distillationResultBaseName.value;
+  const outputJson = distillationCoreOutput.value.json;
+  const jsonText = outputJson && typeof outputJson === "object"
+    ? JSON.stringify(outputJson, null, 2)
+    : "";
+  return [
+    {
+      key: "markdown",
+      name: `${baseName}.md`,
+      extension: "MD",
+      size: encodedByteLength(distillationResultMarkdown.value),
+      detail: "核心提炼文档",
+      href: bridge.knowledgeDistillationWorkbenchExportUrl(runId, "knowledge-distillation", "markdown"),
+      actionLabel: "下载",
+      downloadName: `${baseName}.md`,
+    },
+    {
+      key: "docx",
+      name: `${baseName}.docx`,
+      extension: "DOCX",
+      detail: "Word 文档",
+      href: bridge.knowledgeDistillationWorkbenchExportUrl(runId, "knowledge-distillation", "docx"),
+      actionLabel: "下载",
+      downloadName: `${baseName}.docx`,
+    },
+    {
+      key: "json",
+      name: `${baseName}.json`,
+      extension: "JSON",
+      size: encodedByteLength(jsonText),
+      detail: "结构化结果",
+      href: bridge.knowledgeDistillationWorkbenchExportUrl(runId, "knowledge-distillation", "json"),
+      actionLabel: "下载",
+      downloadName: `${baseName}.json`,
+    },
+    {
+      key: "package",
+      name: `${baseName}-workspace-package.zip`,
+      extension: "ZIP",
+      detail: "蒸馏整包",
+      href: distillationPackageUrl.value,
+      actionLabel: "下载",
+      downloadName: `${baseName}-workspace-package.zip`,
+    },
+  ].filter((file) => file.href);
+});
+const distillationProgressSegments = computed(() => {
+  const step = distillationStep.value;
+  const jobStatus = String(distillationJob.value?.status || "");
+  const runStatus = String(distillationRun.value?.status || "");
+  const coreStatus = String(distillationCoreStage.value?.status || "");
+  const uploadCompleted =
+    distillationUploadPercent.value >= 100 ||
+    step === "parsing" ||
+    step === "distilling" ||
+    step === "completed" ||
+    (step === "failed" && distillationUploadPercent.value >= 100);
+  const parseCompleted =
+    jobStatus === "completed" ||
+    step === "distilling" ||
+    step === "completed" ||
+    (step === "failed" && jobStatus === "completed");
+  const distillCompleted =
+    step === "completed" &&
+    runStatus === "completed" &&
+    coreStatus === "completed" &&
+    distillationResultMarkdownLength.value > 0;
+  return [
+    {
+      key: "upload",
+      label: "上传",
+      state: uploadCompleted ? "complete" : step === "uploading" ? "active" : "pending",
+    },
+    {
+      key: "parse",
+      label: "解析",
+      state: parseCompleted ? "complete" : step === "parsing" ? "active" : jobStatus === "failed" ? "failed" : "pending",
+    },
+    {
+      key: "distill",
+      label: "蒸馏",
+      state: distillCompleted ? "complete" : step === "failed" ? "failed" : step === "distilling" ? "active" : "pending",
+    },
+  ];
+});
+const distillationProgressSummary = computed(() => {
+  const completed = distillationProgressSegments.value.filter((segment) => segment.state === "complete").length;
+  return `${completed}/${distillationProgressSegments.value.length}`;
+});
+const distillationModelOptions = computed(() => infoFeedModelOptions.value || []);
+const selectedDistillationModel = computed(() =>
+  distillationModelOptions.value.find((option) => debugModelOptionValue(option) === distillationModelAlias.value) || null,
+);
+const distillationModelReady = computed(() =>
+  Boolean(selectedDistillationModel.value && debugModelOptionEnabled(selectedDistillationModel.value)),
+);
+const distillationModelLabel = computed(() => String(selectedDistillationModel.value?.label || "").trim());
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function encodedByteLength(value: string) {
+  return new TextEncoder().encode(value || "").length;
+}
+
+function stripFileExtension(name: string) {
+  return String(name || "").replace(/\.[^/.]+$/, "");
+}
+
+function safeDownloadFileName(name: string) {
+  return String(name || "")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim() || "知识蒸馏结果";
+}
+
+function asDistillationRun(value: Record<string, unknown> | null | undefined): DistillationRun {
+  return (value && typeof value === "object" ? value : {}) as DistillationRun;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function debugModelOptionValue(option: { agentUid?: unknown; value?: unknown }) {
+  return String(option.agentUid ?? option.value ?? "").trim();
+}
+
+function debugModelOptionEnabled(option: { disabled?: boolean; selectable?: boolean; enabled?: boolean }) {
+  return option.disabled !== true && option.selectable !== false && option.enabled !== false;
+}
+
+function normalizeDistillationModelSelection() {
+  const current = String(distillationModelAlias.value || "").trim();
+  if (current && distillationModelOptions.value.some((option) => debugModelOptionValue(option) === current)) {
+    return;
+  }
+  const fallback = distillationModelOptions.value.find(debugModelOptionEnabled) || distillationModelOptions.value[0];
+  distillationModelAlias.value = fallback ? debugModelOptionValue(fallback) : "";
+}
+
+function assertCurrentDistillation(sequence: number) {
+  if (sequence !== distillationSequence) {
+    throw new Error("知识蒸馏任务已取消。");
+  }
+}
+
+function handleDebugDistillationFileSelected(files: File[]) {
+  distillationFile.value = files[0] || null;
+  distillationStep.value = "idle";
+  distillationUploadPercent.value = 0;
+  distillationJob.value = null;
+  distillationRun.value = null;
+  distillationError.value = "";
+  distillationStatusMessage.value = distillationFile.value ? "文件已选择" : "等待文件";
+}
+
+async function waitForDistillationJob(jobId: string, sequence: number) {
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    assertCurrentDistillation(sequence);
+    const job = await bridge.getJob(jobId);
+    if (!job) {
+      throw new Error("找不到解析任务。");
+    }
+    distillationJob.value = job;
+    distillationStatusMessage.value = `文件解析：${job.stage || job.status}`;
+    if (job.status === "completed") return job;
+    if (job.status === "failed") {
+      throw new Error(job.error || "文件解析失败。");
+    }
+    await delay(1000);
+  }
+  throw new Error("文件解析超时。");
+}
+
+async function waitForDistillationRun(runId: string, sequence: number) {
+  for (let attempt = 0; attempt < 360; attempt += 1) {
+    assertCurrentDistillation(sequence);
+    const run = asDistillationRun(await bridge.getKnowledgeDistillationWorkbenchRun(runId));
+    distillationRun.value = run;
+    distillationStatusMessage.value = `知识蒸馏：${String(run.status || "running")}`;
+    const status = String(run.status || "");
+    if (status === "completed") {
+      const coreStage = (run.stages || []).find((stage) => String(stage.stageId || "") === "knowledge-distillation");
+      const output = coreStage?.output;
+      const markdownLength =
+        output && typeof output === "object" && !Array.isArray(output)
+          ? Number((output as { markdownLength?: unknown }).markdownLength || 0)
+          : 0;
+      if (coreStage?.status !== "completed" || markdownLength <= 0) {
+        throw new Error("知识蒸馏已结束，但结果文档未生成。");
+      }
+      return run;
+    }
+    if (status === "failed" || status === "canceled") {
+      throw new Error(run.error || "知识蒸馏失败。");
+    }
+    await delay(1500);
+  }
+  throw new Error("知识蒸馏超时。");
+}
+
+async function startDebugKnowledgeDistillation() {
+  const file = distillationFile.value;
+  if (!file) {
+    distillationError.value = "请先选择文件。";
+    return;
+  }
+  if (!distillationModelReady.value) {
+    distillationError.value =
+      String(selectedDistillationModel.value?.reason || selectedDistillationModel.value?.disabledReason || "").trim() ||
+      "请选择一个可用模型。";
+    return;
+  }
+  const sequence = ++distillationSequence;
+  distillationStep.value = "uploading";
+  distillationUploadPercent.value = 0;
+  distillationJob.value = null;
+  distillationRun.value = null;
+  distillationError.value = "";
+  distillationStatusMessage.value = "上传文件";
+  try {
+    const [{ session }, settings] = await Promise.all([
+      createKnowledgeUploadSession([file], {
+        checkpointPrefix: "knowledge-distillation-debug",
+        checkpointMode: "debug-panel",
+        checkpointSource: "knowledge-distillation-debug",
+        onProgress: (progress) => {
+          distillationUploadPercent.value = progress.percent;
+          distillationStatusMessage.value = progress.message;
+        },
+      }),
+      bridge.getSettings(),
+    ]);
+    assertCurrentDistillation(sequence);
+    distillationStep.value = "parsing";
+    distillationStatusMessage.value = "创建解析任务";
+    const job = await bridge.createJob({
+      inputText: "",
+      filePaths: [],
+      uploadedFiles: [],
+      uploadSessionId: session.sessionId,
+      settings,
+    });
+    distillationJob.value = job;
+    const completedJob = await waitForDistillationJob(job.id, sequence);
+    distillationStep.value = "distilling";
+    distillationStatusMessage.value = "创建知识蒸馏任务";
+    const run = asDistillationRun(await bridge.createKnowledgeDistillationWorkbenchRun({
+      title: `${file.name} 知识蒸馏`,
+      jobId: completedJob.id,
+      batchId: completedJob.id,
+      query: "上传文件核心知识提炼",
+      prompt: defaultDistillationPrompt,
+      modelAlias: distillationModelAlias.value,
+      tokenBudget: 24000,
+      payloadBudget: 120000,
+      rawCorpusBatchMaxCharacters: 64000,
+      mergeStrategy: "timeline_then_topic",
+      maxRounds: 3,
+      priority: "normal",
+      modelEnabled: true,
+    }));
+    distillationRun.value = run;
+    if (!run.runId) {
+      throw new Error("知识蒸馏任务没有返回 runId。");
+    }
+    const completedRun = await waitForDistillationRun(run.runId, sequence);
+    distillationRun.value = completedRun;
+    distillationStep.value = "completed";
+    distillationStatusMessage.value = "知识蒸馏完成，可下载结果";
+  } catch (nextError) {
+    if (sequence !== distillationSequence) return;
+    distillationStep.value = "failed";
+    distillationError.value = nextError instanceof Error ? nextError.message : "知识蒸馏失败。";
+    distillationStatusMessage.value = "任务失败";
+  }
+}
+
+watch(distillationModelOptions, normalizeDistillationModelSelection, { immediate: true });
+
+onBeforeUnmount(() => {
+  distillationSequence += 1;
 });
 </script>
 
@@ -88,8 +464,8 @@ const activeDebugTab = computed<DebugTab>(() => {
             <article v-if="activeDebugTab === 'knowledgeRecall'" class="surface-card debug-panel-card knowledge-recall-debug-card">
               <div class="section-header">
                 <div>
-                  <h3>知识库召回</h3>
-                  <p>只调试底层知识库召回，不调用大模型。适合检查融合策略、学习开关和证据可读性。</p>
+                  <h3>知识召回</h3>
+                  <p>只调试底层知识召回，不调用大模型。适合检查融合策略、学习开关和证据可读性。</p>
                 </div>
                 <div class="section-tags">
                   <span>{{ knowledgeConsole?.available ? "KnowledgeCore 可用" : "KnowledgeCore 未启用" }}</span>
@@ -173,12 +549,108 @@ const activeDebugTab = computed<DebugTab>(() => {
                   </ConfigFoldCard>
                 </section>
               </div>
-            </article>
+	            </article>
 
-            <article v-if="activeDebugTab === 'agentRetrieval'" class="surface-card agent-explore-card agent-explore-home debug-panel-card">
+	            <article v-if="activeDebugTab === 'knowledgeDistillation'" class="surface-card debug-panel-card knowledge-distillation-debug-card">
+	              <div class="section-header">
+	                <div>
+	                  <h3>知识蒸馏</h3>
+	                  <p>上传文件后生成核心提炼文档，结果可下载为 Markdown 或整包。</p>
+	                </div>
+	                <div class="section-tags">
+	                  <span>{{ distillationStep === "completed" ? "已完成" : distillationStep === "failed" ? "失败" : "调试模式" }}</span>
+	                  <span v-if="distillationModelLabel">{{ distillationModelLabel }}</span>
+	                  <span v-if="distillationRunId">Run {{ shortId(distillationRunId) }}</span>
+	                </div>
+	              </div>
+
+	              <form class="debug-parameter-panel distillation-debug-form" @submit.prevent="startDebugKnowledgeDistillation">
+	                <div class="full-row distillation-upload-field">
+	                  <span>上传文件</span>
+	                  <small>{{ distillationFileLabel }}</small>
+	                </div>
+	                <AgentModelOptionBar
+	                  v-model="distillationModelAlias"
+	                  class="full-row distillation-model-field"
+	                  label="模型"
+	                  placeholder="选择模型"
+	                  :options="distillationModelOptions"
+	                  empty-library-label="当前模型库为空，请前往配置模型。"
+	                />
+	                <div class="full-row distillation-debug-actions">
+	                  <BrowseSelectButton
+	                    kind="local-files"
+	                    button-type="primary"
+	                    button-text="选择文件"
+	                    button-class="distillation-file-picker-button"
+	                    :multiple="false"
+	                    plain
+	                    @select="handleDebugDistillationFileSelected"
+	                  />
+	                  <button
+	                    class="primary-action distillation-start-action"
+	                    type="submit"
+	                    :disabled="distillationBusy || !distillationFile || !distillationModelReady"
+	                  >
+	                    {{ distillationBusy ? "蒸馏中" : "开始蒸馏" }}
+	                  </button>
+	                </div>
+	              </form>
+
+	              <div class="distillation-debug-progress" :data-state="distillationStep">
+	                <div class="distillation-progress-header">
+	                  <span>{{ distillationStatusMessage }}</span>
+	                  <strong>{{ distillationProgressSummary }}</strong>
+	                </div>
+	                <div class="distillation-progress-segments" role="list" aria-label="知识蒸馏阶段进度">
+	                  <span
+	                    v-for="segment in distillationProgressSegments"
+	                    :key="segment.key"
+	                    role="listitem"
+	                    :data-state="segment.state"
+	                    :title="segment.label"
+	                    :aria-label="`${segment.label}：${segment.state}`"
+	                  ></span>
+	                </div>
+	              </div>
+
+	              <div class="distillation-debug-status-grid">
+	                <section>
+	                  <span>上传</span>
+	                  <strong>{{ distillationUploadPercent > 0 ? `${distillationUploadPercent}%` : "等待" }}</strong>
+	                </section>
+	                <section>
+	                  <span>解析</span>
+	                  <strong>{{ distillationJob?.status || "等待" }}</strong>
+	                  <small v-if="distillationJob?.stage">{{ distillationJob.stage }}</small>
+	                </section>
+	                <section>
+	                  <span>蒸馏</span>
+	                  <strong>{{ distillationRun?.status || "等待" }}</strong>
+	                  <small v-if="distillationCoreStage?.status">
+	                    核心阶段 {{ distillationCoreStage.status }}
+	                    <template v-if="distillationResultMarkdownLength"> · 结果 {{ distillationResultMarkdownLength }} 字</template>
+	                  </small>
+	                </section>
+	              </div>
+
+	              <UploadFileListCard
+	                v-if="distillationResultFiles.length"
+	                class="distillation-result-file-list"
+	                mode="download"
+	                title="蒸馏结果"
+	                :result-files="distillationResultFiles"
+	                :format-bytes="formatFileSize"
+	              />
+
+	              <div v-if="distillationError" class="debug-error-note">
+	                {{ distillationError }}
+	              </div>
+		            </article>
+		            <article v-if="activeDebugTab === 'agentRetrieval'" class="surface-card agent-explore-card agent-explore-home debug-panel-card">
             <div class="section-header">
               <div>
-                <h3>智能体检索</h3>
+                <h3>智能检索</h3>
                 <p>调试智能体如何规划工具调用、压缩上下文、打开证据并生成最终回答。</p>
               </div>
               <div class="section-actions">

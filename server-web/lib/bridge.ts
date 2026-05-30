@@ -9,7 +9,6 @@ import type {
   AgentSyncPublishRequest,
   BackgroundProcessStatus,
   ClientRuntimeStatus,
-  ClientMigrationCommandResponse,
   ConsoleAuditItem,
   ConsoleAuthSummary,
   ConsoleOidcConfig,
@@ -148,6 +147,8 @@ type Bridge = {
   }) => Promise<ServerPathBrowseResponse>;
   saveRuntimeMounts: (payload: Partial<RuntimeMountConfig>) => Promise<RuntimeMountsResponse>;
   reloadRuntimeMounts: (settings?: AgentSettings) => Promise<RuntimeMountReloadResponse>;
+  listRuntimeDependencies: () => Promise<Record<string, unknown>>;
+  downloadRuntimeDependency: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getServerConsoleState: () => Promise<ServerConsoleState>;
   getMaintenanceAgentConfig: () => Promise<{ path: string; config: MaintenanceAgentConfig }>;
   saveMaintenanceAgentConfig: (config: Partial<MaintenanceAgentConfig>) => Promise<{ config: MaintenanceAgentConfig }>;
@@ -250,10 +251,6 @@ type Bridge = {
   getJob: (jobId: string) => Promise<SplitJob | null>;
   getJobResult: (jobId: string) => Promise<SplitResult>;
   getDiscoveryClients: () => Promise<DiscoveryClientsResponse>;
-  requestClientMigration: (
-    clientId: string,
-    payload?: { reason?: string },
-  ) => Promise<ClientMigrationCommandResponse>;
   getKnowledgeConsole: () => Promise<KnowledgeConsoleState>;
   getKnowledgeConfigSchema: () => Promise<KnowledgeConfigSchema>;
   getKnowledgeSources: () => Promise<KnowledgeSourceState>;
@@ -792,6 +789,12 @@ const browserBridge: Bridge = {
       settings ? { settings } : {},
       { safetyConfirm: true },
     ),
+  listRuntimeDependencies: () => getJson<Record<string, unknown>>("/api/runtime/dependencies"),
+  downloadRuntimeDependency: (payload) =>
+    postJson<Record<string, unknown>>("/api/runtime/dependencies/download", {
+      ...payload,
+      confirm: true,
+    }, { safetyConfirm: true }),
   getServerConsoleState: () => getJson<ServerConsoleState>("/api/console/state"),
   getMaintenanceAgentConfig: () =>
     getJson<{ path: string; config: MaintenanceAgentConfig }>("/api/maintenance-agent/config"),
@@ -935,12 +938,6 @@ const browserBridge: Bridge = {
   getJobResult: (jobId) =>
     getJson<SplitResult>(`/api/jobs/${encodeURIComponent(jobId)}/result`),
   getDiscoveryClients: () => getJson<DiscoveryClientsResponse>("/api/discovery/clients"),
-  requestClientMigration: (clientId, payload = {}) =>
-    postJson<ClientMigrationCommandResponse>(
-      `/api/discovery/clients/${encodeURIComponent(clientId)}/migration`,
-      payload,
-      { safetyConfirm: true },
-    ),
   getKnowledgeConsole: () => getJson<KnowledgeConsoleState>("/api/knowledge/console"),
   getKnowledgeConfigSchema: () => getJson<KnowledgeConfigSchema>("/api/knowledge/config-schema"),
   getKnowledgeSources: () => getJson<KnowledgeSourceState>("/api/knowledge/sources"),

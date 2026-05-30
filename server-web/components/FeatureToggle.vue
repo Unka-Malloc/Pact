@@ -73,8 +73,8 @@ function toggle() {
 
 .feature-toggle-track {
   position: relative;
-  width: 36px;
-  height: 20px;
+  width: 40px;
+  height: 22px;
   border-radius: var(--radius-full);
   background: var(--border-strong);
   transition: background var(--dur-base) var(--ease-std);
@@ -86,8 +86,8 @@ function toggle() {
 
 .feature-toggle-knob {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   width: 16px;
   height: 16px;
   border-radius: var(--radius-full);
@@ -98,6 +98,6 @@ function toggle() {
 }
 
 .feature-toggle[data-enabled="true"] .feature-toggle-knob {
-  transform: translateX(16px);
+  transform: translateX(18px);
 }
 </style>

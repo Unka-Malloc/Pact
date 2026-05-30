@@ -5,6 +5,7 @@ import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import JsonConfigFileEditor from '../../components/JsonConfigFileEditor.vue';
 import OptionBar from '../../components/OptionBar.vue';
 import StatusPill from '../../components/StatusPill.vue';
+import AgentConfigInvocationToggle from './AgentConfigInvocationToggle.vue';
 const {
   addModelProvider,
   addableModelProviderOptionBarOptions,
@@ -31,7 +32,6 @@ const {
   modelEntryProbeStatusLabel,
   modelEntryProbeStatusTone,
   modelEntryStatusKey,
-  modelLibrarySaveProbeNotices,
   modelProbeResults,
   modelProviderDefinition,
   moduleAccessModeOptionBarOptions,
@@ -77,7 +77,6 @@ async function saveFunctionCallSchema(value: unknown) {
                 <div class="section-header">
                   <div>
                     <h3>模型库</h3>
-                    <p>新增需要使用的模型后填写授权，并可直接探测连通性。</p>
                   </div>
                 </div>
 
@@ -143,7 +142,6 @@ async function saveFunctionCallSchema(value: unknown) {
 
                     <div class="model-library-summary-row">
                       <div class="model-library-uid">
-                        <span>UID</span>
                         <code>{{ modelEntryStatusKey(entry) }}</code>
                       </div>
 
@@ -158,7 +156,7 @@ async function saveFunctionCallSchema(value: unknown) {
                           复制
                         </button>
                         <button
-                          class="inline-link"
+                          class="tool-button tool-button-ghost compact-action"
                           type="button"
                           :disabled="busyKey === `model-remove:${modelEntryStatusKey(entry)}` || modelEntryIsBound(entry)"
                           :title="modelEntryIsBound(entry) ? `已绑定到 ${modelEntryBindingSummary(entry)}，请先解除引用。` : ''"
@@ -174,21 +172,15 @@ async function saveFunctionCallSchema(value: unknown) {
                     </div>
 
                     <p v-if="modelProbeResults[modelEntryStatusKey(entry)]" class="model-probe-result" :data-ok="modelProbeResults[modelEntryStatusKey(entry)].ok ? 'true' : 'false'">
-                      {{ modelProbeResults[modelEntryStatusKey(entry)].message }}
-                      <small>
-                        {{ modelProbeResults[modelEntryStatusKey(entry)].latencyMs }}ms
-                        <template v-if="modelProbeResults[modelEntryStatusKey(entry)].statusCode">
-                          / HTTP {{ modelProbeResults[modelEntryStatusKey(entry)].statusCode }}
-                        </template>
-                      </small>
+                      <span class="model-probe-response">
+                        <strong v-if="modelProbeResults[modelEntryStatusKey(entry)].statusCode">
+                          HTTP {{ modelProbeResults[modelEntryStatusKey(entry)].statusCode }}
+                        </strong>
+                        <span v-if="modelProbeResults[modelEntryStatusKey(entry)].statusCode" class="model-probe-separator">/</span>
+                        <span>{{ modelProbeResults[modelEntryStatusKey(entry)].answerSnippet || modelProbeResults[modelEntryStatusKey(entry)].message }}</span>
+                      </span>
+                      <small>{{ modelProbeResults[modelEntryStatusKey(entry)].latencyMs }}ms</small>
                     </p>
-                    <p
-                      v-if="modelLibrarySaveProbeNotices[modelEntryStatusKey(entry)]"
-                      class="model-library-save-notice"
-                    >
-                      {{ modelLibrarySaveProbeNotices[modelEntryStatusKey(entry)] }}
-                    </p>
-
                     <div v-if="isModelLibraryCardExpanded(entry)" class="model-library-card-body">
                       <div class="form-grid compact-form-grid">
                         <label>
@@ -370,18 +362,19 @@ async function saveFunctionCallSchema(value: unknown) {
                 <div class="section-header">
                   <div>
                     <h3>调用框架</h3>
-                    <p>模型可输出 function call；服务端再按这里的 HTTP / 本地命令策略执行。命令使用 Node.js spawn，shell=false，跨平台。</p>
                   </div>
                 </div>
                 <section class="settings-sub-card invocation-remote-card">
                   <div class="settings-sub-card-header">
                     <h4>远程调用</h4>
                   </div>
-                  <div class="form-grid compact-form-grid">
-                    <BinaryCheckbox
+                  <div class="invocation-toggle-row">
+                    <AgentConfigInvocationToggle
                       v-model="settingsDraft.agentToolExecution.http.enabled"
-                      label="启用 HTTP 工具"
+                      label="开启 HTTP 调用"
                     />
+                  </div>
+                  <div class="form-grid compact-form-grid invocation-config-grid">
                     <label>
                       <span>HTTP 允许 Host（逗号分隔）</span>
                       <input
@@ -403,15 +396,13 @@ async function saveFunctionCallSchema(value: unknown) {
                   <div class="settings-sub-card-header">
                     <h4>本地调用</h4>
                   </div>
-                  <div class="form-grid compact-form-grid">
-                    <BinaryCheckbox
+                  <div class="invocation-toggle-row">
+                    <AgentConfigInvocationToggle
                       v-model="settingsDraft.agentToolExecution.local.enabled"
-                      label="启用本地命令工具"
+                      label="开启 CLI 调用"
                     />
-                    <BinaryCheckbox
-                      v-model="settingsDraft.agentToolExecution.local.allowDirectCommands"
-                      label="允许直接命令"
-                    />
+                  </div>
+                  <div class="form-grid compact-form-grid invocation-config-grid">
                     <label>
                       <span>命令 Timeout(ms)</span>
                       <input v-model.number="settingsDraft.agentToolExecution.local.timeoutMs" type="number" min="1000" step="1000" />

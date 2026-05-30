@@ -241,10 +241,10 @@ const serviceStatusLabel = computed(() =>
 );
 const pageRefreshBusy = ref(false);
 const pageRefreshTitle = computed(() =>
-  pageRefreshBusy.value ? `${msg.value.actions.refreshing}...` : msg.value.actions.refresh
+  pageRefreshBusy.value ? `${msg.value.actions.refreshing}...` : msg.value.actions.refreshPage
 );
 const pageRefreshAriaLabel = computed(() =>
-  pageRefreshBusy.value ? msg.value.actions.refreshing : msg.value.actions.refresh
+  pageRefreshBusy.value ? msg.value.actions.refreshing : msg.value.actions.refreshPage
 );
 
 async function waitForPageRefreshTasks(tasks: Promise<unknown>[]) {
@@ -266,7 +266,7 @@ async function refreshAdminRoute() {
       return;
     case 'jobs':
       await Promise.all([
-        refreshState({ silent: true }),
+        refreshState({ silent: true, forceDrafts: true }),
         refreshMaintenanceAgent({ silent: true }),
         refreshMonitorAlerts({ silent: true }),
       ]);
@@ -295,16 +295,12 @@ async function refreshAdminRoute() {
       await refreshState({ silent: true });
       return;
     case 'tools':
+    case 'toolList':
+    case 'toolStats':
       await refreshToolManagement();
       return;
     case 'modules':
       await reloadModules();
-      return;
-    case 'agentManagement':
-      await Promise.all([
-        refreshState({ silent: true }),
-        refreshAuthAdmin(),
-      ]);
       return;
     case 'agentPermissions':
       await Promise.all([
@@ -329,16 +325,23 @@ async function refreshAdminRoute() {
 async function refreshCurrentRouteDefaults() {
   switch (activeRouteView.value) {
     case 'dashboard':
+      await refreshDashboardAlertsSnapshot({ silent: false });
+      return;
+    case 'approval':
       await Promise.all([
-        refreshDashboardAlertsSnapshot({ silent: false }),
         refreshMcpAuthorizationRequests(),
+        refreshKnowledgeConflicts(),
       ]);
       return;
     case 'feed':
       await refreshState({ silent: true });
       return;
     case 'sources':
-      await refreshKnowledgeSources();
+      await Promise.all([
+        refreshKnowledgeSources(),
+        refreshClientRuntimeStatus({ silent: true }),
+        refreshState({ silent: true }),
+      ]);
       return;
     case 'workspaces':
       await refreshAuthState();
@@ -346,10 +349,6 @@ async function refreshCurrentRouteDefaults() {
     case 'knowledge':
       if (activeRouteKnowledgeTab.value === 'wordCloud') {
         await refreshWordCloud();
-        return;
-      }
-      if (activeRouteKnowledgeTab.value === 'conflicts') {
-        await refreshKnowledgeConflicts();
         return;
       }
       if (activeRouteKnowledgeTab.value === 'maintenance') {
@@ -396,8 +395,9 @@ const localizedViewTitle = computed(() => {
   if (activeRouteView.value === 'admin') {
     switch (activeRouteAdminView.value) {
       case 'agentPermissions': return m.nav.permissionGroups;
-      case 'agentManagement': return m.nav.agentManagement;
-      case 'tools': return m.nav.agentTools;
+      case 'tools': return m.nav.toolList;
+      case 'toolList': return m.nav.toolList;
+      case 'toolStats': return m.nav.toolStats;
       case 'agentConfig': return m.nav.agentConfig;
       case 'contextManagement': return m.nav.contextManagement;
       case 'maintenanceAgent': return m.nav.maintenanceAgent;
@@ -405,6 +405,7 @@ const localizedViewTitle = computed(() => {
       case 'jobs': return m.nav.jobs;
       case 'logs': return m.nav.logs;
       case 'opsMonitor': return m.nav.opsMonitor;
+      case 'runtimeDownloads': return m.nav.runtimeDownloads;
       case 'productionHealth': return m.nav.productionHealth;
       case 'modules': return m.title.modules;
       case 'storage': return m.title.storage;
@@ -414,6 +415,7 @@ const localizedViewTitle = computed(() => {
   switch (activeRouteView.value) {
     case 'dashboard': return m.nav.dashboard;
     case 'feed': return m.nav.feed;
+    case 'approval': return m.nav.approvalFlow;
     case 'sources': return m.nav.sources;
     case 'knowledge': return m.nav.knowledge;
     case 'workspaces': return m.nav.workspaces;
@@ -435,6 +437,7 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
   switch (tab.id) {
     case 'knowledgeRecall': return msg.value.nav.knowledgeRecall;
     case 'agentRetrieval': return msg.value.nav.agentRetrieval;
+    case 'knowledgeDistillation': return msg.value.nav.knowledgeDistillation;
     default: return tab.label;
   }
 }
@@ -483,6 +486,24 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
         </button>
         <button
           class="side-link"
+          :class="{ active: activeRouteView === 'approval' }"
+          type="button"
+          @click="switchView('approval')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          {{ msg.nav.approvalFlow }}
+        </button>
+        <button
+          class="side-link"
+          :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentPermissions' }"
+          type="button"
+          @click="openAdmin('agentPermissions')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="side-link-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>
+          {{ msg.nav.permissionGroups }}
+        </button>
+        <button
+          class="side-link"
           :class="{ active: activeRouteView === 'sources' }"
           type="button"
           @click="switchView('sources')"
@@ -494,30 +515,12 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
         <section class="side-nav-section" :aria-label="msg.nav.teamPanel">
           <p class="side-nav-section-title">{{ msg.nav.teamPanel }}</p>
           <button
-            v-if="hasFeature('agent-management')"
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentPermissions' }"
-            type="button"
-            @click="openAdmin('agentPermissions')"
-          >
-            {{ msg.nav.permissionGroups }}
-          </button>
-          <button
             class="side-link side-link-subtle"
             :class="{ active: activeRouteView === 'workspaces' }"
             type="button"
             @click="switchView('workspaces')"
           >
             {{ msg.nav.workspaces }}
-          </button>
-          <button
-            v-if="hasFeature('agent-management')"
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'agentManagement' }"
-            type="button"
-            @click="openAdmin('agentManagement')"
-          >
-            {{ msg.nav.agentManagement }}
           </button>
           <button
             class="side-link side-link-subtle"
@@ -540,20 +543,6 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
             @click="openKnowledgeTab(tab.id)"
           >
             {{ localizedKnowledgeTabLabel(tab) }}
-          </button>
-        </section>
-
-        <section v-if="visibleDebugTabs.length > 0" class="side-nav-section" :aria-label="msg.nav.debugPanel">
-          <p class="side-nav-section-title">{{ msg.nav.debugPanel }}</p>
-          <button
-            v-for="tab in visibleDebugTabs"
-            :key="tab.id"
-            class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'debug' && activeRouteDebugTab === tab.id }"
-            type="button"
-            @click="openDebugTab(tab.id)"
-          >
-            {{ localizedDebugTabLabel(tab) }}
           </button>
         </section>
 
@@ -591,11 +580,19 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
           <p class="side-nav-section-title">{{ msg.nav.skillHub }}</p>
           <button
             class="side-link side-link-subtle"
-            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'tools' }"
+            :class="{ active: activeRouteView === 'admin' && (activeRouteAdminView === 'tools' || activeRouteAdminView === 'toolList') }"
             type="button"
-            @click="openAdmin('tools')"
+            @click="openAdmin('toolList')"
           >
-            {{ msg.nav.agentTools }}
+            {{ msg.nav.toolList }}
+          </button>
+          <button
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'toolStats' }"
+            type="button"
+            @click="openAdmin('toolStats')"
+          >
+            {{ msg.nav.toolStats }}
           </button>
         </section>
 
@@ -626,6 +623,14 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
             {{ msg.nav.opsMonitor }}
           </button>
           <button
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'runtimeDownloads' }"
+            type="button"
+            @click="openAdmin('runtimeDownloads')"
+          >
+            {{ msg.nav.runtimeDownloads }}
+          </button>
+          <button
             v-if="hasFeature('maintenance-agent-runbooks')"
             class="side-link side-link-subtle"
             :class="{ active: activeRouteView === 'admin' && activeRouteAdminView === 'maintenanceAgent' }"
@@ -649,6 +654,20 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
             @click="openAdmin('logs')"
           >
             {{ msg.nav.logs }}
+          </button>
+        </section>
+
+        <section v-if="visibleDebugTabs.length > 0" class="side-nav-section" :aria-label="msg.nav.debugPanel">
+          <p class="side-nav-section-title">{{ msg.nav.debugPanel }}</p>
+          <button
+            v-for="tab in visibleDebugTabs"
+            :key="tab.id"
+            class="side-link side-link-subtle"
+            :class="{ active: activeRouteView === 'debug' && activeRouteDebugTab === tab.id }"
+            type="button"
+            @click="openDebugTab(tab.id)"
+          >
+            {{ localizedDebugTabLabel(tab) }}
           </button>
         </section>
 
@@ -1004,12 +1023,6 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
           </div>
 
           <template v-if="canAdminAuth">
-            <div class="drawer-actions">
-              <button class="tool-button tool-button-ghost" type="button" @click="refreshAuthAdmin">
-                刷新
-              </button>
-            </div>
-
             <section class="module-panel">
               <div class="module-panel-heading">
                 <strong>控制台用户</strong>
@@ -1234,18 +1247,7 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
         <section v-else-if="drawerTab === 'syncDirectories' && hasFeature('knowledge-core')" class="drawer-panel">
           <div class="panel-header">
             <h4>目录管理</h4>
-            <p>填写服务端可访问的本地目录。目录变化后会自动整理并更新知识库，也可以手动刷新。</p>
-          </div>
-
-          <div class="drawer-actions">
-            <button
-              class="tool-button"
-              type="button"
-              :disabled="busyKey === 'knowledge:sources'"
-              @click="refreshKnowledgeSources"
-            >
-              {{ busyKey === "knowledge:sources" ? "刷新中" : "刷新状态" }}
-            </button>
+            <p>填写服务端可访问的本地目录。目录变化后会自动整理并更新知识库，也可以手动同步。</p>
           </div>
 
           <form class="knowledge-source-form" @submit.prevent="addKnowledgeSource">
@@ -1375,7 +1377,7 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
                   :disabled="busyKey === `knowledge:source:refresh:${source.sourceId}`"
                   @click="refreshKnowledgeSource(source)"
                 >
-                  手动刷新
+                  同步目录
                 </button>
                 <button
                   class="tool-button tool-button-ghost"
@@ -1424,11 +1426,13 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
             <span v-if="selectedEvidenceId">{{ selectedEvidenceId }}</span>
           </div>
           <button
-            class="tool-button tool-button-ghost compact-action"
+            class="dialog-close-button"
             type="button"
+            aria-label="关闭"
+            title="关闭"
             @click="closeAgentEvidencePreview"
           >
-            关闭
+            ×
           </button>
         </div>
 
@@ -1479,9 +1483,10 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
             <p>选择服务端可访问的{{ pathPickerModeLabel(pathPicker.mode) }}路径。</p>
           </div>
           <button
-            class="path-picker-close-button"
+            class="path-picker-close-button dialog-close-button"
             type="button"
             aria-label="关闭"
+            title="关闭"
             @click="closeServerPathPicker"
           >
             ×
@@ -1511,7 +1516,7 @@ function localizedDebugTabLabel(tab: { id: string; label: string }) {
             上一级
           </button>
           <button class="tool-button tool-button-ghost compact-action" type="button" @click="refreshServerPathBrowser()">
-            刷新
+            重载目录
           </button>
           <BinaryCheckbox
             v-model="pathPicker.includeHidden"

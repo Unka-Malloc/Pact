@@ -6,6 +6,7 @@ import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import OptionBar from '../components/OptionBar.vue';
 import StatusPill from '../components/StatusPill.vue';
+import SplitToggleCard from '../components/SplitToggleCard.vue';
 import WorkspaceFileTree from '../components/WorkspaceFileTree.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import type { HistorySessionPanelItem } from '../types/app';
@@ -81,6 +82,7 @@ interface WsSession {
   eventCount: number;
   lastEventId: string;
   appendOnly: boolean;
+  createdAt: string;
   updatedAt: string;
   workspace?: { workspaceId: string; title: string; currentGeneration: number };
   lastEvent?: WsSessionEvent | null;
@@ -232,6 +234,18 @@ const workspaceOptions = computed(() =>
   workspaces.value.map(w => ({ value: w.workspaceId, label: w.title || w.workspaceId.slice(0, 12) }))
 );
 
+function sessionLatestTimestamp(session: WsSession) {
+  return String(session.lastEvent?.createdAt || session.updatedAt || session.createdAt || '');
+}
+
+const orderedSessions = computed(() =>
+  [...sessions.value].sort((left, right) => {
+    const timeCompare = sessionLatestTimestamp(right).localeCompare(sessionLatestTimestamp(left));
+    if (timeCompare !== 0) return timeCompare;
+    return String(right.sessionId || '').localeCompare(String(left.sessionId || ''));
+  })
+);
+
 const cloudDriveConnectionOptions = computed(() => {
   const connections = Array.isArray(cloudDriveData.value?.connections) ? cloudDriveData.value.connections : [];
   return connections.map((drive: any) => ({
@@ -285,14 +299,14 @@ function cloudDriveExposurePayload() {
 }
 
 const sessionItems = computed<HistorySessionPanelItem[]>(() =>
-  sessions.value.map(session => ({
+  orderedSessions.value.map(session => ({
     id: session.sessionId,
     title: session.title || session.sessionId.slice(0, 12),
     meta: [
       session.workspace?.title || session.workspaceId.slice(0, 12),
       `${session.eventCount || 0} 事件`,
       session.parentSessionId ? `分支 ${session.branchIndex || 1}` : '主线',
-      formatCompactDate(session.updatedAt)
+      formatCompactDate(sessionLatestTimestamp(session))
     ].filter(Boolean).join(' · '),
     preview: session.lastEvent?.summary || session.objective || '暂无会话事件',
     active: selectedSessionId.value === session.sessionId,
@@ -985,7 +999,6 @@ load();
     <div class="ws-toolbar">
       <h2 class="ws-toolbar-title">智能体工作空间</h2>
       <div class="ws-toolbar-actions">
-        <button class="tool-button tool-button-ghost" type="button" :disabled="!!busyKey" @click="load">刷新</button>
         <button class="tool-button" type="button" @click="panel = 'create'">新建工作空间</button>
       </div>
     </div>
@@ -1009,54 +1022,50 @@ load();
           <strong>暂无工作空间</strong>
           <span>点击"新建工作空间"创建第一个工作空间。</span>
         </div>
-        <article
+        <SplitToggleCard
           v-for="ws in workspaces"
           :key="ws.workspaceId"
+          as="article"
           class="ws-card"
           :class="{ selected: selectedId === ws.workspaceId, expanded: isWorkspaceExpanded(ws) }"
-          @click="toggleWorkspaceCard(ws)"
+          :expanded="isWorkspaceExpanded(ws)"
+          :expanded-label="`收起 ${ws.title || ws.workspaceId.slice(0, 12)} 工作空间详情`"
+          :collapsed-label="`展开 ${ws.title || ws.workspaceId.slice(0, 12)} 工作空间详情`"
+          @toggle="toggleWorkspaceCard(ws)"
         >
-          <div class="ws-card-head">
-            <div class="ws-card-title">
-              <strong>{{ ws.title || ws.workspaceId.slice(0, 12) }}</strong>
-              <span v-if="ws.parentWorkspaceId" class="ws-inherited-badge">↳ 继承</span>
+          <template #summary>
+            <div class="ws-card-head">
+              <div class="ws-card-title">
+                <strong>{{ ws.title || ws.workspaceId.slice(0, 12) }}</strong>
+                <span v-if="ws.parentWorkspaceId" class="ws-inherited-badge">↳ 继承</span>
+              </div>
+              <div class="ws-card-head-actions">
+                <StatusPill :tone="statusTone(ws.status)" :label="ws.status" />
+              </div>
             </div>
-            <div class="ws-card-head-actions">
-              <StatusPill :tone="statusTone(ws.status)" :label="ws.status" />
-              <button
-                class="ws-expand-button"
-                type="button"
-                :aria-label="isWorkspaceExpanded(ws) ? '收起工作空间详情' : '展开工作空间详情'"
-                :aria-expanded="isWorkspaceExpanded(ws)"
-                @click.stop="toggleWorkspaceCard(ws)"
-              >
-                {{ isWorkspaceExpanded(ws) ? '⌃' : '⌄' }}
-              </button>
+            <p v-if="ws.objective" class="ws-card-obj">{{ ws.objective }}</p>
+            <div class="ws-card-meta">
+              <span>Gen {{ ws.currentGeneration }}</span>
+              <span>{{ ws.ownedSourceIds.length }} 个知识源</span>
+              <span>{{ ws.summary?.sessionCount ?? 0 }} 个会话</span>
+              <span v-if="ws.accessibleWorkspaceIds.length">+ {{ ws.accessibleWorkspaceIds.length }} 共享</span>
+              <span>{{ formatCompactDate(ws.updatedAt) }}</span>
             </div>
-          </div>
-          <p v-if="ws.objective" class="ws-card-obj">{{ ws.objective }}</p>
-          <div class="ws-card-meta">
-            <span>Gen {{ ws.currentGeneration }}</span>
-            <span>{{ ws.ownedSourceIds.length }} 个知识源</span>
-            <span>{{ ws.summary?.sessionCount ?? 0 }} 个会话</span>
-            <span v-if="ws.accessibleWorkspaceIds.length">+ {{ ws.accessibleWorkspaceIds.length }} 共享</span>
-            <span>{{ formatCompactDate(ws.updatedAt) }}</span>
-          </div>
-          <div class="ws-card-actions">
-            <button class="table-action" type="button" @click.stop="openProfile(ws)">配置 Profile</button>
-            <button class="table-action" type="button" @click.stop="openParent(ws)">设置继承</button>
-            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openLocalDir()">本机目录</button>
-            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCloudDrive()">云盘</button>
-            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCodespace()">代码库</button>
-            <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; panel = 'share'; shareForm.action = 'share'">共享</button>
-          </div>
+            <div class="ws-card-actions">
+              <button class="table-action" type="button" @click.stop="openProfile(ws)">配置 Profile</button>
+              <button class="table-action" type="button" @click.stop="openParent(ws)">设置继承</button>
+              <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openLocalDir()">本机目录</button>
+              <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCloudDrive()">云盘</button>
+              <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; openCodespace()">代码库</button>
+              <button class="table-action" type="button" @click.stop="selectedId = ws.workspaceId; panel = 'share'; shareForm.action = 'share'">共享</button>
+            </div>
+          </template>
           <div
-            v-if="isWorkspaceExpanded(ws)"
             :id="workspaceExpansionSlotId(ws)"
             class="ws-card-expanded-slot"
             @click.stop
           ></div>
-        </article>
+        </SplitToggleCard>
       </div>
 
       <!-- Detail column -->
@@ -1485,11 +1494,10 @@ load();
             </ConfigFoldCard>
 
             <ConfigFoldCard title="本机目录 mount（v0.0.1）">
-              <div class="checkpoint-toolbar">
-                <div>
-                  <strong>{{ localDirMountData?.count ?? 0 }} 个受控目录</strong>
-                  <span v-if="localDirMountData?.configPath">配置：{{ localDirMountData.configPath }}</span>
-                </div>
+	              <div class="checkpoint-toolbar">
+	                <div>
+	                  <strong>{{ localDirMountData?.count ?? 0 }} 个受控目录</strong>
+	                </div>
                 <button class="table-action" type="button" :disabled="!!busyKey" @click="openLocalDir">连接目录</button>
               </div>
               <div v-if="localDirMountData?.mounts?.length" class="ws-id-list" style="margin-top: var(--space-3);">
@@ -1506,11 +1514,10 @@ load();
             </ConfigFoldCard>
 
             <ConfigFoldCard title="云盘 Cloud Drive（v0.0.1）">
-              <div class="checkpoint-toolbar">
-                <div>
-                  <strong>{{ cloudDriveData?.connectedProviderCount ?? 0 }} / {{ cloudDriveData?.providerCount ?? 0 }} 个 provider 已连接</strong>
-                  <span v-if="cloudDriveData?.configPath">配置：{{ cloudDriveData.configPath }}</span>
-                </div>
+	              <div class="checkpoint-toolbar">
+	                <div>
+	                  <strong>{{ cloudDriveData?.connectedProviderCount ?? 0 }} / {{ cloudDriveData?.providerCount ?? 0 }} 个 provider 已连接</strong>
+	                </div>
                 <button class="table-action" type="button" :disabled="!!busyKey" @click="openCloudDrive">打开工作台</button>
               </div>
               <div v-if="cloudDriveData?.connections?.length" class="ws-id-list" style="margin-top: var(--space-3);">
@@ -1524,11 +1531,10 @@ load();
             </ConfigFoldCard>
 
             <ConfigFoldCard title="代码库 Codespace（v0.0.1）">
-              <div class="checkpoint-toolbar">
-                <div>
-                  <strong>{{ codespaceData?.enabledProviderCount ?? 0 }} / {{ codespaceData?.providerCount ?? 0 }} 个 provider 可用</strong>
-                  <span v-if="codespaceData?.configPath">配置：{{ codespaceData.configPath }}</span>
-                </div>
+	              <div class="checkpoint-toolbar">
+	                <div>
+	                  <strong>{{ codespaceData?.enabledProviderCount ?? 0 }} / {{ codespaceData?.providerCount ?? 0 }} 个 provider 可用</strong>
+	                </div>
                 <button class="table-action" type="button" :disabled="!!busyKey" @click="openCodespace">打开工作台</button>
               </div>
               <div v-if="codespaceData?.providers" class="ws-id-list" style="margin-top: var(--space-3);">
@@ -1682,37 +1688,49 @@ load();
 }
 .ws-layout.ws-layout-expanded-cards { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 900px) { .ws-layout { grid-template-columns: 1fr; } }
-.ws-list  { display: flex; flex-direction: column; gap: var(--space-2); overflow: auto; }
+.ws-list  { display: flex; flex-direction: column; gap: 0; overflow: auto; }
 .ws-detail { display: flex; flex-direction: column; gap: var(--space-3); overflow: auto; }
 .ws-layout.ws-layout-expanded-cards .ws-list { overflow: visible; }
 .ws-layout.ws-layout-expanded-cards .ws-detail { min-height: 0; overflow: visible; }
 
 .ws-card {
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-m);
-  padding: var(--space-3); background: var(--bg-surface); cursor: pointer;
+  --split-toggle-card-radius: var(--radius-m);
+  --split-toggle-card-bg: var(--bg-surface);
+  --split-toggle-card-open-bg: var(--accent-surface);
+  --split-toggle-card-open-border-color: var(--accent);
+  --split-toggle-card-padding: var(--space-3);
+  --split-toggle-card-main-gap: var(--space-1);
+  --split-toggle-card-body-gap: var(--space-3);
+  --split-toggle-card-toggle-width: 58px;
+  --split-toggle-card-toggle-padding: 24px 0;
+  --split-toggle-card-toggle-hover-color: var(--accent);
+  --split-toggle-card-focus-color: var(--accent);
+  position: relative;
   transition: border-color 0.15s, background-color 0.15s;
 }
-.ws-card:hover { border-color: var(--border-accent); }
-.ws-card.selected { border-color: var(--accent); background: var(--accent-surface); }
-.ws-card.expanded { border-color: var(--accent); background: var(--accent-surface); }
+.ws-card + .ws-card { margin-top: -1px; }
+.ws-card:not(:first-of-type) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.ws-card:not(:last-of-type) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ws-card:hover { --split-toggle-card-border-color: var(--border-accent); }
+.ws-card.selected {
+  --split-toggle-card-border-color: var(--accent);
+  --split-toggle-card-bg: var(--accent-surface);
+  z-index: 1;
+}
+.ws-card.expanded {
+  --split-toggle-card-open-border-color: var(--accent);
+  --split-toggle-card-open-bg: var(--accent-surface);
+  z-index: 2;
+}
 .ws-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .ws-card-title { display: flex; align-items: center; gap: var(--space-2); }
 .ws-card-head-actions { display: flex; align-items: center; gap: var(--space-2); }
-.ws-expand-button {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 30px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-s);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font-size: 1rem;
-  line-height: 1;
-}
-.ws-expand-button:hover { border-color: var(--accent); color: var(--accent); }
 .ws-inherited-badge {
   font-size: 0.7rem; color: var(--info); border: 1px solid var(--info);
   padding: 1px 6px; border-radius: 4px;
@@ -1720,10 +1738,9 @@ load();
 .ws-card-obj { font-size: 0.8rem; color: var(--text-secondary); margin: var(--space-1) 0 0; }
 .ws-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: 0.75rem; color: var(--text-secondary); margin-top: var(--space-1); }
 .ws-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.ws-card-expanded-slot { margin-top: var(--space-3); }
+.ws-card-expanded-slot { margin-top: 0; }
 .ws-card-expanded {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-3);
+  padding-top: 0;
   cursor: default;
 }
 .workspace-detail-body {

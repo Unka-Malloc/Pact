@@ -146,26 +146,35 @@ const modelLibraryProviderDefinitions: Array<{
   },
 ];
 
-const intelligentModuleDefinitions = [
+type IntelligentModuleDefinition = {
+  id: string;
+  label: string;
+  description: string;
+  alertRequired?: boolean;
+};
+
+const intelligentModuleDefinitions: IntelligentModuleDefinition[] = [
   {
     id: "knowledgeTaxonomy",
-    label: "事务归类",
-    description: "邮件和文档进入图谱前的领域、关键词和意图抽象。",
+    label: "文档分类智能体",
+    description: "邮件和文档进入图谱前的领域、关键词和意图分类。",
+    alertRequired: false,
   },
   {
     id: "graphInsight",
-    label: "知识图谱增强",
+    label: "知识图谱智能体",
     description: "节点聚合、关系解释和高频实体抽象。",
   },
   {
     id: "timelineDistillation",
-    label: "时间线提炼",
+    label: "时序提炼智能体",
     description: "围绕具体事务提炼阶段、事件和关键节点。",
   },
   {
     id: "agentTools",
     label: "智能体工具调用",
-    description: "智能体使用服务端工具前的意图理解和结果整理。",
+    description: "智能体可使用服务端工具的权限范围，不需要单独绑定智能体。",
+    alertRequired: false,
   },
   {
     id: "localOcr",
@@ -298,10 +307,10 @@ const emptySettings: AgentSettings = {
   moduleModelAssignments: {},
   moduleAgentProfiles: {},
   moduleIntelligence: {
-    knowledgeTaxonomy: true,
+    knowledgeTaxonomy: false,
     graphInsight: true,
     timelineDistillation: true,
-    agentTools: true,
+    agentTools: false,
     localOcr: false,
   },
   openRouterApiKey: "",
@@ -443,14 +452,14 @@ const moduleGroupDefinitions = [
 ];
 
 const debugTabs: Array<{ id: DebugTab; label: string }> = [
-  { id: "knowledgeRecall", label: "知识库召回" },
-  { id: "agentRetrieval", label: "智能体检索" },
+  { id: "knowledgeDistillation", label: "知识蒸馏" },
+  { id: "knowledgeRecall", label: "知识召回" },
+  { id: "agentRetrieval", label: "智能检索" },
 ];
 
 const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
   { id: "management", label: "知识管理" },
-  { id: "wordCloud", label: "词云" },
-  { id: "conflicts", label: "冲突审核" },
+  { id: "wordCloud", label: "词汇库" },
   { id: "maintenance", label: "知识库配置" },
 ];
 
@@ -479,28 +488,34 @@ const visibleDebugTabs = computed(() =>
     if (tab.id === "agentRetrieval") {
       return hasFeature("agent-exploration");
     }
+    if (tab.id === "knowledgeDistillation") {
+      return hasFeature("knowledge-distillation");
+    }
     return true;
   })
 );
 const adminViewTitleMap: Partial<Record<AdminView, string>> = {
-  jobs: "工作队列",
+  jobs: "任务队列",
   logs: "日志记录",
-  tools: "智能体工具",
-  agentManagement: "智能体管理",
-  agentPermissions: "智能体权限",
+  tools: "工具列表",
+  toolList: "工具列表",
+  toolStats: "工具统计",
+  agentPermissions: "权限组",
   agentConfig: "智能体仓库",
   contextManagement: "上下文管理",
   maintenanceAgent: "智能巡检",
   opsMonitor: "运维监控",
-  clients: "设备管理",
+  runtimeDownloads: "运行时下载",
+  clients: "客户端",
   storage: "系统概览",
   modules: "接入模块",
 };
 const viewTitleMap: Record<AppView, string> = {
   dashboard: "工作台",
   feed: "信息流",
+  approval: "审批流",
   sources: "数据源",
-  knowledge: "知识库",
+  knowledge: "团队资产",
   workspaces: "协作空间",
   debug: "调试面板",
   admin: "管理",
@@ -543,7 +558,6 @@ const codexOAuthStatus = ref<CodexOAuthStatus | null>(null);
 const codexOAuthLogin = ref<CodexOAuthLogin | null>(null);
 const selectedModelProvider = ref<CloudProvider>("deepseek");
 const modelProbeResults = ref<Record<string, ModelProbeResponse>>({});
-const modelLibrarySaveProbeNotices = ref<Record<string, string>>({});
 const modelLibraryExpandedCards = ref<Record<string, boolean>>({});
 const moduleAgentCandidateDrafts = ref<Record<string, string>>({});
 const agentModelOptionLabelCache = ref<Record<string, string>>({});
@@ -585,7 +599,6 @@ const adminView = ref<AdminView>("jobs");
 const highlightedConfigTarget = ref("");
 const clientSearchQuery = ref("");
 const clientStateFilter = ref<ClientMigrationState | "all">("all");
-const clientMigrationMessages = ref<Record<string, string>>({});
 const editingMountPaths = ref<Record<string, boolean>>({});
 const newGrantLabel = ref("默认智能体");
 const newGrantScopes = ref<string[]>(["knowledge:read"]);
@@ -785,24 +798,24 @@ const knowledgeLogColumnLabels: Record<KnowledgeLogColumnKey, string> = {
   error: "错误",
 };
 const knowledgeLogColumnMinWidths: Record<KnowledgeLogColumnKey, number> = {
-  kind: 82,
+  kind: 120,
   target: 220,
-  status: 96,
+  status: 112,
   stage: 150,
-  progress: 78,
+  progress: 80,
   time: 122,
   detail: 220,
   error: 180,
 };
-const knowledgeLogColumnWidths = ref<Record<KnowledgeLogColumnKey, string | number>>({
-  kind: "7%",
-  target: "19%",
-  status: "7%",
-  stage: "13%",
-  progress: "5%",
-  time: "8%",
-  detail: "22%",
-  error: "19%",
+const knowledgeLogColumnWidths = ref<Record<KnowledgeLogColumnKey, number>>({
+  kind: 120,
+  target: 220,
+  status: 112,
+  stage: 150,
+  progress: 80,
+  time: 122,
+  detail: 220,
+  error: 180,
 });
 const knowledgeLogResizing = ref<{
   key: KnowledgeLogColumnKey;
@@ -842,6 +855,7 @@ const knowledgeIngestTargets = ref<Record<KnowledgeIngestTargetKind, boolean>>({
 });
 const knowledgeIngestExternalProvider = ref("dify");
 const knowledgeIngestExternalRefs = ref("");
+const knowledgeIngestExternalTargetLabels = ref<Record<string, string>>({});
 const knowledgeIngestTeamRefs = ref("");
 const knowledgeIngestUserRefs = ref("");
 const uploadTraceEvents = ref<ProtocolEvent[]>([]);
@@ -2278,8 +2292,8 @@ function collectModelEntryBindings(entry: AgentModelConfig): ModelEntryBinding[]
     addModelEntryBinding(bindings, {
       bindingId: "info-feed:form",
       category: "信息流",
-      label: "信息流总结",
-      detail: "当前信息流页面选用的总结智能体。",
+      label: "信息流智能体",
+      detail: "当前信息流页面选用的智能体。",
       source: "draft",
     });
   }
@@ -2615,23 +2629,18 @@ async function probeModelEntry(entry: AgentModelConfig) {
 async function probeModelLibraryBeforeSave() {
   const failures: Array<{ entry: AgentModelConfig; result: ModelProbeResponse }> = [];
   const nextResults: Record<string, ModelProbeResponse> = {};
-  const nextNotices = { ...modelLibrarySaveProbeNotices.value };
   for (const entry of visibleModelEntries.value) {
     const key = modelEntryStatusKey(entry);
     try {
       const result = await runModelEntryProbe(entry);
       nextResults[key] = result;
-      if (result.ok) {
-        nextNotices[key] = "最近一次保存前连通性检测已通过，智能体已返回可用回答。";
-      } else {
-        delete nextNotices[key];
+      if (!result.ok) {
         failures.push({ entry, result });
       }
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "模型探测失败。";
       const result = modelProbeFailureResult(entry, message);
       nextResults[key] = result;
-      delete nextNotices[key];
       failures.push({ entry, result });
     }
   }
@@ -2639,7 +2648,6 @@ async function probeModelLibraryBeforeSave() {
     ...modelProbeResults.value,
     ...nextResults,
   };
-  modelLibrarySaveProbeNotices.value = nextNotices;
   return failures;
 }
 
@@ -2696,6 +2704,9 @@ function modelProviderFromRef(refValue: string) {
 }
 
 function moduleNeedsIntelligence(moduleId: string) {
+  if (moduleModelRef(moduleId)) {
+    return true;
+  }
   return settingsDraft.value.moduleIntelligence?.[moduleId] !== false;
 }
 
@@ -2774,6 +2785,10 @@ function setModuleModelRef(moduleId: string, refValue: string) {
     settingsDraft.value.moduleModelAssignments = nextAssignments;
     const group = ensureModuleAgentGroup(moduleId);
     group.primaryAgent = "";
+    const moduleDefinition = intelligentModuleDefinitions.find((item) => item.id === moduleId);
+    if (moduleDefinition?.alertRequired === false) {
+      setModuleNeedsIntelligence(moduleId, false);
+    }
     return;
   }
   const parsed = parseModelRef(refValue);
@@ -2787,6 +2802,7 @@ function setModuleModelRef(moduleId: string, refValue: string) {
   const group = ensureModuleAgentGroup(moduleId);
   group.primaryAgent = parsed.model;
   ensureModuleAgentProfile(moduleId, parsed.model, { role: "primary" });
+  setModuleNeedsIntelligence(moduleId, true);
   if (parsed.provider === "openai-chatgpt") {
     void ensureCodexOAuthReady(true);
   }
@@ -2990,13 +3006,13 @@ function knowledgeTabDisplayLabel(tab: { id: KnowledgeTab; label: string }) {
 function knowledgeConfigGroupDescription(groupId: string) {
   switch (groupId) {
     case "retrieval":
-      return "已接入搜索排序链路，控制关键词、向量、图片、图谱、反馈和分层索引的融合权重。";
+      return "";
     case "learning":
       return "已接入反馈学习闭环，控制检索 profile 的候选生成、评估、灰度和自动发布边界。";
     case "maintenance":
-      return "已接入维护健康检查和重建流程，控制重建批大小、索引过期判断和图片证据质量门槛。";
+      return "";
     case "embeddingModel":
-      return "已接入 embedding runtime，用于选择文本、图片和版本化重算索引的 provider。";
+      return "";
     default:
       return "服务端暴露的知识库配置组。";
   }
@@ -4003,7 +4019,7 @@ function wordCloudCorpusPathLabel(item: KnowledgeWordCloudCorpusPath) {
 const wordCloudCorpusPathSummary = computed(() =>
   wordCloudCorpusPaths.value.length
     ? `已绑定 ${wordCloudCorpusPaths.value.length} 个目录/文件`
-    : "未绑定路径时使用全库语料",
+    : "",
 );
 
 function setWordCloudDraftCorpusPaths() {
@@ -4402,7 +4418,7 @@ const selectedKnowledgeReviewFusionModel = computed(() => {
 });
 watchAgentSelectionReference(
   "info-feed-summary",
-  "信息流总结智能体",
+  "信息流智能体",
   () => infoFeedForm.value.modelAlias,
   () => selectedInfoFeedModel.value,
 );
@@ -4485,7 +4501,7 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
     agentSelectionAlert({
       alertId: "info-feed-summary-agent",
       category: "信息流",
-      title: "信息流总结智能体",
+      title: "信息流智能体",
       detail: "信息流最终报告需要一个可用智能体来融合原文检索、智能规划和附件结果。",
       value: infoFeedForm.value.modelAlias,
       options: infoFeedModelOptions.value,
@@ -4495,7 +4511,7 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
     agentSelectionAlert({
       alertId: "agent-explore-agent",
       category: "信息流",
-      title: "智能检索执行智能体",
+      title: "知识检索智能体",
       detail: "智能检索需要一个可用智能体来规划工具调用和打开证据。",
       value: agentExploreForm.value.modelAlias,
       options: agentExploreAgentOptions.value,
@@ -4516,7 +4532,7 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
       alertId: "knowledge-review-fusion-agent",
       category: "知识库",
       title: "知识融合智能体",
-      detail: "工作台审批流中的融合分析需要显式绑定一个可用智能体。",
+      detail: "知识融合分析需要显式绑定一个可用智能体，用于合并多路知识证据与结构化结果。",
       value: settingsDraft.value.agentExploreDefaults?.reviewFusionModelAlias || "",
       options: agentSelectorOptions.value,
       view: "admin",
@@ -4535,6 +4551,9 @@ const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
     const refValue = moduleModelRef(moduleDefinition.id);
     const option = agentModelAssignmentOptions.value.find((item) => item.ref === refValue);
     if (!refValue) {
+      if (moduleDefinition.alertRequired === false) {
+        continue;
+      }
       alerts.push({
         alertId: `module:${moduleDefinition.id}`,
         category: "模块模型分配",
@@ -4610,6 +4629,32 @@ function dashboardAlertInboxId(alertItem: DashboardAlert) {
   return `${alertItem.source}:${alertItem.alertId}`;
 }
 
+function shouldDropResolvedDashboardAlert(alertItem: DashboardAlert) {
+  if (alertItem.source !== "monitor") {
+    return false;
+  }
+  const alertId = String(alertItem.alertId || "");
+  const processIsHealthy = (role: string) => {
+    const processItem = backgroundProcesses.value.find((item: any) => item.role === role);
+    return processItem?.alive === true && ["running", "standby"].includes(String(processItem.status || ""));
+  };
+  if (alertId === "monitor.supervisor.stopped") {
+    return processIsHealthy("background-supervisor");
+  }
+  for (const role of ["background-supervisor", "system-inspection"]) {
+    if (alertId.startsWith(`monitor.process.${role}.`)) {
+      return processIsHealthy(role);
+    }
+  }
+  const demandManagedRoles = ["import-worker", "source-watcher", "maintenance-worker", "agent-worker"];
+  const role = demandManagedRoles.find((item) => alertId.startsWith(`monitor.process.${item}.`));
+  if (!role) {
+    return false;
+  }
+  const processItem = backgroundProcesses.value.find((item: any) => item.role === role);
+  return processItem?.desired === false;
+}
+
 function syncDashboardAlertInbox(liveAlerts: DashboardAlert[]) {
   const now = new Date().toISOString();
   const liveById = new Map<string, DashboardAlert>(
@@ -4627,6 +4672,9 @@ function syncDashboardAlertInbox(liveAlerts: DashboardAlert[]) {
       continue;
     }
     if (!liveById.has(alertId)) {
+      if (shouldDropResolvedDashboardAlert(previousAlert)) {
+        continue;
+      }
       nextInbox[alertId] = previousAlert.live === false
         ? previousAlert
         : {
@@ -6968,7 +7016,7 @@ async function runInfoFeedSummaryAgent(sequence = infoFeedRunSequence) {
         sessionId: run.agent?.workspaceId || run.runId,
         question: buildInfoFeedSummaryQuestion(run),
         systemPrompt:
-          "你是 Pact 信息流总结智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
+          "你是 Pact 信息流智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
         parameters: {
           ...agentExploreThinkingParameters(),
           temperature: summaryTemperature,
@@ -9669,7 +9717,7 @@ const knowledgeRecallDebugGridStyle = computed<Record<string, string>>(() => ({
 async function runKnowledgeRecallDebugBatch() {
   const query = knowledgeRecallDebugForm.value.query.trim();
   if (!query) {
-    error.value = "请输入知识库召回调试问题。";
+    error.value = "请输入知识召回调试问题。";
     return;
   }
   if (!canReadKnowledge.value) {
@@ -9701,7 +9749,7 @@ async function runKnowledgeRecallDebugBatch() {
         run.items = normalizeSearchResults(response);
         run.status = "completed";
       } catch (nextError) {
-        run.error = nextError instanceof Error ? nextError.message : "知识库召回失败。";
+        run.error = nextError instanceof Error ? nextError.message : "知识召回失败。";
         run.status = "failed";
       } finally {
         run.elapsedMs = Math.max(0, Math.round(performance.now() - started));
@@ -10655,23 +10703,66 @@ function splitKnowledgeIngestRefs(value: string) {
     .filter(Boolean);
 }
 
+function knowledgeIngestProviderLabel(provider: string) {
+  const normalized = provider.toLowerCase();
+  if (normalized === "ragflow") {
+    return "RAG Flow";
+  }
+  if (normalized === "dify") {
+    return "Dify";
+  }
+  return provider || "外部知识库";
+}
+
+function parseKnowledgeIngestExternalRef(ref: string) {
+  const separatorIndex = ref.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex === ref.length - 1) {
+    return {
+      provider: knowledgeIngestExternalProvider.value || "dify",
+      ref,
+    };
+  }
+  return {
+    provider: ref.slice(0, separatorIndex),
+    ref: ref.slice(separatorIndex + 1),
+  };
+}
+
 const selectedKnowledgeIngestTargets = computed<KnowledgeIngestTarget[]>(() => {
   const targets: KnowledgeIngestTarget[] = [];
   if (knowledgeIngestTargets.value.global) {
     targets.push({
       kind: "global",
-      label: "全局知识空间",
+      label: "Pact Native 知识库",
     });
   }
   if (knowledgeIngestTargets.value.external) {
-    const provider = knowledgeIngestExternalProvider.value || "dify";
-    const refs = splitKnowledgeIngestRefs(knowledgeIngestExternalRefs.value);
-    targets.push({
-      kind: "external",
-      label: `外部知识库 / ${provider === "ragflow" ? "RAGFlow" : "Dify"}`,
-      provider,
-      refs,
-    });
+    const refsByProvider = new Map<string, string[]>();
+    const labelsByProvider = new Map<string, string[]>();
+    for (const item of splitKnowledgeIngestRefs(knowledgeIngestExternalRefs.value)) {
+      const parsed = parseKnowledgeIngestExternalRef(item);
+      if (!parsed.ref) {
+        continue;
+      }
+      const refs = refsByProvider.get(parsed.provider) || [];
+      refs.push(parsed.ref);
+      refsByProvider.set(parsed.provider, refs);
+      const label = knowledgeIngestExternalTargetLabels.value[`${parsed.provider}:${parsed.ref}`];
+      if (label) {
+        const labels = labelsByProvider.get(parsed.provider) || [];
+        labels.push(label);
+        labelsByProvider.set(parsed.provider, labels);
+      }
+    }
+    for (const [provider, refs] of refsByProvider) {
+      const labels = labelsByProvider.get(provider) || [];
+      targets.push({
+        kind: "external",
+        label: `${knowledgeIngestProviderLabel(provider)}：${labels.length ? labels.join("、") : refs.join("、")}`,
+        provider,
+        refs,
+      });
+    }
   }
   if (knowledgeIngestTargets.value.team) {
     targets.push({
@@ -10811,7 +10902,7 @@ async function addKnowledgeSource() {
   const directoryPath = localSourceForm.value.directoryPath.trim();
   if (!directoryPath) {
     error.value = "请填写服务端本地路径。";
-    return;
+    return false;
   }
   setBusy("knowledge:sources:add");
   error.value = "";
@@ -10836,8 +10927,10 @@ async function addKnowledgeSource() {
       recursive: true,
       hydrationEnabled: true,
     };
+    return true;
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "添加目录失败。";
+    return false;
   } finally {
     clearAllBusy();
   }
@@ -10993,7 +11086,7 @@ function switchView(view: AppView) {
   }
   if (view === "admin") {
     void refreshAuthAdmin();
-    if (adminView.value === "tools" || adminView.value === "agentPermissions") {
+    if (["tools", "toolList", "toolStats", "agentPermissions"].includes(adminView.value)) {
       void refreshToolManagement({ silent: true });
     }
     if (adminView.value === "agentPermissions") {
@@ -11047,9 +11140,6 @@ function openKnowledgeTab(tab: KnowledgeTab) {
   if (tab === "wordCloud") {
     void refreshWordCloud();
   }
-  if (tab === "conflicts") {
-    void refreshKnowledgeConflicts();
-  }
   if (tab === "management" && knowledgeManagementPanel.value === "rules") {
     void refreshExpertRules();
   }
@@ -11091,15 +11181,12 @@ function openAdmin(tab: AdminView) {
   _appRouter?.push(`/admin/${adminSectionToSlug(tab)}`);
   closeSideNavOverlay();
   void refreshAuthAdmin();
-  if (tab === "tools" || tab === "agentPermissions") {
+  if (["tools", "toolList", "toolStats", "agentPermissions"].includes(tab)) {
     void refreshToolManagement().then(() => {
       if (tab === "agentPermissions") {
         ensureAgentPermissionGroupsDraft();
       }
     });
-  }
-  if (tab === "agentManagement") {
-    void refreshState({ silent: true });
   }
   if (tab === "contextManagement") {
     void refreshContextCompiler({ silent: true });
@@ -11124,12 +11211,12 @@ function openAdmin(tab: AdminView) {
 
 function isAdminViewEnabled(tab: AdminView) {
   switch (tab) {
-    case "agentManagement":
-      return hasFeature("agent-management");
     case "tools":
+    case "toolList":
+    case "toolStats":
       return hasFeature("agent-gateway") || hasFeature("agent-management");
     case "agentPermissions":
-      return hasFeature("agent-management");
+      return hasFeature("agent-management") || hasFeature("agent-gateway");
     case "agentConfig":
       return hasFeature("agent-gateway");
     case "contextManagement":
@@ -11422,32 +11509,7 @@ function importClients() {
 }
 
 function exportClients() {
-  alert("导出设备管理列表成功。");
-}
-
-async function requestClientMigration(client: NonNullable<ServerConsoleState["clients"]["items"][number]>) {
-  const clientId = String(client.clientId || "").trim();
-  if (!clientId) {
-    error.value = "缺少客户端 ID，无法发布迁移指令。";
-    return;
-  }
-
-  setBusy(`client:migration:${clientId}`);
-  error.value = "";
-  try {
-    const result = await bridge.requestClientMigration(clientId, {
-      reason: "console",
-    });
-    clientMigrationMessages.value = {
-      ...clientMigrationMessages.value,
-      [clientId]: `已发布迁移指令：${result.command.configVersion || "无版本号"} / ${formatCompactDate(result.command.requestedAt)}`,
-    };
-    await refreshState({ silent: true });
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "发布客户端迁移指令失败。";
-  } finally {
-    clearAllBusy();
-  }
+  alert("导出客户端列表成功。");
 }
 
 function parseTime(value?: string) {
@@ -11753,7 +11815,10 @@ function migrationTone(state: ClientMigrationState) {
 type ClientConnectionRow = NonNullable<ServerConsoleState["clients"]["items"][number]>;
 
 function clientConnectionMethodLabel(client: ClientConnectionRow) {
-  return String(client.connectionMethod || (client.connectionKind === "mcp-plugin" ? "MCP 插件连接" : "pact-client 封装"));
+  if (client.connectionKind === "mcp-plugin") {
+    return "MCP 服务";
+  }
+  return String(client.connectionMethod || "pact-client 封装");
 }
 
 function clientConnectionDetail(client: ClientConnectionRow) {
@@ -12611,7 +12676,7 @@ async function saveAgentPermissionSettings() {
     replaceSettingsDraftFromServer(saved);
   } catch (nextError) {
     error.value =
-      nextError instanceof Error ? nextError.message : "保存智能体权限组失败。";
+      nextError instanceof Error ? nextError.message : "保存权限组失败。";
   } finally {
     clearAllBusy();
   }
@@ -13378,13 +13443,6 @@ const clientRuntimeSummary = computed(() => clientRuntimeStatus.value?.summary |
   workspaceCount: 0,
   contextCount: 0,
 });
-const clientRuntimeCoolingPolicyText = computed(() => {
-  const policy = clientRuntimeStatus.value?.coolingPolicy || {};
-  const strategy = String(policy.strategy || "lru-lfu-v1");
-  const coldAfterMinutes = Math.round(Number(policy.coldAfterMs || 0) / 60000);
-  const maxWarmClients = Number(policy.maxWarmClients || 0);
-  return `${strategy} · 冷却阈值 ${coldAfterMinutes || "默认"} 分钟 · 保温客户端 ${maxWarmClients || "不限"}`;
-});
 const monitorAlertSummary = computed(() => monitorAlertState.value?.summary || {
   activeCount: 0,
   visibleCount: 0,
@@ -13565,7 +13623,7 @@ collectSystemStatusLogRows = () => {
     const status = row.lifecycleStatus || row.status;
     return {
       logId: `queue:${row.rowId}`,
-      kindLabel: "工作队列",
+      kindLabel: "任务队列",
       displayId: shortId(row.queueId || row.rowId),
       target: row.label || row.queueId,
       status,
@@ -14229,9 +14287,7 @@ onUnmounted(() => {
     clearRemovedTermsFromCloud, 
     clearServerEventTimer, 
     clearWordCloudCorpusPaths, 
-    clientMigrationMessages, 
     clientRuntimeCoolingLabel, 
-    clientRuntimeCoolingPolicyText, 
     clientRuntimeCoolingTone, 
     clientRuntimeHeatRows, 
     clientRuntimeHeatStyle, 
@@ -14527,6 +14583,7 @@ onUnmounted(() => {
     knowledgeConsole, 
     knowledgeIngestExternalProvider,
     knowledgeIngestExternalRefs,
+    knowledgeIngestExternalTargetLabels,
     knowledgeIngestTargetSummary,
     knowledgeIngestTargets,
     knowledgeIngestTargetValidationMessage,
@@ -14647,7 +14704,6 @@ onUnmounted(() => {
     modelEntryUidSet, 
     modelLibraryExpandedCards, 
     modelLibraryProviderDefinitions, 
-    modelLibrarySaveProbeNotices, 
     modelProbeFailureResult, 
     modelProbeResults, 
     modelProbeSettingsForEntry, 
@@ -14851,7 +14907,6 @@ onUnmounted(() => {
     replaceMountDraftFromServer, 
     replaceRulesDraftFromServer, 
     replaceSettingsDraftFromServer, 
-    requestClientMigration, 
     resetInfoFeedRunForContinuation, 
     resetKnowledgeAgentExplore, 
     resolveKnowledgeReview, 

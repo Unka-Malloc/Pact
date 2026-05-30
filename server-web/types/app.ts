@@ -19,23 +19,26 @@ export type DrawerTab =
 export type AppView =
   | "dashboard"
   | "feed"
+  | "approval"
   | "debug"
   | "sources"
   | "knowledge"
   | "workspaces"
   | "admin";
-export type DebugTab = "knowledgeRecall" | "agentRetrieval";
+export type DebugTab = "knowledgeRecall" | "agentRetrieval" | "knowledgeDistillation";
 export type RuleAuthoringMode = "chat" | "manual";
 export type AdminView =
   | "jobs"
   | "logs"
   | "tools"
-  | "agentManagement"
+  | "toolList"
+  | "toolStats"
   | "agentPermissions"
   | "agentConfig"
   | "contextManagement"
   | "maintenanceAgent"
   | "opsMonitor"
+  | "runtimeDownloads"
   | "productionHealth"
   | "clients"
   | "storage"

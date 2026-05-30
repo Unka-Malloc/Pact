@@ -206,7 +206,7 @@ function handleSelectKeydown(event: KeyboardEvent) {
   position: relative;
   display: grid;
   min-width: 0;
-  min-height: 40px;
+  min-height: var(--agent-option-height, 40px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -224,7 +224,7 @@ function handleSelectKeydown(event: KeyboardEvent) {
 .agent-option-select {
   width: 100%;
   min-width: 0;
-  min-height: 38px;
+  min-height: calc(var(--agent-option-height, 40px) - 2px);
   padding: 0 38px 0 12px;
   border: 0;
   border-radius: 7px;

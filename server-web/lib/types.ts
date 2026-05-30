@@ -1210,28 +1210,6 @@ export type DiscoveryClientsResponse = {
   items: DiscoveryClientRegistration[];
 };
 
-export type ClientMigrationCommandResponse = {
-  ok: boolean;
-  client: DiscoveryClientRegistration;
-  command: {
-    schemaVersion: number;
-    command: string;
-    clientId: string;
-    desiredServiceUrl: string;
-    configVersion: string;
-    serverId: string;
-    requestedAt: string;
-    reason: string;
-  };
-  event: {
-    id: string;
-    offset: number;
-    topic: string;
-    type: string;
-    publishedAt: string;
-  };
-};
-
 export type DiscoveryConfig = {
   serverId: string;
   serverLabel: string;

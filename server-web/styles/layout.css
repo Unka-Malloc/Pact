@@ -104,7 +104,7 @@
 .side-nav-footer {
   margin-top: auto;
   padding-top: 18px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 0;
 }
 
 .side-nav-section {
@@ -236,16 +236,30 @@
 }
 
 /* Icon-only variant: square, no text padding */
-.tool-button-icon {
+.tool-button.tool-button-icon {
+  --icon-button-size: 34px;
+  box-sizing: border-box;
+  flex: 0 0 var(--icon-button-size);
+  width: var(--icon-button-size);
+  min-width: var(--icon-button-size);
+  max-width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  min-height: var(--icon-button-size);
+  max-height: var(--icon-button-size);
+  aspect-ratio: 1 / 1;
   padding: 0 !important;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
-.tool-button-icon svg {
+
+.tool-button.tool-button-icon svg {
   display: block;
   flex-shrink: 0;
+}
+
+.tool-button.tool-button-icon .language-state-text {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
 }
 
 .language-state-text {

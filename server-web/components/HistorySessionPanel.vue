@@ -159,7 +159,7 @@ function runItemAction(item: HistorySessionPanelItem) {
   gap: var(--space-1);
   margin-top: var(--space-1-5);
   overflow-y: auto;
-  padding: 0 var(--space-1) var(--space-1);
+  padding: 0 var(--space-6) var(--space-3);
   list-style: none;
   scrollbar-gutter: stable;
 }

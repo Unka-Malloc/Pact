@@ -26,7 +26,6 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   select: [files: File[]];
   upload: [];
-  refresh: [];
 }>();
 
 const dropActive = ref(false);
@@ -140,9 +139,6 @@ function onDrop(event: DragEvent) {
             :tone="jobStatusTone(String(ingestJob.status))"
             :label="jobStatusLabels[String(ingestJob.status)] || String(ingestJob.status)"
           />
-          <button class="tool-button tool-button-ghost" type="button" @click="emit('refresh')">
-            刷新
-          </button>
         </div>
       </div>
       <div class="ingest-queue-progress">

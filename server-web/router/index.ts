@@ -4,13 +4,13 @@ export { adminSectionToSlug, slugToAdminView, viewToPath } from "./routes";
 
 // ─── Views ────────────────────────────────────────────────────────────────────
 import WorkspacesView from "../views/WorkspacesView.vue";
+import ApprovalFlowView from "../views/ApprovalFlowView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DebugView from "../views/DebugView.vue";
 import FeedView from "../views/FeedView.vue";
 import KnowledgeView from "../views/KnowledgeView.vue";
 import SourcesView from "../views/SourcesView.vue";
 import AgentConfigView from "../views/admin/AgentConfigView.vue";
-import AgentManagementView from "../views/admin/AgentManagementView.vue";
 import AgentPermissionsView from "../views/admin/AgentPermissionsView.vue";
 import ClientsView from "../views/admin/ClientsView.vue";
 import ContextManagementView from "../views/admin/ContextManagementView.vue";
@@ -20,11 +20,12 @@ import MaintenanceAgentView from "../views/admin/MaintenanceAgentView.vue";
 import ModulesView from "../views/admin/ModulesView.vue";
 import OpsMonitorView from "../views/admin/OpsMonitorView.vue";
 import ProductionHealthView from "../views/admin/ProductionHealthView.vue";
+import RuntimeDownloadsView from "../views/admin/RuntimeDownloadsView.vue";
 import StorageView from "../views/admin/StorageView.vue";
 import ToolsView from "../views/admin/ToolsView.vue";
 
-const validKnowledgeTabs = new Set(["management", "wordCloud", "conflicts", "maintenance"]);
-const validDebugTabs = new Set(["knowledgeRecall", "agentRetrieval"]);
+const validKnowledgeTabs = new Set(["management", "wordCloud", "maintenance"]);
+const validDebugTabs = new Set(["knowledgeRecall", "agentRetrieval", "knowledgeDistillation"]);
 
 const routes: RouteRecordRaw[] = [
   // Agent workspace
@@ -33,6 +34,7 @@ const routes: RouteRecordRaw[] = [
   // Core views
   { path: "/", component: DashboardView, meta: { viewId: "dashboard" } },
   { path: "/feed", component: FeedView, meta: { viewId: "feed" } },
+  { path: "/approval", component: ApprovalFlowView, meta: { viewId: "approval" } },
   { path: "/sources", component: SourcesView, meta: { viewId: "sources" } },
   { path: "/intelligence", redirect: "/" },
 
@@ -65,11 +67,14 @@ const routes: RouteRecordRaw[] = [
   { path: "/admin/jobs", component: JobsView, meta: { viewId: "admin", adminView: "jobs" } },
   { path: "/admin/logs", component: LogsView, meta: { viewId: "admin", adminView: "logs" } },
   { path: "/admin/ops-monitor", component: OpsMonitorView, meta: { viewId: "admin", adminView: "opsMonitor" } },
+  { path: "/admin/runtime-downloads", component: RuntimeDownloadsView, meta: { viewId: "admin", adminView: "runtimeDownloads" } },
   { path: "/admin/production-health", component: ProductionHealthView, meta: { viewId: "admin", adminView: "productionHealth" } },
   { path: "/admin/clients", component: ClientsView, meta: { viewId: "admin", adminView: "clients" } },
-  { path: "/admin/tools", component: ToolsView, meta: { viewId: "admin", adminView: "tools" } },
+  { path: "/admin/tools", redirect: "/admin/tool-list" },
+  { path: "/admin/tool-list", component: ToolsView, meta: { viewId: "admin", adminView: "toolList" } },
+  { path: "/admin/tool-stats", component: ToolsView, meta: { viewId: "admin", adminView: "toolStats" } },
   { path: "/admin/modules", component: ModulesView, meta: { viewId: "admin", adminView: "modules" } },
-  { path: "/admin/agent-management", component: AgentManagementView, meta: { viewId: "admin", adminView: "agentManagement" } },
+  { path: "/admin/agent-management", redirect: "/admin/agent-config" },
   { path: "/admin/agent-permissions", component: AgentPermissionsView, meta: { viewId: "admin", adminView: "agentPermissions" } },
   { path: "/admin/agent-config", component: AgentConfigView, meta: { viewId: "admin", adminView: "agentConfig" } },
   { path: "/admin/context-management", component: ContextManagementView, meta: { viewId: "admin", adminView: "contextManagement" } },

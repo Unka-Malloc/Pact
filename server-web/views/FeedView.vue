@@ -686,11 +686,13 @@ function closeInfoFeedAdvancedOptions() {
                     <span>配置用于信息流智能检索、知识融合和总结前置检索的默认参数。</span>
                   </div>
                   <button
-                    class="tool-button tool-button-ghost"
+                    class="dialog-close-button"
                     type="button"
+                    aria-label="关闭"
+                    title="关闭"
                     @click="closeInfoFeedAdvancedOptions"
                   >
-                    关闭
+                    ×
                   </button>
                 </header>
                 <form class="drawer-panel info-feed-advanced-form" @submit.prevent="saveSettings">

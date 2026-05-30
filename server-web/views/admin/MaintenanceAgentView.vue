@@ -78,16 +78,6 @@ const {
                   <strong>{{ maintenanceAgentSummary?.tools.length || 0 }}</strong>
                 </div>
               </div>
-              <div class="source-actions">
-                <button
-                  class="tool-button"
-                  type="button"
-                  :disabled="busyKey === 'maintenance-agent:refresh'"
-                  @click="refreshMaintenanceAgent"
-                >
-                  {{ busyKey === "maintenance-agent:refresh" ? "刷新中" : "刷新" }}
-                </button>
-              </div>
             </article>
 
             <article v-if="maintenanceAgentConfig" class="surface-card">

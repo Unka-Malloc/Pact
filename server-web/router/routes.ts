@@ -1,10 +1,9 @@
 export type KnowledgeTab =
   | "management"
   | "wordCloud"
-  | "conflicts"
   | "maintenance";
 
-export type DebugTab = "knowledgeRecall" | "agentRetrieval";
+export type DebugTab = "knowledgeRecall" | "agentRetrieval" | "knowledgeDistillation";
 
 export type AdminSection =
   | "storage"
@@ -13,9 +12,13 @@ export type AdminSection =
   | "ops-monitor"
   | "clients"
   | "tools"
+  | "toolList"
+  | "toolStats"
+  | "tool-list"
+  | "tool-stats"
   | "modules"
   | "productionHealth"
-  | "agent-management"
+  | "runtimeDownloads"
   | "agent-permissions"
   | "agent-config"
   | "context-management"
@@ -29,6 +32,7 @@ export function viewToPath(
   switch (view) {
     case "dashboard":   return "/";
     case "feed":        return "/feed";
+    case "approval":    return "/approval";
     case "sources":     return "/sources";
     case "workspaces":  return "/workspaces";
     case "knowledge":
@@ -49,10 +53,12 @@ export function adminSectionToSlug(section: string): string {
     logs: "logs",
     opsMonitor: "ops-monitor",
     clients: "clients",
-    tools: "tools",
+    tools: "tool-list",
+    toolList: "tool-list",
+    toolStats: "tool-stats",
     modules: "modules",
     productionHealth: "production-health",
-    agentManagement: "agent-management",
+    runtimeDownloads: "runtime-downloads",
     agentPermissions: "agent-permissions",
     agentConfig: "agent-config",
     contextManagement: "context-management",
@@ -69,10 +75,12 @@ export function slugToAdminView(slug: string): string {
     logs: "logs",
     "ops-monitor": "opsMonitor",
     clients: "clients",
-    tools: "tools",
+    tools: "toolList",
+    "tool-list": "toolList",
+    "tool-stats": "toolStats",
     modules: "modules",
     "production-health": "productionHealth",
-    "agent-management": "agentManagement",
+    "runtime-downloads": "runtimeDownloads",
     "agent-permissions": "agentPermissions",
     "agent-config": "agentConfig",
     "context-management": "contextManagement",

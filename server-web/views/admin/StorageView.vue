@@ -87,7 +87,7 @@ const {
       <section class="metric-grid system-overview-metrics">
         <article class="metric-card" data-tone="primary">
           <div class="metric-card-header">
-            <span>数据源能力</span>
+            <span>数据源</span>
             <strong>{{ enabledMountCount }}/{{ totalMountCount }}</strong>
           </div>
           <h3>{{ enabledMountCount }}</h3>

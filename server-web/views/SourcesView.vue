@@ -1,19 +1,30 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import { onMounted, onUnmounted } from 'vue';
 import { useConsole } from '../composables/useConsole';
+import BinaryCheckbox from '../components/BinaryCheckbox.vue';
+import BrowseSelectButton from '../components/BrowseSelectButton.vue';
 import StatusPill from '../components/StatusPill.vue';
 
 const {
   activeKnowledgeSources,
+  addKnowledgeSource,
   busyKey,
+  canBrowseServerPaths,
+  canWriteJobs,
+  clientRuntimeHeatRows,
+  clientRuntimeTaskText,
   consoleState,
   deleteKnowledgeSource,
   formatBytes,
   formatCompactDate,
+  localSourceForm,
   openAdmin,
-  openDrawer,
+  openLocalSourceDirectoryPicker,
+  refreshClientRuntimeStatus,
   refreshKnowledgeSource,
   refreshKnowledgeSources,
+  refreshState,
   shortId,
   sourceDownloadStatusLabel,
   sourceIndexStatusLabel,
@@ -21,16 +32,87 @@ const {
   sourceSyncLabel,
   sourceSyncTone,
   splitJobStatusLabel,
+  syncLocalSourceLabelFromPath,
   updateKnowledgeSource,
 } = useConsole();
 
+type DataSourceType = '' | 'localDirectory' | 'client';
+
 let pollTimer: number | null = null;
+const addDataSourceDialogOpen = ref(false);
+const selectedDataSourceType = ref<DataSourceType>('');
+
+const clientTotalCount = computed(() => consoleState.value?.clients?.summary?.totalCount || 0);
+const clientOfflineCount = computed(() => consoleState.value?.clients?.summary?.offlineCount || 0);
+const clientOnlineCount = computed(() => Math.max(0, clientTotalCount.value - clientOfflineCount.value));
+const clientRequestRows = computed(() => {
+  const heatRows = clientRuntimeHeatRows.value || [];
+  if (heatRows.length) {
+    return heatRows.map((row) => ({
+      key: row.clientUid,
+      label: row.clientUid,
+      detail: clientRuntimeTaskText(row),
+      requestPerMinute: Number(row.recentCalls || 0),
+      totalCalls: Number(row.totalCalls || 0),
+      lastSeenAt: row.lastSeenAt || "",
+    }));
+  }
+  return (consoleState.value?.clients?.items || []).map((client) => ({
+    key: client.clientId,
+    label: client.clientLabel || client.clientId,
+    detail: client.hostname || client.platform || "无请求记录",
+    requestPerMinute: 0,
+    totalCalls: 0,
+    lastSeenAt: client.lastSeenAt || "",
+  }));
+});
+const clientRequestChartMax = computed(() =>
+  Math.max(1, ...clientRequestRows.value.map((row) => Number(row.requestPerMinute || 0))),
+);
+const clientRequestChartRows = computed(() =>
+  clientRequestRows.value.map((row) => {
+    const requestPerMinute = Number(row.requestPerMinute || 0);
+    return {
+      ...row,
+      barPercent: requestPerMinute > 0 ? Math.max(8, Math.round((requestPerMinute / clientRequestChartMax.value) * 100)) : 0,
+      lastSeenLabel: formatCompactDate(row.lastSeenAt) || "暂无上报",
+    };
+  }),
+);
+
+function openAddDataSourceDialog() {
+  selectedDataSourceType.value = '';
+  addDataSourceDialogOpen.value = true;
+}
+
+function closeAddDataSourceDialog() {
+  addDataSourceDialogOpen.value = false;
+  selectedDataSourceType.value = '';
+}
+
+async function submitSelectedDataSource() {
+  if (selectedDataSourceType.value === 'localDirectory') {
+    const added = await addKnowledgeSource();
+    if (added) {
+      closeAddDataSourceDialog();
+    }
+    return;
+  }
+  if (selectedDataSourceType.value === 'client') {
+    closeAddDataSourceDialog();
+    openAdmin('clients');
+  }
+}
 
 onMounted(() => {
   // Initial fetch if needed, and start polling
   refreshKnowledgeSources();
+  refreshClientRuntimeStatus({ silent: true });
+  refreshState({ silent: true });
   pollTimer = window.setInterval(() => {
     refreshKnowledgeSources();
+    refreshClientRuntimeStatus({ silent: true });
+    refreshState({ silent: true });
   }, 3000); // poll every 3 seconds
 });
 
@@ -44,21 +126,21 @@ onUnmounted(() => {
 
 <template>
   <div style="padding-bottom: 24px;">
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
-      <div>
-        <h3 style="font-size: 1.1rem; margin-bottom: 4px;">数据源能力</h3>
-        <p style="color: var(--text-muted); font-size: 0.85rem;">配置并管理所有的本地或外部数据来源。</p>
-      </div>
+    <!-- Top Action Bar -->
+    <div class="sources-action-bar">
       <button
         class="primary-action"
         type="button"
-        @click="openDrawer('syncDirectories')"
+        data-testid="add-data-source-button"
+        @click="openAddDataSourceDialog"
       >
-        + 添加本地目录
+        添加数据源
       </button>
     </div>
 
-    <section class="sources-layout">
+    <!-- Outer Container for Cards -->
+    <div class="sources-cards-container">
+      <section class="sources-layout">
       <!-- 动态的本地文件夹数据源卡片 -->
       <article
         v-for="source in activeKnowledgeSources"
@@ -141,7 +223,7 @@ onUnmounted(() => {
             :disabled="busyKey === `knowledge:source:refresh:${source.sourceId}`"
             @click="refreshKnowledgeSource(source)"
           >
-            手动刷新
+            同步目录
           </button>
           <button
             class="tool-button tool-button-ghost"
@@ -172,44 +254,152 @@ onUnmounted(() => {
       </article>
 
       <!-- 无本地数据源时的空占位卡片 -->
-      <article v-if="activeKnowledgeSources.length === 0" class="surface-card source-card" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 48px 24px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-color); box-shadow: none;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px; opacity: 0.5;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-        <strong style="font-size: 1rem; color: var(--text-color);">暂无本地数据源</strong>
-        <p style="margin-top: 8px; font-size: 0.85rem;">点击右上角「添加本地目录」后，文件变化会自动触发整理任务。</p>
+      <article v-if="activeKnowledgeSources.length === 0" class="surface-card source-card source-empty-card">
+        <svg class="source-empty-card-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <strong>暂无本地数据源</strong>
+        <p>点击右上角「添加数据源」后，按类型填写对应配置。</p>
       </article>
 
-      <!-- 外部客户端卡片 -->
-      <article class="surface-card source-card">
-        <div class="source-card-header">
-          <div>
-            <h3>外部客户端</h3>
-            <p>桌面客户端通过服务发现接入，服务端只提供任务、解析与工具能力。</p>
-          </div>
-          <StatusPill
-            :enabled="(consoleState?.clients?.summary?.totalCount || 0) > 0"
-            :label="`${consoleState?.clients?.summary?.totalCount || 0} 台`"
-          />
-        </div>
-        <dl class="meta-list">
-          <div>
-            <dt>活跃服务</dt>
-            <dd>{{ consoleState?.discovery?.value?.activeServiceUrl || "未配置" }}</dd>
-          </div>
-          <div>
-            <dt>模式</dt>
-            <dd>{{ consoleState?.discovery?.value?.mode || "active" }}</dd>
-          </div>
-        </dl>
-        <div class="source-actions" style="margin-top: auto;">
-          <button
-            class="tool-button tool-button-ghost"
-            type="button"
-            @click="openAdmin('clients')"
-          >
-            设备管理
-          </button>
-        </div>
-      </article>
+
     </section>
+  </div>
+
+    <Teleport to="body">
+      <div
+        v-if="addDataSourceDialogOpen"
+        class="data-source-dialog-backdrop"
+        @click.self="closeAddDataSourceDialog"
+      >
+        <section
+          class="data-source-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-data-source-title"
+          data-testid="add-data-source-dialog"
+          @keydown.esc="closeAddDataSourceDialog"
+        >
+          <header class="data-source-dialog-header">
+            <div>
+              <h3 id="add-data-source-title">添加数据源</h3>
+              <p>先选择数据源类型，再填写该类型需要的配置。</p>
+            </div>
+            <button
+              class="dialog-close-button"
+              type="button"
+              aria-label="关闭"
+              title="关闭"
+              @click="closeAddDataSourceDialog"
+            >
+              ×
+            </button>
+          </header>
+
+          <form class="data-source-dialog-body" @submit.prevent="submitSelectedDataSource">
+            <label class="data-source-type-field">
+              <span>数据源类型</span>
+              <select
+                v-model="selectedDataSourceType"
+                data-testid="data-source-type-select"
+                autofocus
+              >
+                <option disabled value="">请选择数据源类型</option>
+                <option value="localDirectory">本地目录</option>
+                <option value="client">客户端接入</option>
+              </select>
+            </label>
+
+            <section
+              v-if="selectedDataSourceType === 'localDirectory'"
+              class="data-source-config-panel"
+              data-testid="local-directory-config"
+            >
+              <label class="source-name-field">
+                <span>目录名称</span>
+                <input
+                  v-model="localSourceForm.label"
+                  type="text"
+                  placeholder="例如：公司共享资料"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="source-path-field">
+                <span>本地路径</span>
+                <div class="path-field">
+                  <input
+                    v-model="localSourceForm.directoryPath"
+                    type="text"
+                    placeholder="/Users/you/Documents/Knowledge"
+                    autocomplete="off"
+                    @change="syncLocalSourceLabelFromPath"
+                  />
+                  <BrowseSelectButton
+                    kind="server-directory"
+                    button-class="path-action-button"
+                    button-text="浏览"
+                    size="small"
+                    :disabled="!canBrowseServerPaths"
+                    plain
+                    @browse="openLocalSourceDirectoryPicker"
+                  />
+                </div>
+              </label>
+              <div class="source-sync-row">
+                <BinaryCheckbox
+                  v-model="localSourceForm.autoSync"
+                  label="自动监听变化"
+                />
+                <BinaryCheckbox
+                  v-model="localSourceForm.recursive"
+                  label="包含子目录"
+                />
+                <BinaryCheckbox
+                  v-model="localSourceForm.hydrationEnabled"
+                  label="自动下载"
+                />
+              </div>
+            </section>
+
+            <section
+              v-else-if="selectedDataSourceType === 'client'"
+              class="data-source-config-panel"
+              data-testid="client-source-config"
+            >
+              <div class="data-source-config-note">
+                <strong>客户端接入</strong>
+                <span>客户端无需在这里创建固定记录。客户端完成接入并上报后，会自动出现在客户端列表和请求统计表中。</span>
+              </div>
+            </section>
+
+            <footer
+              v-if="selectedDataSourceType"
+              class="data-source-dialog-actions"
+            >
+              <button
+                class="tool-button tool-button-ghost"
+                type="button"
+                @click="closeAddDataSourceDialog"
+              >
+                取消
+              </button>
+              <button
+                v-if="selectedDataSourceType === 'localDirectory'"
+                class="primary-action"
+                type="submit"
+                :disabled="!canWriteJobs || busyKey === 'knowledge:sources:add'"
+              >
+                {{ busyKey === "knowledge:sources:add" ? "添加中" : "添加数据源" }}
+              </button>
+              <button
+                v-else-if="selectedDataSourceType === 'client'"
+                class="primary-action"
+                type="submit"
+              >
+                查看客户端
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+    </Teleport>
   </div>
 </template>
