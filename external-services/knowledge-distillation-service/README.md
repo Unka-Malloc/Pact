@@ -48,7 +48,8 @@ Core response fields:
 
 - `runtimeDoctor`: optional parser runtime availability for Java/Tika fallback, PyMuPDF, Poppler, Tesseract, and PaddleOCR.
 - `routePlan`: per-source format, content shape, parser chain, fallback parsers, risk flags, and reference frameworks.
-- `corpusPlan`: route-then-window source plan with byte counts, character counts, window counts, and evidence strength.
+- `corpusPlan`: route-then-window source plan with byte counts, character counts, element counts, window counts, and evidence strength.
+- `elementPlan`: document-element model for structured sources, with element type counts, sampled element metadata, and by-title chunking references.
 - `parserTrace`: per-source parser stages, including direct text, JSON, CSV/TSV, mounted file references, chunked text windowing, MSG Tika extraction, MBOX message splitting, email attachment routing, archive child routing, and OOXML extraction.
 - `classification`: hashing-embedding document groups plus window communities before distillation, with a weak-evidence garbage pool, per-topic distillation units, group cohesion, and inter-group separation scores.
 - `convergence`: window-to-window-community-to-document-to-topic-to-project convergence plan with community reports for large project synthesis.
@@ -141,6 +142,7 @@ Built-in algorithm baseline:
 - `graph-lite-entity-relationship-evidence-pack.v1`: builds deterministic text-unit, entity, relationship, claim/covariate, community, and community-report tables for agent retrieval and graph-style inspection.
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, source, entity, claim, group, and time filters for engineering-project convergence queries.
+- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code isolation, and element refs on agent windows and graph text units.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - Weak or tiny inputs are assigned to a garbage group and are not promoted as core distillation candidates.
 
@@ -154,6 +156,7 @@ Reference patterns currently absorbed into the local baseline:
 - Haystack-style pipeline snapshots for replayable agent/debug context.
 - Docling/Haystack-style converter boundaries for HTML, AsciiDoc, XML, and LaTeX-like markup documents.
 - Unstructured-style element families for markup headings, lists, links, table rows, code, citations, and formulas.
+- Unstructured `chunk_by_title`-style element-aware windows with table/code isolation, plus LlamaIndex-style node refs in graph text-unit metadata.
 
 Reference framework checkout root:
 
