@@ -26,6 +26,54 @@ async function fetchText(url, options = {}) {
   };
 }
 
+async function captureMcpSseDuring({ url, headers = {}, action, until, timeoutMs = 5000 }) {
+  const abortController = new AbortController();
+  let text = "";
+  let status = 0;
+  let resolveReady;
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+  const reader = (async () => {
+    try {
+      const response = await fetch(url, {
+        headers: { ...headers, Accept: "text/event-stream" },
+        signal: abortController.signal
+      });
+      status = response.status;
+      resolveReady();
+      const bodyReader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await bodyReader.read();
+        if (value) {
+          text += decoder.decode(value);
+          if (until(text)) {
+            abortController.abort();
+            break;
+          }
+        }
+        if (done) {
+          break;
+        }
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        throw error;
+      }
+    } finally {
+      clearTimeout(timeout);
+      resolveReady();
+    }
+    return { status, text };
+  })();
+  await ready;
+  assert.equal(status, 200);
+  await action();
+  return reader;
+}
+
 function mcpRequest(method, params = {}, id = 1) {
   return {
     jsonrpc: "2.0",
@@ -375,15 +423,29 @@ try {
   const workspaceRef = createdWorkspacePayload.workspace.workspaceRef;
   assert.equal(workspaceRef, "workspace-1");
 
-  const sharedspaceWrite = await fetchJson(`${server.url}/mcp`, {
-    method: "POST",
+  let sharedspaceWrite = null;
+  const sharedspaceWriteSse = await captureMcpSseDuring({
+    url: `${server.url}/mcp`,
     headers: apiKeyHeaders(sharedspaceGrant.payload.token),
-    body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.file.write", {
-      workspaceRef,
-      path: "notes/hello.txt",
-      content: "hello pact"
-    }, 35))
+    until: (text) =>
+      text.includes("notifications/pact/operation_reply") &&
+        text.includes("pact.sharedspace.file.write") &&
+        text.includes("\"status\":\"completed\""),
+    action: async () => {
+      sharedspaceWrite = await fetchJson(`${server.url}/mcp`, {
+        method: "POST",
+        headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+        body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.file.write", {
+          workspaceRef,
+          path: "notes/hello.txt",
+          content: "hello pact"
+        }, 35))
+      });
+    }
   });
+  assert.match(sharedspaceWriteSse.text, /notifications\/pact\/operation_reply/);
+  assert.match(sharedspaceWriteSse.text, /pact\.sharedspace\.file\.write/);
+  assert.match(sharedspaceWriteSse.text, /"status":"completed"/);
   assert.equal(sharedspaceWrite.status, 200);
   const writePayload = sharedspaceWrite.payload.result.structuredContent.payload;
   assert.equal(writePayload.ok, true);
