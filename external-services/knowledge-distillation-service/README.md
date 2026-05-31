@@ -51,6 +51,7 @@ Core response fields:
 - `runtimeDoctor`: optional parser runtime availability for Java/Tika fallback, PyMuPDF, Poppler, Tesseract, and PaddleOCR.
 - `routePlan`: per-source format, content shape, parser chain, fallback parsers, risk flags, and reference frameworks.
 - `corpusPlan`: route-then-window source plan with byte counts, character counts, element counts, window counts, and evidence strength.
+- `pdfProfile`: PDF subtype evidence for PDF sources, including `pdf-text`, `pdf-scanned`, `pdf-font-broken`, `pdf-image-heavy`, `pdf-encrypted`, or `pdf-empty-or-unknown`, plus image/font/ToUnicode counts and extraction character counts.
 - `elementPlan`: document-element model for structured sources, with element type counts, sampled element metadata, and by-title chunking references.
 - `parserTrace`: per-source parser stages, including direct text, JSON, CSV/TSV, mounted file references, chunked text windowing, MSG Tika extraction, MBOX message splitting, email attachment routing, archive child routing, and OOXML extraction.
 - `classification`: hashing-embedding document groups plus window communities before distillation, with a weak-evidence garbage pool, per-topic distillation units, group cohesion, and inter-group separation scores.
@@ -74,7 +75,7 @@ Agent/API requests can include a `timeFilter` object:
 
 Routed format families:
 
-- PDF: text extraction, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
+- PDF: subtype routing before distillation, text extraction, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
 - Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP with paragraph, heading, Word comments/footnotes/endnotes, Word/PowerPoint/OpenDocument table row/cell metadata, slide, PresentationML shape geometry, sheet-row, cell-coordinate, SpreadsheetML formula metadata, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
 - Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements rather than treated as plain text.
@@ -105,6 +106,7 @@ Built-in payload parsers:
 - MBOX mailbox splitting into child EML messages, preserving message-level trace and recursively routed attachments.
 - MIME attachment extraction with recursive child-file routing.
 - Basic text PDF content streams, including FlateDecode streams where text operators are present.
+- PDF subtype routing emits `pdf.subtype-route` and `pdfProfile` so agents can distinguish text PDFs, scanned PDFs, font-mapping-risk PDFs, image-heavy PDFs, encrypted PDFs, and empty/unknown PDFs without rescanning parser traces.
 - Image OCR through Tesseract when `tesseract-ocr` is installed.
 - Scanned PDF OCR through Poppler page rasterization plus Tesseract when both runtimes are installed.
 - Mounted file references from configured input roots, with chunked text windowing for streamable text formats.
@@ -149,6 +151,7 @@ Built-in algorithm baseline:
 - `hierarchical-domain-topic-project-convergence.v3`: adds a project-domain layer, domain reports, cross-domain links, and `agent-project-convergence-query-index.v1` for global/local project reads.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, domain, route, source, entity, claim, group, and time filters for engineering-project convergence queries.
 - `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/annotation isolation, element refs, basic PDF geometry, Word annotations, Word/PowerPoint/OpenDocument table cells, spreadsheet cell coordinates and formulas, and PresentationML shape geometry on agent windows and graph text units.
+- `pdf-subtype-routing.v1`: turns PDF parser signals into machine-readable subtype, risk flags, image/font/ToUnicode counts, text/OCR/Tika character counts, and route-level `pdfSubtype`.
 - `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates and known loss boundaries.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - `reference-framework-local-checkout-audit.v1`: verifies each declared local reference checkout exists, is a Git worktree, and matches the manifest commit before treating it as a current comparison source.

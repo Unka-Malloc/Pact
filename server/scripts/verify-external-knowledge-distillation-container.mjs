@@ -378,6 +378,8 @@ try {
   assert.equal(capabilities.payload.graphEvidence.query.filters.includes("domain"), true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.filters.includes("routeId"), true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.readModel, "domain-topic-community-source-time.v1");
+  assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.strategy, "pdf-subtype-routing.v1");
+  assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.subtypes.includes("pdf-scanned"), true);
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
@@ -468,6 +470,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markup.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.subtype-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
@@ -588,6 +591,12 @@ try {
   const scannedPdfDocument = scannedPdfRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-scanned-pdf");
   assert.ok(scannedPdfDocument, "scanned PDF must be present in the corpus plan");
   assert.equal(scannedPdfDocument.route.formatId, "pdf");
+  assert.equal(scannedPdfDocument.route.pdfSubtype, "pdf-scanned");
+  assert.equal(scannedPdfDocument.pdfProfile.strategy, "pdf-subtype-routing.v1");
+  assert.equal(scannedPdfDocument.pdfProfile.subtype, "pdf-scanned");
+  assert.equal(scannedPdfDocument.pdfProfile.imageObjectCount >= 1, true);
+  assert.equal(scannedPdfDocument.pdfProfile.ocrCharacters > 0, true);
+  assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.subtype-route" && trace.subtype === "pdf-scanned"), true);
   assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "empty"), true);
   assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.page-rasterize" && trace.status === "completed"), true);
   assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "ocr.page" && trace.status === "completed"), true);

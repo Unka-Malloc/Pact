@@ -702,6 +702,8 @@ try {
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.timeFiltering.timeFields.includes("eventTime"), true);
+  assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.strategy, "pdf-subtype-routing.v1");
+  assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.subtypes.includes("pdf-scanned"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.strategy, "streaming-windowed");
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
@@ -727,6 +729,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.subtype-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
@@ -795,6 +798,7 @@ try {
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("pdf-subtype-routing.v1"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
   assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
@@ -1335,6 +1339,8 @@ try {
   const routedPdf = createRun.payload.result.routePlan.documents.find((document) => document.sourceId === "source-3");
   assert.ok(routedPdf, "large PDF source must be present in route plan");
   assert.equal(routedPdf.formatId, "pdf");
+  assert.equal(routedPdf.pdfSubtype, "pdf-text");
+  assert.equal(routedPdf.pdfSubtypeStrategy, "pdf-subtype-routing.v1");
   assert.equal(routedPdf.parserChain.includes("ocr.page"), true);
   assert.equal(routedPdf.riskFlags.includes("large-file-risk"), true);
   const routedSpreadsheet = createRun.payload.result.routePlan.documents.find((document) => document.sourceId === "source-2");
@@ -1787,6 +1793,10 @@ try {
     }
   }
   const pdfPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-12");
+  assert.equal(pdfPayloadCorpus.pdfProfile.strategy, "pdf-subtype-routing.v1");
+  assert.equal(pdfPayloadCorpus.pdfProfile.subtype, "pdf-text");
+  assert.equal(pdfPayloadCorpus.route.pdfSubtype, "pdf-text");
+  assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.subtype-route" && trace.subtype === "pdf-text"), true);
   assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "completed" && trace.layoutBlocks >= 1 && trace.layoutStrategy === "pdf-text-operator-geometry.v1"), true);
   assert.equal(pdfPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pdfPayloadCorpus.elementPlan.sourceFormat, "pdf");
@@ -2241,9 +2251,56 @@ try {
   assert.equal(scannedPdfRun.status, 201);
   assert.equal(scannedPdfRun.payload.status, "failed");
   const scannedTrace = scannedPdfRun.payload.result.corpusPlan.documents[0].parserTrace;
+  const scannedPdfCorpus = scannedPdfRun.payload.result.corpusPlan.documents[0];
+  assert.equal(scannedPdfCorpus.pdfProfile.strategy, "pdf-subtype-routing.v1");
+  assert.equal(scannedPdfCorpus.pdfProfile.subtype, "pdf-empty-or-unknown");
+  assert.equal(scannedPdfCorpus.route.pdfSubtype, "pdf-empty-or-unknown");
+  assert.equal(scannedTrace.some((trace) => trace.stage === "pdf.subtype-route" && trace.subtype === "pdf-empty-or-unknown"), true);
   assert.equal(scannedTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "empty"), true);
   assert.equal(scannedTrace.some((trace) => trace.stage === "pdf.visual.layout" && ["unavailable", "available-not-executed"].includes(trace.status)), true);
   assert.equal(scannedTrace.some((trace) => trace.stage === "ocr.page" && ["unavailable", "available-not-executed"].includes(trace.status)), true);
+
+  const fontRiskPdfRun = await fetchJson(`${pactServer.url}/api/external/knowledge/distillation/runs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(auth, { method: "POST" })
+    },
+    body: JSON.stringify({
+      query: "PDF 字体映射风险验证",
+      title: "PDF 字体映射风险验证",
+      rawDocuments: [
+        {
+          sourceId: "font-risk-pdf",
+          title: "Font Risk PDF",
+          fileName: "font-risk.pdf",
+          mediaType: "application/pdf",
+          contentBase64: base64Text([
+            "%PDF-1.4",
+            "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+            "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+            "3 0 obj << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
+            "4 0 obj << /Type /Font /Subtype /TrueType /BaseFont /BrokenFont >> endobj",
+            "5 0 obj << /Length 0 >> stream",
+            "",
+            "endstream",
+            "endobj",
+            "trailer << /Root 1 0 R >>",
+            "%%EOF"
+          ].join("\n"))
+        }
+      ],
+      responseProfile: "agent"
+    })
+  });
+  assert.equal(fontRiskPdfRun.status, 201);
+  assert.equal(fontRiskPdfRun.payload.status, "failed");
+  const fontRiskPdf = fontRiskPdfRun.payload.result.corpusPlan.documents[0];
+  assert.equal(fontRiskPdf.pdfProfile.strategy, "pdf-subtype-routing.v1");
+  assert.equal(fontRiskPdf.pdfProfile.subtype, "pdf-font-broken");
+  assert.equal(fontRiskPdf.route.pdfSubtype, "pdf-font-broken");
+  assert.equal(fontRiskPdf.route.riskFlags.includes("font-mapping-risk"), true);
+  assert.equal(fontRiskPdf.parserTrace.some((trace) => trace.stage === "pdf.subtype-route" && trace.subtype === "pdf-font-broken"), true);
 
   const getRun = await fetchJson(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}`, {
     headers: authHeaders(auth)

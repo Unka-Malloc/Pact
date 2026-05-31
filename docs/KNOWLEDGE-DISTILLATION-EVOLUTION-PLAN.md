@@ -117,7 +117,7 @@ flowchart LR
 
 | 层级 | 当前可用基线 | 后续调整落点 |
 | --- | --- | --- |
-| 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan` | 内建 file processor 与 Tika 调用前也必须统一 route-first |
+| 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan`，PDF 额外输出 `pdf-subtype-routing.v1` 和 `pdfProfile`，可区分文本 PDF、扫描 PDF、字体映射风险 PDF、图片密集 PDF、加密 PDF 和空/未知 PDF | 内建 file processor 与 Tika 调用前也必须统一 route-first，并回填 PDF 子类型字段 |
 | 解析链 | 外部服务已覆盖文本、配置、Markdown block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry、Word comments/footnotes/endnotes、Word/PowerPoint/OpenDocument table cells、PowerPoint shape geometry、Excel cell coordinates 和 SpreadsheetML formulas 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
 | 大文件 | 外部服务已支持 mounted file refs、streaming JSONL document manifests、archive refs、chunked windowing，并对 mounted Office/OpenDocument/EPUB 结构包执行结构 entry 选择、bounded native parse 和 large-entry streaming fallback | 上传、manifest、解析、蒸馏三层统一流式窗口协议 |
@@ -223,6 +223,7 @@ flowchart LR
 - 日历事件文件按 iCalendar/vCalendar 结构解析：`.ics`、`.vcs` 提取事件、待办、开始/结束时间、地点、组织者和描述。
 - Office 文件走结构化解析：`.docx`、`.pptx`、`.xlsx`。
 - PDF 拆分为 `pdf-text`、`pdf-scanned`、`pdf-font-broken`、`pdf-image-heavy`。
+- PDF 子类型必须写入 `route.pdfSubtype`、`corpusPlan.documents[].pdfProfile` 和 Agent 报文，不允许只把判断埋在 parser trace 里。
 - 邮件走邮件解析器：`.eml`、`.msg`、`.mbox`。
 - 图片走 OCR/多模态解析器：`.png`、`.jpg`、`.jpeg`、`.tif`、`.tiff`、`.webp`。
 - 压缩包作为 workspace package 处理，不直接送入单文件解析器。
@@ -243,6 +244,7 @@ flowchart LR
 - `.diff/.patch` 不再作为普通文本摘要，必须保留文件级、hunk 级和增删行统计。
 - `.ics/.vcs` 必须直接产出 `eventTime` 证据，支持智能体按时间段检索会议、里程碑和变更窗口。
 - PDF 路由结果能说明后续是否需要视觉解析或 OCR。
+- 文本 PDF、扫描 PDF、字体映射风险 PDF、图片密集 PDF、加密 PDF、空/未知 PDF 的 subtype 和风险标记可被智能体直接过滤。
 
 ---
 

@@ -51,6 +51,7 @@ const PROJECT_CONVERGENCE_STRATEGY = "hierarchical-domain-topic-project-converge
 const PROJECT_EVIDENCE_QUERY_STRATEGY = "project-graph-evidence-convergence-query.v1";
 const REFERENCE_GAP_REPORT_STRATEGY = "reference-framework-gap-report.v1";
 const REFERENCE_FRAMEWORK_AUDIT_STRATEGY = "reference-framework-local-checkout-audit.v1";
+const PDF_SUBTYPE_ROUTING_STRATEGY = "pdf-subtype-routing.v1";
 const RUNTIME_DOCTOR_TIMEOUT_MS = 2500;
 const RUNTIME_DOCTOR_CACHE_MS = 30_000;
 const OCR_TIMEOUT_MS = Number(process.env.PACT_EXTERNAL_KD_OCR_TIMEOUT_MS || 30_000);
@@ -5987,6 +5988,109 @@ function parsePdfBasicText(buffer) {
   return { text, parserTrace, warnings, elements, format: "pdf" };
 }
 
+function countPdfMatches(latin = "", pattern) {
+  return (String(latin || "").match(pattern) || []).length;
+}
+
+function buildPdfSubtypeProfile({
+  source = "payload",
+  buffer = null,
+  byteSize = 0,
+  textCharacters = 0,
+  layoutBlocks = 0,
+  ocrCharacters = 0,
+  tikaCharacters = 0,
+  parserWarnings = []
+} = {}) {
+  const latin = buffer?.length ? Buffer.from(buffer).toString("latin1") : "";
+  const effectiveByteSize = Number(byteSize || buffer?.length || 0);
+  const extractedTextCharacters = Number(textCharacters || 0);
+  const effectiveOcrCharacters = Number(ocrCharacters || 0);
+  const effectiveTikaCharacters = Number(tikaCharacters || 0);
+  const imageObjectCount = latin ? countPdfMatches(latin, /\/Subtype\s*\/Image\b/g) : 0;
+  const fontObjectCount = latin ? countPdfMatches(latin, /\/Type\s*\/Font\b|\/Font\s*<</g) : 0;
+  const toUnicodeMapCount = latin ? countPdfMatches(latin, /\/ToUnicode\b|beginbfchar|beginbfrange/g) : 0;
+  const pageCount = latin ? Math.max(0, countPdfMatches(latin, /\/Type\s*\/Page(?!s)\b/g)) : 0;
+  const streamCount = latin ? countPdfMatches(latin, /\bstream\r?\n?/g) : 0;
+  const encrypted = latin ? /\/Encrypt\b/.test(latin) : false;
+  const outputCharacters = extractedTextCharacters + effectiveOcrCharacters + effectiveTikaCharacters;
+  const textDensity = effectiveByteSize > 0 ? Number((outputCharacters / effectiveByteSize).toFixed(6)) : 0;
+  let subtype = "pdf-empty-or-unknown";
+  if (encrypted) {
+    subtype = "pdf-encrypted";
+  } else if (extractedTextCharacters > 0) {
+    subtype = "pdf-text";
+  } else if (effectiveOcrCharacters > 0) {
+    subtype = "pdf-scanned";
+  } else if (effectiveTikaCharacters > 0) {
+    subtype = "pdf-text";
+  } else if (imageObjectCount > 0) {
+    subtype = "pdf-image-heavy";
+  } else if (fontObjectCount > 0 && toUnicodeMapCount === 0) {
+    subtype = "pdf-font-broken";
+  }
+  const riskFlags = [];
+  if (subtype === "pdf-scanned" || subtype === "pdf-image-heavy") {
+    riskFlags.push("ocr-required");
+  }
+  if (subtype === "pdf-font-broken") {
+    riskFlags.push("font-mapping-risk");
+  }
+  if (subtype === "pdf-encrypted") {
+    riskFlags.push("encrypted-pdf");
+  }
+  if (subtype === "pdf-empty-or-unknown") {
+    riskFlags.push("pdf-empty-or-unknown");
+  }
+  if (imageObjectCount > 0 && outputCharacters > 0 && subtype !== "pdf-scanned") {
+    riskFlags.push("pdf-image-mixed");
+  }
+  if (outputCharacters > 0 && outputCharacters < 800) {
+    riskFlags.push("pdf-low-text-density");
+  }
+  return {
+    strategy: PDF_SUBTYPE_ROUTING_STRATEGY,
+    source,
+    subtype,
+    byteSize: effectiveByteSize,
+    textDensity,
+    pageCount,
+    streamCount,
+    imageObjectCount,
+    fontObjectCount,
+    toUnicodeMapCount,
+    encrypted,
+    layoutBlocks: Number(layoutBlocks || 0),
+    textCharacters: extractedTextCharacters,
+    ocrCharacters: effectiveOcrCharacters,
+    tikaCharacters: effectiveTikaCharacters,
+    outputCharacters,
+    riskFlags: uniqueOrdered(riskFlags),
+    warnings: uniqueOrdered(parserWarnings).slice(0, 20)
+  };
+}
+
+function pdfSubtypeTrace(profile = {}) {
+  return {
+    stage: "pdf.subtype-route",
+    status: "completed",
+    strategy: profile.strategy || PDF_SUBTYPE_ROUTING_STRATEGY,
+    source: profile.source || "",
+    subtype: profile.subtype || "pdf-empty-or-unknown",
+    byteSize: Number(profile.byteSize || 0),
+    textDensity: Number(profile.textDensity || 0),
+    pageCount: Number(profile.pageCount || 0),
+    imageObjects: Number(profile.imageObjectCount || 0),
+    fontObjects: Number(profile.fontObjectCount || 0),
+    toUnicodeMaps: Number(profile.toUnicodeMapCount || 0),
+    layoutBlocks: Number(profile.layoutBlocks || 0),
+    textCharacters: Number(profile.textCharacters || 0),
+    ocrCharacters: Number(profile.ocrCharacters || 0),
+    tikaCharacters: Number(profile.tikaCharacters || 0),
+    riskFlags: profile.riskFlags || []
+  };
+}
+
 function runtimeStageTrace(stage, runtimeStatus = null, runtimeKey = "") {
   const runtime = runtimeKey ? runtimeStatus?.runtimes?.[runtimeKey] : null;
   if (!runtime) {
@@ -6251,6 +6355,15 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
   const parserTrace = [];
   if (text) {
     parserTrace.push({ stage: "payload.text", status: "completed", characters: text.length });
+    if (route?.id === "pdf") {
+      const pdfProfile = buildPdfSubtypeProfile({
+        source: "supplied-text",
+        byteSize: metadata.byteSize || 0,
+        textCharacters: text.length
+      });
+      parserTrace.push(pdfSubtypeTrace(pdfProfile));
+      return { text, parserTrace, warnings: [], pdfProfile };
+    }
     if (route?.id === "config") {
       const parsed = parseConfigText(text, metadata);
       parserTrace.push({
@@ -6348,12 +6461,21 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       parserTrace.push(...parsed.parserTrace);
       warnings.push(...parsed.warnings);
       if (parsed.text) {
+        const pdfProfile = buildPdfSubtypeProfile({
+          source: "direct-payload",
+          buffer,
+          textCharacters: parsed.text.length,
+          layoutBlocks: parsed.elements?.filter((element) => element.type === "pdf-text-block").length || 0,
+          parserWarnings: warnings
+        });
+        parserTrace.push(pdfSubtypeTrace(pdfProfile));
         return {
           text: parsed.text,
           parserTrace,
           warnings,
           structureElements: parsed.elements || [],
-          structureFormat: parsed.format || "pdf"
+          structureFormat: parsed.format || "pdf",
+          pdfProfile
         };
       }
       parserTrace.push(runtimeStageTrace("pdf.visual.layout", runtimeStatus, "pdf.pymupdf"));
@@ -6362,16 +6484,36 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       parserTrace.push(...ocrResult.parserTrace);
       warnings.push(...ocrResult.warnings);
       if (ocrResult.text) {
-        return { text: ocrResult.text, parserTrace, warnings };
+        const pdfProfile = buildPdfSubtypeProfile({
+          source: "direct-payload",
+          buffer,
+          ocrCharacters: ocrResult.text.length,
+          parserWarnings: warnings
+        });
+        parserTrace.push(pdfSubtypeTrace(pdfProfile));
+        return { text: ocrResult.text, parserTrace, warnings, pdfProfile };
       }
       const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "pdf.text.tika");
       parserTrace.push(...tikaResult.parserTrace);
       warnings.push(...tikaResult.warnings);
       if (tikaResult.text) {
-        return { text: tikaResult.text, parserTrace, warnings };
+        const pdfProfile = buildPdfSubtypeProfile({
+          source: "direct-payload",
+          buffer,
+          tikaCharacters: tikaResult.text.length,
+          parserWarnings: warnings
+        });
+        parserTrace.push(pdfSubtypeTrace(pdfProfile));
+        return { text: tikaResult.text, parserTrace, warnings, pdfProfile };
       }
       warnings.push(requiredRuntimeWarning(runtimeStatus, ["pdf.pymupdf", "pdf.poppler", "ocr.paddleocr", "ocr.tesseract"]) || "pdf-visual-or-ocr-runtime-required");
-      return { text: "", parserTrace, warnings };
+      const pdfProfile = buildPdfSubtypeProfile({
+        source: "direct-payload",
+        buffer,
+        parserWarnings: warnings
+      });
+      parserTrace.push(pdfSubtypeTrace(pdfProfile));
+      return { text: "", parserTrace, warnings, pdfProfile };
     }
     if (route?.id === "image") {
       const ocrResult = runImageOcr(buffer, metadata, runtimeStatus);
@@ -6889,6 +7031,9 @@ function buildDocumentRoute(document = {}) {
   if (route?.id === "pdf" && document.text && document.text.length < 800) {
     riskFlags.push("pdf-low-text-density");
   }
+  if (route?.id === "pdf" && document.pdfProfile?.riskFlags?.length) {
+    riskFlags.push(...document.pdfProfile.riskFlags);
+  }
   if (route?.id === "image") {
     riskFlags.push("ocr-required");
   }
@@ -6912,6 +7057,8 @@ function buildDocumentRoute(document = {}) {
     declaredType: document.mediaType || document.extension || "unknown",
     sniffedType: route?.mediaTypes?.[0] || document.mediaType || "unknown",
     formatId: route?.id || "unknown",
+    pdfSubtype: route?.id === "pdf" ? document.pdfProfile?.subtype || "" : "",
+    pdfSubtypeStrategy: route?.id === "pdf" ? document.pdfProfile?.strategy || PDF_SUBTYPE_ROUTING_STRATEGY : "",
     contentShape: route?.contentShape || "unknown",
     preferredParser: route?.preferredParser || "unsupported.format",
     fallbackParsers: route?.fallbackParsers || [],
@@ -7826,13 +7973,19 @@ function streamTextFileAnalysis({ document = {}, route = null, metadata = {}, fi
 function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeStatus = null, options = {} } = {}) {
   const runtime = runtimeStatus?.runtimes?.["pdf.pdftotext"];
   if (!runtime?.available) {
+    const pdfProfile = buildPdfSubtypeProfile({
+      source: "file-ref-pdftotext",
+      byteSize: document.byteSize || 0,
+      parserWarnings: ["missing-runtime:pdf.pdftotext"]
+    });
     return {
       text: "",
       totalCharacters: 0,
       contentHash: "",
       windowPlan: null,
-      parserTrace: [runtimeStageTrace("pdf.text.pdftotext", runtimeStatus, "pdf.pdftotext")],
-      warnings: ["missing-runtime:pdf.pdftotext"]
+      parserTrace: [runtimeStageTrace("pdf.text.pdftotext", runtimeStatus, "pdf.pdftotext"), pdfSubtypeTrace(pdfProfile)],
+      warnings: ["missing-runtime:pdf.pdftotext"],
+      pdfProfile
     };
   }
   const workDir = tempWorkDir("external-kd-pdf-text-");
@@ -7860,6 +8013,12 @@ function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeS
           parserTrace: [],
           warnings: ["pdf-pdftotext-empty"]
         };
+    const pdfProfile = buildPdfSubtypeProfile({
+      source: "file-ref-pdftotext",
+      byteSize: document.byteSize || 0,
+      textCharacters: stream.totalCharacters || 0,
+      parserWarnings: stream.warnings || []
+    });
     return {
       text: stream.textSample || "",
       totalCharacters: stream.totalCharacters || 0,
@@ -7875,11 +8034,18 @@ function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeS
           characters: stream.totalCharacters || 0,
           windows: stream.windowPlan?.windowCount || 0
         },
+        pdfSubtypeTrace(pdfProfile),
         ...stream.parserTrace
       ],
-      warnings: stream.warnings || []
+      warnings: stream.warnings || [],
+      pdfProfile
     };
   } catch (error) {
+    const pdfProfile = buildPdfSubtypeProfile({
+      source: "file-ref-pdftotext",
+      byteSize: document.byteSize || 0,
+      parserWarnings: ["pdf-pdftotext-failed"]
+    });
     return {
       text: "",
       totalCharacters: 0,
@@ -7891,8 +8057,9 @@ function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeS
         runtime: "pdf.pdftotext",
         command: runtime.command || "pdftotext",
         error: error instanceof Error ? error.message : String(error)
-      }],
-      warnings: ["pdf-pdftotext-failed"]
+      }, pdfSubtypeTrace(pdfProfile)],
+      warnings: ["pdf-pdftotext-failed"],
+      pdfProfile
     };
   } finally {
     fsSync.rmSync(workDir, { recursive: true, force: true });
@@ -8294,6 +8461,7 @@ function buildCorpusPlan(documents = [], input = {}) {
       timeRange: document.timeRange || null,
       timeConfidence: Number(document.timeConfidence || 0),
       timeSignals: document.timeSignals || [],
+      pdfProfile: document.pdfProfile || null,
       route,
       elementPlan,
       formatConversionProfile,
@@ -8471,7 +8639,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
         parserTrace: streamAnalysis.parserTrace,
         warnings: streamAnalysis.warnings,
         structureElements: [],
-        structureFormat: ""
+        structureFormat: "",
+        pdfProfile: null
       }
     : pdfFileAnalysis
       ? {
@@ -8479,7 +8648,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           parserTrace: pdfFileAnalysis.parserTrace,
           warnings: pdfFileAnalysis.warnings,
           structureElements: [],
-          structureFormat: ""
+          structureFormat: "",
+          pdfProfile: pdfFileAnalysis.pdfProfile || null
         }
     : structuredZipAnalysis
       ? {
@@ -8487,7 +8657,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           parserTrace: structuredZipAnalysis.parserTrace,
           warnings: structuredZipAnalysis.warnings,
           structureElements: structuredZipAnalysis.structureElements || [],
-          structureFormat: structuredZipAnalysis.structureFormat || ""
+          structureFormat: structuredZipAnalysis.structureFormat || "",
+          pdfProfile: null
         }
     : mboxFileAnalysis
       ? {
@@ -8495,7 +8666,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           parserTrace: mboxFileAnalysis.parserTrace,
           warnings: mboxFileAnalysis.warnings,
           structureElements: [],
-          structureFormat: ""
+          structureFormat: "",
+          pdfProfile: null
         }
     : tikaFileAnalysis
       ? {
@@ -8503,7 +8675,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           parserTrace: tikaFileAnalysis.parserTrace,
           warnings: tikaFileAnalysis.warnings,
           structureElements: [],
-          structureFormat: ""
+          structureFormat: "",
+          pdfProfile: null
         }
     : payload.archiveFilePath && isArchiveRoute(route)
       ? {
@@ -8516,7 +8689,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           }],
           warnings: [],
           structureElements: [],
-          structureFormat: ""
+          structureFormat: "",
+          pdfProfile: null
         }
     : parseSuppliedContent({ route, metadata: documentMetadata, text: suppliedText, buffer, runtimeStatus });
   const parserTrace = [...(payload.parserTrace || []), ...parsed.parserTrace];
@@ -8571,6 +8745,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       timeRange: inferredTime.timeRange,
       timeConfidence: documentMetadata.eventTime ? 1 : inferredTime.timeConfidence,
       timeSignals: inferredTime.timeSignals,
+      pdfProfile: parsed.pdfProfile || null,
       text,
       totalTextCharacters,
       structureElements,
@@ -12031,6 +12206,7 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
         timeRange: document.timeRange,
         timeConfidence: document.timeConfidence,
         timeSignals: document.timeSignals,
+        pdfProfile: document.pdfProfile || null,
         route: document.route,
         parseStatus: document.parseStatus,
         parserTrace: document.parserTrace,
@@ -12555,6 +12731,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "inline-or-streaming-manifest-document-input.v1",
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
+      PDF_SUBTYPE_ROUTING_STRATEGY,
       EVIDENCE_QUERY_STRATEGY,
       PROJECT_EVIDENCE_QUERY_STRATEGY,
       REFERENCE_GAP_REPORT_STRATEGY,
@@ -12570,6 +12747,12 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
     fileCompatibility: {
       routingStrategy: "extension-media-shape-routing.v1",
       routeOrder: ["extension", "mediaType", "sourceKind", "textFallback"],
+      pdfSubtypeRouting: {
+        supported: true,
+        strategy: PDF_SUBTYPE_ROUTING_STRATEGY,
+        subtypes: ["pdf-text", "pdf-scanned", "pdf-font-broken", "pdf-image-heavy", "pdf-encrypted", "pdf-empty-or-unknown"],
+        fields: ["route.pdfSubtype", "corpusPlan.documents[].pdfProfile", "agentMessage.corpusPlan.documents[].pdfProfile"]
+      },
       supportedExtensions,
       supportedMediaTypes,
       formats: FORMAT_ROUTES.map((route) => ({
@@ -12628,6 +12811,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "email.attachment-route",
         "pdf.text.basic",
         "pdf.text.pdftotext",
+        "pdf.subtype-route",
         "structured-zip.file-ref",
         "structured-zip.structural-entry-plan",
         "structured-zip.large-entry-stream",
