@@ -285,13 +285,13 @@ const samplePptxBase64 = base64Zip({
 const sampleXlsxBase64 = base64Zip({
   "xl/sharedStrings.xml": [
     "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
-    "<si><t>Vendor</t></si><si><t>Total</t></si><si><t>Payment Date</t></si>",
+    "<si><t>Vendor</t></si><si><t>Total</t></si><si><t>Payment Date</t></si><si><t>Projected Total</t></si>",
     "<si><t>Acme</t></si><si><t>42</t></si><si><t>2026-05-31</t></si>",
     "</sst>"
   ].join(""),
   "xl/worksheets/sheet1.xml": [
     "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
-    "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c></row><row><c t=\"s\"><v>3</v></c><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c></row></sheetData>",
+    "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>B2*2</f><v>84</v></c></row></sheetData>",
     "</worksheet>"
   ].join("")
 });
@@ -486,13 +486,13 @@ try {
         entries: {
           "xl/sharedStrings.xml": [
             "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
-            "<si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si>",
+            "<si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>Evidence Score</t></si>",
             "<si><t>structured filePath</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si>",
             "</sst>"
           ].join(""),
           "xl/worksheets/sheet1.xml": [
             "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
-            "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c></row><row><c t=\"s\"><v>3</v></c><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c></row></sheetData>",
+            "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData>",
             "</worksheet>"
           ].join("")
         }
@@ -694,6 +694,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.emptyCorpusErrorCode, "EMPTY_RAW_CORPUS");
   assert.ok(capabilities.payload.runtimeDoctor.summary, "capabilities must expose runtime doctor summary");
@@ -728,6 +729,7 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("bbox"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("layout.width"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
@@ -1530,17 +1532,23 @@ try {
           ref.table?.format === "presentationml" &&
           ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
         ))), true);
+      } else if (formatId === "spreadsheet") {
+        assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-06-15"), true);
+        assert.equal(mountedStructuredCorpus.timeRange.from, "2026-06-15");
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "table-row" &&
+          ref.table?.format === "xlsx" &&
+          ref.cells?.some((cell) => cell.ref === "D2" && cell.header === "Evidence Score" && cell.formula === "LEN(B2)")
+        ))), true);
       } else {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "file-ref-stream-windowing.v1");
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "document.structure.elements" && trace.status === "completed"), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
-      }
-      if (formatId === "spreadsheet") {
-        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
-        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
-        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-06-15"), true);
-        assert.equal(mountedStructuredCorpus.timeRange.from, "2026-06-15");
-        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
       }
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
       assert.ok(mountedStructuredCorpus.quality.textCharacters > 0, `${sourceId} mounted structured ZIP document must produce text`);
@@ -1669,6 +1677,7 @@ try {
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.structured" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+  assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
   assert.equal(xlsxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(xlsxPayloadCorpus.elementPlan.sourceFormat, "xlsx");
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
@@ -1678,8 +1687,14 @@ try {
     element.table?.format === "xlsx" &&
     element.cells?.some((cell) => cell.ref === "C2" && cell.header === "Payment Date" && cell.value === "2026-05-31")
   )), true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "table-row" &&
+    element.table?.format === "xlsx" &&
+    element.cells?.some((cell) => cell.ref === "D2" && cell.header === "Projected Total" && cell.value === "84" && cell.formula === "B2*2")
+  )), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.parserProfile, "spreadsheetml-sheet-row-cell-route");
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("formulas"), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -1687,6 +1702,19 @@ try {
     ref.table?.format === "xlsx" &&
     ref.cells?.some((cell) => cell.ref === "C2")
   ))), true);
+  assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-row" &&
+    ref.table?.format === "xlsx" &&
+    ref.cells?.some((cell) => cell.ref === "D2" && cell.formula === "B2*2")
+  ))), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-14" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "table-row" &&
+      ref.table?.format === "xlsx" &&
+      ref.cells?.some((cell) => cell.ref === "D2" && cell.formula === "B2*2")
+    ))
+  )), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-05-31"), true);
   assert.equal(xlsxPayloadCorpus.eventTime, "2026-05-31");
   assert.equal(xlsxPayloadCorpus.timeRange.from, "2026-05-31");

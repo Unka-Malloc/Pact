@@ -734,14 +734,14 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["ranking/evaluation loop over external vector stores", "full document-layout enrichment for every parser"]
   },
   mineru: {
-    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs"],
+    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs", "SpreadsheetML formula metadata"],
     baseline: ["file-ref parsers for large binary payloads"],
-    gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
+    gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "spreadsheet sheet/row/cell coordinate/formula metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
-    gaps: ["full PDF and Word layout block geometry", "formula recognition beyond text-level elements"]
+    gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
   "llama-index": {
     absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API", "node-style element references on windows and text units"],
@@ -4470,6 +4470,23 @@ function xlsxCellValue(cellXml = "", sharedStrings = []) {
   return raw;
 }
 
+function xlsxCellFormula(cellXml = "") {
+  const formulaTag = String(cellXml || "").match(/<f\b[^>]*(?:\/>|>)/)?.[0] || "";
+  if (!formulaTag) {
+    return null;
+  }
+  const formula = decodeXmlEntities(String(cellXml || "").match(/<f\b[^>]*>([\s\S]*?)<\/f>/)?.[1] || "").trim();
+  const formulaType = xmlAttribute(formulaTag, "t");
+  const formulaRef = xmlAttribute(formulaTag, "ref");
+  const sharedIndex = xmlAttribute(formulaTag, "si");
+  return {
+    formula,
+    ...(formulaType ? { formulaType } : {}),
+    ...(formulaRef ? { formulaRef } : {}),
+    ...(sharedIndex ? { sharedIndex } : {})
+  };
+}
+
 function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0) {
   const rowOpenTag = String(rowXml || "").match(/^<row\b[^>]*>/)?.[0] || "";
   const rowNumber = Number(xmlAttribute(rowOpenTag, "r") || fallbackRowNumber || 0);
@@ -4481,23 +4498,36 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0)
     const ref = xmlAttribute(openTag, "r") || `${xlsxColumnLabel("", fallbackCellIndex)}${rowNumber || ""}`;
     const column = xlsxColumnLabel(ref, fallbackCellIndex);
     const value = xlsxCellValue(cellXml, sharedStrings);
+    const formula = xlsxCellFormula(cellXml);
     fallbackCellIndex += 1;
-    if (value) {
-      cells.push({ ref, column, value });
+    if (value || formula) {
+      cells.push({
+        ref,
+        column,
+        value,
+        ...(formula ? formula : {})
+      });
     }
   }
   return { rowNumber, cells };
 }
 
+function formatXlsxCellValue(cell = {}, header = "") {
+  const label = header ? `${cell.ref} ${header}` : cell.ref || cell.column;
+  const value = cell.value ? `=${cell.value}` : "=<formula-only>";
+  const formula = cell.formula ? ` (formula=${cell.formula})` : "";
+  return `${label}${value}${formula}`;
+}
+
 function formatXlsxHeaderRow(sheetLabel = "", row = { cells: [] }) {
-  const cells = row.cells.map((cell) => `${cell.column}=${cell.value}`);
+  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}`);
   return `${sheetLabel} Header row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
 }
 
 function formatXlsxDataRow(sheetLabel = "", row = { cells: [] }, headersByColumn = new Map()) {
   const cells = row.cells.map((cell) => {
     const header = headersByColumn.get(cell.column);
-    return header ? `${cell.ref} ${header}=${cell.value}` : `${cell.ref}=${cell.value}`;
+    return formatXlsxCellValue(cell, header);
   });
   return `${sheetLabel} Row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
 }
@@ -4533,6 +4563,7 @@ function parseXlsxDetailed(entries = []) {
   const lines = [];
   let rowCount = 0;
   let cellCount = 0;
+  let formulaCount = 0;
   let headerRows = 0;
   const elements = [];
   for (const [index, name] of sheetNames.entries()) {
@@ -4543,6 +4574,7 @@ function parseXlsxDetailed(entries = []) {
         rows.push(row);
         rowCount += 1;
         cellCount += row.cells.length;
+        formulaCount += row.cells.filter((cell) => cell.formula).length;
       }
     }
     const sheetLabel = `Sheet ${index + 1}${sheetDisplayNames[index] ? ` (${sheetDisplayNames[index]})` : ""}`;
@@ -4574,7 +4606,11 @@ function parseXlsxDetailed(entries = []) {
             ref: cell.ref,
             column: cell.column,
             row: row.rowNumber,
-            value: cell.value
+            value: cell.value,
+            ...(cell.formula ? { formula: cell.formula } : {}),
+            ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
+            ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
+            ...(cell.sharedIndex ? { sharedIndex: cell.sharedIndex } : {})
           })),
           limit: 2000
         });
@@ -4595,7 +4631,11 @@ function parseXlsxDetailed(entries = []) {
           column: cell.column,
           row: row.rowNumber,
           header: headersByColumn.get(cell.column) || "",
-          value: cell.value
+          value: cell.value,
+          ...(cell.formula ? { formula: cell.formula } : {}),
+          ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
+          ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
+          ...(cell.sharedIndex ? { sharedIndex: cell.sharedIndex } : {})
         })),
         limit: 2000
       });
@@ -4609,6 +4649,7 @@ function parseXlsxDetailed(entries = []) {
     sheetCount: sheetNames.length,
     rowCount,
     cellCount,
+    formulaCount,
     headerRows
   };
 }
@@ -4924,6 +4965,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
   let headerCaptured = false;
   let rowCount = 0;
   let cellCount = 0;
+  let formulaCount = 0;
   let headerRows = 0;
   let totalCharacters = 0;
   const appendLine = (line = "") => {
@@ -4938,6 +4980,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     }
     rowCount += 1;
     cellCount += row.cells.length;
+    formulaCount += row.cells.filter((cell) => cell.formula).length;
     if (!headerCaptured && row.cells.length >= 2) {
       for (const cell of row.cells) {
         headersByColumn.set(cell.column, cell.value);
@@ -4949,7 +4992,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     }
     appendLine(formatXlsxDataRow(sheetLabel, row, headersByColumn));
   });
-  return { rowCount, cellCount, headerRows, totalCharacters };
+  return { rowCount, cellCount, formulaCount, headerRows, totalCharacters };
 }
 
 function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
@@ -4964,6 +5007,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
   let totalCharacters = 0;
   let rowCount = 0;
   let cellCount = 0;
+  let formulaCount = 0;
   let headerRows = 0;
   for (const [index, sheet] of sheetFiles.entries()) {
     const sheetLabel = `Sheet ${index + 1}${sheetNames[index] ? ` (${sheetNames[index]})` : ""}`;
@@ -4976,6 +5020,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     totalCharacters += stats.totalCharacters;
     rowCount += stats.rowCount;
     cellCount += stats.cellCount;
+    formulaCount += stats.formulaCount;
     headerRows += stats.headerRows;
   }
   return {
@@ -4984,6 +5029,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     sheetCount: sheetFiles.length,
     rowCount,
     cellCount,
+    formulaCount,
     headerRows,
     parserTrace: [
       {
@@ -4997,6 +5043,11 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
         cells: cellCount,
         rows: rowCount,
         sharedStrings: sharedStrings.length
+      },
+      {
+        stage: "table.sheet.formulas",
+        status: formulaCount ? "completed" : "empty",
+        formulas: formulaCount
       }
     ]
   };
@@ -5134,12 +5185,13 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           elements: parsed.elements.length,
           sheets: parsed.sheetCount,
           rows: parsed.rowCount,
-          cells: parsed.cellCount
+          cells: parsed.cellCount,
+          formulas: parsed.formulaCount
         },
         {
           stage: "table.sheet.headers",
-          status: parsed.headerRowCount ? "completed" : "empty",
-          headerRows: parsed.headerRowCount
+          status: parsed.headerRows ? "completed" : "empty",
+          headerRows: parsed.headerRows
         },
         {
           stage: "table.sheet.cells",
@@ -5147,6 +5199,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           cells: parsed.cellCount,
           rows: parsed.rowCount,
           sharedStrings: parsed.sharedStringCount
+        },
+        {
+          stage: "table.sheet.formulas",
+          status: parsed.formulaCount ? "completed" : "empty",
+          formulas: parsed.formulaCount
         }
       ]
     };
@@ -6142,7 +6199,8 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           elements: parsed.elements.length,
           sheets: parsed.sheetCount,
           rows: parsed.rowCount,
-          cells: parsed.cellCount
+          cells: parsed.cellCount,
+          formulas: parsed.formulaCount
         });
         parserTrace.push({
           stage: "table.sheet.headers",
@@ -6154,6 +6212,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           status: parsed.cellCount ? "completed" : "empty",
           cells: parsed.cellCount,
           sharedStrings: parsed.sharedStringCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.formulas",
+          status: parsed.formulaCount ? "completed" : "empty",
+          formulas: parsed.formulaCount
         });
         if (parsed.text) {
           return {
@@ -6501,7 +6564,11 @@ function normalizedStructureElements(document = {}) {
             column: String(cell.column || ""),
             row: Number(cell.row || 0),
             header: String(cell.header || ""),
-            value: String(cell.value || "")
+            value: String(cell.value || ""),
+            formula: String(cell.formula || ""),
+            formulaType: String(cell.formulaType || ""),
+            formulaRef: String(cell.formulaRef || ""),
+            sharedIndex: String(cell.sharedIndex || "")
           }))
         : [];
       return {
@@ -6718,9 +6785,9 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     return {
       ...base,
       parserProfile: "spreadsheetml-sheet-row-cell-route",
-      preserves: [...base.preserves, "sheet", "row", "column", "cellRefs", "headers", "timeSignals"],
-      conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates", "evidence-pack"],
-      knownLosses: ["formulas-preserved-as-values-when-cached-value-only"]
+      preserves: [...base.preserves, "sheet", "row", "column", "cellRefs", "headers", "formulas", "timeSignals"],
+      conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates-and-formulas", "evidence-pack"],
+      knownLosses: ["formula-results-not-recomputed"]
     };
   }
   if (formatId === "markdown") {
@@ -7134,20 +7201,56 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
   let structureElements = [];
   let structureFormat = "";
   try {
-    const spreadsheet = route?.id === "spreadsheet"
-      ? appendXlsxDirectoryAsText(extracted.outputDir, outputPath)
-      : null;
-    if (spreadsheet) {
-      totalCharacters = spreadsheet.totalCharacters;
-      structuredFileCount = spreadsheet.sheetCount;
-      parserTrace.push({
-        stage,
-        status: totalCharacters ? "completed" : "empty",
-        mode: "structured-zip-file-ref",
-        files: structuredFileCount,
-        characters: totalCharacters
-      });
-      parserTrace.push(...spreadsheet.parserTrace);
+    if (route?.id === "spreadsheet") {
+      const parsed = parseXlsxDetailed(readDirectoryEntries(extracted.outputDir, 2000));
+      if (parsed.text) {
+        directText = parsed.text;
+        totalCharacters = directText.length;
+        structuredFileCount = parsed.sheetCount;
+        structureElements = parsed.elements || [];
+        structureFormat = parsed.format || "xlsx";
+        parserTrace.push({
+          stage,
+          status: "completed",
+          mode: "structured-zip-file-ref",
+          files: structuredFileCount,
+          characters: totalCharacters,
+          elements: structureElements.length,
+          sheets: parsed.sheetCount,
+          rows: parsed.rowCount,
+          cells: parsed.cellCount,
+          formulas: parsed.formulaCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.headers",
+          status: parsed.headerRows ? "completed" : "empty",
+          headerRows: parsed.headerRows
+        });
+        parserTrace.push({
+          stage: "table.sheet.cells",
+          status: parsed.cellCount ? "completed" : "empty",
+          cells: parsed.cellCount,
+          rows: parsed.rowCount,
+          sharedStrings: parsed.sharedStringCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.formulas",
+          status: parsed.formulaCount ? "completed" : "empty",
+          formulas: parsed.formulaCount
+        });
+      } else {
+        const spreadsheet = appendXlsxDirectoryAsText(extracted.outputDir, outputPath);
+        totalCharacters = spreadsheet.totalCharacters;
+        structuredFileCount = spreadsheet.sheetCount;
+        parserTrace.push({
+          stage,
+          status: totalCharacters ? "completed" : "empty",
+          mode: "structured-zip-file-ref",
+          files: structuredFileCount,
+          characters: totalCharacters
+        });
+        parserTrace.push(...spreadsheet.parserTrace);
+      }
     } else if (route?.id === "presentation") {
       const parsed = parsePptx(readDirectoryEntries(extracted.outputDir, 2000));
       directText = parsed.text || "";
@@ -10933,6 +11036,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.sheet.structured",
         "table.sheet.headers",
         "table.sheet.cells",
+        "table.sheet.formulas",
         "table.time-index",
         "open-document.structured",
         "open-document.tables",
@@ -10951,8 +11055,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       windowingStrategy: "element-aware-by-title-windowing.v1",
       elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "list-item", "blockquote", "link", "image", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.cells"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref", "cells.formula"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.cells", "elementRefs.cells.formula"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -10968,7 +11072,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       professionalFormats: ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"],
       humanReadableTargets: ["portable-markdown", "portable-docx", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs"]
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "formulas"]
     },
     runtimeDoctor: runtimeStatus,
     classification: {

@@ -454,6 +454,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ocr.image.tesseract"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.ocr.poppler-tesseract"), true);
@@ -966,7 +967,7 @@ try {
   assert.equal(conversionPlan.professionalFormats.includes("spreadsheet"), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
-    document.conversionTargets.includes("agent-json-with-cell-coordinates")
+    document.conversionTargets.includes("agent-json-with-cell-coordinates-and-formulas")
   )), true);
   const architectureEvidence = await fetchJson(
     `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?entity=namespace&sourceId=container-project-package!docs%2Farchitecture.md&limit=20`
@@ -1223,8 +1224,8 @@ try {
       "mkdir -p /tmp/pact-mounted-structured/docx/word /tmp/pact-mounted-structured/pptx/ppt/slides /tmp/pact-mounted-structured/xlsx/xl/worksheets /tmp/pact-mounted-structured/odt /tmp/pact-mounted-structured/epub/META-INF /tmp/pact-mounted-structured/epub/OEBPS",
       "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
       "printf '%s' '<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX filePath slide evidence enters structured parser windows.</a:t></a:r></a:p></p:txBody></p:sp><p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"3\" name=\"Mounted Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Container PPTX</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Preserve mounted slide table cells</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>' > /tmp/pact-mounted-structured/pptx/ppt/slides/slide1.xml",
-      "printf '%s' '<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>mounted xlsx</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si></sst>' > /tmp/pact-mounted-structured/xlsx/xl/sharedStrings.xml",
-      "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c></row><row><c t=\"s\"><v>3</v></c><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c></row></sheetData></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
+      "printf '%s' '<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>Evidence Score</t></si><si><t>mounted xlsx</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si></sst>' > /tmp/pact-mounted-structured/xlsx/xl/sharedStrings.xml",
+      "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
       "printf '%s' 'application/vnd.oasis.opendocument.text' > /tmp/pact-mounted-structured/odt/mimetype",
       "printf '%s' '<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"><office:body><office:text><text:p>Mounted ODT filePath extraction keeps OpenDocument evidence distillable.</text:p></office:text></office:body></office:document-content>' > /tmp/pact-mounted-structured/odt/content.xml",
       "printf '%s' 'application/epub+zip' > /tmp/pact-mounted-structured/epub/mimetype",
@@ -1484,13 +1485,20 @@ NODE`
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
     if (formatId === "spreadsheet") {
+      assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-06-15"), true);
       assert.equal(mountedStructured.eventTime, "2026-06-15");
       assert.equal(mountedStructured.timeRange.from, "2026-06-15");
       assert.match(mountedStructured.windowPlan.windows[0]?.excerpt || "", /Sheet 1 Header row|A1=Parser|B2 Status=completed|C2 Report Date=2026-06-15/);
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "table-row" &&
+        ref.table?.format === "xlsx" &&
+        ref.cells?.some((cell) => cell.ref === "D2" && cell.header === "Evidence Score" && cell.formula === "LEN(B2)")
+      ))), true);
     }
     if (formatId === "presentation") {
       assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -1500,7 +1508,7 @@ NODE`
         ref.table?.format === "presentationml" &&
         ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
       ))), true);
-    } else {
+    } else if (formatId !== "spreadsheet") {
       assert.equal(mountedStructured.windowPlan.strategy, "file-ref-stream-windowing.v1");
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
     }
