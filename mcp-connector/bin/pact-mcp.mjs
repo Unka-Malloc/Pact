@@ -358,6 +358,23 @@ function targetInstallMode(target) {
   return TARGET_INSTALL_MODES[target] || "pact-mcp-client-install";
 }
 
+function notDetectedTargetDetail(target) {
+  if (target === "openclaw") {
+    return "OpenClaw-compatible MCP CLI was not detected. Pass --openclaw-bin or run scan in the target VM/context.";
+  }
+  if (target === "hermes") {
+    return "Hermes MCP CLI was not detected in an OrbStack VM or remote Linux context. Pass --vm/--vm-user or run scan where Hermes is installed.";
+  }
+  if (target === "antigravity") {
+    return "Antigravity config path not found yet.";
+  }
+  const descriptor = AGENT_CLI_TARGETS.find((item) => item.target === target);
+  if (descriptor) {
+    return `${descriptor.commandNames.join("/")} executable was not detected. Pass --${descriptor.binOption} with an explicit command or path.`;
+  }
+  return `${targetLabel(target)} was not detected.`;
+}
+
 function redactToken(value) {
   const text = String(value || "");
   if (text.length <= 12) {
@@ -4205,8 +4222,20 @@ async function scanInstallTargets(options = {}) {
     target: "antigravity",
     label: targetLabel("antigravity"),
     status: antigravityDetected ? "detected" : "not-detected",
-    detail: antigravityDetected ? `config: ${settings.antigravityConfigPath}` : "Antigravity config path not found yet"
+    detail: antigravityDetected ? `config: ${settings.antigravityConfigPath}` : notDetectedTargetDetail("antigravity")
   });
+  for (const target of SUPPORTED_TARGETS) {
+    if (candidates.some((candidate) => candidate.target === target)) {
+      continue;
+    }
+    candidates.push({
+      id: target,
+      target,
+      label: targetLabel(target),
+      status: "not-detected",
+      detail: notDetectedTargetDetail(target)
+    });
+  }
   await annotateInstalledCandidates(settings, candidates);
 
   return {

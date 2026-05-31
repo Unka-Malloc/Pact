@@ -78,10 +78,15 @@ const autoOpencodeConfigPath = path.join(opencodeConfigDir, "opencode-auto.jsonc
 const tempRegistryPath = path.join(opencodeConfigDir, "pact-servers.json");
 const autoRegistryPath = path.join(opencodeConfigDir, "pact-auto-servers.json");
 const autoMarketplaceRoot = path.join(opencodeConfigDir, "codex-marketplace");
+const autoKiloConfigPath = path.join(opencodeConfigDir, "kilo", "kilo.json");
+const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "mcp_config.json");
 const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
 const fakeCodexPath = path.join(fakeBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
 const fakeClaudePath = path.join(fakeBinDir, process.platform === "win32" ? "claude.cmd" : "claude");
+const fakeGeminiPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini.cmd" : "gemini");
+const fakeKiloPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo.cmd" : "kilo");
+const fakeCopilotPath = path.join(fakeBinDir, process.platform === "win32" ? "copilot.cmd" : "copilot");
 const fakeOpenClawPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
 const fakeOpencodePath = path.join(fakeBinDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
 
@@ -95,6 +100,9 @@ async function installFakeAgentCli(filePath) {
       "  exit /b 0",
       ")",
       "if \"%1\"==\"plugin\" (",
+      "  exit /b 0",
+      ")",
+      "if \"%1\"==\"extensions\" (",
       "  exit /b 0",
       ")",
       "if \"%1\"==\"mcp\" if \"%2\"==\"remove\" exit /b 0",
@@ -122,6 +130,7 @@ async function installFakeAgentCli(filePath) {
     "  exit 0",
     "fi",
     "if [ \"$1\" = \"plugin\" ]; then exit 0; fi",
+    "if [ \"$1\" = \"extensions\" ]; then exit 0; fi",
     "if [ \"$1\" = \"mcp\" ]; then",
     "  case \"$2\" in",
     "    remove|add|add-json|set) exit 0 ;;",
@@ -136,7 +145,15 @@ async function installFakeAgentCli(filePath) {
 }
 
 async function installFakePriorityAgentClis() {
-  for (const filePath of [fakeCodexPath, fakeClaudePath, fakeOpenClawPath, fakeOpencodePath]) {
+  for (const filePath of [
+    fakeCodexPath,
+    fakeClaudePath,
+    fakeGeminiPath,
+    fakeKiloPath,
+    fakeCopilotPath,
+    fakeOpenClawPath,
+    fakeOpencodePath
+  ]) {
     await installFakeAgentCli(filePath);
   }
 }
@@ -214,17 +231,30 @@ try {
     assert.equal(t.status, 200);
     assert.ok(t.payload.result?.tools?.length > 0);
   });
-  await testAsync("local-grant target match for Claude Code", async () => {
-    const g = await fetchJson(`${serverUrl}/api/mcp/local-grant`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targets: ["claude-code"], label: "claude-code-test", connectorVersion: "verify" })
-    });
-    assert.equal(g.status, 201);
-    assert.equal(g.payload.targetMatch?.matched, true);
-    assert.deepEqual(g.payload.targetMatch?.matchedTargets, ["claude-code"]);
-    assert.equal(g.payload.targetMatch?.agentProfileId, "pact.mcp.claude-code");
-    assert.ok(g.payload.toolsets?.includes("pact.agent.workspace"));
+  await testAsync("local-grant target match for all supported agents", async () => {
+    const expectedProfiles = {
+      codex: "pact.mcp.codex",
+      "claude-code": "pact.mcp.claude-code",
+      "gemini-cli": "pact.mcp.gemini-cli",
+      "kilo-code": "pact.mcp.kilo-code",
+      copilot: "pact.mcp.copilot",
+      openclaw: "pact.mcp.openclaw",
+      hermes: "pact.mcp.hermes",
+      antigravity: "pact.mcp.antigravity",
+      opencode: "pact.mcp.opencode"
+    };
+    for (const [target, profileId] of Object.entries(expectedProfiles)) {
+      const g = await fetchJson(`${serverUrl}/api/mcp/local-grant`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targets: [target], label: `${target}-test`, connectorVersion: "verify" })
+      });
+      assert.equal(g.status, 201, `${target} should issue local grant`);
+      assert.equal(g.payload.targetMatch?.matched, true, `${target} should match an agent profile`);
+      assert.deepEqual(g.payload.targetMatch?.matchedTargets, [target]);
+      assert.equal(g.payload.targetMatch?.agentProfileId, profileId);
+      assert.ok(g.payload.toolsets?.includes("pact.agent.workspace"), `${target} should include workspace toolset`);
+    }
   });
 
   // ── SECTION 3: Config manipulation (simulating installOpenCode) ──
@@ -322,8 +352,9 @@ try {
 
   // ── SECTION 5: Non-interactive auto install ──
   console.log("\n[5] Non-interactive auto install");
-  await testAsync("--target auto installs explicitly detected priority agents", async () => {
+  await testAsync("--target auto installs explicitly detected supported agents", async () => {
     await installFakePriorityAgentClis();
+    await fs.mkdir(path.dirname(autoAntigravityConfigPath), { recursive: true });
     const result = await spawnConnector([
       "install",
       "--target", "auto",
@@ -332,11 +363,15 @@ try {
       "--token-env", autoTokenEnv,
       "--codex-bin", fakeCodexPath,
       "--claude-bin", fakeClaudePath,
+      "--gemini-bin", fakeGeminiPath,
+      "--kilo-bin", fakeKiloPath,
+      "--copilot-bin", fakeCopilotPath,
       "--openclaw-bin", fakeOpenClawPath,
       "--opencode-bin", fakeOpencodePath,
       "--marketplace-root", autoMarketplaceRoot,
+      "--kilo-config", autoKiloConfigPath,
       "--opencode-config", autoOpencodeConfigPath,
-      "--antigravity-config", path.join(opencodeConfigDir, "missing-antigravity", "mcp_config.json"),
+      "--antigravity-config", autoAntigravityConfigPath,
       "--discovery-file", autoRegistryPath,
       "--no-scan",
       "--no-verify",
@@ -354,17 +389,30 @@ try {
     assert.equal(payload.autoDetected, true);
     assert.equal(payload.selected?.some((item) => item.target === "codex"), true);
     assert.equal(payload.selected?.some((item) => item.target === "claude-code"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "gemini-cli"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "kilo-code"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "copilot"), true);
     assert.equal(payload.selected?.some((item) => item.target === "openclaw"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "antigravity"), true);
     assert.equal(payload.selected?.some((item) => item.target === "opencode"), true);
     assert.equal(payload.installed?.codex?.status, "installed");
     assert.equal(payload.installed?.["claude-code"]?.status, "installed");
+    assert.equal(payload.installed?.["gemini-cli"]?.status, "installed");
+    assert.equal(payload.installed?.["kilo-code"]?.status, "installed");
+    assert.equal(payload.installed?.copilot?.status, "installed");
     assert.equal(payload.installed?.openclaw?.status, "installed");
+    assert.equal(payload.installed?.antigravity?.status, "installed");
     assert.equal(payload.installed?.opencode?.status, "installed");
 
     const config = JSON.parse(await fs.readFile(autoOpencodeConfigPath, "utf8"));
     assert.equal(config.mcp?.pact?.type, "remote");
     assert.equal(config.mcp?.pact?.url, `${serverUrl}/mcp`);
     assert.ok(config.mcp?.pact?.headers?.["X-Pact-Api-Key"]);
+    const kiloConfig = JSON.parse(await fs.readFile(autoKiloConfigPath, "utf8"));
+    assert.equal(kiloConfig.mcp?.pact?.type, "remote");
+    assert.equal(kiloConfig.mcp?.pact?.url, `${serverUrl}/mcp`);
+    const antigravityConfig = JSON.parse(await fs.readFile(autoAntigravityConfigPath, "utf8"));
+    assert.equal(antigravityConfig.mcpServers?.pact?.serverUrl, `${serverUrl}/mcp`);
   });
 
   // ── SECTION 6: Verify installed config works ──
@@ -472,19 +520,22 @@ try {
     assert.ok(v.packageVersion);
   });
 
-  await testAsync("usage (help) includes priority agent targets", async () => {
+  await testAsync("usage (help) includes supported agent targets", async () => {
     const result = await spawnConnector([]);
     assert.match(result.stdout, /--claude-bin/);
+    assert.match(result.stdout, /--gemini-bin/);
+    assert.match(result.stdout, /--kilo-bin/);
+    assert.match(result.stdout, /--copilot-bin/);
     assert.match(result.stdout, /opencode/);
   });
 
-  await testAsync("supported targets include priority agents", async () => {
+  await testAsync("supported targets include all declared agents", async () => {
     const result = await spawnConnector(["scan", "--json", "--url", serverUrl, "--no-scan"]);
     const scan = JSON.parse(result.stdout);
     const targets = scan.candidates.map((c) => c.target);
-    assert.ok(targets.includes("codex"), `targets: ${targets.join(", ")}`);
-    assert.ok(targets.includes("claude-code"), `targets: ${targets.join(", ")}`);
-    assert.ok(targets.includes("opencode"), `targets: ${targets.join(", ")}`);
+    for (const target of ["codex", "claude-code", "gemini-cli", "kilo-code", "copilot", "openclaw", "hermes", "antigravity", "opencode"]) {
+      assert.ok(targets.includes(target), `targets: ${targets.join(", ")}`);
+    }
   });
 
 } catch (error) {
