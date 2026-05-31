@@ -5908,6 +5908,29 @@ function yesNo(value) {
   return value ? "yes" : "no";
 }
 
+function formatLocalPathForDisplay(value) {
+  const text = String(value || "");
+  if (!text) {
+    return "";
+  }
+  const normalized = path.normalize(text);
+  const home = path.normalize(os.homedir());
+  if (home && normalized === home) {
+    return "~";
+  }
+  if (home && normalized.startsWith(`${home}${path.sep}`)) {
+    const relativePath = path.relative(home, normalized)
+      .split(path.sep)
+      .filter(Boolean)
+      .join("/");
+    return relativePath ? `~/${relativePath}` : "~";
+  }
+  if (path.isAbsolute(normalized)) {
+    return `<local-path>/${path.basename(normalized) || "path"}`;
+  }
+  return text;
+}
+
 function formatTargetInstallLine(target, item = {}) {
   const failed = item.status === "failed" || item.ok === false || Boolean(item.error);
   const status = failed ? "FAIL" : "OK";
@@ -5958,7 +5981,7 @@ function formatInstallResult(result) {
     `  MCP URL: ${result.baseUrl ? `${result.baseUrl}/mcp` : "unknown"}`
   );
   if (result.discoveryManifest) {
-    lines.push(`  Local registry: ${result.discoveryManifest}`);
+    lines.push(`  Local registry: ${formatLocalPathForDisplay(result.discoveryManifest)}`);
   }
   lines.push("", "Clients:");
   const installed = result.installed || {};
@@ -6006,7 +6029,7 @@ function formatRegisterResult(result) {
     "",
     `MCP URL: ${result.mcpUrl || (result.baseUrl ? `${result.baseUrl}/mcp` : "unknown")}`,
     `Verified handshake: ${result.verifiedHandshake || "yes"}`,
-    `Local registry: ${result.discoveryManifest || ""}`,
+    `Local registry: ${formatLocalPathForDisplay(result.discoveryManifest)}`,
     "",
     "Next:",
     "  pact-mcp install"
@@ -6032,7 +6055,7 @@ function formatUninstallResult(result) {
     lines.push(`  [${item.removedMcp === false ? "WARN" : "OK"}] ${targetLabel(target)} (${target})`);
   }
   if (result.discoveryManifest) {
-    lines.push("", `Local registry: ${result.discoveryManifest}`);
+    lines.push("", `Local registry: ${formatLocalPathForDisplay(result.discoveryManifest)}`);
   }
   return lines.join("\n");
 }
@@ -6056,7 +6079,7 @@ function formatDoctorResult(result) {
   } else {
     lines.push(`  [${checks.systemHealth?.ok ? "OK" : "FAIL"}] Authenticated system.health`);
   }
-  lines.push(`  [${checks.deviceManifest?.ok ? "OK" : "WARN"}] Local registry${checks.deviceManifest?.path ? `: ${checks.deviceManifest.path}` : ""}`);
+  lines.push(`  [${checks.deviceManifest?.ok ? "OK" : "WARN"}] Local registry${checks.deviceManifest?.path ? `: ${formatLocalPathForDisplay(checks.deviceManifest.path)}` : ""}`);
   if (result.nextCommand) {
     lines.push("", "Next:", `  ${result.nextCommand}`);
   }
@@ -6074,7 +6097,7 @@ function formatServerConfigResult(result) {
     return [
       "Pact MCP server config reset.",
       "",
-      `Local registry: ${result.path || ""}`,
+      `Local registry: ${formatLocalPathForDisplay(result.path)}`,
       "Next install will scan for a signed Pact server again."
     ].join("\n");
   }
@@ -6085,7 +6108,7 @@ function formatServerConfigResult(result) {
       "",
       `Active profile: ${result.activeName || "(none)"}`,
       `Profiles: ${names.length ? names.join(", ") : "(none)"}`,
-      `Local registry: ${result.path || ""}`
+      `Local registry: ${formatLocalPathForDisplay(result.path)}`
     ].join("\n");
   }
   return [
@@ -6093,7 +6116,7 @@ function formatServerConfigResult(result) {
     "",
     `Active profile: ${result.activeName || result.profile?.name || "default"}`,
     `MCP URL: ${result.profile?.mcpUrl || (result.profile?.baseUrl ? `${result.profile.baseUrl}/mcp` : "")}`,
-    `Local registry: ${result.path || ""}`
+    `Local registry: ${formatLocalPathForDisplay(result.path)}`
   ].join("\n");
 }
 

@@ -518,6 +518,19 @@ try {
     assert.ok(payload.repairCommands?.includes("pact-mcp doctor --token-stdin --json"));
   });
 
+  await testAsync("doctor human output redacts local registry path", async () => {
+    const result = await spawnConnector([
+      "doctor",
+      "--url", serverUrl,
+      "--discovery-file", tempRegistryPath,
+      "--token-env", missingDoctorTokenEnv
+    ]);
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /Local registry: <local-path>\/pact-servers\.json/);
+    assert.equal(result.stdout.includes(tempRegistryPath), false, "doctor human output must not expose the registry path");
+    assert.equal(result.stdout.includes(path.dirname(tempRegistryPath)), false, "doctor human output must not expose the registry directory");
+  });
+
   await testAsync("doctor with token verifies installed target without leaking token", async () => {
     const config = JSON.parse(await fs.readFile(opencodeConfigPath, "utf8"));
     const installedToken = config.mcp?.pact?.headers?.["X-Pact-Api-Key"];
