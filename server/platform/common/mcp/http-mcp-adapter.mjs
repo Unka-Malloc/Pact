@@ -165,8 +165,58 @@ function parseRequestBody(requestBody) {
   return JSON.parse(requestBody.toString("utf8"));
 }
 
+const MCP_OUTLET_METADATA = Object.freeze({
+  [MCP_DISCOVERY_TOOL_NAME]: { toolName: MCP_DISCOVERY_TOOL_NAME, architectureCategory: "Discovery" },
+  [MCP_KNOWLEDGE_TOOL_NAME]: { toolName: MCP_KNOWLEDGE_TOOL_NAME, architectureCategory: "Knowledge" },
+  [MCP_SHAREDSPACE_TOOL_NAME]: { toolName: MCP_SHAREDSPACE_TOOL_NAME, architectureCategory: "Sharedspace" },
+  [MCP_CODESPACE_TOOL_NAME]: { toolName: MCP_CODESPACE_TOOL_NAME, architectureCategory: "Codespace" },
+  [MCP_SKILL_HUB_TOOL_NAME]: { toolName: MCP_SKILL_HUB_TOOL_NAME, architectureCategory: "Skill Hub" }
+});
+
+function mcpOutletForTool(tool = {}) {
+  const id = String(tool.operationId || tool.id || tool.name || "").trim();
+  const publicName = String(tool.id || tool.name || "").trim();
+  const feature = String(tool.feature || "").trim();
+  const aspects = Array.isArray(tool.aspects) ? tool.aspects.map((item) => String(item || "")) : [];
+  const text = `${id} ${publicName} ${feature} ${aspects.join(" ")}`.toLowerCase();
+
+  if (/^(tool_management\.|knowledge\.skills\.|knowledge\.agent_skill\.|workspace\.skill\.)/i.test(id)) {
+    return MCP_OUTLET_METADATA[MCP_SKILL_HUB_TOOL_NAME];
+  }
+  if (/^(repo\.|gerrit\.|github\.|workspace\.code\.)/i.test(id) || /\b(repo|repository|codespace|gerrit|github)\b/.test(text)) {
+    return MCP_OUTLET_METADATA[MCP_CODESPACE_TOOL_NAME];
+  }
+  if (/^(agent_workspaces\.|agent_sessions\.|sharedspace\.|workspace\.)/i.test(id) || feature === "agent_workspace") {
+    return MCP_OUTLET_METADATA[MCP_SHAREDSPACE_TOOL_NAME];
+  }
+  if (/^knowledge\./i.test(id) || /\b(knowledge|evidence|asset|dossier|distillation)\b/.test(text)) {
+    return MCP_OUTLET_METADATA[MCP_KNOWLEDGE_TOOL_NAME];
+  }
+  return MCP_OUTLET_METADATA[MCP_DISCOVERY_TOOL_NAME];
+}
+
+function mcpOutletSummary(operations = []) {
+  const outlets = {};
+  for (const toolName of CATEGORIZED_TOOL_NAMES) {
+    const meta = MCP_OUTLET_METADATA[toolName];
+    outlets[toolName] = {
+      ...meta,
+      operationCount: 0,
+      operations: []
+    };
+  }
+  for (const operation of operations) {
+    const toolName = operation?._meta?.mcpOutlet || MCP_DISCOVERY_TOOL_NAME;
+    const outlet = outlets[toolName] || outlets[MCP_DISCOVERY_TOOL_NAME];
+    outlet.operationCount += 1;
+    outlet.operations.push(operation.name);
+  }
+  return outlets;
+}
+
 function publicMcpTool(tool) {
   const inputSchema = publicMcpInputSchema(tool.inputSchema || { type: "object" });
+  const outlet = mcpOutletForTool(tool);
   const workspaceHint = schemaMentionsWorkspaceId(tool.inputSchema)
     ? " MCP clients should use workspaceRef, workspaceIndex, or workspaceName instead of internal workspaceId."
     : "";
@@ -187,6 +237,8 @@ function publicMcpTool(tool) {
     },
     _meta: {
       operationId: tool.operationId || tool.id,
+      mcpOutlet: outlet.toolName,
+      architectureCategory: outlet.architectureCategory,
       toolsets: tool.toolsets || [],
       requiredScopes: tool.requiredScopes || [],
       risk: tool.risk || "read_only"
@@ -877,14 +929,16 @@ function pactMetaResult({ operation, input, envelope, toolSkillManagementProvide
     });
   }
   if (operation === "pact.capabilities.list") {
+    const operations = toolSkillManagementProvider
+      .listVisibleTools({ authorization })
+      .map(publicMcpTool);
     return mcpToolResult({
       result: {
         ...mcpVersionInfo(),
         grant: toolSkillManagementProvider.visibleGrantSummary({ authorization }),
         envelope: mcpEnvelopePublic(envelope),
-        operations: toolSkillManagementProvider
-          .listVisibleTools({ authorization })
-          .map(publicMcpTool)
+        outlets: mcpOutletSummary(operations),
+        operations
       }
     });
   }

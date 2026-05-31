@@ -300,6 +300,30 @@ try {
   assert.equal(localGrantBearerList.payload.result.tools.length, 5);
   assert.equal(localGrantBearerList.payload.result._meta.stableToolName, "pact.call");
 
+  const localGrantCapabilities = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(localGrant.payload.token),
+    body: JSON.stringify(mcpRequest("tools/call", {
+      name: "pact.discovery",
+      arguments: {
+        apiVersion: "pact.mcp.v1",
+        operation: "pact.capabilities.list"
+      }
+    }, 32))
+  });
+  assert.equal(localGrantCapabilities.status, 200);
+  const localOperations = localGrantCapabilities.payload.result.structuredContent.operations;
+  const localOutlets = localGrantCapabilities.payload.result.structuredContent.outlets;
+  const operationByName = new Map(localOperations.map((operation) => [operation.name, operation]));
+  assert.equal(operationByName.get("pact.sharedspace.file.write")._meta.mcpOutlet, "pact.sharedspace");
+  assert.equal(operationByName.get("pact.repo.status")._meta.mcpOutlet, "pact.codespace");
+  assert.equal(operationByName.get("pact.knowledge.skills.list")._meta.mcpOutlet, "pact.skillHub");
+  assert.equal(operationByName.get("pact.knowledge.search")._meta.mcpOutlet, "pact.knowledge");
+  assert.ok(localOutlets["pact.sharedspace"].operations.includes("pact.sharedspace.file.write"));
+  assert.ok(localOutlets["pact.codespace"].operations.includes("pact.repo.status"));
+  assert.ok(localOutlets["pact.skillHub"].operations.includes("pact.knowledge.skills.list"));
+  assert.ok(localOutlets["pact.knowledge"].operations.includes("pact.knowledge.search"));
+
   const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
