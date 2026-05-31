@@ -35,6 +35,17 @@ function mcpRequest(method, params = {}, id = 1) {
   };
 }
 
+function mcpToolCall(name, operation, input = {}, id = 1) {
+  return mcpRequest("tools/call", {
+    name,
+    arguments: {
+      apiVersion: "pact.mcp.v1",
+      operation,
+      input
+    }
+  }, id);
+}
+
 function apiKeyHeaders(token) {
   return {
     "Content-Type": "application/json",
@@ -323,6 +334,80 @@ try {
   assert.ok(localOutlets["pact.codespace"].operations.includes("pact.repo.status"));
   assert.ok(localOutlets["pact.skillHub"].operations.includes("pact.knowledge.skills.list"));
   assert.ok(localOutlets["pact.knowledge"].operations.includes("pact.knowledge.search"));
+
+  const sharedspaceGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      targets: ["codex"],
+      label: "verify-mcp-sharedspace-flow",
+      connectorVersion: "verify"
+    })
+  });
+  assert.equal(sharedspaceGrant.status, 201);
+  assert.equal(sharedspaceGrant.payload.ok, true);
+
+  const createdSharedWorkspace = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+    body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.agentWorkspace.create", {
+      title: "MCP sharedspace exchange",
+      objective: "Verify agent-to-agent file exchange through Pact MCP"
+    }, 33))
+  });
+  assert.equal(createdSharedWorkspace.status, 200);
+  const createdWorkspacePayload = createdSharedWorkspace.payload.result.structuredContent.payload;
+  const workspaceRef = createdWorkspacePayload.workspace.workspaceRef;
+  assert.equal(workspaceRef, "workspace-1");
+
+  const sharedspaceWrite = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+    body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.file.write", {
+      workspaceRef,
+      path: "notes/hello.txt",
+      content: "hello pact"
+    }, 34))
+  });
+  assert.equal(sharedspaceWrite.status, 200);
+  const writePayload = sharedspaceWrite.payload.result.structuredContent.payload;
+  assert.equal(writePayload.ok, true);
+  assert.equal(writePayload.file.relativePath, "notes/hello.txt");
+
+  const sharedspaceList = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+    body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.item.list", {
+      workspaceRef,
+      path: "notes"
+    }, 35))
+  });
+  assert.equal(sharedspaceList.status, 200);
+  const listPayload = sharedspaceList.payload.result.structuredContent.payload;
+  assert.equal(listPayload.ok, true);
+  assert.ok(listPayload.paths.includes("notes/hello.txt"));
+
+  const sharedspaceRead = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+    body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.file.read", {
+      workspaceRef,
+      path: "notes/hello.txt",
+      includeText: true
+    }, 36))
+  });
+  assert.equal(sharedspaceRead.status, 200);
+  const readPayload = sharedspaceRead.payload.result.structuredContent.payload;
+  assert.equal(readPayload.ok, true);
+  assert.equal(readPayload.content, "hello pact");
+  const sharedspaceJson = JSON.stringify({
+    createdWorkspacePayload,
+    writePayload,
+    listPayload,
+    readPayload
+  });
+  assert.equal(/\bworkspace_[A-Za-z0-9_]+\b/.test(sharedspaceJson), false, "MCP sharedspace output must not expose internal workspace ids");
+  assert.equal(/\/Users\/|\/var\/folders|\/private\/var/.test(sharedspaceJson), false, "MCP sharedspace output must not expose local filesystem paths");
 
   const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",

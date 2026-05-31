@@ -211,7 +211,17 @@ const publicPayload = await provider.publicMcpToolPayload({
     workspaces: [{ workspaceId: "workspace_a", title: "Alpha" }],
     selected: {
       workspaceId: "workspace_a",
-      absolutePath: "/Users/unka/private.txt"
+      absolutePath: "/home/private-user/private.txt"
+    },
+    cacheReceipt: {
+      cacheKey: "workspace:workspace_a:notes",
+      indexRoots: {
+        "workspace:workspace_a": "cid:sha256:abc"
+      }
+    },
+    metadata: {
+      defaultAdminUserId: "grant_internal_admin",
+      adminUserIds: ["grant_internal_admin"]
     }
   },
   request,
@@ -219,6 +229,11 @@ const publicPayload = await provider.publicMcpToolPayload({
 });
 assert.equal(publicPayload.selected.workspaceRef, "workspace-1");
 assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.selected, "absolutePath"), false);
+assert.equal(publicPayload.cacheReceipt.cacheKey, "workspace:workspace-1:notes");
+assert.equal(publicPayload.cacheReceipt.indexRoots["workspace:workspace-1"], "cid:sha256:abc");
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.metadata, "defaultAdminUserId"), false);
+assert.equal(JSON.stringify(publicPayload).includes("workspace_a"), false);
+assert.equal(JSON.stringify(publicPayload).includes("grant_internal_admin"), false);
 
 const localGrant = await provider.createLocalMcpGrant({
   request,

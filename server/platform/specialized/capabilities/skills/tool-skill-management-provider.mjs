@@ -445,6 +445,25 @@ function isInternalAbsolutePath(value) {
   );
 }
 
+function publicWorkspaceToken(directory, workspaceId) {
+  const entry = directory.byId.get(String(workspaceId || ""));
+  return entry?.ref || "workspace-hidden";
+}
+
+function sanitizeInternalWorkspaceIds(value, directory = workspaceDirectoryFromWorkspaces([])) {
+  return String(value || "").replace(/\bworkspace_[A-Za-z0-9_]+\b/g, (workspaceId) =>
+    publicWorkspaceToken(directory, workspaceId)
+  );
+}
+
+function sanitizeMcpString(value, directory = workspaceDirectoryFromWorkspaces([])) {
+  const text = String(value || "");
+  if (isInternalAbsolutePath(text)) {
+    return "[server-internal-path]";
+  }
+  return sanitizeInternalWorkspaceIds(text, directory);
+}
+
 function valueContainsWorkspaceId(value) {
   if (!value || typeof value !== "object") {
     return false;
@@ -462,17 +481,18 @@ function sanitizeMcpOutputValue(value, directory = workspaceDirectoryFromWorkspa
     return value.map((item) => sanitizeMcpOutputValue(item, directory));
   }
   if (!value || typeof value !== "object") {
-    return typeof value === "string" && isInternalAbsolutePath(value) ? "[server-internal-path]" : value;
+    return typeof value === "string" ? sanitizeMcpString(value, directory) : value;
   }
   const result = {};
   for (const [key, child] of Object.entries(value)) {
+    const publicKey = sanitizeInternalWorkspaceIds(key, directory);
     if (/^(fsPath|absolutePath|rootPath|databasePath|userDataPath)$/i.test(key)) {
       continue;
     }
     if (/path$/i.test(key) && typeof child === "string" && isInternalAbsolutePath(child)) {
       continue;
     }
-    if (/ownerUserId$/i.test(key)) {
+    if (/^(ownerUserId|defaultAdminUserId|adminUserIds|userId|userIds)$/i.test(key)) {
       continue;
     }
     if (/workspaceIds$/i.test(key) && Array.isArray(child)) {
@@ -499,7 +519,7 @@ function sanitizeMcpOutputValue(value, directory = workspaceDirectoryFromWorkspa
       }
       continue;
     }
-    result[key] = sanitizeMcpOutputValue(child, directory);
+    result[publicKey] = sanitizeMcpOutputValue(child, directory);
   }
   if (value.workspaceId && !result.workspaceRef) {
     const entry = directory.byId.get(String(value.workspaceId || ""));
