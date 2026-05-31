@@ -190,7 +190,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "pdf",
     preferredParser: "pdf.text.tika-safe",
     fallbackParsers: ["pdf.visual.layout", "ocr.page"],
-    parserChain: ["pdf.route", "pdf.text.tika-safe", "pdf.visual.layout", "ocr.page"],
+    parserChain: ["pdf.route", "pdf.text.tika-safe", "pdf.hyperlinks", "pdf.visual.layout", "ocr.page"],
     streamingUnit: "page",
     referenceFrameworks: ["docling", "mineru", "marker", "unstructured"]
   },
@@ -517,10 +517,10 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "PDF",
     professionalFamily: "pdf",
     parserProfile: "pdf.text-layout-ocr-route",
-    structureUnits: ["page", "pdf-text-block", "layout-run", "ocr-page"],
-    parserStages: ["pdf.text.basic", "pdf.text.pdftotext", "pdf.visual.layout", "ocr.page"],
-    preserves: ["page", "bbox", "layout.order", "layout.fontSize"],
-    conversionTargets: ["markdown-with-page-blocks", "docx-review-copy", "agent-json-with-layout", "evidence-pack"],
+    structureUnits: ["page", "pdf-text-block", "layout-run", "link", "ocr-page"],
+    parserStages: ["pdf.text.basic", "pdf.text.pdftotext", "pdf.hyperlinks", "pdf.visual.layout", "ocr.page"],
+    preserves: ["page", "bbox", "layout.order", "layout.fontSize", "links"],
+    conversionTargets: ["markdown-with-page-blocks", "docx-review-copy", "agent-json-with-layout-and-link-refs", "evidence-pack"],
     conversionAdapters: [
       {
         target: "portable-markdown",
@@ -541,7 +541,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "pdf-layout-to-agent-elements.v1",
         mode: "agent",
-        stages: ["page-bbox-element-refs", "window-ids", "content-hashes"]
+        stages: ["page-bbox-element-refs", "link-refs", "window-ids", "content-hashes"]
       },
       {
         target: "evidence-pack-json",
@@ -551,7 +551,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "entities", "claims"]
       }
     ],
-    qualityGates: ["page-order-preserved", "bbox-metadata-present-when-available", "empty-corpus-blocked"],
+    qualityGates: ["page-order-preserved", "bbox-metadata-present-when-available", "pdf-link-refs-preserved", "empty-corpus-blocked"],
     riskControls: ["font-mapping-risk", "image-only-pdf-ocr-fallback", "layout-geometry-approximation"],
     knownLosses: ["approximate-text-bbox", "complex-vector-layout-not-fully-reconstructed"]
   },
@@ -6517,6 +6517,87 @@ function pdfTextTokenValue(token = null) {
   return "";
 }
 
+function decodePdfStringTokenValue(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (raw.startsWith("(")) {
+    return decodePdfLiteral(raw);
+  }
+  if (/^<[0-9a-fA-F\s]+>$/.test(raw)) {
+    return decodePdfHex(raw.slice(1, -1));
+  }
+  return raw;
+}
+
+function parsePdfRect(value = "") {
+  const numbers = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item));
+  if (numbers.length < 4) {
+    return null;
+  }
+  const [x1, y1, x2, y2] = numbers;
+  return {
+    x: roundLayoutNumber(Math.min(x1, x2)),
+    y: roundLayoutNumber(Math.min(y1, y2)),
+    width: roundLayoutNumber(Math.abs(x2 - x1)),
+    height: roundLayoutNumber(Math.abs(y2 - y1))
+  };
+}
+
+function extractPdfUriLinks(latin = "") {
+  const objectBodies = new Map();
+  for (const match of String(latin || "").matchAll(/(\d+)\s+\d+\s+obj\b([\s\S]*?)\bendobj\b/g)) {
+    objectBodies.set(match[1], match[2] || "");
+  }
+
+  const pageByAnnotationObject = new Map();
+  let page = 0;
+  for (const body of objectBodies.values()) {
+    if (!/\/Type\s*\/Page(?!s)\b/.test(body)) {
+      continue;
+    }
+    page += 1;
+    const annots = body.match(/\/Annots\s*\[([\s\S]*?)\]/)?.[1] || "";
+    for (const ref of annots.matchAll(/(\d+)\s+\d+\s+R/g)) {
+      pageByAnnotationObject.set(ref[1], page);
+    }
+  }
+
+  const links = [];
+  const seen = new Set();
+  for (const [objectNumber, body] of objectBodies.entries()) {
+    if (!/\/Subtype\s*\/Link\b/.test(body) || !/\/S\s*\/URI\b/.test(body)) {
+      continue;
+    }
+    const uriToken = body.match(/\/URI\s*(\((?:\\.|[^\\)])*\)|<[0-9a-fA-F\s]+>)/)?.[1] || "";
+    const href = decodePdfStringTokenValue(uriToken);
+    if (!href) {
+      continue;
+    }
+    const rect = parsePdfRect(body.match(/\/Rect\s*\[([^\]]+)\]/)?.[1] || "");
+    const label = decodePdfStringTokenValue(body.match(/\/Contents\s*(\((?:\\.|[^\\)])*\)|<[0-9a-fA-F\s]+>)/)?.[1] || "") || href;
+    const pageNumber = pageByAnnotationObject.get(objectNumber) || 1;
+    const key = `${pageNumber}:${href}:${JSON.stringify(rect || {})}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    links.push({
+      href,
+      text: label,
+      page: pageNumber,
+      objectNumber,
+      bbox: rect
+    });
+  }
+  return links;
+}
+
 function tokenizePdfTextBlock(block = "") {
   const tokens = [];
   const pattern = /\((?:\\.|[^\\)])*\)|<([0-9a-fA-F\s]+)>|\[|\]|\/[^\s<>\[\]()]+|-?(?:\d+\.\d+|\d+|\.\d+)|TJ|Tj|Tf|Td|TD|Tm|T\*|'|"|[A-Za-z*]+/g;
@@ -6648,6 +6729,7 @@ function parsePdfBasicText(buffer) {
   const warnings = [];
   const textChunks = [];
   const layoutRuns = [];
+  const uriLinks = extractPdfUriLinks(latin);
   let layoutOrder = 0;
   let streamCount = 0;
   let decodedStreamCount = 0;
@@ -6711,6 +6793,22 @@ function parsePdfBasicText(buffer) {
       }
     });
   }
+  uriLinks.forEach((link, index) => {
+    pushStructureElement(elements, "link", link.text || link.href, {
+      line: layoutOrder + index + 1,
+      name: "pdf-uri-annotation",
+      page: link.page,
+      href: link.href,
+      bbox: link.bbox,
+      layout: {
+        strategy: "pdf-uri-annotation.v1",
+        page: link.page,
+        annotationObject: link.objectNumber,
+        order: layoutOrder + index + 1
+      },
+      limit: 800
+    });
+  });
   parserTrace.push({
     stage: "pdf.text.basic",
     status: text ? "completed" : "empty",
@@ -6720,6 +6818,12 @@ function parsePdfBasicText(buffer) {
     elements: elements.length,
     layoutBlocks: layoutRuns.length,
     layoutStrategy: "pdf-text-operator-geometry.v1"
+  });
+  parserTrace.push({
+    stage: "pdf.hyperlinks",
+    status: uriLinks.length ? "completed" : "empty",
+    links: uriLinks.length,
+    strategy: "pdf-uri-annotation.v1"
   });
   if (!text) {
     warnings.push("pdf-basic-text-empty");
@@ -8331,6 +8435,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: evidence.geometryElementCount > 0
           ? "Layout geometry is available on element references."
           : "No bbox metadata was attached to the PDF element sample."
+      });
+    }
+    if (gate === "pdf-link-refs-preserved") {
+      const linkSignals = maxTraceMetric(document, ["links", "hyperlinks", "linkCount"]);
+      const status = routeId !== "pdf"
+        ? "not_applicable"
+        : linkSignals > 0
+          ? evidence.linkElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { linkSignals, linkElementCount: evidence.linkElementCount },
+        required: { linksWhenPresent: true },
+        message: status === "passed" ? "PDF URI annotations are preserved as link element references." : "No PDF URI annotations were required or observed."
       });
     }
     if (gate === "word-table-cell-refs-preserved") {
@@ -14206,6 +14323,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "pdf.text.basic",
         "pdf.text.pdftotext",
         "pdf.subtype-route",
+        "pdf.hyperlinks",
         "structured-zip.file-ref",
         "structured-zip.structural-entry-plan",
         "structured-zip.large-entry-stream",

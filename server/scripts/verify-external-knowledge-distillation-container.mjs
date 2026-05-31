@@ -214,6 +214,44 @@ function buildImageOnlyPdf(raster) {
   return Buffer.concat(chunks);
 }
 
+function buildTextPdfWithLink() {
+  const content = Buffer.from("BT /F1 12 Tf 72 720 Td (Container text PDF parser extracts linked evidence.) Tj ET", "ascii");
+  const objects = [
+    pdfTextObject(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+    pdfTextObject(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+    pdfTextObject(
+      3,
+      "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [6 0 R] >>"
+    ),
+    pdfTextObject(4, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+    pdfStreamObject(5, `<< /Length ${content.length} >>`, content),
+    pdfTextObject(6, "<< /Type /Annot /Subtype /Link /Rect [72 700 268 716] /Contents (Container PDF evidence portal) /A << /S /URI /URI (https://example.test/container-pdf-evidence) >> >>")
+  ];
+  const chunks = [Buffer.from("%PDF-1.4\n", "ascii")];
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+    chunks.push(object);
+  }
+  const xrefOffset = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const xrefEntries = [
+    "0000000000 65535 f ",
+    ...offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n `)
+  ];
+  chunks.push(Buffer.from([
+    "xref",
+    `0 ${objects.length + 1}`,
+    ...xrefEntries,
+    "trailer",
+    `<< /Size ${objects.length + 1} /Root 1 0 R >>`,
+    "startxref",
+    String(xrefOffset),
+    "%%EOF",
+    ""
+  ].join("\n"), "ascii"));
+  return Buffer.concat(chunks);
+}
+
 function zipBase64(entries) {
   return Buffer.from(zipSync(Object.fromEntries(
     Object.entries(entries).map(([name, text]) => [name, typeof text === "string" ? strToU8(text) : text])
@@ -451,6 +489,7 @@ try {
     assert.equal(adapter.qualityGates.includes(qualityGate), true);
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("pdf-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
@@ -512,6 +551,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.subtype-route"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
@@ -605,6 +645,47 @@ try {
   assert.match(docxDocumentXml, /w:pStyle w:val="ListParagraph"/, "container DOCX export must preserve Markdown bullets as Word list paragraphs");
   assert.match(docxDocumentXml, /<w:tbl\b/, "container DOCX export must render Markdown tables as Word tables");
   assert.match(docxStylesXml, /w:styleId="CodeBlock"/, "container DOCX export must declare code-block style");
+
+  const textPdf = buildTextPdfWithLink();
+  const textPdfRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container text PDF hyperlink verification",
+      title: "Container text PDF hyperlink verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-text-pdf",
+          title: "Container Text PDF",
+          fileName: "container-text.pdf",
+          mediaType: "application/pdf",
+          byteSize: textPdf.length,
+          contentBase64: textPdf.toString("base64")
+        }
+      ]
+    })
+  });
+  assert.equal(textPdfRun.status, 201);
+  assert.equal(textPdfRun.payload.status, "completed");
+  const textPdfDocument = textPdfRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-text-pdf");
+  assert.ok(textPdfDocument, "container text PDF document must be present");
+  assert.equal(textPdfDocument.route.formatId, "pdf");
+  assert.equal(textPdfDocument.pdfProfile.subtype, "pdf-text");
+  assert.equal(textPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "completed"), true);
+  assert.equal(textPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.hyperlinks" && trace.status === "completed" && trace.links === 1), true);
+  assert.equal(textPdfDocument.elementPlan.elementTypes["pdf-text-block"] >= 1, true);
+  assert.equal(textPdfDocument.elementPlan.elementTypes.link >= 1, true);
+  assert.equal(textPdfDocument.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.href === "https://example.test/container-pdf-evidence" &&
+    ref.layout?.strategy === "pdf-uri-annotation.v1"
+  ))), true);
+  assert.equal(textPdfRun.payload.result.formatConversionPlan.documents.some((document) => (
+    document.routeId === "pdf" &&
+    document.evidence.linkElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "pdf-link-refs-preserved" && gate.status === "passed")
+  )), true);
 
   const scannedPdfRaster = drawOcrRaster([
     "SCANNED PDF ROUTING",

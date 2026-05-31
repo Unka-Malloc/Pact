@@ -377,13 +377,14 @@ const samplePdfBase64 = base64Text([
   "%PDF-1.4",
   "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
   "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-  "3 0 obj << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
+  "3 0 obj << /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [6 0 R] >> endobj",
   "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
   "5 0 obj << /Length 92 >>",
   "stream",
   "BT /F1 12 Tf 72 720 Td (Standalone PDF payload parser extracts evidence.) Tj ET",
   "endstream",
   "endobj",
+  "6 0 obj << /Type /Annot /Subtype /Link /Rect [72 700 248 716] /Contents (PDF evidence portal) /A << /S /URI /URI (https://example.test/pdf-evidence) >> >> endobj",
   "trailer << /Root 1 0 R >>",
   "%%EOF"
 ].join("\n"));
@@ -827,6 +828,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.subtype-route"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
@@ -943,6 +945,7 @@ try {
     assert.equal(adapter.qualityGates.includes(qualityGate), true);
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("pdf-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
@@ -1609,6 +1612,13 @@ try {
     document.evidence.linkElementCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed")
   )), true);
+  assert.equal(professionalConversionPlan.documents.some((document) => (
+    document.sourceId === "source-12" &&
+    document.routeId === "pdf" &&
+    document.evidence.linkElementCount >= 1 &&
+    document.qualityGates.includes("pdf-link-refs-preserved") &&
+    document.qualityGateResults.some((gate) => gate.gate === "pdf-link-refs-preserved" && gate.status === "passed")
+  )), true);
   const jsonPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-6");
   assert.equal(jsonPayloadCorpus.parserTrace.some((trace) => trace.stage === "structured.json"), true);
   const csvPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-7");
@@ -2122,9 +2132,11 @@ try {
   assert.equal(pdfPayloadCorpus.route.pdfSubtype, "pdf-text");
   assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.subtype-route" && trace.subtype === "pdf-text"), true);
   assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "completed" && trace.layoutBlocks >= 1 && trace.layoutStrategy === "pdf-text-operator-geometry.v1"), true);
+  assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.hyperlinks" && trace.status === "completed" && trace.links === 1), true);
   assert.equal(pdfPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pdfPayloadCorpus.elementPlan.sourceFormat, "pdf");
   assert.equal(pdfPayloadCorpus.elementPlan.elementTypes["pdf-text-block"] >= 1, true);
+  assert.equal(pdfPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(pdfPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "pdf-text-block" &&
     element.page === 1 &&
@@ -2132,8 +2144,16 @@ try {
     element.bbox?.y === 720 &&
     element.layout?.strategy === "pdf-text-operator-geometry.v1"
   )), true);
+  assert.equal(pdfPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "link" &&
+    element.href === "https://example.test/pdf-evidence" &&
+    element.page === 1 &&
+    element.bbox?.x === 72 &&
+    element.layout?.strategy === "pdf-uri-annotation.v1"
+  )), true);
   assert.equal(pdfPayloadCorpus.formatConversionProfile.parserProfile, "pdf.text-layout-ocr-route");
   assert.equal(pdfPayloadCorpus.formatConversionProfile.preserves.includes("bbox"), true);
+  assert.equal(pdfPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
   assert.equal(pdfPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(pdfPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "pdf-text-block" &&
@@ -2142,12 +2162,26 @@ try {
     ref.bbox?.y === 720 &&
     ref.layout?.strategy === "pdf-text-operator-geometry.v1"
   ))), true);
+  assert.equal(pdfPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.href === "https://example.test/pdf-evidence" &&
+    ref.page === 1 &&
+    ref.layout?.strategy === "pdf-uri-annotation.v1"
+  ))), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-12" &&
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "pdf-text-block" &&
       ref.bbox?.x === 72 &&
       ref.layout?.strategy === "pdf-text-operator-geometry.v1"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-12" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "link" &&
+      ref.href === "https://example.test/pdf-evidence" &&
+      ref.layout?.strategy === "pdf-uri-annotation.v1"
     ))
   )), true);
   assert.equal(pdfPayloadCorpus.windowPlan.windowCount >= 1, true);
@@ -2883,6 +2917,12 @@ try {
     artifact.gates.some((gate) => gate.gate === "word-hyperlinks-well-formed" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "pdf" && item.qualityGates.includes("page-order-preserved")), true);
+  assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "pdf" && item.qualityGates.includes("pdf-link-refs-preserved")), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "pdf" &&
+    document.evidence.linkElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "pdf-link-refs-preserved" && gate.status === "passed")
+  )), true);
   assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
