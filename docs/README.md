@@ -51,6 +51,9 @@ graph LR
 | [CLIENT-IMPLEMENTATION-PLAN.md](CLIENT-IMPLEMENTATION-PLAN.md) | 客户端实施路线 | Lightweight Pact Client refactor phases, checkpoints, interfaces, compatibility targets, and acceptance gates | 28 KB |
 | [CLIENT-DESIGN-CONFORMANCE.md](CLIENT-DESIGN-CONFORMANCE.md) | 客户端设计符合性矩阵 | Destructive keep/replace/delete/legacy-dev-only decisions for old client modules | 9 KB |
 | [CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md](CHECKPOINT-ALGORITHM-EVOLUTION-PLAN.md) | Checkpoint 算法演进方案 | Step-by-step LSM/Merkle/CAS/checkpoint algorithm evolution path from single-node contracts to distributed lossless migration | 25 KB |
+| [KNOWLEDGE-DISTILLATION-EVOLUTION-PLAN.md](KNOWLEDGE-DISTILLATION-EVOLUTION-PLAN.md) | 知识蒸馏演进方案 | Chaptered full-chain knowledge distillation plan covering routing, runtime, parsing, raw corpus, large files, grounding, timeline filtering, exports, and single-node deployment | 32 KB |
+| [KNOWLEDGE-DISTILLATION-AUDIT.md](KNOWLEDGE-DISTILLATION-AUDIT.md) | 知识蒸馏审计 | Current implementation audit, gaps, and quality risks for the distillation runtime and workbench | 7 KB |
+| [KNOWLEDGE-DISTILLATION-IMPLEMENTATION-BASELINE.md](KNOWLEDGE-DISTILLATION-IMPLEMENTATION-BASELINE.md) | 知识蒸馏实现基线 | Baseline implementation notes for current distillation behavior and artifacts | 4 KB |
 | [ENTITY-CONFIG-LAYOUT.md](ENTITY-CONFIG-LAYOUT.md) | 实体配置目录 | Human-maintainable entity config directory, lightweight skill packs, and validation | 2 KB |
 | [TEST-FRAMEWORK.md](TEST-FRAMEWORK.md) | 测试框架 | Unified test framework contract | 6 KB |
 | [DEVELOPER-GUIDELINES.md](DEVELOPER-GUIDELINES.md) | 开发者核心守则 | Coding conventions, architecture principles, and design philosophy | 5 KB |

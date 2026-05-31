@@ -186,3 +186,71 @@ Use staged CI jobs:
 Keep report artifacts from `build/test-reports/` for all CI jobs. Keep GUI
 screenshots from `build/artifacts/ubuntu-client-gui/` only for release and failed
 GUI jobs.
+
+## Pipeline Gate Capability Registry
+
+Use this checklist as the source of truth when adding or reviewing CI gate
+coverage for product capabilities. A capability is only marked checked when it
+has an executable verifier and is included in the appropriate CI profile or
+workflow job. If a requested capability is missing, add the smallest verifier
+that can fail for that contract, wire it into `tests/run.mjs` or a release gate,
+then update this list in the same patch.
+
+- [x] `repository-hygiene`: enforced by `repo.hygiene.pre`,
+  `repo.hygiene.post`, and `npm run repo:hygiene`; blocks generated output and
+  misplaced artifacts from leaking into source roots.
+- [x] `secret-hygiene`: enforced by `security.secret-hygiene` and
+  `npm run security:hygiene`; blocks high-risk secrets in source, docs, and
+  tests.
+- [x] `production-dependency-audit`: enforced by `security.npm-audit` in
+  security, standard, prebuild, and release profiles.
+- [x] `typescript-typecheck`: enforced by the CI `typecheck` job with
+  `npx tsc --noEmit`.
+- [x] `renderer-build`: enforced by `server.web.build`,
+  `npm run build:renderer:raw`, and the CI `build-renderer` job.
+- [x] `server-runtime-regression`: enforced by the `standard`, `server`,
+  `prebuild`, and `release` profiles across headless runtime, MCP HTTP,
+  continuity, checkpoints, rebuild, ops, knowledge, policy, trace, logging, and
+  business scenario suites.
+- [x] `external-service-api-registration`: enforced by
+  `server.external-service-api-registration`,
+  `npm run server:verify:external-service-api-registration`, and the production
+  readiness external-service gate; requires every `external-services/*`
+  capability to register through `external.*` operations and mediated
+  `/api/external/*` APIs, and rejects Tool Management exposure of platform
+  internal algorithm operations such as `knowledge.distillation.*`.
+- [x] `capability-kernel-api-capability`: enforced by
+  `npm run server:verify:authorization-capabilities` and the production
+  readiness Capability Kernel gate; verifies every `SERVER_API_OPERATIONS`
+  entry and Tool Catalog entry has a known kernel Capability and that
+  Capability-only authorization allow/deny behavior works.
+- [x] `key-management-storage-distribution`: enforced by the production
+  readiness key-management gate, `npm run server:verify:secret-init`,
+  `npm run server:verify:opaque-capability-key`,
+  `npm run server:verify:tool-management`, and `npm run server:verify:mcp-http`;
+  covers key initialization, opaque key storage/verification, grant
+  rotate/revoke storage, and MCP local grant delivery.
+- [x] `permission-management-auth-config`: enforced by the production readiness
+  tool-permission gate, `npm run server:verify:console-auth`,
+  `npm run server:verify:2-3-5-security-model`,
+  `npm run server:verify:tool-management`, and
+  `npm run server:verify:authorization-governance`; covers client identity,
+  role/policy/governance configuration, tool grants, and authorization audit.
+- [x] `mcp-gateway-client-push`: enforced by the production readiness MCP
+  gateway gate, `npm run server:verify:mcp-http`,
+  `npm run server:verify:mcp-release`, `npm run client:verify:mcp-plugins`,
+  and `npm run server:verify:client-runtime-bootstrap`; covers MCP discovery,
+  `notifications/tools/list_changed`, connector version packaging, client MCP
+  config update/rollback, and key grant delivery to downstream clients.
+- [x] `client-native-and-flutter`: enforced by the `fast`, `client`,
+  `standard`, `prebuild`, and `release` profiles across Rust native tests,
+  client architecture gates, target/config contracts, Flutter analyze, and
+  Flutter tests.
+- [x] `smoke-runtime-memory-cli`: enforced by `npm run test:smoke`; covers
+  server lifecycle, bounded source evidence memory behavior, and client CLI
+  smoke.
+- [x] `docker-image-build`: enforced by the CI `docker-build` job.
+- [x] `release-readiness`: enforced on release branches, version tags, and
+  manual runs by `npm run test:full`, `npm run server:verify:v001`, and
+  `npm run server:verify:production-readiness`; uploads release and production
+  readiness reports.
