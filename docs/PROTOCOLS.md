@@ -705,7 +705,7 @@ npx pact-mcp-connector@latest install --target codex
 面向 Claude Code、Codex、OpenClaw 等智能体自助执行的无人值守入口必须使用 auto target，一次安装 connector 能验证到的全部受支持客户端：
 
 ```bash
-/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --json
 ```
 
 只有使用预先签发的自定义 grant 时才传入 token：

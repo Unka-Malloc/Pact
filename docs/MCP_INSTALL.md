@@ -109,7 +109,7 @@ Pass connector install flags after the shell command:
 Unattended agent shells can use automatic detection directly:
 
 ```bash
-~/.pact/mcp/connector/current/pact-mcp install --target auto
+~/.pact/mcp/connector/current/pact-mcp install --target auto --json
 ```
 
 `auto` installs every supported client the connector can verify. A
@@ -122,7 +122,7 @@ auto target form. This covers Codex, Claude Code, OpenClaw, and every other
 supported client that the connector can verify:
 
 ```bash
-/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --json
 ```
 
 Manage local server address profiles:

@@ -76,7 +76,7 @@ PACT_MCP_INSTALL_DIR="$HOME/.local/share/pact-mcp" \
 非交互智能体 shell 可以直接使用自动检测模式：
 
 ```bash
-~/.pact/mcp/connector/current/pact-mcp install --target auto
+~/.pact/mcp/connector/current/pact-mcp install --target auto --json
 ```
 
 `auto` 会安装 connector 能验证到的所有受支持客户端。没有 TTY 且未传
@@ -89,7 +89,7 @@ auto target 形态。它会覆盖 Codex、Claude Code、OpenClaw 以及 connecto
 能验证到的所有其它受支持客户端：
 
 ```bash
-/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target auto --json
 ```
 
 管理本机服务端地址 profile：

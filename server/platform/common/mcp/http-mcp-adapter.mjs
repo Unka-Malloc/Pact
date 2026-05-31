@@ -540,7 +540,7 @@ function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {
   return {
     command,
     installCommand: urlArgs ? `${command} --${urlArgs}` : command,
-    autoInstallCommand: `${command} -- --target auto${urlArgs}`
+    autoInstallCommand: `${command} -- --target auto${urlArgs} --json`
   };
 }
 
@@ -636,7 +636,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const urlArgs = commandUrlArgs(baseUrl);
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register${urlArgs}`;
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs}`;
-  const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs}`;
+  const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs} --json`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
   const {
     command: githubOneLineCommand,
@@ -731,7 +731,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         zipInstallEntry: "install.command",
         installCommand: `./pact-mcp register${urlArgs}`,
         interactiveInstallCommand: `./pact-mcp install${urlArgs}`,
-        autoInstallCommand: `./pact-mcp install --target auto${urlArgs}`,
+        autoInstallCommand: `./pact-mcp install --target auto${urlArgs} --json`,
         clientInstallCommand: `./pact-mcp install --target <client>${urlArgs}`,
         doubleClickEntry: "install.command"
       }

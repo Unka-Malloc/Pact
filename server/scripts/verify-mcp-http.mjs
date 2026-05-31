@@ -144,6 +144,7 @@ try {
   assert.match(discovery.payload.installer.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
   assert.match(discovery.payload.installer.githubOneLineInstallCommand, /pact-mcp-install\.sh.+--url/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
+  assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /--json/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
@@ -153,6 +154,7 @@ try {
   assert.match(discovery.payload.installer.installCommand, /npx pact-mcp-connector@latest register/);
   assert.match(discovery.payload.installer.interactiveInstallCommand, /pact-mcp-connector@latest install/);
   assert.match(discovery.payload.installer.autoInstallCommand, /pact-mcp-connector@latest install --target auto/);
+  assert.match(discovery.payload.installer.autoInstallCommand, /--json/);
   assert.match(discovery.payload.installer.clientInstallCommand, /--target <client>/);
   assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
@@ -162,7 +164,7 @@ try {
   assert.match(discovery.payload.installer.autoInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.equal(discovery.payload.installer.portable.installCommand, `./pact-mcp register --url '${server.url}'`);
   assert.equal(discovery.payload.installer.portable.interactiveInstallCommand, `./pact-mcp install --url '${server.url}'`);
-  assert.equal(discovery.payload.installer.portable.autoInstallCommand, `./pact-mcp install --target auto --url '${server.url}'`);
+  assert.equal(discovery.payload.installer.portable.autoInstallCommand, `./pact-mcp install --target auto --url '${server.url}' --json`);
   assert.equal(discovery.payload.installer.portable.clientInstallCommand, `./pact-mcp install --target <client> --url '${server.url}'`);
   const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
   const expectedInstallTargets = [
@@ -399,6 +401,7 @@ try {
   assert.equal(updateProbe.payload.result.structuredContent.updateAvailable, true);
   assert.equal(updateProbe.payload.result.structuredContent.autoInstallCommand, updateCommand);
   assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
+  assert.match(updateCommand, /--json/);
   assert.match(updateCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(updateProbe.payload.result.content[0].text, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
 

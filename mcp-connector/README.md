@@ -52,7 +52,7 @@ npx pact-mcp-connector@latest install --target codex
 For unattended agent shells:
 
 ```bash
-npx pact-mcp-connector@latest install --target auto
+npx pact-mcp-connector@latest install --target auto --json
 ```
 
 `auto` installs every supported client that the connector can verify on this
@@ -62,7 +62,7 @@ with no `--target` uses the same auto-detected path.
 For a single copyable GitHub Release command in an unattended agent shell:
 
 ```bash
-/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --json
 ```
 
 Use `--token-stdin` only when installing with a pre-issued custom grant token.

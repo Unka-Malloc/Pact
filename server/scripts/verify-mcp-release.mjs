@@ -197,8 +197,10 @@ try {
   assert.ok(manifest.install.githubOneLineCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommand.includes("pact-mcp-install.sh"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommand.includes("--target auto"));
+  assert.ok(manifest.install.githubOneLineAutoInstallCommand.includes("--json"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("--target auto"));
+  assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("--json"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
   for (const command of [
@@ -214,9 +216,11 @@ try {
   assert.ok(manifest.install.portableCommand.includes("pact-mcp register"));
   assert.ok(manifest.install.interactiveInstallCommand.includes("pact-mcp-connector@latest install"));
   assert.ok(manifest.install.autoInstallCommand.includes("pact-mcp-connector@latest install --target auto"));
+  assert.ok(manifest.install.autoInstallCommand.includes("--json"));
   assert.ok(manifest.install.interactiveUninstallCommand.includes("pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.clientInstallCommand.includes("--target <client>"));
   assert.ok(manifest.portable.autoInstallCommand.includes("./pact-mcp install --target auto"));
+  assert.ok(manifest.portable.autoInstallCommand.includes("--json"));
   assert.equal(Object.hasOwn(manifest.install, "bulkInstallCommand"), false);
   assert.ok(manifest.install.uninstallCommand.includes("npx pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.discoverCommand.includes("pact-mcp-connector@latest discover-local"));
@@ -250,9 +254,11 @@ try {
   assert.equal(result.bootstrapUninstallerZhCNSha256, await sha256(result.bootstrapUninstallerZhCNPath));
   assert.ok(result.githubOneLineCommand.includes("pact-mcp-install.sh"));
   assert.ok(result.githubOneLineAutoInstallCommand.includes("--target auto"));
+  assert.ok(result.githubOneLineAutoInstallCommand.includes("--json"));
   assert.ok(result.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
   assert.ok(result.githubOneLineCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(result.githubOneLineAutoInstallCommandZhCN.includes("--target auto"));
+  assert.ok(result.githubOneLineAutoInstallCommandZhCN.includes("--json"));
   assert.ok(result.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
   for (const command of [
     result.githubOneLineCommand,
