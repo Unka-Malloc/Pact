@@ -14,8 +14,8 @@ Request payloads can provide either direct text fields or a base64 file payload:
 - Streaming document manifest: `rawDocumentsManifestPath`, `rawDocumentsManifestRef`, `documentsManifestPath`, or `manifestPath` can point to an allowed JSONL manifest. The service streams the manifest line by line, then routes each referenced document through the same filePath/contentRef parser chain so large project requests do not need large JSON bodies.
 - Mounted archive payloads are expanded from their file path through ZIP/TAR/TGZ/7z extractors; child entries are routed as documents and streamable text entries use chunked windowing.
 - Mounted PDF payloads use Poppler `pdftotext` into a temporary text stream and then the normal windowing path.
-- Mounted DOCX, PPTX, XLSX, OpenDocument, and EPUB payloads are expanded as ZIP containers from their file path. The parser selects only structural XML/XHTML entries, uses bounded in-memory reads for native element extraction, and falls back to streaming structural text when a selected entry is too large.
-- Mounted legacy Office and RTF payloads such as DOC, PPT, XLS, and RTF use Apache Tika from their file path into temporary text, then the normal windowing path is used for distillation.
+- Mounted OOXML payloads, including DOCX/DOCM/DOTX/DOTM, PPTX/PPTM/PPSX/PPSM/POTX/POTM, XLSX/XLSM/XLTX/XLTM, plus OpenDocument and EPUB payloads, are expanded as ZIP containers from their file path. The parser selects only structural XML/XHTML entries, uses bounded in-memory reads for native element extraction, and falls back to streaming structural text when a selected entry is too large.
+- Mounted legacy Office and RTF payloads such as DOC/DOT, PPT/PPS/POT, XLS/XLSB, and RTF use Apache Tika from their file path into temporary text, then the normal windowing path is used for distillation.
 - Oversized mounted binary files without a format-specific text parser use `bounded-binary-file-profile.v1`: the service streams a hash and bounded head/tail byte sample, records route and size evidence, and avoids direct in-memory reads without pretending binary bytes are text.
 - File hints: `fileName`, `mediaType`, `byteSize`, `sourceId`, and optional `metadata`.
 
@@ -79,7 +79,7 @@ Agent/API requests can include a `timeFilter` object:
 Routed format families:
 
 - PDF: subtype routing before distillation, text extraction, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
-- Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP with paragraph, heading, Word comments/footnotes/endnotes, Word/PowerPoint/OpenDocument table row/cell metadata, slide, PresentationML shape geometry, sheet-row, cell-coordinate, SpreadsheetML formula metadata, and table elements for OOXML/OpenDocument payloads.
+- Office and OpenDocument: DOC/DOT/DOCX/DOCM/DOTX/DOTM, RTF, PPT/PPS/POT/PPTX/PPTM/PPSX/PPSM/POTX/POTM, XLS/XLSB/XLSX/XLSM/XLTX/XLTM, ODT/ODS/ODP with paragraph, heading, Word comments/footnotes/endnotes, Word/PowerPoint/OpenDocument table row/cell metadata, slide, PresentationML shape geometry, sheet-row, cell-coordinate, SpreadsheetML formula metadata, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
 - Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements rather than treated as plain text.
 - Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
@@ -116,14 +116,14 @@ Built-in payload parsers:
 - Bounded binary file profiles for oversized or unknown file references without a text parser, emitted as `payload.file-ref-binary-profile`.
 - Mounted archive file references with child-entry file refs, so project packages do not need to be base64 encoded or fully loaded into Node memory.
 - Mounted PDF file references with Poppler `pdftotext` extraction into chunked windows.
-- Mounted structured ZIP file references for DOCX, PPTX, XLSX, ODT/ODS/ODP, and EPUB, with structural text extraction into chunked windows or element-aware windows when native OOXML structure is available.
+- Mounted structured ZIP file references for OOXML document/presentation/spreadsheet macro and template variants, ODT/ODS/ODP, and EPUB, with structural text extraction into chunked windows or element-aware windows when native OOXML structure is available.
 - Mounted structured ZIP file references expose `structured-zip.structural-entry-plan`; large selected structural entries use `structured-zip.large-entry-stream` instead of forcing a whole XML entry into memory.
 - XLSX extraction preserves sheet, header row, row number, cell reference, formula, and `header=value` pairs so table evidence can be classified and grounded without losing cell context.
 - XLSX, CSV, and TSV table rows feed a table time index when date-like headers are present; extracted dates are attached to document and window records as `timeRange`, `timeConfidence`, and `timeSignals`.
-- Mounted legacy Office file references for DOC, PPT, XLS, and RTF through Apache Tika into chunked windows.
+- Mounted legacy Office file references for DOC/DOT, PPT/PPS/POT, XLS/XLSB, and RTF through Apache Tika into chunked windows.
 - ZIP, TAR, and GZip/TGZ manifest extraction plus child-file routing for project packages.
 - 7z extraction through the packaged `7zz`/`7z` runtime when available.
-- OOXML container extraction for DOCX, PPTX, and XLSX.
+- OOXML container extraction for document, presentation, slideshow, template, macro-enabled, and spreadsheet template variants.
 - Content-signature routing for mislabeled or generic `application/octet-stream` PDF, DOCX, PPTX, XLSX, OpenDocument, EPUB, image, archive, RTF, and HTML payloads before Tika fallback.
 - OpenDocument extraction for ODT, ODS, and ODP.
 - EPUB chapter extraction.

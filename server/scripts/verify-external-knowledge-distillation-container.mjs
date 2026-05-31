@@ -452,6 +452,13 @@ try {
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".rtf"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".docm"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".dotx"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".pptm"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ppsx"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".xlsm"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".xltx"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".xlsb"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".gif"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".odt"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".epub"), true);
@@ -1711,6 +1718,27 @@ NODE`
           fileName: "mounted-xlsx.asset",
           mediaType: "application/octet-stream",
           filePath: "/data/mounted-evidence.xlsx"
+        },
+        {
+          sourceId: "container-variant-docm",
+          title: "Container DOCM Variant",
+          fileName: "mounted-project-plan.docm",
+          mediaType: "application/vnd.ms-word.document.macroEnabled.12",
+          filePath: "/data/mounted-project-plan.docx"
+        },
+        {
+          sourceId: "container-variant-pptm",
+          title: "Container PPTM Variant",
+          fileName: "mounted-roadmap.pptm",
+          mediaType: "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+          filePath: "/data/mounted-roadmap.pptx"
+        },
+        {
+          sourceId: "container-variant-xlsm",
+          title: "Container XLSM Variant",
+          fileName: "mounted-evidence.xlsm",
+          mediaType: "application/vnd.ms-excel.sheet.macroEnabled.12",
+          filePath: "/data/mounted-evidence.xlsx"
         }
       ],
       maxWindowCharacters: 8000,
@@ -1740,6 +1768,19 @@ NODE`
     )), true);
     assert.equal(signatureRouted.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
     assert.equal(signatureRouted.formatConversionProfile.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
+  }
+  for (const [sourceId, formatId, extension, stage] of [
+    ["container-variant-docm", "word", ".docm", "office.word.structured"],
+    ["container-variant-pptm", "presentation", ".pptm", "office.presentation.slides"],
+    ["container-variant-xlsm", "spreadsheet", ".xlsm", "table.sheet.structured"]
+  ]) {
+    const variantRouted = signatureRoutedRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === sourceId);
+    assert.ok(variantRouted, `${sourceId} must be routed as an OOXML format variant`);
+    assert.equal(variantRouted.route.formatId, formatId);
+    assert.equal(variantRouted.route.extension, extension);
+    assert.equal(variantRouted.quality.suppliedPayloadKind, "file-ref-structured-zip");
+    assert.equal(variantRouted.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
+    assert.equal(variantRouted.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
   }
 
   const timeFilteredRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {

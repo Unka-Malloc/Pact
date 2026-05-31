@@ -197,9 +197,12 @@ const FORMAT_ROUTES = Object.freeze([
   {
     id: "word",
     label: "Word document",
-    extensions: [".docx", ".doc", ".rtf"],
+    extensions: [".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf"],
     mediaTypes: [
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-word.document.macroenabled.12",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+      "application/vnd.ms-word.template.macroenabled.12",
       "application/msword",
       "application/rtf",
       "text/rtf"
@@ -214,9 +217,14 @@ const FORMAT_ROUTES = Object.freeze([
   {
     id: "presentation",
     label: "Presentation",
-    extensions: [".pptx", ".ppt"],
+    extensions: [".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot"],
     mediaTypes: [
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+      "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+      "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
+      "application/vnd.openxmlformats-officedocument.presentationml.template",
+      "application/vnd.ms-powerpoint.template.macroenabled.12",
       "application/vnd.ms-powerpoint"
     ],
     contentShape: "presentation",
@@ -229,10 +237,14 @@ const FORMAT_ROUTES = Object.freeze([
   {
     id: "spreadsheet",
     label: "Spreadsheet",
-    extensions: [".xlsx", ".xls", ".csv", ".tsv"],
+    extensions: [".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".xlsb", ".csv", ".tsv"],
     mediaTypes: [
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel.sheet.macroenabled.12",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+      "application/vnd.ms-excel.template.macroenabled.12",
       "application/vnd.ms-excel",
+      "application/vnd.ms-excel.sheet.binary.macroenabled.12",
       "text/csv",
       "text/tab-separated-values"
     ],
@@ -779,11 +791,26 @@ const MEDIA_TYPE_BY_EXTENSION = new Map(Object.entries({
   ".text": "text/plain",
   ".log": "text/plain",
   ".doc": "application/msword",
+  ".dot": "application/msword",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".docm": "application/vnd.ms-word.document.macroenabled.12",
+  ".dotx": "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+  ".dotm": "application/vnd.ms-word.template.macroenabled.12",
   ".ppt": "application/vnd.ms-powerpoint",
+  ".pps": "application/vnd.ms-powerpoint",
+  ".pot": "application/vnd.ms-powerpoint",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".pptm": "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+  ".ppsx": "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+  ".ppsm": "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
+  ".potx": "application/vnd.openxmlformats-officedocument.presentationml.template",
+  ".potm": "application/vnd.ms-powerpoint.template.macroenabled.12",
   ".xls": "application/vnd.ms-excel",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xlsm": "application/vnd.ms-excel.sheet.macroenabled.12",
+  ".xlsb": "application/vnd.ms-excel.sheet.binary.macroenabled.12",
+  ".xltx": "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+  ".xltm": "application/vnd.ms-excel.template.macroenabled.12",
   ".odt": "application/vnd.oasis.opendocument.text",
   ".ods": "application/vnd.oasis.opendocument.spreadsheet",
   ".odp": "application/vnd.oasis.opendocument.presentation",
@@ -1709,13 +1736,13 @@ function isPdfRoute(route = null) {
 function isStructuredZipFileRoute(route = null, metadata = {}) {
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
   if (route?.id === "word") {
-    return extension === ".docx";
+    return [".docx", ".docm", ".dotx", ".dotm"].includes(extension);
   }
   if (route?.id === "presentation") {
-    return extension === ".pptx";
+    return [".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm"].includes(extension);
   }
   if (route?.id === "spreadsheet") {
-    return extension === ".xlsx";
+    return [".xlsx", ".xlsm", ".xltx", ".xltm"].includes(extension);
   }
   if (route?.id === "open-document") {
     return [".odt", ".ott", ".ods", ".ots", ".odp", ".otp"].includes(extension);
@@ -1729,13 +1756,13 @@ function isStructuredZipFileRoute(route = null, metadata = {}) {
 function isTikaFileRoute(route = null, metadata = {}) {
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
   if (route?.id === "word") {
-    return [".doc", ".rtf"].includes(extension);
+    return [".doc", ".dot", ".rtf"].includes(extension);
   }
   if (route?.id === "presentation") {
-    return extension === ".ppt";
+    return [".ppt", ".pps", ".pot"].includes(extension);
   }
   if (route?.id === "spreadsheet") {
-    return extension === ".xls";
+    return [".xls", ".xlsb"].includes(extension);
   }
   if (route?.id === "email") {
     return isMsgRoute(route, metadata);

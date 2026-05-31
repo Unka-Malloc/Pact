@@ -862,7 +862,7 @@ try {
     assert.equal(adapter.qualityGates.includes(qualityGate), true);
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
-  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
+  for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
       true,
@@ -1286,6 +1286,27 @@ try {
           title: "Signature Routed XLSX",
           fileName: "signature-routed-xlsx.asset",
           mediaType: "application/octet-stream",
+          contentBase64: sampleXlsxBase64
+        },
+        {
+          sourceId: "source-48",
+          title: "DOCM Payload",
+          fileName: "payload.docm",
+          mediaType: "application/vnd.ms-word.document.macroEnabled.12",
+          contentBase64: sampleDocxBase64
+        },
+        {
+          sourceId: "source-49",
+          title: "PPTM Payload",
+          fileName: "payload.pptm",
+          mediaType: "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+          contentBase64: samplePptxBase64
+        },
+        {
+          sourceId: "source-50",
+          title: "XLSM Payload",
+          fileName: "payload.xlsm",
+          mediaType: "application/vnd.ms-excel.sheet.macroEnabled.12",
           contentBase64: sampleXlsxBase64
         },
         {
@@ -2047,6 +2068,18 @@ try {
     )), true);
     assert.equal(signatureRoutedCorpus.parserTrace.some((trace) => trace.stage === parserStage && trace.status === "completed"), true);
     assert.equal(signatureRoutedCorpus.formatConversionProfile.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
+  }
+  for (const [sourceId, formatId, extension, parserStage] of [
+    ["source-48", "word", ".docm", "office.word.structured"],
+    ["source-49", "presentation", ".pptm", "office.presentation.slides"],
+    ["source-50", "spreadsheet", ".xlsm", "table.sheet.structured"]
+  ]) {
+    const officeVariantCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === sourceId);
+    assert.ok(officeVariantCorpus, `${sourceId} OOXML variant document must be present`);
+    assert.equal(officeVariantCorpus.route.formatId, formatId);
+    assert.equal(officeVariantCorpus.route.extension, extension);
+    assert.equal(officeVariantCorpus.parserTrace.some((trace) => trace.stage === parserStage && trace.status === "completed"), true);
+    assert.equal(officeVariantCorpus.formatConversionProfile.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
   }
   assert.ok(
     createRun.payload.result.agentMessage.corpusPlan.documents.some((document) => document.sourceId === "source-3"),

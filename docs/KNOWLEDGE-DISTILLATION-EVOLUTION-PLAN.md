@@ -221,7 +221,7 @@ flowchart LR
 - 源码文件按静态结构解析：JavaScript、TypeScript、Python、Java、Go、Rust、Swift、Kotlin、C/C++ 提取 import、symbol、entry point 和 TODO，不执行源码。
 - 变更集文件按统一 diff 结构解析：`.diff`、`.patch` 提取 changed files、hunks、additions、deletions 和上下文。
 - 日历事件文件按 iCalendar/vCalendar 结构解析：`.ics`、`.vcs` 提取事件、待办、开始/结束时间、地点、组织者和描述。
-- Office 文件走结构化解析：`.docx`、`.pptx`、`.xlsx`。
+- Office 文件走结构化解析：`.docx/.docm/.dotx/.dotm`、`.pptx/.pptm/.ppsx/.ppsm/.potx/.potm`、`.xlsx/.xlsm/.xltx/.xltm`；旧式 `.doc/.dot/.ppt/.pps/.pot/.xls/.xlsb/.rtf` 走 Tika fallback。
 - 在扩展名/media type 路由前增加 `content-signature-routing.v1`：对 PDF、OOXML Word/PowerPoint/Excel、OpenDocument、EPUB、图片、压缩包、RTF、HTML 做 bounded head-byte 嗅探，纠正 `.asset`、缺扩展名或 `application/octet-stream` 这类错误声明。
 - PDF 拆分为 `pdf-text`、`pdf-scanned`、`pdf-font-broken`、`pdf-image-heavy`。
 - PDF 子类型必须写入 `route.pdfSubtype`、`corpusPlan.documents[].pdfProfile` 和 Agent 报文，不允许只把判断埋在 parser trace 里。
