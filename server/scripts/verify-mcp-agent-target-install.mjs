@@ -1265,6 +1265,10 @@ try {
     assert.match(result.stdout, /--copilot-bin/);
     assert.match(result.stdout, /--openclaw-bin/);
     assert.match(result.stdout, /opencode/);
+    assert.match(result.stdout, /claude-code,codex,openclaw/);
+    for (const target of DECLARED_AGENT_TARGETS) {
+      assert.match(result.stdout, new RegExp(`\\b${target}\\b`));
+    }
   });
 
   await testAsync("supported targets include all declared agents", async () => {
