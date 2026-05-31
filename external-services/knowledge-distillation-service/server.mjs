@@ -4791,6 +4791,76 @@ function mergeCentroid(current = [], next = [], count = 1) {
   return normalizeVector(merged);
 }
 
+const STRONG_CLASSIFICATION_CONCEPTS = Object.freeze(new Set([
+  "concept:finance"
+]));
+
+const CONCEPT_MERGE_MIN_SIMILARITY = Object.freeze({
+  "concept:finance": 0.08
+});
+
+function strongConceptIntersection(left = new Set(), right = new Set()) {
+  const shared = [];
+  for (const token of left) {
+    if (STRONG_CLASSIFICATION_CONCEPTS.has(token) && right.has(token)) {
+      shared.push(token);
+    }
+  }
+  return shared;
+}
+
+function mergeWeightedCentroids(left = [], right = [], leftWeight = 1, rightWeight = 1) {
+  if (!left.length) {
+    return right;
+  }
+  if (!right.length) {
+    return left;
+  }
+  const total = Math.max(1, leftWeight + rightWeight);
+  return normalizeVector(left.map((value, index) => ((value * leftWeight) + (right[index] * rightWeight)) / total));
+}
+
+function mergeLeaderGroupsBySemanticConcept(groups = []) {
+  let merged = true;
+  while (merged) {
+    merged = false;
+    outer:
+    for (let leftIndex = 0; leftIndex < groups.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < groups.length; rightIndex += 1) {
+        const left = groups[leftIndex];
+        const right = groups[rightIndex];
+        const sharedConcepts = strongConceptIntersection(left.expandedTokens, right.expandedTokens);
+        if (!sharedConcepts.length) {
+          continue;
+        }
+        const similarity = cosineSimilarity(left.centroid, right.centroid);
+        const canMerge = sharedConcepts.some((concept) => (
+          similarity >= (CONCEPT_MERGE_MIN_SIMILARITY[concept] ?? LEADER_CLUSTER_THRESHOLD)
+        ));
+        if (!canMerge) {
+          continue;
+        }
+        const leftWeight = Math.max(1, left.documents.length);
+        const rightWeight = Math.max(1, right.documents.length);
+        left.centroid = mergeWeightedCentroids(left.centroid, right.centroid, leftWeight, rightWeight);
+        left.documents.push(...right.documents);
+        left.cohesionScores.push(...right.cohesionScores);
+        left.signalScores.push(...right.signalScores);
+        for (const token of right.tokens) {
+          left.tokens.add(token);
+        }
+        for (const token of right.expandedTokens) {
+          left.expandedTokens.add(token);
+        }
+        groups.splice(rightIndex, 1);
+        merged = true;
+        break outer;
+      }
+    }
+  }
+  return groups;
+}
+
 function signalStrength({ text = "", tokens = new Set() } = {}) {
   if (!String(text || "").trim()) {
     return 0;
@@ -5281,6 +5351,7 @@ function classifyDocuments(documents = []) {
       bestGroup.expandedTokens.add(token);
     }
   }
+  mergeLeaderGroupsBySemanticConcept(groups);
   const topicGroups = groups.map((group, index) => {
     const keywords = topTokens(group.tokens, 5);
     const topicGroup = {
