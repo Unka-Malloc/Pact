@@ -22,11 +22,11 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `server-web/composables` | 55 | 23003 | 121 | 9 | 0 | 200 | 25 |
-| `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 0 | 0 |
+| `server-web/styles` | 22 | 12348 | 0 | 0 | 0 | 150 | 0 |
 | `server-web/views` | 21 | 7723 | 0 | 0 | 0 | 75 | 1 |
 | `server-web/components` | 37 | 6780 | 1 | 0 | 1 | 21 | 2 |
 | `server-web/lib` | 9 | 4908 | 25 | 0 | 0 | 20 | 0 |
-| `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
+| `server-web/i18n` | 1 | 1645 | 0 | 0 | 0 | 7 | 0 |
 
 ### Largest Files
 
@@ -34,7 +34,7 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | --- | ---: | --- |
 | `server-web/composables/useConsole.ts` | 4486 | Global singleton, route/page state, bridge calls, DOM effects, auth, settings, jobs, knowledge, runtime, and admin actions are still concentrated here. |
 | `server-web/lib/types.ts` | 2661 | Cross-domain frontend API type monolith. |
-| `server-web/i18n/console.ts` | 1644 | All console copy plus DOM localization are coupled in one module. |
+| `server-web/i18n/console.ts` | 1645 | All console copy plus DOM localization are coupled in one module. |
 | `server-web/styles/features.css` | 1495 | Feature styling monolith. |
 | `server-web/styles/components.css` | 1214 | Shared component styling monolith. |
 | `server-web/lib/bridge.ts` | 1206 | One frontend API bridge for all domains. |
@@ -200,8 +200,8 @@ Required direction:
 
 ## Execution Order
 
-1. P0-1: Start reducing `useConsole()` as the global frontend runtime. First target should be a page/domain with clear ownership and direct bridge leakage, so the extraction reduces both singleton size and UI/service coupling.
-2. P0-2: Keep view/component `bridge.*` calls at the single `BridgeDownloadButton.vue` allowlisted boundary, then add a verifier so new direct callers fail fast.
+1. P0-1: Continue reducing `useConsole()` as the global frontend runtime. Leaf views are migrated; next target is the compatibility facade layer (`useDebugViewConsole`, `useKnowledgeViewConsole`, `useWorkspacesConsole`, agent permissions controller, then shell spread).
+2. P0-2: Keep view/component `bridge.*` calls at the single `BridgeDownloadButton.vue` allowlisted boundary; the frontend architecture verifier now fails new direct callers.
 3. P0-3: Split large feature components after their async operations move out.
 4. P0-5: Split `bridge.ts` and `types.ts` by domains touched by the UI extractions.
 5. P0-4: Split CSS ownership once component/domain boundaries are clearer.
