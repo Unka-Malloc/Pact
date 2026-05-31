@@ -70,8 +70,24 @@ function spawnConnector(args, timeoutMs = 30000, env = {}) {
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("close", (code) => resolve({ code: code || 0, stdout, stderr }));
+    child.on("close", (code, signal) => resolve({ code: code ?? (signal ? 1 : 0), signal: signal || "", stdout, stderr }));
     child.on("error", (err) => resolve({ code: 1, stdout: "", stderr: err.message }));
+  });
+}
+
+function runProcess(command, args = [], timeoutMs = 10000, env = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (code, signal) => resolve({ code: code ?? (signal ? 1 : 0), signal: signal || "", stdout, stderr }));
+    child.on("error", (err) => resolve({ code: 1, signal: "", stdout: "", stderr: err.message }));
   });
 }
 
@@ -206,45 +222,94 @@ async function installFakeDockerRuntime() {
   }
   await fs.mkdir(fakeBinDir, { recursive: true });
   await fs.mkdir(remoteOpenCodeHome, { recursive: true });
-  const fakeDockerRuntimePath = `${fakeDockerPath}.js`;
-  await fs.writeFile(fakeDockerRuntimePath, [
-    "#!/usr/bin/env node",
-    "const fs = require('fs');",
-    "const path = require('path');",
-    "const args = process.argv.slice(2);",
-    "const remoteHome = process.env.PACT_FAKE_REMOTE_HOME || process.cwd();",
-    "const logPath = process.env.PACT_FAKE_AGENT_LOG || '';",
-    "function writeLog(line) { if (logPath) fs.appendFileSync(logPath, `${line}\\n`); }",
-    "function writeJson(filePath, value) { fs.mkdirSync(path.dirname(filePath), { recursive: true }); fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\\n`); }",
-    "function readJson(filePath, fallback) { try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return fallback; } }",
-    "function openCodeConfigPath() { return path.join(remoteHome, '.config', 'opencode', 'opencode.jsonc'); }",
-    "function writeOpenCode(url) { const filePath = openCodeConfigPath(); const config = readJson(filePath, {}); config.mcp = { ...(config.mcp || {}), pact: { type: 'remote', url, headers: { 'X-Pact-Api-Key': 'fake-token' }, enabled: true } }; writeJson(filePath, config); }",
-    "function removeOpenCode() { const filePath = openCodeConfigPath(); const config = readJson(filePath, {}); if (config.mcp) delete config.mcp.pact; writeJson(filePath, config); }",
-    "function hasOpenCode() { return Boolean(readJson(openCodeConfigPath(), {}).mcp?.pact); }",
-    "function writeCodexEnv(envName) { const dir = path.join(remoteHome, '.pact', 'mcp'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'env'), `export ${envName}='fake-token-for-remote-codex-verifier'\\n`); const profile = path.join(remoteHome, '.profile'); const text = fs.existsSync(profile) ? fs.readFileSync(profile, 'utf8') : ''; if (!text.includes('Pact MCP token env')) fs.appendFileSync(profile, '\\n# Pact MCP token env\\n[ -f \"$HOME/.pact/mcp/env\" ] && . \"$HOME/.pact/mcp/env\"\\n'); }",
-    "function handleCodex(cmd) { const marker = path.join(remoteHome, '.codex-pact-mcp-installed'); if (cmd[2] === '--help') { process.stdout.write('Usage: codex mcp add get list remove\\n'); return 0; } if (cmd[2] === 'add') { fs.mkdirSync(remoteHome, { recursive: true }); fs.writeFileSync(marker, 'installed\\n'); writeLog(`codex|mcp add|${cmd.slice(3, 8).join('|')}`); return 0; } if (cmd[2] === 'remove') { fs.rmSync(marker, { force: true }); return 0; } if (cmd[2] === 'get') { if (!fs.existsSync(marker)) return 1; process.stdout.write('pact http://127.0.0.1/mcp\\n'); return 0; } return 1; }",
-    "if (args[0] === 'ps') { process.stdout.write('box123\\tagentbox\\n'); process.exit(0); }",
-    "if (args[0] === 'inspect') { process.stdout.write('172.17.0.1\\n'); process.exit(0); }",
-    "if (args[0] !== 'exec') process.exit(1);",
-    "let index = 1;",
-    "if (args[index] === '-i') index += 1;",
-    "const env = {};",
-    "while (args[index] === '-e') { const [name, ...rest] = String(args[index + 1] || '').split('='); env[name] = rest.join('='); index += 2; }",
-    "const container = args[index++];",
-    "let cmd = args.slice(index);",
-    "if (container !== 'box123') process.exit(1);",
-    "if ((cmd[0] === 'sh' || cmd[0] === 'bash') && cmd[1] === '-lc') { const script = String(cmd[2] || ''); if (script.includes(\"command_name='codex'\")) { process.stdout.write('/usr/local/bin/codex\\n'); process.exit(0); } if (env.PACT_TOKEN_ENV) { writeCodexEnv(env.PACT_TOKEN_ENV); process.exit(0); } if (script.includes('delete config.mcp.pact')) { removeOpenCode(); process.stdout.write('removed\\n'); process.exit(0); } if (script.includes(\".config', 'opencode'\")) { writeOpenCode(env.PACT_URL || ''); process.exit(0); } if (script.includes('.config/opencode/opencode.jsonc')) process.exit(hasOpenCode() ? 0 : 1); process.exit(0); }",
-    "if (cmd[0] === 'env') { cmd = cmd.slice(1); while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(cmd[0] || '')) cmd = cmd.slice(1); }",
-    "if (cmd[0] === '/usr/local/bin/codex' && cmd[1] === 'mcp') process.exit(handleCodex(cmd));",
-    "process.exit(1);",
+  const fakeDockerScriptPath = `${fakeDockerPath}.sh`;
+  const fakeDockerSourcePath = `${fakeDockerPath}.c`;
+  await fs.writeFile(fakeDockerScriptPath, [
+    "#!/bin/sh",
+    "remote_home=\"${PACT_FAKE_REMOTE_HOME:-$PWD}\"",
+    "log_path=\"${PACT_FAKE_AGENT_LOG:-}\"",
+    "write_log() { [ -n \"$log_path\" ] && printf '%s\\n' \"$1\" >> \"$log_path\"; }",
+    "write_opencode() {",
+    "  mkdir -p \"$remote_home/.config/opencode\"",
+    "  {",
+    "    printf '{\\n'",
+    "    printf '  \"mcp\": {\\n'",
+    "    printf '    \"pact\": {\\n'",
+    "    printf '      \"type\": \"remote\",\\n'",
+    "    printf '      \"url\": \"%s\",\\n' \"${PACT_URL:-}\"",
+    "    printf '      \"headers\": { \"X-Pact-Api-Key\": \"fake-token\" },\\n'",
+    "    printf '      \"enabled\": true\\n'",
+    "    printf '    }\\n'",
+    "    printf '  }\\n'",
+    "    printf '}\\n'",
+    "  } > \"$remote_home/.config/opencode/opencode.jsonc\"",
+    "}",
+    "remove_opencode() {",
+    "  mkdir -p \"$remote_home/.config/opencode\"",
+    "  printf '{\\n  \"mcp\": {}\\n}\\n' > \"$remote_home/.config/opencode/opencode.jsonc\"",
+    "}",
+    "write_codex_env() {",
+    "  env_name=\"$1\"",
+    "  mkdir -p \"$remote_home/.pact/mcp\"",
+    "  printf \"export %s='fake-token-for-remote-codex-verifier'\\n\" \"$env_name\" > \"$remote_home/.pact/mcp/env\"",
+    "  if ! grep -q 'Pact MCP token env' \"$remote_home/.profile\" 2>/dev/null; then",
+    "    printf '\\n# Pact MCP token env\\n[ -f \"$HOME/.pact/mcp/env\" ] && . \"$HOME/.pact/mcp/env\"\\n' >> \"$remote_home/.profile\"",
+    "  fi",
+    "}",
+    "[ \"${PACT_FAKE_DOCKER_HANG:-}\" = \"1\" ] && while :; do sleep 1000; done",
+    "[ \"$1\" = \"ps\" ] && { printf 'box123\\tagentbox\\n'; exit 0; }",
+    "[ \"$1\" = \"inspect\" ] && { printf '172.17.0.1\\n'; exit 0; }",
+    "[ \"$1\" = \"exec\" ] || exit 1",
+    "shift",
+    "[ \"$1\" = \"-i\" ] && shift",
+    "while [ \"$1\" = \"-e\" ]; do export \"$2\"; shift 2; done",
+    "container=\"$1\"",
+    "shift",
+    "[ \"$container\" = \"box123\" ] || exit 1",
+    "if { [ \"$1\" = \"sh\" ] || [ \"$1\" = \"bash\" ]; } && [ \"$2\" = \"-lc\" ]; then",
+    "  script=\"$3\"",
+    "  case \"$script\" in *\"command_name='codex'\"*) printf '/usr/local/bin/codex\\n'; exit 0 ;; esac",
+    "  [ -n \"${PACT_TOKEN_ENV:-}\" ] && { write_codex_env \"$PACT_TOKEN_ENV\"; exit 0; }",
+    "  case \"$script\" in *\"delete config.mcp.pact\"*) remove_opencode; printf 'removed\\n'; exit 0 ;; esac",
+    "  case \"$script\" in *\".config', 'opencode'\"*) write_opencode; exit 0 ;; esac",
+    "  case \"$script\" in *\".config/opencode/opencode.jsonc\"*) grep -q '\"pact\"' \"$remote_home/.config/opencode/opencode.jsonc\" 2>/dev/null; exit $? ;; esac",
+    "  HOME=\"$remote_home\" sh -lc \"$script\"",
+    "  exit $?",
+    "fi",
+    "if [ \"$1\" = \"env\" ]; then",
+    "  shift",
+    "  while printf '%s' \"${1:-}\" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do export \"$1\"; shift; done",
+    "fi",
+    "if [ \"$1\" = \"/usr/local/bin/codex\" ] && [ \"$2\" = \"mcp\" ]; then",
+    "  marker=\"$remote_home/.codex-pact-mcp-installed\"",
+    "  case \"$3\" in",
+    "    --help) printf 'Usage: codex mcp add get list remove\\n'; exit 0 ;;",
+    "    add) mkdir -p \"$remote_home\"; printf 'installed\\n' > \"$marker\"; write_log \"codex|mcp add|$4|$5|$6|$7|$8\"; exit 0 ;;",
+    "    remove) rm -f \"$marker\"; exit 0 ;;",
+    "    get) [ -f \"$marker\" ] || exit 1; printf 'pact http://127.0.0.1/mcp\\n'; exit 0 ;;",
+    "  esac",
+    "fi",
+    "exit 1",
     ""
   ].join("\n"));
-  await fs.writeFile(fakeDockerPath, [
-    "#!/bin/bash",
-    `exec "${process.execPath}" "${fakeDockerRuntimePath}" "$@"`,
+  await fs.writeFile(fakeDockerSourcePath, [
+    "#include <stdlib.h>",
+    "#include <unistd.h>",
+    "int main(int argc, char **argv) {",
+    `  const char *script = ${JSON.stringify(fakeDockerScriptPath)};`,
+    "  char **next = calloc((size_t)argc + 2, sizeof(char *));",
+    "  if (!next) return 127;",
+    "  next[0] = \"/bin/sh\";",
+    "  next[1] = (char *)script;",
+    "  for (int i = 1; i < argc; i++) next[i + 1] = argv[i];",
+    "  next[argc + 1] = 0;",
+    "  execv(\"/bin/sh\", next);",
+    "  return 127;",
+    "}",
     ""
-  ].join("\n"), { mode: 0o755 });
-  return true;
+  ].join("\n"));
+  const compile = await runProcess("cc", [fakeDockerSourcePath, "-o", fakeDockerPath], 10000);
+  return compile.code === 0;
 }
 
 let serverUrl = "";
@@ -574,6 +639,39 @@ try {
     assert.equal(uninstallPayload.ok, true);
     assert.equal(uninstallPayload.uninstalled?.codex?.status, "not-installed");
     assert.equal(uninstallPayload.uninstalled?.codex?.uninstallMode, "codex-docker-mcp-cli");
+  });
+
+  await testAsync("cli remote codex install times out stalled remote context", async () => {
+    const canRun = await installFakeDockerRuntime();
+    if (!canRun) {
+      return;
+    }
+    const result = await spawnConnector([
+      "install",
+      "--target", "codex",
+      "--url", serverUrl,
+      "--token", token,
+      "--token-env", remoteCodexTokenEnv,
+      "--execution-location", "docker",
+      "--remote-kind", "docker",
+      "--remote-id", "box123",
+      "--remote-name", "agentbox",
+      "--remote-bin", fakeDockerPath,
+      "--codex-bin", "/usr/local/bin/codex",
+      "--discovery-file", remoteCodexRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 15000, {
+      PACT_FAKE_REMOTE_HOME: remoteOpenCodeHome,
+      PACT_FAKE_DOCKER_HANG: "1",
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "timeout failure output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.codex?.status, "failed");
+    assert.match(payload.installed?.codex?.error, /timed out/);
   });
 
   // ── SECTION 5: Non-interactive auto install ──

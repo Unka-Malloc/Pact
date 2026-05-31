@@ -185,6 +185,7 @@ const TARGET_INSTALL_MODES = {
 };
 const SCAN_COMMAND_TIMEOUT_MS = 3000;
 const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
+const INSTALL_COMMAND_TIMEOUT_MS = positiveIntegerEnv("PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS", 120000);
 const PACKAGE_MANAGER_DISCOVERY_ENV = Object.freeze({
   HOMEBREW_NO_AUTO_UPDATE: "1",
   HOMEBREW_NO_ANALYTICS: "1",
@@ -215,6 +216,11 @@ const GENERIC_REMOTE_CONTEXT_KINDS = [
   "vagrant",
   "parallels"
 ];
+
+function positiveIntegerEnv(name, fallback) {
+  const value = Number.parseInt(String(process.env[name] || ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 function usage() {
   return [
@@ -666,13 +672,47 @@ async function run(command, args = [], options = {}) {
 
 async function runWithInput(command, args = [], input = "", options = {}) {
   return new Promise((resolve, reject) => {
+    const timeoutMs = Number(options.timeoutMs || 0);
+    const useProcessGroup = timeoutMs > 0 && process.platform !== "win32";
     const child = spawn(command, args, {
       cwd: options.cwd || process.cwd(),
       env: childProcessEnv(options.env),
-      stdio: ["pipe", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: useProcessGroup
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    const timer = timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          const signal = options.killSignal || "SIGKILL";
+          try {
+            if (useProcessGroup && child.pid) {
+              process.kill(-child.pid, signal);
+            } else {
+              child.kill(signal);
+            }
+          } catch {
+            try {
+              child.kill(signal);
+            } catch {
+              // The process may have exited between timeout firing and signal delivery.
+            }
+          }
+        }, timeoutMs)
+      : null;
+    const settle = (callback) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      callback();
+    };
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
@@ -680,23 +720,37 @@ async function runWithInput(command, args = [], input = "", options = {}) {
       stderr += chunk.toString();
     });
     child.on("error", (error) => {
-      if (options.allowFailure) {
-        resolve({ ok: false, stdout, stderr: stderr || error.message || "" });
-        return;
-      }
-      reject(error);
+      settle(() => {
+        if (options.allowFailure) {
+          resolve({ ok: false, stdout, stderr: stderr || error.message || "" });
+          return;
+        }
+        reject(error);
+      });
     });
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ ok: true, stdout, stderr });
-        return;
-      }
-      if (options.allowFailure) {
-        resolve({ ok: false, stdout, stderr });
-        return;
-      }
-      reject(new Error(`${command} exited with ${code}: ${stderr || stdout}`));
+      settle(() => {
+        if (timedOut) {
+          const timeoutMessage = `command timed out after ${timeoutMs} ms`;
+          if (options.allowFailure) {
+            resolve({ ok: false, stdout, stderr: stderr || timeoutMessage });
+            return;
+          }
+          reject(new Error(timeoutMessage));
+          return;
+        }
+        if (code === 0) {
+          resolve({ ok: true, stdout, stderr });
+          return;
+        }
+        if (options.allowFailure) {
+          resolve({ ok: false, stdout, stderr });
+          return;
+        }
+        reject(new Error(`${command} exited with ${code}: ${stderr || stdout}`));
+      });
     });
+    child.stdin.on("error", () => {});
     child.stdin.end(input);
   });
 }
@@ -1288,7 +1342,7 @@ async function installCodexOrb({ baseUrl, token, tokenEnv, orbBin, vmName, vmUse
     "bash",
     "-lc",
     codexRemoteTokenEnvScript()
-  ], `${token}\n`, { allowFailure: true });
+  ], `${token}\n`, { allowFailure: true, timeoutMs: INSTALL_COMMAND_TIMEOUT_MS });
   if (!envWrite.ok) {
     throw new Error(`Codex VM token environment setup failed: ${envWrite.stderr || envWrite.stdout}`);
   }
@@ -1629,7 +1683,7 @@ async function installKiloOrb({ baseUrl, token, orbBin, vmName, vmUser, kiloBin 
     "bash",
     "-lc",
     script
-  ], `${token}\n`);
+  ], `${token}\n`, { timeoutMs: INSTALL_COMMAND_TIMEOUT_MS });
   return {
     installMode: "kilo-orbstack-global-kilo-json",
     vm: vmName,
@@ -1874,7 +1928,7 @@ async function installOpenCodeOrb({ baseUrl, token, orbBin, vmName, vmUser }) {
     "bash",
     "-lc",
     openCodeRemoteInstallScript()
-  ], `${token}\n`, { allowFailure: true });
+  ], `${token}\n`, { allowFailure: true, timeoutMs: INSTALL_COMMAND_TIMEOUT_MS });
   if (!result.ok) {
     throw new Error(`OpenCode VM install failed: ${result.stderr || result.stdout}`);
   }
@@ -1997,7 +2051,7 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
     "bash",
     "-lc",
     script
-  ], `${token}\n`);
+  ], `${token}\n`, { timeoutMs: INSTALL_COMMAND_TIMEOUT_MS });
   const enableScript = [
     "set -e",
     "if [ -d \"$HOME/.hermes/hermes-agent\" ]; then",
@@ -3761,30 +3815,34 @@ async function remoteLinuxShell(context, script, options = {}) {
   return { ok: false, stdout: "", stderr: `Unsupported remote context: ${context.kind}` };
 }
 
-async function remoteLinuxShellWithInput(context, script, input = "", env = {}) {
+async function remoteLinuxShellWithInput(context, script, input = "", env = {}, options = {}) {
   const envArgs = Object.entries(env).map(([name, value]) => `${name}=${value}`);
+  const runOptions = {
+    allowFailure: true,
+    timeoutMs: options.timeoutMs || INSTALL_COMMAND_TIMEOUT_MS
+  };
   if (["docker", "podman", "nerdctl"].includes(context.kind)) {
     const runtimeEnvArgs = Object.entries(env).flatMap(([name, value]) => ["-e", `${name}=${value}`]);
-    return runWithInput(context.bin, ["exec", "-i", ...runtimeEnvArgs, context.id, "sh", "-lc", script], input, { allowFailure: true });
+    return runWithInput(context.bin, ["exec", "-i", ...runtimeEnvArgs, context.id, "sh", "-lc", script], input, runOptions);
   }
   if (context.kind === "wsl") {
-    return runWithInput(context.bin, ["-d", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+    return runWithInput(context.bin, ["-d", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, runOptions);
   }
   if (context.kind === "lima") {
-    return runWithInput(context.bin, ["shell", context.id, "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+    return runWithInput(context.bin, ["shell", context.id, "env", ...envArgs, "bash", "-lc", script], input, runOptions);
   }
   if (context.kind === "colima") {
-    return runWithInput(context.bin, ["ssh", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+    return runWithInput(context.bin, ["ssh", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, runOptions);
   }
   if (["multipass", "lxc", "incus"].includes(context.kind)) {
-    return runWithInput(context.bin, ["exec", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+    return runWithInput(context.bin, ["exec", context.id, "--", "env", ...envArgs, "bash", "-lc", script], input, runOptions);
   }
   if (context.kind === "vagrant") {
     const command = `env ${envArgs.map(shellQuote).join(" ")} bash -lc ${shellQuote(script)}`;
-    return runWithInput(context.bin, ["ssh", context.id, "-c", command], input, { allowFailure: true });
+    return runWithInput(context.bin, ["ssh", context.id, "-c", command], input, runOptions);
   }
   if (context.kind === "parallels") {
-    return runWithInput(context.bin, ["exec", context.id, "env", ...envArgs, "bash", "-lc", script], input, { allowFailure: true });
+    return runWithInput(context.bin, ["exec", context.id, "env", ...envArgs, "bash", "-lc", script], input, runOptions);
   }
   return { ok: false, stdout: "", stderr: `Unsupported remote context: ${context.kind}` };
 }
