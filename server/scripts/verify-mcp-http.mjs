@@ -415,6 +415,7 @@ try {
   assert.equal(updateProbe.status, 200);
   const updateCommand = updateProbe.payload.result.structuredContent.installCommand;
   assert.equal(updateProbe.payload.result.structuredContent.updateAvailable, true);
+  assert.equal(updateProbe.payload.result.structuredContent.autoUpdate, false);
   assert.equal(updateProbe.payload.result.structuredContent.autoInstallCommand, updateCommand);
   assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(updateCommand, /--json/);
