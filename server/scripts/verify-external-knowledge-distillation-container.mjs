@@ -549,8 +549,14 @@ try {
   const legacyDocument = legacyOfficeRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-legacy-doc");
   assert.ok(legacyDocument, "legacy Office document must be present in the corpus plan");
   assert.equal(legacyDocument.route.formatId, "word");
-  assert.equal(legacyDocument.parserTrace.some((trace) => trace.stage === "tika.text" && trace.status === "completed"), true);
-  assert.ok(legacyDocument.quality.textCharacters > 0, "Tika fallback must produce distillable text for legacy Office routes");
+  assert.equal(legacyDocument.parserTrace.some((trace) => (
+    (trace.stage === "office.word.structured" || trace.stage === "tika.text") &&
+    trace.status === "completed"
+  )), true);
+  assert.equal(legacyDocument.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(["doc", "docx", "word"].includes(legacyDocument.elementPlan.sourceFormat), true);
+  assert.equal(legacyDocument.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.ok(legacyDocument.quality.textCharacters > 0, "Legacy Office routes must produce distillable text");
 
   const msgText = "Container Outlook MSG Tika parser extracts service escalation schedule evidence.";
   const msgRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
@@ -614,6 +620,10 @@ try {
   assert.ok(openDocument, "OpenDocument source must be present in the corpus plan");
   assert.equal(openDocument.route.formatId, "open-document");
   assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed"), true);
+  assert.equal(openDocument.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(openDocument.elementPlan.sourceFormat, "open-document");
+  assert.equal(openDocument.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(openDocument.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.ok(openDocument.quality.textCharacters > 0, "OpenDocument parser must produce distillable text");
 
   const epubRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
@@ -649,6 +659,11 @@ try {
   assert.ok(epubDocument, "EPUB source must be present in the corpus plan");
   assert.equal(epubDocument.route.formatId, "ebook");
   assert.equal(epubDocument.parserTrace.some((trace) => trace.stage === "ebook.epub" && trace.status === "completed"), true);
+  assert.equal(epubDocument.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(epubDocument.elementPlan.sourceFormat, "epub");
+  assert.equal(epubDocument.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(epubDocument.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(epubDocument.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.ok(epubDocument.quality.textCharacters > 0, "EPUB parser must produce distillable text");
 
   const mboxRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {

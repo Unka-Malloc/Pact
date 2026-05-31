@@ -283,6 +283,31 @@ const sampleXlsxBase64 = base64Zip({
   ].join("")
 });
 
+const sampleOpenDocumentBase64 = base64Zip({
+  "mimetype": "application/vnd.oasis.opendocument.text",
+  "content.xml": [
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+    "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" ",
+    "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">",
+    "<office:body><office:text>",
+    "<text:h text:outline-level=\"1\">OpenDocument Distillation Plan</text:h>",
+    "<text:p>OpenDocument parser preserves project convergence evidence as structured elements.</text:p>",
+    "</office:text></office:body>",
+    "</office:document-content>"
+  ].join("")
+});
+
+const sampleEpubBase64 = base64Zip({
+  "mimetype": "application/epub+zip",
+  "META-INF/container.xml": "<?xml version=\"1.0\"?><container version=\"1.0\"></container>",
+  "OEBPS/chapter1.xhtml": [
+    "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body>",
+    "<h1>EPUB Distillation Evidence</h1>",
+    "<p>EPUB chapter evidence remains available to agent element windows.</p>",
+    "</body></html>"
+  ].join("")
+});
+
 const sampleZipBase64 = base64Zip({
   "docs/architecture.md": "# Architecture\nExternal service route-first parsing.",
   "data/invoice.csv": "vendor,total\nAcme,42"
@@ -902,6 +927,20 @@ try {
           ].join("\n"))
         },
         {
+          sourceId: "source-40",
+          title: "OpenDocument Distillation Plan",
+          fileName: "distillation-plan.odt",
+          mediaType: "application/vnd.oasis.opendocument.text",
+          contentBase64: sampleOpenDocumentBase64
+        },
+        {
+          sourceId: "source-41",
+          title: "EPUB Distillation Evidence",
+          fileName: "distillation-evidence.epub",
+          mediaType: "application/epub+zip",
+          contentBase64: sampleEpubBase64
+        },
+        {
           sourceId: "source-8",
           title: "DOCX Payload",
           fileName: "payload.docx",
@@ -1144,8 +1183,31 @@ try {
   assert.equal(latexMarkupCorpus.windowPlan.windows.some((window) => (
     /Convergent Knowledge Distillation|Routing Model|precision/.test(window.excerpt || "")
   )), true);
+  const openDocumentPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-40");
+  assert.equal(openDocumentPayloadCorpus.route.formatId, "open-document");
+  assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed" && trace.elements >= 2 && trace.headings >= 1 && trace.paragraphs >= 1), true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(openDocumentPayloadCorpus.elementPlan.sourceFormat, "open-document");
+  assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(openDocumentPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(openDocumentPayloadCorpus.windowPlan.windows.some((window) => /OpenDocument Distillation Plan|project convergence evidence/.test(window.excerpt || "")), true);
+  const epubPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-41");
+  assert.equal(epubPayloadCorpus.route.formatId, "ebook");
+  assert.equal(epubPayloadCorpus.parserTrace.some((trace) => trace.stage === "ebook.epub" && trace.status === "completed" && trace.elements >= 2 && trace.chapters >= 1 && trace.headings >= 1 && trace.paragraphs >= 1), true);
+  assert.equal(epubPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(epubPayloadCorpus.elementPlan.sourceFormat, "epub");
+  assert.equal(epubPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(epubPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(epubPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(epubPayloadCorpus.windowPlan.windows.some((window) => /EPUB Distillation Evidence|agent element windows/.test(window.excerpt || "")), true);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
+  assert.equal(docxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(docxPayloadCorpus.elementPlan.sourceFormat, "docx");
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");
   assert.equal(zipPayloadCorpus.parserTrace.some((trace) => trace.stage === "archive.manifest" && trace.status === "completed"), true);
   assert.equal(zipPayloadCorpus.parserTrace.some((trace) => trace.stage === "archive.expand-route" && trace.status === "completed"), true);
@@ -1298,13 +1360,27 @@ try {
   }
   const pdfPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-12");
   assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "completed"), true);
+  assert.equal(pdfPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(pdfPayloadCorpus.elementPlan.sourceFormat, "pdf");
+  assert.equal(pdfPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(pdfPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(pdfPayloadCorpus.windowPlan.windowCount >= 1, true);
   const pptxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-13");
   assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.presentation.slides" && trace.status === "completed"), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   const xlsxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-14");
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.structured" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(xlsxPayloadCorpus.elementPlan.sourceFormat, "xlsx");
+  assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(xlsxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-05-31"), true);
   assert.equal(xlsxPayloadCorpus.eventTime, "2026-05-31");
   assert.equal(xlsxPayloadCorpus.timeRange.from, "2026-05-31");

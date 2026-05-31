@@ -624,9 +624,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, and LaTeX-style markup route separation"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, OOXML, OpenDocument, EPUB, and PDF element models"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
-    gaps: ["full layout block graph", "native table geometry and formula objects beyond markup formulas"]
+    gaps: ["full layout block geometry", "native table coordinate objects and formula recognition beyond text-level elements"]
   },
   "llama-index": {
     absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API", "node-style element references on windows and text units"],
@@ -649,9 +649,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for markup headings, lists, links, tables, code, and formulas", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, code, and formulas", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
-    gaps: ["element-type enrichment for PDF and Office layout blocks", "domain-specific chunk enrichment plugins"]
+    gaps: ["high-fidelity PDF and Office layout coordinates", "domain-specific chunk enrichment plugins"]
   }
 });
 
@@ -1435,6 +1435,127 @@ function pushMarkupElement(elements, type, text, metadata = {}) {
     ...(metadata.href ? { href: metadata.href } : {}),
     ...(metadata.name ? { name: metadata.name } : {})
   });
+}
+
+function pushStructureElement(elements, type, text, metadata = {}) {
+  const normalized = compactMarkupText(text, metadata.limit || 1200);
+  if (!normalized) {
+    return;
+  }
+  elements.push({
+    type,
+    text: normalized,
+    ...(metadata.level ? { level: metadata.level } : {}),
+    ...(metadata.line ? { line: metadata.line } : {}),
+    ...(metadata.href ? { href: metadata.href } : {}),
+    ...(metadata.name ? { name: metadata.name } : {})
+  });
+}
+
+function xmlLocalAttribute(tag = "", localName = "") {
+  const pattern = new RegExp(`(?:^|\\s)(?:[\\w.-]+:)?${localName}=(["'])(.*?)\\1`, "i");
+  return decodeXmlEntities(String(tag || "").match(pattern)?.[2] || "");
+}
+
+function fallbackStructureFormat(route = null, metadata = {}) {
+  const extensionFormat = normalizeExtension(metadata.extension || "").replace(/^\./, "");
+  if (route?.id === "pdf") return "pdf";
+  if (route?.id === "word") return extensionFormat || "word";
+  if (route?.id === "presentation") return extensionFormat || "presentation";
+  if (route?.id === "spreadsheet") return extensionFormat || "table";
+  if (route?.id === "open-document") return "open-document";
+  if (route?.id === "ebook") return "epub";
+  return extensionFormat || route?.id || "";
+}
+
+function supportsFallbackStructureElements(route = null) {
+  return ["pdf", "word", "presentation", "spreadsheet", "open-document", "ebook"].includes(route?.id);
+}
+
+function lineLooksLikeTableRow(line = "", route = null) {
+  return route?.id === "spreadsheet" ||
+    /\b[A-Z]{1,3}\d+=/.test(line) ||
+    /\s\|\s/.test(line) ||
+    /^\|.+\|$/.test(line);
+}
+
+function lineLooksLikeHeading(line = "") {
+  return /^(?:title|page|slide|sheet|chapter|section|part)\s+\d*\b[:：]?/i.test(line) ||
+    /^(?:#{1,6}|\d+(?:\.\d+){0,5}[.)、])\s+\S/.test(line);
+}
+
+function buildFallbackStructureElementsFromText(text = "", route = null, metadata = {}) {
+  if (!supportsFallbackStructureElements(route)) {
+    return [];
+  }
+  const elements = [];
+  const title = String(metadata.title || metadata.fileName || "").trim();
+  if (title) {
+    pushStructureElement(elements, "title", title, { line: 1 });
+  }
+  const lines = String(text || "").split(/\r?\n/);
+  let paragraph = [];
+  let paragraphLine = 0;
+  let tableRows = 0;
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    pushStructureElement(elements, "paragraph", paragraph.join(" "), { line: paragraphLine });
+    paragraph = [];
+    paragraphLine = 0;
+  };
+  for (const [index, rawLine] of lines.entries()) {
+    if (elements.length >= 2000) {
+      flushParagraph();
+      break;
+    }
+    const line = compactMarkupText(rawLine, 1200);
+    if (!line) {
+      flushParagraph();
+      continue;
+    }
+    const lineNumber = index + 1;
+    const titleMatch = line.match(/^(?:title|document title)\s*[:：]\s*(.+)$/i);
+    if (titleMatch) {
+      flushParagraph();
+      pushStructureElement(elements, "title", titleMatch[1], { line: lineNumber });
+      continue;
+    }
+    if (lineLooksLikeTableRow(line, route)) {
+      flushParagraph();
+      const elementType = route?.id === "spreadsheet" && (tableRows === 0 || /header row/i.test(line))
+        ? "table-header"
+        : "table-row";
+      tableRows += 1;
+      pushStructureElement(elements, elementType, line, { line: lineNumber });
+      continue;
+    }
+    if (/^(?:[-*+]|\d+[.)、])\s+\S/.test(line)) {
+      flushParagraph();
+      pushStructureElement(elements, "list-item", line.replace(/^(?:[-*+]|\d+[.)、])\s+/, ""), { line: lineNumber });
+      continue;
+    }
+    if (/^(?:```| {4,}|\t)/.test(rawLine)) {
+      flushParagraph();
+      pushStructureElement(elements, "code", line, { line: lineNumber });
+      continue;
+    }
+    if (lineLooksLikeHeading(line)) {
+      flushParagraph();
+      pushStructureElement(elements, "heading", line.replace(/^#{1,6}\s+/, ""), { line: lineNumber, level: 2 });
+      continue;
+    }
+    if (!paragraphLine) {
+      paragraphLine = lineNumber;
+    }
+    paragraph.push(line);
+    if (paragraph.join(" ").length >= 900) {
+      flushParagraph();
+    }
+  }
+  flushParagraph();
+  return elements;
 }
 
 function parseHtmlMarkupElements(text = "") {
@@ -3294,11 +3415,83 @@ function zipEntryText(entries = [], entryName = "") {
   return entry?.data?.length ? utf8(entry.data) : "";
 }
 
+function structureElementsToText(format = "document", elements = [], fallback = "") {
+  if (!elements.length && !String(fallback || "").trim()) {
+    return "";
+  }
+  const records = elements.length ? [`Document format: ${format}`] : [];
+  for (const element of elements.slice(0, 900)) {
+    const level = element.level ? ` level ${element.level}` : "";
+    const line = element.line ? ` line ${element.line}` : "";
+    const name = element.name ? ` ${element.name}` : "";
+    const href = element.href ? ` -> ${element.href}` : "";
+    records.push(`Document ${element.type}${level}${name}${line}: ${element.text}${href}`);
+  }
+  if (records.length === 1 && fallback) {
+    records.push(`Document text: ${compactMarkupText(fallback, 6000)}`);
+  }
+  return records.filter(Boolean).join("\n");
+}
+
+function docxParagraphStyle(paragraphXml = "") {
+  const styleTag = String(paragraphXml || "").match(/<[^:>]*:?pStyle\b[^>]*>/i)?.[0] || "";
+  return xmlLocalAttribute(styleTag, "val");
+}
+
+function docxParagraphElementType(paragraphXml = "", style = "") {
+  if (/^Title$/i.test(style)) {
+    return { type: "title", level: 1 };
+  }
+  const heading = String(style || "").match(/^Heading(\d+)$/i);
+  if (heading) {
+    return { type: "heading", level: Math.max(1, Math.min(8, Number(heading[1]) || 1)) };
+  }
+  if (/<[^:>]*:?numPr\b/i.test(paragraphXml)) {
+    return { type: "list-item", level: 0 };
+  }
+  return { type: "paragraph", level: 0 };
+}
+
 function parseDocx(entries = []) {
   const xmlNames = entries
     .map((entry) => entry.name)
     .filter((name) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(name));
-  return xmlNames.map((name) => textFromXmlTextNodes(zipEntryText(entries, name))).filter(Boolean).join("\n\n");
+  const elements = [];
+  let paragraphCount = 0;
+  for (const name of xmlNames) {
+    const xml = zipEntryText(entries, name);
+    let foundParagraph = false;
+    for (const match of xml.matchAll(/<[^:>]*:?p\b[\s\S]*?<\/[^:>]*:?p>/g)) {
+      foundParagraph = true;
+      const paragraphXml = match[0];
+      const text = textFromXmlTextNodes(paragraphXml);
+      if (!text) {
+        continue;
+      }
+      paragraphCount += 1;
+      const style = docxParagraphStyle(paragraphXml);
+      const { type, level } = docxParagraphElementType(paragraphXml, style);
+      pushStructureElement(elements, type, text, { level, line: paragraphCount, name });
+    }
+    if (!foundParagraph) {
+      const text = textFromXmlTextNodes(xml);
+      if (text) {
+        paragraphCount += 1;
+        pushStructureElement(elements, "paragraph", text, { line: paragraphCount, name });
+      }
+    }
+  }
+  const fallback = xmlNames.map((name) => textFromXmlTextNodes(zipEntryText(entries, name))).filter(Boolean).join("\n\n");
+  const counts = elementTypeCounts(elements);
+  return {
+    text: structureElementsToText("docx", elements, fallback),
+    elements,
+    format: "docx",
+    xmlFileCount: xmlNames.length,
+    paragraphCount,
+    headingCount: (counts.title || 0) + (counts.heading || 0),
+    listItemCount: counts["list-item"] || 0
+  };
 }
 
 function parsePptx(entries = []) {
@@ -3306,10 +3499,44 @@ function parsePptx(entries = []) {
     .map((entry) => entry.name)
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((left, right) => Number(left.match(/slide(\d+)/)?.[1] || 0) - Number(right.match(/slide(\d+)/)?.[1] || 0));
-  return slideNames
+  const elements = [];
+  let paragraphCount = 0;
+  for (const [index, name] of slideNames.entries()) {
+    const xml = zipEntryText(entries, name);
+    const paragraphs = Array.from(xml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
+      .map((match) => textFromXmlTextNodes(match[0]))
+      .filter(Boolean);
+    const fallback = textFromXmlTextNodes(xml);
+    const slideText = paragraphs.length ? paragraphs : (fallback ? [fallback] : []);
+    if (!slideText.length) {
+      continue;
+    }
+    pushStructureElement(elements, "heading", `Slide ${index + 1}: ${slideText[0]}`, {
+      level: 1,
+      line: index + 1,
+      name
+    });
+    for (const paragraph of slideText.slice(paragraphs.length ? 1 : 0)) {
+      paragraphCount += 1;
+      pushStructureElement(elements, "paragraph", paragraph, {
+        line: paragraphCount,
+        name
+      });
+    }
+  }
+  const fallback = slideNames
     .map((name, index) => `Slide ${index + 1}: ${textFromXmlTextNodes(zipEntryText(entries, name))}`)
     .filter((line) => !line.endsWith(": "))
     .join("\n");
+  const counts = elementTypeCounts(elements);
+  return {
+    text: structureElementsToText("pptx", elements, fallback),
+    elements,
+    format: "pptx",
+    slideCount: slideNames.length,
+    paragraphCount,
+    headingCount: counts.heading || 0
+  };
 }
 
 function xmlAttribute(tag = "", name = "") {
@@ -3433,6 +3660,7 @@ function parseXlsxDetailed(entries = []) {
   let rowCount = 0;
   let cellCount = 0;
   let headerRows = 0;
+  const elements = [];
   for (const [index, name] of sheetNames.entries()) {
     const rows = [];
     for (const match of zipEntryText(entries, name).matchAll(/<row\b[\s\S]*?<\/row>/g)) {
@@ -3449,9 +3677,35 @@ function parseXlsxDetailed(entries = []) {
       headerRows += 1;
       lines.push(text);
     }
+    const headersByColumn = new Map();
+    let headerCaptured = false;
+    for (const row of rows) {
+      if (!row.cells.length) {
+        continue;
+      }
+      if (!headerCaptured && row.cells.length >= 2) {
+        for (const cell of row.cells) {
+          headersByColumn.set(cell.column, cell.value);
+        }
+        pushStructureElement(elements, "table-header", formatXlsxHeaderRow(sheetLabel, row), {
+          line: row.rowNumber,
+          name: sheetLabel,
+          limit: 2000
+        });
+        headerCaptured = true;
+        continue;
+      }
+      pushStructureElement(elements, "table-row", formatXlsxDataRow(sheetLabel, row, headersByColumn), {
+        line: row.rowNumber,
+        name: sheetLabel,
+        limit: 2000
+      });
+    }
   }
   return {
-    text: lines.join("\n"),
+    text: structureElementsToText("xlsx", elements, lines.join("\n")),
+    elements,
+    format: "xlsx",
     sharedStringCount: sharedStrings.length,
     sheetCount: sheetNames.length,
     rowCount,
@@ -3468,10 +3722,47 @@ function parseOpenDocument(entries = []) {
   const contentNames = entries
     .map((entry) => entry.name)
     .filter((name) => /^(content|styles|meta)\.xml$/.test(name));
-  return contentNames
+  const elements = [];
+  let sequence = 0;
+  for (const name of contentNames) {
+    const xml = zipEntryText(entries, name);
+    for (const match of xml.matchAll(/<(?:[\w.-]+:)?h\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?h>/g)) {
+      const tag = match[0].match(/^<[^>]+>/)?.[0] || "";
+      const level = Number(xmlLocalAttribute(tag, "outline-level") || 1);
+      sequence += 1;
+      pushStructureElement(elements, "heading", textFromXmlTextNodes(match[0]), {
+        level: Math.max(1, Math.min(8, level || 1)),
+        line: sequence,
+        name
+      });
+    }
+    for (const match of xml.matchAll(/<(?:[\w.-]+:)?p\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?p>/g)) {
+      sequence += 1;
+      pushStructureElement(elements, "paragraph", textFromXmlTextNodes(match[0]), { line: sequence, name });
+    }
+    for (const match of xml.matchAll(/<(?:[\w.-]+:)?table-row\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?table-row>/g)) {
+      sequence += 1;
+      pushStructureElement(elements, "table-row", textFromXmlTextNodes(match[0]), {
+        line: sequence,
+        name,
+        limit: 2000
+      });
+    }
+  }
+  const fallback = contentNames
     .map((name) => textFromXmlTextNodes(zipEntryText(entries, name)))
     .filter(Boolean)
     .join("\n\n");
+  const counts = elementTypeCounts(elements);
+  return {
+    text: structureElementsToText("open-document", elements, fallback),
+    elements,
+    format: "open-document",
+    xmlFileCount: contentNames.length,
+    headingCount: counts.heading || 0,
+    paragraphCount: counts.paragraph || 0,
+    tableRowCount: counts["table-row"] || 0
+  };
 }
 
 function parseEpub(entries = []) {
@@ -3480,14 +3771,42 @@ function parseEpub(entries = []) {
     .filter((name) => /\.(xhtml|html|htm|xml)$/i.test(name))
     .filter((name) => !/(^|\/)(container|package|toc|nav)\.(xml|xhtml|html)$/i.test(name))
     .sort((left, right) => left.localeCompare(right));
-  return chapterNames
-    .slice(0, 500)
-    .map((name, index) => {
-      const text = stripMarkup(zipEntryText(entries, name));
-      return text ? `Chapter ${index + 1} (${name}): ${text}` : "";
-    })
-    .filter(Boolean)
-    .join("\n\n");
+  const elements = [];
+  const fallback = [];
+  for (const [index, name] of chapterNames.slice(0, 500).entries()) {
+    const xml = zipEntryText(entries, name);
+    const chapterElements = parseHtmlMarkupElements(xml);
+    const text = stripMarkup(xml);
+    if (text) {
+      fallback.push(`Chapter ${index + 1} (${name}): ${text}`);
+    }
+    if (!chapterElements.some((element) => isHeadingStructureElement(element))) {
+      pushStructureElement(elements, "heading", `Chapter ${index + 1}: ${name}`, {
+        level: 1,
+        line: index + 1,
+        name
+      });
+    }
+    for (const element of chapterElements) {
+      pushStructureElement(elements, element.type, element.text, {
+        level: element.level,
+        line: element.line || index + 1,
+        href: element.href,
+        name
+      });
+    }
+  }
+  const counts = elementTypeCounts(elements);
+  return {
+    text: structureElementsToText("epub", elements, fallback.join("\n\n")),
+    elements,
+    format: "epub",
+    chapterCount: chapterNames.length,
+    headingCount: (counts.title || 0) + (counts.heading || 0),
+    paragraphCount: counts.paragraph || 0,
+    tableRowCount: counts["table-row"] || 0,
+    linkCount: counts.link || 0
+  };
 }
 
 function collectFiles(rootDir = "", predicate = () => false, limit = 1000) {
@@ -3856,17 +4175,29 @@ function parsePdfBasicText(buffer) {
     textChunks.unshift(`Title: ${decodePdfLiteral(title)}`);
   }
   const text = textChunks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  const elements = [];
+  textChunks.forEach((chunk, index) => {
+    if (!chunk) {
+      return;
+    }
+    if (index === 0 && /^Title:\s*/i.test(chunk)) {
+      pushStructureElement(elements, "title", chunk.replace(/^Title:\s*/i, ""), { level: 1, line: index + 1, name: "pdf-info" });
+      return;
+    }
+    pushStructureElement(elements, "paragraph", chunk, { line: index + 1, name: `stream-${index + 1}` });
+  });
   parserTrace.push({
     stage: "pdf.text.basic",
     status: text ? "completed" : "empty",
     streamCount,
     decodedStreamCount,
-    characters: text.length
+    characters: text.length,
+    elements: elements.length
   });
   if (!text) {
     warnings.push("pdf-basic-text-empty");
   }
-  return { text, parserTrace, warnings };
+  return { text, parserTrace, warnings, elements, format: "pdf" };
 }
 
 function runtimeStageTrace(stage, runtimeStatus = null, runtimeKey = "") {
@@ -4230,7 +4561,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       parserTrace.push(...parsed.parserTrace);
       warnings.push(...parsed.warnings);
       if (parsed.text) {
-        return { text: parsed.text, parserTrace, warnings };
+        return {
+          text: parsed.text,
+          parserTrace,
+          warnings,
+          structureElements: parsed.elements || [],
+          structureFormat: parsed.format || "pdf"
+        };
       }
       parserTrace.push(runtimeStageTrace("pdf.visual.layout", runtimeStatus, "pdf.pymupdf"));
       parserTrace.push(runtimeStageTrace("ocr.page", runtimeStatus, "ocr.paddleocr"));
@@ -4415,9 +4752,23 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       parserTrace.push({ stage: "zip.container", status: entries.length ? "completed" : "failed", entries: entries.length });
       if (route.id === "word") {
         const parsed = parseDocx(entries);
-        parserTrace.push({ stage: "office.word.structured", status: parsed ? "completed" : "empty", characters: parsed.length });
-        if (parsed) {
-          return { text: parsed, parserTrace, warnings };
+        parserTrace.push({
+          stage: "office.word.structured",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          paragraphs: parsed.paragraphCount,
+          headings: parsed.headingCount,
+          listItems: parsed.listItemCount
+        });
+        if (parsed.text) {
+          return {
+            text: parsed.text,
+            parserTrace,
+            warnings,
+            structureElements: parsed.elements,
+            structureFormat: parsed.format
+          };
         }
         const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
         parserTrace.push(...tikaResult.parserTrace);
@@ -4426,9 +4777,23 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       }
       if (route.id === "presentation") {
         const parsed = parsePptx(entries);
-        parserTrace.push({ stage: "office.presentation.slides", status: parsed ? "completed" : "empty", characters: parsed.length });
-        if (parsed) {
-          return { text: parsed, parserTrace, warnings };
+        parserTrace.push({
+          stage: "office.presentation.slides",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          slides: parsed.slideCount,
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount
+        });
+        if (parsed.text) {
+          return {
+            text: parsed.text,
+            parserTrace,
+            warnings,
+            structureElements: parsed.elements,
+            structureFormat: parsed.format
+          };
         }
         const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
         parserTrace.push(...tikaResult.parserTrace);
@@ -4441,6 +4806,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           stage: "table.sheet.structured",
           status: parsed.text ? "completed" : "empty",
           characters: parsed.text.length,
+          elements: parsed.elements.length,
           sheets: parsed.sheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount
@@ -4457,7 +4823,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           sharedStrings: parsed.sharedStringCount
         });
         if (parsed.text) {
-          return { text: parsed.text, parserTrace, warnings };
+          return {
+            text: parsed.text,
+            parserTrace,
+            warnings,
+            structureElements: parsed.elements,
+            structureFormat: parsed.format
+          };
         }
         const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
         parserTrace.push(...tikaResult.parserTrace);
@@ -4466,9 +4838,23 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       }
       if (route.id === "open-document") {
         const parsed = parseOpenDocument(entries);
-        parserTrace.push({ stage: "open-document.structured", status: parsed ? "completed" : "empty", characters: parsed.length });
-        if (parsed) {
-          return { text: parsed, parserTrace, warnings };
+        parserTrace.push({
+          stage: "open-document.structured",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount,
+          tableRows: parsed.tableRowCount
+        });
+        if (parsed.text) {
+          return {
+            text: parsed.text,
+            parserTrace,
+            warnings,
+            structureElements: parsed.elements,
+            structureFormat: parsed.format
+          };
         }
         const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
         parserTrace.push(...tikaResult.parserTrace);
@@ -4477,9 +4863,25 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       }
       if (route.id === "ebook") {
         const parsed = parseEpub(entries);
-        parserTrace.push({ stage: "ebook.epub", status: parsed ? "completed" : "empty", characters: parsed.length });
-        if (parsed) {
-          return { text: parsed, parserTrace, warnings };
+        parserTrace.push({
+          stage: "ebook.epub",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          chapters: parsed.chapterCount,
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount,
+          tableRows: parsed.tableRowCount,
+          links: parsed.linkCount
+        });
+        if (parsed.text) {
+          return {
+            text: parsed.text,
+            parserTrace,
+            warnings,
+            structureElements: parsed.elements,
+            structureFormat: parsed.format
+          };
         }
         const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
         parserTrace.push(...tikaResult.parserTrace);
@@ -4737,7 +5139,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-row", "code", "code-boundary", "formula"].includes(element.type);
+  return ["table-header", "table-row", "code", "code-boundary", "formula"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -5576,6 +5978,21 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
   const parserTrace = [...(payload.parserTrace || []), ...parsed.parserTrace];
   const parseWarnings = [...(payload.warnings || []), ...parsed.warnings];
   const text = parsed.text.trim();
+  const parsedStructureElements = Array.isArray(parsed.structureElements) ? parsed.structureElements : [];
+  const fallbackElements = parsedStructureElements.length
+    ? []
+    : buildFallbackStructureElementsFromText(text, route, documentMetadata);
+  const structureElements = parsedStructureElements.length ? parsedStructureElements : fallbackElements;
+  const structureFormat = parsed.structureFormat || (structureElements.length ? fallbackStructureFormat(route, documentMetadata) : "");
+  if (!parsedStructureElements.length && structureElements.length) {
+    parserTrace.push({
+      stage: "document.structure.elements",
+      status: "completed",
+      format: structureFormat,
+      elements: structureElements.length,
+      source: "text-lines"
+    });
+  }
   const totalTextCharacters = streamAnalysis?.totalCharacters || pdfFileAnalysis?.totalCharacters || structuredZipAnalysis?.totalCharacters || mboxFileAnalysis?.totalCharacters || tikaFileAnalysis?.totalCharacters || text.length;
   const inferredTime = inferTimeMetadataFromText(text);
   if (inferredTime.timeRange) {
@@ -5611,8 +6028,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       timeSignals: inferredTime.timeSignals,
       text,
       totalTextCharacters,
-      structureElements: parsed.structureElements || [],
-      structureFormat: parsed.structureFormat || "",
+      structureElements,
+      structureFormat,
       streamingWindowPlan: streamAnalysis?.windowPlan || pdfFileAnalysis?.windowPlan || structuredZipAnalysis?.windowPlan || tikaFileAnalysis?.windowPlan || null,
       archiveFilePath: payload.archiveFilePath || "",
       pdfFilePath: payload.pdfFilePath || "",
@@ -8427,6 +8844,13 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
       windowPlan: plannedBySourceId.get(document.sourceId)?.windowPlan || buildWindowPlan(document, input),
       route: plannedBySourceId.get(document.sourceId)?.route || document.route
     }));
+  const evidenceDocuments = activeDocuments
+    .map((document) => ({
+      ...document,
+      windowPlan: plannedBySourceId.get(document.sourceId)?.windowPlan || buildWindowPlan(document, input),
+      route: plannedBySourceId.get(document.sourceId)?.route || document.route
+    }))
+    .filter((document) => document.text || document.windowPlan?.windowCount > 0);
   const query = String(input.query || input.prompt || input.title || "External knowledge distillation").trim();
   const title = String(input.title || query || "External Knowledge Distillation").trim();
   const runId = String(input.runId || "").trim() || stableId("external_kd_run", query, createdAt);
@@ -8478,7 +8902,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
   const graphEvidence = buildGraphEvidencePack({
     runId,
     createdAt,
-    documents,
+    documents: evidenceDocuments,
     classification,
     convergence,
     grounding,
@@ -8912,7 +9336,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "list-item", "link", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "list-item", "link", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      structuredFormats: ["html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason"],
       referencePatterns: [
         "unstructured.elements",

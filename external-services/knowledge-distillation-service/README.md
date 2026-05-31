@@ -71,8 +71,8 @@ Agent/API requests can include a `timeFilter` object:
 
 Routed format families:
 
-- PDF: text extraction, visual layout fallback, OCR fallback.
-- Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP.
+- PDF: text extraction, visual layout fallback, OCR fallback, and text-level document elements for evidence windows.
+- Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP with paragraph, heading, slide, sheet-row, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
 - Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, and logs.
 - Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
@@ -142,7 +142,7 @@ Built-in algorithm baseline:
 - `graph-lite-entity-relationship-evidence-pack.v1`: builds deterministic text-unit, entity, relationship, claim/covariate, community, and community-report tables for agent retrieval and graph-style inspection.
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, source, entity, claim, group, and time filters for engineering-project convergence queries.
-- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code isolation, and element refs on agent windows and graph text units.
+- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code isolation, and element refs on agent windows and graph text units for markup, OOXML, OpenDocument, EPUB, and basic PDF text payloads.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - Weak or tiny inputs are assigned to a garbage group and are not promoted as core distillation candidates.
 
@@ -154,8 +154,8 @@ Reference patterns currently absorbed into the local baseline:
 - LlamaIndex-style node/window metadata attached to agent-readable outputs.
 - Haystack-style explicit pipeline stages exposed through route plans, parser traces, and capability metadata.
 - Haystack-style pipeline snapshots for replayable agent/debug context.
-- Docling/Haystack-style converter boundaries for HTML, AsciiDoc, XML, and LaTeX-like markup documents.
-- Unstructured-style element families for markup headings, lists, links, table rows, code, citations, and formulas.
+- Docling/Haystack-style converter boundaries for HTML, AsciiDoc, XML, LaTeX-like markup, OOXML, OpenDocument, EPUB, and PDF text documents.
+- Unstructured-style element families for markup and structured-document headings, paragraphs, lists, links, table headers, table rows, code, citations, and formulas.
 - Unstructured `chunk_by_title`-style element-aware windows with table/code isolation, plus LlamaIndex-style node refs in graph text-unit metadata.
 
 Reference framework checkout root:
