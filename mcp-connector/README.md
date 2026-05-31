@@ -1,6 +1,6 @@
 # Pact MCP Connector
 
-Release-packaged installer for connecting local AI agents to an Pact MCP HTTP endpoint.
+Release-packaged installer for connecting local AI agents to a Pact MCP HTTP endpoint.
 
 This package is the client-side connector only. It does not contain the Pact server.
 
@@ -33,7 +33,7 @@ npx pact-mcp-connector@latest register
 
 This writes one local registry at `~/.pact/mcp/servers.json`. It does not mutate any agent client config.
 
-For one target:
+For interactive multi-client install:
 
 ```bash
 pact-mcp install
@@ -43,13 +43,7 @@ The interactive installer scans local clients and lets you choose one or more ta
 The default output is a human install report with per-client success or failure,
 not a raw configuration dump. Use `--json` for scripts.
 
-For scripts:
-
-```bash
-npx pact-mcp-connector@latest install --target codex
-```
-
-For unattended agent shells:
+For scripts and unattended agent shells:
 
 ```bash
 npx pact-mcp-connector@latest install --target auto --json
@@ -58,6 +52,12 @@ npx pact-mcp-connector@latest install --target auto --json
 `auto` installs every supported client that the connector can verify on this
 machine or in a detected runtime context. A non-interactive `pact-mcp install`
 with no `--target` uses the same auto-detected path.
+
+Limit scope only when a script intentionally targets a known client set:
+
+```bash
+npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --json
+```
 
 For a single copyable GitHub Release command in an unattended agent shell:
 
@@ -96,7 +96,7 @@ cd pact-mcp-connector-<version>-<platform>
 For scripts:
 
 ```bash
-./pact-mcp install --target codex
+./pact-mcp install --target auto --json
 ```
 
 The portable zip package includes its own Node.js runtime. macOS users can open `install.command` and follow the prompts.
@@ -127,8 +127,10 @@ npx pact-mcp-connector@latest scan --json
 ## Uninstall
 
 ```bash
-npx pact-mcp-connector@latest uninstall --target codex
+npx pact-mcp-connector@latest uninstall --target claude-code,codex,openclaw
 ```
+
+Non-interactive uninstall requires an explicit target list.
 
 Supported targets: `codex`, `claude-code`, `gemini-cli`, `kilo-code`,
 `copilot`, `openclaw`, `hermes`, `antigravity`, `opencode`.

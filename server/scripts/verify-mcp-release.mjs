@@ -38,16 +38,21 @@ function assertResilientOneLineCommand(command) {
 }
 
 async function assertPublishedInstallDocsUseResilientCurl() {
+  const connectorReadmePath = path.join(projectRoot, "mcp-connector", "README.md");
   for (const filePath of [
     path.join(projectRoot, "docs", "MCP_INSTALL.md"),
     path.join(projectRoot, "docs", "MCP_INSTALL.zh-CN.md"),
     path.join(projectRoot, "docs", "PROTOCOLS.md"),
-    path.join(projectRoot, "mcp-connector", "README.md")
+    connectorReadmePath
   ]) {
     const text = await fs.readFile(filePath, "utf8");
     assert.doesNotMatch(text, /curl -fsSL/);
     assert.match(text, /curl -fL --retry 3 --connect-timeout 20 -sS/);
   }
+  const connectorReadme = await fs.readFile(connectorReadmePath, "utf8");
+  assert.match(connectorReadme, /install --target auto --json/);
+  assert.match(connectorReadme, /--target claude-code,codex,openclaw --json/);
+  assert.doesNotMatch(connectorReadme, /install --target codex(?:\s|$)/);
 }
 
 function resolveVerifyTargetPlatform() {
