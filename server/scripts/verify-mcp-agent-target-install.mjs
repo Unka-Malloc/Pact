@@ -424,6 +424,11 @@ try {
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.equal(payload.installed?.[target]?.status, "installed", `${target} should be installed by auto install`);
     }
+    for (const target of PRIORITY_AGENT_TARGETS) {
+      const selected = payload.selected?.find((item) => item.target === target);
+      assert.ok(selected?.installCommand?.includes(`pact-mcp install --target ${target}`), `${target} should include a copyable install command`);
+      assert.equal(selected.installCommand.includes(token), false, `${target} install command must not expose token values`);
+    }
     assert.equal(payload.installed?.["gemini-cli"]?.status, "installed");
     assert.equal(payload.installed?.["kilo-code"]?.status, "installed");
     assert.equal(payload.installed?.copilot?.status, "installed");
@@ -541,6 +546,7 @@ try {
     const oc = scan.candidates.find((c) => c.target === "opencode");
     assert.ok(oc, "scan should include opencode");
     assert.equal(oc.label, "OpenCode");
+    assert.ok(oc.repairCommand?.includes("pact-mcp install --target opencode"), "scan should include an opencode repair command");
   });
 
   // ── SECTION 9: Connector self-checks ──
@@ -570,6 +576,11 @@ try {
     const targets = scan.candidates.map((c) => c.target);
     for (const target of DECLARED_AGENT_TARGETS) {
       assert.ok(targets.includes(target), `targets: ${targets.join(", ")}`);
+    }
+    for (const target of PRIORITY_AGENT_TARGETS) {
+      const candidate = scan.candidates.find((c) => c.target === target);
+      assert.ok(candidate?.repairCommand?.includes(`pact-mcp install --target ${target}`), `${target} should include a repair command`);
+      assert.equal(candidate.doctorCommand, "pact-mcp doctor --json");
     }
   });
 
@@ -617,6 +628,10 @@ try {
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "codex"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "claude-code"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "openclaw"), true);
+    for (const target of PRIORITY_AGENT_TARGETS) {
+      const candidate = payload.candidates?.find((item) => item.target === target);
+      assert.ok(candidate?.repairCommand?.includes(`pact-mcp install --target ${target}`), `${target} should provide a repair command`);
+    }
   });
 
 } catch (error) {

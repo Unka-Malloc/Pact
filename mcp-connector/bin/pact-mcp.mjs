@@ -391,13 +391,26 @@ function targetBinOption(target) {
   return descriptor?.binOption || "";
 }
 
-function shellCommandForInstall({ target = "codex", binOption = "", includeUrl = false, includeToken = false } = {}) {
+function targetDefaultCommand(target) {
+  if (target === "claude-code") {
+    return "claude";
+  }
+  if (target === "gemini-cli") {
+    return "gemini";
+  }
+  if (target === "kilo-code") {
+    return "kilo";
+  }
+  return target || "codex";
+}
+
+function shellCommandForInstall({ target = "codex", binOption = "", includeUrl = false, baseUrl = "http://127.0.0.1:7228", includeToken = false } = {}) {
   const parts = ["pact-mcp", "install", "--target", target];
   if (binOption) {
-    parts.push(`--${binOption}`, target === "claude-code" ? "claude" : target);
+    parts.push(`--${binOption}`, targetDefaultCommand(target));
   }
   if (includeUrl) {
-    parts.push("--url", "http://127.0.0.1:7228");
+    parts.push("--url", baseUrl);
   }
   if (includeToken) {
     parts.push("--token-stdin");
@@ -458,6 +471,46 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
       "pact-mcp doctor --json",
       "pact-mcp scan --json"
     ]
+  };
+}
+
+function commandOptionArgs(options = {}) {
+  const args = [];
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    args.push(`--${key}`, shellQuote(value));
+  }
+  return args;
+}
+
+function candidateInstallCommand(candidate, settings) {
+  const args = ["pact-mcp", "install", "--target", candidate.target];
+  if (settings.baseUrl) {
+    args.push("--url", shellQuote(settings.baseUrl));
+  }
+  args.push(...commandOptionArgs(candidate.optionOverrides || {}));
+  args.push("--json");
+  return args.join(" ");
+}
+
+function candidateRepairCommand(candidate, settings) {
+  const binOption = targetBinOption(candidate.target);
+  return shellCommandForInstall({
+    target: candidate.target,
+    binOption,
+    includeUrl: Boolean(settings.baseUrl),
+    baseUrl: settings.baseUrl || "http://127.0.0.1:7228"
+  });
+}
+
+function withInstallCandidateGuidance(candidate, settings) {
+  return {
+    ...candidate,
+    installCommand: candidate.status === "detected" ? candidateInstallCommand(candidate, settings) : "",
+    repairCommand: candidate.status === "detected" ? "" : candidateRepairCommand(candidate, settings),
+    doctorCommand: "pact-mcp doctor --json"
   };
 }
 
@@ -4318,7 +4371,7 @@ async function scanInstallTargets(options = {}) {
     hostOs: settings.hostOs,
     baseUrl: settings.baseUrl,
     mcpUrl: settings.baseUrl ? `${settings.baseUrl}/mcp` : "",
-    candidates
+    candidates: candidates.map((candidate) => withInstallCandidateGuidance(candidate, settings))
   };
 }
 
@@ -5173,7 +5226,10 @@ function summarizeInstallCandidate(candidate) {
     target: candidate.target,
     label: candidate.label,
     detail: candidate.detail || "",
-    installed: Boolean(candidate.installed)
+    installed: Boolean(candidate.installed),
+    installCommand: candidate.installCommand || "",
+    repairCommand: candidate.repairCommand || "",
+    doctorCommand: candidate.doctorCommand || "pact-mcp doctor --json"
   };
 }
 
