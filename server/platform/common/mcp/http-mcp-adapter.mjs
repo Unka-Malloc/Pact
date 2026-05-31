@@ -40,6 +40,17 @@ export const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
 export const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
 export const PACT_MCP_DISCOVERY_FILE = "~/.pact/mcp/servers.json";
+const MCP_CLIENT_TARGETS = Object.freeze([
+  { target: "codex", label: "Codex", priority: true, installMode: "codex-release-plugin-and-mcp-cli", locations: ["local"] },
+  { target: "claude-code", label: "Claude Code", priority: true, installMode: "claude-code-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
+  { target: "gemini-cli", label: "Gemini CLI", priority: false, installMode: "gemini-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
+  { target: "kilo-code", label: "Kilo Code", priority: false, installMode: "kilo-release-global-kilo-json", locations: ["local", "orbstack", "remote-linux"] },
+  { target: "copilot", label: "Copilot", priority: false, installMode: "copilot-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
+  { target: "openclaw", label: "OpenClaw", priority: true, installMode: "openclaw-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
+  { target: "hermes", label: "Hermes Agent", priority: false, installMode: "hermes-remote-mcp-cli", locations: ["orbstack", "remote-linux"] },
+  { target: "antigravity", label: "Antigravity", priority: false, installMode: "antigravity-release-mcp-config", locations: ["local"] },
+  { target: "opencode", label: "OpenCode", priority: true, installMode: "opencode-release-mcp-config", locations: ["local", "orbstack", "remote-linux"] }
+]);
 
 function jsonRpcResult(id, result = {}) {
   return {
@@ -415,6 +426,92 @@ function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
   return { baseUrl, vmBaseUrl };
 }
 
+function mcpTargetConfigTemplate(target, { baseUrl = "", vmBaseUrl = "" } = {}) {
+  const mcpUrl = `${baseUrl}/mcp`;
+  const vmMcpUrl = `${vmBaseUrl}/mcp`;
+  const headerConfig = {
+    "X-Pact-Api-Key": "${PACT_MCP_TOKEN}"
+  };
+  if (target === "codex") {
+    return {
+      mcp_servers: {
+        pact: {
+          url: mcpUrl,
+          bearer_token_env_var: "PACT_MCP_TOKEN"
+        }
+      }
+    };
+  }
+  if (target === "claude-code") {
+    return {
+      type: "http",
+      url: mcpUrl,
+      vmUrl: vmMcpUrl,
+      headers: headerConfig
+    };
+  }
+  if (target === "opencode") {
+    return {
+      mcp: {
+        pact: {
+          type: "remote",
+          url: mcpUrl,
+          vmUrl: vmMcpUrl,
+          headers: headerConfig,
+          enabled: true
+        }
+      }
+    };
+  }
+  if (target === "openclaw") {
+    return {
+      type: "http",
+      url: mcpUrl,
+      vmUrl: vmMcpUrl,
+      headers: headerConfig,
+      timeout: DEFAULT_TIMEOUT_MS,
+      enabled: true
+    };
+  }
+  if (target === "antigravity") {
+    return {
+      mcpServers: {
+        pact: {
+          serverUrl: mcpUrl,
+          headers: headerConfig,
+          disabled: false
+        }
+      }
+    };
+  }
+  return {
+    type: "http",
+    url: mcpUrl,
+    vmUrl: vmMcpUrl,
+    headers: headerConfig,
+    timeout: DEFAULT_TIMEOUT_MS
+  };
+}
+
+function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineCommand = "" } = {}) {
+  return MCP_CLIENT_TARGETS.map((client) => ({
+    ...client,
+    endpoints: {
+      mcpUrl: `${baseUrl}/mcp`,
+      vmMcpUrl: `${vmBaseUrl}/mcp`
+    },
+    install: {
+      oneCommand: `${githubOneLineCommand} -- --target ${client.target}`,
+      npx: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}`,
+      portable: `./pact-mcp install --target ${client.target}`,
+      uninstall: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target ${client.target}`,
+      doctor: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor --json`
+    },
+    tokenInput: "auto-local-grant-or-stdin-or-env",
+    configTemplate: mcpTargetConfigTemplate(client.target, { baseUrl, vmBaseUrl })
+  }));
+}
+
 export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`;
@@ -427,6 +524,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor`;
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local`;
   const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan --json`;
+  const clientTargets = mcpClientTargetGuides({ baseUrl, vmBaseUrl, githubOneLineCommand });
   return {
     schemaVersion: 1,
     name: "Pact",
@@ -473,6 +571,13 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       packageName: MCP_CONNECTOR_PACKAGE_NAME,
       packageVersion: MCP_CONNECTOR_VERSION,
       releaseChannel: "stable",
+      supportedTargets: clientTargets.map(({ target, label, priority, installMode, locations }) => ({
+        target,
+        label,
+        priority,
+        installMode,
+        locations
+      })),
       githubOneLineCommand,
       githubOneLineAutoInstallCommand,
       oneCommandInstall: githubOneLineCommand,
@@ -507,6 +612,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         doubleClickEntry: "install.command"
       }
     },
+    clientTargets,
     upgrade: {
       listChanged: true,
       notification: "notifications/tools/list_changed",

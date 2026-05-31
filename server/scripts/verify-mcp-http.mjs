@@ -83,6 +83,34 @@ try {
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
   assert.equal(discovery.payload.installer.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.match(discovery.payload.installer.scanCommand, /pact-mcp-connector@latest scan --json/);
+  const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
+  const expectedInstallTargets = [
+    "codex",
+    "claude-code",
+    "gemini-cli",
+    "kilo-code",
+    "copilot",
+    "openclaw",
+    "hermes",
+    "antigravity",
+    "opencode"
+  ];
+  assert.deepEqual(targetIds, expectedInstallTargets);
+  const clientTargetsById = new Map(discovery.payload.clientTargets.map((target) => [target.target, target]));
+  for (const targetId of expectedInstallTargets) {
+    const target = clientTargetsById.get(targetId);
+    assert.ok(target, `${targetId} should be present in discovery clientTargets`);
+    assert.equal(target.install.npx, `npx pact-mcp-connector@latest install --target ${targetId}`);
+    assert.match(target.install.oneCommand, new RegExp(`--target ${targetId}`));
+    assert.equal(target.tokenInput, "auto-local-grant-or-stdin-or-env");
+  }
+  for (const targetId of ["codex", "claude-code", "openclaw", "opencode"]) {
+    assert.equal(clientTargetsById.get(targetId).priority, true);
+  }
+  assert.equal(clientTargetsById.get("codex").configTemplate.mcp_servers.pact.bearer_token_env_var, "PACT_MCP_TOKEN");
+  assert.equal(clientTargetsById.get("claude-code").configTemplate.headers["X-Pact-Api-Key"], "${PACT_MCP_TOKEN}");
+  assert.equal(clientTargetsById.get("openclaw").configTemplate.enabled, true);
+  assert.equal(clientTargetsById.get("opencode").configTemplate.mcp.pact.type, "remote");
   assert.equal(discovery.payload.localDiscovery.files.length, 1);
   assert.match(discovery.payload.localDiscovery.entrypoint.command, /discover-local/);
   assert.equal(discovery.payload.installer.portable.requiresInstalledNode, false);
