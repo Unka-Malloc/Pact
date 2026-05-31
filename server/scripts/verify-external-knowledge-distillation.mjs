@@ -622,6 +622,11 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
+  assert.equal(capabilities.payload.elementModel.supported, true);
+  assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
+  assert.equal(capabilities.payload.elementModel.windowingStrategy, "element-aware-by-title-windowing.v1");
+  assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
+  assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
   for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
@@ -1115,11 +1120,30 @@ try {
   const htmlMarkupCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-38");
   assert.equal(htmlMarkupCorpus.route.formatId, "markup");
   assert.equal(htmlMarkupCorpus.parserTrace.some((trace) => trace.stage === "markup.structure" && trace.status === "completed" && trace.format === "html" && trace.elements >= 8 && trace.headings >= 2 && trace.links >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1), true);
-  assert.match(htmlMarkupCorpus.windowPlan.windows[0]?.excerpt || "", /External knowledge distillation operations|markup\.structure|agent contract/);
+  assert.equal(htmlMarkupCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(htmlMarkupCorpus.elementPlan.elementTypes.heading >= 2, true);
+  assert.equal(htmlMarkupCorpus.elementPlan.elementTypes.link >= 1, true);
+  assert.equal(htmlMarkupCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(htmlMarkupCorpus.windowPlan.source.kind, "structure-elements");
+  assert.equal(htmlMarkupCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-38" &&
+    unit.metadata?.semanticChunkStrategy === "unstructured.by-title-element-windowing.v1" &&
+    unit.metadata?.elementTypes?.includes("table-row")
+  )), true);
+  assert.equal(htmlMarkupCorpus.windowPlan.windows.some((window) => (
+    /External knowledge distillation operations|markup\.structure|agent contract/.test(window.excerpt || "")
+  )), true);
   const latexMarkupCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-39");
   assert.equal(latexMarkupCorpus.route.formatId, "markup");
   assert.equal(latexMarkupCorpus.parserTrace.some((trace) => trace.stage === "markup.structure" && trace.status === "completed" && trace.format === "latex" && trace.headings >= 3 && trace.listItems >= 2 && trace.formulas >= 1), true);
-  assert.match(latexMarkupCorpus.windowPlan.windows[0]?.excerpt || "", /Convergent Knowledge Distillation|Routing Model|precision/);
+  assert.equal(latexMarkupCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(latexMarkupCorpus.elementPlan.elementTypes.formula >= 1, true);
+  assert.equal(latexMarkupCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(latexMarkupCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "formula")), true);
+  assert.equal(latexMarkupCorpus.windowPlan.windows.some((window) => (
+    /Convergent Knowledge Distillation|Routing Model|precision/.test(window.excerpt || "")
+  )), true);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");

@@ -378,6 +378,10 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
+  assert.equal(capabilities.payload.elementModel.supported, true);
+  assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
+  assert.equal(capabilities.payload.elementModel.windowingStrategy, "element-aware-by-title-windowing.v1");
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs"), true);
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".rtf"), true);
@@ -853,7 +857,18 @@ try {
   assert.equal(markupChild.parentSourceId, "container-project-package");
   assert.equal(markupChild.route.formatId, "markup");
   assert.equal(markupChild.parserTrace.some((trace) => trace.stage === "markup.structure" && trace.status === "completed" && trace.format === "asciidoc" && trace.headings >= 2 && trace.listItems >= 2 && trace.links >= 1 && trace.tables >= 2), true);
+  assert.equal(markupChild.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(markupChild.elementPlan.sourceFormat, "asciidoc");
+  assert.equal(markupChild.elementPlan.elementTypes.heading >= 2, true);
+  assert.equal(markupChild.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(markupChild.windowPlan.source.kind, "structure-elements");
+  assert.equal(markupChild.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
   assert.match(markupChild.windowPlan.windows[0]?.excerpt || "", /External KD Runbook|Parser Strategy|markup\.structure/);
+  assert.equal(projectPackageRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "container-project-package!docs/runbook.adoc" &&
+    unit.metadata?.semanticChunkStrategy === "unstructured.by-title-element-windowing.v1" &&
+    unit.metadata?.elementTypes?.includes("table-row")
+  )), true);
   const candidateSourceIds = new Set(projectPackageRun.payload.result.candidates.flatMap((candidate) => candidate.sourceIds || []));
   assert.equal(candidateSourceIds.has("container-project-package!docs/architecture.md"), true);
   assert.equal(candidateSourceIds.has("container-project-package!finance/invoice.csv"), true);

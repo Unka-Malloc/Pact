@@ -629,7 +629,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["full layout block graph", "native table geometry and formula objects beyond markup formulas"]
   },
   "llama-index": {
-    absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API"],
+    absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API", "node-style element references on windows and text units"],
     baseline: ["node/window metadata and project snapshot hashes"],
     gaps: ["pluggable ingestion pipeline contracts", "agent evaluation feedback loop"]
   },
@@ -649,7 +649,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for markup headings, lists, links, tables, code, and formulas"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for markup headings, lists, links, tables, code, and formulas", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["element-type enrichment for PDF and Office layout blocks", "domain-specific chunk enrichment plugins"]
   }
@@ -1667,6 +1667,7 @@ function parseMarkupText(text = "", metadata = {}) {
   return {
     text: markupElementsToText(format, elements, fallback),
     format,
+    elements,
     elementCount: elements.length,
     headingCount: (counts.heading || 0) + (counts["task-heading"] || 0) + (counts.title || 0),
     listItemCount: counts["list-item"] || 0,
@@ -4334,7 +4335,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
         codeBlocks: parsed.codeBlockCount,
         formulas: parsed.formulaCount
       });
-      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+      return {
+        text: parsed.text || plain.trim(),
+        parserTrace,
+        warnings,
+        structureElements: parsed.elements,
+        structureFormat: parsed.format
+      };
     }
     if (route?.id === "config") {
       const parsed = parseConfigText(plain, metadata);
@@ -4690,6 +4697,180 @@ function buildWindowRecord(document = {}, index = 0, startOffset = 0, endOffset 
       timeConfidence: inferredTime.timeConfidence,
       timeSignals: inferredTime.timeSignals
     } : {})
+  };
+}
+
+function structureElementLine(element = {}) {
+  const level = element.level ? ` level ${element.level}` : "";
+  const line = element.line ? ` line ${element.line}` : "";
+  const name = element.name ? ` ${element.name}` : "";
+  const href = element.href ? ` -> ${element.href}` : "";
+  return `Element ${element.type}${level}${name}${line}: ${element.text}${href}`;
+}
+
+function structureElementTypeCounts(elements = []) {
+  const counts = {};
+  for (const element of elements) {
+    counts[element.type] = (counts[element.type] || 0) + 1;
+  }
+  return counts;
+}
+
+function normalizedStructureElements(document = {}) {
+  const elements = Array.isArray(document.structureElements) ? document.structureElements : [];
+  return elements
+    .map((element, index) => ({
+      elementId: element.elementId || stableId("element", document.sourceId, String(index), element.type || "text", element.text || ""),
+      index,
+      type: String(element.type || "text"),
+      text: String(element.text || "").trim(),
+      level: Number(element.level || 0),
+      line: Number(element.line || 0),
+      href: String(element.href || ""),
+      name: String(element.name || "")
+    }))
+    .filter((element) => element.text);
+}
+
+function isHeadingStructureElement(element = {}) {
+  return ["title", "heading", "task-heading"].includes(element.type);
+}
+
+function isIsolatedStructureElement(element = {}) {
+  return ["table-row", "code", "code-boundary", "formula"].includes(element.type);
+}
+
+function headingLevelForElement(element = {}) {
+  if (element.level) {
+    return Math.max(1, Math.min(8, Number(element.level)));
+  }
+  return element.type === "title" ? 1 : 2;
+}
+
+function buildStructureWindowRecord(document = {}, index = 0, elements = [], headingPath = [], boundaryReason = "element-sequence") {
+  const text = elements.map(structureElementLine).join("\n").trim();
+  const first = elements[0] || {};
+  const last = elements[elements.length - 1] || first;
+  const record = buildWindowRecord(document, index, first.index || 0, (last.index || 0) + 1, text);
+  return {
+    ...record,
+    offsetUnit: "element-index",
+    semanticChunkStrategy: "unstructured.by-title-element-windowing.v1",
+    boundaryReason,
+    headingPath,
+    elementRefs: elements.map((element) => ({
+      elementId: element.elementId,
+      type: element.type,
+      index: element.index,
+      line: element.line || null,
+      headingPath
+    })),
+    elementTypes: uniqueOrdered(elements.map((element) => element.type))
+  };
+}
+
+function buildElementAwareWindowPlan(document = {}, options = {}) {
+  const elements = normalizedStructureElements(document);
+  if (!elements.length) {
+    return null;
+  }
+  const { maxCharacters, overlapCharacters } = normalizedWindowOptions(options);
+  const windows = [];
+  const headingStack = [];
+  let current = [];
+  let currentCharacters = 0;
+  let currentHeadingPath = [];
+
+  const closeCurrent = (reason = "element-boundary") => {
+    if (!current.length) {
+      return;
+    }
+    windows.push(buildStructureWindowRecord(document, windows.length, current, currentHeadingPath, reason));
+    current = [];
+    currentCharacters = 0;
+  };
+
+  const addElement = (element) => {
+    const line = structureElementLine(element);
+    current.push(element);
+    currentCharacters += line.length + 1;
+  };
+
+  for (const element of elements) {
+    const line = structureElementLine(element);
+    if (isHeadingStructureElement(element)) {
+      closeCurrent("heading-boundary");
+      const level = headingLevelForElement(element);
+      while (headingStack.length && headingStack[headingStack.length - 1].level >= level) {
+        headingStack.pop();
+      }
+      headingStack.push({ level, text: element.text });
+      currentHeadingPath = headingStack.map((item) => item.text);
+      addElement(element);
+      continue;
+    }
+
+    const isolated = isIsolatedStructureElement(element);
+    const currentHasIsolated = current.some(isIsolatedStructureElement);
+    const differentIsolatedRun = currentHasIsolated && !current.every((item) => item.type === element.type);
+    const wouldOverflow = current.length > 0 && currentCharacters + line.length + 1 > maxCharacters;
+    if (current.length && (wouldOverflow || (isolated && !currentHasIsolated) || differentIsolatedRun)) {
+      closeCurrent(wouldOverflow ? "size-boundary" : `${element.type}-isolation`);
+    }
+    currentHeadingPath = headingStack.map((item) => item.text);
+    addElement(element);
+  }
+  closeCurrent("document-end");
+
+  return {
+    strategy: "element-aware-by-title-windowing.v1",
+    maxCharacters,
+    overlapCharacters: 0,
+    requestedOverlapCharacters: overlapCharacters,
+    windowCount: windows.length,
+    truncated: false,
+    source: {
+      kind: "structure-elements",
+      elementCount: elements.length,
+      structureFormat: document.structureFormat || "",
+      referencePatterns: [
+        "unstructured.chunk_by_title",
+        "unstructured.table-isolated-pre-chunks",
+        "docling.docitem-labels",
+        "llama-index.nodes-with-metadata"
+      ]
+    },
+    windows
+  };
+}
+
+function buildDocumentElementPlan(document = {}, windowPlan = null) {
+  const elements = normalizedStructureElements(document);
+  if (!elements.length) {
+    return null;
+  }
+  const counts = structureElementTypeCounts(elements);
+  return {
+    strategy: "document-element-model.v1",
+    sourceFormat: document.structureFormat || document.extension || "",
+    elementCount: elements.length,
+    elementTypes: counts,
+    chunkingStrategy: windowPlan?.strategy || "",
+    referencePatterns: [
+      "unstructured.elements",
+      "unstructured.chunk_by_title",
+      "docling.docitem-labels",
+      "llama-index.nodes-with-metadata"
+    ],
+    sampleElements: elements.slice(0, 80).map((element) => ({
+      elementId: element.elementId,
+      index: element.index,
+      type: element.type,
+      text: element.text.slice(0, 500),
+      line: element.line || null,
+      level: element.level || null,
+      href: element.href || ""
+    }))
   };
 }
 
@@ -5107,6 +5288,10 @@ function buildWindowPlan(document = {}, options = {}) {
   if (document.streamingWindowPlan) {
     return document.streamingWindowPlan;
   }
+  const elementAwareWindowPlan = buildElementAwareWindowPlan(document, options);
+  if (elementAwareWindowPlan) {
+    return elementAwareWindowPlan;
+  }
   const text = String(document.text || "");
   const { maxCharacters, overlapCharacters } = normalizedWindowOptions(options);
   if (!text) {
@@ -5144,6 +5329,7 @@ function buildCorpusPlan(documents = [], input = {}) {
   const plannedDocuments = documents.map((document) => {
     const route = buildDocumentRoute(document);
     const windowPlan = buildWindowPlan(document, input);
+    const elementPlan = buildDocumentElementPlan(document, windowPlan);
     const textCharacters = Number(document.totalTextCharacters || document.text.length || 0);
     const distillable = Boolean(document.text || textCharacters > 0 || windowPlan.windowCount > 0);
     return {
@@ -5164,6 +5350,7 @@ function buildCorpusPlan(documents = [], input = {}) {
       timeConfidence: Number(document.timeConfidence || 0),
       timeSignals: document.timeSignals || [],
       route,
+      elementPlan,
       windowPlan,
       parserTrace: document.parserTrace || [],
       parseWarnings: document.parseWarnings || [],
@@ -5189,6 +5376,7 @@ function buildCorpusPlan(documents = [], input = {}) {
     distillableSourceCount: plannedDocuments.filter((document) => document.quality.distillable).length,
     totalBytes: plannedDocuments.reduce((sum, document) => sum + (document.byteSize || 0), 0),
     totalCharacters: documents.reduce((sum, document) => sum + Number(document.totalTextCharacters || document.text.length || 0), 0),
+    elementCount: plannedDocuments.reduce((sum, document) => sum + Number(document.elementPlan?.elementCount || 0), 0),
     windowCount: plannedDocuments.reduce((sum, document) => sum + document.windowPlan.windowCount, 0),
     documents: plannedDocuments
   };
@@ -5335,31 +5523,41 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
     ? {
         text: streamAnalysis.textSample,
         parserTrace: streamAnalysis.parserTrace,
-        warnings: streamAnalysis.warnings
+        warnings: streamAnalysis.warnings,
+        structureElements: [],
+        structureFormat: ""
       }
     : pdfFileAnalysis
       ? {
           text: pdfFileAnalysis.text,
           parserTrace: pdfFileAnalysis.parserTrace,
-          warnings: pdfFileAnalysis.warnings
+          warnings: pdfFileAnalysis.warnings,
+          structureElements: [],
+          structureFormat: ""
         }
     : structuredZipAnalysis
       ? {
           text: structuredZipAnalysis.text,
           parserTrace: structuredZipAnalysis.parserTrace,
-          warnings: structuredZipAnalysis.warnings
+          warnings: structuredZipAnalysis.warnings,
+          structureElements: [],
+          structureFormat: ""
         }
     : mboxFileAnalysis
       ? {
           text: mboxFileAnalysis.text,
           parserTrace: mboxFileAnalysis.parserTrace,
-          warnings: mboxFileAnalysis.warnings
+          warnings: mboxFileAnalysis.warnings,
+          structureElements: [],
+          structureFormat: ""
         }
     : tikaFileAnalysis
       ? {
           text: tikaFileAnalysis.text,
           parserTrace: tikaFileAnalysis.parserTrace,
-          warnings: tikaFileAnalysis.warnings
+          warnings: tikaFileAnalysis.warnings,
+          structureElements: [],
+          structureFormat: ""
         }
     : payload.archiveFilePath && isArchiveRoute(route)
       ? {
@@ -5370,7 +5568,9 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
             path: payload.archiveFilePath,
             bytes: documentMetadata.byteSize
           }],
-          warnings: []
+          warnings: [],
+          structureElements: [],
+          structureFormat: ""
         }
     : parseSuppliedContent({ route, metadata: documentMetadata, text: suppliedText, buffer, runtimeStatus });
   const parserTrace = [...(payload.parserTrace || []), ...parsed.parserTrace];
@@ -5411,6 +5611,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       timeSignals: inferredTime.timeSignals,
       text,
       totalTextCharacters,
+      structureElements: parsed.structureElements || [],
+      structureFormat: parsed.structureFormat || "",
       streamingWindowPlan: streamAnalysis?.windowPlan || pdfFileAnalysis?.windowPlan || structuredZipAnalysis?.windowPlan || tikaFileAnalysis?.windowPlan || null,
       archiveFilePath: payload.archiveFilePath || "",
       pdfFilePath: payload.pdfFilePath || "",
@@ -7070,7 +7272,10 @@ function snapshotDocument(document = {}) {
     startOffset: window.startOffset,
     endOffset: window.endOffset,
     contentHash: window.contentHash,
-    timeRange: window.timeRange || null
+    timeRange: window.timeRange || null,
+    elementRefs: window.elementRefs || [],
+    elementTypes: window.elementTypes || [],
+    headingPath: window.headingPath || []
   }));
   return {
     sourceId: document.sourceId,
@@ -7356,7 +7561,12 @@ function buildGraphEvidencePack({ runId = "", createdAt = "", documents = [], cl
         metadata: {
           routeId: document.route?.formatId || "unknown",
           contentHash: window.contentHash || document.contentHash || "",
-          timeRange: window.timeRange || document.timeRange || null
+          timeRange: window.timeRange || document.timeRange || null,
+          elementRefs: window.elementRefs || [],
+          elementTypes: window.elementTypes || [],
+          headingPath: window.headingPath || [],
+          semanticChunkStrategy: window.semanticChunkStrategy || "",
+          boundaryReason: window.boundaryReason || ""
         }
       });
     }
@@ -8118,6 +8328,7 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
       distillableSourceCount: corpusPlan.distillableSourceCount,
       totalBytes: corpusPlan.totalBytes,
       totalCharacters: corpusPlan.totalCharacters,
+      elementCount: corpusPlan.elementCount || 0,
       windowCount: corpusPlan.windowCount,
       timeFilter: corpusPlan.timeFilter || null,
       documents: corpusPlan.documents.map((document) => ({
@@ -8136,6 +8347,7 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
         parseStatus: document.parseStatus,
         parserTrace: document.parserTrace,
         parseWarnings: document.parseWarnings,
+        elementPlan: document.elementPlan || null,
         windowPlan: {
           strategy: document.windowPlan.strategy,
           windowCount: document.windowPlan.windowCount,
@@ -8340,6 +8552,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
       distillableSourceCount: corpusPlan.distillableSourceCount,
       totalBytes: corpusPlan.totalBytes,
       totalCharacters: corpusPlan.totalCharacters,
+      elementCount: corpusPlan.elementCount || 0,
       windowCount: corpusPlan.windowCount,
       timeFilter: corpusPlan.timeFilter
     },
@@ -8406,6 +8619,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
         allSizePolicy: corpusPlan.allSizePolicy,
         totalBytes: corpusPlan.totalBytes,
         totalCharacters: corpusPlan.totalCharacters,
+        elementCount: corpusPlan.elementCount || 0,
         windowCount: corpusPlan.windowCount,
         timeFilter: corpusPlan.timeFilter
       },
@@ -8600,6 +8814,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "external-service.route-window-community-claim-gated-distillation.v3",
       "external-service.route-window-community-claim-gated-incremental-distillation.v4",
       "external-service.route-window-community-claim-gated-graph-incremental-distillation.v5",
+      "document-element-model.v1",
+      "element-aware-by-title-windowing.v1",
       EVIDENCE_QUERY_STRATEGY,
       PROJECT_EVIDENCE_QUERY_STRATEGY,
       REFERENCE_GAP_REPORT_STRATEGY
@@ -8691,6 +8907,20 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       ],
       externalRuntimeRequired: ["tika.text", "pdf.visual.layout", "ocr.page", "ocr.image", "multimodal.image"],
       emptyCorpusErrorCode: "EMPTY_RAW_CORPUS"
+    },
+    elementModel: {
+      supported: true,
+      strategy: "document-element-model.v1",
+      windowingStrategy: "element-aware-by-title-windowing.v1",
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "list-item", "link", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason"],
+      referencePatterns: [
+        "unstructured.elements",
+        "unstructured.chunk_by_title",
+        "unstructured.table-isolated-pre-chunks",
+        "docling.docitem-labels",
+        "llama-index.nodes-with-metadata"
+      ]
     },
     runtimeDoctor: runtimeStatus,
     classification: {
