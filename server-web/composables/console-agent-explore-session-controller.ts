@@ -1,7 +1,12 @@
 import { computed, type ComputedRef, type Ref } from "vue";
 import { bridge } from "../lib/bridge";
 import type { AgentExploreRunResponse } from "../lib/types";
-import type { AgentExploreSession, HistorySessionPanelItem } from "../types/app";
+import type {
+  AgentExploreSession,
+  AppView,
+  DebugTab,
+  HistorySessionPanelItem,
+} from "../types/app";
 import { asRecord } from "./console-model-utils";
 import { formatCompactDate } from "./console-format-utils";
 import {
@@ -32,6 +37,11 @@ type AgentExploreContextProfile = {
   value: string;
 };
 
+type AgentExploreModelOption = {
+  value: string;
+  enabled: boolean;
+};
+
 type ConsoleAgentExploreSessionControllerOptions = {
   agentExploreActiveTabId: Ref<string>;
   agentExploreClosedTabIds: Ref<Set<string>>;
@@ -43,10 +53,14 @@ type ConsoleAgentExploreSessionControllerOptions = {
   agentExploreResult: Ref<AgentExploreRunResponse | null>;
   agentExploreTraceOpen: Ref<boolean>;
   busyKey: ComputedRef<string>;
+  canReadKnowledge: ComputedRef<boolean>;
   clearAllBusy: () => void;
+  currentView: Ref<AppView>;
+  debugTab: Ref<DebugTab>;
   error: Ref<string>;
   hasAgentModelOption: (value?: string) => boolean;
   selectedAgentExploreContextProfile: ComputedRef<AgentExploreContextProfile>;
+  selectedAgentExploreModel: ComputedRef<AgentExploreModelOption>;
   selectedAgentExploreThinkingMode: ComputedRef<string>;
   setBusy: (key: string) => void;
   validAgentModelAlias: (value?: string) => string;
@@ -56,6 +70,11 @@ type ConsoleAgentExploreSessionControllerOptions = {
 
 export function createConsoleAgentExploreSessionController(options: ConsoleAgentExploreSessionControllerOptions) {
   let agentExplorePollTimer: number | null = null;
+
+  function boundedAgentExploreNumber(value: unknown, fallback: number, min: number, max: number) {
+    const next = Number(value);
+    return Math.max(min, Math.min(Number.isFinite(next) ? next : fallback, max));
+  }
 
   function agentExploreSessionFromResult(
     result: AgentExploreRunResponse | null,
@@ -498,6 +517,145 @@ export function createConsoleAgentExploreSessionController(options: ConsoleAgent
     }, 750);
   }
 
+  async function runKnowledgeAgentExplore() {
+    const query = options.agentExploreForm.value.query.trim();
+    if (!query) {
+      options.error.value = "请输入智能检索问题。";
+      return;
+    }
+    if (!options.canReadKnowledge.value) {
+      options.error.value = "当前账号没有知识库读取权限。";
+      return;
+    }
+    if (!options.selectedAgentExploreModel.value.enabled) {
+      options.error.value = "请选择模型库中已配置且支持智能检索工具调用的模型。";
+      return;
+    }
+    const defaults = options.agentExploreDefaults();
+    const maxIterations = boundedAgentExploreNumber(
+      options.agentExploreForm.value.maxIterations,
+      defaults.maxIterations,
+      1,
+      8,
+    );
+    const limit = boundedAgentExploreNumber(
+      options.agentExploreForm.value.limit,
+      defaults.limit,
+      1,
+      20,
+    );
+    const temperature = boundedAgentExploreNumber(
+      options.agentExploreForm.value.temperature,
+      defaults.temperature,
+      0,
+      2,
+    );
+    const maxTokens = boundedAgentExploreNumber(
+      options.agentExploreForm.value.maxTokens,
+      defaults.maxTokens,
+      128,
+      32000,
+    );
+    const toolChoice =
+      String(options.agentExploreForm.value.toolChoice || defaults.toolChoice || "auto").trim() || "auto";
+    options.agentExploreForm.value.maxIterations = maxIterations;
+    options.agentExploreForm.value.limit = limit;
+    options.agentExploreForm.value.temperature = temperature;
+    options.agentExploreForm.value.maxTokens = maxTokens;
+    options.agentExploreForm.value.toolChoice = toolChoice;
+    options.agentExploreForm.value.contextProfileId = options.selectedAgentExploreContextProfile.value.value;
+    options.agentExploreForm.value.thinkingMode = options.selectedAgentExploreThinkingMode.value;
+    options.agentExploreTraceOpen.value = true;
+    options.setBusy("knowledge:agent-explore");
+    options.error.value = "";
+    options.currentView.value = "debug";
+    options.debugTab.value = "agentRetrieval";
+    options.agentExploreResult.value = null;
+    const draftRunId = options.agentExploreActiveTabId.value.startsWith("draft:")
+      ? options.agentExploreActiveTabId.value
+      : "";
+    stopAgentExplorePolling();
+    try {
+      const result = normalizeAgentExploreRun(await bridge.runKnowledgeAgentExplore({
+        query,
+        modelAlias: options.selectedAgentExploreModel.value.value,
+        contextProfileId: options.selectedAgentExploreContextProfile.value.value,
+        thinkingMode: options.selectedAgentExploreThinkingMode.value,
+        temperature,
+        maxTokens,
+        maxIterations,
+        limit,
+        toolChoice,
+        workspaceId: options.agentExploreForm.value.workspaceId || undefined,
+        async: true,
+        realtime: true,
+      }));
+      options.agentExploreResult.value = result;
+      const runId = String(asRecord(result.run)?.runId || "");
+      const workspaceId = String(result.workspace?.workspaceId || "");
+      if (workspaceId) {
+        options.agentExploreForm.value.workspaceId = workspaceId;
+      }
+      if (runId) {
+        options.agentExploreActiveTabId.value = runId;
+        if (draftRunId) {
+          options.agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
+            options.agentExploreDraftTabs.value.filter((item) => item.runId !== draftRunId),
+          );
+        }
+      }
+      persistAgentExploreState();
+      if (runId && workspaceId && ["queued", "running"].includes(agentExploreRunStatus(result))) {
+        startAgentExplorePolling(runId, workspaceId);
+        return;
+      }
+      if (result.ok === false && result.error) {
+        options.error.value = result.error;
+      }
+      options.clearAllBusy();
+    } catch (nextError) {
+      options.error.value = nextError instanceof Error ? nextError.message : "智能检索失败。";
+      options.clearAllBusy();
+    }
+  }
+
+  function resetKnowledgeAgentExplore() {
+    stopAgentExplorePolling();
+    options.agentExploreTraceOpen.value = true;
+    const draft = createAgentExploreDraftTab({
+      modelAlias: options.agentExploreForm.value.modelAlias,
+      contextProfileId: options.selectedAgentExploreContextProfile.value.value,
+      thinkingMode: options.selectedAgentExploreThinkingMode.value,
+      temperature: options.agentExploreForm.value.temperature,
+      maxTokens: options.agentExploreForm.value.maxTokens,
+      maxIterations: options.agentExploreForm.value.maxIterations,
+      limit: options.agentExploreForm.value.limit,
+      toolChoice: options.agentExploreForm.value.toolChoice,
+    });
+    options.agentExploreDraftTabs.value = normalizeAgentExploreHistoryList([
+      draft,
+      ...options.agentExploreDraftTabs.value,
+    ]);
+    options.agentExploreActiveTabId.value = draft.runId;
+    options.agentExploreResult.value = null;
+    options.agentExploreForm.value = {
+      query: "",
+      modelAlias: draft.modelAlias,
+      contextProfileId: draft.contextProfileId,
+      thinkingMode: draft.thinkingMode,
+      temperature: draft.temperature,
+      maxTokens: draft.maxTokens,
+      maxIterations: draft.maxIterations,
+      limit: draft.limit,
+      toolChoice: draft.toolChoice,
+      workspaceId: "",
+    };
+    persistAgentExploreState();
+    if (options.busyKey.value === "knowledge:agent-explore") {
+      options.clearAllBusy();
+    }
+  }
+
   return {
     agentExploreHistoryPanelItems,
     agentExplorePollTimer,
@@ -515,7 +673,9 @@ export function createConsoleAgentExploreSessionController(options: ConsoleAgent
     loadAgentExploreSession,
     normalizeAgentExploreHistoryList,
     persistAgentExploreState,
+    resetKnowledgeAgentExplore,
     restoreAgentExploreState,
+    runKnowledgeAgentExplore,
     sanitizeAgentExploreSessionModelReference,
     selectAgentExploreHistoryItem,
     startAgentExplorePolling,

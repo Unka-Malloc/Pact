@@ -148,6 +148,7 @@ import {
   type AgentExploreFormState,
 } from "./console-agent-explore-utils";
 import { createConsoleAuthController } from "./console-auth-controller";
+import { createConsoleAgentExploreLayoutController } from "./console-agent-explore-layout-controller";
 import { createConsoleAgentExploreSessionController } from "./console-agent-explore-session-controller";
 import { createConsoleExpertRulesController } from "./console-expert-rules-controller";
 import { createConsoleKnowledgeSourceController } from "./console-knowledge-source-controller";
@@ -433,10 +434,6 @@ const agentExploreHistory = ref<AgentExploreSession[]>([]);
 const agentExploreDraftTabs = ref<AgentExploreSession[]>([]);
 const agentExploreActiveTabId = ref("");
 const agentExploreHydrated = ref(false);
-const agentExploreSplitRef = ref<HTMLElement | null>(null);
-const agentExploreSplitDragging = ref(false);
-const agentExploreSplitLeftPercent = ref(42);
-const agentExploreTraceOpen = ref(true);
 const agentExploreHiddenRunIds = ref<Set<string>>(new Set());
 const agentExploreClosedTabIds = ref<Set<string>>(new Set());
 const contextProfilesResponse = ref<Record<string, unknown> | null>(null);
@@ -930,72 +927,20 @@ function agentExploreDefaults() {
     toolChoice: agentExploreConfiguredToolChoice.value,
   };
 }
-const agentExploreSplitStyle = computed<Record<string, string>>(() => ({
-  "--agent-explore-left": `${agentExploreSplitLeftPercent.value}%`,
-}));
-
-function clampAgentExploreSplitPercent(value: number) {
-  return Math.max(28, Math.min(Number.isFinite(value) ? value : 42, 68));
-}
-
-function updateAgentExploreSplitFromClientX(clientX: number) {
-  const element = agentExploreSplitRef.value;
-  if (!element) {
-    return;
-  }
-  const rect = element.getBoundingClientRect();
-  if (rect.width <= 0) {
-    return;
-  }
-  agentExploreSplitLeftPercent.value = clampAgentExploreSplitPercent(
-    ((clientX - rect.left) / rect.width) * 100,
-  );
-}
-
-function stopAgentExploreSplitResize() {
-  if (typeof document !== "undefined") {
-    document.removeEventListener("pointermove", handleAgentExploreSplitPointerMove);
-    document.removeEventListener("pointerup", stopAgentExploreSplitResize);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  }
-  agentExploreSplitDragging.value = false;
-}
-
-function handleAgentExploreSplitPointerMove(event: PointerEvent) {
-  updateAgentExploreSplitFromClientX(event.clientX);
-}
-
-function startAgentExploreSplitResize(event: PointerEvent) {
-  event.preventDefault();
-  agentExploreSplitDragging.value = true;
-  updateAgentExploreSplitFromClientX(event.clientX);
-  document.addEventListener("pointermove", handleAgentExploreSplitPointerMove);
-  document.addEventListener("pointerup", stopAgentExploreSplitResize);
-  document.body.style.cursor = "col-resize";
-  document.body.style.userSelect = "none";
-}
-
-function handleAgentExploreSplitKeydown(event: KeyboardEvent) {
-  const step = event.shiftKey ? 5 : 2;
-  if (event.key === "ArrowLeft") {
-    event.preventDefault();
-    agentExploreSplitLeftPercent.value = clampAgentExploreSplitPercent(
-      agentExploreSplitLeftPercent.value - step,
-    );
-  } else if (event.key === "ArrowRight") {
-    event.preventDefault();
-    agentExploreSplitLeftPercent.value = clampAgentExploreSplitPercent(
-      agentExploreSplitLeftPercent.value + step,
-    );
-  } else if (event.key === "Home") {
-    event.preventDefault();
-    agentExploreSplitLeftPercent.value = 28;
-  } else if (event.key === "End") {
-    event.preventDefault();
-    agentExploreSplitLeftPercent.value = 68;
-  }
-}
+const {
+  agentExploreSplitDragging,
+  agentExploreSplitLeftPercent,
+  agentExploreSplitRef,
+  agentExploreSplitStyle,
+  agentExploreTraceOpen,
+  clampAgentExploreSplitPercent,
+  handleAgentExploreSplitKeydown,
+  handleAgentExploreSplitPointerMove,
+  handleAgentExploreTraceToggle,
+  startAgentExploreSplitResize,
+  stopAgentExploreSplitResize,
+  updateAgentExploreSplitFromClientX,
+} = createConsoleAgentExploreLayoutController();
 
 function syncKnowledgeLogTableScrollLeft(fallback?: unknown) {
   const record = asRecord(fallback);
@@ -1064,10 +1009,6 @@ function handleKnowledgeLogColumnDividerKeydown(event: KeyboardEvent, key: Knowl
       knowledgeLogColumnWidths.value[key] + direction * step,
     ),
   };
-}
-
-function handleAgentExploreTraceToggle(event: Event) {
-  agentExploreTraceOpen.value = Boolean((event.currentTarget as HTMLDetailsElement | null)?.open);
 }
 
 async function clearBrowserLocalStateFromUrl() {
@@ -2527,7 +2468,9 @@ const {
   loadAgentExploreSession,
   normalizeAgentExploreHistoryList,
   persistAgentExploreState,
+  resetKnowledgeAgentExplore,
   restoreAgentExploreState,
+  runKnowledgeAgentExplore,
   sanitizeAgentExploreSessionModelReference,
   selectAgentExploreHistoryItem,
   startAgentExplorePolling,
@@ -2547,11 +2490,15 @@ const {
   agentExploreTraceOpen,
   agentExploreDefaults,
   busyKey,
+  canReadKnowledge,
   clearAllBusy,
+  currentView,
+  debugTab,
   error,
   hasAgentModelOption,
   normalizeThinkingMode: normalizedAgentExploreThinkingMode,
   selectedAgentExploreContextProfile,
+  selectedAgentExploreModel,
   selectedAgentExploreThinkingMode,
   setBusy,
   validAgentModelAlias,
@@ -3138,143 +3085,6 @@ async function refreshKnowledgeConsole(options: { skipReviewItems?: boolean } = 
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "加载知识库管控数据失败。";
-  }
-}
-
-async function runKnowledgeAgentExplore() {
-  const query = agentExploreForm.value.query.trim();
-  if (!query) {
-    error.value = "请输入智能检索问题。";
-    return;
-  }
-  if (!canReadKnowledge.value) {
-    error.value = "当前账号没有知识库读取权限。";
-    return;
-  }
-  if (!selectedAgentExploreModel.value.enabled) {
-    error.value = "请选择模型库中已配置且支持智能检索工具调用的模型。";
-    return;
-  }
-  const maxIterations = boundedAgentExploreNumber(
-    agentExploreForm.value.maxIterations,
-    agentExploreConfiguredMaxIterations.value,
-    1,
-    8,
-  );
-  const limit = boundedAgentExploreNumber(
-    agentExploreForm.value.limit,
-    agentExploreConfiguredLimit.value,
-    1,
-    20,
-  );
-  const temperature = boundedAgentExploreNumber(
-    agentExploreForm.value.temperature,
-    agentExploreConfiguredTemperature.value,
-    0,
-    2,
-  );
-  const maxTokens = boundedAgentExploreNumber(
-    agentExploreForm.value.maxTokens,
-    agentExploreConfiguredMaxTokens.value,
-    128,
-    32000,
-  );
-  const toolChoice = String(agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value || "auto").trim() || "auto";
-  agentExploreForm.value.maxIterations = maxIterations;
-  agentExploreForm.value.limit = limit;
-  agentExploreForm.value.temperature = temperature;
-  agentExploreForm.value.maxTokens = maxTokens;
-  agentExploreForm.value.toolChoice = toolChoice;
-  agentExploreForm.value.contextProfileId = selectedAgentExploreContextProfile.value.value;
-  agentExploreForm.value.thinkingMode = selectedAgentExploreThinkingMode.value;
-  agentExploreTraceOpen.value = true;
-  setBusy("knowledge:agent-explore");
-  error.value = "";
-  currentView.value = "debug";
-  debugTab.value = "agentRetrieval";
-  agentExploreResult.value = null;
-  const draftRunId = agentExploreActiveTabId.value.startsWith("draft:")
-    ? agentExploreActiveTabId.value
-    : "";
-  stopAgentExplorePolling();
-  try {
-    const result = normalizeAgentExploreRun(await bridge.runKnowledgeAgentExplore({
-      query,
-      modelAlias: selectedAgentExploreModel.value.value,
-      contextProfileId: selectedAgentExploreContextProfile.value.value,
-      thinkingMode: selectedAgentExploreThinkingMode.value,
-      temperature,
-      maxTokens,
-      maxIterations,
-      limit,
-      toolChoice,
-      workspaceId: agentExploreForm.value.workspaceId || undefined,
-      async: true,
-      realtime: true,
-    }));
-    agentExploreResult.value = result;
-    const runId = String(asRecord(result.run)?.runId || "");
-    const workspaceId = String(result.workspace?.workspaceId || "");
-    if (workspaceId) {
-      agentExploreForm.value.workspaceId = workspaceId;
-    }
-    if (runId) {
-      agentExploreActiveTabId.value = runId;
-      if (draftRunId) {
-        agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-          agentExploreDraftTabs.value.filter((item: any) => item.runId !== draftRunId),
-        );
-      }
-    }
-    persistAgentExploreState();
-    if (runId && workspaceId && ["queued", "running"].includes(agentExploreRunStatus(result))) {
-      startAgentExplorePolling(runId, workspaceId);
-      return;
-    }
-    if (result.ok === false && result.error) {
-      error.value = result.error;
-    }
-    clearAllBusy();
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "智能检索失败。";
-    clearAllBusy();
-  }
-}
-
-function resetKnowledgeAgentExplore() {
-  stopAgentExplorePolling();
-  agentExploreTraceOpen.value = true;
-  const draft = createAgentExploreDraftTab({
-    modelAlias: agentExploreForm.value.modelAlias,
-    contextProfileId: selectedAgentExploreContextProfile.value.value,
-    thinkingMode: selectedAgentExploreThinkingMode.value,
-    temperature: agentExploreForm.value.temperature,
-    maxTokens: agentExploreForm.value.maxTokens,
-    maxIterations: agentExploreForm.value.maxIterations,
-    limit: agentExploreForm.value.limit,
-    toolChoice: agentExploreForm.value.toolChoice,
-  });
-  agentExploreDraftTabs.value = normalizeAgentExploreHistoryList([
-    draft,
-    ...agentExploreDraftTabs.value,
-  ]);
-  agentExploreActiveTabId.value = draft.runId;
-  agentExploreResult.value = null;
-  agentExploreForm.value = {
-    query: "",
-    modelAlias: draft.modelAlias,
-    contextProfileId: draft.contextProfileId,
-    thinkingMode: draft.thinkingMode,
-    temperature: draft.temperature,
-    maxTokens: draft.maxTokens,
-    maxIterations: draft.maxIterations,
-    limit: draft.limit,
-    toolChoice: draft.toolChoice,
-    workspaceId: "",
-  };
-  persistAgentExploreState();
-  if (busyKey.value === "knowledge:agent-explore") {
-    clearAllBusy();
   }
 }
 
