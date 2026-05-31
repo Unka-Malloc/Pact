@@ -211,7 +211,7 @@
     "server:verify:sample-business-pack": "node server/scripts/verify-sample-business-pack.mjs",
     "server:verify:business-scenarios": "node server/scripts/verify-business-scenarios.mjs",
     "server:verify:mcp-opencode": "node server/scripts/verify-mcp-opencode.mjs",
-    "server:verify:mcp-agent-target-install": "node server/scripts/verify-mcp-opencode-install.mjs",
+    "server:verify:mcp-agent-target-install": "node server/scripts/verify-mcp-agent-target-install.mjs",
     "server:verify:mcp-opencode-install": "node server/scripts/verify-mcp-opencode-install.mjs",
     "server:verify:mcp-codex-install": "node server/scripts/verify-mcp-codex-install.mjs",
     "server:gateway": "node server/scripts/gateway-ingress.mjs",
