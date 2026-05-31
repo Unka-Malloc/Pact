@@ -1106,11 +1106,15 @@ function pactMetaResult({
     const operations = toolSkillManagementProvider
       .listVisibleTools({ authorization })
       .map(publicMcpTool);
+    const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
     return mcpToolResult({
       result: {
         ...mcpVersionInfo(),
         grant: toolSkillManagementProvider.visibleGrantSummary({ authorization }),
         envelope: mcpEnvelopePublic(envelope),
+        sharedHub: discovery.sharedHub,
+        priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+        supportedTargets: mcpSupportedTargetDetails(),
         outlets: mcpOutletSummary(operations),
         operations
       }

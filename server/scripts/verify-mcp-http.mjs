@@ -473,6 +473,12 @@ try {
   assert.equal(localGrantCapabilities.status, 200);
   const localOperations = localGrantCapabilities.payload.result.structuredContent.operations;
   const localOutlets = localGrantCapabilities.payload.result.structuredContent.outlets;
+  assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.ok(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
+  assert.deepEqual(localGrantCapabilities.payload.result.structuredContent.priorityTargets, ["claude-code", "codex", "openclaw"]);
+  assert.deepEqual(localGrantCapabilities.payload.result.structuredContent.supportedTargets.map((target) => target.target), expectedInstallTargets);
   const operationByName = new Map(localOperations.map((operation) => [operation.name, operation]));
   assert.equal(operationByName.get("pact.sharedspace.file.write")._meta.mcpOutlet, "pact.sharedspace");
   assert.equal(operationByName.get("pact.sharedspace.file.write")._meta.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
