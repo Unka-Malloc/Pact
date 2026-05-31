@@ -21,10 +21,10 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `server-web/composables` | 56 | 22994 | 121 | 5 | 0 | 108 | 25 |
+| `server-web/composables` | 57 | 22994 | 121 | 5 | 0 | 108 | 25 |
 | `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 100 | 0 |
 | `server-web/views` | 21 | 6771 | 0 | 0 | 0 | 4 | 1 |
-| `server-web/components` | 39 | 7650 | 1 | 0 | 1 | 21 | 2 |
+| `server-web/components` | 40 | 7650 | 1 | 0 | 1 | 21 | 2 |
 | `server-web/lib` | 9 | 4899 | 25 | 0 | 0 | 12 | 0 |
 | `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
 
@@ -48,6 +48,9 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | `server-web/composables/console-model-library-controller.ts` | 812 | Model-library controller remains broad. |
 | `server-web/components/UploadFileListCard.vue` | 787 | Upload component still combines file selection, progress, and job table rendering. |
 | `server-web/views/admin/AgentPermissionsView.vue` | 702 | View presentation is slimmer after controller extraction, but template complexity is still high. |
+| `server-web/composables/console-agent-explore-session-controller.ts` | 687 | Agent explore session controller still combines history/session orchestration. |
+| `server-web/styles/views/knowledge-sources.css` | 685 | Knowledge source styling remains broad. |
+| `server-web/components/KnowledgeDistillationWorkbench.vue` | 675 | Component no longer owns bridge calls, run normalization, or model probe plumbing, but still has a large template. |
 
 ### Direct Coupling Hotspots
 
@@ -71,7 +74,7 @@ Page-level HTML rendering now goes through `SafeHtmlBlock`, which requires calle
 
 ### P0-1: `useConsole.ts` is still the cross-page frontend runtime
 
-`useConsole.ts` remains the central state/effect container for unrelated pages and admin sections. It exposes route state, auth, jobs, settings, runtime mounts, knowledge management, maintenance, OAuth, browser effects, and admin actions from one 4486-line singleton. Leaf views and page facades no longer call it directly, but `useServerConsoleShell.ts` still spreads the full compatibility singleton into route context, so the public surface is still too broad.
+`useConsole.ts` remains the central state/effect container for unrelated pages and admin sections. It exposes route state, auth, jobs, settings, runtime mounts, knowledge management, maintenance, OAuth, browser effects, and admin actions from one 4485-line singleton. Leaf views and page facades no longer call it directly, but `useServerConsoleShell.ts` still spreads the full compatibility singleton into route context, so the public surface is still too broad.
 
 Required direction:
 
@@ -92,7 +95,7 @@ Required direction:
 
 ### P0-3: Large feature components mix rendering, workflow state, and side effects
 
-`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, the debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, KnowledgeView's ingest panel has been split into `KnowledgeIngestPanel.vue`, and WorkspacesView's right-side action/detail panel has been split into `WorkspaceDetailPanel.vue`, but the remaining large templates still need focused child components.
+`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, the debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, KnowledgeView's ingest panel has been split into `KnowledgeIngestPanel.vue`, WorkspacesView's right-side action/detail panel has been split into `WorkspaceDetailPanel.vue`, and FeedView's composer/advanced-options area has been split into `InfoFeedComposerPanel.vue`, but the remaining large templates still need focused child components.
 
 Required direction:
 
@@ -217,6 +220,7 @@ Required direction:
 - `server-web/views/KnowledgeView.vue` and `server-web/components/KnowledgeImportCard.vue`: knowledge export URL generation, normalized document links, and document preview parsing moved to `server-web/lib/knowledge-documents.ts`. Both files no longer import `bridge` directly.
 - `server-web/views/KnowledgeView.vue`: knowledge ingest target selection, upload, parsing preview, and normalized document download table moved to `server-web/components/knowledge/KnowledgeIngestPanel.vue`; the view now consumes the dynamic parsing signature from `useKnowledgeViewConsole.ts` instead of duplicating the parsing contract inline.
 - `server-web/views/WorkspacesView.vue`: right-side create/profile/parent/share/local-directory/codespace/detail panel moved to `server-web/components/workspaces/WorkspaceDetailPanel.vue`; the view now keeps session history, workspace list, and delete modal orchestration only.
+- `server-web/views/FeedView.vue`: composer input, attachments, model selector, and advanced options modal moved to `server-web/components/feed/InfoFeedComposerPanel.vue`; route state is provided through `server-web/composables/feedViewContext.ts`.
 - `server-web/views/DashboardView.vue`: dashboard state now comes from `serverConsoleShellContext`; the view no longer imports `useConsole()` directly.
 - `server-web/views/ApprovalFlowView.vue`, `server-web/views/FeedView.vue`, `server-web/views/SourcesView.vue`, and admin views under `server-web/views/admin`: shell-owned state now comes from `serverConsoleShellContext`; these views no longer import `useConsole()` directly.
 - `server-web/composables/useDebugViewConsole.ts`, `server-web/composables/useKnowledgeViewConsole.ts`, `server-web/composables/useWorkspacesConsole.ts`, and `server-web/composables/console-agent-permissions-view-controller.ts`: compatibility dependencies now flow through `serverConsoleShellContext`, reducing direct `useConsole()` callers to the shell boundary.
