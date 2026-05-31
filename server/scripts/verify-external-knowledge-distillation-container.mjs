@@ -449,6 +449,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.mbox"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.attachment-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.structured"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
@@ -631,8 +632,13 @@ try {
             "content.xml": [
               "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
               "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" ",
-              "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">",
-              "<office:body><office:text><text:p>OpenDocument project convergence evidence for external distillation.</text:p></office:text></office:body>",
+              "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" ",
+              "xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\">",
+              "<office:body><office:text><text:p>OpenDocument project convergence evidence for external distillation.</text:p>",
+              "<table:table table:name=\"Container ODF Decisions\">",
+              "<table:table-row><table:table-cell><text:p>Owner</text:p></table:table-cell><table:table-cell><text:p>Decision</text:p></table:table-cell></table:table-row>",
+              "<table:table-row><table:table-cell><text:p>Container</text:p></table:table-cell><table:table-cell><text:p>Preserve ODF cells in graph evidence</text:p></table:table-cell></table:table-row>",
+              "</table:table></office:text></office:body>",
               "</office:document-content>"
             ].join("")
           })
@@ -646,9 +652,16 @@ try {
   assert.ok(openDocument, "OpenDocument source must be present in the corpus plan");
   assert.equal(openDocument.route.formatId, "open-document");
   assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed"), true);
+  assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 4), true);
   assert.equal(openDocument.elementPlan.strategy, "document-element-model.v1");
   assert.equal(openDocument.elementPlan.sourceFormat, "open-document");
   assert.equal(openDocument.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(openDocument.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(openDocument.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-row" &&
+    ref.table?.format === "open-document" &&
+    ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
+  ))), true);
   assert.equal(openDocument.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.ok(openDocument.quality.textCharacters > 0, "OpenDocument parser must produce distillable text");
 
