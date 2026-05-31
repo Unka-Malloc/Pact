@@ -381,10 +381,15 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.strategy, "pdf-subtype-routing.v1");
   assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.subtypes.includes("pdf-scanned"), true);
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
+  assert.equal(capabilities.payload.artifacts.includes("console-summary-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("format-conversion-plan-json"), true);
+  assert.equal(capabilities.payload.artifacts.includes("professional-format-manifest-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
+  assert.equal(capabilities.payload.responseProfileSeparation.strategy, "human-agent-response-profile-separation.v1");
+  assert.equal(capabilities.payload.responseProfileSeparation.humanReadable.artifacts.includes("console-summary-json"), true);
+  assert.equal(capabilities.payload.responseProfileSeparation.agentReadable.artifacts.includes("professional-format-manifest-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
   assert.equal(capabilities.payload.elementModel.supported, true);
   assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
@@ -411,6 +416,8 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
   assert.equal(capabilities.payload.formatConversion.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
+  assert.equal(capabilities.payload.formatConversion.professionalManifestArtifact, "professional-format-manifest-json");
+  assert.equal(capabilities.payload.formatConversion.modeSeparationStrategy, "human-agent-response-profile-separation.v1");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   for (const [routeId, parserProfile, qualityGate] of [
@@ -1091,11 +1098,19 @@ try {
   const workspacePackage = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/artifacts/workspace-package-zip`);
   assert.equal(workspacePackage.status, 200);
   const workspaceEntries = unzipSync(new Uint8Array(await workspacePackage.arrayBuffer()));
-  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "format-conversion-plan.json", "reference-gap-report.json"]) {
+  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "console-summary.json", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "format-conversion-plan.json", "professional-format-manifest.json", "reference-gap-report.json"]) {
     assert.ok(workspaceEntries[entryName], `container workspace package must include ${entryName}`);
   }
   const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));
   assert.equal(workspaceManifest.artifacts.every((item) => item.byteSize > 0 && /^[a-f0-9]{64}$/.test(item.sha256)), true);
+  assert.equal(workspaceManifest.artifacts.some((item) => item.artifactId === "console-summary-json" && item.path === "console-summary.json"), true);
+  assert.equal(workspaceManifest.artifacts.some((item) => item.artifactId === "professional-format-manifest-json" && item.path === "professional-format-manifest.json"), true);
+  const packageConsoleSummary = JSON.parse(Buffer.from(workspaceEntries["console-summary.json"]).toString("utf8"));
+  assert.equal(packageConsoleSummary.responseProfile, "console");
+  assert.equal(packageConsoleSummary.documents.every((document) => !Object.prototype.hasOwnProperty.call(document, "parserTrace")), true);
+  const packageProfessionalManifest = JSON.parse(Buffer.from(workspaceEntries["professional-format-manifest.json"]).toString("utf8"));
+  assert.equal(packageProfessionalManifest.strategy, "professional-format-manifest.v1");
+  assert.equal(packageProfessionalManifest.modeSeparation.agentReadable.artifacts.includes("agent-message-json"), true);
   assert.equal(workspaceManifest.artifacts.some((item) => (
     item.artifactId === "portable-docx" &&
     item.validation?.status === "passed" &&

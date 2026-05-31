@@ -777,10 +777,15 @@ try {
   assert.equal(capabilities.payload.graphEvidence.projectQuery.filters.includes("routeId"), true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.readModel, "domain-topic-community-source-time.v1");
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
+  assert.equal(capabilities.payload.artifacts.includes("console-summary-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("format-conversion-plan-json"), true);
+  assert.equal(capabilities.payload.artifacts.includes("professional-format-manifest-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
+  assert.equal(capabilities.payload.responseProfileSeparation.strategy, "human-agent-response-profile-separation.v1");
+  assert.equal(capabilities.payload.responseProfileSeparation.humanReadable.artifacts.includes("console-summary-json"), true);
+  assert.equal(capabilities.payload.responseProfileSeparation.agentReadable.artifacts.includes("professional-format-manifest-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.elementModel.supported, true);
@@ -799,11 +804,15 @@ try {
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("pdf-subtype-routing.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("human-agent-response-profile-separation.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("professional-format-manifest.v1"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
   assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
   assert.equal(capabilities.payload.formatConversion.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
+  assert.equal(capabilities.payload.formatConversion.professionalManifestArtifact, "professional-format-manifest-json");
+  assert.equal(capabilities.payload.formatConversion.modeSeparationStrategy, "human-agent-response-profile-separation.v1");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("word"), true);
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("presentation"), true);
@@ -2377,6 +2386,24 @@ try {
   assert.match(docxDocumentXml, /<w:tbl\b/, "DOCX export must render Markdown source-routing tables as Word tables");
   assert.match(docxStylesXml, /w:styleId="CodeBlock"/, "DOCX export must declare a code block style for Markdown code conversion");
 
+  const consoleSummaryArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/console-summary-json`, {
+    headers: authHeaders(auth)
+  });
+  assert.equal(consoleSummaryArtifact.status, 200);
+  assert.match(consoleSummaryArtifact.headers.get("content-type") || "", /application\/json/);
+  const consoleSummary = JSON.parse(await consoleSummaryArtifact.text());
+  assert.equal(consoleSummary.responseProfile, "console");
+  assert.equal(consoleSummary.modeSeparation.strategy, "human-agent-response-profile-separation.v1");
+  assert.equal(consoleSummary.modeSeparation.humanReadable.artifacts.includes("portable-docx"), true);
+  assert.equal(consoleSummary.modeSeparation.agentReadable.artifacts.includes("professional-format-manifest-json"), true);
+  assert.equal(consoleSummary.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.openability?.docxOpenXmlPackage === true &&
+    document.qualityGateStatusCounts?.passed >= 1
+  )), true);
+  assert.equal(consoleSummary.documents.every((document) => !Object.prototype.hasOwnProperty.call(document, "parserTrace")), true);
+  assert.equal(consoleSummary.omittedForConsole.includes("parserTrace"), true);
+
   const agentArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/agent-message-json`, {
     headers: authHeaders(auth)
   });
@@ -2438,6 +2465,31 @@ try {
     document.evidence.annotationElementCount >= 1 &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
   )), true);
+  const professionalManifestArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/professional-format-manifest-json`, {
+    headers: authHeaders(auth)
+  });
+  assert.equal(professionalManifestArtifact.status, 200);
+  assert.match(professionalManifestArtifact.headers.get("content-type") || "", /application\/json/);
+  const professionalManifest = JSON.parse(await professionalManifestArtifact.text());
+  assert.equal(professionalManifest.strategy, "professional-format-manifest.v1");
+  assert.equal(professionalManifest.modeSeparation.strategy, "human-agent-response-profile-separation.v1");
+  assert.equal(professionalManifest.modeSeparation.agentReadable.artifacts.includes("agent-message-json"), true);
+  assert.equal(professionalManifest.documents.some((document) => (
+    document.routeId === "word" &&
+    document.parserProfile === "wordprocessingml-paragraph-style-route" &&
+    document.preserves.includes("comments") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-annotation-refs-preserved" && gate.status === "passed")
+  )), true);
+  assert.equal(professionalManifest.documents.some((document) => (
+    document.routeId === "presentation" &&
+    document.parserStages.includes("office.presentation.slides") &&
+    document.preserves.includes("shape-bbox")
+  )), true);
+  assert.equal(professionalManifest.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.parserStages.includes("table.sheet.formulas") &&
+    document.evidence.formulaRefCount >= 1
+  )), true);
   const referenceGapArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/reference-gap-report-json`, {
     headers: authHeaders(auth)
   });
@@ -2452,7 +2504,7 @@ try {
   assert.equal(workspacePackageArtifact.status, 200);
   assert.match(workspacePackageArtifact.headers.get("content-type") || "", /application\/zip/);
   const workspaceEntries = unzipSync(new Uint8Array(await workspacePackageArtifact.arrayBuffer()));
-  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "format-conversion-plan.json", "reference-gap-report.json"]) {
+  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "console-summary.json", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "format-conversion-plan.json", "professional-format-manifest.json", "reference-gap-report.json"]) {
     assert.ok(workspaceEntries[entryName], `workspace package must include ${entryName}`);
   }
   const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));

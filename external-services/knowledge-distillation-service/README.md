@@ -38,11 +38,13 @@ Artifacts:
 
 - `portable-markdown`: human-readable classified distillation output.
 - `portable-docx`: valid OpenXML Word document for human review; Markdown headings, lists, code blocks, and routing tables are converted into native Word paragraph styles and table XML instead of plain text lines.
+- `console-summary-json`: control-plane summary for humans, with document rows, route IDs, file sizes, parse status, openability, conversion risk, and quality gate counts while omitting parser traces and full window payloads.
 - `agent-message-json`: machine-readable classification and evidence message for agents.
 - `result-json`: full run record.
 - `project-snapshot-json`: project-level fingerprint, text-unit/window hashes, group snapshot, and incremental diff plan.
 - `evidence-pack-json`: GraphRAG-style text units, entities, relationships, claims/covariates, communities, and community reports.
 - `format-conversion-plan-json`: per-document professional parser/conversion plan, adapter matrix, quality gate results, and output artifact validation for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
+- `professional-format-manifest-json`: agent-readable professional format manifest listing every source document's parser profile, structure units, conversion adapters, preserves, quality gate results, risk controls, known losses, and openability state.
 - `reference-gap-report-json`: machine-readable comparison between the service and local RAGFlow, MinerU, Docling, LlamaIndex, Marker, GraphRAG, Haystack, and Unstructured checkouts.
 - `workspace-package-zip`: complete delivery package with Markdown, DOCX, agent JSON, result JSON, snapshot, evidence pack, manifest sizes/hashes, and artifact validation status.
 
@@ -60,6 +62,7 @@ Core response fields:
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
 - `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
 - `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument. DOCX self-checks verify OpenXML package structure plus heading style, list/code style, and Word table readiness.
+- `modeSeparation`: `human-agent-response-profile-separation.v1` separates console artifacts from agent artifacts: console output avoids parser trace noise, while agent output carries parser, element, window, quality gate, evidence, and convergence payloads.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
 - `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, domain, route id, source id, group id, and time range.
@@ -153,6 +156,7 @@ Built-in algorithm baseline:
 - `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/annotation isolation, element refs, basic PDF geometry, Word annotations, Word/PowerPoint/OpenDocument table cells, spreadsheet cell coordinates and formulas, and PresentationML shape geometry on agent windows and graph text units.
 - `pdf-subtype-routing.v1`: turns PDF parser signals into machine-readable subtype, risk flags, image/font/ToUnicode counts, text/OCR/Tika character counts, and route-level `pdfSubtype`.
 - `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates and known loss boundaries.
+- `human-agent-response-profile-separation.v1` and `professional-format-manifest.v1`: split control-plane summaries from agent payloads and make professional parsing/conversion evidence queryable without scanning the full result JSON.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - `reference-framework-local-checkout-audit.v1`: verifies each declared local reference checkout exists, is a Git worktree, and matches the manifest commit before treating it as a current comparison source.
 - Weak or tiny inputs are assigned to a garbage group and are not promoted as core distillation candidates.

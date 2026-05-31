@@ -9632,6 +9632,150 @@ function buildPortableDocx(run = {}) {
   });
 }
 
+function humanAgentModeSeparation() {
+  return {
+    strategy: "human-agent-response-profile-separation.v1",
+    humanReadable: {
+      responseProfile: "console",
+      artifacts: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
+      purpose: "reviewable distillation output without parserTrace or full window payload noise"
+    },
+    agentReadable: {
+      responseProfile: "agent",
+      artifacts: ["agent-message-json", "evidence-pack-json", "format-conversion-plan-json", "professional-format-manifest-json"],
+      purpose: "machine-readable route, parser, element, window, quality gate, evidence, and convergence payloads"
+    },
+    apiReadable: {
+      responseProfile: "api",
+      artifacts: ["result-json", "project-snapshot-json", "reference-gap-report-json"],
+      purpose: "complete integration payloads for platform services and audit tooling"
+    }
+  };
+}
+
+function buildConsoleSummary(run = {}) {
+  const result = run.result || {};
+  const corpusPlan = result.corpusPlan || {};
+  const conversionDocuments = new Map((result.formatConversionPlan?.documents || [])
+    .map((document) => [document.sourceId, document]));
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.console-summary`,
+    responseProfile: "console",
+    runId: run.runId || "",
+    status: run.status || result.status || "unknown",
+    title: run.title || "",
+    query: run.query || "",
+    generatedAt: nowIso(),
+    modeSeparation: humanAgentModeSeparation(),
+    summary: {
+      sourceCount: Number(corpusPlan.sourceCount || 0),
+      distillableSourceCount: Number(corpusPlan.distillableSourceCount || 0),
+      totalBytes: Number(corpusPlan.totalBytes || 0),
+      totalCharacters: Number(corpusPlan.totalCharacters || 0),
+      windowCount: Number(corpusPlan.windowCount || 0),
+      classificationGroupCount: Number(result.classification?.groupCount || 0),
+      coreGroupCount: Number(result.classification?.coreGroupCount || 0),
+      garbageGroupCount: Number(result.classification?.garbageGroupCount || 0),
+      highConversionRiskCount: Number(result.formatConversionPlan?.summary?.documentWithHighConversionRiskCount || 0),
+      mediumConversionRiskCount: Number(result.formatConversionPlan?.summary?.documentWithMediumConversionRiskCount || 0),
+      outputArtifactFailedCount: Number(result.formatConversionPlan?.summary?.outputArtifactFailedCount || 0)
+    },
+    documents: (corpusPlan.documents || []).map((document) => {
+      const conversion = conversionDocuments.get(document.sourceId) || {};
+      return {
+        sourceId: document.sourceId,
+        title: document.title,
+        fileName: document.fileName,
+        routeId: document.route?.formatId || "unknown",
+        sourceFormat: conversion.sourceFormat || document.elementPlan?.sourceFormat || document.extension || "",
+        pdfSubtype: document.route?.pdfSubtype || document.pdfProfile?.subtype || "",
+        byteSize: Number(document.byteSize || 0),
+        parseStatus: document.parseStatus || "",
+        distillable: Boolean(document.quality?.distillable),
+        textCharacters: Number(document.quality?.textCharacters || 0),
+        windowCount: Number(document.windowPlan?.windowCount || 0),
+        elementCount: Number(document.elementPlan?.elementCount || 0),
+        professionalFamily: conversion.professionalFamily || document.formatConversionProfile?.professionalFamily || "",
+        parserProfile: conversion.parserProfile || document.formatConversionProfile?.parserProfile || "",
+        conversionRiskLevel: conversion.conversionRiskLevel || "",
+        qualityGateStatusCounts: conversion.qualityGateStatusCounts || {},
+        openability: conversion.openability || {},
+        riskFlags: document.route?.riskFlags || [],
+        parseWarnings: (document.parseWarnings || []).slice(0, 8)
+      };
+    }),
+    artifactRefs: [
+      { artifactId: "portable-markdown", mode: "human", fileName: `${run.runId || "distillation"}.md` },
+      { artifactId: "portable-docx", mode: "human", fileName: `${run.runId || "distillation"}.docx` },
+      { artifactId: "agent-message-json", mode: "agent", fileName: `${run.runId || "distillation"}.agent.json` },
+      { artifactId: "professional-format-manifest-json", mode: "agent", fileName: `${run.runId || "distillation"}.professional-format-manifest.json` },
+      { artifactId: "workspace-package-zip", mode: "bundle", fileName: `${run.runId || "distillation"}.workspace-package.zip` }
+    ],
+    omittedForConsole: ["parserTrace", "windowPlan.windows", "graphEvidence.text_units", "graphEvidence.relationships"]
+  };
+}
+
+function buildProfessionalFormatManifest(run = {}) {
+  const result = run.result || {};
+  const corpusDocuments = new Map((result.corpusPlan?.documents || [])
+    .map((document) => [document.sourceId, document]));
+  const plan = result.formatConversionPlan || {};
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.professional-format-manifest`,
+    strategy: "professional-format-manifest.v1",
+    runId: run.runId || "",
+    status: run.status || result.status || "unknown",
+    title: run.title || "",
+    generatedAt: nowIso(),
+    modeSeparation: humanAgentModeSeparation(),
+    allSizePolicy: result.corpusPlan?.allSizePolicy || "streaming-windowed",
+    formatConversionStrategy: plan.strategy || "office-document-professional-adaptation.v1",
+    referencePatterns: [
+      "docling.docitem-labels",
+      "unstructured.elements",
+      "unstructured.chunk_by_title",
+      "llama-index.nodes-with-metadata",
+      "haystack.explicit-pipeline-components",
+      "graphrag.community-reports"
+    ],
+    summary: plan.summary || {},
+    outputArtifactValidation: plan.outputArtifactValidation || null,
+    formatMatrix: plan.formatMatrix || [],
+    documents: (plan.documents || []).map((document) => {
+      const corpusDocument = corpusDocuments.get(document.sourceId) || {};
+      return {
+        sourceId: document.sourceId,
+        title: document.title,
+        fileName: document.fileName,
+        routeId: document.routeId,
+        sourceFormat: document.sourceFormat,
+        byteSize: Number(corpusDocument.byteSize || 0),
+        pdfProfile: corpusDocument.pdfProfile || null,
+        professionalFamily: document.professionalFamily,
+        parserProfile: document.parserProfile,
+        parserStages: document.parserStages || [],
+        structureUnits: document.structureUnits || [],
+        adaptationLevel: document.adaptationLevel,
+        humanReadableTargets: document.humanReadableTargets || [],
+        agentReadableTargets: document.agentReadableTargets || [],
+        conversionTargets: document.conversionTargets || [],
+        targetFormats: document.targetFormats || [],
+        conversionAdapters: document.conversionAdapters || [],
+        preserves: document.preserves || [],
+        riskControls: document.riskControls || [],
+        knownLosses: document.knownLosses || [],
+        qualityGates: document.qualityGates || [],
+        qualityGateResults: document.qualityGateResults || [],
+        qualityGateStatusCounts: document.qualityGateStatusCounts || {},
+        conversionRiskLevel: document.conversionRiskLevel || "",
+        evidence: document.evidence || {},
+        openability: document.openability || {},
+        routeRiskFlags: corpusDocument.route?.riskFlags || []
+      };
+    })
+  };
+}
+
 function artifactValidationGate(gate = "", passed = false, details = {}) {
   return {
     gate,
@@ -9787,16 +9931,20 @@ function jsonArtifactBuffer(value = {}) {
 function buildWorkspacePackageZip(run = {}) {
   const markdown = Buffer.from(run.result?.portableDocuments?.[0]?.document?.markdown || "", "utf8");
   const docx = buildPortableDocx(run);
+  const consoleSummary = jsonArtifactBuffer(buildConsoleSummary(run));
+  const professionalFormatManifest = jsonArtifactBuffer(buildProfessionalFormatManifest(run));
   const validationByArtifactId = new Map((run.result?.formatConversionPlan?.outputArtifactValidation?.artifacts || [])
     .map((artifact) => [artifact.artifactId, artifact]));
   const artifactEntries = [
     { artifactId: "portable-markdown", path: "distillation.md", contentType: "text/markdown; charset=utf-8", data: markdown },
     { artifactId: "portable-docx", path: "distillation.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: docx },
+    { artifactId: "console-summary-json", path: "console-summary.json", contentType: "application/json; charset=utf-8", data: consoleSummary },
     { artifactId: "agent-message-json", path: "agent-message.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.agentMessage || {}) },
     { artifactId: "result-json", path: "result.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run) },
     { artifactId: "project-snapshot-json", path: "project-snapshot.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.incrementalPlan || {}) },
     { artifactId: "evidence-pack-json", path: "evidence-pack.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.graphEvidence || {}) },
     { artifactId: "format-conversion-plan-json", path: "format-conversion-plan.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.formatConversionPlan || {}) },
+    { artifactId: "professional-format-manifest-json", path: "professional-format-manifest.json", contentType: "application/json; charset=utf-8", data: professionalFormatManifest },
     { artifactId: "reference-gap-report-json", path: "reference-gap-report.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.referenceGapReport || {}) }
   ];
   const manifest = {
@@ -12650,6 +12798,12 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
         fileName: `${runId}.docx`
       },
       {
+        artifactId: "console-summary-json",
+        label: "Console Summary JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.console-summary.json`
+      },
+      {
         artifactId: "result-json",
         label: "Result JSON",
         contentType: "application/json; charset=utf-8",
@@ -12678,6 +12832,12 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
         label: "Format Conversion Plan JSON",
         contentType: "application/json; charset=utf-8",
         fileName: `${runId}.format-conversion-plan.json`
+      },
+      {
+        artifactId: "professional-format-manifest-json",
+        label: "Professional Format Manifest JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.professional-format-manifest.json`
       },
       {
         artifactId: "reference-gap-report-json",
@@ -12715,8 +12875,9 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       projectEvidenceQuery: "GET /v1/projects/:projectId/evidence",
       exportArtifact: "GET /v1/distillation/runs/:runId/artifacts/:artifactId"
     },
-    artifacts: ["portable-markdown", "portable-docx", "result-json", "agent-message-json", "project-snapshot-json", "evidence-pack-json", "format-conversion-plan-json", "reference-gap-report-json", "workspace-package-zip"],
+    artifacts: ["portable-markdown", "portable-docx", "console-summary-json", "result-json", "agent-message-json", "project-snapshot-json", "evidence-pack-json", "format-conversion-plan-json", "professional-format-manifest-json", "reference-gap-report-json", "workspace-package-zip"],
     responseProfiles: ["console", "agent", "api"],
+    responseProfileSeparation: humanAgentModeSeparation(),
     algorithms: [
       "external-service.route-window-embedding-grounded-distillation.v1",
       "external-service.route-window-community-grounded-distillation.v2",
@@ -12732,6 +12893,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
       PDF_SUBTYPE_ROUTING_STRATEGY,
+      "human-agent-response-profile-separation.v1",
+      "professional-format-manifest.v1",
       EVIDENCE_QUERY_STRATEGY,
       PROJECT_EVIDENCE_QUERY_STRATEGY,
       REFERENCE_GAP_REPORT_STRATEGY,
@@ -12869,10 +13032,12 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       qualityGateEvaluationStrategy: "professional-format-quality-gates.v1",
       outputArtifactValidationStrategy: "format-conversion-output-artifact-self-check.v1",
       artifact: "format-conversion-plan-json",
+      professionalManifestArtifact: "professional-format-manifest-json",
+      modeSeparationStrategy: "human-agent-response-profile-separation.v1",
       professionalFormats: PROFESSIONAL_FORMAT_ORDER,
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
-      humanReadableTargets: ["portable-markdown", "portable-docx", "workspace-package-zip"],
-      agentReadableTargets: ["agent-message-json", "result-json", "evidence-pack-json"],
+      humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
+      agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
       preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "formulas", "annotations"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
@@ -13128,6 +13293,12 @@ async function handleRequest(request, response) {
           });
           return;
         }
+        if (artifactId === "console-summary-json") {
+          jsonResponse(response, 200, buildConsoleSummary(run), {
+            "content-disposition": `attachment; filename="${run.runId}.console-summary.json"`
+          });
+          return;
+        }
         if (artifactId === "result-json") {
           jsonResponse(response, 200, run, {
             "content-disposition": `attachment; filename="${run.runId}.json"`
@@ -13155,6 +13326,12 @@ async function handleRequest(request, response) {
         if (artifactId === "format-conversion-plan-json") {
           jsonResponse(response, 200, run.result?.formatConversionPlan || {}, {
             "content-disposition": `attachment; filename="${run.runId}.format-conversion-plan.json"`
+          });
+          return;
+        }
+        if (artifactId === "professional-format-manifest-json") {
+          jsonResponse(response, 200, buildProfessionalFormatManifest(run), {
+            "content-disposition": `attachment; filename="${run.runId}.professional-format-manifest.json"`
           });
           return;
         }

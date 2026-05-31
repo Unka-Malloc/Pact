@@ -601,7 +601,9 @@ raw corpus item 标准字段：
 - Markdown：核心提炼文档。
 - DOCX：Word 可打开文档。
 - JSON：机器可读结构化结果。
+- Console Summary JSON：管控台摘要，只保留状态、文件大小、路由、openability、转换风险和质量门禁计数，不暴露 parser trace 噪声。
 - Format Conversion Plan JSON：每个输入文档的专业解析与格式转换计划。
+- Professional Format Manifest JSON：智能体/集成测试用专业格式清单，逐文档列出 parser profile、structure units、conversion adapters、preserves、quality gates、risk controls、known losses 和 openability。
 - ZIP：完整工作区包。
 - Agent JSON：智能体专用报文。
 
@@ -612,6 +614,7 @@ raw corpus item 标准字段：
 - Markdown 不允许包含 Tika XHTML 噪声。
 - PDF、Word、PowerPoint、Excel、Markdown、OpenDocument 必须进入 `office-document-professional-adaptation.v1` 格式矩阵，声明 parser stages、structure units、conversion adapters、preserves、quality gates、risk controls 和 known losses。
 - 每个文档的 `formatConversionPlan.documents[]` 必须能说明转换到 Markdown、DOCX、Agent JSON 和 evidence pack 时保留什么、丢失什么、如何验收可打开性。
+- `human-agent-response-profile-separation.v1` 必须把管控台摘要和智能体报文分开；管控台不展示 parser trace/full windows，智能体必须能下载 `professional-format-manifest-json` 精确筛选格式适配状态。
 - 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/批注、PPT slide/shape、Excel sheet-row-cell/formula/time-index、Markdown heading/table、OpenDocument content/table 变成可机读的 pass/warning/fail/not_applicable。
 - `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body、文本节点、heading style、list/code style 和表格 XML 可用性。
 - 下载链路统一走 bridge-mediated fetch/blob。
