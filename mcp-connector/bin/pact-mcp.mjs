@@ -227,6 +227,25 @@ function supportedTargetDetails() {
   }));
 }
 
+function sharedspaceExchangeReceiptContract() {
+  return {
+    schemaVersion: "pact.mcp.sharedspace-exchange.v1",
+    locations: [
+      "structuredContent.exchange",
+      "notifications/pact/operation_reply.params.exchange"
+    ],
+    actions: [
+      "workspace-created",
+      "file-written",
+      "file-read",
+      "items-listed",
+      "item-deleted",
+      "operation"
+    ],
+    fields: ["action", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+  };
+}
+
 const GENERIC_REMOTE_CONTEXT_KINDS = [
   "docker",
   "podman",
@@ -2304,6 +2323,8 @@ function buildDeviceHubManifest({
 }) {
   const parsed = new URL(baseUrl);
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  const mcpUrl = `${baseUrl}/mcp`;
+  const vmMcpUrl = `${parsed.protocol}//host.orb.internal:${port}/mcp`;
   const env = deviceDiscoveryEnv({ baseUrl, primaryPath: discoveryPath });
   const packageExec = `npx ${packageJson.name}@${packageJson.version}`;
   const urlArgs = ` --url ${shellQuote(baseUrl)}`;
@@ -2357,11 +2378,29 @@ function buildDeviceHubManifest({
       [MCP_SERVER_NAME]: {
         name: "Pact",
         transport: "streamable-http",
-        httpUrl: `${baseUrl}/mcp`,
-        vmHttpUrl: `${parsed.protocol}//host.orb.internal:${port}/mcp`,
+        httpUrl: mcpUrl,
+        vmHttpUrl: vmMcpUrl,
         discoveryUrl: `${baseUrl}/.well-known/pact/mcp.json`,
         apiDiscoveryUrl: `${baseUrl}/api/mcp/discovery`,
         stableToolName: MCP_STABLE_TOOL_NAME,
+        sharedHub: {
+          canonicalMcpUrl: mcpUrl,
+          vmMcpUrl,
+          clientPolicy: "discover-shared-hub-then-opt-in",
+          defaultClientMutation: "none",
+          directHttp: true,
+          sharedspace: {
+            outlet: "pact.sharedspace",
+            referencePolicy: "use-public-workspace-ref",
+            exchangeReceipt: sharedspaceExchangeReceiptContract(),
+            coreOperations: [
+              "pact.agentWorkspace.create",
+              "pact.sharedspace.item.list",
+              "pact.sharedspace.file.read",
+              "pact.sharedspace.file.write"
+            ]
+          }
+        },
         connector: {
           packageName: packageJson.name,
           packageVersion: packageJson.version,

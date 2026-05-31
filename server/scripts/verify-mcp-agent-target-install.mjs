@@ -1009,6 +1009,10 @@ try {
     assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}' --json`);
     assert.equal(connector.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
+    assert.equal(manifest.servers?.pact?.sharedHub?.sharedspace?.outlet, "pact.sharedspace");
+    assert.equal(manifest.servers?.pact?.sharedHub?.sharedspace?.referencePolicy, "use-public-workspace-ref");
+    assert.equal(manifest.servers?.pact?.sharedHub?.sharedspace?.exchangeReceipt?.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+    assert.ok(manifest.servers?.pact?.sharedHub?.sharedspace?.coreOperations?.includes("pact.sharedspace.file.write"));
     assert.equal(manifest.servers?.pact?.codex?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.codex?.installCommand, `${npxPrefix} install --target codex --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     assert.ok(manifest.discovery?.lookupOrder?.includes("pact-mcp discover-local --json"));
@@ -1325,6 +1329,8 @@ try {
     assert.deepEqual(manifest.servers?.pact?.connector?.priorityTargets, ["claude-code", "codex", "openclaw"]);
     assert.deepEqual(manifest.servers?.pact?.connector?.supportedTargets, DECLARED_AGENT_TARGETS);
     assert.deepEqual(manifest.servers?.pact?.connector?.supportedTargetDetails, payload.supportedTargetDetails);
+    assert.equal(manifest.servers?.pact?.sharedHub?.sharedspace?.exchangeReceipt?.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+    assert.ok(manifest.servers?.pact?.sharedHub?.sharedspace?.coreOperations?.includes("pact.sharedspace.file.write"));
     assert.equal(manifest.servers?.pact?.connector?.installCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}'`);
     assert.equal(manifest.servers?.pact?.connector?.scanCommand, `npx pact-mcp-connector@${payload.packageVersion} scan --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     const refresh = await spawnConnector([
