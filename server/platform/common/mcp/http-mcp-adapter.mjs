@@ -176,6 +176,25 @@ const MCP_OUTLET_METADATA = Object.freeze({
   [MCP_SKILL_HUB_TOOL_NAME]: { toolName: MCP_SKILL_HUB_TOOL_NAME, architectureCategory: "Skill Hub" }
 });
 
+function sharedspaceExchangeReceiptContract() {
+  return {
+    schemaVersion: "pact.mcp.sharedspace-exchange.v1",
+    locations: [
+      "structuredContent.exchange",
+      "notifications/pact/operation_reply.params.exchange"
+    ],
+    actions: [
+      "workspace-created",
+      "file-written",
+      "file-read",
+      "items-listed",
+      "item-deleted",
+      "operation"
+    ],
+    fields: ["action", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+  };
+}
+
 function mcpOutletForTool(tool = {}) {
   const id = String(tool.operationId || tool.id || tool.name || "").trim();
   const publicName = String(tool.id || tool.name || "").trim();
@@ -204,6 +223,7 @@ function mcpOutletSummary(operations = []) {
     const meta = MCP_OUTLET_METADATA[toolName];
     outlets[toolName] = {
       ...meta,
+      ...(toolName === MCP_SHAREDSPACE_TOOL_NAME ? { exchangeReceipt: sharedspaceExchangeReceiptContract() } : {}),
       operationCount: 0,
       operations: []
     };
@@ -284,6 +304,7 @@ function publicMcpTool(tool) {
       operationId: tool.operationId || tool.id,
       mcpOutlet: outlet.toolName,
       architectureCategory: outlet.architectureCategory,
+      ...(outlet.toolName === MCP_SHAREDSPACE_TOOL_NAME ? { exchangeReceipt: sharedspaceExchangeReceiptContract() } : {}),
       toolsets: tool.toolsets || [],
       requiredScopes: tool.requiredScopes || [],
       risk: tool.risk || "read_only"
