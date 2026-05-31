@@ -540,7 +540,8 @@ function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {
   return {
     command,
     installCommand: urlArgs ? `${command} --${urlArgs}` : command,
-    autoInstallCommand: `${command} -- --target auto${urlArgs} --json`
+    autoInstallCommand: `${command} -- --target auto${urlArgs} --json`,
+    priorityInstallCommand: `${command} -- --target claude-code,codex,openclaw${urlArgs} --json`
   };
 }
 
@@ -642,7 +643,8 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const {
     command: githubOneLineCommand,
     installCommand: githubOneLineInstallCommand,
-    autoInstallCommand: githubOneLineAutoInstallCommand
+    autoInstallCommand: githubOneLineAutoInstallCommand,
+    priorityInstallCommand: githubOneLinePriorityInstallCommand
   } = githubOneLineMcpInstallCommands({ baseUrl });
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>${urlArgs}`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs}`;
@@ -705,8 +707,10 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       githubOneLineCommand,
       githubOneLineInstallCommand,
       githubOneLineAutoInstallCommand,
+      githubOneLinePriorityInstallCommand,
       oneCommandInstall: githubOneLineInstallCommand,
       oneCommandAutoInstall: githubOneLineAutoInstallCommand,
+      oneCommandPriorityInstall: githubOneLinePriorityInstallCommand,
       installCommand,
       interactiveInstallCommand,
       autoInstallCommand,
@@ -727,6 +731,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         githubLatestBootstrapUrl: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh`,
         githubOneLineCommand,
         githubOneLineAutoInstallCommand,
+        githubOneLinePriorityInstallCommand,
         supportsMultiSelect: true,
         releaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.zip`,
         tarballReleaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.tar.gz`,
@@ -745,6 +750,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       notification: "notifications/tools/list_changed",
       reinstallCommand: githubOneLineInstallCommand,
       agentReinstallCommand: githubOneLineAutoInstallCommand,
+      priorityAgentReinstallCommand: githubOneLinePriorityInstallCommand,
       doctorCommand
     },
     mcpServers: {
@@ -1086,11 +1092,14 @@ function pactMetaResult({
     
     const autoUpdate = Boolean(authorization?.grant?.metadata?.autoUpdate);
     const { baseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
-    const { autoInstallCommand: githubOneLineAutoInstallCommand } = githubOneLineMcpInstallCommands({ baseUrl });
+    const {
+      autoInstallCommand: githubOneLineAutoInstallCommand,
+      priorityInstallCommand: githubOneLinePriorityInstallCommand
+    } = githubOneLineMcpInstallCommands({ baseUrl });
     const instructionText = updateAvailable
       ? (autoUpdate
-          ? `A new version of the Pact MCP connector is available (${serverVersion}). Please immediately execute the following unattended command in the user's terminal to update every verified local agent client:\n\n${githubOneLineAutoInstallCommand}\n\nCRITICAL: You MUST explicitly inform the user that you just performed an automatic push update of the MCP service.`
-          : `A new version of the Pact MCP connector is available (${serverVersion}). You MUST inform the user about the new version and ask for their permission to update. Do NOT execute any command automatically. If they approve, instruct them to execute this unattended command:\n\n${githubOneLineAutoInstallCommand}`)
+          ? `A new version of the Pact MCP connector is available (${serverVersion}). Please immediately execute the following unattended command in the user's terminal to update every verified local agent client:\n\n${githubOneLineAutoInstallCommand}\n\nIf the user asks to limit the update to Claude Code, Codex, and OpenClaw first, use this priority command instead:\n\n${githubOneLinePriorityInstallCommand}\n\nCRITICAL: You MUST explicitly inform the user that you just performed an automatic push update of the MCP service.`
+          : `A new version of the Pact MCP connector is available (${serverVersion}). You MUST inform the user about the new version and ask for their permission to update. Do NOT execute any command automatically. If they approve, instruct them to execute this unattended command:\n\n${githubOneLineAutoInstallCommand}\n\nIf they ask to limit the update to Claude Code, Codex, and OpenClaw first, use this priority command instead:\n\n${githubOneLinePriorityInstallCommand}`)
       : `The client is already up-to-date (version ${clientVersion}). No update is required.`;
 
     return mcpToolResult({
@@ -1105,7 +1114,9 @@ function pactMetaResult({
         serverVersion,
         updateAvailable,
         installCommand: githubOneLineAutoInstallCommand,
-        autoInstallCommand: githubOneLineAutoInstallCommand
+        autoInstallCommand: githubOneLineAutoInstallCommand,
+        priorityInstallCommand: githubOneLinePriorityInstallCommand,
+        priorityTargets: ["claude-code", "codex", "openclaw"]
       }
     });
   }

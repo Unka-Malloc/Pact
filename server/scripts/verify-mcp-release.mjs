@@ -534,6 +534,7 @@ try {
     env: {
       HOME: layeredHome,
       NVM_DIR: path.join(layeredHome, ".nvm"),
+      VOLTA_HOME: path.join(layeredHome, ".volta"),
       PACT_MCP_BREW_ENV_PROBE: packageManagerEnvProbe,
       PATH: [fakeWorkspaceBin, packageManagerProbeBin, "/usr/bin", "/bin"].filter(Boolean).join(path.delimiter)
     }

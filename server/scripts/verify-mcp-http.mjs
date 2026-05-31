@@ -145,12 +145,17 @@ try {
   assert.match(discovery.payload.installer.githubOneLineInstallCommand, /pact-mcp-install\.sh.+--url/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /--json/);
+  assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
+  assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommand, /--json/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
+  assert.equal(discovery.payload.installer.oneCommandPriorityInstall, discovery.payload.installer.githubOneLinePriorityInstallCommand);
   assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
   assert.equal(discovery.payload.upgrade.agentReinstallCommand, discovery.payload.installer.githubOneLineAutoInstallCommand);
+  assert.equal(discovery.payload.upgrade.priorityAgentReinstallCommand, discovery.payload.installer.githubOneLinePriorityInstallCommand);
   assert.match(discovery.payload.upgrade.reinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.upgrade.agentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(discovery.payload.upgrade.priorityAgentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.installer.installCommand, /npx pact-mcp-connector@latest register/);
   assert.match(discovery.payload.installer.interactiveInstallCommand, /pact-mcp-connector@latest install/);
   assert.match(discovery.payload.installer.autoInstallCommand, /pact-mcp-connector@latest install --target auto/);
@@ -411,7 +416,12 @@ try {
   assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(updateCommand, /--json/);
   assert.match(updateCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
+  assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /--json/);
+  assert.deepEqual(updateProbe.payload.result.structuredContent.priorityTargets, ["claude-code", "codex", "openclaw"]);
+  assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(updateProbe.payload.result.content[0].text, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(updateProbe.payload.result.content[0].text, /claude-code,codex,openclaw/);
 
   const localGrantCapabilities = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
