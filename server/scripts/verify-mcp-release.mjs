@@ -239,12 +239,14 @@ try {
   assert.ok(manifest.install.autoInstallCommand.includes("--json"));
   assert.ok(manifest.install.priorityInstallCommand.includes("pact-mcp-connector@latest install --target claude-code,codex,openclaw"));
   assert.ok(manifest.install.priorityInstallCommand.includes("--json"));
+  assert.deepEqual(manifest.install.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.ok(manifest.install.interactiveUninstallCommand.includes("pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.clientInstallCommand.includes("--target <client>"));
   assert.ok(manifest.portable.autoInstallCommand.includes("./pact-mcp install --target auto"));
   assert.ok(manifest.portable.autoInstallCommand.includes("--json"));
   assert.ok(manifest.portable.priorityInstallCommand.includes("./pact-mcp install --target claude-code,codex,openclaw"));
   assert.ok(manifest.portable.priorityInstallCommand.includes("--json"));
+  assert.deepEqual(manifest.portable.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.equal(Object.hasOwn(manifest.install, "bulkInstallCommand"), false);
   assert.ok(manifest.install.uninstallCommand.includes("npx pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.discoverCommand.includes("pact-mcp-connector@latest discover-local"));

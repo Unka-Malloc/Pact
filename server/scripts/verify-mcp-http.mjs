@@ -153,6 +153,7 @@ try {
   assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
   assert.equal(discovery.payload.upgrade.agentReinstallCommand, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.equal(discovery.payload.upgrade.priorityAgentReinstallCommand, discovery.payload.installer.githubOneLinePriorityInstallCommand);
+  assert.deepEqual(discovery.payload.upgrade.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.match(discovery.payload.upgrade.reinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.upgrade.agentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.upgrade.priorityAgentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
@@ -162,6 +163,7 @@ try {
   assert.match(discovery.payload.installer.autoInstallCommand, /--json/);
   assert.match(discovery.payload.installer.priorityInstallCommand, /pact-mcp-connector@latest install --target claude-code,codex,openclaw/);
   assert.match(discovery.payload.installer.priorityInstallCommand, /--json/);
+  assert.deepEqual(discovery.payload.installer.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.match(discovery.payload.installer.clientInstallCommand, /--target <client>/);
   assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
@@ -176,6 +178,7 @@ try {
   assert.equal(discovery.payload.installer.portable.interactiveInstallCommand, `./pact-mcp install --url '${server.url}'`);
   assert.equal(discovery.payload.installer.portable.autoInstallCommand, `./pact-mcp install --target auto --url '${server.url}' --json`);
   assert.equal(discovery.payload.installer.portable.priorityInstallCommand, `./pact-mcp install --target claude-code,codex,openclaw --url '${server.url}' --json`);
+  assert.deepEqual(discovery.payload.installer.portable.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.equal(discovery.payload.installer.portable.clientInstallCommand, `./pact-mcp install --target <client> --url '${server.url}'`);
   const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
   const expectedInstallTargets = [

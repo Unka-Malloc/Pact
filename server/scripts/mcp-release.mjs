@@ -20,6 +20,8 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const connectorRoot = path.join(projectRoot, "mcp-connector");
 const BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
+const PRIORITY_INSTALL_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
+const PRIORITY_INSTALL_TARGET = PRIORITY_INSTALL_TARGETS.join(",");
 
 function parseArgs(argv) {
   const args = {
@@ -356,7 +358,7 @@ async function createPortableBundle({ outputDir, packageJson, target, bundledVer
     "  ./pact-mcp install --target auto --json",
     "",
     "Connect the priority agent clients from a script:",
-    "  ./pact-mcp install --target claude-code,codex,openclaw --json",
+    `  ./pact-mcp install --target ${PRIORITY_INSTALL_TARGET} --json`,
     "",
     "Use --token-stdin only when installing with a pre-issued custom grant token:",
     "  printf '%s\\n' '<issued-token>' | ./pact-mcp install --target auto --token-stdin --json",
@@ -368,7 +370,7 @@ async function createPortableBundle({ outputDir, packageJson, target, bundledVer
     "  ./pact-mcp uninstall",
     "",
     "Uninstall priority clients from a script:",
-    "  ./pact-mcp uninstall --target claude-code,codex,openclaw",
+    `  ./pact-mcp uninstall --target ${PRIORITY_INSTALL_TARGET}`,
     "",
     `Platform: ${platform}`,
     `Connector: ${packageJson.name}@${packageJson.version}`,
@@ -626,7 +628,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     githubLatestUrl: `https://github.com/${repo}/releases/latest/download/${scriptName}`,
     oneLineCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${scriptName})"`,
     oneLineAutoInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${scriptName})" -- --target auto --json`,
-    oneLinePriorityInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${scriptName})" -- --target claude-code,codex,openclaw --json`,
+    oneLinePriorityInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${scriptName})" -- --target ${PRIORITY_INSTALL_TARGET} --json`,
     uninstallScriptName,
     uninstallScriptPath,
     uninstallSha256: await sha256(uninstallScriptPath),
@@ -640,7 +642,7 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
         githubLatestUrl: `https://github.com/${repo}/releases/latest/download/${zhCnScriptName}`,
         oneLineCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnScriptName})"`,
         oneLineAutoInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnScriptName})" -- --target auto --json`,
-        oneLinePriorityInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnScriptName})" -- --target claude-code,codex,openclaw --json`,
+        oneLinePriorityInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnScriptName})" -- --target ${PRIORITY_INSTALL_TARGET} --json`,
         uninstallScriptName: zhCnUninstallScriptName,
         uninstallScriptPath: zhCnUninstallScriptPath,
         uninstallSha256: zhCnUninstallSha256,
@@ -704,7 +706,8 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       installCommand: `./${portable.executable} register`,
       clientInstallCommand: `./${portable.executable} install --target <client>`,
       autoInstallCommand: `./${portable.executable} install --target auto --json`,
-      priorityInstallCommand: `./${portable.executable} install --target claude-code,codex,openclaw --json`,
+      priorityInstallCommand: `./${portable.executable} install --target ${PRIORITY_INSTALL_TARGET} --json`,
+      priorityTargets: [...PRIORITY_INSTALL_TARGETS],
       interactiveUninstallCommand: `./${portable.executable} uninstall`,
       clientUninstallCommand: `./${portable.executable} uninstall --target <client>`,
       doubleClickEntry: process.platform === "win32" ? "" : "install.command"
@@ -723,7 +726,8 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       portableCommand: `./${portable.executable} register`,
       interactiveInstallCommand: `npx ${packageJson.name}@latest install`,
       autoInstallCommand: `npx ${packageJson.name}@latest install --target auto --json`,
-      priorityInstallCommand: `npx ${packageJson.name}@latest install --target claude-code,codex,openclaw --json`,
+      priorityInstallCommand: `npx ${packageJson.name}@latest install --target ${PRIORITY_INSTALL_TARGET} --json`,
+      priorityTargets: [...PRIORITY_INSTALL_TARGETS],
       clientInstallCommand: `npx ${packageJson.name}@latest install --target <client>`,
       interactiveUninstallCommand: `npx ${packageJson.name}@latest uninstall`,
       uninstallCommand: `npx ${packageJson.name}@latest uninstall --target <client>`,

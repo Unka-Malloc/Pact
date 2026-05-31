@@ -142,6 +142,8 @@ const SUPPORTED_TARGETS = [
   "antigravity",
   "opencode"
 ];
+const PRIORITY_INSTALL_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
+const PRIORITY_INSTALL_TARGET = PRIORITY_INSTALL_TARGETS.join(",");
 const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
 const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
@@ -2286,7 +2288,7 @@ function buildDeviceHubManifest({
   const discoverCommand = `${packageExec} discover-local${urlArgs} --json`;
   const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
   const autoInstallCommand = `${packageExec} install --target auto${urlArgs}${tokenEnvArgs} --json`;
-  const priorityInstallCommand = `${packageExec} install --target claude-code,codex,openclaw${urlArgs}${tokenEnvArgs} --json`;
+  const priorityInstallCommand = `${packageExec} install --target ${PRIORITY_INSTALL_TARGET}${urlArgs}${tokenEnvArgs} --json`;
   const scanCommand = `${packageExec} scan${urlArgs}${tokenEnvArgs} --json`;
   const codexInstallCommand = `${packageExec} install --target codex${urlArgs}${tokenEnvArgs}`;
   const codexManifest = codex
@@ -2344,6 +2346,7 @@ function buildDeviceHubManifest({
           interactiveInstallCommand,
           autoInstallCommand,
           priorityInstallCommand,
+          priorityTargets: [...PRIORITY_INSTALL_TARGETS],
           installCommand: `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs}`,
           uninstallCommand: `${packageExec} uninstall --target <client>${urlArgs}`,
           discoverCommand,
@@ -6282,11 +6285,12 @@ async function registerCommand(options) {
       tokenEnv
     }),
     priorityInstall: shellCommandForInstall({
-      target: "claude-code,codex,openclaw",
+      target: PRIORITY_INSTALL_TARGET,
       includeUrl,
       baseUrl: settings.baseUrl,
       tokenEnv
     }),
+    priorityTargets: [...PRIORITY_INSTALL_TARGETS],
     verifiedHandshake: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,
     note: "Discovered and registered the signed Pact MCP endpoint without installing it into any client."

@@ -52,6 +52,8 @@ const MCP_CLIENT_TARGETS = Object.freeze([
   { target: "antigravity", label: "Antigravity", priority: false, installMode: "antigravity-release-mcp-config", locations: ["local"] },
   { target: "opencode", label: "OpenCode", priority: true, installMode: "opencode-release-mcp-config", locations: ["local", "orbstack", "remote-linux"] }
 ]);
+const MCP_PRIORITY_INSTALL_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
+const MCP_PRIORITY_INSTALL_TARGET = MCP_PRIORITY_INSTALL_TARGETS.join(",");
 
 function jsonRpcResult(id, result = {}) {
   return {
@@ -541,7 +543,7 @@ function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {
     command,
     installCommand: urlArgs ? `${command} --${urlArgs}` : command,
     autoInstallCommand: `${command} -- --target auto${urlArgs} --json`,
-    priorityInstallCommand: `${command} -- --target claude-code,codex,openclaw${urlArgs} --json`
+    priorityInstallCommand: `${command} -- --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`
   };
 }
 
@@ -638,7 +640,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register${urlArgs}`;
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs}`;
   const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs} --json`;
-  const priorityInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target claude-code,codex,openclaw${urlArgs} --json`;
+  const priorityInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
   const {
     command: githubOneLineCommand,
@@ -704,6 +706,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         installMode,
         locations
       })),
+      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       githubOneLineCommand,
       githubOneLineInstallCommand,
       githubOneLineAutoInstallCommand,
@@ -739,7 +742,8 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         installCommand: `./pact-mcp register${urlArgs}`,
         interactiveInstallCommand: `./pact-mcp install${urlArgs}`,
         autoInstallCommand: `./pact-mcp install --target auto${urlArgs} --json`,
-        priorityInstallCommand: `./pact-mcp install --target claude-code,codex,openclaw${urlArgs} --json`,
+        priorityInstallCommand: `./pact-mcp install --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`,
+        priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
         clientInstallCommand: `./pact-mcp install --target <client>${urlArgs}`,
         doubleClickEntry: "install.command"
       }
@@ -751,6 +755,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       reinstallCommand: githubOneLineInstallCommand,
       agentReinstallCommand: githubOneLineAutoInstallCommand,
       priorityAgentReinstallCommand: githubOneLinePriorityInstallCommand,
+      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       doctorCommand
     },
     mcpServers: {
@@ -1116,7 +1121,7 @@ function pactMetaResult({
         installCommand: githubOneLineAutoInstallCommand,
         autoInstallCommand: githubOneLineAutoInstallCommand,
         priorityInstallCommand: githubOneLinePriorityInstallCommand,
-        priorityTargets: ["claude-code", "codex", "openclaw"]
+        priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS]
       }
     });
   }
