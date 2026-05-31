@@ -739,7 +739,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "spreadsheet sheet/row/cell coordinate/formula metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -764,7 +764,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -1850,6 +1850,7 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.bbox ? { bbox: metadata.bbox } : {}),
     ...(metadata.layout ? { layout: metadata.layout } : {}),
     ...(metadata.table ? { table: metadata.table } : {}),
+    ...(metadata.annotation ? { annotation: metadata.annotation } : {}),
     ...(metadata.cells ? { cells: metadata.cells } : {})
   });
 }
@@ -4145,6 +4146,74 @@ function appendDocxTableElements(elements = [], tableXml = "", { name = "", tabl
   return { rowCount: rows.length, cellCount, headerCells: headers };
 }
 
+function appendDocxAnnotationElements(elements = [], xml = "", {
+  tagName = "comment",
+  type = "comment",
+  sourcePart = "",
+  lineStart = 0
+} = {}) {
+  let count = 0;
+  for (const match of String(xml || "").matchAll(new RegExp(`<[^:>]*:?${tagName}\\b[\\s\\S]*?<\\/[^:>]*:?${tagName}>`, "g"))) {
+    const annotationXml = match[0];
+    const openTag = annotationXml.match(/^<[^>]+>/)?.[0] || "";
+    const annotationType = xmlLocalAttribute(openTag, "type");
+    if (/^(separator|continuationSeparator|continuationNotice)$/i.test(annotationType)) {
+      continue;
+    }
+    const text = textFromXmlTextNodes(annotationXml);
+    if (!text) {
+      continue;
+    }
+    count += 1;
+    const id = xmlLocalAttribute(openTag, "id") || String(count);
+    const author = xmlLocalAttribute(openTag, "author");
+    const date = xmlLocalAttribute(openTag, "date");
+    const label = type === "comment"
+      ? `Comment ${id}${author ? ` by ${author}` : ""}`
+      : `${type === "footnote" ? "Footnote" : "Endnote"} ${id}`;
+    pushStructureElement(elements, type, `${label}: ${text}`, {
+      line: lineStart + count,
+      name: `${sourcePart}#${type}-${id}`,
+      annotation: {
+        kind: type,
+        id,
+        ...(author ? { author } : {}),
+        ...(date ? { date } : {}),
+        ...(annotationType ? { type: annotationType } : {}),
+        sourcePart
+      }
+    });
+  }
+  return count;
+}
+
+function appendDocxAnnotations(elements = [], entries = [], lineStart = 0) {
+  const comments = appendDocxAnnotationElements(elements, zipEntryText(entries, "word/comments.xml"), {
+    tagName: "comment",
+    type: "comment",
+    sourcePart: "word/comments.xml",
+    lineStart
+  });
+  const footnotes = appendDocxAnnotationElements(elements, zipEntryText(entries, "word/footnotes.xml"), {
+    tagName: "footnote",
+    type: "footnote",
+    sourcePart: "word/footnotes.xml",
+    lineStart: lineStart + comments
+  });
+  const endnotes = appendDocxAnnotationElements(elements, zipEntryText(entries, "word/endnotes.xml"), {
+    tagName: "endnote",
+    type: "endnote",
+    sourcePart: "word/endnotes.xml",
+    lineStart: lineStart + comments + footnotes
+  });
+  return {
+    commentCount: comments,
+    footnoteCount: footnotes,
+    endnoteCount: endnotes,
+    annotationCount: comments + footnotes + endnotes
+  };
+}
+
 function parseDocx(entries = []) {
   const xmlNames = entries
     .map((entry) => entry.name)
@@ -4154,6 +4223,10 @@ function parseDocx(entries = []) {
   let tableCount = 0;
   let tableRowCount = 0;
   let tableCellCount = 0;
+  let annotationCount = 0;
+  let commentCount = 0;
+  let footnoteCount = 0;
+  let endnoteCount = 0;
   for (const name of xmlNames) {
     const xml = zipEntryText(entries, name);
     for (const tableMatch of xml.matchAll(/<[^:>]*:?tbl\b[\s\S]*?<\/[^:>]*:?tbl>/g)) {
@@ -4188,6 +4261,11 @@ function parseDocx(entries = []) {
       }
     }
   }
+  const annotations = appendDocxAnnotations(elements, entries, paragraphCount + tableRowCount);
+  annotationCount = annotations.annotationCount;
+  commentCount = annotations.commentCount;
+  footnoteCount = annotations.footnoteCount;
+  endnoteCount = annotations.endnoteCount;
   const fallback = xmlNames.map((name) => textFromXmlTextNodes(zipEntryText(entries, name))).filter(Boolean).join("\n\n");
   const counts = elementTypeCounts(elements);
   return {
@@ -4199,6 +4277,10 @@ function parseDocx(entries = []) {
     tableCount,
     tableRowCount,
     tableCellCount,
+    annotationCount,
+    commentCount,
+    footnoteCount,
+    endnoteCount,
     headingCount: (counts.title || 0) + (counts.heading || 0),
     listItemCount: counts["list-item"] || 0
   };
@@ -5055,7 +5137,9 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
 
 function structuredZipXmlFiles(route = null, rootDir = "") {
   if (route?.id === "word") {
-    return collectFiles(rootDir, (name) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(name), 200);
+    return collectFiles(rootDir, (name) => (
+      /^word\/(document|header\d*|footer\d*|comments|footnotes|endnotes)\.xml$/.test(name)
+    ), 240);
   }
   if (route?.id === "presentation") {
     return collectFiles(rootDir, (name) => /^ppt\/slides\/slide\d+\.xml$/.test(name), 1000)
@@ -5124,6 +5208,10 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tables: parsed.tableCount,
           tableRows: parsed.tableRowCount,
           tableCells: parsed.tableCellCount,
+          annotations: parsed.annotationCount,
+          comments: parsed.commentCount,
+          footnotes: parsed.footnoteCount,
+          endnotes: parsed.endnoteCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount
         },
@@ -5133,6 +5221,14 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tables: parsed.tableCount,
           rows: parsed.tableRowCount,
           cells: parsed.tableCellCount
+        },
+        {
+          stage: "office.word.annotations",
+          status: parsed.annotationCount ? "completed" : "empty",
+          annotations: parsed.annotationCount,
+          comments: parsed.commentCount,
+          footnotes: parsed.footnoteCount,
+          endnotes: parsed.endnoteCount
         }
       ]
     };
@@ -6124,6 +6220,10 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tables: parsed.tableCount,
           tableRows: parsed.tableRowCount,
           tableCells: parsed.tableCellCount,
+          annotations: parsed.annotationCount,
+          comments: parsed.commentCount,
+          footnotes: parsed.footnoteCount,
+          endnotes: parsed.endnoteCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount
         });
@@ -6133,6 +6233,14 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tables: parsed.tableCount,
           rows: parsed.tableRowCount,
           cells: parsed.tableCellCount
+        });
+        parserTrace.push({
+          stage: "office.word.annotations",
+          status: parsed.annotationCount ? "completed" : "empty",
+          annotations: parsed.annotationCount,
+          comments: parsed.commentCount,
+          footnotes: parsed.footnoteCount,
+          endnotes: parsed.endnoteCount
         });
         if (parsed.text) {
           return {
@@ -6558,6 +6666,16 @@ function normalizedStructureElements(document = {}) {
             columns: Number(element.table.columns || 0)
           }
         : null;
+      const annotation = element.annotation && typeof element.annotation === "object"
+        ? {
+            kind: String(element.annotation.kind || ""),
+            id: String(element.annotation.id || ""),
+            author: String(element.annotation.author || ""),
+            date: String(element.annotation.date || ""),
+            type: String(element.annotation.type || ""),
+            sourcePart: String(element.annotation.sourcePart || "")
+          }
+        : null;
       const cells = Array.isArray(element.cells)
         ? element.cells.slice(0, 200).map((cell) => ({
             ref: String(cell.ref || ""),
@@ -6584,6 +6702,7 @@ function normalizedStructureElements(document = {}) {
         bbox,
         layout,
         table,
+        annotation,
         cells
       };
     })
@@ -6595,7 +6714,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "code", "code-boundary", "formula"].includes(element.type);
+  return ["table-header", "table-row", "code", "code-boundary", "formula", "comment", "footnote", "endnote"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -6625,6 +6744,7 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       bbox: element.bbox || null,
       layout: element.layout || null,
       table: element.table || null,
+      annotation: element.annotation || null,
       cells: element.cells || [],
       headingPath
     })),
@@ -6737,6 +6857,7 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       bbox: element.bbox || null,
       layout: element.layout || null,
       table: element.table || null,
+      annotation: element.annotation || null,
       cells: element.cells || []
     }))
   };
@@ -6767,8 +6888,8 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     return {
       ...base,
       parserProfile: "wordprocessingml-paragraph-style-route",
-      preserves: [...base.preserves, "headings", "paragraphs", "lists", "tables", "cellRefs"],
-      conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-table-refs", "evidence-pack"],
+      preserves: [...base.preserves, "headings", "paragraphs", "lists", "tables", "cellRefs", "comments", "footnotes", "endnotes"],
+      conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-table-and-annotation-refs", "evidence-pack"],
       knownLosses: ["advanced-openxml-styling-not-rendered"]
     };
   }
@@ -7201,7 +7322,49 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
   let structureElements = [];
   let structureFormat = "";
   try {
-    if (route?.id === "spreadsheet") {
+    if (route?.id === "word") {
+      const parsed = parseDocx(readDirectoryEntries(extracted.outputDir, 2000));
+      if (parsed.text) {
+        directText = parsed.text;
+        totalCharacters = directText.length;
+        structuredFileCount = parsed.xmlFileCount;
+        structureElements = parsed.elements || [];
+        structureFormat = parsed.format || "docx";
+        parserTrace.push({
+          stage,
+          status: "completed",
+          mode: "structured-zip-file-ref",
+          files: structuredFileCount,
+          characters: totalCharacters,
+          elements: structureElements.length,
+          paragraphs: parsed.paragraphCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
+          annotations: parsed.annotationCount,
+          comments: parsed.commentCount,
+          footnotes: parsed.footnoteCount,
+          endnotes: parsed.endnoteCount,
+          headings: parsed.headingCount,
+          listItems: parsed.listItemCount
+        });
+        parserTrace.push({
+          stage: "office.word.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount
+        });
+        parserTrace.push({
+          stage: "office.word.annotations",
+          status: parsed.annotationCount ? "completed" : "empty",
+          annotations: parsed.annotationCount,
+          comments: parsed.commentCount,
+          footnotes: parsed.footnoteCount,
+          endnotes: parsed.endnoteCount
+        });
+      }
+    } else if (route?.id === "spreadsheet") {
       const parsed = parseXlsxDetailed(readDirectoryEntries(extracted.outputDir, 2000));
       if (parsed.text) {
         directText = parsed.text;
@@ -11033,6 +11196,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.presentation.slides",
         "office.presentation.tables",
         "office.word.tables",
+        "office.word.annotations",
         "table.sheet.structured",
         "table.sheet.headers",
         "table.sheet.cells",
@@ -11053,10 +11217,10 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "list-item", "blockquote", "link", "image", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref", "cells.formula"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.cells", "elementRefs.cells.formula"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.annotation", "elementRefs.cells", "elementRefs.cells.formula"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -11072,7 +11236,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       professionalFormats: ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"],
       humanReadableTargets: ["portable-markdown", "portable-docx", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "formulas"]
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "formulas", "annotations"]
     },
     runtimeDoctor: runtimeStatus,
     classification: {

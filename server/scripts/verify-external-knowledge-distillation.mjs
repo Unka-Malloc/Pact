@@ -257,12 +257,28 @@ const sampleDocxBase64 = base64Zip({
     "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
     "<w:body>",
     "<w:p><w:r><w:t>Standalone DOCX payload parser extracts contract decisions.</w:t></w:r></w:p>",
+    "<w:p><w:r><w:t>Annotation reference paragraph.</w:t></w:r><w:r><w:footnoteReference w:id=\"2\"/></w:r></w:p>",
     "<w:tbl>",
     "<w:tr><w:tc><w:p><w:r><w:t>Owner</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Decision</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Due Date</w:t></w:r></w:p></w:tc></w:tr>",
     "<w:tr><w:tc><w:p><w:r><w:t>Platform</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Adopt external.knowledge.distillation routing</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2026-07-10</w:t></w:r></w:p></w:tc></w:tr>",
     "</w:tbl>",
     "</w:body>",
     "</w:document>"
+  ].join(""),
+  "word/comments.xml": [
+    "<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+    "<w:comment w:id=\"7\" w:author=\"Reviewer\" w:date=\"2026-07-01T00:00:00Z\"><w:p><w:r><w:t>Reviewer asks to keep routing decision evidence explicit.</w:t></w:r></w:p></w:comment>",
+    "</w:comments>"
+  ].join(""),
+  "word/footnotes.xml": [
+    "<w:footnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+    "<w:footnote w:id=\"2\"><w:p><w:r><w:t>Footnote captures deployment prerequisite for the external service.</w:t></w:r></w:p></w:footnote>",
+    "</w:footnotes>"
+  ].join(""),
+  "word/endnotes.xml": [
+    "<w:endnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+    "<w:endnote w:id=\"3\"><w:p><w:r><w:t>Endnote keeps the audit trail available to agents.</w:t></w:r></w:p></w:endnote>",
+    "</w:endnotes>"
   ].join("")
 });
 
@@ -456,6 +472,16 @@ try {
               `<w:p><w:r><w:t>Mounted DOCX section ${index + 1} confirms structured filePath extraction, project convergence, and evidence windowing.</w:t></w:r></w:p>`
             )).join(""),
             "</w:body></w:document>"
+          ].join(""),
+          "word/comments.xml": [
+            "<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:comment w:id=\"4\" w:author=\"Mounted Reviewer\"><w:p><w:r><w:t>Mounted DOCX comment remains available as agent annotation evidence.</w:t></w:r></w:p></w:comment>",
+            "</w:comments>"
+          ].join(""),
+          "word/footnotes.xml": [
+            "<w:footnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:footnote w:id=\"5\"><w:p><w:r><w:t>Mounted DOCX footnote preserves filePath annotation evidence.</w:t></w:r></w:p></w:footnote>",
+            "</w:footnotes>"
           ].join("")
         }
       },
@@ -678,6 +704,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
@@ -731,6 +758,9 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
@@ -1371,15 +1401,32 @@ try {
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 6), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.word.annotations" &&
+    trace.status === "completed" &&
+    trace.comments === 1 &&
+    trace.footnotes === 1 &&
+    trace.endnotes === 1
+  )), true);
   assert.equal(docxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(docxPayloadCorpus.elementPlan.sourceFormat, "docx");
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.footnote >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.endnote >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "table-row" &&
     element.table?.format === "docx" &&
     element.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision" && cell.value.includes("external.knowledge.distillation"))
+  )), true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "comment" &&
+    element.annotation?.kind === "comment" &&
+    element.annotation?.id === "7" &&
+    element.annotation?.author === "Reviewer" &&
+    element.text.includes("routing decision evidence")
   )), true);
   assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
@@ -1388,8 +1435,15 @@ try {
     ref.table?.format === "docx" &&
     ref.cells?.some((cell) => cell.ref === "B2")
   ))), true);
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "comment" &&
+    ref.annotation?.kind === "comment" &&
+    ref.annotation?.id === "7"
+  ))), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.parserProfile, "wordprocessingml-paragraph-style-route");
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("footnotes"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-8" &&
@@ -1397,6 +1451,14 @@ try {
       ref.type === "table-row" &&
       ref.table?.format === "docx" &&
       ref.cells?.some((cell) => cell.ref === "B2")
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-8" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "comment" &&
+      ref.annotation?.kind === "comment" &&
+      ref.annotation?.id === "7"
     ))
   )), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");
@@ -1519,7 +1581,20 @@ try {
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
-      if (formatId === "presentation") {
+      if (formatId === "word") {
+        assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.word.annotations" &&
+          trace.status === "completed" &&
+          trace.comments === 1 &&
+          trace.footnotes === 1
+        )), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "comment" &&
+          ref.annotation?.kind === "comment" &&
+          ref.annotation?.author === "Mounted Reviewer"
+        ))), true);
+      } else if (formatId === "presentation") {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
           trace.stage === "office.presentation.tables" &&

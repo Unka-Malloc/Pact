@@ -389,6 +389,9 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
@@ -425,6 +428,7 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".tex"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
@@ -1223,6 +1227,8 @@ try {
       "rm -rf /tmp/pact-mounted-structured",
       "mkdir -p /tmp/pact-mounted-structured/docx/word /tmp/pact-mounted-structured/pptx/ppt/slides /tmp/pact-mounted-structured/xlsx/xl/worksheets /tmp/pact-mounted-structured/odt /tmp/pact-mounted-structured/epub/META-INF /tmp/pact-mounted-structured/epub/OEBPS",
       "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
+      "printf '%s' '<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:comment w:id=\"8\" w:author=\"Container Reviewer\"><w:p><w:r><w:t>Container mounted DOCX comments remain agent-readable.</w:t></w:r></w:p></w:comment></w:comments>' > /tmp/pact-mounted-structured/docx/word/comments.xml",
+      "printf '%s' '<w:footnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:footnote w:id=\"9\"><w:p><w:r><w:t>Container mounted DOCX footnotes stay linked as annotation evidence.</w:t></w:r></w:p></w:footnote></w:footnotes>' > /tmp/pact-mounted-structured/docx/word/footnotes.xml",
       "printf '%s' '<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX filePath slide evidence enters structured parser windows.</a:t></a:r></a:p></p:txBody></p:sp><p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"3\" name=\"Mounted Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Container PPTX</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Preserve mounted slide table cells</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>' > /tmp/pact-mounted-structured/pptx/ppt/slides/slide1.xml",
       "printf '%s' '<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>Evidence Score</t></si><si><t>mounted xlsx</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si></sst>' > /tmp/pact-mounted-structured/xlsx/xl/sharedStrings.xml",
       "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
@@ -1231,7 +1237,7 @@ try {
       "printf '%s' 'application/epub+zip' > /tmp/pact-mounted-structured/epub/mimetype",
       "printf '%s' '<?xml version=\"1.0\"?><container version=\"1.0\"></container>' > /tmp/pact-mounted-structured/epub/META-INF/container.xml",
       "printf '%s' '<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Mounted EPUB Evidence</h1><p>Mounted EPUB filePath chapter routing verifies ebook compatibility.</p></body></html>' > /tmp/pact-mounted-structured/epub/OEBPS/chapter1.xhtml",
-      "cd /tmp/pact-mounted-structured/docx && (7zz a -tzip /data/mounted-project-plan.docx word/document.xml >/dev/null || 7z a -tzip /data/mounted-project-plan.docx word/document.xml >/dev/null)",
+      "cd /tmp/pact-mounted-structured/docx && (7zz a -tzip /data/mounted-project-plan.docx word/document.xml word/comments.xml word/footnotes.xml >/dev/null || 7z a -tzip /data/mounted-project-plan.docx word/document.xml word/comments.xml word/footnotes.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/pptx && (7zz a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml >/dev/null || 7z a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/worksheets/sheet1.xml >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/worksheets/sheet1.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/odt && (7zz a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null || 7z a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null)",
@@ -1484,6 +1490,20 @@ NODE`
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
+    if (formatId === "word") {
+      assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+      assert.equal(mountedStructured.parserTrace.some((trace) => (
+        trace.stage === "office.word.annotations" &&
+        trace.status === "completed" &&
+        trace.comments === 1 &&
+        trace.footnotes === 1
+      )), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "comment" &&
+        ref.annotation?.kind === "comment" &&
+        ref.annotation?.author === "Container Reviewer"
+      ))), true);
+    }
     if (formatId === "spreadsheet") {
       assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
@@ -1508,7 +1528,7 @@ NODE`
         ref.table?.format === "presentationml" &&
         ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
       ))), true);
-    } else if (formatId !== "spreadsheet") {
+    } else if (!["word", "spreadsheet"].includes(formatId)) {
       assert.equal(mountedStructured.windowPlan.strategy, "file-ref-stream-windowing.v1");
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
     }
