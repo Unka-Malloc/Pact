@@ -401,6 +401,20 @@ try {
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
+  for (const [routeId, parserProfile, qualityGate] of [
+    ["pdf", "pdf.text-layout-ocr-route", "page-order-preserved"],
+    ["word", "wordprocessingml-paragraph-style-route", "word-annotation-refs-preserved"],
+    ["presentation", "presentationml-slide-route", "slide-order-preserved"],
+    ["spreadsheet", "spreadsheetml-sheet-row-cell-route", "sheet-row-cell-refs-preserved"],
+    ["markdown", "markdown-block-element-route", "heading-tree-preserved"]
+  ]) {
+    const adapter = capabilities.payload.formatConversion.formatMatrix.find((item) => item.routeId === routeId);
+    assert.ok(adapter, `${routeId} professional adapter must be advertised by container service`);
+    assert.equal(adapter.parserProfile, parserProfile);
+    assert.equal(adapter.conversionAdapters.some((item) => item.targetFormat === "docx"), true);
+    assert.equal(adapter.qualityGates.includes(qualityGate), true);
+  }
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.expectedCount >= 6, true);
@@ -969,9 +983,20 @@ try {
   assert.equal(conversionPlan.strategy, "office-document-professional-adaptation.v1");
   assert.equal(conversionPlan.runId, projectPackageRun.payload.runId);
   assert.equal(conversionPlan.professionalFormats.includes("spreadsheet"), true);
+  assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "markdown" && item.parserProfile === "markdown-block-element-route"), true);
+  assert.equal(conversionPlan.summary.targetFormats.includes("docx"), true);
+  assert.equal(conversionPlan.summary.qualityGates.includes("heading-tree-preserved"), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
-    document.conversionTargets.includes("agent-json-with-cell-coordinates-and-formulas")
+    document.conversionTargets.includes("agent-json-with-cell-coordinates-and-formulas") &&
+    document.professionalFamily === "office-spreadsheet" &&
+    document.qualityGates.includes("formula-text-preserved") &&
+    document.openability.docxOpenXmlPackage === true
+  )), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "markdown" &&
+    document.professionalFamily === "markdown" &&
+    document.conversionAdapters.some((adapter) => adapter.adapter === "markdown-blocks-to-valid-openxml.v1")
   )), true);
   const architectureEvidence = await fetchJson(
     `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?entity=namespace&sourceId=container-project-package!docs%2Farchitecture.md&limit=20`

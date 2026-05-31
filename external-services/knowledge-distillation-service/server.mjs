@@ -493,6 +493,262 @@ for (const route of FORMAT_ROUTES) {
   }
 }
 
+const PROFESSIONAL_FORMAT_ORDER = Object.freeze(["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"]);
+const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
+  pdf: {
+    label: "PDF",
+    professionalFamily: "pdf",
+    parserProfile: "pdf.text-layout-ocr-route",
+    structureUnits: ["page", "pdf-text-block", "layout-run", "ocr-page"],
+    parserStages: ["pdf.text.basic", "pdf.text.pdftotext", "pdf.visual.layout", "ocr.page"],
+    preserves: ["page", "bbox", "layout.order", "layout.fontSize"],
+    conversionTargets: ["markdown-with-page-blocks", "docx-review-copy", "agent-json-with-layout", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "pdf-pages-to-markdown.v1",
+        mode: "human",
+        stages: ["page-anchor-headings", "layout-block-order", "utf8-markdown"]
+      },
+      {
+        target: "portable-docx",
+        targetFormat: "docx",
+        adapter: "pdf-pages-to-docx-review.v1",
+        mode: "human",
+        stages: ["page-section-breaks", "layout-notes", "openxml-package"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "pdf-layout-to-agent-elements.v1",
+        mode: "agent",
+        stages: ["page-bbox-element-refs", "window-ids", "content-hashes"]
+      },
+      {
+        target: "evidence-pack-json",
+        targetFormat: "graph-evidence",
+        adapter: "pdf-windows-to-graph-evidence.v1",
+        mode: "agent",
+        stages: ["text-units", "entities", "claims"]
+      }
+    ],
+    qualityGates: ["page-order-preserved", "bbox-metadata-present-when-available", "empty-corpus-blocked"],
+    riskControls: ["font-mapping-risk", "image-only-pdf-ocr-fallback", "layout-geometry-approximation"],
+    knownLosses: ["approximate-text-bbox", "complex-vector-layout-not-fully-reconstructed"]
+  },
+  word: {
+    label: "Word",
+    professionalFamily: "office-word",
+    parserProfile: "wordprocessingml-paragraph-style-route",
+    structureUnits: ["heading", "paragraph", "list-item", "table-row", "comment", "footnote", "endnote"],
+    parserStages: ["office.word.structured", "office.word.tables", "office.word.annotations", "tika.text"],
+    preserves: ["headings", "paragraphs", "lists", "tables", "cellRefs", "comments", "footnotes", "endnotes"],
+    conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-table-and-annotation-refs", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "word-elements-to-markdown-outline.v1",
+        mode: "human",
+        stages: ["heading-outline", "table-markdown", "annotation-sections"]
+      },
+      {
+        target: "portable-docx",
+        targetFormat: "docx",
+        adapter: "word-elements-to-valid-openxml.v1",
+        mode: "human",
+        stages: ["paragraph-styles", "table-grid", "openxml-package"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "word-elements-to-agent-refs.v1",
+        mode: "agent",
+        stages: ["element-refs", "table-cell-refs", "annotation-refs"]
+      },
+      {
+        target: "evidence-pack-json",
+        targetFormat: "graph-evidence",
+        adapter: "word-windows-to-graph-evidence.v1",
+        mode: "agent",
+        stages: ["text-units", "relationships", "claims"]
+      }
+    ],
+    qualityGates: ["docx-openxml-package-valid", "word-table-cell-refs-preserved", "word-annotation-refs-preserved"],
+    riskControls: ["legacy-doc-tika-fallback", "advanced-style-loss-reporting"],
+    knownLosses: ["advanced-openxml-styling-not-rendered"]
+  },
+  presentation: {
+    label: "PowerPoint",
+    professionalFamily: "office-presentation",
+    parserProfile: "presentationml-slide-route",
+    structureUnits: ["slide", "heading", "slide-shape", "table-row", "speaker-note"],
+    parserStages: ["office.presentation.slides", "office.presentation.tables", "tika.text", "ocr.slide-images"],
+    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs"],
+    conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-and-table-refs", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "slides-to-markdown-outline.v1",
+        mode: "human",
+        stages: ["slide-headings", "shape-order", "table-markdown"]
+      },
+      {
+        target: "portable-docx",
+        targetFormat: "docx",
+        adapter: "slides-to-docx-review.v1",
+        mode: "human",
+        stages: ["slide-sections", "shape-bullets", "openxml-package"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "slides-to-agent-layout-refs.v1",
+        mode: "agent",
+        stages: ["slide-refs", "shape-bbox-refs", "table-cell-refs"]
+      },
+      {
+        target: "evidence-pack-json",
+        targetFormat: "graph-evidence",
+        adapter: "slides-to-graph-evidence.v1",
+        mode: "agent",
+        stages: ["text-units", "slide-relationships", "claims"]
+      }
+    ],
+    qualityGates: ["slide-order-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved"],
+    riskControls: ["speaker-notes-partial", "raster-only-slide-ocr-fallback"],
+    knownLosses: ["speaker-notes-and-visual-layer-geometry-partial"]
+  },
+  spreadsheet: {
+    label: "Excel",
+    professionalFamily: "office-spreadsheet",
+    parserProfile: "spreadsheetml-sheet-row-cell-route",
+    structureUnits: ["sheet", "table-header", "table-row", "cell", "formula", "time-signal"],
+    parserStages: ["table.sheet.structured", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.time-index"],
+    preserves: ["sheet", "row", "column", "cellRefs", "headers", "formulas", "timeSignals"],
+    conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates-and-formulas", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "sheets-to-markdown-tables.v1",
+        mode: "human",
+        stages: ["sheet-sections", "header-row-capture", "formula-notes"]
+      },
+      {
+        target: "portable-docx",
+        targetFormat: "docx",
+        adapter: "sheets-to-docx-review-tables.v1",
+        mode: "human",
+        stages: ["sheet-heading", "table-grid", "openxml-package"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "sheets-to-agent-cell-refs.v1",
+        mode: "agent",
+        stages: ["cell-coordinate-refs", "formula-refs", "time-signals"]
+      },
+      {
+        target: "evidence-pack-json",
+        targetFormat: "graph-evidence",
+        adapter: "sheets-to-graph-evidence.v1",
+        mode: "agent",
+        stages: ["row-text-units", "entity-columns", "claim-values"]
+      }
+    ],
+    qualityGates: ["sheet-row-cell-refs-preserved", "formula-text-preserved", "table-time-index-when-date-columns-exist"],
+    riskControls: ["formula-results-not-recomputed", "merged-cell-normalization-risk"],
+    knownLosses: ["formula-results-not-recomputed"]
+  },
+  markdown: {
+    label: "Markdown",
+    professionalFamily: "markdown",
+    parserProfile: "markdown-block-element-route",
+    structureUnits: ["frontmatter", "heading", "paragraph", "list-item", "table-row", "code", "link", "image"],
+    parserStages: ["text.markdown", "markdown.structure"],
+    preserves: ["heading-levels", "tables", "code-blocks", "links", "images", "frontmatter"],
+    conversionTargets: ["clean-markdown", "valid-openxml-docx", "agent-json-with-block-refs", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "markdown-normalized-clean.v1",
+        mode: "human",
+        stages: ["frontmatter-section", "heading-tree", "table-and-code-blocks"]
+      },
+      {
+        target: "portable-docx",
+        targetFormat: "docx",
+        adapter: "markdown-blocks-to-valid-openxml.v1",
+        mode: "human",
+        stages: ["heading-styles", "table-grid", "code-paragraphs", "openxml-package"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "markdown-blocks-to-agent-refs.v1",
+        mode: "agent",
+        stages: ["block-refs", "heading-paths", "link-refs"]
+      },
+      {
+        target: "evidence-pack-json",
+        targetFormat: "graph-evidence",
+        adapter: "markdown-windows-to-graph-evidence.v1",
+        mode: "agent",
+        stages: ["text-units", "entities", "claims"]
+      }
+    ],
+    qualityGates: ["heading-tree-preserved", "markdown-table-blocks-preserved", "docx-openxml-package-valid"],
+    riskControls: ["custom-extension-loss-reporting", "image-reference-preservation"],
+    knownLosses: ["custom-markdown-extension-rendering-not-normalized"]
+  },
+  "open-document": {
+    label: "OpenDocument",
+    professionalFamily: "opendocument",
+    parserProfile: "opendocument-content-xml-route",
+    structureUnits: ["heading", "paragraph", "table-row", "cell"],
+    parserStages: ["open-document.structured", "open-document.tables", "tika.text"],
+    preserves: ["headings", "paragraphs", "tables", "cellRefs"],
+    conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-opendocument-cell-refs", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "odf-elements-to-markdown-outline.v1",
+        mode: "human",
+        stages: ["heading-outline", "table-markdown", "content-xml-order"]
+      },
+      {
+        target: "portable-docx",
+        targetFormat: "docx",
+        adapter: "odf-elements-to-docx-review.v1",
+        mode: "human",
+        stages: ["paragraph-styles", "table-grid", "openxml-package"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "odf-elements-to-agent-refs.v1",
+        mode: "agent",
+        stages: ["element-refs", "table-cell-refs"]
+      },
+      {
+        target: "evidence-pack-json",
+        targetFormat: "graph-evidence",
+        adapter: "odf-windows-to-graph-evidence.v1",
+        mode: "agent",
+        stages: ["text-units", "entities", "claims"]
+      }
+    ],
+    qualityGates: ["odf-content-order-preserved", "opendocument-table-cell-refs-preserved", "empty-corpus-blocked"],
+    riskControls: ["advanced-odf-style-loss-reporting"],
+    knownLosses: ["advanced-odf-styling-not-rendered"]
+  }
+});
+
 const MEDIA_TYPE_BY_EXTENSION = new Map(Object.entries({
   ".html": "text/html",
   ".htm": "text/html",
@@ -6863,9 +7119,38 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
   };
 }
 
+function professionalFormatAdapter(formatId = "") {
+  return PROFESSIONAL_FORMAT_ADAPTERS[String(formatId || "")] || null;
+}
+
+function professionalFormatMatrix(formatIds = PROFESSIONAL_FORMAT_ORDER) {
+  return formatIds
+    .map((formatId) => {
+      const adapter = professionalFormatAdapter(formatId);
+      if (!adapter) {
+        return null;
+      }
+      return {
+        routeId: formatId,
+        label: adapter.label,
+        professionalFamily: adapter.professionalFamily,
+        parserProfile: adapter.parserProfile,
+        structureUnits: adapter.structureUnits,
+        parserStages: adapter.parserStages,
+        conversionTargets: adapter.conversionTargets,
+        conversionAdapters: adapter.conversionAdapters,
+        qualityGates: adapter.qualityGates,
+        riskControls: adapter.riskControls,
+        knownLosses: adapter.knownLosses
+      };
+    })
+    .filter(Boolean);
+}
+
 function professionalDocumentProfile(route = {}, document = {}, elementPlan = null) {
   const formatId = route?.formatId || route?.id || "unknown";
   const sourceFormat = elementPlan?.sourceFormat || document.structureFormat || document.extension || formatId;
+  const adapter = professionalFormatAdapter(formatId);
   const base = {
     strategy: "office-document-professional-adaptation.v1",
     sourceFormat,
@@ -6875,64 +7160,46 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     preserves: ["sourceId", "routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash"],
     knownLosses: []
   };
-  if (formatId === "pdf") {
+  if (adapter) {
     return {
       ...base,
-      parserProfile: "pdf.text-layout-ocr-route",
-      preserves: [...base.preserves, "page", "bbox", "layout.order"],
-      conversionTargets: ["markdown-with-page-blocks", "docx-review-copy", "agent-json-with-layout", "evidence-pack"],
-      knownLosses: ["approximate-text-bbox", "complex-vector-layout-not-fully-reconstructed"]
-    };
-  }
-  if (formatId === "word") {
-    return {
-      ...base,
-      parserProfile: "wordprocessingml-paragraph-style-route",
-      preserves: [...base.preserves, "headings", "paragraphs", "lists", "tables", "cellRefs", "comments", "footnotes", "endnotes"],
-      conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-table-and-annotation-refs", "evidence-pack"],
-      knownLosses: ["advanced-openxml-styling-not-rendered"]
-    };
-  }
-  if (formatId === "presentation") {
-    return {
-      ...base,
-      parserProfile: "presentationml-slide-route",
-      preserves: [...base.preserves, "slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs"],
-      conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-and-table-refs", "evidence-pack"],
-      knownLosses: ["speaker-notes-and-visual-layer-geometry-partial"]
-    };
-  }
-  if (formatId === "spreadsheet") {
-    return {
-      ...base,
-      parserProfile: "spreadsheetml-sheet-row-cell-route",
-      preserves: [...base.preserves, "sheet", "row", "column", "cellRefs", "headers", "formulas", "timeSignals"],
-      conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates-and-formulas", "evidence-pack"],
-      knownLosses: ["formula-results-not-recomputed"]
-    };
-  }
-  if (formatId === "markdown") {
-    return {
-      ...base,
-      parserProfile: "markdown-block-element-route",
-      preserves: [...base.preserves, "heading-levels", "tables", "code-blocks", "links", "images", "frontmatter"],
-      conversionTargets: ["clean-markdown", "valid-openxml-docx", "agent-json-with-block-refs", "evidence-pack"],
-      knownLosses: ["custom-markdown-extension-rendering-not-normalized"]
-    };
-  }
-  if (formatId === "open-document") {
-    return {
-      ...base,
-      parserProfile: "opendocument-content-xml-route",
-      preserves: [...base.preserves, "headings", "paragraphs", "tables", "cellRefs"],
-      conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-opendocument-cell-refs", "evidence-pack"],
-      knownLosses: ["advanced-odf-styling-not-rendered"]
+      professionalFamily: adapter.professionalFamily,
+      parserProfile: adapter.parserProfile,
+      structureUnits: adapter.structureUnits,
+      parserStages: adapter.parserStages,
+      preserves: uniqueOrdered([...base.preserves, ...adapter.preserves]),
+      conversionTargets: adapter.conversionTargets,
+      conversionAdapters: adapter.conversionAdapters,
+      qualityGates: adapter.qualityGates,
+      riskControls: adapter.riskControls,
+      knownLosses: adapter.knownLosses
     };
   }
   return {
     ...base,
     parserProfile: `${formatId}-route`,
-    conversionTargets: ["portable-markdown", "agent-json", "evidence-pack"]
+    professionalFamily: "generic",
+    structureUnits: ["document"],
+    parserStages: [route?.preferredParser || `${formatId}.parse`],
+    conversionTargets: ["portable-markdown", "agent-json", "evidence-pack"],
+    conversionAdapters: [
+      {
+        target: "portable-markdown",
+        targetFormat: "markdown",
+        adapter: "generic-text-to-markdown.v1",
+        mode: "human",
+        stages: ["text-normalization"]
+      },
+      {
+        target: "agent-message-json",
+        targetFormat: "agent-json",
+        adapter: "generic-text-to-agent-message.v1",
+        mode: "agent",
+        stages: ["window-refs"]
+      }
+    ],
+    qualityGates: ["empty-corpus-blocked"],
+    riskControls: ["generic-text-fallback"]
   };
 }
 
@@ -6943,17 +7210,30 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const sampleElements = document.elementPlan?.sampleElements || [];
     const tableElementCount = sampleElements.filter((element) => ["table-header", "table-row"].includes(element.type)).length;
     const cellRefCount = sampleElements.reduce((sum, element) => sum + (Array.isArray(element.cells) ? element.cells.length : 0), 0);
+    const formulaRefCount = sampleElements.reduce((sum, element) => (
+      sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.formula).length : 0)
+    ), 0);
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
+    const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
+    const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
     return {
       sourceId: document.sourceId,
       title: document.title,
       fileName: document.fileName,
       routeId: document.route?.formatId || document.route?.id || "unknown",
       sourceFormat: profile.sourceFormat || document.elementPlan?.sourceFormat || document.extension || "",
+      professionalFamily: profile.professionalFamily || "generic",
       parserProfile: profile.parserProfile || "",
+      parserStages: profile.parserStages || [],
+      structureUnits: profile.structureUnits || [],
+      adaptationLevel: document.elementPlan?.strategy ? "native-structure-elements" : "text-window-fallback",
       humanReadableTargets: profile.humanReadableModes || [],
       agentReadableTargets: profile.agentReadableModes || [],
       conversionTargets: profile.conversionTargets || [],
+      targetFormats: uniqueOrdered(conversionAdapters.map((adapter) => adapter.targetFormat)),
+      conversionAdapters,
+      qualityGates: profile.qualityGates || [],
+      riskControls: profile.riskControls || [],
       preserves: profile.preserves || [],
       knownLosses: profile.knownLosses || [],
       evidence: {
@@ -6961,10 +7241,21 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
         windowCount: Number(document.windowPlan?.windowCount || 0),
         tableElementCount,
         cellRefCount,
-        geometryElementCount
+        formulaRefCount,
+        geometryElementCount,
+        annotationElementCount
+      },
+      openability: {
+        markdownUtf8: (profile.humanReadableModes || []).includes("portable-markdown"),
+        docxOpenXmlPackage: conversionAdapters.some((adapter) => adapter.targetFormat === "docx"),
+        agentJson: (profile.agentReadableModes || []).includes("agent-message-json"),
+        workspacePackage: true
       }
     };
   });
+  const professionalFormats = uniqueOrdered(plannedDocuments.map((document) => document.routeId).filter((routeId) => (
+    PROFESSIONAL_FORMAT_ORDER.includes(routeId)
+  )));
   return {
     protocolVersion: `${PROTOCOL_VERSION}.format-conversion-plan`,
     strategy: "office-document-professional-adaptation.v1",
@@ -6972,14 +7263,17 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     generatedAt: nowIso(),
     humanReadableTargets: uniqueOrdered(plannedDocuments.flatMap((document) => document.humanReadableTargets)),
     agentReadableTargets: uniqueOrdered(plannedDocuments.flatMap((document) => document.agentReadableTargets)),
-    professionalFormats: uniqueOrdered(plannedDocuments.map((document) => document.routeId).filter((routeId) => (
-      ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"].includes(routeId)
-    ))),
+    professionalFormats,
+    formatMatrix: professionalFormatMatrix(professionalFormats.length ? professionalFormats : PROFESSIONAL_FORMAT_ORDER),
     summary: {
       documentCount: plannedDocuments.length,
       documentWithElementPlanCount: plannedDocuments.filter((document) => document.evidence.elementCount > 0).length,
       documentWithGeometryCount: plannedDocuments.filter((document) => document.evidence.geometryElementCount > 0).length,
       documentWithCellRefsCount: plannedDocuments.filter((document) => document.evidence.cellRefCount > 0).length,
+      documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
+      documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
+      targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
+      qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
       knownLosses: uniqueOrdered(plannedDocuments.flatMap((document) => document.knownLosses)).slice(0, 80)
     },
     documents: plannedDocuments
@@ -11233,10 +11527,17 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "office-document-professional-adaptation.v1",
       artifact: "format-conversion-plan-json",
-      professionalFormats: ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"],
+      professionalFormats: PROFESSIONAL_FORMAT_ORDER,
+      formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "formulas", "annotations"]
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "formulas", "annotations"],
+      qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
+        professionalFormatAdapter(formatId)?.qualityGates || []
+      ))),
+      riskControls: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
+        professionalFormatAdapter(formatId)?.riskControls || []
+      )))
     },
     runtimeDoctor: runtimeStatus,
     classification: {

@@ -42,7 +42,7 @@ Artifacts:
 - `result-json`: full run record.
 - `project-snapshot-json`: project-level fingerprint, text-unit/window hashes, group snapshot, and incremental diff plan.
 - `evidence-pack-json`: GraphRAG-style text units, entities, relationships, claims/covariates, communities, and community reports.
-- `format-conversion-plan-json`: per-document professional parser/conversion plan for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
+- `format-conversion-plan-json`: per-document professional parser/conversion plan and adapter matrix for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
 - `reference-gap-report-json`: machine-readable comparison between the service and local RAGFlow, MinerU, Docling, LlamaIndex, Marker, GraphRAG, Haystack, and Unstructured checkouts.
 - `workspace-package-zip`: complete delivery package with Markdown, DOCX, agent JSON, result JSON, snapshot, evidence pack, and manifest sizes/hashes.
 
@@ -58,6 +58,7 @@ Core response fields:
 - `incrementalPlan`: project snapshot and reuse plan keyed by `projectId`/`workspaceId`/`repositoryId`, with added, changed, removed, and reusable source/window counts.
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
 - `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
+- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, quality gates, risk controls, openability targets, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
 - `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, source id, group id, and time range.
@@ -146,7 +147,7 @@ Built-in algorithm baseline:
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, source, entity, claim, group, and time filters for engineering-project convergence queries.
 - `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/annotation isolation, element refs, basic PDF geometry, Word annotations, Word/PowerPoint/OpenDocument table cells, spreadsheet cell coordinates and formulas, and PresentationML shape geometry on agent windows and graph text units.
-- `office-document-professional-adaptation.v1`: exposes per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs.
+- `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates and known loss boundaries.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - `reference-framework-local-checkout-audit.v1`: verifies each declared local reference checkout exists, is a Git worktree, and matches the manifest commit before treating it as a current comparison source.
 - Weak or tiny inputs are assigned to a garbage group and are not promoted as core distillation candidates.

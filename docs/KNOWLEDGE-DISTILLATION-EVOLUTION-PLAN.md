@@ -126,7 +126,7 @@ flowchart LR
 | 时间线 | 表格日期已进入 `timeRange`、`timeConfidence`、`timeSignals` | 扩展到邮件、元数据、正文日期，并提供 agent 查询过滤 |
 | 项目收敛 | 外部服务已有 project snapshot、incremental reuse plan 和 project evidence query | 内建知识库接入窗口 hash、增量重算和项目级 convergence |
 | 图证据 | 外部服务已有 graph-lite evidence pack、run evidence query 和跨 run project evidence query | 接入更多智能体检索策略和项目级图谱查询 |
-| 导出 | 外部服务产出 Markdown、DOCX、JSON、Agent JSON、snapshot、evidence pack、workspace ZIP | 内建继续复用 openability、manifest size/hash 和 bridge 下载统一规则 |
+| 导出 | 外部服务产出 Markdown、DOCX、JSON、Agent JSON、snapshot、evidence pack、workspace ZIP，并为 PDF/Word/PowerPoint/Excel/Markdown/OpenDocument 输出专业格式适配矩阵、转换 adapter、质量门禁和风险边界 | 内建继续复用 openability、manifest size/hash、专业格式转换矩阵和 bridge 下载统一规则 |
 | 服务边界 | `external.knowledge.distillation` 可作为独立服务注册 | 外部能力继续采用 `external.*` 命名，内建模块保留平台内部名称 |
 | 验证 | 已有外部服务、容器和平台注册 verifier | 增补 routing、grounding、timeline、export-openability 全量回归 |
 
@@ -601,6 +601,8 @@ raw corpus item 标准字段：
 - DOCX 必须使用合法 OpenXML，不写伪文档。
 - ZIP manifest 记录文件大小、hash 和 media type。
 - Markdown 不允许包含 Tika XHTML 噪声。
+- PDF、Word、PowerPoint、Excel、Markdown、OpenDocument 必须进入 `office-document-professional-adaptation.v1` 格式矩阵，声明 parser stages、structure units、conversion adapters、preserves、quality gates、risk controls 和 known losses。
+- 每个文档的 `formatConversionPlan.documents[]` 必须能说明转换到 Markdown、DOCX、Agent JSON 和 evidence pack 时保留什么、丢失什么、如何验收可打开性。
 - 下载链路统一走 bridge-mediated fetch/blob。
 - 下载 UI 显示文件大小。
 
@@ -614,6 +616,7 @@ raw corpus item 标准字段：
 验收：
 
 - Markdown、DOCX、JSON、ZIP 均可打开。
+- `format-conversion-plan-json` 能按 PDF/Word/PowerPoint/Excel/Markdown 精确列出专业 adapter、质量门禁和 openability 状态。
 - 浏览器下载记录不再出现失败项。
 - 文件大小与 manifest 一致。
 

@@ -775,6 +775,20 @@ try {
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   assert.equal(capabilities.payload.formatConversion.agentReadableTargets.includes("evidence-pack-json"), true);
+  for (const [routeId, parserProfile, qualityGate] of [
+    ["pdf", "pdf.text-layout-ocr-route", "page-order-preserved"],
+    ["word", "wordprocessingml-paragraph-style-route", "word-annotation-refs-preserved"],
+    ["presentation", "presentationml-slide-route", "slide-order-preserved"],
+    ["spreadsheet", "spreadsheetml-sheet-row-cell-route", "sheet-row-cell-refs-preserved"],
+    ["markdown", "markdown-block-element-route", "heading-tree-preserved"]
+  ]) {
+    const adapter = capabilities.payload.formatConversion.formatMatrix.find((item) => item.routeId === routeId);
+    assert.ok(adapter, `${routeId} must have a professional format adapter`);
+    assert.equal(adapter.parserProfile, parserProfile);
+    assert.equal(adapter.conversionAdapters.some((item) => item.targetFormat === "docx"), true);
+    assert.equal(adapter.qualityGates.includes(qualityGate), true);
+  }
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
@@ -1291,8 +1305,27 @@ try {
   assert.equal(markdownPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.parserProfile, "markdown-block-element-route");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
-  assert.equal(createRun.payload.result.formatConversionPlan.strategy, "office-document-professional-adaptation.v1");
-  assert.equal(createRun.payload.result.formatConversionPlan.documents.some((document) => (
+  const professionalConversionPlan = createRun.payload.result.formatConversionPlan;
+  assert.equal(professionalConversionPlan.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(professionalConversionPlan.summary.targetFormats.includes("docx"), true);
+  assert.equal(professionalConversionPlan.summary.qualityGates.includes("docx-openxml-package-valid"), true);
+  for (const [sourceId, routeId, family, qualityGate] of [
+    ["source-5", "markdown", "markdown", "heading-tree-preserved"],
+    ["source-8", "word", "office-word", "word-annotation-refs-preserved"],
+    ["source-12", "pdf", "pdf", "page-order-preserved"],
+    ["source-13", "presentation", "office-presentation", "slide-order-preserved"],
+    ["source-14", "spreadsheet", "office-spreadsheet", "formula-text-preserved"]
+  ]) {
+    const document = professionalConversionPlan.documents.find((item) => item.sourceId === sourceId);
+    assert.ok(document, `${sourceId} must be present in professional conversion plan`);
+    assert.equal(document.routeId, routeId);
+    assert.equal(document.professionalFamily, family);
+    assert.equal(document.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
+    assert.equal(document.conversionAdapters.some((adapter) => adapter.targetFormat === "agent-json"), true);
+    assert.equal(document.qualityGates.includes(qualityGate), true);
+    assert.equal(document.openability.docxOpenXmlPackage, true);
+  }
+  assert.equal(professionalConversionPlan.documents.some((document) => (
     document.sourceId === "source-5" &&
     document.parserProfile === "markdown-block-element-route" &&
     document.conversionTargets.includes("valid-openxml-docx")
@@ -2202,7 +2235,15 @@ try {
   const conversionPlan = JSON.parse(await conversionArtifact.text());
   assert.equal(conversionPlan.strategy, "office-document-professional-adaptation.v1");
   assert.equal(conversionPlan.summary.documentWithCellRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithFormulaRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
+  assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "pdf" && item.qualityGates.includes("page-order-preserved")), true);
   assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "word" &&
+    document.evidence.annotationElementCount >= 1 &&
+    document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
+  )), true);
   const referenceGapArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/reference-gap-report-json`, {
     headers: authHeaders(auth)
   });
