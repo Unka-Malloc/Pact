@@ -246,6 +246,27 @@ function sharedspaceExchangeReceiptContract() {
   };
 }
 
+function sharedHubContract({ mcpUrl = "", vmMcpUrl = "" } = {}) {
+  return {
+    canonicalMcpUrl: mcpUrl,
+    vmMcpUrl,
+    clientPolicy: "discover-shared-hub-then-opt-in",
+    defaultClientMutation: "none",
+    directHttp: true,
+    sharedspace: {
+      outlet: "pact.sharedspace",
+      referencePolicy: "use-public-workspace-ref",
+      exchangeReceipt: sharedspaceExchangeReceiptContract(),
+      coreOperations: [
+        "pact.agentWorkspace.create",
+        "pact.sharedspace.item.list",
+        "pact.sharedspace.file.read",
+        "pact.sharedspace.file.write"
+      ]
+    }
+  };
+}
+
 const GENERIC_REMOTE_CONTEXT_KINDS = [
   "docker",
   "podman",
@@ -2383,24 +2404,7 @@ function buildDeviceHubManifest({
         discoveryUrl: `${baseUrl}/.well-known/pact/mcp.json`,
         apiDiscoveryUrl: `${baseUrl}/api/mcp/discovery`,
         stableToolName: MCP_STABLE_TOOL_NAME,
-        sharedHub: {
-          canonicalMcpUrl: mcpUrl,
-          vmMcpUrl,
-          clientPolicy: "discover-shared-hub-then-opt-in",
-          defaultClientMutation: "none",
-          directHttp: true,
-          sharedspace: {
-            outlet: "pact.sharedspace",
-            referencePolicy: "use-public-workspace-ref",
-            exchangeReceipt: sharedspaceExchangeReceiptContract(),
-            coreOperations: [
-              "pact.agentWorkspace.create",
-              "pact.sharedspace.item.list",
-              "pact.sharedspace.file.read",
-              "pact.sharedspace.file.write"
-            ]
-          }
-        },
+        sharedHub: sharedHubContract({ mcpUrl, vmMcpUrl }),
         connector: {
           packageName: packageJson.name,
           packageVersion: packageJson.version,
@@ -6314,6 +6318,10 @@ async function uninstallCommand(options) {
 async function registerCommand(options) {
   const resolvedOptions = await optionsWithDiscoveredBaseUrl(options);
   const settings = installerOptions(resolvedOptions);
+  const parsedBaseUrl = new URL(settings.baseUrl);
+  const port = parsedBaseUrl.port || (parsedBaseUrl.protocol === "https:" ? "443" : "80");
+  const mcpUrl = `${settings.baseUrl}/mcp`;
+  const vmMcpUrl = `${parsedBaseUrl.protocol}//host.orb.internal:${port}/mcp`;
   const profile = await writeServerConfigProfile({
     options: resolvedOptions,
     name: String(option(resolvedOptions, "name", "default")).trim() || "default",
@@ -6331,7 +6339,8 @@ async function registerCommand(options) {
     packageVersion: packageJson.version,
     mode: "device-hub-registration",
     baseUrl: settings.baseUrl,
-    mcpUrl: `${settings.baseUrl}/mcp`,
+    mcpUrl,
+    sharedHub: sharedHubContract({ mcpUrl, vmMcpUrl }),
     discoveryManifest,
     localEntry: {
       command: shellCommandForDiscoverLocal({ includeUrl: Boolean(settings.baseUrl), baseUrl: settings.baseUrl }),

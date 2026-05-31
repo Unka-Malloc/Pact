@@ -1317,6 +1317,11 @@ try {
     assert.equal(payload.autoInstall, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.priorityInstall, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.equal(payload.sharedHub?.canonicalMcpUrl, `${serverUrl}/mcp`);
+    assert.equal(payload.sharedHub?.sharedspace?.outlet, "pact.sharedspace");
+    assert.equal(payload.sharedHub?.sharedspace?.referencePolicy, "use-public-workspace-ref");
+    assert.equal(payload.sharedHub?.sharedspace?.exchangeReceipt?.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+    assert.ok(payload.sharedHub?.sharedspace?.coreOperations?.includes("pact.sharedspace.file.write"));
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
     const payloadTargetDetails = new Map(payload.supportedTargetDetails.map((target) => [target.target, target]));
     assert.deepEqual([...payloadTargetDetails.keys()], DECLARED_AGENT_TARGETS);
