@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfigFoldCard from "../ConfigFoldCard.vue";
+import SafeHtmlBlock from "../SafeHtmlBlock.vue";
 import { useServerConsoleShellContext } from "../../composables/serverConsoleShellContext";
 
 const {
@@ -46,7 +47,11 @@ const {
             <h4>原始文件</h4>
             <span>{{ evidenceReadableKind }}</span>
           </div>
-          <div class="evidence-rendered-content" v-html="evidenceReadableHtml"></div>
+          <SafeHtmlBlock
+            class="evidence-rendered-content"
+            :html="evidenceReadableHtml"
+            source="renderEvidenceReadableHtml"
+          />
         </section>
         <ConfigFoldCard class="evidence-source-details" title="来源定位">
           <dl class="meta-list evidence-summary-list">

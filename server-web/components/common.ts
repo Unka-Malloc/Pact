@@ -7,15 +7,16 @@ import HistorySessionPanel from "./HistorySessionPanel.vue";
 import InfoFeedResultRow from "./InfoFeedResultRow.vue";
 import JsonConfigFileEditor from "./JsonConfigFileEditor.vue";
 import OptionBar from "./OptionBar.vue";
+import SafeHtmlBlock from "./SafeHtmlBlock.vue";
 import SegmentedToggle from "./SegmentedToggle.vue";
 import StatusPill from "./StatusPill.vue";
 
-export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, JsonConfigFileEditor, OptionBar, SegmentedToggle, StatusPill };
+export { AgentModelOptionBar, BinaryCheckbox, BrowseSelectButton, ConfigFoldCard, FeatureToggle, HistorySessionPanel, InfoFeedResultRow, JsonConfigFileEditor, OptionBar, SafeHtmlBlock, SegmentedToggle, StatusPill };
 
 export type CommonComponentRegistration = {
   name: string;
   file: string;
-  category: "choice" | "picker" | "history" | "result" | "config";
+  category: "choice" | "picker" | "history" | "result" | "config" | "render";
   description: string;
   usageRule: string;
 };
@@ -96,6 +97,13 @@ export const commonComponentRegistry: CommonComponentRegistration[] = [
     category: "result",
     description: "信息流和调试面板复用的结果行渲染组件。",
     usageRule: "需要与信息流结果保持一致的召回/规划结果展示时使用，避免重新绘制相似卡片。",
+  },
+  {
+    name: "SafeHtmlBlock",
+    file: "server-web/components/SafeHtmlBlock.vue",
+    category: "render",
+    description: "已净化或沙箱化 HTML 的唯一页面渲染边界。",
+    usageRule: "页面需要渲染 HTML 时使用；调用方必须传入由 markdownToSafeHtml 或 renderEvidenceReadableHtml 生成的内容，并声明 source。",
   },
   {
     name: "SegmentedToggle",

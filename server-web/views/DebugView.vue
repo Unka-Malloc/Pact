@@ -6,6 +6,7 @@ import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import InfoFeedResultRow from '../components/InfoFeedResultRow.vue';
 import OptionBar from '../components/OptionBar.vue';
+import SafeHtmlBlock from '../components/SafeHtmlBlock.vue';
 import UploadFileListCard from '../components/UploadFileListCard.vue';
 import { useDebugViewConsole } from '../composables/useDebugViewConsole';
 
@@ -518,12 +519,13 @@ const {
                     </button>
                   </div>
                 </div>
-                <div
+                <SafeHtmlBlock
                   v-if="agentExploreResult?.answer"
                   class="evidence-rendered-content"
+                  :html="agentExploreAnswerHtml"
+                  source="markdownToSafeHtml"
                   @click="handleAgentAnswerClick"
-                  v-html="agentExploreAnswerHtml"
-                ></div>
+                />
                 <div v-else class="knowledge-preview-empty">
                   <strong>等待结果</strong>
                   <span>模型会调用本地工具检索，再决定是否打开证据。</span>

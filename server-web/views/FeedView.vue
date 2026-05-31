@@ -7,6 +7,7 @@ import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import HistorySessionPanel from '../components/HistorySessionPanel.vue';
 import InfoFeedResultRow from '../components/InfoFeedResultRow.vue';
 import OptionBar from '../components/OptionBar.vue';
+import SafeHtmlBlock from '../components/SafeHtmlBlock.vue';
 import StatusPill from '../components/StatusPill.vue';
 const {
   agentSelectorOptions,
@@ -146,11 +147,12 @@ function closeInfoFeedAdvancedOptions() {
                         <span>上一轮</span>
                       </div>
                     </div>
-                    <div
+                    <SafeHtmlBlock
                       class="evidence-rendered-content info-feed-summary-content"
+                      :html="infoFeedParentSummaryHtml"
+                      source="markdownToSafeHtml"
                       @click="handleAgentAnswerClick"
-                      v-html="infoFeedParentSummaryHtml"
-                    ></div>
+                    />
                     <div
                       v-if="infoFeedExpertFeedbackForRun(infoFeedParentRunForCurrent, 'report').length"
                       class="info-feed-expert-feedback-list"
@@ -215,12 +217,13 @@ function closeInfoFeedAdvancedOptions() {
                           <span>{{ formatCompactDate(turn.completedAt) }}</span>
                         </div>
                       </div>
-                      <div
+                      <SafeHtmlBlock
                         v-if="turn.summaryAnswer"
                         class="evidence-rendered-content info-feed-summary-content"
+                        :html="infoFeedTurnSummaryHtml(turn)"
+                        source="markdownToSafeHtml"
                         @click="handleAgentAnswerClick"
-                        v-html="infoFeedTurnSummaryHtml(turn)"
-                      ></div>
+                      />
                       <p v-if="turn.summaryError" class="module-note danger-note">
                         {{ turn.summaryError }}
                       </p>
@@ -548,13 +551,14 @@ function closeInfoFeedAdvancedOptions() {
                         <span :style="{ width: `${infoFeedCurrentRun.summary.progress}%` }"></span>
                       </div>
                     </div>
-                    <div
+                    <SafeHtmlBlock
                       v-else
                       class="evidence-rendered-content info-feed-summary-content"
                       :data-streaming="infoFeedSummaryIsStreaming"
+                      :html="infoFeedStreamingSummaryHtml"
+                      source="markdownToSafeHtml"
                       @click="handleAgentAnswerClick"
-                      v-html="infoFeedStreamingSummaryHtml"
-                    ></div>
+                    />
                     <p v-if="infoFeedCurrentRun.summary.error" class="module-note danger-note">
                       {{ infoFeedCurrentRun.summary.error }}
                     </p>
