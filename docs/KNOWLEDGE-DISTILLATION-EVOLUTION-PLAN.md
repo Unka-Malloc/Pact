@@ -2,7 +2,7 @@
 
 状态：章节化落地版调整计划
 日期：2026-05-31
-版本：v2
+版本：v2.1
 适用范围：内建知识蒸馏、独立知识蒸馏服务、控制台、智能体 API、导出链路
 
 ---
@@ -14,6 +14,8 @@
 本文作为后续知识蒸馏改造的主执行文档：新增算法、解析器、导出链路、外部服务能力和 verifier，都必须回填到对应章节，避免计划继续分散到临时说明里。
 
 章节粒度就是后续工程推进粒度。每一章都对应一个可实现、可验证、可回滚的系统层级：先把文件可靠变成证据，再把证据变成可检索、可校验、可导出的知识。
+
+章节写法固定为五段：目标、现状问题、改进动作、落地位置、验收门禁。已经落地的能力写入“当前可用基线”，尚未完成的能力写入“后续调整落点”，避免把可用 baseline、设计目标和临时补丁混在一起。
 
 本计划覆盖以下边界：
 
@@ -116,7 +118,7 @@ flowchart LR
 | 层级 | 当前可用基线 | 后续调整落点 |
 | --- | --- | --- |
 | 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan` | 内建 file processor 与 Tika 调用前也必须统一 route-first |
-| 解析链 | 外部服务已覆盖文本、配置、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
+| 解析链 | 外部服务已覆盖文本、配置、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 markup、OOXML、OpenDocument、EPUB、基础 PDF 文本纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
 | 大文件 | 外部服务已支持 mounted file refs、archive refs 和 chunked windowing | 上传、解析、蒸馏三层统一流式窗口协议 |
 | 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v2` | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
@@ -127,6 +129,21 @@ flowchart LR
 | 导出 | 外部服务产出 Markdown、DOCX、JSON、Agent JSON、snapshot、evidence pack、workspace ZIP | 内建继续复用 openability、manifest size/hash 和 bridge 下载统一规则 |
 | 服务边界 | `external.knowledge.distillation` 可作为独立服务注册 | 外部能力继续采用 `external.*` 命名，内建模块保留平台内部名称 |
 | 验证 | 已有外部服务、容器和平台注册 verifier | 增补 routing、grounding、timeline、export-openability 全量回归 |
+
+### 2.4 分层边界
+
+| 层级 | 范围 | 不接受的结果 |
+| --- | --- | --- |
+| 平台边界层 | 内建知识蒸馏、`external.knowledge.distillation`、普通 API、Agent 工具注册 | 内外服务同名、控制台私有接口被智能体直接依赖 |
+| 输入路由层 | 文件类型、媒体类型、内容形态、调用函数和 fallback 决策 | 未判断格式就直接交给 Tika 或模型 |
+| 解析运行时层 | Java/Tika、PDF 视觉解析、OCR、Office/Archive/Email parser 的能力自检 | 缺依赖时只返回“执行失败” |
+| Raw Corpus 层 | 文本、表格、页面、slide、sheet、邮件线程、图表节点和源码 symbol 的证据化 | 空语料继续进入蒸馏并生成假成功 |
+| 分窗层 | 页、章节、元素、表格、代码、公式和 overlap 窗口 | 大文件依赖单次内存、单次 Tika 或单次模型上下文 |
+| 语义算法层 | 主题分类、聚类、垃圾池、窗口级/文档级/项目级收敛 | 多主题资料被压成一个不可追溯总结 |
+| 证据校验层 | claim 拆解、evidence top-k、冲突证据、grounding score | 无证据结论进入核心提炼文档 |
+| 时间线层 | `eventTime`、`documentTime`、`ingestedAt`、`distilledAt` 和时间段过滤 | 智能体只能拿全量结果自行扫 JSON |
+| 响应导出层 | `console`、`agent`、`api` response profile，Markdown/DOCX/JSON/ZIP/Agent JSON | 用户看到机器 trace，智能体拿不到可重试错误码 |
+| 部署验证层 | 单机包、OrbStack 容器、离线依赖、轻重 verifier | 只在开发机偶然可用，不能复现 |
 
 ---
 
@@ -360,7 +377,7 @@ raw corpus item 标准字段：
 - 解析层按页、sheet、slide、section 或 block 流式产出。
 - corpus 层按结构边界建立窗口：
   - 默认窗口按字符、页、元素或 block 混合控制。
-  - 标记语言、后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
+  - 标记语言、OOXML、OpenDocument、EPUB、PDF 基础文本块和后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
   - 标题层级使用 `element-aware-by-title-windowing.v1` 建立窗口，表格、代码、公式保留隔离边界。
   - 普通文本窗口之间保留 overlap；元素窗口保留 `headingPath`、`elementRefs` 和 `boundaryReason`。
   - 每个窗口保留 `contentHash`。
@@ -690,6 +707,17 @@ Verifier：
 | P2-A | 10 | 中 | 增量蒸馏、窗口 hash、跨 run 项目收敛 | 未变内容复用缓存，变更窗口可重蒸馏 |
 | P2-B | 15 | 中 | `external.knowledge.distillation` 独立服务、平台注册、Agent 工具目录 | OrbStack 单机容器可运行，Pact 可注册并调用 |
 | P2-C | 16 | 中 | 全量样本集、轻重 verifier、CI 门禁 | 历史故障全部进入固定回归 |
+
+### 17.1 第一轮执行顺序
+
+第一轮不按“改一点点 UI”推进，而按系统链路闭环推进：
+
+1. 路由与运行时：先统一 `FileRoutingPlan`、runtime doctor、parser trace 和空语料门禁。
+2. 解析与证据：补齐 PDF/Office/Email/Archive/Markup/Notebook/Source/Diff/Calendar 的结构化证据模型。
+3. 大文件与分窗：把页、章节、元素、表格、代码、公式统一纳入窗口模型，消除小文件上限。
+4. 算法与校验：引入主题分类、聚类、垃圾池、claim grounding、冲突证据和时间线过滤。
+5. 响应与导出：分离控制台、Agent、普通 API 报文，并验证 Markdown/DOCX/JSON/ZIP 可打开。
+6. 服务与门禁：外部服务注册为 `external.knowledge.distillation`，OrbStack 单机容器和 verifier 固化为回归门禁。
 
 ---
 
