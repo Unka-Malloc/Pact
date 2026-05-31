@@ -449,6 +449,23 @@ try {
   assert.deepEqual(localGrantBearerList.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrantBearerList.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
+  const versionProbe = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(localGrant.payload.token),
+    body: JSON.stringify(mcpRequest("tools/call", {
+      name: "pact.discovery",
+      arguments: {
+        apiVersion: "pact.mcp.v1",
+        operation: "pact.mcp.version"
+      }
+    }, 314))
+  });
+  assert.equal(versionProbe.status, 200);
+  assert.equal(versionProbe.payload.result.structuredContent.stableToolName, "pact.call");
+  assert.equal(versionProbe.payload.result.structuredContent.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.equal(versionProbe.payload.result.structuredContent.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.deepEqual(versionProbe.payload.result.structuredContent.supportedTargets.map((target) => target.target), expectedInstallTargets);
+
   const updateProbe = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
     headers: apiKeyHeaders(localGrant.payload.token),

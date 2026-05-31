@@ -1107,7 +1107,7 @@ function pactMetaResult({
   if (operation === "pact.mcp.version" || operation === "pact.version") {
     return mcpToolResult({
       result: {
-        ...mcpVersionInfo(),
+        ...mcpRuntimeMetadata({ listenUrl, discoveryState }),
         envelope: mcpEnvelopePublic(envelope)
       }
     });
