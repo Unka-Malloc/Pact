@@ -1050,7 +1050,7 @@ function publicMcpEnvelopeString(value, workspaceDirectory = null) {
   return text
     .replace(/\bworkspace_[A-Za-z0-9_]+\b/g, (workspaceId) => publicMcpWorkspaceToken(workspaceDirectory, workspaceId))
     .replace(/(^|[\s"'=:(])((?:\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/)[^\s"',)\]}]+)/g, "$1[server-internal-path]")
-    .replace(/[A-Za-z]:[\\/][^\s"',)\]}]+/g, "[server-internal-path]");
+    .replace(/(^|[\s"'=:(])([A-Za-z]:[\\/][^\s"',)\]}]+)/g, "$1[server-internal-path]");
 }
 
 function publicMcpEnvelopeValue(value, workspaceDirectory = null, depth = 0) {
@@ -1408,12 +1408,16 @@ function broadcastMcpOperationReply({ envelope, operation, status, target, excha
   }), { grantId });
 }
 
-async function sendMcpSseVersionEvent(request, response, toolSkillManagementProvider) {
+async function sendMcpSseVersionEvent(request, response, toolSkillManagementProvider, { listenUrl = "", discoveryState = null } = {}) {
   const authorization = hasMcpAuthToken(request)
     ? await toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] })
     : { ok: false };
+  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   const payload = jsonRpcNotification("notifications/tools/list_changed", {
     ...mcpVersionInfo(),
+    sharedHub: discovery.sharedHub,
+    priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+    supportedTargets: mcpSupportedTargetDetails(),
     reason: "Pact MCP tool surface or schema version changed."
   });
   response.writeHead(200, {
@@ -1831,7 +1835,7 @@ export async function handlePactMcpHttpRequest({
   }
 
   if (method === "GET") {
-    await sendMcpSseVersionEvent(request, response, toolSkillManagementProvider);
+    await sendMcpSseVersionEvent(request, response, toolSkillManagementProvider, { listenUrl, discoveryState });
     return true;
   }
 

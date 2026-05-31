@@ -555,7 +555,7 @@ function sanitizeInternalWorkspaceIds(value, directory = workspaceDirectoryFromW
 function sanitizeInternalPaths(value) {
   return String(value || "")
     .replace(/(^|[\s"'=:(])((?:\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/)[^\s"',)\]}]+)/g, "$1[server-internal-path]")
-    .replace(/[A-Za-z]:[\\/][^\s"',)\]}]+/g, "[server-internal-path]");
+    .replace(/(^|[\s"'=:(])([A-Za-z]:[\\/][^\s"',)\]}]+)/g, "$1[server-internal-path]");
 }
 
 function sanitizeMcpString(value, directory = workspaceDirectoryFromWorkspaces([])) {

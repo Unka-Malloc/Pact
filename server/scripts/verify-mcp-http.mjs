@@ -110,11 +110,13 @@ function bearerHeaders(token) {
 
 function assertNoMcpInternalLeak(value, label) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
+  const filesystemLeak = /(^|[\s"'=:(])\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/[^\s"',)\]}]*/.exec(text) ||
+    /(^|[\s"'=:(])[A-Za-z]:[\\/][^\s"',)\]}]*/.exec(text);
   assert.equal(/\bworkspace_[A-Za-z0-9_]+\b/.test(text), false, `${label} must not expose internal workspace ids`);
   assert.equal(
-    /(^|[\s"'=:(])\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\//.test(text) || /[A-Za-z]:[\\/]/.test(text),
+    Boolean(filesystemLeak),
     false,
-    `${label} must not expose internal filesystem paths`
+    `${label} must not expose internal filesystem paths${filesystemLeak ? `: ${filesystemLeak[0]}` : ""}`
   );
 }
 
@@ -291,6 +293,10 @@ try {
   
   assert.equal(getMcpStatus, 200);
   assert.match(getMcpText, /notifications\/tools\/list_changed/);
+  assert.match(getMcpText, /"sharedHub":\{/);
+  assert.match(getMcpText, /"outlet":"pact\.sharedspace"/);
+  assert.match(getMcpText, /"priorityTargets":\["claude-code","codex","openclaw"\]/);
+  assert.match(getMcpText, /"supportedTargets":\[\{"target":"codex"/);
 
   const initialize = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
