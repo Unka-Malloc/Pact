@@ -10,7 +10,9 @@ import { ServerConfig } from "../platform/common/config/ServerConfig.mjs";
 import {
   MCP_CONNECTOR_PACKAGE_NAME,
   MCP_CONNECTOR_VERSION,
+  MCP_CLIENT_TARGETS,
   MCP_INTERFACE_VERSION,
+  MCP_PRIORITY_INSTALL_TARGETS,
   MCP_SERVER_VERSION,
   MCP_STABLE_TOOL_NAME,
   MCP_TOOLSET_VERSION
@@ -20,8 +22,17 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const connectorRoot = path.join(projectRoot, "mcp-connector");
 const BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
-const PRIORITY_INSTALL_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
-const PRIORITY_INSTALL_TARGET = PRIORITY_INSTALL_TARGETS.join(",");
+const PRIORITY_INSTALL_TARGET = MCP_PRIORITY_INSTALL_TARGETS.join(",");
+
+function supportedTargetDetails() {
+  return MCP_CLIENT_TARGETS.map(({ target, label, priority, installMode, locations }) => ({
+    target,
+    label,
+    priority,
+    installMode,
+    locations: [...locations]
+  }));
+}
 
 function parseArgs(argv) {
   const args = {
@@ -707,7 +718,8 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       clientInstallCommand: `./${portable.executable} install --target <client>`,
       autoInstallCommand: `./${portable.executable} install --target auto --json`,
       priorityInstallCommand: `./${portable.executable} install --target ${PRIORITY_INSTALL_TARGET} --json`,
-      priorityTargets: [...PRIORITY_INSTALL_TARGETS],
+      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+      supportedTargetDetails: supportedTargetDetails(),
       interactiveUninstallCommand: `./${portable.executable} uninstall`,
       clientUninstallCommand: `./${portable.executable} uninstall --target <client>`,
       doubleClickEntry: process.platform === "win32" ? "" : "install.command"
@@ -727,24 +739,15 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       interactiveInstallCommand: `npx ${packageJson.name}@latest install`,
       autoInstallCommand: `npx ${packageJson.name}@latest install --target auto --json`,
       priorityInstallCommand: `npx ${packageJson.name}@latest install --target ${PRIORITY_INSTALL_TARGET} --json`,
-      priorityTargets: [...PRIORITY_INSTALL_TARGETS],
+      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       clientInstallCommand: `npx ${packageJson.name}@latest install --target <client>`,
       interactiveUninstallCommand: `npx ${packageJson.name}@latest uninstall`,
       uninstallCommand: `npx ${packageJson.name}@latest uninstall --target <client>`,
       doctorCommand: `npx ${packageJson.name}@latest doctor`,
       discoverCommand: `npx ${packageJson.name}@latest discover-local --json`,
       scanCommand: `npx ${packageJson.name}@latest scan --json`,
-      supportedTargets: [
-        "codex",
-        "claude-code",
-        "gemini-cli",
-        "kilo-code",
-        "copilot",
-        "openclaw",
-        "hermes",
-        "antigravity",
-        "opencode"
-      ]
+      supportedTargets: MCP_CLIENT_TARGETS.map((target) => target.target),
+      supportedTargetDetails: supportedTargetDetails()
     },
     bootstrap: {
       scriptName: bootstrap.scriptName,

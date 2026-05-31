@@ -10,6 +10,17 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const pkgStr = await fs.readFile(path.join(projectRoot, "mcp-connector", "package.json"), "utf8");
 const expectedVersion = JSON.parse(pkgStr).version;
+const EXPECTED_SUPPORTED_TARGETS = Object.freeze([
+  "codex",
+  "claude-code",
+  "gemini-cli",
+  "kilo-code",
+  "copilot",
+  "openclaw",
+  "hermes",
+  "antigravity",
+  "opencode"
+]);
 
 async function run(command, args = [], options = {}) {
   const result = await execFileAsync(command, args, {
@@ -252,6 +263,15 @@ try {
   assert.ok(manifest.install.discoverCommand.includes("pact-mcp-connector@latest discover-local"));
   assert.ok(manifest.install.discoverCommand.includes("--json"));
   assert.ok(manifest.install.scanCommand.includes("pact-mcp-connector@latest scan"));
+  assert.deepEqual(manifest.install.supportedTargets, EXPECTED_SUPPORTED_TARGETS);
+  const installTargetDetails = new Map(manifest.install.supportedTargetDetails.map((target) => [target.target, target]));
+  assert.deepEqual([...installTargetDetails.keys()], EXPECTED_SUPPORTED_TARGETS);
+  assert.equal(installTargetDetails.get("claude-code").label, "Claude Code");
+  assert.equal(installTargetDetails.get("codex").installMode, "codex-release-plugin-and-mcp-cli");
+  assert.equal(installTargetDetails.get("codex").priority, true);
+  assert.equal(installTargetDetails.get("opencode").priority, true);
+  assert.deepEqual(installTargetDetails.get("hermes").locations, ["orbstack", "remote-linux"]);
+  assert.deepEqual(manifest.portable.supportedTargetDetails, manifest.install.supportedTargetDetails);
   assert.equal(manifest.bootstrap.scriptName, "pact-mcp-install.sh");
   assert.equal(manifest.bootstrap.uninstallScriptName, "pact-mcp-uninstall.sh");
   assert.equal(manifest.bootstrap.localized.zhCN.scriptName, "pact-mcp-install.zh-CN.sh");

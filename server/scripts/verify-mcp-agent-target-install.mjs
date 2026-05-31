@@ -998,6 +998,12 @@ try {
     assert.equal(connector.autoInstallCommand, `${npxPrefix} install --target auto --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     assert.equal(connector.priorityInstallCommand, `${npxPrefix} install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     assert.deepEqual(connector.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(connector.supportedTargets, DECLARED_AGENT_TARGETS);
+    const connectorTargetDetails = new Map(connector.supportedTargetDetails.map((target) => [target.target, target]));
+    assert.deepEqual([...connectorTargetDetails.keys()], DECLARED_AGENT_TARGETS);
+    assert.equal(connectorTargetDetails.get("claude-code").label, "Claude Code");
+    assert.equal(connectorTargetDetails.get("opencode").priority, true);
+    assert.deepEqual(connectorTargetDetails.get("hermes").locations, ["orbstack", "remote-linux"]);
     assert.equal(connector.installCommand, `${npxPrefix} install --target <client> --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     assert.equal(connector.uninstallCommand, `${npxPrefix} uninstall --target <client> --url '${serverUrl}'`);
     assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}' --json`);
@@ -1307,11 +1313,18 @@ try {
     assert.equal(payload.autoInstall, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.priorityInstall, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    const payloadTargetDetails = new Map(payload.supportedTargetDetails.map((target) => [target.target, target]));
+    assert.deepEqual([...payloadTargetDetails.keys()], DECLARED_AGENT_TARGETS);
+    assert.equal(payloadTargetDetails.get("openclaw").installMode, "openclaw-release-mcp-cli");
+    assert.equal(payloadTargetDetails.get("opencode").priority, true);
     const manifest = JSON.parse(await fs.readFile(registerRegistryPath, "utf8"));
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, missingInstallTokenEnv);
     assert.equal(manifest.servers?.pact?.connector?.autoInstallCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(manifest.servers?.pact?.connector?.priorityInstallCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.deepEqual(manifest.servers?.pact?.connector?.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(manifest.servers?.pact?.connector?.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.deepEqual(manifest.servers?.pact?.connector?.supportedTargetDetails, payload.supportedTargetDetails);
     assert.equal(manifest.servers?.pact?.connector?.installCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}'`);
     assert.equal(manifest.servers?.pact?.connector?.scanCommand, `npx pact-mcp-connector@${payload.packageVersion} scan --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     const refresh = await spawnConnector([
@@ -1327,6 +1340,7 @@ try {
     assert.equal(refreshPayload.autoInstall, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(refreshPayload.priorityInstall, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.deepEqual(refreshPayload.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(refreshPayload.supportedTargets, DECLARED_AGENT_TARGETS);
     const refreshedManifest = JSON.parse(await fs.readFile(registerRegistryPath, "utf8"));
     assert.equal(refreshedManifest.servers?.pact?.auth?.tokenEnv, missingInstallTokenEnv);
   });
@@ -1348,6 +1362,11 @@ try {
     assert.equal(payload.nextCommand, `pact-mcp scan --url '${serverUrl}' --json`);
     assert.ok(payload.repairCommands?.includes(`pact-mcp scan --url '${serverUrl}' --json`));
     assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${serverUrl}' --json`));
+    assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    const targetDetails = new Map(payload.supportedTargetDetails.map((target) => [target.target, target]));
+    assert.deepEqual([...targetDetails.keys()], DECLARED_AGENT_TARGETS);
+    assert.equal(targetDetails.get("claude-code").label, "Claude Code");
+    assert.equal(targetDetails.get("openclaw").priority, true);
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.ok(payload.supportedTargets?.includes(target), `${target} should be listed as supported`);
     }
@@ -1413,6 +1432,9 @@ try {
     assert.ok(payload.repairCommands?.some((command) => command.includes("pact-mcp install --target codex")));
     assert.ok(payload.repairCommands?.every((command) => command.includes(`--url '${serverUrl}'`)));
     assert.ok(payload.repairCommands?.every((command) => command.includes(`--token-env '${missingInstallTokenEnv}'`)));
+    assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "codex")?.installMode, "codex-release-plugin-and-mcp-cli");
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "codex"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "claude-code"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "openclaw"), true);

@@ -41,7 +41,7 @@ export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
 export const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
 export const PACT_MCP_DISCOVERY_FILE = "~/.pact/mcp/servers.json";
 const MCP_BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
-const MCP_CLIENT_TARGETS = Object.freeze([
+export const MCP_CLIENT_TARGETS = Object.freeze([
   { target: "codex", label: "Codex", priority: true, installMode: "codex-release-plugin-and-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
   { target: "claude-code", label: "Claude Code", priority: true, installMode: "claude-code-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
   { target: "gemini-cli", label: "Gemini CLI", priority: false, installMode: "gemini-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
@@ -52,7 +52,7 @@ const MCP_CLIENT_TARGETS = Object.freeze([
   { target: "antigravity", label: "Antigravity", priority: false, installMode: "antigravity-release-mcp-config", locations: ["local"] },
   { target: "opencode", label: "OpenCode", priority: true, installMode: "opencode-release-mcp-config", locations: ["local", "orbstack", "remote-linux"] }
 ]);
-const MCP_PRIORITY_INSTALL_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
+export const MCP_PRIORITY_INSTALL_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
 const MCP_PRIORITY_INSTALL_TARGET = MCP_PRIORITY_INSTALL_TARGETS.join(",");
 
 function jsonRpcResult(id, result = {}) {

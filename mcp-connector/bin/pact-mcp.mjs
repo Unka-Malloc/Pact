@@ -185,6 +185,17 @@ const TARGET_INSTALL_MODES = {
   antigravity: "antigravity-release-mcp-config",
   opencode: "opencode-release-mcp-config"
 };
+const TARGET_LOCATIONS = Object.freeze({
+  codex: ["local", "orbstack", "remote-linux"],
+  "claude-code": ["local", "orbstack", "remote-linux"],
+  "gemini-cli": ["local", "orbstack", "remote-linux"],
+  "kilo-code": ["local", "orbstack", "remote-linux"],
+  copilot: ["local", "orbstack", "remote-linux"],
+  openclaw: ["local", "orbstack", "remote-linux"],
+  hermes: ["orbstack", "remote-linux"],
+  antigravity: ["local"],
+  opencode: ["local", "orbstack", "remote-linux"]
+});
 const SCAN_COMMAND_TIMEOUT_MS = 3000;
 const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
 const INSTALL_COMMAND_TIMEOUT_MS = positiveIntegerEnv("PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS", 120000);
@@ -205,6 +216,17 @@ const PACKAGE_SOURCE_KIND = Object.freeze({
   COMMAND_PATHS: "command-paths",
   COMMAND_PREFIX_DIRS: "command-prefix-dirs"
 });
+
+function supportedTargetDetails() {
+  return SUPPORTED_TARGETS.map((target) => ({
+    target,
+    label: TARGET_LABELS[target] || target,
+    priority: PRIORITY_INSTALL_TARGETS.includes(target) || target === "opencode",
+    installMode: TARGET_INSTALL_MODES[target] || "supported",
+    locations: [...(TARGET_LOCATIONS[target] || ["local"])]
+  }));
+}
+
 const GENERIC_REMOTE_CONTEXT_KINDS = [
   "docker",
   "podman",
@@ -514,7 +536,8 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         scanCommand,
         shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
       ],
-      supportedTargets: SUPPORTED_TARGETS
+      supportedTargets: [...SUPPORTED_TARGETS],
+      supportedTargetDetails: supportedTargetDetails()
     };
   }
   if (lower.includes("no signed pact mcp hub was discovered")) {
@@ -2347,6 +2370,8 @@ function buildDeviceHubManifest({
           autoInstallCommand,
           priorityInstallCommand,
           priorityTargets: [...PRIORITY_INSTALL_TARGETS],
+          supportedTargets: [...SUPPORTED_TARGETS],
+          supportedTargetDetails: supportedTargetDetails(),
           installCommand: `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs}`,
           uninstallCommand: `${packageExec} uninstall --target <client>${urlArgs}`,
           discoverCommand,
@@ -5829,7 +5854,10 @@ function noDetectedClientGuidance(candidates = [], options = {}) {
       scanCommand,
       shellCommandForInstall({ target: suggestedTarget, binOption, includeUrl, baseUrl, tokenEnv }),
       shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
-    ]
+    ],
+    priorityTargets: [...PRIORITY_INSTALL_TARGETS],
+    supportedTargets: [...SUPPORTED_TARGETS],
+    supportedTargetDetails: supportedTargetDetails()
   };
 }
 
@@ -6291,6 +6319,8 @@ async function registerCommand(options) {
       tokenEnv
     }),
     priorityTargets: [...PRIORITY_INSTALL_TARGETS],
+    supportedTargets: [...SUPPORTED_TARGETS],
+    supportedTargetDetails: supportedTargetDetails(),
     verifiedHandshake: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,
     note: "Discovered and registered the signed Pact MCP endpoint without installing it into any client."
