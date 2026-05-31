@@ -210,7 +210,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "office-document",
     preferredParser: "office.word.structured",
     fallbackParsers: ["tika.text", "ocr.embedded-images"],
-    parserChain: ["office.route", "office.word.structured", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "tika.text"],
+    parserChain: ["office.route", "office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "tika.text"],
     streamingUnit: "section",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -559,10 +559,10 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Word",
     professionalFamily: "office-word",
     parserProfile: "wordprocessingml-paragraph-style-route",
-    structureUnits: ["heading", "paragraph", "list-item", "table-row", "link", "comment", "footnote", "endnote"],
-    parserStages: ["office.word.structured", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "tika.text"],
-    preserves: ["headings", "paragraphs", "lists", "tables", "cellRefs", "links", "comments", "footnotes", "endnotes"],
-    conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-table-link-and-annotation-refs", "evidence-pack"],
+    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "comment", "footnote", "endnote"],
+    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "tika.text"],
+    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "comments", "footnotes", "endnotes"],
+    conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-style-list-table-link-and-annotation-refs", "evidence-pack"],
     conversionAdapters: [
       {
         target: "portable-markdown",
@@ -583,7 +583,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "word-elements-to-agent-refs.v1",
         mode: "agent",
-        stages: ["element-refs", "table-cell-refs", "link-refs", "annotation-refs"]
+        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "annotation-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -593,7 +593,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "relationships", "claims"]
       }
     ],
-    qualityGates: ["docx-openxml-package-valid", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-annotation-refs-preserved"],
+    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-annotation-refs-preserved"],
     riskControls: ["legacy-doc-tika-fallback", "advanced-style-loss-reporting"],
     knownLosses: ["advanced-openxml-styling-not-rendered"]
   },
@@ -2374,6 +2374,7 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.layout ? { layout: metadata.layout } : {}),
     ...(metadata.table ? { table: metadata.table } : {}),
     ...(metadata.annotation ? { annotation: metadata.annotation } : {}),
+    ...(metadata.style ? { style: metadata.style } : {}),
     ...(metadata.cells ? { cells: metadata.cells } : {})
   });
 }
@@ -4595,16 +4596,33 @@ function docxParagraphStyle(paragraphXml = "") {
   return xmlLocalAttribute(styleTag, "val");
 }
 
+function docxParagraphStyleProfile(paragraphXml = "", styleId = "") {
+  const numPr = String(paragraphXml || "").match(/<[^:>]*:?numPr\b[\s\S]*?<\/[^:>]*:?numPr>/i)?.[0] || "";
+  const numberingId = xmlLocalAttribute(numPr.match(/<[^:>]*:?numId\b[^>]*>/i)?.[0] || "", "val");
+  const numberingLevel = xmlLocalAttribute(numPr.match(/<[^:>]*:?ilvl\b[^>]*>/i)?.[0] || "", "val");
+  const listLevel = numberingLevel === "" ? 0 : Math.max(1, (Number(numberingLevel) || 0) + 1);
+  return {
+    ...(styleId ? { styleId } : {}),
+    ...(numberingId ? { numberingId } : {}),
+    ...(numberingLevel !== "" ? { numberingLevel: Number(numberingLevel) || 0 } : {}),
+    ...(listLevel ? { listLevel } : {})
+  };
+}
+
 function docxParagraphElementType(paragraphXml = "", style = "") {
   if (/^Title$/i.test(style)) {
     return { type: "title", level: 1 };
   }
-  const heading = String(style || "").match(/^Heading(\d+)$/i);
+  const heading = String(style || "").match(/^Heading\s*(\d+)$/i);
   if (heading) {
     return { type: "heading", level: Math.max(1, Math.min(8, Number(heading[1]) || 1)) };
   }
+  const styleProfile = docxParagraphStyleProfile(paragraphXml, style);
+  if (/^ListParagraph$/i.test(style) || styleProfile.numberingId) {
+    return { type: "list-item", level: styleProfile.listLevel || 1 };
+  }
   if (/<[^:>]*:?numPr\b/i.test(paragraphXml)) {
-    return { type: "list-item", level: 0 };
+    return { type: "list-item", level: styleProfile.listLevel || 1 };
   }
   return { type: "paragraph", level: 0 };
 }
@@ -4807,6 +4825,8 @@ function parseDocx(entries = []) {
   let footnoteCount = 0;
   let endnoteCount = 0;
   let hyperlinkCount = 0;
+  let styleRefCount = 0;
+  let numberingRefCount = 0;
   for (const name of xmlNames) {
     const xml = zipEntryText(entries, name);
     const relationships = docxPartRelationships(entries, name);
@@ -4831,8 +4851,20 @@ function parseDocx(entries = []) {
       }
       paragraphCount += 1;
       const style = docxParagraphStyle(paragraphXml);
+      const styleProfile = docxParagraphStyleProfile(paragraphXml, style);
       const { type, level } = docxParagraphElementType(paragraphXml, style);
-      pushStructureElement(elements, type, text, { level, line: paragraphCount, name });
+      if (styleProfile.styleId) {
+        styleRefCount += 1;
+      }
+      if (styleProfile.numberingId) {
+        numberingRefCount += 1;
+      }
+      pushStructureElement(elements, type, text, {
+        level,
+        line: paragraphCount,
+        name,
+        ...(Object.keys(styleProfile).length ? { style: styleProfile } : {})
+      });
       for (const link of docxParagraphHyperlinks(paragraphXml, relationships)) {
         hyperlinkCount += 1;
         pushStructureElement(elements, "link", link.text, {
@@ -4871,6 +4903,8 @@ function parseDocx(entries = []) {
     footnoteCount,
     endnoteCount,
     hyperlinkCount,
+    styleRefCount,
+    numberingRefCount,
     headingCount: (counts.title || 0) + (counts.heading || 0),
     listItemCount: counts["list-item"] || 0
   };
@@ -6276,6 +6310,21 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           endnotes: parsed.endnoteCount,
           links: parsed.hyperlinkCount,
           headings: parsed.headingCount,
+          listItems: parsed.listItemCount,
+          styles: parsed.styleRefCount,
+          numberingRefs: parsed.numberingRefCount
+        },
+        {
+          stage: "office.word.styles",
+          status: parsed.styleRefCount ? "completed" : "empty",
+          styles: parsed.styleRefCount,
+          headings: parsed.headingCount,
+          listItems: parsed.listItemCount
+        },
+        {
+          stage: "office.word.numbering",
+          status: parsed.numberingRefCount ? "completed" : "empty",
+          numberingRefs: parsed.numberingRefCount,
           listItems: parsed.listItemCount
         },
         {
@@ -7563,6 +7612,21 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           endnotes: parsed.endnoteCount,
           links: parsed.hyperlinkCount,
           headings: parsed.headingCount,
+          listItems: parsed.listItemCount,
+          styles: parsed.styleRefCount,
+          numberingRefs: parsed.numberingRefCount
+        });
+        parserTrace.push({
+          stage: "office.word.styles",
+          status: parsed.styleRefCount ? "completed" : "empty",
+          styles: parsed.styleRefCount,
+          headings: parsed.headingCount,
+          listItems: parsed.listItemCount
+        });
+        parserTrace.push({
+          stage: "office.word.numbering",
+          status: parsed.numberingRefCount ? "completed" : "empty",
+          numberingRefs: parsed.numberingRefCount,
           listItems: parsed.listItemCount
         });
         parserTrace.push({
@@ -7999,7 +8063,9 @@ function structureElementLine(element = {}) {
   const line = element.line ? ` line ${element.line}` : "";
   const name = element.name ? ` ${element.name}` : "";
   const href = element.href ? ` -> ${element.href}` : "";
-  return `Element ${element.type}${level}${name}${line}: ${element.text}${href}`;
+  const style = element.style?.styleId ? ` style ${element.style.styleId}` : "";
+  const numbering = element.style?.numberingId ? ` num ${element.style.numberingId}:${element.style.numberingLevel || 0}` : "";
+  return `Element ${element.type}${level}${name}${line}${style}${numbering}: ${element.text}${href}`;
 }
 
 function structureElementTypeCounts(elements = []) {
@@ -8054,6 +8120,14 @@ function normalizedStructureElements(document = {}) {
             sourcePart: String(element.annotation.sourcePart || "")
           }
         : null;
+      const style = element.style && typeof element.style === "object"
+        ? {
+            styleId: String(element.style.styleId || ""),
+            numberingId: String(element.style.numberingId || ""),
+            numberingLevel: Number(element.style.numberingLevel || 0),
+            listLevel: Number(element.style.listLevel || 0)
+          }
+        : null;
       const cells = Array.isArray(element.cells)
         ? element.cells.slice(0, 200).map((cell) => ({
             ref: String(cell.ref || ""),
@@ -8091,6 +8165,7 @@ function normalizedStructureElements(document = {}) {
         layout,
         table,
         annotation,
+        style,
         cells
       };
     })
@@ -8134,6 +8209,7 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       layout: element.layout || null,
       table: element.table || null,
       annotation: element.annotation || null,
+      style: element.style || null,
       cells: element.cells || [],
       headingPath
     })),
@@ -8247,6 +8323,7 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       layout: element.layout || null,
       table: element.table || null,
       annotation: element.annotation || null,
+      style: element.style || null,
       cells: element.cells || []
     }))
   };
@@ -8461,6 +8538,32 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         observed: { tableCells, cellRefCount: evidence.cellRefCount },
         required: { cellRefsWhenTablesExist: true },
         message: status === "passed" ? "Word table cell references are present." : "No Word table cell references were required or observed."
+      });
+    }
+    if (gate === "word-paragraph-style-refs-preserved") {
+      const styleSignals = maxTraceMetric(document, ["styles", "styleRefs", "headingCount", "headings"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : styleSignals > 0
+          ? evidence.styleRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { styleSignals, styleRefCount: evidence.styleRefCount },
+        required: { paragraphStylesWhenPresent: true },
+        message: status === "passed" ? "Word paragraph style references are preserved." : "No Word paragraph style references were required or observed."
+      });
+    }
+    if (gate === "word-list-refs-preserved") {
+      const listSignals = maxTraceMetric(document, ["numberingRefs", "listItems"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : listSignals > 0
+          ? evidence.numberingRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { listSignals, numberingRefCount: evidence.numberingRefCount },
+        required: { numberingRefsWhenListItemsExist: true },
+        message: status === "passed" ? "Word numbered/bulleted list references are preserved." : "No Word list references were required or observed."
       });
     }
     if (gate === "word-annotation-refs-preserved") {
@@ -8744,6 +8847,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
     const linkElementCount = sampleElements.filter((element) => element.type === "link" && element.href).length;
     const imageRefCount = sampleElements.filter((element) => element.type === "image" && element.href).length;
+    const styleRefCount = sampleElements.filter((element) => element.style?.styleId).length;
+    const numberingRefCount = sampleElements.filter((element) => element.style?.numberingId).length;
     const speakerNoteElementCount = sampleElements.filter((element) => element.type === "speaker-note").length;
     const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
     const evidence = {
@@ -8757,6 +8862,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       annotationElementCount,
       linkElementCount,
       imageRefCount,
+      styleRefCount,
+      numberingRefCount,
       speakerNoteElementCount
     };
     const qualityGateResults = buildProfessionalQualityGateResults({
@@ -8817,6 +8924,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
       documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
+      documentWithStyleRefsCount: plannedDocuments.filter((document) => document.evidence.styleRefCount > 0).length,
+      documentWithNumberingRefsCount: plannedDocuments.filter((document) => document.evidence.numberingRefCount > 0).length,
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
@@ -9321,6 +9430,21 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           endnotes: parsed.endnoteCount,
           links: parsed.hyperlinkCount,
           headings: parsed.headingCount,
+          listItems: parsed.listItemCount,
+          styles: parsed.styleRefCount,
+          numberingRefs: parsed.numberingRefCount
+        });
+        parserTrace.push({
+          stage: "office.word.styles",
+          status: parsed.styleRefCount ? "completed" : "empty",
+          styles: parsed.styleRefCount,
+          headings: parsed.headingCount,
+          listItems: parsed.listItemCount
+        });
+        parserTrace.push({
+          stage: "office.word.numbering",
+          status: parsed.numberingRefCount ? "completed" : "empty",
+          numberingRefs: parsed.numberingRefCount,
           listItems: parsed.listItemCount
         });
         parserTrace.push({
@@ -14339,6 +14463,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "archive.gzip.decompress",
         "archive.7z.extract",
         "office.word.structured",
+        "office.word.styles",
+        "office.word.numbering",
         "office.word.hyperlinks",
         "office.presentation.slides",
         "office.presentation.tables",
@@ -14371,7 +14497,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref", "cells.formula", "cells.hyperlink.target"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.href", "elementRefs.annotation", "elementRefs.cells", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.cells", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -14392,7 +14518,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "links", "formulas", "annotations"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "links", "formulas", "paragraphStyles", "listLevels", "annotations"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

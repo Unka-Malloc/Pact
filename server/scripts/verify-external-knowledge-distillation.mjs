@@ -257,6 +257,9 @@ const sampleDocxBase64 = base64Zip({
   "word/document.xml": [
     "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
     "<w:body>",
+    "<w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>DOCX Contract Decision Register</w:t></w:r></w:p>",
+    "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>Routing Decisions</w:t></w:r></w:p>",
+    "<w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"9\"/></w:numPr></w:pPr><w:r><w:t>Preserve Word list hierarchy for agent filters.</w:t></w:r></w:p>",
     "<w:p><w:r><w:t>Standalone DOCX payload parser extracts contract decisions.</w:t></w:r></w:p>",
     "<w:p><w:r><w:t>Evidence portal: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>DOCX evidence portal</w:t></w:r></w:hyperlink></w:p>",
     "<w:p><w:r><w:t>Annotation reference paragraph.</w:t></w:r><w:r><w:footnoteReference w:id=\"2\"/></w:r></w:p>",
@@ -833,6 +836,8 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.numbering"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
@@ -907,6 +912,8 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.href"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
@@ -946,6 +953,8 @@ try {
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("pdf-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-paragraph-style-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
@@ -1609,7 +1618,11 @@ try {
   assert.equal(professionalConversionPlan.documents.some((document) => (
     document.sourceId === "source-8" &&
     document.routeId === "word" &&
+    document.evidence.styleRefCount >= 1 &&
+    document.evidence.numberingRefCount >= 1 &&
     document.evidence.linkElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalConversionPlan.documents.some((document) => (
@@ -1741,6 +1754,8 @@ try {
   assert.equal(epubPayloadCorpus.windowPlan.windows.some((window) => /EPUB Distillation Evidence|agent element windows/.test(window.excerpt || "")), true);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.styles" && trace.status === "completed" && trace.styles >= 3 && trace.headings >= 2), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.numbering" && trace.status === "completed" && trace.numberingRefs === 1), true);
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 6), true);
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => (
     trace.stage === "office.word.annotations" &&
@@ -1756,6 +1771,9 @@ try {
   )), true);
   assert.equal(docxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(docxPayloadCorpus.elementPlan.sourceFormat, "docx");
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.title >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes["list-item"] >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
@@ -1763,6 +1781,17 @@ try {
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.footnote >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.endnote >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "heading" &&
+    element.style?.styleId === "Heading1" &&
+    element.text.includes("Routing Decisions")
+  )), true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "list-item" &&
+    element.style?.styleId === "ListParagraph" &&
+    element.style?.numberingId === "9" &&
+    element.style?.numberingLevel === 0
+  )), true);
   assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "table-row" &&
     element.table?.format === "docx" &&
@@ -1783,6 +1812,11 @@ try {
   assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
   assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "list-item" &&
+    ref.style?.styleId === "ListParagraph" &&
+    ref.style?.numberingId === "9"
+  ))), true);
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "table-row" &&
     ref.table?.format === "docx" &&
     ref.cells?.some((cell) => cell.ref === "B2")
@@ -1797,11 +1831,21 @@ try {
     ref.href === "https://example.com/docx-evidence"
   ))), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.parserProfile, "wordprocessingml-paragraph-style-route");
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("paragraphStyles"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("listLevels"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("footnotes"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-8" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "list-item" &&
+      ref.style?.styleId === "ListParagraph" &&
+      ref.style?.numberingId === "9"
+    ))
+  )), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-8" &&
     unit.metadata?.elementRefs?.some((ref) => (
@@ -2906,6 +2950,8 @@ try {
   assert.equal(conversionPlan.summary.documentWithFormulaRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithLinkRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithStyleRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithNumberingRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.every((artifact) => artifact.status === "passed"), true);
@@ -2936,7 +2982,11 @@ try {
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "word" &&
     document.evidence.annotationElementCount >= 1 &&
+    document.evidence.styleRefCount >= 1 &&
+    document.evidence.numberingRefCount >= 1 &&
     document.evidence.linkElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
   )), true);
@@ -2964,9 +3014,17 @@ try {
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "word" &&
     document.parserProfile === "wordprocessingml-paragraph-style-route" &&
+    document.parserStages.includes("office.word.styles") &&
+    document.parserStages.includes("office.word.numbering") &&
     document.parserStages.includes("office.word.hyperlinks") &&
+    document.preserves.includes("paragraphStyles") &&
+    document.preserves.includes("listLevels") &&
     document.preserves.includes("links") &&
     document.preserves.includes("comments") &&
+    document.evidence.styleRefCount >= 1 &&
+    document.evidence.numberingRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-annotation-refs-preserved" && gate.status === "passed")
   )), true);

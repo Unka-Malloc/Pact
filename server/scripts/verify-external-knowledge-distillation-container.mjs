@@ -455,6 +455,8 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.href"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.binaryProfileStrategy, "bounded-binary-file-profile.v1");
@@ -490,6 +492,8 @@ try {
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("pdf-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-paragraph-style-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
@@ -536,6 +540,8 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.numbering"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
@@ -1496,7 +1502,7 @@ try {
       "tar -cf /data/mounted-project-package.tar -C /tmp/pact-mounted-archive large-project.md invoice.csv",
       "rm -rf /tmp/pact-mounted-structured",
       "mkdir -p /tmp/pact-mounted-structured/docx/word/_rels /tmp/pact-mounted-structured/pptx/ppt/slides/_rels /tmp/pact-mounted-structured/pptx/ppt/notesSlides /tmp/pact-mounted-structured/xlsx/xl/worksheets/_rels /tmp/pact-mounted-structured/odt /tmp/pact-mounted-structured/epub/META-INF /tmp/pact-mounted-structured/epub/OEBPS",
-      "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p><w:p><w:r><w:t>Container link: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>container DOCX link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
+      "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body><w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>Mounted DOCX Decision Register</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>Mounted Routing Decisions</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"6\"/></w:numPr></w:pPr><w:r><w:t>Container mounted DOCX list hierarchy remains agent-readable.</w:t></w:r></w:p><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p><w:p><w:r><w:t>Container link: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>container DOCX link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-docx\" TargetMode=\"External\"/></Relationships>' > /tmp/pact-mounted-structured/docx/word/_rels/document.xml.rels",
       "printf '%s' '<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:comment w:id=\"8\" w:author=\"Container Reviewer\"><w:p><w:r><w:t>Container mounted DOCX comments remain agent-readable.</w:t></w:r></w:p></w:comment></w:comments>' > /tmp/pact-mounted-structured/docx/word/comments.xml",
       "printf '%s' '<w:footnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:footnote w:id=\"9\"><w:p><w:r><w:t>Container mounted DOCX footnotes stay linked as annotation evidence.</w:t></w:r></w:p></w:footnote></w:footnotes>' > /tmp/pact-mounted-structured/docx/word/footnotes.xml",
@@ -1814,6 +1820,16 @@ NODE`
     if (formatId === "word") {
       assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
       assert.equal(mountedStructured.parserTrace.some((trace) => (
+        trace.stage === "office.word.styles" &&
+        trace.status === "completed" &&
+        trace.styles >= 3
+      )), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => (
+        trace.stage === "office.word.numbering" &&
+        trace.status === "completed" &&
+        trace.numberingRefs === 1
+      )), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => (
         trace.stage === "office.word.annotations" &&
         trace.status === "completed" &&
         trace.comments === 1 &&
@@ -1824,6 +1840,11 @@ NODE`
         trace.status === "completed" &&
         trace.links === 1
       )), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "list-item" &&
+        ref.style?.styleId === "ListParagraph" &&
+        ref.style?.numberingId === "6"
+      ))), true);
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
         ref.type === "comment" &&
         ref.annotation?.kind === "comment" &&
