@@ -780,6 +780,7 @@ export function useKnowledgeViewConsole() {
     isManagementKnowledgePanel,
     isManagementRulesPanel,
     isKnownKnowledgeTab,
+    dynamicParsingPreviewConfig,
     dynamicParsingPolicySignature,
     documentPreviewResult,
     knowledgeBackendSpacesResult,

@@ -1,185 +1,74 @@
 <script setup lang="ts">
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
-import BridgeDownloadButton from '../components/BridgeDownloadButton.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
 import FeatureToggle from '../components/FeatureToggle.vue';
+import KnowledgeIngestPanel from '../components/knowledge/KnowledgeIngestPanel.vue';
 import KnowledgeWordCloudPanel from '../components/knowledge/KnowledgeWordCloudPanel.vue';
 import KnowledgeDistillationWorkbench from '../components/KnowledgeDistillationWorkbench.vue';
 import OptionBar from '../components/OptionBar.vue';
 import SegmentedToggle from '../components/SegmentedToggle.vue';
 import StatusPill from '../components/StatusPill.vue';
 import SplitToggleCard from '../components/SplitToggleCard.vue';
-import UploadFileListCard from '../components/UploadFileListCard.vue';
 import { provideKnowledgeView } from '../composables/knowledgeViewContext';
 import { useKnowledgeViewConsole } from '../composables/useKnowledgeViewConsole';
-import { normalizedKnowledgeDocumentUrl, previewKnowledgeDocuments } from '../lib/knowledge-documents';
 
 const knowledgeView = useKnowledgeViewConsole();
 provideKnowledgeView(knowledgeView);
-const dynamicParsingViewContract = {
-  pipelineId: "dynamic-parameter-v1",
-  ingestPipelineId: "unified-knowledge-ingest-v1",
-  contextBudget: { knowledgeTokens: 12000 },
-  payloadBudget: { maxResponseBytes: 1048576 },
-  granularity: {
-    secondaryParse: { enabled: false },
-  },
-  dynamicParsing: {
-    preserveStructureArtifacts: true,
-  },
-  structureArtifacts: true,
-  granularityFragments: true,
-  parentArtifactId: "",
-};
-const dynamicParsingViewContractSignature = JSON.stringify(dynamicParsingViewContract);
 const knowledgeViewBranchContract = [
   'knowledgeManagementPanel.value === "knowledge"',
   'knowledgeManagementPanel.value === "rules"',
 ];
 
 const {
-  addChildWordCloud,
-  addManualWordCloud,
-  autoFillCloudWithAgent,
-  fillingWordBagIds,
-  addTermActionToCloud,
-  addTermInputToCloud,
   addVocabularyEntry,
   busyKey,
   canAdminKnowledge,
-  canBrowseServerPaths,
   canMaintainKnowledge,
   canReadKnowledge,
-  canWriteJobs,
-  canWriteKnowledge,
-  clearRemovedTermsFromCloud,
-  clearWordCloudCorpusPaths,
-  collapsedWordBagIds,
-  currentView,
   deleteVocabularyEntry,
   displayedVocabularyEntries,
   emailReportSeriesRules,
   emailSynonymRules,
   enabledStringOptionBarOptions,
-  error,
   expertRuleEnabled,
   expertVocabularyDraft,
   filter,
-  formatBytes,
   formatCompactDate,
-  formatMachineDate,
-  formatWordCloudThreshold,
   goldenRuleItems,
   goldenRulePackageTitle,
   goldenRulePackages,
   hasFeature,
   hiddenVocabularyEntryCount,
-  canSubmitKnowledgeIngest,
-  ingestFiles,
   ingestJob,
-  ingestProgress,
   infoFeedModelOptions,
-  isAuthenticated,
-  jobStatusLabels,
-  jobStatusTone,
   jsonPreview,
   knowledgeConfigGroupDescription,
   knowledgeManagementPanel,
   knowledgeManagementPanelOptionBarOptions,
-  knowledgeReviewCanResolveWithDocument,
-  knowledgeReviewCurrentDocuments,
-  knowledgeReviewDetailText,
-  knowledgeReviewDocumentLine,
-  knowledgeReviewIncomingDocument,
-  knowledgeReviewItems,
-  knowledgeReviewPrimaryCurrentDocument,
-  knowledgeReviewReasonLabel,
-  knowledgeReviewRecordPreview,
-  knowledgeReviewResolvedAction,
-  knowledgeReviewRowClassName,
-  knowledgeReviewSimilarity,
-  knowledgeReviewSourceLabel,
-  knowledgeReviewStatus,
-  knowledgeReviewStatusLabel,
-  knowledgeReviewStatusOptionBarOptions,
-  knowledgeReviewTitle,
-  knowledgeReviewTone,
-  knowledgeIngestExternalProvider,
-  knowledgeIngestExternalRefs,
-  knowledgeIngestExternalTargetLabels,
-  knowledgeIngestTargets,
-  knowledgeIngestTargetValidationMessage,
-  knowledgeIngestTeamRefs,
-  knowledgeIngestUserRefs,
   knowledgeConsole,
   knowledgeSchema,
-  knowledgeTab,
   maintenanceFieldValue,
   maintenanceJson,
   normalizedManifest,
-  onIngestFilesSelected,
-  openWordCloudCorpusDirectoryPicker,
-  openWordCloudCorpusFilePicker,
-  proposeWordCloud,
-  refreshExpertRules,
-  refreshIngestJob,
-  refreshKnowledgeConflicts,
-  refreshKnowledgeConsole,
-  refreshWordCloud,
-  removeTermFromCloud,
-  removeWordCloudCorpusPath,
-  resolveKnowledgeReview,
   rulesText,
   saveExpertVocabulary,
   saveKnowledgeMaintenance,
   saveRules,
-  saveWordCloud,
-  selectKnowledgeManagementPanel,
-  selectKnowledgeReviewItem,
-  selectWordCloud,
-  selectedKnowledgeReviewFusionModel,
-  selectedKnowledgeReviewItem,
-  selectedWordCloud,
-  selectedWordCloudModel,
   setEmailRuleEntryEnabled,
   setMaintenanceFieldFromEvent,
   setMaintenanceFieldValue,
   setVocabularyEntryEnabled,
-  setWordCloudTermInput,
   showAllVocabularyEntries,
-  syncLocalSourceLabelFromPath,
   toggleGoldenRuleEnabled,
-  toggleWordCloudActionMenu,
-  toggleWordCloudCollapsed,
-  pinWordCloud,
-  pinnedWordBagIds,
   updateVocabularyDomains,
   updateVocabularyKeywords,
   updateVocabularyPath,
-  updateWordCloudField,
-  uploadFilesToKnowledge,
   vocabularyEntryPath,
   vocabularySearch,
-  wordBagActionMenuId,
-  wordCloudCardRows,
-  wordCloudCardStyle,
-  wordCloudCorpusPathLabel,
-  wordCloudCorpusPathSummary,
-  wordCloudCorpusPaths,
-  wordCloudDraft,
-  wordCloudMessages,
-  wordCloudModelAlias,
-  wordCloudModelOptions,
-  wordCloudPrompt,
-  wordCloudTermInputs,
-  wordCloudTerms,
-  wordCloudVisibleTerms,
-  wordCloudState,
   highlightedConfigTarget,
   publishRuleAuthoringPackage,
   ruleActionOptionBarOptions,
   ruleAuthoringCanSubmit,
-  ruleAuthoringDraftPayload,
   ruleAuthoringForm,
   ruleAuthoringModelOptions,
   ruleAuthoringResult,
@@ -187,70 +76,32 @@ const {
   ruleCreationMode,
   ruleMatchStrategyOptionBarOptions,
   ruleScopeOptionBarOptions,
-  fuseKnowledgeReview,
   runRuleAuthoringChat,
   shortId,
   activeKnowledgeTab,
-  expandedSummaryIds,
-  toggleSummaryExpanded,
-  expandedAdvancedIds,
-  toggleAdvancedExpanded,
-  titleFocusedWordBagId,
-  jumpToCloud,
   isManagementKnowledgePanel,
   isManagementRulesPanel,
   isKnownKnowledgeTab,
   dynamicParsingPolicySignature,
-  documentPreviewResult,
-  knowledgeBackendSpacesResult,
   knowledgeLibraryBusy,
   knowledgeLibraryError,
-  knowledgeBackendProviderOptions,
   knowledgeBackendModeOptions,
   knowledgeBackendProviderForms,
-  expandedKnowledgeLibraryCards,
-  expandedKnowledgeBackendCards,
-  knowledgeBackendSpaces,
-  realKnowledgeBackendSpaces,
   isKnowledgeLibraryCardExpanded,
   toggleKnowledgeLibraryCard,
   isKnowledgeBackendCardExpanded,
   toggleKnowledgeBackendCard,
-  textField,
-  externalProviderLabel,
-  knowledgeLibraryDisplayTitle,
-  knowledgeBackendSpaceDisplayName,
-  knowledgeIngestExternalValue,
-  parseKnowledgeIngestExternalValue,
-  parseKnowledgeIngestExternalRef,
-  knowledgeIngestTargetOptions,
-  knowledgeIngestTargetValues,
-  knowledgeIngestTargetDisplaySummary,
-  setKnowledgeIngestTargetValues,
-  metadataPolicyLabel,
   knowledgeLibraryCards,
   knowledgeBackendProviderCards,
-  refreshKnowledgeLibrarySpaces,
   connectKnowledgeBackendProvider,
 } = knowledgeView;
-
-async function previewKnowledgeDocumentParsing() {
-  documentPreviewResult.value = await previewKnowledgeDocuments(ingestFiles.value, {
-    pipelineId: dynamicParsingViewContract.pipelineId,
-    expectedOutputs: ["preprocessResult", "chunks", "structureArtifacts", "granularityFragments"],
-    contextBudget: dynamicParsingViewContract.contextBudget,
-    payloadBudget: dynamicParsingViewContract.payloadBudget,
-    granularity: dynamicParsingViewContract.granularity,
-    dynamicParsing: dynamicParsingViewContract.dynamicParsing,
-  });
-}
 </script>
 
 <template>
           <section
             class="knowledge-layout"
             :data-dynamic-parsing-policy="dynamicParsingPolicySignature"
-            :data-dynamic-parsing-contract="dynamicParsingViewContractSignature"
+            :data-dynamic-parsing-contract="dynamicParsingPolicySignature"
             :data-knowledge-view-branches="knowledgeViewBranchContract.join(';')"
           >
             <SegmentedToggle
@@ -308,75 +159,7 @@ async function previewKnowledgeDocumentParsing() {
               </div>
             </article>
 
-            <article
-              id="knowledge-file-import"
-              v-if="isManagementKnowledgePanel"
-              class="surface-card ingest-upload-card"
-            >
-              <div class="section-header">
-                <div>
-                  <h3>知识入库</h3>
-                </div>
-              </div>
-              <div class="knowledge-ingest-target-select-panel">
-                <OptionBar
-                  label="入库目标"
-                  placeholder="请选择入库目标"
-                  :model-value="knowledgeIngestTargetValues"
-                  :options="knowledgeIngestTargetOptions"
-                  multiple
-                  collapse-tags
-                  clearable
-                  @update:model-value="setKnowledgeIngestTargetValues"
-                />
-                <span>{{ knowledgeIngestTargetDisplaySummary }}</span>
-              </div>
-              <p v-if="knowledgeIngestTargetValidationMessage" class="module-note warning-note">
-                {{ knowledgeIngestTargetValidationMessage }}
-              </p>
-              <div class="knowledge-ingest-section-spacer" aria-hidden="true"></div>
-              <UploadFileListCard
-                :files="ingestFiles"
-                :can-submit="canSubmitKnowledgeIngest"
-                :can-write-jobs="canWriteJobs"
-                :busy-key="busyKey"
-                :ingest-job="ingestJob"
-                :ingest-progress="ingestProgress"
-                :job-status-labels="jobStatusLabels"
-                :job-status-tone="jobStatusTone"
-                :format-bytes="formatBytes"
-                @select="onIngestFilesSelected"
-                @upload="uploadFilesToKnowledge"
-                @preview="previewKnowledgeDocumentParsing"
-              />
-              <section v-if="documentPreviewResult" class="knowledge-document-preview-panel">
-                <header class="knowledge-document-preview-header">
-                  <strong>解析预览</strong>
-                  <span>JSON</span>
-                </header>
-                <pre class="module-json-preview">{{ jsonPreview(documentPreviewResult) }}</pre>
-              </section>
-              <div v-if="normalizedManifest" class="job-table compact-job-table normalized-table">
-                <div class="job-table-header">
-                  <span>生成文档</span>
-                  <span>类型</span>
-                  <span>大小</span>
-                </div>
-                <div
-                  v-for="doc in [...normalizedManifest.documents, ...normalizedManifest.sourceMaterials]"
-                  :key="doc.documentId"
-                  class="job-row"
-                >
-                  <BridgeDownloadButton
-                    :href="normalizedKnowledgeDocumentUrl(normalizedManifest.batchId, doc.documentId)"
-                    :label="doc.title"
-                    button-class="bridge-download-link"
-                  />
-                  <span>{{ doc.granularity }}</span>
-                  <span>{{ formatBytes(doc.byteSize) }}</span>
-                </div>
-              </div>
-            </article>
+            <KnowledgeIngestPanel v-if="isManagementKnowledgePanel" />
 
             <KnowledgeDistillationWorkbench
               v-if="isManagementKnowledgePanel && hasFeature('knowledge-distillation')"

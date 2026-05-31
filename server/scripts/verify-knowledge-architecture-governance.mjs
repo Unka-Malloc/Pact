@@ -412,7 +412,7 @@ async function assertDynamicParsingImplementation() {
   const module = await read("server/platform/specialized/knowledge/preprocessing/dynamic-parameter-document-parsing.mjs");
   const runtime = await read("server/platform/specialized/knowledge/preprocessing/document-parsing-runtime.mjs");
   const preprocessResult = await read("server/platform/specialized/knowledge/preprocessing/preprocess-result.mjs");
-  const knowledgeView = await read("server-web/views/KnowledgeView.vue");
+  const knowledgeViewConsole = await read("server-web/composables/useKnowledgeViewConsole.ts");
   const types = await read("server-web/lib/types.ts");
   const packageJson = await read("package.json");
 
@@ -448,7 +448,8 @@ async function assertDynamicParsingImplementation() {
     "granularityFragments"
   ], "server/platform/specialized/knowledge/preprocessing/preprocess-result.mjs");
 
-  assertAllIncludes(knowledgeView, [
+  assertAllIncludes(knowledgeViewConsole, [
+    "dynamicParsingPreviewConfig",
     "dynamic-parameter-v1",
     "unified-knowledge-ingest-v1",
     "contextBudget",
@@ -457,7 +458,7 @@ async function assertDynamicParsingImplementation() {
     "structureArtifacts",
     "granularityFragments",
     "parentArtifactId"
-  ], "server-web/views/KnowledgeView.vue");
+  ], "server-web/composables/useKnowledgeViewConsole.ts");
 
   assertAllIncludes(types, [
     "contextBudget",
@@ -629,7 +630,9 @@ async function assertFrontendCoverage() {
   const registry = await read("server/config/frontend-feature-registry.yaml");
   const router = await read("server-web/router/index.ts");
   const bridge = await read("server-web/lib/bridge.ts");
+  const knowledgeDocuments = await read("server-web/lib/knowledge-documents.ts");
   const knowledgeView = await read("server-web/views/KnowledgeView.vue");
+  const knowledgeIngestPanel = await read("server-web/components/knowledge/KnowledgeIngestPanel.vue");
   const approvalFlowView = await read("server-web/views/ApprovalFlowView.vue");
   const knowledgeImportCard = await read("server-web/components/KnowledgeImportCard.vue");
   const workspacesView = await read("server-web/views/WorkspacesView.vue");
@@ -684,10 +687,18 @@ async function assertFrontendCoverage() {
     "activeKnowledgeTab === 'maintenance'",
     "knowledgeManagementPanel.value === \"knowledge\"",
     "knowledgeManagementPanel.value === \"rules\"",
-    "uploadFilesToKnowledge",
-    "onIngestFilesSelected",
+    "KnowledgeIngestPanel",
     "dynamicParsingPolicySignature"
   ], "server-web/views/KnowledgeView.vue");
+
+  assertAllIncludes(knowledgeIngestPanel, [
+    "useKnowledgeViewContext",
+    "previewKnowledgeDocuments",
+    "normalizedKnowledgeDocumentUrl",
+    "dynamicParsingPreviewConfig",
+    "uploadFilesToKnowledge",
+    "onIngestFilesSelected"
+  ], "server-web/components/knowledge/KnowledgeIngestPanel.vue");
 
   assertAllIncludes(approvalFlowView, [
     "全平台审批流",
@@ -700,13 +711,18 @@ async function assertFrontendCoverage() {
   ], "server-web/views/ApprovalFlowView.vue");
 
   assertAllIncludes(knowledgeImportCard, [
-    "knowledgeDocxExportUrl",
-    "normalizedDocumentUrl",
+    "knowledgeExportUrl",
+    "normalizedKnowledgeDocumentUrl",
     "开始解析",
     "DOCX",
     "生成文档",
     "Number(ingestJob.progressPercent || 0)"
   ], "server-web/components/KnowledgeImportCard.vue");
+
+  assertAllIncludes(knowledgeDocuments, [
+    "knowledgeDocxExportUrl",
+    "normalizedDocumentUrl"
+  ], "server-web/lib/knowledge-documents.ts");
 
   assertAllIncludes(workspacesView, [
     "knowledgeScope",

@@ -21,29 +21,30 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `server-web/composables` | 56 | 23031 | 121 | 5 | 0 | 200 | 25 |
-| `server-web/styles` | 22 | 12348 | 0 | 0 | 0 | 150 | 0 |
-| `server-web/views` | 21 | 7723 | 0 | 0 | 0 | 75 | 1 |
-| `server-web/components` | 37 | 6780 | 1 | 0 | 1 | 21 | 2 |
-| `server-web/lib` | 9 | 4908 | 25 | 0 | 0 | 20 | 0 |
-| `server-web/i18n` | 1 | 1645 | 0 | 0 | 0 | 7 | 0 |
+| `server-web/composables` | 56 | 22976 | 121 | 5 | 0 | 108 | 25 |
+| `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 100 | 0 |
+| `server-web/views` | 21 | 7485 | 0 | 0 | 0 | 4 | 1 |
+| `server-web/components` | 38 | 6852 | 1 | 0 | 1 | 21 | 2 |
+| `server-web/lib` | 9 | 4899 | 25 | 0 | 0 | 12 | 0 |
+| `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
 
 ### Largest Files
 
 | File | Lines | Notes |
 | --- | ---: | --- |
-| `server-web/composables/useConsole.ts` | 4486 | Global singleton, route/page state, bridge calls, DOM effects, auth, settings, jobs, knowledge, runtime, and admin actions are still concentrated here. |
+| `server-web/composables/useConsole.ts` | 4485 | Global singleton, route/page state, bridge calls, DOM effects, auth, settings, jobs, knowledge, runtime, and admin actions are still concentrated here. |
 | `server-web/lib/types.ts` | 2661 | Cross-domain frontend API type monolith. |
-| `server-web/i18n/console.ts` | 1645 | All console copy plus DOM localization are coupled in one module. |
+| `server-web/i18n/console.ts` | 1644 | All console copy plus DOM localization are coupled in one module. |
 | `server-web/styles/features.css` | 1495 | Feature styling monolith. |
 | `server-web/styles/components.css` | 1214 | Shared component styling monolith. |
 | `server-web/lib/bridge.ts` | 1206 | One frontend API bridge for all domains. |
 | `server-web/styles/views/debug-agent-explore.css` | 984 | View-specific stylesheet has grown into a feature module. |
 | `server-web/composables/console-word-cloud-controller.ts` | 980 | Large domain controller with bridge effects and UI orchestration. |
-| `server-web/composables/useWorkspacesConsole.ts` | 962 | Workspace page facade now consumes shell context, but still contains direct DOM feedback and loose workspace payload typing. |
-| `server-web/views/KnowledgeView.vue` | 884 | View no longer owns document parsing or normalized document URL bridge calls, but template and destructured page facade remain large. |
-| `server-web/views/admin/AgentPermissionsView.vue` | 702 | View presentation is slimmer after controller extraction, but template complexity is still high. |
-| `server-web/components/KnowledgeDistillationWorkbench.vue` | 675 | Component no longer owns bridge calls, run normalization, or model probe plumbing, but still has a large template. |
+| `server-web/composables/useWorkspacesConsole.ts` | 961 | Workspace page facade now consumes shell context, but still contains direct DOM feedback and loose workspace payload typing. |
+| `server-web/styles/views/word-cloud.css` | 922 | Word cloud view styling is a large feature stylesheet. |
+| `server-web/styles/themes.css` | 876 | Theme and token ownership remain broad. |
+| `server-web/composables/console-info-feed-utils.ts` | 852 | Feed utilities mix formatting, filtering, and presentation helpers. |
+| `server-web/composables/useKnowledgeViewConsole.ts` | 817 | Knowledge page facade still aggregates maintenance, rules, library, ingest, and word cloud state. |
 
 ### Direct Coupling Hotspots
 
@@ -88,7 +89,7 @@ Required direction:
 
 ### P0-3: Large feature components mix rendering, workflow state, and side effects
 
-`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, and the debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, but the remaining large templates still need focused child components.
+`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, the debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, and KnowledgeView's ingest panel has been split into `KnowledgeIngestPanel.vue`, but the remaining large templates still need focused child components.
 
 Required direction:
 
@@ -211,6 +212,7 @@ Required direction:
 - `server-web/views/admin/RuntimeDownloadsView.vue`: runtime dependency types, status helpers, source hints, trigger guards, and bridge calls moved to `server-web/lib/runtime-dependencies.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/admin/ProductionHealthView.vue`: production health/baseline loading, status labels, elapsed time formatting, and date formatting moved to `server-web/lib/production-health.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/KnowledgeView.vue` and `server-web/components/KnowledgeImportCard.vue`: knowledge export URL generation, normalized document links, and document preview parsing moved to `server-web/lib/knowledge-documents.ts`. Both files no longer import `bridge` directly.
+- `server-web/views/KnowledgeView.vue`: knowledge ingest target selection, upload, parsing preview, and normalized document download table moved to `server-web/components/knowledge/KnowledgeIngestPanel.vue`; the view now consumes the dynamic parsing signature from `useKnowledgeViewConsole.ts` instead of duplicating the parsing contract inline.
 - `server-web/views/DashboardView.vue`: dashboard state now comes from `serverConsoleShellContext`; the view no longer imports `useConsole()` directly.
 - `server-web/views/ApprovalFlowView.vue`, `server-web/views/FeedView.vue`, `server-web/views/SourcesView.vue`, and admin views under `server-web/views/admin`: shell-owned state now comes from `serverConsoleShellContext`; these views no longer import `useConsole()` directly.
 - `server-web/composables/useDebugViewConsole.ts`, `server-web/composables/useKnowledgeViewConsole.ts`, `server-web/composables/useWorkspacesConsole.ts`, and `server-web/composables/console-agent-permissions-view-controller.ts`: compatibility dependencies now flow through `serverConsoleShellContext`, reducing direct `useConsole()` callers to the shell boundary.
