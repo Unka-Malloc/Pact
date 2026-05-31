@@ -383,6 +383,18 @@ const FORMAT_ROUTES = Object.freeze([
     referenceFrameworks: ["haystack", "llama-index", "graphrag"]
   },
   {
+    id: "calendar",
+    label: "Calendar",
+    extensions: [".ics", ".vcs"],
+    mediaTypes: ["text/calendar", "application/ics", "text/x-vcalendar"],
+    contentShape: "calendar",
+    preferredParser: "calendar.ics",
+    fallbackParsers: ["text.direct"],
+    parserChain: ["calendar.route", "calendar.ics", "text.direct"],
+    streamingUnit: "event",
+    referenceFrameworks: ["llama-index", "haystack", "unstructured"]
+  },
+  {
     id: "source-code",
     label: "Source code",
     extensions: [
@@ -970,7 +982,7 @@ function isStreamableTextRoute(route = null, metadata = {}) {
   if (!route) {
     return false;
   }
-  if (["markdown", "plain-text", "source-code", "config", "diagram", "notebook", "diff"].includes(route.id)) {
+  if (["markdown", "plain-text", "source-code", "config", "diagram", "notebook", "diff", "calendar"].includes(route.id)) {
     return true;
   }
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
@@ -1742,6 +1754,152 @@ function parseUnifiedDiffText(text = "") {
     hunkCount,
     additions,
     deletions
+  };
+}
+
+function unfoldCalendarLines(text = "") {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const unfolded = [];
+  for (const line of lines) {
+    if (/^[ \t]/.test(line) && unfolded.length) {
+      unfolded[unfolded.length - 1] += line.slice(1);
+    } else {
+      unfolded.push(line);
+    }
+  }
+  return unfolded;
+}
+
+function decodeCalendarValue(value = "") {
+  return String(value || "")
+    .replace(/\\n/gi, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
+function parseCalendarDate(value = "") {
+  const text = String(value || "").trim();
+  let match = text.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z?)?$/);
+  if (match) {
+    return isoDateFromParts(match[1], match[2], match[3]);
+  }
+  match = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return isoDateFromParts(match[1], match[2], match[3]);
+  }
+  return "";
+}
+
+function parseCalendarText(text = "") {
+  const records = [];
+  const events = [];
+  const todos = [];
+  let current = null;
+  let minDate = "";
+  let maxDate = "";
+
+  const updateRange = (date = "") => {
+    if (!date) {
+      return;
+    }
+    if (!minDate || date < minDate) {
+      minDate = date;
+    }
+    if (!maxDate || date > maxDate) {
+      maxDate = date;
+    }
+  };
+
+  const closeComponent = () => {
+    if (!current) {
+      return;
+    }
+    const collection = current.type === "VTODO" ? todos : events;
+    collection.push(current);
+    current = null;
+  };
+
+  for (const rawLine of unfoldCalendarLines(text).slice(0, 20_000)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    if (/^BEGIN:(VEVENT|VTODO|VJOURNAL)$/i.test(line)) {
+      current = {
+        type: line.split(":")[1].toUpperCase(),
+        fields: {}
+      };
+      continue;
+    }
+    if (/^END:(VEVENT|VTODO|VJOURNAL)$/i.test(line)) {
+      closeComponent();
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    const colon = line.indexOf(":");
+    if (colon < 0) {
+      continue;
+    }
+    const propertyPart = line.slice(0, colon);
+    const value = decodeCalendarValue(line.slice(colon + 1));
+    const [namePart] = propertyPart.split(";");
+    const name = String(namePart || "").toUpperCase();
+    if (!name) {
+      continue;
+    }
+    current.fields[name] = value;
+  }
+  closeComponent();
+
+  const emitComponent = (component, index, label) => {
+    const fields = component.fields || {};
+    const title = fields.SUMMARY || fields.UID || `${label} ${index + 1}`;
+    records.push(`Calendar ${label} ${index + 1}: ${title}`);
+    for (const [field, prefix] of [
+      ["DTSTART", "start date"],
+      ["DTEND", "end date"],
+      ["DUE", "due date"],
+      ["COMPLETED", "completed date"],
+      ["CREATED", "created date"],
+      ["LAST-MODIFIED", "modified date"]
+    ]) {
+      const date = parseCalendarDate(fields[field] || "");
+      if (date) {
+        updateRange(date);
+        records.push(`Calendar ${label} ${prefix}: ${date}`);
+      }
+    }
+    if (fields.LOCATION) {
+      records.push(`Calendar ${label} location: ${fields.LOCATION}`);
+    }
+    if (fields.ORGANIZER) {
+      records.push(`Calendar ${label} organizer: ${fields.ORGANIZER}`);
+    }
+    if (fields.DESCRIPTION) {
+      records.push(`Calendar ${label} description: ${fields.DESCRIPTION.replace(/\s+/g, " ").slice(0, 1000)}`);
+    }
+  };
+
+  events.forEach((event, index) => emitComponent(event, index, "event"));
+  todos.forEach((todo, index) => emitComponent(todo, index, "todo"));
+
+  if (!records.length) {
+    const fallback = String(text || "").trim();
+    if (fallback) {
+      records.push(`Calendar text: ${fallback.slice(0, 4000)}`);
+    }
+  }
+
+  return {
+    text: records.join("\n"),
+    eventCount: events.length,
+    todoCount: todos.length,
+    from: minDate,
+    to: maxDate || minDate
   };
 }
 
@@ -3676,6 +3834,19 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       });
       return { text: parsed.text || text, parserTrace, warnings: [] };
     }
+    if (route?.id === "calendar") {
+      const parsed = parseCalendarText(text);
+      parserTrace.push({
+        stage: "calendar.ics",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        events: parsed.eventCount,
+        todos: parsed.todoCount,
+        from: parsed.from,
+        to: parsed.to
+      });
+      return { text: parsed.text || text, parserTrace, warnings: [] };
+    }
     if (route?.id === "diagram") {
       const parsed = parseDiagramText(text, metadata);
       parserTrace.push({
@@ -3779,6 +3950,19 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
         hunks: parsed.hunkCount,
         additions: parsed.additions,
         deletions: parsed.deletions
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+    }
+    if (route?.id === "calendar") {
+      const parsed = parseCalendarText(plain);
+      parserTrace.push({
+        stage: "calendar.ics",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        events: parsed.eventCount,
+        todos: parsed.todoCount,
+        from: parsed.from,
+        to: parsed.to
       });
       return { text: parsed.text || plain.trim(), parserTrace, warnings };
     }
@@ -4148,6 +4332,7 @@ function streamParserStage(route = null, metadata = {}) {
   if (route?.id === "diagram") return "diagram.structure";
   if (route?.id === "notebook") return "notebook.cells";
   if (route?.id === "diff") return "diff.unified";
+  if (route?.id === "calendar") return "calendar.ics";
   if (route?.id === "spreadsheet" && metadata.extension === ".csv") return "table.csv";
   if (route?.id === "spreadsheet" && metadata.extension === ".tsv") return "table.tsv";
   if (route?.id === "json") return "structured.jsonl";
@@ -4169,6 +4354,9 @@ function transformStreamingTextChunk(chunk = "", route = null, metadata = {}) {
   }
   if (route?.id === "diff") {
     return parseUnifiedDiffText(chunk).text || String(chunk || "");
+  }
+  if (route?.id === "calendar") {
+    return parseCalendarText(chunk).text || String(chunk || "");
   }
   if (metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml") {
     return stripMarkup(chunk);
@@ -8095,6 +8283,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "notebook.cells",
         "code.structure",
         "diff.unified",
+        "calendar.ics",
         "table.csv",
         "table.tsv",
         "email.headers-body",

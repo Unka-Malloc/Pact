@@ -396,6 +396,7 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".py"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".diff"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".patch"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ics"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
@@ -406,6 +407,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("notebook.cells"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diff.unified"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("calendar.ics"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
@@ -758,6 +760,20 @@ try {
               "+        routed['parser'] = 'diff.unified'",
               "+        return json.dumps(routed)",
               ""
+            ].join("\n"),
+            "calendar/release.ics": [
+              "BEGIN:VCALENDAR",
+              "VERSION:2.0",
+              "PRODID:-//Pact//Container KD//EN",
+              "BEGIN:VEVENT",
+              "UID:container-release-20260615@example.test",
+              "DTSTART:20260615T120000Z",
+              "DTEND:20260615T130000Z",
+              "SUMMARY:Container project convergence review",
+              "LOCATION:Container Lab",
+              "DESCRIPTION:Verify archive child routing, calendar timeline extraction, and graph evidence convergence.",
+              "END:VEVENT",
+              "END:VCALENDAR"
             ].join("\n")
           })
         }
@@ -805,6 +821,12 @@ try {
   assert.equal(diffChild.parentSourceId, "container-project-package");
   assert.equal(diffChild.route.formatId, "diff");
   assert.equal(diffChild.parserTrace.some((trace) => trace.stage === "diff.unified" && trace.status === "completed" && trace.files === 1 && trace.hunks === 1 && trace.additions === 3 && trace.deletions === 1), true);
+  const calendarChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!calendar/release.ics");
+  assert.ok(calendarChild, "project package calendar child must be expanded");
+  assert.equal(calendarChild.parentSourceId, "container-project-package");
+  assert.equal(calendarChild.route.formatId, "calendar");
+  assert.equal(calendarChild.parserTrace.some((trace) => trace.stage === "calendar.ics" && trace.status === "completed" && trace.events === 1 && trace.from === "2026-06-15"), true);
+  assert.equal(calendarChild.timeRange.from, "2026-06-15");
   const candidateSourceIds = new Set(projectPackageRun.payload.result.candidates.flatMap((candidate) => candidate.sourceIds || []));
   assert.equal(candidateSourceIds.has("container-project-package!docs/architecture.md"), true);
   assert.equal(candidateSourceIds.has("container-project-package!finance/invoice.csv"), true);
@@ -813,6 +835,7 @@ try {
   assert.equal(candidateSourceIds.has("container-project-package!notebooks/experiment.ipynb"), true);
   assert.equal(candidateSourceIds.has("container-project-package!src/runtime.py"), true);
   assert.equal(candidateSourceIds.has("container-project-package!changes/runtime.diff"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!calendar/release.ics"), true);
   assert.equal(projectPackageRun.payload.result.classification.coreGroupCount >= 2, true);
   assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
     group.sourceIds.includes("container-project-package!docs/architecture.md") &&

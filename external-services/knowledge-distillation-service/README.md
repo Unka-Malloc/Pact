@@ -80,6 +80,7 @@ Routed format families:
 - Email: EML, MSG, MBOX with attachment child routing.
 - Images: PNG, JPEG, TIFF, WEBP, BMP, HEIC, PBM, PGM, PNM.
 - Source code: JavaScript, TypeScript, Python, Java, Go, Rust, Swift, Kotlin, C, and C++ with static import/symbol extraction.
+- Calendar events: iCalendar `.ics` and vCalendar `.vcs` with event/todo and timeline extraction.
 - Recursively routed ZIP, TAR, GZip/TGZ, and 7z archives.
 
 Built-in payload parsers:
@@ -91,6 +92,7 @@ Built-in payload parsers:
 - Jupyter Notebook cell normalization for `.ipynb` files.
 - Source code structure normalization for imports, symbols, entry points, TODOs, and line-aware excerpts without executing code.
 - Unified diff/patch normalization for changed files, hunks, additions, deletions, and context lines.
+- iCalendar/vCalendar normalization for events, todos, dates, locations, organizers, and descriptions.
 - CSV and TSV row normalization.
 - EML-style header/body extraction.
 - MSG binary text extraction through Apache Tika for direct payloads and mounted file references.
@@ -118,7 +120,7 @@ Container runtime:
 - The Docker image installs Poppler and Tesseract English OCR so scanned PDF and image OCR paths are executable in single-node deployment.
 - The Docker image installs Java and Apache Tika app so legacy Office fallback is executable without relying on the embedded Pact server.
 - The Docker image installs 7zip so 7z project packages can be expanded as child documents.
-- `npm run server:verify:external-knowledge-distillation-container` builds the image, starts the service, checks `/v1/runtime/health`, and verifies OCR image, image-only scanned PDF, legacy Office fallback, OpenDocument, EPUB, project ZIP/TAR/TGZ/7z packages, mounted file references, mounted archive packages, mounted PDF payloads, mounted DOCX/PPTX/XLSX/OpenDocument/EPUB payloads, mounted DOC/PPT/XLS/RTF payloads, configuration files, diagram files, notebook files, source code files, diff/patch files, MSG Tika extraction, MBOX mailbox splitting, and email attachment payloads become distillable corpus through `ocr.image`, `ocr.page`, `tika.text`, `tika.text.file-ref`, `open-document.structured`, `ebook.epub`, `pdf.text.pdftotext`, `structured-zip.file-ref.extract`, `table.sheet.headers`, `table.sheet.cells`, `table.time-index`, `config.key-value`, `diagram.structure`, `notebook.cells`, `code.structure`, `diff.unified`, `archive.expand-route`, `archive.file-ref.expand`, `archive.entry-file-ref`, `archive.tar.container`, `archive.gzip.decompress`, `archive.7z.extract`, `payload.file-ref`, `payload.stream-text`, `email.msg.tika`, `email.msg.tika.file-ref`, `email.mbox`, `email.mbox-route`, and `email.attachment-route`.
+- `npm run server:verify:external-knowledge-distillation-container` builds the image, starts the service, checks `/v1/runtime/health`, and verifies OCR image, image-only scanned PDF, legacy Office fallback, OpenDocument, EPUB, project ZIP/TAR/TGZ/7z packages, mounted file references, mounted archive packages, mounted PDF payloads, mounted DOCX/PPTX/XLSX/OpenDocument/EPUB payloads, mounted DOC/PPT/XLS/RTF payloads, configuration files, diagram files, notebook files, source code files, diff/patch files, calendar files, MSG Tika extraction, MBOX mailbox splitting, and email attachment payloads become distillable corpus through `ocr.image`, `ocr.page`, `tika.text`, `tika.text.file-ref`, `open-document.structured`, `ebook.epub`, `pdf.text.pdftotext`, `structured-zip.file-ref.extract`, `table.sheet.headers`, `table.sheet.cells`, `table.time-index`, `config.key-value`, `diagram.structure`, `notebook.cells`, `code.structure`, `diff.unified`, `calendar.ics`, `archive.expand-route`, `archive.file-ref.expand`, `archive.entry-file-ref`, `archive.tar.container`, `archive.gzip.decompress`, `archive.7z.extract`, `payload.file-ref`, `payload.stream-text`, `email.msg.tika`, `email.msg.tika.file-ref`, `email.mbox`, `email.mbox-route`, and `email.attachment-route`.
 
 External runtime still required:
 
