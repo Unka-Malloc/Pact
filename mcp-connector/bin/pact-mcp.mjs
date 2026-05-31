@@ -2257,9 +2257,26 @@ function buildDeviceHubManifest({
   const parsed = new URL(baseUrl);
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
   const env = deviceDiscoveryEnv({ baseUrl, primaryPath: discoveryPath });
-  const discoverCommand = `npx ${packageJson.name}@${packageJson.version} discover-local`;
-  const interactiveInstallCommand = `npx ${packageJson.name}@${packageJson.version} install`;
-  const scanCommand = `npx ${packageJson.name}@${packageJson.version} scan --json`;
+  const packageExec = `npx ${packageJson.name}@${packageJson.version}`;
+  const urlArgs = ` --url ${shellQuote(baseUrl)}`;
+  const discoverCommand = `${packageExec} discover-local${urlArgs}`;
+  const interactiveInstallCommand = `${packageExec} install${urlArgs}`;
+  const scanCommand = `${packageExec} scan${urlArgs} --json`;
+  const codexInstallCommand = `${packageExec} install --target codex${urlArgs}`;
+  const codexManifest = codex
+    ? {
+        ...codex,
+        installCommand: codexInstallCommand
+      }
+    : codexPluginRoot
+    ? {
+        plugin: `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+        marketplaceRoot,
+        pluginRoot: codexPluginRoot,
+        tokenEnv: DEFAULT_TOKEN_ENV,
+        installCommand: codexInstallCommand
+      }
+    : null;
   return {
     version: 1,
     schemaVersion: "pact.mcp.device-hub.v1",
@@ -2296,10 +2313,10 @@ function buildDeviceHubManifest({
         connector: {
           packageName: packageJson.name,
           packageVersion: packageJson.version,
-          registerCommand: `npx ${packageJson.name}@${packageJson.version} register`,
+          registerCommand: `${packageExec} register${urlArgs}`,
           interactiveInstallCommand,
-          installCommand: `npx ${packageJson.name}@${packageJson.version} install --target <client>`,
-          uninstallCommand: `npx ${packageJson.name}@${packageJson.version} uninstall --target <client>`,
+          installCommand: `${packageExec} install --target <client>${urlArgs}`,
+          uninstallCommand: `${packageExec} uninstall --target <client>${urlArgs}`,
           discoverCommand,
           scanCommand
         },
@@ -2308,15 +2325,7 @@ function buildDeviceHubManifest({
           acceptedHeaders: ["Authorization: Bearer <token>", "X-Pact-Api-Key"],
           tokenEnv: DEFAULT_TOKEN_ENV
         },
-        codex: codex || (codexPluginRoot
-          ? {
-              plugin: `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
-              marketplaceRoot,
-              pluginRoot: codexPluginRoot,
-              tokenEnv: DEFAULT_TOKEN_ENV,
-              installCommand: `npx ${packageJson.name}@${packageJson.version} install --target codex`
-            }
-          : null),
+        codex: codexManifest,
         targets
       }
     }
@@ -6209,12 +6218,17 @@ async function registerCommand(options) {
     mcpUrl: `${settings.baseUrl}/mcp`,
     discoveryManifest,
     localEntry: {
-      command: "pact-mcp discover-local",
+      command: shellCommandForDiscoverLocal({ includeUrl: Boolean(settings.baseUrl), baseUrl: settings.baseUrl }),
       registryFile: discoveryManifest
     },
     localFiles,
     env,
-    clientInstall: `pact-mcp install --target <client>`,
+    clientInstall: shellCommandForInstall({
+      target: "<client>",
+      includeUrl: Boolean(settings.baseUrl),
+      baseUrl: settings.baseUrl,
+      tokenEnv: settings.tokenEnv
+    }),
     verifiedHandshake: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,
     note: "Discovered and registered the signed Pact MCP endpoint without installing it into any client."

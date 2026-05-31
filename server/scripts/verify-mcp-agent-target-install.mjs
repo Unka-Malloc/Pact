@@ -113,6 +113,7 @@ const autoKiloConfigPath = path.join(opencodeConfigDir, "kilo", "kilo.json");
 const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "mcp_config.json");
 const noDetectHome = path.join(opencodeConfigDir, "no-detect-home");
 const noDetectRegistryPath = path.join(opencodeConfigDir, "pact-no-detect-servers.json");
+const registerRegistryPath = path.join(opencodeConfigDir, "pact-register-servers.json");
 const remoteOpenCodeHome = path.join(opencodeConfigDir, "remote-opencode-home");
 const remoteOpenCodeRegistryPath = path.join(opencodeConfigDir, "pact-remote-opencode-servers.json");
 const remoteCodexRegistryPath = path.join(opencodeConfigDir, "pact-remote-codex-servers.json");
@@ -873,6 +874,16 @@ try {
     assert.equal(config.mcp?.pact?.type, "remote");
     assert.equal(config.mcp?.pact?.url, `${serverUrl}/mcp`);
     assert.ok(config.mcp?.pact?.headers?.["X-Pact-Api-Key"]);
+    const manifest = JSON.parse(await fs.readFile(autoRegistryPath, "utf8"));
+    const npxPrefix = `npx pact-mcp-connector@${payload.packageVersion}`;
+    const connector = manifest.servers?.pact?.connector || {};
+    assert.equal(connector.registerCommand, `${npxPrefix} register --url '${serverUrl}'`);
+    assert.equal(connector.interactiveInstallCommand, `${npxPrefix} install --url '${serverUrl}'`);
+    assert.equal(connector.installCommand, `${npxPrefix} install --target <client> --url '${serverUrl}'`);
+    assert.equal(connector.uninstallCommand, `${npxPrefix} uninstall --target <client> --url '${serverUrl}'`);
+    assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}'`);
+    assert.equal(connector.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --json`);
+    assert.equal(manifest.servers?.pact?.codex?.installCommand, `${npxPrefix} install --target codex --url '${serverUrl}'`);
     const kiloConfig = JSON.parse(await fs.readFile(autoKiloConfigPath, "utf8"));
     assert.equal(kiloConfig.mcp?.pact?.type, "remote");
     assert.equal(kiloConfig.mcp?.pact?.url, `${serverUrl}/mcp`);
@@ -1139,6 +1150,25 @@ try {
       assert.ok(candidate?.repairCommand?.includes(`pact-mcp install --target ${target}`), `${target} should include a repair command`);
       assert.equal(candidate.doctorCommand, `pact-mcp doctor --url '${serverUrl}' --json`);
     }
+  });
+
+  await testAsync("register output preserves verified server url in follow-up commands", async () => {
+    const result = await spawnConnector([
+      "register",
+      "--url", serverUrl,
+      "--token-env", missingInstallTokenEnv,
+      "--discovery-file", registerRegistryPath,
+      "--no-env",
+      "--json"
+    ]);
+    assert.equal(result.code, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.localEntry?.command, `pact-mcp discover-local --url '${serverUrl}' --json`);
+    assert.equal(payload.clientInstall, `pact-mcp install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    const manifest = JSON.parse(await fs.readFile(registerRegistryPath, "utf8"));
+    assert.equal(manifest.servers?.pact?.connector?.installCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target <client> --url '${serverUrl}'`);
+    assert.equal(manifest.servers?.pact?.connector?.scanCommand, `npx pact-mcp-connector@${payload.packageVersion} scan --url '${serverUrl}' --json`);
   });
 
   // ── SECTION 10: Machine-readable install failures ──
