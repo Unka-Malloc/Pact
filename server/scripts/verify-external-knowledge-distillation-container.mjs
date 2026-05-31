@@ -439,6 +439,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.file-ref.expand"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.entry-file-ref"), true);
@@ -1221,7 +1222,7 @@ try {
       "rm -rf /tmp/pact-mounted-structured",
       "mkdir -p /tmp/pact-mounted-structured/docx/word /tmp/pact-mounted-structured/pptx/ppt/slides /tmp/pact-mounted-structured/xlsx/xl/worksheets /tmp/pact-mounted-structured/odt /tmp/pact-mounted-structured/epub/META-INF /tmp/pact-mounted-structured/epub/OEBPS",
       "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
-      "printf '%s' '<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Mounted PPTX filePath slide evidence enters structured parser windows.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>' > /tmp/pact-mounted-structured/pptx/ppt/slides/slide1.xml",
+      "printf '%s' '<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX filePath slide evidence enters structured parser windows.</a:t></a:r></a:p></p:txBody></p:sp><p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"3\" name=\"Mounted Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Container PPTX</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Preserve mounted slide table cells</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>' > /tmp/pact-mounted-structured/pptx/ppt/slides/slide1.xml",
       "printf '%s' '<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>mounted xlsx</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si></sst>' > /tmp/pact-mounted-structured/xlsx/xl/sharedStrings.xml",
       "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c></row><row><c t=\"s\"><v>3</v></c><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c></row></sheetData></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
       "printf '%s' 'application/vnd.oasis.opendocument.text' > /tmp/pact-mounted-structured/odt/mimetype",
@@ -1479,7 +1480,6 @@ NODE`
     assert.ok(mountedStructured, `${sourceId} must be present in mounted structured corpus`);
     assert.equal(mountedStructured.route.formatId, formatId);
     assert.equal(mountedStructured.quality.suppliedPayloadKind, "file-ref-structured-zip");
-    assert.equal(mountedStructured.windowPlan.strategy, "file-ref-stream-windowing.v1");
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
@@ -1492,7 +1492,18 @@ NODE`
       assert.match(mountedStructured.windowPlan.windows[0]?.excerpt || "", /Sheet 1 Header row|A1=Parser|B2 Status=completed|C2 Report Date=2026-06-15/);
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
     }
-    assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+    if (formatId === "presentation") {
+      assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "office.presentation.tables" && trace.status === "completed" && trace.cells === 4), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "table-row" &&
+        ref.table?.format === "presentationml" &&
+        ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
+      ))), true);
+    } else {
+      assert.equal(mountedStructured.windowPlan.strategy, "file-ref-stream-windowing.v1");
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+    }
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
     assert.ok(mountedStructured.quality.textCharacters > 0, `${sourceId} must produce distillable text`);
   }

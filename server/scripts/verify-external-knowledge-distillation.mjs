@@ -273,6 +273,10 @@ const samplePptxBase64 = base64Zip({
     "<p:cSld><p:spTree>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable.</a:t></a:r></a:p></p:txBody></p:sp>",
+    "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"4\" name=\"Roadmap Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"2590800\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
+    "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
+    "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Slides</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Keep PowerPoint table cells queryable</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
+    "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
     "</p:spTree></p:cSld>",
     "</p:sld>"
   ].join("")
@@ -463,7 +467,13 @@ try {
         entries: {
           "ppt/slides/slide1.xml": [
             "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
-            "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Mounted PPTX slide route validates structured filePath parser coverage.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
+            "<p:cSld><p:spTree>",
+            "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX slide route validates structured filePath parser coverage.</a:t></a:r></a:p></p:txBody></p:sp>",
+            "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"3\" name=\"Mounted Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
+            "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
+            "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Mounted PPTX</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Preserve filePath PowerPoint table cells</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
+            "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
+            "</p:spTree></p:cSld>",
             "</p:sld>"
           ].join("")
         }
@@ -668,6 +678,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.file-ref.expand"), true);
@@ -1501,13 +1512,29 @@ try {
       assert.ok(mountedStructuredCorpus, `${sourceId} mounted structured ZIP document must be present in corpus`);
       assert.equal(mountedStructuredCorpus.route.formatId, formatId);
       assert.equal(mountedStructuredCorpus.quality.suppliedPayloadKind, "file-ref-structured-zip");
-      assert.equal(mountedStructuredCorpus.windowPlan.strategy, "file-ref-stream-windowing.v1");
       assert.equal(mountedStructuredCorpus.elementPlan.strategy, "document-element-model.v1");
-      assert.ok(mountedStructuredCorpus.elementPlan.elementCount >= 1, `${sourceId} mounted structured ZIP document must expose text-line fallback elements`);
+      assert.ok(mountedStructuredCorpus.elementPlan.elementCount >= 1, `${sourceId} mounted structured ZIP document must expose structured elements`);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
-      assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "document.structure.elements" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
+      if (formatId === "presentation") {
+        assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.presentation.tables" &&
+          trace.status === "completed" &&
+          trace.tables === 1 &&
+          trace.cells === 4
+        )), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "table-row" &&
+          ref.table?.format === "presentationml" &&
+          ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
+        ))), true);
+      } else {
+        assert.equal(mountedStructuredCorpus.windowPlan.strategy, "file-ref-stream-windowing.v1");
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "document.structure.elements" && trace.status === "completed"), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+      }
       if (formatId === "spreadsheet") {
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
@@ -1515,7 +1542,6 @@ try {
         assert.equal(mountedStructuredCorpus.timeRange.from, "2026-06-15");
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
       }
-      assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
       assert.ok(mountedStructuredCorpus.quality.textCharacters > 0, `${sourceId} mounted structured ZIP document must produce text`);
     }
@@ -1577,16 +1603,33 @@ try {
     trace.geometries >= 2 &&
     trace.layoutStrategy === "presentationml-shape-geometry.v1"
   )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.tables" &&
+    trace.status === "completed" &&
+    trace.tables === 1 &&
+    trace.cells === 4 &&
+    trace.layoutStrategy === "presentationml-table-geometry.v1"
+  )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["slide-shape"] >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "heading" &&
     element.page === 1 &&
     element.bbox?.x === 72 &&
     element.bbox?.y === 36 &&
     element.layout?.strategy === "presentationml-shape-geometry.v1"
+  )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "table-row" &&
+    element.page === 1 &&
+    element.bbox?.x === 72 &&
+    element.bbox?.y === 204 &&
+    element.table?.format === "presentationml" &&
+    element.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision" && cell.value.includes("PowerPoint table cells"))
   )), true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -1596,15 +1639,30 @@ try {
     ref.bbox?.y === 108 &&
     ref.layout?.strategy === "presentationml-shape-geometry.v1"
   ))), true);
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-row" &&
+    ref.page === 1 &&
+    ref.table?.format === "presentationml" &&
+    ref.cells?.some((cell) => cell.ref === "B2")
+  ))), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.parserProfile, "presentationml-slide-route");
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("slide-order"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-bbox"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "slide-shape" &&
       ref.bbox?.x === 72 &&
       ref.layout?.strategy === "presentationml-shape-geometry.v1"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "table-row" &&
+      ref.table?.format === "presentationml" &&
+      ref.cells?.some((cell) => cell.ref === "B2")
     ))
   )), true);
   const xlsxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-14");

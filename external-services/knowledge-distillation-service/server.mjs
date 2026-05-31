@@ -739,7 +739,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML and OpenDocument table row/cell metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond text-level elements"]
   },
@@ -764,7 +764,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/OpenDocument table cells, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -4241,6 +4241,64 @@ function pptxShapeGeometry(shapeXml = "", slideNumber = 0, order = 0) {
   };
 }
 
+function pptxTableCells(rowXml = "") {
+  const cells = [];
+  for (const match of String(rowXml || "").matchAll(/<[^:>]*:?tc\b[\s\S]*?<\/[^:>]*:?tc>/g)) {
+    cells.push(compactMarkupText(textFromXmlTextNodes(match[0]), 1000));
+  }
+  return cells;
+}
+
+function appendPptxTableElements(elements = [], frameXml = "", { slideNumber = 0, tableIndex = 0, order = 0 } = {}) {
+  const tableXml = String(frameXml || "").match(/<[^:>]*:?tbl\b[\s\S]*?<\/[^:>]*:?tbl>/i)?.[0] || "";
+  const tableLabel = pptxShapeName(frameXml, `Slide ${slideNumber} Table ${tableIndex}`);
+  const rows = [];
+  for (const match of tableXml.matchAll(/<[^:>]*:?tr\b[\s\S]*?<\/[^:>]*:?tr>/g)) {
+    const cells = pptxTableCells(match[0]);
+    if (cells.some(Boolean)) {
+      rows.push(cells);
+    }
+  }
+  if (!rows.length) {
+    return { rowCount: 0, cellCount: 0, geometryCount: 0 };
+  }
+  const geometry = pptxShapeGeometry(frameXml, slideNumber, order);
+  const tableLayout = geometry.layout
+    ? { ...geometry.layout, strategy: "presentationml-table-geometry.v1" }
+    : { strategy: "presentationml-table-geometry.v1", page: slideNumber, order };
+  const headers = rows[0];
+  let cellCount = 0;
+  for (const [rowIndex, cells] of rows.entries()) {
+    const rowNumber = rowIndex + 1;
+    cellCount += cells.length;
+    const type = rowIndex === 0 ? "table-header" : "table-row";
+    const text = rowIndex === 0
+      ? `Slide ${slideNumber} ${tableLabel} Header row ${rowNumber}: ${cells.map((cell, cellIndex) => `${xlsxColumnLabel("", cellIndex)}=${cell}`).join("; ")}`
+      : `Slide ${slideNumber} ${tableLabel} Row ${rowNumber}: ${cells.map((cell, cellIndex) => `${headers[cellIndex] || `Column ${cellIndex + 1}`}=${cell}`).join("; ")}`;
+    pushStructureElement(elements, type, text, {
+      line: rowNumber,
+      name: `slide-${slideNumber}#${tableLabel}`,
+      page: slideNumber,
+      bbox: geometry.bbox,
+      layout: tableLayout,
+      table: {
+        format: "presentationml",
+        sheet: tableLabel,
+        row: rowNumber,
+        columns: cells.length
+      },
+      cells: cells.map((cell, cellIndex) => ({
+        ref: `${xlsxColumnLabel("", cellIndex)}${rowNumber}`,
+        column: xlsxColumnLabel("", cellIndex),
+        row: rowNumber,
+        header: rowIndex === 0 ? "" : headers[cellIndex] || "",
+        value: cell
+      }))
+    });
+  }
+  return { rowCount: rows.length, cellCount, geometryCount: geometry.bbox ? 1 : 0 };
+}
+
 function parsePptx(entries = []) {
   const slideNames = entries
     .map((entry) => entry.name)
@@ -4249,13 +4307,20 @@ function parsePptx(entries = []) {
   const elements = [];
   let paragraphCount = 0;
   let shapeCount = 0;
-  let geometryCount = 0;
+  let shapeGeometryCount = 0;
+  let tableCount = 0;
+  let tableRowCount = 0;
+  let tableCellCount = 0;
+  let tableGeometryCount = 0;
   for (const [index, name] of slideNames.entries()) {
     const slideNumber = index + 1;
     const xml = zipEntryText(entries, name);
     const shapeBlocks = Array.from(xml.matchAll(/<[^:>]*:?sp\b[\s\S]*?<\/[^:>]*:?sp>/g))
       .map((match) => match[0])
       .filter((shapeXml) => textFromXmlTextNodes(shapeXml));
+    const tableFrames = Array.from(xml.matchAll(/<[^:>]*:?graphicFrame\b[\s\S]*?<\/[^:>]*:?graphicFrame>/g))
+      .map((match) => match[0])
+      .filter((frameXml) => /<[^:>]*:?tbl\b/i.test(frameXml));
     if (shapeBlocks.length) {
       for (const [shapeIndex, shapeXml] of shapeBlocks.entries()) {
         const paragraphs = Array.from(shapeXml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
@@ -4270,7 +4335,7 @@ function parsePptx(entries = []) {
         shapeCount += 1;
         const geometry = pptxShapeGeometry(shapeXml, slideNumber, shapeCount);
         if (geometry.bbox) {
-          geometryCount += 1;
+          shapeGeometryCount += 1;
         }
         const shapeName = pptxShapeName(shapeXml, `shape-${shapeIndex + 1}`);
         const type = shapeIndex === 0 ? "heading" : "slide-shape";
@@ -4286,6 +4351,21 @@ function parsePptx(entries = []) {
           paragraphCount += Math.max(1, paragraphs.length);
         }
       }
+    }
+    if (tableFrames.length) {
+      for (const frameXml of tableFrames) {
+        tableCount += 1;
+        const table = appendPptxTableElements(elements, frameXml, {
+          slideNumber,
+          tableIndex: tableCount,
+          order: shapeCount + tableCount
+        });
+        tableRowCount += table.rowCount;
+        tableCellCount += table.cellCount;
+        tableGeometryCount += table.geometryCount;
+      }
+    }
+    if (shapeBlocks.length || tableFrames.length) {
       continue;
     }
     const paragraphs = Array.from(xml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
@@ -4322,7 +4402,12 @@ function parsePptx(entries = []) {
     format: "pptx",
     slideCount: slideNames.length,
     shapeCount,
-    geometryCount,
+    geometryCount: shapeGeometryCount + tableGeometryCount,
+    shapeGeometryCount,
+    tableCount,
+    tableRowCount,
+    tableCellCount,
+    tableGeometryCount,
     paragraphCount,
     headingCount: counts.heading || 0
   };
@@ -4951,6 +5036,165 @@ function structuredZipStage(route = null) {
   if (route?.id === "open-document") return "open-document.structured";
   if (route?.id === "ebook") return "ebook.epub";
   return "structured-zip.text";
+}
+
+function structuredZipDirectoryEntries(route = null, rootDir = "") {
+  const files = route?.id === "spreadsheet"
+    ? [
+        ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
+        ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
+        ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
+          .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
+      ]
+    : structuredZipXmlFiles(route, rootDir);
+  return files.map((file) => ({
+    name: file.relativePath,
+    data: fsSync.readFileSync(file.absolutePath)
+  }));
+}
+
+function parseStructuredZipDirectory(route = null, rootDir = "") {
+  const entries = structuredZipDirectoryEntries(route, rootDir);
+  if (!entries.length) {
+    return { text: "", elements: [], format: "", fileCount: 0, parserTrace: [] };
+  }
+  if (route?.id === "word") {
+    const parsed = parseDocx(entries);
+    return {
+      ...parsed,
+      fileCount: entries.length,
+      parserTrace: [
+        {
+          stage: "office.word.structured",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          paragraphs: parsed.paragraphCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
+          headings: parsed.headingCount,
+          listItems: parsed.listItemCount
+        },
+        {
+          stage: "office.word.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount
+        }
+      ]
+    };
+  }
+  if (route?.id === "presentation") {
+    const parsed = parsePptx(entries);
+    return {
+      ...parsed,
+      fileCount: entries.length,
+      parserTrace: [
+        {
+          stage: "office.presentation.slides",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          slides: parsed.slideCount,
+          shapes: parsed.shapeCount,
+          geometries: parsed.geometryCount,
+          shapeGeometries: parsed.shapeGeometryCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
+          tableGeometries: parsed.tableGeometryCount,
+          layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount
+        },
+        {
+          stage: "office.presentation.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount,
+          geometries: parsed.tableGeometryCount,
+          layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        }
+      ]
+    };
+  }
+  if (route?.id === "spreadsheet") {
+    const parsed = parseXlsxDetailed(entries);
+    return {
+      ...parsed,
+      fileCount: entries.length,
+      parserTrace: [
+        {
+          stage: "table.sheet.structured",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          sheets: parsed.sheetCount,
+          rows: parsed.rowCount,
+          cells: parsed.cellCount
+        },
+        {
+          stage: "table.sheet.headers",
+          status: parsed.headerRowCount ? "completed" : "empty",
+          headerRows: parsed.headerRowCount
+        },
+        {
+          stage: "table.sheet.cells",
+          status: parsed.cellCount ? "completed" : "empty",
+          cells: parsed.cellCount,
+          rows: parsed.rowCount,
+          sharedStrings: parsed.sharedStringCount
+        }
+      ]
+    };
+  }
+  if (route?.id === "open-document") {
+    const parsed = parseOpenDocument(entries);
+    return {
+      ...parsed,
+      fileCount: entries.length,
+      parserTrace: [
+        {
+          stage: "open-document.structured",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          elements: parsed.elements.length,
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount
+        },
+        {
+          stage: "open-document.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount
+        }
+      ]
+    };
+  }
+  if (route?.id === "ebook") {
+    const parsed = parseEpub(entries);
+    return {
+      ...parsed,
+      fileCount: entries.length,
+      parserTrace: [{
+        stage: "ebook.epub",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        elements: parsed.elements.length,
+        chapters: parsed.chapterCount,
+        headings: parsed.headingCount,
+        paragraphs: parsed.paragraphCount
+      }]
+    };
+  }
+  return { text: "", elements: [], format: "", fileCount: entries.length, parserTrace: [] };
 }
 
 function parseArchiveManifest(entries = []) {
@@ -5857,9 +6101,23 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           slides: parsed.slideCount,
           shapes: parsed.shapeCount,
           geometries: parsed.geometryCount,
-          layoutStrategy: parsed.geometryCount ? "presentationml-shape-geometry.v1" : "",
+          shapeGeometries: parsed.shapeGeometryCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
+          tableGeometries: parsed.tableGeometryCount,
+          layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount,
+          geometries: parsed.tableGeometryCount,
+          layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
         });
         if (parsed.text) {
           return {
@@ -6451,8 +6709,8 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     return {
       ...base,
       parserProfile: "presentationml-slide-route",
-      preserves: [...base.preserves, "slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order"],
-      conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout", "evidence-pack"],
+      preserves: [...base.preserves, "slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs"],
+      conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-and-table-refs", "evidence-pack"],
       knownLosses: ["speaker-notes-and-visual-layer-geometry-partial"]
     };
   }
@@ -6872,6 +7130,9 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
   const outputPath = path.join(outputDir, "structured-text.txt");
   let totalCharacters = 0;
   let structuredFileCount = 0;
+  let directText = "";
+  let structureElements = [];
+  let structureFormat = "";
   try {
     const spreadsheet = route?.id === "spreadsheet"
       ? appendXlsxDirectoryAsText(extracted.outputDir, outputPath)
@@ -6879,7 +7140,49 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
     if (spreadsheet) {
       totalCharacters = spreadsheet.totalCharacters;
       structuredFileCount = spreadsheet.sheetCount;
+      parserTrace.push({
+        stage,
+        status: totalCharacters ? "completed" : "empty",
+        mode: "structured-zip-file-ref",
+        files: structuredFileCount,
+        characters: totalCharacters
+      });
       parserTrace.push(...spreadsheet.parserTrace);
+    } else if (route?.id === "presentation") {
+      const parsed = parsePptx(readDirectoryEntries(extracted.outputDir, 2000));
+      directText = parsed.text || "";
+      totalCharacters = directText.length;
+      structuredFileCount = parsed.slideCount;
+      structureElements = parsed.elements || [];
+      structureFormat = parsed.format || "pptx";
+      parserTrace.push({
+        stage,
+        status: totalCharacters ? "completed" : "empty",
+        mode: "structured-zip-file-ref",
+        files: structuredFileCount,
+        characters: totalCharacters,
+        elements: structureElements.length,
+        slides: parsed.slideCount,
+        shapes: parsed.shapeCount,
+        geometries: parsed.geometryCount,
+        shapeGeometries: parsed.shapeGeometryCount,
+        tables: parsed.tableCount,
+        tableRows: parsed.tableRowCount,
+        tableCells: parsed.tableCellCount,
+        tableGeometries: parsed.tableGeometryCount,
+        layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
+        headings: parsed.headingCount,
+        paragraphs: parsed.paragraphCount
+      });
+      parserTrace.push({
+        stage: "office.presentation.tables",
+        status: parsed.tableCount ? "completed" : "empty",
+        tables: parsed.tableCount,
+        rows: parsed.tableRowCount,
+        cells: parsed.tableCellCount,
+        geometries: parsed.tableGeometryCount,
+        layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+      });
     } else {
       const files = structuredZipXmlFiles(route, extracted.outputDir);
       structuredFileCount = files.length;
@@ -6898,15 +7201,15 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
         fsSync.appendFileSync(outputPath, "\n", "utf8");
         totalCharacters += heading.length + extractedCharacters + 1;
       }
+      parserTrace.push({
+        stage,
+        status: totalCharacters ? "completed" : "empty",
+        mode: "structured-zip-file-ref",
+        files: structuredFileCount,
+        characters: totalCharacters
+      });
     }
-    parserTrace.push({
-      stage,
-      status: totalCharacters ? "completed" : "empty",
-      mode: "structured-zip-file-ref",
-      files: structuredFileCount,
-      characters: totalCharacters
-    });
-    const stream = totalCharacters > 0
+    const stream = totalCharacters > 0 && !structureElements.length
       ? streamTextFileAnalysis({
           document,
           route: plainTextRoute(),
@@ -6923,10 +7226,12 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           warnings: []
         };
     return {
-      text: stream.textSample || "",
-      totalCharacters: stream.totalCharacters || 0,
-      contentHash: stream.contentHash || "",
-      windowPlan: stream.windowPlan || null,
+      text: directText || stream.textSample || "",
+      totalCharacters: totalCharacters || stream.totalCharacters || 0,
+      contentHash: directText ? `sha256:${sha(directText)}` : stream.contentHash || "",
+      windowPlan: structureElements.length ? null : stream.windowPlan || null,
+      structureElements,
+      structureFormat,
       parserTrace: [...parserTrace, ...stream.parserTrace],
       warnings: [...warnings, ...(stream.warnings || [])]
     };
@@ -7210,8 +7515,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           text: structuredZipAnalysis.text,
           parserTrace: structuredZipAnalysis.parserTrace,
           warnings: structuredZipAnalysis.warnings,
-          structureElements: [],
-          structureFormat: ""
+          structureElements: structuredZipAnalysis.structureElements || [],
+          structureFormat: structuredZipAnalysis.structureFormat || ""
         }
     : mboxFileAnalysis
       ? {
@@ -10623,6 +10928,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "archive.7z.extract",
         "office.word.structured",
         "office.presentation.slides",
+        "office.presentation.tables",
         "office.word.tables",
         "table.sheet.structured",
         "table.sheet.headers",
