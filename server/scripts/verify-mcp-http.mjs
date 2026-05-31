@@ -141,8 +141,9 @@ try {
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
+  assert.match(discovery.payload.installer.githubOneLineInstallCommand, /pact-mcp-install\.sh.+--url/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
-  assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineCommand);
+  assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.match(discovery.payload.installer.installCommand, /npx pact-mcp-connector@latest register/);
   assert.match(discovery.payload.installer.interactiveInstallCommand, /pact-mcp-connector@latest install/);
@@ -154,6 +155,10 @@ try {
   assert.match(discovery.payload.installer.scanCommand, /pact-mcp-connector@latest scan/);
   assert.match(discovery.payload.installer.scanCommand, /--json/);
   assert.match(discovery.payload.installer.autoInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.equal(discovery.payload.installer.portable.installCommand, `./pact-mcp register --url '${server.url}'`);
+  assert.equal(discovery.payload.installer.portable.interactiveInstallCommand, `./pact-mcp install --url '${server.url}'`);
+  assert.equal(discovery.payload.installer.portable.autoInstallCommand, `./pact-mcp install --target auto --url '${server.url}'`);
+  assert.equal(discovery.payload.installer.portable.clientInstallCommand, `./pact-mcp install --target <client> --url '${server.url}'`);
   const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
   const expectedInstallTargets = [
     "codex",

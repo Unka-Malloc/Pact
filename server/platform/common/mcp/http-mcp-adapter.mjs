@@ -624,6 +624,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs}`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
   const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
+  const githubOneLineInstallCommand = urlArgs ? `${githubOneLineCommand} --${urlArgs}` : githubOneLineCommand;
   const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto${urlArgs}`;
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>${urlArgs}`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs}`;
@@ -684,8 +685,9 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         locations
       })),
       githubOneLineCommand,
+      githubOneLineInstallCommand,
       githubOneLineAutoInstallCommand,
-      oneCommandInstall: githubOneLineCommand,
+      oneCommandInstall: githubOneLineInstallCommand,
       oneCommandAutoInstall: githubOneLineAutoInstallCommand,
       installCommand,
       interactiveInstallCommand,
@@ -710,10 +712,10 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         releaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.zip`,
         tarballReleaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.tar.gz`,
         zipInstallEntry: "install.command",
-        installCommand: "./pact-mcp register",
-        interactiveInstallCommand: "./pact-mcp install",
-        autoInstallCommand: "./pact-mcp install --target auto",
-        clientInstallCommand: "./pact-mcp install --target <client>",
+        installCommand: `./pact-mcp register${urlArgs}`,
+        interactiveInstallCommand: `./pact-mcp install${urlArgs}`,
+        autoInstallCommand: `./pact-mcp install --target auto${urlArgs}`,
+        clientInstallCommand: `./pact-mcp install --target <client>${urlArgs}`,
         doubleClickEntry: "install.command"
       }
     },
