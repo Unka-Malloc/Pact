@@ -298,8 +298,8 @@ const samplePptxBase64 = base64Zip({
     "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" ",
     "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
     "<p:cSld><p:spTree>",
-    "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
-    "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\" tooltip=\"Presentation evidence link\"/></a:rPr><a:t>Presentation evidence portal</a:t></a:r></a:p></p:txBody></p:sp>",
+    "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:nvPr><p:ph type=\"title\" idx=\"0\"/></p:nvPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
+    "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\" tooltip=\"Presentation evidence link\"/></a:rPr><a:t>Presentation evidence portal</a:t></a:r></a:p></p:txBody></p:sp>",
     "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"4\" name=\"Roadmap Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"2590800\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Slides</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Keep PowerPoint table cells queryable</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
@@ -838,6 +838,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.numbering"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.placeholders"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
@@ -905,6 +906,7 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.hyperlink.target"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("shape.placeholderType"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("speaker-note"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
@@ -914,6 +916,7 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.shape.placeholderType"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
@@ -958,6 +961,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
@@ -2237,6 +2241,12 @@ try {
     trace.layoutStrategy === "presentationml-shape-geometry.v1"
   )), true);
   assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.placeholders" &&
+    trace.status === "completed" &&
+    trace.placeholders === 2 &&
+    trace.shapeMetadata >= 2
+  )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
     trace.stage === "office.presentation.tables" &&
     trace.status === "completed" &&
     trace.tables === 1 &&
@@ -2266,7 +2276,18 @@ try {
     element.page === 1 &&
     element.bbox?.x === 72 &&
     element.bbox?.y === 36 &&
+    element.shape?.id === "2" &&
+    element.shape?.name === "Roadmap Title" &&
+    element.shape?.placeholderType === "title" &&
     element.layout?.strategy === "presentationml-shape-geometry.v1"
+  )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "slide-shape" &&
+    element.page === 1 &&
+    element.shape?.id === "3" &&
+    element.shape?.name === "Roadmap Body" &&
+    element.shape?.placeholderType === "body" &&
+    element.shape?.placeholderIndex === "1"
   )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "table-row" &&
@@ -2289,6 +2310,7 @@ try {
     element.text.includes("Presentation evidence portal")
   )), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-placeholder"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("speaker-notes"), true);
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "speaker-note" &&
@@ -2317,6 +2339,7 @@ try {
     ref.page === 1 &&
     ref.bbox?.x === 72 &&
     ref.bbox?.y === 108 &&
+    ref.shape?.placeholderType === "body" &&
     ref.layout?.strategy === "presentationml-shape-geometry.v1"
   ))), true);
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2328,12 +2351,16 @@ try {
   assert.equal(pptxPayloadCorpus.formatConversionProfile.parserProfile, "presentationml-slide-route");
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("slide-order"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-bbox"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-id"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-name"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "slide-shape" &&
       ref.bbox?.x === 72 &&
+      ref.shape?.id === "3" &&
+      ref.shape?.placeholderType === "body" &&
       ref.layout?.strategy === "presentationml-shape-geometry.v1"
     ))
   )), true);
@@ -2992,8 +3019,11 @@ try {
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "presentation" &&
+    document.evidence.placeholderRefCount >= 2 &&
+    document.evidence.shapeRefCount >= 2 &&
     document.evidence.linkElementCount >= 1 &&
     document.evidence.speakerNoteElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
@@ -3031,11 +3061,15 @@ try {
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "presentation" &&
     document.parserStages.includes("office.presentation.slides") &&
+    document.parserStages.includes("office.presentation.placeholders") &&
     document.parserStages.includes("office.presentation.hyperlinks") &&
     document.parserStages.includes("office.presentation.speaker-notes") &&
+    document.preserves.includes("shape-placeholder") &&
     document.preserves.includes("shape-bbox") &&
     document.preserves.includes("links") &&
     document.preserves.includes("speaker-notes") &&
+    document.evidence.placeholderRefCount >= 2 &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
