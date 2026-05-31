@@ -155,6 +155,8 @@ try {
   assert.match(discovery.payload.installer.interactiveInstallCommand, /pact-mcp-connector@latest install/);
   assert.match(discovery.payload.installer.autoInstallCommand, /pact-mcp-connector@latest install --target auto/);
   assert.match(discovery.payload.installer.autoInstallCommand, /--json/);
+  assert.match(discovery.payload.installer.priorityInstallCommand, /pact-mcp-connector@latest install --target claude-code,codex,openclaw/);
+  assert.match(discovery.payload.installer.priorityInstallCommand, /--json/);
   assert.match(discovery.payload.installer.clientInstallCommand, /--target <client>/);
   assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
@@ -164,9 +166,11 @@ try {
   assert.match(discovery.payload.installer.discoverCommand, /pact-mcp-connector@latest discover-local/);
   assert.match(discovery.payload.installer.discoverCommand, /--json/);
   assert.match(discovery.payload.installer.autoInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(discovery.payload.installer.priorityInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.equal(discovery.payload.installer.portable.installCommand, `./pact-mcp register --url '${server.url}'`);
   assert.equal(discovery.payload.installer.portable.interactiveInstallCommand, `./pact-mcp install --url '${server.url}'`);
   assert.equal(discovery.payload.installer.portable.autoInstallCommand, `./pact-mcp install --target auto --url '${server.url}' --json`);
+  assert.equal(discovery.payload.installer.portable.priorityInstallCommand, `./pact-mcp install --target claude-code,codex,openclaw --url '${server.url}' --json`);
   assert.equal(discovery.payload.installer.portable.clientInstallCommand, `./pact-mcp install --target <client> --url '${server.url}'`);
   const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
   const expectedInstallTargets = [

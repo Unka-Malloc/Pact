@@ -637,6 +637,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register${urlArgs}`;
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs}`;
   const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs} --json`;
+  const priorityInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target claude-code,codex,openclaw${urlArgs} --json`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
   const {
     command: githubOneLineCommand,
@@ -709,6 +710,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       installCommand,
       interactiveInstallCommand,
       autoInstallCommand,
+      priorityInstallCommand,
       clientInstallCommand,
       uninstallCommand,
       doctorCommand,
@@ -732,6 +734,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         installCommand: `./pact-mcp register${urlArgs}`,
         interactiveInstallCommand: `./pact-mcp install${urlArgs}`,
         autoInstallCommand: `./pact-mcp install --target auto${urlArgs} --json`,
+        priorityInstallCommand: `./pact-mcp install --target claude-code,codex,openclaw${urlArgs} --json`,
         clientInstallCommand: `./pact-mcp install --target <client>${urlArgs}`,
         doubleClickEntry: "install.command"
       }

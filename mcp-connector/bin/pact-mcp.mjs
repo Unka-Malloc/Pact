@@ -2285,6 +2285,8 @@ function buildDeviceHubManifest({
   const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
   const discoverCommand = `${packageExec} discover-local${urlArgs} --json`;
   const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
+  const autoInstallCommand = `${packageExec} install --target auto${urlArgs}${tokenEnvArgs} --json`;
+  const priorityInstallCommand = `${packageExec} install --target claude-code,codex,openclaw${urlArgs}${tokenEnvArgs} --json`;
   const scanCommand = `${packageExec} scan${urlArgs}${tokenEnvArgs} --json`;
   const codexInstallCommand = `${packageExec} install --target codex${urlArgs}${tokenEnvArgs}`;
   const codexManifest = codex
@@ -2340,6 +2342,8 @@ function buildDeviceHubManifest({
           packageVersion: packageJson.version,
           registerCommand: `${packageExec} register${urlArgs}${tokenEnvArgs}`,
           interactiveInstallCommand,
+          autoInstallCommand,
+          priorityInstallCommand,
           installCommand: `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs}`,
           uninstallCommand: `${packageExec} uninstall --target <client>${urlArgs}`,
           discoverCommand,
@@ -4467,15 +4471,13 @@ async function detectExplicitLocalAgentCliTargets(settings, options = {}) {
     const configuredBin = descriptorConfiguredBin(settings, descriptor);
     const paths = await detectLocalCommandPaths(configuredBin);
     for (const detectedPath of paths) {
-      if (!await commandSupportsMcp(detectedPath)) {
-        continue;
-      }
+      const supportsMcp = await commandSupportsMcp(detectedPath);
       candidates.push({
         id: `${descriptor.target}:local:${detectedPath}`,
         target: descriptor.target,
         label: descriptor.label,
         status: "detected",
-        detail: detectedPath,
+        detail: supportsMcp ? detectedPath : `${detectedPath} (explicit path; MCP probe inconclusive)`,
         optionOverrides: {
           "execution-location": "local",
           [descriptor.binOption]: detectedPath
@@ -4494,15 +4496,15 @@ async function detectExplicitLocalClawCompatibleTargets(settings, options = {}) 
   const paths = await detectLocalCommandPaths(openclawBin);
   const candidates = [];
   for (const detectedPath of paths) {
-    if (!await commandSupportsMcp(detectedPath)) {
-      continue;
-    }
+    const supportsMcp = await commandSupportsMcp(detectedPath);
     candidates.push({
       id: `claw-compatible:local:${detectedPath}`,
       target: "openclaw",
       label: targetLabel("openclaw"),
       status: "detected",
-      detail: `claw-compatible MCP CLI at ${detectedPath}`,
+      detail: supportsMcp
+        ? `claw-compatible MCP CLI at ${detectedPath}`
+        : `claw-compatible explicit CLI at ${detectedPath}; MCP probe inconclusive`,
       optionOverrides: {
         "execution-location": "local",
         "openclaw-bin": detectedPath
@@ -6249,6 +6251,7 @@ async function registerCommand(options) {
   const localFiles = deviceDiscoveryPaths(resolvedOptions);
   const env = deviceDiscoveryEnv({ baseUrl: settings.baseUrl, primaryPath: discoveryManifest });
   const tokenEnv = profile.tokenEnv || settings.tokenEnv;
+  const includeUrl = Boolean(settings.baseUrl);
   return {
     ok: true,
     packageName: packageJson.name,
@@ -6265,7 +6268,19 @@ async function registerCommand(options) {
     env,
     clientInstall: shellCommandForInstall({
       target: "<client>",
-      includeUrl: Boolean(settings.baseUrl),
+      includeUrl,
+      baseUrl: settings.baseUrl,
+      tokenEnv
+    }),
+    autoInstall: shellCommandForInstall({
+      target: "auto",
+      includeUrl,
+      baseUrl: settings.baseUrl,
+      tokenEnv
+    }),
+    priorityInstall: shellCommandForInstall({
+      target: "claude-code,codex,openclaw",
+      includeUrl,
       baseUrl: settings.baseUrl,
       tokenEnv
     }),
