@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import BinaryCheckbox from '../../components/BinaryCheckbox.vue';
 import BrowseSelectButton from '../../components/BrowseSelectButton.vue';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
@@ -72,7 +72,7 @@ const {
   updateConsoleUserRole,
   currentUser,
   logoutConsole,
-} = useConsole();
+} = useServerConsoleShellContext();
 </script>
 
 <template>

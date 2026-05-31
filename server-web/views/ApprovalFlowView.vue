@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
-import { useConsole } from '../composables/useConsole';
+import { useServerConsoleShellContext } from '../composables/serverConsoleShellContext';
 import SegmentedToggle from '../components/SegmentedToggle.vue';
 
 const {
@@ -22,7 +22,7 @@ const {
   resolveKnowledgeReview,
   resolveMcpAuthorizationRequest,
   selectedKnowledgeReviewFusionModel,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 type ApprovalFlowCard =
   | {

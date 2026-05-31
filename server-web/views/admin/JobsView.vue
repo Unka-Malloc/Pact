@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import StatusPill from '../../components/StatusPill.vue';
 const {
   adminView,
@@ -17,7 +17,7 @@ const {
   workQueueSummary,
   queueMonitorState,
   recentJobs,
-} = useConsole();
+} = useServerConsoleShellContext();
 </script>
 
 <template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onMounted, onUnmounted } from 'vue';
-import { useConsole } from '../composables/useConsole';
+import { useServerConsoleShellContext } from '../composables/serverConsoleShellContext';
 import BinaryCheckbox from '../components/BinaryCheckbox.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
 import StatusPill from '../components/StatusPill.vue';
@@ -34,7 +34,7 @@ const {
   splitJobStatusLabel,
   syncLocalSourceLabelFromPath,
   updateKnowledgeSource,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 type DataSourceType = '' | 'localDirectory' | 'client';
 

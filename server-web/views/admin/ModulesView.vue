@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import BrowseSelectButton from '../../components/BrowseSelectButton.vue';
 import FeatureToggle from '../../components/FeatureToggle.vue';
 import StatusPill from '../../components/StatusPill.vue';
@@ -24,7 +24,7 @@ const {
   isAuthenticated,
   mountDraft,
   openMountPathPicker,
-} = useConsole();
+} = useServerConsoleShellContext();
 </script>
 
 <template>

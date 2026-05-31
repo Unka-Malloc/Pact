@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import AgentModelOptionBar from '../../components/AgentModelOptionBar.vue';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import OptionBar from '../../components/OptionBar.vue';
@@ -44,7 +44,7 @@ const {
   runMaintenanceAgentRunbook,
   saveMaintenanceAgentConfig,
   selectedMaintenanceAgentRun,
-} = useConsole();
+} = useServerConsoleShellContext();
 </script>
 
 <template>

@@ -88,6 +88,7 @@ export function useServerConsoleShell() {
     consoleDomLocalizer = null;
   });
 
+  const consoleContext = useConsole();
   const {
     adminView,
     agentEvidencePreviewOpen,
@@ -225,7 +226,7 @@ export function useServerConsoleShell() {
     submitLoginAuth,
     updateConsoleUser,
     updateConsoleUserRole,
-  } = useConsole();
+  } = consoleContext;
 
   const route = useRoute();
   const activeRouteView = computed(() => String(route.meta?.viewId || currentView.value));
@@ -440,6 +441,7 @@ export function useServerConsoleShell() {
   }
 
   return {
+    ...consoleContext,
     adminView,
     agentEvidencePreviewOpen,
     authBootstrapping,

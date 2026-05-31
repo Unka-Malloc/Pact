@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import DataTable from '../../components/DataTable.vue';
 import OptionBar from '../../components/OptionBar.vue';
 import StatusPill from '../../components/StatusPill.vue';
@@ -21,7 +21,7 @@ const {
   monitorAlertSummary,
   workQueueSummary,
   serverLogRows,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 function handleHeaderDragend(newWidth: number, oldWidth: number, column: any) {
   const key = column.property;

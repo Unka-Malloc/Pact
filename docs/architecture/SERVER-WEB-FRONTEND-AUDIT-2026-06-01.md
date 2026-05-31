@@ -21,18 +21,18 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `server-web/composables` | 55 | 22934 | 121 | 9 | 0 | 81 | 25 |
+| `server-web/composables` | 55 | 23003 | 121 | 9 | 0 | 200 | 25 |
 | `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 0 | 0 |
-| `server-web/views` | 21 | 7702 | 0 | 14 | 0 | 4 | 1 |
-| `server-web/components` | 37 | 6743 | 1 | 0 | 1 | 11 | 2 |
-| `server-web/lib` | 9 | 4899 | 25 | 0 | 0 | 10 | 0 |
+| `server-web/views` | 21 | 7723 | 0 | 0 | 0 | 75 | 1 |
+| `server-web/components` | 37 | 6780 | 1 | 0 | 1 | 21 | 2 |
+| `server-web/lib` | 9 | 4908 | 25 | 0 | 0 | 20 | 0 |
 | `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
 
 ### Largest Files
 
 | File | Lines | Notes |
 | --- | ---: | --- |
-| `server-web/composables/useConsole.ts` | 4485 | Global singleton, route/page state, bridge calls, DOM effects, auth, settings, jobs, knowledge, runtime, and admin actions are still concentrated here. |
+| `server-web/composables/useConsole.ts` | 4486 | Global singleton, route/page state, bridge calls, DOM effects, auth, settings, jobs, knowledge, runtime, and admin actions are still concentrated here. |
 | `server-web/lib/types.ts` | 2661 | Cross-domain frontend API type monolith. |
 | `server-web/i18n/console.ts` | 1644 | All console copy plus DOM localization are coupled in one module. |
 | `server-web/styles/features.css` | 1495 | Feature styling monolith. |
@@ -49,24 +49,13 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 Direct `useConsole()` callers:
 
-- `server-web/views/FeedView.vue`
-- `server-web/views/ApprovalFlowView.vue`
-- `server-web/views/SourcesView.vue`
-- `server-web/views/admin/AgentConfigView.vue`
-- `server-web/views/admin/JobsView.vue`
-- `server-web/views/admin/LogsView.vue`
-- `server-web/views/admin/StorageView.vue`
-- `server-web/views/admin/ToolsView.vue`
-- `server-web/views/admin/ModulesView.vue`
-- `server-web/views/admin/OpsMonitorView.vue`
-- `server-web/views/admin/ClientsView.vue`
-- `server-web/views/admin/ContextManagementView.vue`
-- `server-web/views/admin/MaintenanceAgentView.vue`
 - `server-web/composables/useServerConsoleShell.ts`
 - `server-web/composables/useKnowledgeViewConsole.ts`
 - `server-web/composables/useDebugViewConsole.ts`
 - `server-web/composables/useWorkspacesConsole.ts`
 - `server-web/composables/console-agent-permissions-view-controller.ts`
+
+Leaf view direct `useConsole()` callers are now zero. Views consume `serverConsoleShellContext`, `knowledgeViewContext`, `workspacesViewContext`, or feature controllers. The remaining five callers are compatibility facades/controllers and are enforced by `npm run server:verify:frontend-architecture`.
 
 Direct `bridge.*` calls from view/component files:
 
@@ -82,14 +71,14 @@ Page-level HTML rendering now goes through `SafeHtmlBlock`, which requires calle
 
 ### P0-1: `useConsole.ts` is still the cross-page frontend runtime
 
-`useConsole.ts` remains the central state/effect container for unrelated pages and admin sections. It exposes route state, auth, jobs, settings, runtime mounts, knowledge management, maintenance, OAuth, browser effects, and admin actions from one 4485-line singleton. This blocks low coupling because view-level changes can accidentally bind to unrelated console state.
+`useConsole.ts` remains the central state/effect container for unrelated pages and admin sections. It exposes route state, auth, jobs, settings, runtime mounts, knowledge management, maintenance, OAuth, browser effects, and admin actions from one 4486-line singleton. Leaf views no longer call it directly, but `useServerConsoleShell.ts` still spreads the full compatibility singleton into route context, so the public surface is still too broad.
 
 Required direction:
 
 - Keep `useConsole()` temporarily as a compatibility shell only.
 - Move page/domain state into cohesive controllers or contexts: shell, auth, jobs, settings/model library, runtime modules/downloads, production health, knowledge management, knowledge distillation, workspaces, debug, and admin permissions.
-- Leaf views should consume narrow route/domain contexts, not import `useConsole()` directly.
-- New extraction should reduce public return size and remove one caller group at a time.
+- Leaf views should continue consuming route/domain contexts, not import `useConsole()` directly.
+- The next extraction wave should replace the broad `...consoleContext` shell spread with narrower admin/feed/approval/source contexts and remove one compatibility caller group at a time.
 
 ### P0-2: UI files call `bridge` directly instead of domain controllers
 
@@ -154,13 +143,13 @@ Required direction:
 
 ### P1-3: Route contexts exist but are not consistently used
 
-`serverConsoleShellContext.ts`, `knowledgeViewContext.ts`, and `workspacesViewContext.ts` are present, but many views still import `useConsole()` directly.
+`serverConsoleShellContext.ts`, `knowledgeViewContext.ts`, and `workspacesViewContext.ts` are present. Leaf views now use contexts instead of importing `useConsole()` directly, but the shell context still exposes a broad compatibility surface.
 
 Required direction:
 
-- Use route-level providers as the default way to pass shell/page state.
+- Keep route-level providers as the default way to pass shell/page state.
 - Add missing admin/debug contexts where the page has multiple child views.
-- Remove direct `useConsole()` imports from views as each domain facade is extracted.
+- Burn down the five remaining compatibility callers and narrow the shell return surface.
 
 ### P1-4: Type looseness remains in shared utilities
 
@@ -200,14 +189,14 @@ Required direction:
 - Standardize small UI primitives after P0 ownership splits.
 - Do not prematurely abstract until the domain controllers are separated.
 
-### P2-3: Frontend architecture verification is only indirect
+### P2-3: Frontend architecture verification now has a first boundary gate
 
-Existing server architecture verifiers protect backend boundaries, but there is no dedicated frontend architecture check for direct `useConsole()` imports, direct `bridge` calls in views, or unsafe HTML boundaries.
+Existing server architecture verifiers protect backend boundaries. A dedicated frontend gate now checks direct `bridge.*` use in views/components, unsafe `v-html` ownership, and remaining direct `useConsole()` compatibility callers.
 
 Required direction:
 
-- Add a frontend architecture verifier after the first wave of violations is reduced enough to make the rule meaningful.
-- Initially allowlist remaining debt explicitly, then burn the allowlist down.
+- Keep `server:verify:frontend-architecture` in the aggregate server gate.
+- Burn down the explicit `useConsole()` allowlist as route/domain contexts replace compatibility callers.
 
 ## Execution Order
 
@@ -227,12 +216,17 @@ Required direction:
 - `server-web/views/admin/ProductionHealthView.vue`: production health/baseline loading, status labels, elapsed time formatting, and date formatting moved to `server-web/lib/production-health.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/KnowledgeView.vue` and `server-web/components/KnowledgeImportCard.vue`: knowledge export URL generation, normalized document links, and document preview parsing moved to `server-web/lib/knowledge-documents.ts`. Both files no longer import `bridge` directly.
 - `server-web/views/DashboardView.vue`: dashboard state now comes from `serverConsoleShellContext`; the view no longer imports `useConsole()` directly.
+- `server-web/views/ApprovalFlowView.vue`, `server-web/views/FeedView.vue`, `server-web/views/SourcesView.vue`, and admin views under `server-web/views/admin`: shell-owned state now comes from `serverConsoleShellContext`; these views no longer import `useConsole()` directly.
+- `server/scripts/verify-frontend-architecture.mjs`: enforces the current bridge, safe-html, and `useConsole()` compatibility boundaries. The script is wired into `server:verify` as `server:verify:frontend-architecture`.
 
 ## Verification Gates
 
 For frontend-only refactors:
 
 ```bash
+npm run server:verify:frontend-architecture
+npm run server:verify:frontend-feature-registry
+npm run server:verify:frontend-typecheck
 npm run build:renderer
 ```
 

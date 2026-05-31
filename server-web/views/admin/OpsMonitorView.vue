@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import StatusPill from '../../components/StatusPill.vue';
 import type { MonitorAlertItem } from '../../lib/types';
@@ -37,7 +37,7 @@ const {
   processTypeLabel,
   recentMonitorAlertHistory,
   saveMonitorAlertConfig,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 type MonitorAlertDetailBullet = {
   label: string;

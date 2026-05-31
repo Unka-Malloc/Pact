@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 
 const {
@@ -16,7 +16,7 @@ const {
   jsonPreview,
   previewContextCompiler,
   runContextReplayEvaluation,
-} = useConsole();
+} = useServerConsoleShellContext();
 </script>
 
 <template>

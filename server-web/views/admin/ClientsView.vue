@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import OptionBar from '../../components/OptionBar.vue';
 import StatusPill from '../../components/StatusPill.vue';
 const {
@@ -15,7 +15,7 @@ const {
   filteredClientList,
   formatCompactDate,
   importClients,
-} = useConsole();
+} = useServerConsoleShellContext();
 </script>
 
 <template>

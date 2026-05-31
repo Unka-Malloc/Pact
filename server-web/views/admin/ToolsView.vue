@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 
 const {
   activeToolManagementToolCount,
@@ -29,7 +29,7 @@ const {
   toolRiskLabel,
   toolStatusLabel,
   toolsetLabel,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 const isStatsView = computed(() => adminView.value === "toolStats");
 

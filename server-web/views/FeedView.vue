@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useConsole } from '../composables/useConsole';
+import { useServerConsoleShellContext } from '../composables/serverConsoleShellContext';
 import AgentModelOptionBar from '../components/AgentModelOptionBar.vue';
 import BrowseSelectButton from '../components/BrowseSelectButton.vue';
 import ConfigFoldCard from '../components/ConfigFoldCard.vue';
@@ -77,7 +77,7 @@ const {
   settingsDraft,
   thinkingModeOptionBarOptions,
   truncateInfoFeedText,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 const infoFeedAdvancedOptionsOpen = ref(false);
 

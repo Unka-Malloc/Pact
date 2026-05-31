@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConsole } from '../../composables/useConsole';
+import { useServerConsoleShellContext } from '../../composables/serverConsoleShellContext';
 import BinaryCheckbox from '../../components/BinaryCheckbox.vue';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import JsonConfigFileEditor from '../../components/JsonConfigFileEditor.vue';
@@ -47,7 +47,7 @@ const {
   toggleModelEntryModuleAccess,
   toggleModelLibraryCard,
   visibleModelEntries,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 async function saveLocalCommandTemplates(value: unknown) {
   if (!Array.isArray(value)) {
