@@ -60,7 +60,6 @@ import {
 } from "./console-browser-state-utils";
 import {
   copyTextToClipboard,
-  csvCell,
   downloadTextFile,
   formatBytes,
   formatCompactDate,
@@ -68,7 +67,6 @@ import {
   formatDuration,
   formatMachineDate,
   jobStatusTone,
-  parseFilterDate,
   parseTime,
   safeDownloadName,
 } from "./console-format-utils";
@@ -147,6 +145,10 @@ import {
   writeAgentExplorePersistence,
   type AgentExploreFormState,
 } from "./console-agent-explore-utils";
+import {
+  AGENT_SELECTION_REFERENCE_LOG_LIMIT,
+  createConsoleAgentSelectionReferenceController,
+} from "./console-agent-selection-reference-controller";
 import { createConsoleAuthController } from "./console-auth-controller";
 import { createConsoleAgentExploreLayoutController } from "./console-agent-explore-layout-controller";
 import { createConsoleAgentExploreResultController } from "./console-agent-explore-result-controller";
@@ -159,6 +161,7 @@ import { createConsoleDashboardAlertController } from "./console-dashboard-alert
 import { createConsoleInfoFeedController } from "./console-info-feed-controller";
 import { createConsoleKnowledgeEvidenceController } from "./console-knowledge-evidence-controller";
 import { createConsoleKnowledgeIngestController } from "./console-knowledge-ingest-controller";
+import { createConsoleKnowledgeLogController } from "./console-knowledge-log-controller";
 import { createConsoleKnowledgeRecallController } from "./console-knowledge-recall-controller";
 import { createConsoleKnowledgeReviewController } from "./console-knowledge-review-controller";
 import { createConsoleMaintenanceAgentController } from "./console-maintenance-agent-controller";
@@ -166,6 +169,9 @@ import { createConsoleMcpAuthorizationController } from "./console-mcp-authoriza
 import { createConsoleModelLibraryController } from "./console-model-library-controller";
 import { createConsoleOpsMonitorController } from "./console-ops-monitor-controller";
 import { createConsoleRuleAuthoringController } from "./console-rule-authoring-controller";
+import { createConsoleRefreshStateController } from "./console-refresh-state-controller";
+import { createConsoleServerEventController } from "./console-server-event-controller";
+import { createConsoleSystemLogRowController } from "./console-system-log-row-controller";
 import { createConsoleToolManagementController } from "./console-tool-management-controller";
 import { createConsoleWordCloudController } from "./console-word-cloud-controller";
 
@@ -359,18 +365,6 @@ let applyingRemoteSettings = false;
 let applyingRemoteConsoleDrafts = false;
 let codexOAuthPollTimer: number | null = null;
 let configTargetHighlightTimer: number | null = null;
-let serverEventCursor = 0;
-let serverEventSubscriptionStopped = false;
-let serverEventSubscriptionGeneration = 0;
-let serverEventAbortController: AbortController | null = null;
-let serverEventTimer: number | null = null;
-let serverEventTimerResolve: (() => void) | null = null;
-const REFRESH_STATE_DELAY_MS = 3000;
-let lastRefreshStateStartedAt = 0;
-let pendingRefreshStateTimer: number | null = null;
-let pendingRefreshStateOptions: RefreshStateOptions | null = null;
-let pendingRefreshStatePromise: Promise<void> | null = null;
-let pendingRefreshStateResolve: (() => void) | null = null;
 const filter = ref("");
 const drawerOpen = ref(false);
 const drawerTab = ref<DrawerTab>("discovery");
@@ -443,78 +437,14 @@ const contextPreviewTask = ref("总结最近一个月邮件中的账单风险，
 const contextPreviewRequiredEvidence = ref("");
 const contextPreviewResult = ref<Record<string, unknown> | null>(null);
 const contextEvaluationResult = ref<Record<string, unknown> | null>(null);
-const knowledgeLogAdvancedOpen = ref(false);
-const knowledgeLogFilters = ref({
-  id: "",
-  status: "",
-  stage: "",
-  from: "",
-  to: "",
-});
-const AGENT_SELECTION_REFERENCE_LOG_LIMIT = 80;
-type AgentSelectionReferenceState = "empty" | "available" | "removed";
-type AgentSelectionReferenceSnapshot = {
-  alias: string;
-  state: AgentSelectionReferenceState;
-};
-const agentSelectionReferenceLogs = ref<KnowledgeLogRow[]>([]);
-const agentSelectionReferenceStates = ref<Record<string, AgentSelectionReferenceSnapshot>>({});
-type KnowledgeLogColumnKey =
-  | "kind"
-  | "target"
-  | "status"
-  | "stage"
-  | "progress"
-  | "time"
-  | "detail"
-  | "error";
-const knowledgeLogTableShellRef = ref<HTMLElement | null>(null);
-const knowledgeLogTableScrollLeft = ref(0);
-const knowledgeLogColumnOrder: KnowledgeLogColumnKey[] = [
-  "kind",
-  "target",
-  "status",
-  "stage",
-  "progress",
-  "time",
-  "detail",
-  "error",
-];
-const knowledgeLogColumnLabels: Record<KnowledgeLogColumnKey, string> = {
-  kind: "类型",
-  target: "对象",
-  status: "状态",
-  stage: "阶段",
-  progress: "进度",
-  time: "时间",
-  detail: "详情",
-  error: "错误",
-};
-const knowledgeLogColumnMinWidths: Record<KnowledgeLogColumnKey, number> = {
-  kind: 120,
-  target: 220,
-  status: 112,
-  stage: 150,
-  progress: 80,
-  time: 122,
-  detail: 220,
-  error: 180,
-};
-const knowledgeLogColumnWidths = ref<Record<KnowledgeLogColumnKey, number>>({
-  kind: 120,
-  target: 220,
-  status: 112,
-  stage: 150,
-  progress: 80,
-  time: 122,
-  detail: 220,
-  error: 180,
-});
-const knowledgeLogResizing = ref<{
-  key: KnowledgeLogColumnKey;
-  startX: number;
-  startWidth: number;
-} | null>(null);
+const {
+  agentSelectionReferenceLogs,
+  agentSelectionReferenceStates,
+  emitAgentSelectionReferenceLog,
+  normalizeAgentSelectionAlias,
+  trackAgentSelectionReference,
+  watchAgentSelectionReference,
+} = createConsoleAgentSelectionReferenceController();
 const knowledgeSearchResults = ref<KnowledgeSearchResult[]>([]);
 const knowledgeSearchResponse = ref<KnowledgeSearchResponse | null>(null);
 const lastKnowledgeSearchQuery = ref("");
@@ -970,75 +900,6 @@ const {
   stopAgentExploreSplitResize,
   updateAgentExploreSplitFromClientX,
 } = createConsoleAgentExploreLayoutController();
-
-function syncKnowledgeLogTableScrollLeft(fallback?: unknown) {
-  const record = asRecord(fallback);
-  const directValue = Number(record?.scrollLeft);
-  if (Number.isFinite(directValue)) {
-    knowledgeLogTableScrollLeft.value = Math.max(0, directValue);
-    return;
-  }
-  const scrollWrap = knowledgeLogTableShellRef.value?.querySelector<HTMLElement>(".el-scrollbar__wrap");
-  knowledgeLogTableScrollLeft.value = Math.max(0, Number(scrollWrap?.scrollLeft || 0));
-}
-
-function handleKnowledgeLogTableScroll(payload: unknown) {
-  syncKnowledgeLogTableScrollLeft(payload);
-}
-
-function stopKnowledgeLogColumnResize() {
-  if (typeof document !== "undefined") {
-    document.removeEventListener("pointermove", handleKnowledgeLogColumnPointerMove);
-    document.removeEventListener("pointerup", stopKnowledgeLogColumnResize);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  }
-  knowledgeLogResizing.value = null;
-}
-
-function handleKnowledgeLogColumnPointerMove(event: PointerEvent) {
-  const resizing = knowledgeLogResizing.value;
-  if (!resizing) {
-    return;
-  }
-  const minWidth = knowledgeLogColumnMinWidths[resizing.key];
-  const nextWidth = Math.max(minWidth, resizing.startWidth + event.clientX - resizing.startX);
-  knowledgeLogColumnWidths.value = {
-    ...knowledgeLogColumnWidths.value,
-    [resizing.key]: Math.round(nextWidth),
-  };
-}
-
-function startKnowledgeLogColumnResize(event: PointerEvent, key: KnowledgeLogColumnKey) {
-  event.preventDefault();
-  event.stopPropagation();
-  syncKnowledgeLogTableScrollLeft();
-  knowledgeLogResizing.value = {
-    key,
-    startX: event.clientX,
-    startWidth: knowledgeLogColumnWidths.value[key],
-  };
-  document.addEventListener("pointermove", handleKnowledgeLogColumnPointerMove);
-  document.addEventListener("pointerup", stopKnowledgeLogColumnResize);
-  document.body.style.cursor = "col-resize";
-  document.body.style.userSelect = "none";
-}
-
-function handleKnowledgeLogColumnDividerKeydown(event: KeyboardEvent, key: KnowledgeLogColumnKey) {
-  const step = event.shiftKey ? 24 : 8;
-  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-    return;
-  }
-  event.preventDefault();
-  const direction = event.key === "ArrowLeft" ? -1 : 1;
-  knowledgeLogColumnWidths.value = {
-    ...knowledgeLogColumnWidths.value,
-    [key]: Math.max(
-      knowledgeLogColumnMinWidths[key],
-      knowledgeLogColumnWidths.value[key] + direction * step,
-    ),
-  };
-}
 
 async function clearBrowserLocalStateFromUrl() {
   return clearBrowserLocalStateFromUrlCore({
@@ -1513,6 +1374,27 @@ function applyServerEvent(event: ProtocolEvent) {
 }
 
 const {
+  clearServerEventTimer,
+  isAbortError,
+  nextCursorFromProtocolEvents,
+  resetServerEventCursor,
+  runServerEventSubscription,
+  serverEventAbortController,
+  serverEventCursor,
+  serverEventSubscriptionGeneration,
+  serverEventSubscriptionStopped,
+  serverEventTimer,
+  serverEventTimerResolve,
+  startServerEventSubscription,
+  stopServerEventSubscription,
+  waitForServerEventRetry,
+} = createConsoleServerEventController({
+  applyServerEvent,
+  currentTopics: currentServerEventTopics,
+  refreshState,
+});
+
+const {
   addModelEntryBinding,
   addModelProvider,
   addModuleAgentProfileFromDraft,
@@ -1832,9 +1714,7 @@ const {
   oidcDraft,
   oidcRoleMappingText,
   refreshState,
-  resetServerEventCursor: () => {
-    serverEventCursor = 0;
-  },
+  resetServerEventCursor,
   setBusy,
   startServerEventSubscription,
   stopServerEventSubscription,
@@ -2033,108 +1913,6 @@ function selectedAgentFromOptions(options: AgentSelectorUiOption[], value?: stri
     };
   }
   return options.find((item) => item.value === selectedValue) || inactiveAgentModelOption(selectedValue);
-}
-
-function normalizeAgentSelectionAlias(value?: string) {
-  return String(value || "").trim();
-}
-function emitAgentSelectionReferenceLog(params: {
-  context: string;
-  contextLabel: string;
-  alias: string;
-  stage: "lost" | "restored";
-  reason: string;
-}) {
-  const now = new Date().toISOString();
-  const statusLabel = params.stage === "lost" ? "引用丢失" : "引用恢复";
-  const tone: KnowledgeLogRow["tone"] = params.stage === "lost" ? "warning" : "success";
-  const logId = `${params.context}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-  const row: KnowledgeLogRow = {
-    logId,
-    kindLabel: "智能体引用",
-    displayId: "ref",
-    target: `${params.contextLabel}（${params.alias}）`,
-    status: params.stage === "lost" ? "missing" : "available",
-    statusLabel,
-    tone,
-    stage: params.reason,
-    occurredAt: now,
-    createdAt: now,
-    progressPercent: 100,
-    detail: params.reason,
-    error: params.stage === "lost" ? params.reason : "",
-  };
-  console.warn("[agent-selection-ref]", params.context, params.stage, params.alias, params.reason);
-  agentSelectionReferenceLogs.value = [row, ...agentSelectionReferenceLogs.value].slice(
-    0,
-    AGENT_SELECTION_REFERENCE_LOG_LIMIT,
-  );
-}
-function trackAgentSelectionReference(
-  context: string,
-  contextLabel: string,
-  alias: string,
-  selectedOption: AgentSelectorUiOption,
-) {
-  const normalizedAlias = normalizeAgentSelectionAlias(alias);
-  const nextState: AgentSelectionReferenceState = normalizedAlias
-    ? selectedOption.selectable
-      ? "available"
-      : "removed"
-    : "empty";
-  const previous = agentSelectionReferenceStates.value[context] || { alias: "", state: "empty" };
-  if (previous.alias === normalizedAlias && previous.state === nextState) {
-    return;
-  }
-  if (normalizedAlias && previous.state === "available" && nextState === "removed") {
-    emitAgentSelectionReferenceLog({
-      context,
-      contextLabel,
-      alias: normalizedAlias,
-      stage: "lost",
-      reason: `${normalizedAlias} 不在当前列表，显示为“已移除的智能体”。`,
-    });
-  } else if (normalizedAlias && previous.state === "removed" && nextState === "available") {
-    emitAgentSelectionReferenceLog({
-      context,
-      contextLabel,
-      alias: normalizedAlias,
-      stage: "restored",
-      reason: `${normalizedAlias} 已重新出现在列表，空引用已恢复。`,
-    });
-  } else if (normalizedAlias && previous.state === "empty" && nextState === "removed") {
-    emitAgentSelectionReferenceLog({
-      context,
-      contextLabel,
-      alias: normalizedAlias,
-      stage: "lost",
-      reason: `${normalizedAlias} 初始加载时未匹配到可用列表，页面显示“已移除的智能体”。`,
-    });
-  }
-  agentSelectionReferenceStates.value = {
-    ...agentSelectionReferenceStates.value,
-    [context]: { alias: normalizedAlias, state: nextState },
-  };
-}
-function watchAgentSelectionReference(
-  context: string,
-  contextLabel: string,
-  getAlias: () => string,
-  getSelection: () => AgentSelectorUiOption,
-) {
-  watch(
-    () => [
-      normalizeAgentSelectionAlias(getAlias()),
-      getSelection().enabled,
-      getSelection().selectable,
-      getSelection().label,
-    ],
-    () => {
-      const alias = normalizeAgentSelectionAlias(getAlias());
-      trackAgentSelectionReference(context, contextLabel, alias, getSelection());
-    },
-    { immediate: true },
-  );
 }
 
 const selectedAgentExploreModel = computed(() => {
@@ -2555,148 +2333,6 @@ const knowledgeSearchEmpty = computed(
     knowledgeSearchResults.value.length === 0,
 );
 const knowledgeRecentJobs = computed(() => knowledgeConsole.value?.recentJobs || []);
-const baseServerLogRows = computed<KnowledgeLogRow[]>(() => {
-  const traceRows = uploadTraceEvents.value.map((event) => {
-    const payload = asRecord(event.payload) || {};
-    const http = asRecord(payload.http) || {};
-    const level = String(payload.level || "info");
-    const functionName = String(payload.functionName || "");
-    const stage = String(payload.stage || event.type || "");
-    const message = String(payload.message || "");
-    const layer = String(payload.layer || "");
-    return {
-      logId: `upload-trace:${event.id}`,
-      kindLabel: layer === "store" ? "上传函数" : "上传报文",
-      displayId: `#${event.offset}`,
-      target: [http.method, http.path].filter(Boolean).join(" ") || functionName || String(payload.sessionId || ""),
-      status: level,
-      statusLabel: stage || level,
-      tone: uploadTraceTone(level),
-      stage: functionName || message,
-      occurredAt: event.publishedAt || "",
-      createdAt: event.publishedAt || "",
-      progressPercent: traceProgressPercent(payload),
-      detail: uploadTraceDetailText(payload),
-      error: String(payload.error || ""),
-    };
-  });
-  const jobRows = knowledgeRecentJobs.value.map((job) => {
-    const summary = job.resultSummary
-      ? [
-          `邮件 ${job.resultSummary.emails || 0}`,
-          `事务 ${job.resultSummary.transactions || 0}`,
-          `人物 ${job.resultSummary.people || 0}`,
-          `警告 ${job.resultSummary.warnings || 0}`,
-        ].join(" / ")
-      : "";
-    return {
-      logId: `job:${job.id}`,
-      kindLabel: "入库任务",
-      displayId: shortId(job.id),
-      target: job.id,
-      status: job.status,
-      statusLabel: jobStatusLabels[job.status] || job.status,
-      tone: jobStatusTone(job.status),
-      stage: job.stage || "",
-      occurredAt: job.updatedAt || job.finishedAt || job.startedAt || job.createdAt || "",
-      createdAt: job.createdAt || "",
-      progressPercent: Number(job.progressPercent || 0),
-      detail: summary || job.error || "",
-      error: job.error || "",
-    };
-  });
-  const sourceRows = activeKnowledgeSources.value.map((source) => ({
-    logId: `source:${source.sourceId}`,
-    kindLabel: "目录管理",
-    displayId: shortId(source.sourceId),
-    target: source.label || source.directoryPath || source.sourceId,
-    status: source.status || source.lastJobStatus || "",
-    statusLabel: sourceSyncLabel(source),
-    tone: sourceSyncTone(source),
-    stage: source.lastJobStage || source.pendingReason || source.watcherStatus || "",
-    occurredAt:
-      source.lastJobUpdatedAt ||
-      source.lastSyncedAt ||
-      source.lastScanAt ||
-      source.lastEventAt ||
-      source.updatedAt ||
-      source.createdAt ||
-      "",
-    createdAt: source.createdAt || "",
-    progressPercent: sourceJobProgress(source),
-    detail: [
-      source.directoryPath,
-      `${source.lastFileCount || 0} 个文件`,
-      formatBytes(source.lastTotalBytes || 0),
-      source.lastJobId ? `任务 ${shortId(source.lastJobId)}` : "",
-    ]
-      .filter(Boolean)
-      .join(" · "),
-    error: source.error || "",
-  }));
-  return [...traceRows, ...jobRows, ...sourceRows, ...agentSelectionReferenceLogs.value].sort(
-    (left, right) => parseTime(right.occurredAt) - parseTime(left.occurredAt),
-  );
-});
-function dedupeLogRows(rows: KnowledgeLogRow[]) {
-  const seen = new Set<string>();
-  return rows.filter((row) => {
-    if (seen.has(row.logId)) {
-      return false;
-    }
-    seen.add(row.logId);
-    return true;
-  });
-}
-let collectSystemStatusLogRows: () => KnowledgeLogRow[] = () => [];
-const serverLogRows = computed<KnowledgeLogRow[]>(() =>
-  dedupeLogRows([...collectSystemStatusLogRows(), ...baseServerLogRows.value]).sort(
-    (left, right) => parseTime(right.occurredAt) - parseTime(left.occurredAt),
-  ),
-);
-const knowledgeLogStatusOptions = computed(() =>
-  Array.from(new Set(serverLogRows.value.map((row) => row.statusLabel).filter(Boolean))),
-);
-const filteredKnowledgeLogRows = computed(() => {
-  const filters = knowledgeLogFilters.value;
-  const idQuery = filters.id.trim().toLowerCase();
-  const stageQuery = filters.stage.trim().toLowerCase();
-  const fromTime = parseFilterDate(filters.from, "start");
-  const toTime = parseFilterDate(filters.to, "end");
-  return serverLogRows.value.filter((row) => {
-    const id = `${row.logId} ${row.target} ${row.displayId}`.toLowerCase();
-    const stage = `${row.stage} ${row.detail} ${row.error}`.toLowerCase();
-    const updatedAt = parseTime(row.occurredAt || row.createdAt);
-    if (idQuery && !id.includes(idQuery)) {
-      return false;
-    }
-    if (filters.status && row.statusLabel !== filters.status && row.status !== filters.status) {
-      return false;
-    }
-    if (stageQuery && !stage.includes(stageQuery)) {
-      return false;
-    }
-    if (fromTime && (!updatedAt || updatedAt < fromTime)) {
-      return false;
-    }
-    if (toTime && (!updatedAt || updatedAt > toTime)) {
-      return false;
-    }
-    return true;
-  });
-});
-const knowledgeLogColumnDividers = computed(() => {
-  let left = 0;
-  return knowledgeLogColumnOrder.slice(0, -1).map((key) => {
-    left += knowledgeLogColumnWidths.value[key];
-    return {
-      key,
-      label: knowledgeLogColumnLabels[key],
-      left: left - knowledgeLogTableScrollLeft.value,
-      active: knowledgeLogResizing.value?.key === key,
-    };
-  });
-});
 
 function hasScope(scopeId: string) {
   return isAuthenticated.value && currentUserScopes.value.includes(scopeId);
@@ -2733,32 +2369,6 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
     "application/json;charset=utf-8",
   );
   error.value = "";
-}
-
-function exportKnowledgeLogRows() {
-  const rows = filteredKnowledgeLogRows.value;
-  const csv = [
-    ["type", "id", "target", "status", "stage", "createdAt", "updatedAt", "progressPercent", "detail", "error"].map(csvCell).join(","),
-    ...rows.map((row) =>
-      [
-        row.kindLabel,
-        row.logId,
-        row.target,
-        row.statusLabel,
-        row.stage,
-        formatMachineDate(row.createdAt, "full"),
-        formatMachineDate(row.occurredAt, "full"),
-        row.progressPercent,
-        row.detail,
-        row.error,
-      ].map(csvCell).join(","),
-    ),
-  ].join("\n");
-  downloadTextFile(
-    `system-logs-${formatMachineDate(new Date().toISOString(), "full").replace(/[: ]/g, "-")}.csv`,
-    csv,
-    "text/csv;charset=utf-8",
-  );
 }
 
 function readNestedValue(source: Record<string, unknown>, dottedName: string) {
@@ -3276,63 +2886,7 @@ function closeDrawer() {
   drawerOpen.value = false;
 }
 
-function normalizeRefreshStateOptions(options: RefreshStateOptions = {}): RefreshStateOptions {
-  return {
-    silent: options.silent === true,
-    forceSettings: options.forceSettings === true,
-    forceDrafts: options.forceDrafts === true,
-  };
-}
-
-function mergeRefreshStateOptions(
-  current: RefreshStateOptions | null,
-  incoming: RefreshStateOptions = {},
-): RefreshStateOptions {
-  if (!current) {
-    return normalizeRefreshStateOptions(incoming);
-  }
-  const left = normalizeRefreshStateOptions(current || {});
-  const right = normalizeRefreshStateOptions(incoming);
-  return {
-    silent: left.silent && right.silent,
-    forceSettings: Boolean(left.forceSettings || right.forceSettings),
-    forceDrafts: Boolean(left.forceDrafts || right.forceDrafts),
-  };
-}
-
-function clearPendingRefreshStateTimer() {
-  if (pendingRefreshStateTimer) {
-    window.clearTimeout(pendingRefreshStateTimer);
-    pendingRefreshStateTimer = null;
-  }
-}
-
-function scheduleDelayedRefreshState(options: RefreshStateOptions, delayMs: number) {
-  pendingRefreshStateOptions = mergeRefreshStateOptions(pendingRefreshStateOptions, options);
-  if (!pendingRefreshStatePromise) {
-    pendingRefreshStatePromise = new Promise<void>((resolve) => {
-      pendingRefreshStateResolve = resolve;
-    });
-  }
-  if (pendingRefreshStateTimer) {
-    return pendingRefreshStatePromise;
-  }
-  pendingRefreshStateTimer = window.setTimeout(() => {
-    const nextOptions = pendingRefreshStateOptions || {};
-    const resolve = pendingRefreshStateResolve;
-    clearPendingRefreshStateTimer();
-    pendingRefreshStateOptions = null;
-    pendingRefreshStatePromise = null;
-    pendingRefreshStateResolve = null;
-    void performRefreshState(nextOptions).finally(() => {
-      resolve?.();
-    });
-  }, Math.max(0, delayMs));
-  return pendingRefreshStatePromise;
-}
-
-async function performRefreshState(options: RefreshStateOptions = {}) {
-  lastRefreshStateStartedAt = Date.now();
+async function executeRefreshState(options: RefreshStateOptions = {}) {
   const showBusy = !options.silent;
   const forceDrafts = options.forceDrafts === true;
   if (showBusy) {
@@ -3358,19 +2912,27 @@ async function performRefreshState(options: RefreshStateOptions = {}) {
   }
 }
 
-async function refreshState(options: RefreshStateOptions = {}) {
-  const normalized = normalizeRefreshStateOptions(options);
-  if (normalized.forceSettings || normalized.forceDrafts) {
-    return performRefreshState(normalized);
-  }
-  const elapsedMs = Date.now() - lastRefreshStateStartedAt;
-  if (lastRefreshStateStartedAt > 0 && elapsedMs < REFRESH_STATE_DELAY_MS) {
-    return scheduleDelayedRefreshState(
-      normalized,
-      REFRESH_STATE_DELAY_MS - elapsedMs,
-    );
-  }
-  return performRefreshState(normalized);
+const refreshStateController = createConsoleRefreshStateController({
+  performRefreshState: executeRefreshState,
+});
+const {
+  REFRESH_STATE_DELAY_MS,
+  clearPendingRefreshState,
+  clearPendingRefreshStateTimer,
+  lastRefreshStateStartedAt,
+  mergeRefreshStateOptions,
+  normalizeRefreshStateOptions,
+  pendingRefreshStateOptions,
+  pendingRefreshStatePromise,
+  pendingRefreshStateResolve,
+  pendingRefreshStateTimer,
+  performRefreshState,
+  refreshState: refreshStateCore,
+  scheduleDelayedRefreshState,
+} = refreshStateController;
+
+function refreshState(options: RefreshStateOptions = {}) {
+  return refreshStateCore(options);
 }
 
 async function refreshContextCompiler(options: { silent?: boolean } = {}) {
@@ -3500,126 +3062,6 @@ function exportContextBuildRecords() {
     `${JSON.stringify(payload, null, 2)}\n`,
     "application/json;charset=utf-8",
   );
-}
-
-function clearServerEventTimer() {
-  if (serverEventTimer) {
-    window.clearTimeout(serverEventTimer);
-    serverEventTimer = null;
-  }
-  if (serverEventTimerResolve) {
-    serverEventTimerResolve();
-    serverEventTimerResolve = null;
-  }
-}
-
-function waitForServerEventRetry(ms: number) {
-  return new Promise<void>((resolve) => {
-    serverEventTimerResolve = resolve;
-    serverEventTimer = window.setTimeout(() => {
-      serverEventTimer = null;
-      serverEventTimerResolve = null;
-      resolve();
-    }, ms);
-  });
-}
-
-function isAbortError(nextError: unknown) {
-  return (
-    (nextError instanceof DOMException && nextError.name === "AbortError") ||
-    (nextError instanceof Error && nextError.name === "AbortError")
-  );
-}
-
-function nextCursorFromProtocolEvents(events: ProtocolEvent[]) {
-  return events.reduce((cursor, event) => Math.max(cursor, event.offset + 1), 0);
-}
-
-function stopServerEventSubscription() {
-  serverEventSubscriptionStopped = true;
-  serverEventSubscriptionGeneration += 1;
-  clearServerEventTimer();
-  if (serverEventAbortController) {
-    serverEventAbortController.abort();
-    serverEventAbortController = null;
-  }
-}
-
-async function runServerEventSubscription(generation = serverEventSubscriptionGeneration) {
-  if (
-    serverEventSubscriptionStopped ||
-    generation !== serverEventSubscriptionGeneration
-  ) {
-    return;
-  }
-
-  const controller = new AbortController();
-  serverEventAbortController = controller;
-  const requestCursor = serverEventCursor;
-  try {
-    const response = await bridge.subscribeEvents({
-      cursor: requestCursor,
-      topic: currentServerEventTopics(),
-      timeoutMs: requestCursor === 0 ? 0 : 25000,
-      includeSnapshot: requestCursor === 0,
-    }, { signal: controller.signal });
-    if (
-      serverEventSubscriptionStopped ||
-      generation !== serverEventSubscriptionGeneration ||
-      controller.signal.aborted
-    ) {
-      return;
-    }
-    const snapshotEvents = requestCursor === 0 ? response.snapshots || [] : [];
-    const snapshotCursor = nextCursorFromProtocolEvents(snapshotEvents);
-    const liveEvents =
-      snapshotCursor > 0
-        ? response.events.filter((event) => event.offset >= snapshotCursor)
-        : response.events;
-    const incomingEvents = [...snapshotEvents, ...liveEvents];
-    const hasUpdates = incomingEvents.length > 0;
-    const handledUpdates = incomingEvents.filter(applyServerEvent).length;
-    serverEventCursor = Math.max(
-      serverEventCursor,
-      response.nextCursor || 0,
-      snapshotCursor,
-      nextCursorFromProtocolEvents(liveEvents),
-    );
-    if (hasUpdates && handledUpdates < incomingEvents.length) {
-      await refreshState({ silent: true });
-    }
-  } catch (nextError) {
-    if (
-      isAbortError(nextError) ||
-      serverEventSubscriptionStopped ||
-      generation !== serverEventSubscriptionGeneration
-    ) {
-      return;
-    }
-    await waitForServerEventRetry(3000);
-  } finally {
-    if (serverEventAbortController === controller) {
-      serverEventAbortController = null;
-    }
-  }
-
-  if (
-    !serverEventSubscriptionStopped &&
-    generation === serverEventSubscriptionGeneration
-  ) {
-    serverEventTimer = window.setTimeout(() => {
-      serverEventTimer = null;
-      void runServerEventSubscription(generation);
-    }, 100);
-  }
-}
-
-function startServerEventSubscription() {
-  stopServerEventSubscription();
-  serverEventCursor = 0;
-  serverEventSubscriptionStopped = false;
-  serverEventSubscriptionGeneration += 1;
-  void runServerEventSubscription(serverEventSubscriptionGeneration);
 }
 
 async function refreshCodexOAuthStatus() {
@@ -3978,10 +3420,6 @@ const moduleAccessModeOptionBarOptions: OptionBarOption[] = [
   { value: "all", label: "默认公开给所有功能" },
   { value: "selected", label: "仅公开给选定功能" },
 ];
-const knowledgeLogStatusOptionBarOptions = computed<OptionBarOption[]>(() => [
-  { value: "", label: "全部状态" },
-  ...knowledgeLogStatusOptions.value.map((status) => ({ value: status, label: status })),
-]);
 const analysisModuleOptionBarOptions = computed<OptionBarOption[]>(() =>
   (consoleState.value?.runtime?.analysisModules || []).map((item) => ({
     value: item.id,
@@ -4047,224 +3485,55 @@ const {
   visibleModelEntries,
 });
 
-function compactLogDetail(parts: Array<string | number | boolean | null | undefined>) {
-  return parts
-    .map((item) => String(item ?? "").trim())
-    .filter(Boolean)
-    .join(" · ");
-}
+const {
+  baseServerLogRows,
+  collectSystemStatusLogRows,
+  compactLogDetail,
+  genericStatusTone,
+  serverLogRows,
+  stateProgressPercent,
+} = createConsoleSystemLogRowController({
+  activeKnowledgeSources,
+  activeMonitorAlerts,
+  agentConfigurationAlerts,
+  agentSelectionReferenceLogs,
+  authAudit,
+  backgroundProcesses,
+  backgroundProcessStatus,
+  jsonPreview,
+  knowledgeRecentJobs,
+  recentJobs,
+  recentMonitorAlertHistory,
+  toolManagementAuditItems,
+  toolRiskLabel,
+  uploadTraceEvents,
+  workQueueRows,
+});
 
-function genericStatusTone(status: string) {
-  const normalized = String(status || "").toLowerCase();
-  if (["failed", "error", "denied", "unauthorized", "critical", "interrupted", "blocked"].some((item) => normalized.includes(item))) {
-    return "danger";
-  }
-  if (["warning", "warn", "pending", "queued", "stale", "awaiting"].some((item) => normalized.includes(item))) {
-    return "warning";
-  }
-  if (["success", "ok", "completed", "allowed", "available", "active", "running", "recovered"].some((item) => normalized.includes(item))) {
-    return "success";
-  }
-  return "info";
-}
-
-function stateProgressPercent(status: string) {
-  const normalized = String(status || "").toLowerCase();
-  if (["completed", "success", "ok", "closed", "available", "recovered"].some((item) => normalized.includes(item))) {
-    return 100;
-  }
-  if (["running", "active", "allowed"].some((item) => normalized.includes(item))) {
-    return 80;
-  }
-  if (["queued", "pending", "awaiting"].some((item) => normalized.includes(item))) {
-    return 20;
-  }
-  if (["failed", "error", "interrupted", "critical", "denied"].some((item) => normalized.includes(item))) {
-    return 0;
-  }
-  return 50;
-}
-
-collectSystemStatusLogRows = () => {
-  const queueRows = workQueueRows.value.map((row): KnowledgeLogRow => {
-    const status = row.lifecycleStatus || row.status;
-    return {
-      logId: `queue:${row.rowId}`,
-      kindLabel: "任务队列",
-      displayId: shortId(row.queueId || row.rowId),
-      target: row.label || row.queueId,
-      status,
-      statusLabel: queueLifecycleLabel(status),
-      tone: row.tone || queueLifecycleTone(status),
-      stage: compactLogDetail([row.sourceLabel, row.phase, row.status]),
-      occurredAt: row.updatedAt || row.lastHeartbeatAt || row.startedAt || "",
-      createdAt: row.startedAt || "",
-      progressPercent: stateProgressPercent(status),
-      detail: compactLogDetail([
-        `队列 ${row.queueId}`,
-        row.ownerId ? `owner ${row.ownerId}` : "",
-        row.checkpointTreeId ? `checkpoint ${row.checkpointTreeId}` : "",
-        row.registration?.registrationId ? `registration ${row.registration.registrationId}` : "",
-        row.lastHeartbeatAt ? `heartbeat ${row.lastHeartbeatAt}` : "",
-        row.detail,
-      ]),
-      error: ["failed", "interrupted"].includes(String(row.status || row.lifecycleStatus)) ? row.detail : "",
-    };
-  });
-
-  const taskRows = recentJobs.value.map((job): KnowledgeLogRow => ({
-    logId: `job:${job.id}`,
-    kindLabel: "服务端任务",
-    displayId: shortId(job.id),
-    target: compactLogDetail([job.id, job.queueId ? `队列 ${job.queueId}` : ""]),
-    status: job.status,
-    statusLabel: jobStatusLabels[job.status] || job.status,
-    tone: jobStatusTone(job.status),
-    stage: job.stage || job.status,
-    occurredAt: job.updatedAt || job.finishedAt || job.startedAt || job.createdAt || "",
-    createdAt: job.createdAt || job.startedAt || "",
-    progressPercent: Number(job.progressPercent || 0),
-    detail: compactLogDetail([
-      job.queueId ? `队列 ${job.queueId}` : "",
-      job.checkpointTreeId ? `checkpoint ${job.checkpointTreeId}` : "",
-      job.resultSummary ? jsonPreview(job.resultSummary) : "",
-    ]),
-    error: job.error || "",
-  }));
-
-  const processRows = backgroundProcesses.value.map((processItem): KnowledgeLogRow => ({
-    logId: `process:${processItem.role}`,
-    kindLabel: processItem.processType === "daemon" ? "守护进程" : "服务进程",
-    displayId: processItem.role,
-    target: processItem.label || processItem.role,
-    status: processItem.status,
-    statusLabel: backgroundProcessLabel(processItem.status),
-    tone: backgroundProcessTone(processItem.status),
-    stage: processItem.responsibility || processItem.description || processItem.mode || "",
-    occurredAt: processItem.lastHeartbeatAt || processItem.startedAt || backgroundProcessStatus.value?.updatedAt || "",
-    createdAt: processItem.startedAt || "",
-    progressPercent: processItem.alive && !processItem.stale ? 100 : processItem.alive ? 50 : 0,
-    detail: compactLogDetail([
-      processItem.pid ? `PID ${processItem.pid}` : "",
-      processItem.restartCount ? `重启 ${processItem.restartCount}` : "",
-      processItem.services?.length ? `服务 ${processItem.services.join("/")}` : "",
-      processItem.features?.length ? `功能 ${processItem.features.join("/")}` : "",
-      processItem.monitors?.length ? `监控 ${processItem.monitors.join("/")}` : "",
-      processItem.alerts?.length ? `报警 ${processItem.alerts.join("/")}` : "",
-    ]),
-    error: processItem.error || String(asRecord(processItem.lastExit)?.error || ""),
-  }));
-
-  const alertRows = [...activeMonitorAlerts.value, ...recentMonitorAlertHistory.value].map((alert): KnowledgeLogRow => {
-    const status = alert.ackRequired ? "recovered" : alert.status || alert.severity;
-    return {
-      logId: `alert:${alert.alertId}:${alert.lastSeenAt || alert.resolvedAt || alert.firstSeenAt || ""}`,
-      kindLabel: alert.ruleId === "queueInterrupted" ? "中断报警" : "监控报警",
-      displayId: shortId(alert.alertId),
-      target: alert.title,
-      status,
-      statusLabel: alert.ackRequired || alert.active === false ? "已恢复" : monitorAlertSeverityLabel(alert.severity),
-      tone: alert.ackRequired || alert.active === false ? "success" : monitorAlertSeverityTone(alert.severity),
-      stage: compactLogDetail([alert.ruleId, alert.source, alert.role, alert.queueId ? `队列 ${alert.queueId}` : ""]),
-      occurredAt: alert.recoveredAt || alert.resolvedAt || alert.lastSeenAt || alert.firstSeenAt || "",
-      createdAt: alert.firstSeenAt || "",
-      progressPercent: alert.ackRequired || alert.active === false ? 100 : 0,
-      detail: compactLogDetail([
-        alert.message,
-        alert.interruptedAt ? `中断 ${alert.interruptedAt}` : "",
-        alert.recoveredAt ? `恢复 ${alert.recoveredAt}` : "",
-        alert.acknowledgedAt ? `确认 ${alert.acknowledgedAt}` : "",
-        alert.evidence ? jsonPreview(alert.evidence) : "",
-      ]),
-      error: alert.severity === "critical" && alert.active ? alert.message : "",
-    };
-  });
-
-  const configAlertRows = agentConfigurationAlerts.value.map((alert): KnowledgeLogRow => ({
-    logId: `config-alert:${alert.alertId}`,
-    kindLabel: "配置报警",
-    displayId: shortId(alert.alertId),
-    target: `${alert.category} / ${alert.title}`,
-    status: alert.status,
-    statusLabel: alert.status,
-    tone: alert.tone,
-    stage: alert.targetId || "",
-    occurredAt: "",
-    createdAt: "",
-    progressPercent: alert.tone === "danger" ? 0 : 20,
-    detail: alert.detail,
-    error: alert.tone === "danger" ? alert.detail : "",
-  }));
-
-  const toolAuditRows = toolManagementAuditItems.value.map((item): KnowledgeLogRow => ({
-    logId: `tool-audit:${item.toolExecutionId}`,
-    kindLabel: "调用记录",
-    displayId: shortId(item.toolExecutionId),
-    target: item.toolId || item.operationId || item.toolExecutionId,
-    status: item.status,
-    statusLabel: compactLogDetail([item.status, item.decision]),
-    tone: genericStatusTone(`${item.status} ${item.decision} ${item.errorCode}`),
-    stage: compactLogDetail([item.operationId, toolRiskLabel(item.risk), item.profileId, item.agentId]),
-    occurredAt: item.finishedAt || item.startedAt || "",
-    createdAt: item.startedAt || "",
-    progressPercent: stateProgressPercent(item.status),
-    detail: compactLogDetail([
-      item.traceId ? `trace ${item.traceId}` : "",
-      item.grantId ? `grant ${item.grantId}` : "",
-      item.durationMs ? `${item.durationMs}ms` : "",
-      item.resultSummary ? jsonPreview(item.resultSummary) : "",
-    ]),
-    error: item.errorCode || "",
-  }));
-
-  const authAuditRows = authAudit.value.map((item): KnowledgeLogRow => {
-    const actor = asRecord(item.actor) || {};
-    const target = asRecord(item.target) || null;
-    const redactedInput = asRecord(item.redactedInput) || null;
-    const redactedOutputSummary = asRecord(item.redactedOutputSummary) || null;
-    const operationId = item.operationId || item.action || "operation";
-    const isAuthOperation = operationId.startsWith("auth.");
-    return {
-      logId: `operation-audit:${item.auditId}`,
-      kindLabel: isAuthOperation ? "认证日志" : "操作日志",
-      displayId: shortId(item.auditId),
-      target: compactLogDetail([
-        String(item.username || actor.username || actor.userId || item.userId || "anonymous"),
-        operationId,
-      ]),
-      status: item.status,
-      statusLabel: item.status,
-      tone: genericStatusTone(item.status || item.error),
-      stage: compactLogDetail([
-        item.method || item.transport,
-        item.path,
-        item.action || item.risk,
-        item.durationMs ? `${item.durationMs}ms` : "",
-      ]),
-      occurredAt: item.createdAt,
-      createdAt: item.createdAt,
-      progressPercent: stateProgressPercent(item.status),
-      detail: target
-        ? jsonPreview(target)
-        : redactedInput
-          ? jsonPreview(redactedInput)
-          : redactedOutputSummary
-            ? jsonPreview(redactedOutputSummary)
-            : "",
-      error: item.error || "",
-    };
-  });
-
-  return [
-    ...queueRows,
-    ...taskRows,
-    ...processRows,
-    ...alertRows,
-    ...configAlertRows,
-    ...toolAuditRows,
-    ...authAuditRows,
-  ];
-};
+const {
+  exportKnowledgeLogRows,
+  filteredKnowledgeLogRows,
+  handleKnowledgeLogColumnDividerKeydown,
+  handleKnowledgeLogColumnPointerMove,
+  handleKnowledgeLogTableScroll,
+  knowledgeLogAdvancedOpen,
+  knowledgeLogColumnDividers,
+  knowledgeLogColumnLabels,
+  knowledgeLogColumnMinWidths,
+  knowledgeLogColumnOrder,
+  knowledgeLogColumnWidths,
+  knowledgeLogFilters,
+  knowledgeLogResizing,
+  knowledgeLogStatusOptionBarOptions,
+  knowledgeLogStatusOptions,
+  knowledgeLogTableScrollLeft,
+  knowledgeLogTableShellRef,
+  startKnowledgeLogColumnResize,
+  stopKnowledgeLogColumnResize,
+  syncKnowledgeLogTableScrollLeft,
+} = createConsoleKnowledgeLogController({
+  serverLogRows,
+});
 
 watch(
   [currentView, adminView, filteredKnowledgeLogRows],
@@ -4357,11 +3626,7 @@ function cleanupConsoleRuntime() {
   stopAgentExploreSplitResize();
   stopKnowledgeLogColumnResize();
   clearInfoFeedSummaryStreamTimer();
-  clearPendingRefreshStateTimer();
-  pendingRefreshStateOptions = null;
-  pendingRefreshStateResolve?.();
-  pendingRefreshStatePromise = null;
-  pendingRefreshStateResolve = null;
+  clearPendingRefreshState();
   if (configTargetHighlightTimer) {
     window.clearTimeout(configTargetHighlightTimer);
     configTargetHighlightTimer = null;
@@ -4634,7 +3899,6 @@ onUnmounted(() => {
     createGrant, 
     createInfoFeedFollowUpContext, 
     createInfoFeedRun, 
-    csvCell, 
     currentAgentExploreQuery, 
     currentAgentModelOptionLabel, 
     currentKnowledgeLearningEnabled, 
@@ -4657,7 +3921,6 @@ onUnmounted(() => {
     decodeMimeWords, 
     decodeQuotedPrintableToBytes, 
     decodeURIComponentSafe, 
-    dedupeLogRows, 
     defaultAgentPermissionGroups, 
     delayMs, 
     deleteAgentExploreHistoryItem, 
@@ -5086,7 +4349,6 @@ onUnmounted(() => {
     openWordCloudCorpusFilePicker, 
     parseEmailHeaders, 
     parseEmailRulesDraft, 
-    parseFilterDate, 
     parseHeaderParams, 
     parseModelRef, 
     parseTime, 
