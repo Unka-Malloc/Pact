@@ -58,6 +58,8 @@ const ARCHIVE_EXPANSION_MAX_DEPTH = Math.max(1, Number(process.env.PACT_EXTERNAL
 const ARCHIVE_EXPANSION_MAX_ENTRIES = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_EXPANSION_MAX_ENTRIES || 500));
 const ARCHIVE_ENTRY_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_ENTRY_MAX_BYTES || 25 * 1024 * 1024));
 const ARCHIVE_EXTERNAL_TIMEOUT_MS = Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_EXTERNAL_TIMEOUT_MS || 45_000);
+const MANIFEST_MAX_DOCUMENTS = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_MANIFEST_MAX_DOCUMENTS || 100_000));
+const MANIFEST_JSON_DIRECT_READ_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_MANIFEST_JSON_DIRECT_READ_MAX_BYTES || FILE_REF_DIRECT_READ_MAX_BYTES));
 const EMAIL_ATTACHMENT_MAX_COUNT = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_ATTACHMENT_MAX_COUNT || 200));
 const EMAIL_ATTACHMENT_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_EMAIL_ATTACHMENT_MAX_BYTES || 25 * 1024 * 1024));
 const EMAIL_MIME_MAX_DEPTH = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MIME_MAX_DEPTH || 8));
@@ -697,7 +699,7 @@ function buildReferenceGapReport(referenceFrameworks = null, { run = null, runti
       },
       allSizeProcessing: {
         status: "baseline-absorbed",
-        evidence: ["filePath/contentRef", "payload.stream-text", "archive.entry-file-ref", "streaming-windowed"],
+        evidence: ["filePath/contentRef", "input.manifest.jsonl", "payload.stream-text", "archive.entry-file-ref", "streaming-windowed"],
         references: ["ragflow", "haystack", "unstructured"]
       },
       classificationDistillation: {
@@ -1361,6 +1363,260 @@ function loadDocumentPayload(document = {}, metadata = {}, route = null) {
       warnings: ["content-ref-read-failed"]
     };
   }
+}
+
+function manifestPathFromInput(input = {}) {
+  return String(
+    input.rawDocumentsManifestPath ||
+      input.documentsManifestPath ||
+      input.documentManifestPath ||
+      input.sourceManifestPath ||
+      input.rawDocumentsManifestRef ||
+      input.documentsManifestRef ||
+      input.documentManifestRef ||
+      input.sourceManifestRef ||
+      input.manifestPath ||
+      input.manifestRef ||
+      ""
+  ).trim();
+}
+
+function normalizeManifestDocument(record = {}, source = {}) {
+  const document = record?.document && typeof record.document === "object"
+    ? { ...record.document }
+    : { ...record };
+  delete document.document;
+  if (!contentPathFromDocument(document, document.metadata || {}) && typeof record.path === "string" && record.path.trim()) {
+    document.filePath = record.path.trim();
+  }
+  if (!document.sourceId && source.lineNumber) {
+    document.sourceId = stableId("manifest_source", source.manifestPath || "", String(source.lineNumber), document.filePath || document.contentRef || document.fileName || document.title || "");
+  }
+  document.sourceKind = document.sourceKind || "manifest-entry";
+  document.metadata = {
+    ...(document.metadata && typeof document.metadata === "object" ? document.metadata : {}),
+    manifestPath: source.manifestPath || "",
+    manifestLine: source.lineNumber || 0
+  };
+  return document;
+}
+
+function readJsonlDocumentManifest(filePath = "", maxDocuments = MANIFEST_MAX_DOCUMENTS) {
+  const documents = [];
+  const parserTrace = [];
+  const warnings = [];
+  const hash = crypto.createHash("sha256");
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  let file = null;
+  let pending = "";
+  let lineNumber = 0;
+  const readLine = (line = "") => {
+    lineNumber += 1;
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      return;
+    }
+    if (documents.length >= maxDocuments) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        warnings.push(`manifest-line-${lineNumber}-not-object`);
+        return;
+      }
+      documents.push(normalizeManifestDocument(parsed, { manifestPath: filePath, lineNumber }));
+    } catch (error) {
+      warnings.push(`manifest-line-${lineNumber}-parse-failed`);
+      parserTrace.push({
+        stage: "input.manifest.jsonl.line",
+        status: "failed",
+        lineNumber,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+  try {
+    file = fsSync.openSync(filePath, "r");
+    while (documents.length < maxDocuments) {
+      const bytesRead = fsSync.readSync(file, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      const bytes = buffer.subarray(0, bytesRead);
+      hash.update(bytes);
+      pending += decoder.decode(bytes, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() || "";
+      for (const line of lines) {
+        readLine(line);
+        if (documents.length >= maxDocuments) {
+          break;
+        }
+      }
+    }
+    const tail = decoder.decode();
+    if (tail) {
+      pending += tail;
+    }
+    if (documents.length < maxDocuments && pending) {
+      readLine(pending);
+    }
+  } finally {
+    if (file !== null) {
+      fsSync.closeSync(file);
+    }
+  }
+  return {
+    documents,
+    parserTrace,
+    warnings: documents.length >= maxDocuments ? [...warnings, "manifest-document-limit-reached"] : warnings,
+    contentHash: `sha256:${hash.digest("hex")}`,
+    lineCount: lineNumber,
+    truncated: documents.length >= maxDocuments
+  };
+}
+
+function readJsonDocumentManifest(filePath = "", maxDocuments = MANIFEST_MAX_DOCUMENTS) {
+  const stat = fsSync.statSync(filePath);
+  if (stat.size > MANIFEST_JSON_DIRECT_READ_MAX_BYTES) {
+    return {
+      documents: [],
+      parserTrace: [{
+        stage: "input.manifest.json",
+        status: "requires-jsonl-streaming",
+        path: filePath,
+        bytes: stat.size,
+        maxDirectReadBytes: MANIFEST_JSON_DIRECT_READ_MAX_BYTES
+      }],
+      warnings: ["manifest-json-too-large-use-jsonl"],
+      contentHash: "",
+      lineCount: 0,
+      truncated: false
+    };
+  }
+  const text = fsSync.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+  const parsed = JSON.parse(text);
+  const records = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.documents)
+      ? parsed.documents
+      : Array.isArray(parsed?.rawDocuments)
+        ? parsed.rawDocuments
+        : [];
+  return {
+    documents: records
+      .filter((record) => record && typeof record === "object" && !Array.isArray(record))
+      .slice(0, maxDocuments)
+      .map((record, index) => normalizeManifestDocument(record, { manifestPath: filePath, lineNumber: index + 1 })),
+    parserTrace: [],
+    warnings: records.length > maxDocuments ? ["manifest-document-limit-reached"] : [],
+    contentHash: `sha256:${sha(text)}`,
+    lineCount: 0,
+    truncated: records.length > maxDocuments
+  };
+}
+
+function loadDocumentManifest(input = {}) {
+  const manifestPath = manifestPathFromInput(input);
+  if (!manifestPath) {
+    return {
+      documents: [],
+      manifests: [],
+      parserTrace: [],
+      warnings: []
+    };
+  }
+  const resolved = resolveAllowedInputPath(manifestPath);
+  if (resolved.error) {
+    const manifest = {
+      stage: "input.manifest",
+      status: "rejected",
+      path: manifestPath,
+      reason: resolved.error,
+      allowedRoots: INPUT_ROOTS,
+      documentCount: 0
+    };
+    return {
+      documents: [],
+      manifests: [manifest],
+      parserTrace: [manifest],
+      warnings: ["manifest-ref-rejected"]
+    };
+  }
+  try {
+    const stat = fsSync.statSync(resolved.path);
+    if (!stat.isFile()) {
+      const manifest = {
+        stage: "input.manifest",
+        status: "failed",
+        path: resolved.path,
+        reason: "not-a-file",
+        documentCount: 0
+      };
+      return {
+        documents: [],
+        manifests: [manifest],
+        parserTrace: [manifest],
+        warnings: ["manifest-ref-not-file"]
+      };
+    }
+    const extension = normalizeExtension(extensionFromFileName(resolved.path));
+    const isJson = extension === ".json";
+    const parsed = isJson
+      ? readJsonDocumentManifest(resolved.path)
+      : readJsonlDocumentManifest(resolved.path);
+    const manifest = {
+      stage: isJson ? "input.manifest.json" : "input.manifest.jsonl",
+      status: parsed.documents.length ? "completed" : parsed.warnings.length ? "warning" : "empty",
+      path: resolved.path,
+      bytes: stat.size,
+      format: isJson ? "json" : "jsonl",
+      documentCount: parsed.documents.length,
+      lineCount: parsed.lineCount || 0,
+      contentHash: parsed.contentHash || "",
+      maxDocuments: MANIFEST_MAX_DOCUMENTS,
+      truncated: Boolean(parsed.truncated)
+    };
+    return {
+      documents: parsed.documents,
+      manifests: [manifest],
+      parserTrace: [manifest, ...(parsed.parserTrace || [])],
+      warnings: parsed.warnings || []
+    };
+  } catch (error) {
+    const manifest = {
+      stage: "input.manifest",
+      status: "failed",
+      path: resolved.path,
+      error: error instanceof Error ? error.message : String(error),
+      documentCount: 0
+    };
+    return {
+      documents: [],
+      manifests: [manifest],
+      parserTrace: [manifest],
+      warnings: ["manifest-read-failed"]
+    };
+  }
+}
+
+function collectInputDocuments(input = {}) {
+  const inlineDocuments = Array.isArray(input.rawDocuments)
+    ? input.rawDocuments
+    : Array.isArray(input.documents)
+      ? input.documents
+      : [];
+  const manifest = loadDocumentManifest(input);
+  return {
+    documents: [...inlineDocuments, ...manifest.documents],
+    inlineDocumentCount: inlineDocuments.length,
+    manifestDocumentCount: manifest.documents.length,
+    manifests: manifest.manifests,
+    parserTrace: manifest.parserTrace,
+    warnings: manifest.warnings
+  };
 }
 
 function utf8(buffer) {
@@ -5375,6 +5631,7 @@ function normalizeDocumentMetadata(document = {}, metadata = {}, title = "", tex
     mediaType,
     byteSize,
     sourceKind: String(document.sourceKind || metadata.sourceKind || "document").trim() || "document",
+    manifestLine: Number(document.manifestLine || metadata.manifestLine || 0),
     language: String(document.language || metadata.language || "").trim(),
     eventTime: String(document.eventTime || metadata.eventTime || "").trim(),
     documentTime: String(document.documentTime || metadata.documentTime || document.capturedAt || metadata.capturedAt || "").trim()
@@ -6351,6 +6608,8 @@ function buildCorpusPlan(documents = [], input = {}) {
       extension: document.extension,
       mediaType: document.mediaType,
       byteSize: document.byteSize,
+      sourceKind: document.sourceKind || "",
+      manifestLine: Number(document.manifestLine || 0),
       contentHash: document.contentHash,
       capturedAt: document.capturedAt,
       eventTime: document.eventTime || "",
@@ -6628,6 +6887,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       mediaType: documentMetadata.mediaType,
       byteSize: documentMetadata.byteSize,
       sourceKind: documentMetadata.sourceKind,
+      manifestLine: Number(documentMetadata.manifestLine || 0),
       language: documentMetadata.language,
       eventTime: documentMetadata.eventTime || inferredTime.timeRange?.from || "",
       documentTime: documentMetadata.documentTime,
@@ -6912,11 +7172,8 @@ function expandMboxMessageDocuments({ parentDocument, buffer = null, runtimeStat
 }
 
 function normalizeDocuments(input = {}, runtimeStatus = null) {
-  const documents = Array.isArray(input.rawDocuments)
-    ? input.rawDocuments
-    : Array.isArray(input.documents)
-      ? input.documents
-      : [];
+  const inputDocuments = collectInputDocuments(input);
+  const documents = inputDocuments.documents;
   const normalizedDocuments = [];
   const windowOptions = {
     maxWindowCharacters: input.maxWindowCharacters,
@@ -6996,7 +7253,18 @@ function normalizeDocuments(input = {}, runtimeStatus = null) {
       normalizedDocuments.push(...children);
     }
   }
-  return normalizedDocuments;
+  return {
+    documents: normalizedDocuments,
+    inputDocumentPlan: {
+      strategy: "inline-or-streaming-manifest-document-input.v1",
+      inlineDocumentCount: inputDocuments.inlineDocumentCount,
+      manifestDocumentCount: inputDocuments.manifestDocumentCount,
+      sourceCount: documents.length,
+      manifests: inputDocuments.manifests,
+      parserTrace: inputDocuments.parserTrace,
+      warnings: inputDocuments.warnings
+    }
+  };
 }
 
 function textTokens(value = "") {
@@ -9350,6 +9618,7 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
     corpusPlan: {
       strategy: corpusPlan.strategy,
       allSizePolicy: corpusPlan.allSizePolicy,
+      inputDocumentPlan: corpusPlan.inputDocumentPlan || null,
       sourceCount: corpusPlan.sourceCount,
       distillableSourceCount: corpusPlan.distillableSourceCount,
       totalBytes: corpusPlan.totalBytes,
@@ -9434,7 +9703,9 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
 
 function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFrameworks = null) {
   const createdAt = nowIso();
-  const allDocuments = normalizeDocuments(input, runtimeStatus);
+  const normalizedInput = normalizeDocuments(input, runtimeStatus);
+  const allDocuments = normalizedInput.documents;
+  const inputDocumentPlan = normalizedInput.inputDocumentPlan;
   const timeFilter = normalizeTimeFilter(input);
   const filtered = applyTimeFilterToDocuments(allDocuments, timeFilter, {
     maxWindowCharacters: input.maxWindowCharacters,
@@ -9443,6 +9714,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
   const activeDocuments = filtered.documents;
   const corpusPlan = {
     ...buildCorpusPlan(activeDocuments, input),
+    inputDocumentPlan,
     timeFilter: filtered.summary
   };
   const routePlan = buildRoutePlan(corpusPlan);
@@ -9584,6 +9856,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
     corpusPlan: {
       strategy: corpusPlan.strategy,
       allSizePolicy: corpusPlan.allSizePolicy,
+      inputDocumentPlan: corpusPlan.inputDocumentPlan || null,
       sourceCount: corpusPlan.sourceCount,
       distillableSourceCount: corpusPlan.distillableSourceCount,
       totalBytes: corpusPlan.totalBytes,
@@ -9635,6 +9908,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
     updatedAt: createdAt,
     inputSummary: {
       sourceCount: allDocuments.length,
+      inputDocumentPlan,
       projectId: incrementalPlan.projectId,
       projectFingerprint: incrementalPlan.projectFingerprint,
       distillableSourceCount: documents.length,
@@ -9654,6 +9928,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
       corpusPlan: {
         strategy: corpusPlan.strategy,
         allSizePolicy: corpusPlan.allSizePolicy,
+        inputDocumentPlan: corpusPlan.inputDocumentPlan || null,
         totalBytes: corpusPlan.totalBytes,
         totalCharacters: corpusPlan.totalCharacters,
         elementCount: corpusPlan.elementCount || 0,
@@ -9720,6 +9995,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
         },
         corpus: {
           allSizePolicy: corpusPlan.allSizePolicy,
+          inputDocumentPlan: corpusPlan.inputDocumentPlan || null,
           windowCount: corpusPlan.windowCount,
           totalBytes: corpusPlan.totalBytes,
           totalCharacters: corpusPlan.totalCharacters
@@ -9858,6 +10134,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "external-service.route-window-community-claim-gated-distillation.v3",
       "external-service.route-window-community-claim-gated-incremental-distillation.v4",
       "external-service.route-window-community-claim-gated-graph-incremental-distillation.v5",
+      "inline-or-streaming-manifest-document-input.v1",
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
       EVIDENCE_QUERY_STRATEGY,
@@ -9895,12 +10172,17 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       defaultWindowOverlapCharacters: DEFAULT_WINDOW_OVERLAP_CHARACTERS,
       largeFileBytes: LARGE_FILE_BYTES,
       largeTextCharacters: LARGE_TEXT_CHARACTERS,
+      manifestStrategy: "inline-or-streaming-manifest-document-input.v1",
+      manifestMaxDocuments: MANIFEST_MAX_DOCUMENTS,
+      manifestJsonDirectReadMaxBytes: MANIFEST_JSON_DIRECT_READ_MAX_BYTES,
       sizeLimitPolicy: "resource-bounded-no-small-hard-cap"
     },
     parserExecution: {
-      payloadModes: ["text", "contentBase64", "filePath", "contentRef"],
+      payloadModes: ["text", "contentBase64", "filePath", "contentRef", "rawDocumentsManifestPath", "rawDocumentsManifestRef", "jsonlManifest"],
       allowedInputRoots: INPUT_ROOTS,
       builtInParsers: [
+        "input.manifest.jsonl",
+        "input.manifest.json",
         "payload.file-ref",
         "payload.file-ref-deferred",
         "payload.stream-text",

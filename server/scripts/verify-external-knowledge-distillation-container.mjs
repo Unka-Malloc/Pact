@@ -387,6 +387,10 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
+  assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
+  assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
@@ -414,6 +418,10 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".html"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".adoc"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".tex"), true);
+  assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
+  assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
@@ -1180,6 +1188,10 @@ try {
     [
       "mkdir -p /data /tmp/pact-mounted-archive",
       "printf '%s\\n' '# Mounted Input' 'Mounted filePath payloads avoid JSON base64 transport and enter normal distillation windows.' > /data/mounted-input.md",
+      "printf '%s\\n' '# Manifest Input' > /data/manifest-input.md",
+      "yes 'Container manifest JSONL input keeps request bodies small while filePath documents stream into windows.' | head -n 8000 >> /data/manifest-input.md",
+      "printf '%s\\n' 'vendor,total,date' 'ContainerManifest,88,2026-07-03' > /data/manifest-input.csv",
+      "printf '%s\\n' '{\"sourceId\":\"container-manifest-md\",\"title\":\"Container Manifest Markdown\",\"fileName\":\"manifest-input.md\",\"mediaType\":\"text/markdown\",\"filePath\":\"/data/manifest-input.md\"}' '{\"sourceId\":\"container-manifest-csv\",\"title\":\"Container Manifest CSV\",\"fileName\":\"manifest-input.csv\",\"mediaType\":\"text/csv\",\"filePath\":\"/data/manifest-input.csv\"}' > /data/raw-documents-manifest.jsonl",
       "dd if=/dev/zero of=/data/oversized-binary.pdf bs=1048576 count=9 status=none",
       "printf '%s\\n' '# Mounted Archive Project' > /tmp/pact-mounted-archive/large-project.md",
       "yes 'Mounted archive package evidence must expand from filePath and stream child windows.' | head -n 120000 >> /tmp/pact-mounted-archive/large-project.md",
@@ -1289,6 +1301,31 @@ NODE`
   assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
   assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
   assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+
+  const manifestRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container streaming manifest verification",
+      title: "Container streaming manifest verification",
+      responseProfile: "agent",
+      rawDocumentsManifestPath: "/data/raw-documents-manifest.jsonl"
+    })
+  });
+  assert.equal(manifestRun.status, 201);
+  assert.equal(manifestRun.payload.status, "completed");
+  assert.equal(manifestRun.payload.inputSummary.inputDocumentPlan.strategy, "inline-or-streaming-manifest-document-input.v1");
+  assert.equal(manifestRun.payload.inputSummary.inputDocumentPlan.manifestDocumentCount, 2);
+  assert.equal(manifestRun.payload.result.corpusPlan.inputDocumentPlan.manifests[0].stage, "input.manifest.jsonl");
+  const manifestMd = manifestRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-manifest-md");
+  const manifestCsv = manifestRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-manifest-csv");
+  assert.ok(manifestMd, "container manifest Markdown source must be present in corpus");
+  assert.ok(manifestCsv, "container manifest CSV source must be present in corpus");
+  assert.equal(manifestMd.quality.suppliedPayloadKind, "file-ref-stream");
+  assert.equal(manifestMd.windowPlan.strategy, "file-ref-stream-windowing.v1");
+  assert.equal(manifestMd.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+  assert.equal(manifestCsv.route.formatId, "spreadsheet");
+  assert.equal(manifestRun.payload.result.agentMessage.corpusPlan.inputDocumentPlan.manifestDocumentCount, 2);
 
   const mountedArchiveRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
     method: "POST",

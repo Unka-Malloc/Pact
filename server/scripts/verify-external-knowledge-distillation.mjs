@@ -343,6 +343,7 @@ let pactServer = null;
 let fileRefDocument = null;
 let deferredFileRefDocument = null;
 let mountedArchiveDocument = null;
+let rawDocumentsManifestPath = "";
 const mountedStructuredDocuments = [];
 const mountedLegacyOfficeDocuments = [];
 
@@ -364,6 +365,38 @@ try {
       byteSize: fileStat.size,
       filePath: fileRefPath
     };
+    const manifestMarkdownPath = path.join(serviceDataDir, "manifest-large-project.md");
+    await fs.writeFile(
+      manifestMarkdownPath,
+      [
+        "# Manifest Project Evidence",
+        ...Array.from({ length: 130 }, (_, index) => (
+          `Manifest section ${index + 1}: streaming JSONL document manifests must avoid large request bodies while preserving filePath routing and windowed distillation.`
+        ))
+      ].join("\n\n")
+    );
+    const manifestCsvPath = path.join(serviceDataDir, "manifest-invoices.csv");
+    await fs.writeFile(manifestCsvPath, "vendor,total,date\nManifestCo,640,2026-07-01\nManifestOps,128,2026-07-02\n");
+    rawDocumentsManifestPath = path.join(serviceDataDir, "raw-documents-manifest.jsonl");
+    await fs.writeFile(
+      rawDocumentsManifestPath,
+      [
+        {
+          sourceId: "manifest-md",
+          title: "Manifest Markdown Project",
+          fileName: "manifest-large-project.md",
+          mediaType: "text/markdown",
+          filePath: manifestMarkdownPath
+        },
+        {
+          sourceId: "manifest-csv",
+          title: "Manifest Invoice CSV",
+          fileName: "manifest-invoices.csv",
+          mediaType: "text/csv",
+          filePath: manifestCsvPath
+        }
+      ].map((record) => JSON.stringify(record)).join("\n") + "\n"
+    );
     const deferredPath = path.join(serviceDataDir, "mounted-large-binary.pdf");
     await fs.writeFile(deferredPath, Buffer.alloc((9 * 1024 * 1024) + 17, 0x25));
     const deferredStat = await fs.stat(deferredPath);
@@ -590,9 +623,14 @@ try {
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.timeFiltering.timeFields.includes("eventTime"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.strategy, "streaming-windowed");
+  assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.manifestMaxDocuments >= 1000, true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("contentBase64"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("contentRef"), true);
+  assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.stream-text"), true);
@@ -701,6 +739,7 @@ try {
     body: JSON.stringify({
       query: "外部知识蒸馏注册验证",
       title: "外部知识蒸馏注册验证",
+      rawDocumentsManifestPath: rawDocumentsManifestPath || undefined,
       rawDocuments: [
         {
           sourceId: "source-1",
@@ -1133,6 +1172,12 @@ try {
   assert.equal(createRun.payload.result.agentMessage.responseProfile, "agent");
   assert.equal(createRun.payload.result.routePlan.strategy, "extension-media-shape-routing.v1");
   assert.equal(createRun.payload.result.corpusPlan.allSizePolicy, "streaming-windowed");
+  if (rawDocumentsManifestPath) {
+    assert.equal(createRun.payload.result.corpusPlan.inputDocumentPlan.strategy, "inline-or-streaming-manifest-document-input.v1");
+    assert.equal(createRun.payload.result.corpusPlan.inputDocumentPlan.manifestDocumentCount, 2);
+    assert.equal(createRun.payload.result.corpusPlan.inputDocumentPlan.manifests[0].format, "jsonl");
+    assert.equal(createRun.payload.result.agentMessage.corpusPlan.inputDocumentPlan.manifestDocumentCount, 2);
+  }
   assert.equal(createRun.payload.result.convergence.strategy, "window-community-topic-project-convergence.v2");
   assert.equal(createRun.payload.result.convergence.layers.includes("window-community"), true);
   assert.equal(createRun.payload.result.convergence.communityReports.length >= 1, true);
@@ -1144,6 +1189,18 @@ try {
   assert.equal(routedPdf.riskFlags.includes("large-file-risk"), true);
   const routedSpreadsheet = createRun.payload.result.routePlan.documents.find((document) => document.sourceId === "source-2");
   assert.equal(routedSpreadsheet?.formatId, "spreadsheet");
+  if (rawDocumentsManifestPath) {
+    const manifestMarkdownCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "manifest-md");
+    assert.ok(manifestMarkdownCorpus, "JSONL manifest markdown document must enter corpus plan");
+    assert.equal(manifestMarkdownCorpus.sourceKind, "manifest-entry");
+    assert.equal(manifestMarkdownCorpus.manifestLine, 1);
+    assert.equal(manifestMarkdownCorpus.parseStatus, "completed");
+    assert.equal(manifestMarkdownCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref"), true);
+    const manifestCsvCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "manifest-csv");
+    assert.ok(manifestCsvCorpus, "JSONL manifest CSV document must enter corpus plan");
+    assert.equal(manifestCsvCorpus.route.formatId, "spreadsheet");
+    assert.equal(manifestCsvCorpus.parserTrace.some((trace) => trace.stage === "table.csv"), true);
+  }
   const routedImage = createRun.payload.result.routePlan.documents.find((document) => document.sourceId === "source-4");
   assert.equal(routedImage?.riskFlags.includes("ocr-required"), true);
   const largePdfCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-3");
@@ -1506,6 +1563,42 @@ try {
     true,
     "only claim-grounded groups may become candidates"
   );
+
+  if (rawDocumentsManifestPath) {
+    const manifestRun = await fetchJson(`${pactServer.url}/api/external/knowledge/distillation/runs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(auth, { method: "POST" })
+      },
+      body: JSON.stringify({
+        query: "Streaming manifest input verification",
+        title: "Streaming manifest input verification",
+        responseProfile: "agent",
+        rawDocumentsManifestPath
+      })
+    });
+    assert.equal(manifestRun.status, 201);
+    assert.equal(manifestRun.payload.status, "completed");
+    assert.equal(manifestRun.payload.inputSummary.inputDocumentPlan.strategy, "inline-or-streaming-manifest-document-input.v1");
+    assert.equal(manifestRun.payload.inputSummary.inputDocumentPlan.manifestDocumentCount, 2);
+    assert.equal(manifestRun.payload.inputSummary.inputDocumentPlan.manifests.some((manifest) => (
+      manifest.stage === "input.manifest.jsonl" &&
+      manifest.status === "completed" &&
+      manifest.documentCount === 2
+    )), true);
+    assert.equal(manifestRun.payload.result.corpusPlan.inputDocumentPlan.manifests[0].format, "jsonl");
+    const manifestMarkdown = manifestRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "manifest-md");
+    const manifestCsv = manifestRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "manifest-csv");
+    assert.ok(manifestMarkdown, "manifest Markdown file-ref source must be present in corpus");
+    assert.ok(manifestCsv, "manifest CSV file-ref source must be present in corpus");
+    assert.equal(manifestMarkdown.quality.suppliedPayloadKind, "file-ref-stream");
+    assert.equal(manifestMarkdown.windowPlan.strategy, "file-ref-stream-windowing.v1");
+    assert.equal(manifestMarkdown.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+    assert.equal(manifestCsv.route.formatId, "spreadsheet");
+    assert.equal(manifestCsv.quality.suppliedPayloadKind, "file-ref-stream");
+    assert.equal(manifestRun.payload.result.agentMessage.corpusPlan.inputDocumentPlan.manifestDocumentCount, 2);
+  }
 
   const contradictionRun = await fetchJson(`${pactServer.url}/api/external/knowledge/distillation/runs`, {
     method: "POST",

@@ -120,7 +120,7 @@ flowchart LR
 | 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan` | 内建 file processor 与 Tika 调用前也必须统一 route-first |
 | 解析链 | 外部服务已覆盖文本、配置、Markdown block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry 和 Excel cell coordinates 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
-| 大文件 | 外部服务已支持 mounted file refs、archive refs 和 chunked windowing | 上传、解析、蒸馏三层统一流式窗口协议 |
+| 大文件 | 外部服务已支持 mounted file refs、streaming JSONL document manifests、archive refs 和 chunked windowing | 上传、manifest、解析、蒸馏三层统一流式窗口协议 |
 | 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v2` | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
 | Grounding | 外部服务已做 claim-evidence top-k、冲突证据和 promotion gate | 内建运行时补 claim 级门禁和无证据结论拦截 |
 | 时间线 | 表格日期已进入 `timeRange`、`timeConfidence`、`timeSignals` | 扩展到邮件、元数据、正文日期，并提供 agent 查询过滤 |
@@ -374,6 +374,7 @@ raw corpus item 标准字段：
 改进计划：
 
 - 上传层支持 chunk/resume，不把大文件完整塞进单次内存处理。
+- API 层支持 `rawDocumentsManifestPath`/`rawDocumentsManifestRef` 指向 JSONL 文档清单，服务端逐行读取 manifest，再把每个条目交给 filePath/contentRef 路由，避免大工程把所有文档塞进一次请求体。
 - 解析层按页、sheet、slide、section 或 block 流式产出。
 - corpus 层按结构边界建立窗口：
   - 默认窗口按字符、页、元素或 block 混合控制。
@@ -589,6 +590,7 @@ raw corpus item 标准字段：
 - Markdown：核心提炼文档。
 - DOCX：Word 可打开文档。
 - JSON：机器可读结构化结果。
+- Format Conversion Plan JSON：每个输入文档的专业解析与格式转换计划。
 - ZIP：完整工作区包。
 - Agent JSON：智能体专用报文。
 
