@@ -530,12 +530,15 @@ try {
     assert.ok(config.mcp?.pact?.headers?.["X-Pact-Api-Key"]);
   });
 
-  await testAsync("cli install json output mentions opencode", () => {
+  await testAsync("cli install human output mentions opencode", () => {
     const output = cliInstallResult.stdout;
     assert.ok(
       output.includes("opencode") || output.includes("OpenCode"),
       `Output should mention opencode: ${output.slice(0, 200)}`
     );
+    assert.match(output, /OpenCode quick test:/);
+    assert.match(output, /X-Pact-Api-Key: <token>/);
+    assert.equal(output.includes(token), false, "human install output must not expose the grant token");
   });
 
   await testAsync("cli remote opencode install writes remote config", async () => {

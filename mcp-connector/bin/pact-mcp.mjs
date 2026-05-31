@@ -6554,7 +6554,7 @@ function formatInstallResult(result) {
     lines.push("");
     lines.push("  OpenCode quick test:");
     lines.push(`    curl -s ${result.baseUrl}/mcp -H 'Content-Type: application/json' \\`);
-    lines.push(`      -H 'X-Pact-Api-Key: ${Object.values(result.installed || {}).find(i => i?.tokenPrefix)?.tokenPrefix || "<token>"}' \\`);
+    lines.push("      -H 'X-Pact-Api-Key: <token>' \\");
     lines.push(`      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'`);
   }
   if (!result.ok) {
