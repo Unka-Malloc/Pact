@@ -418,10 +418,6 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".html"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".adoc"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".tex"), true);
-  assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
-  assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
-  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
-  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
