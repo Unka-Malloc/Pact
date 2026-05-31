@@ -185,6 +185,11 @@ const TARGET_INSTALL_MODES = {
 };
 const SCAN_COMMAND_TIMEOUT_MS = 3000;
 const REMOTE_SCAN_COMMAND_TIMEOUT_MS = 8000;
+const PACKAGE_MANAGER_DISCOVERY_ENV = Object.freeze({
+  HOMEBREW_NO_AUTO_UPDATE: "1",
+  HOMEBREW_NO_ANALYTICS: "1",
+  HOMEBREW_NO_ENV_HINTS: "1"
+});
 const HOST_PLATFORM = Object.freeze({
   MACOS: "darwin",
   LINUX: "linux",
@@ -440,14 +445,19 @@ function deviceDiscoveryEnv({ baseUrl, primaryPath }) {
   };
 }
 
+function childProcessEnv(extraEnv = {}) {
+  return {
+    ...process.env,
+    ...PACKAGE_MANAGER_DISCOVERY_ENV,
+    ...(extraEnv || {})
+  };
+}
+
 async function run(command, args = [], options = {}) {
   try {
     const result = await execFileAsync(command, args, {
       cwd: options.cwd || process.cwd(),
-      env: {
-        ...process.env,
-        ...(options.env || {})
-      },
+      env: childProcessEnv(options.env),
       timeout: options.timeoutMs || 0,
       killSignal: options.killSignal || "SIGKILL",
       maxBuffer: 10 * 1024 * 1024
@@ -474,10 +484,7 @@ async function runWithInput(command, args = [], input = "", options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd || process.cwd(),
-      env: {
-        ...process.env,
-        ...(options.env || {})
-      },
+      env: childProcessEnv(options.env),
       stdio: ["pipe", "pipe", "pipe"]
     });
     let stdout = "";
@@ -2678,26 +2685,8 @@ const PLATFORM_PACKAGE_DIR_SOURCES = {
 };
 
 const PLATFORM_PACKAGE_EXECUTABLE_PATH_SOURCES = {
-  [HOST_PLATFORM.MACOS]: [
-    packageSource("homebrew-package-prefix", PACKAGE_SOURCE_KIND.COMMAND_PREFIX_DIRS, {
-      executable: "brew",
-      argsForCommand: (command) => ["--prefix", command],
-      mapOutput: (stdout) => {
-        const prefix = lastOutputLine(stdout);
-        return prefix ? [path.join(prefix, "bin"), path.join(prefix, "sbin")] : [];
-      }
-    })
-  ],
-  [HOST_PLATFORM.LINUX]: [
-    packageSource("homebrew-package-prefix", PACKAGE_SOURCE_KIND.COMMAND_PREFIX_DIRS, {
-      executable: "brew",
-      argsForCommand: (command) => ["--prefix", command],
-      mapOutput: (stdout) => {
-        const prefix = lastOutputLine(stdout);
-        return prefix ? [path.join(prefix, "bin"), path.join(prefix, "sbin")] : [];
-      }
-    })
-  ],
+  [HOST_PLATFORM.MACOS]: [],
+  [HOST_PLATFORM.LINUX]: [],
   [HOST_PLATFORM.WINDOWS]: [
     packageSource("scoop-which", PACKAGE_SOURCE_KIND.COMMAND_PATHS, {
       executables: ["scoop.cmd", "scoop"],
@@ -2993,13 +2982,16 @@ async function detectOrbVms(orbBin) {
 function linuxExecutableScanScript(command) {
   return [
     "set +e",
+    "export HOMEBREW_NO_AUTO_UPDATE=\"${HOMEBREW_NO_AUTO_UPDATE:-1}\"",
+    "export HOMEBREW_NO_ANALYTICS=\"${HOMEBREW_NO_ANALYTICS:-1}\"",
+    "export HOMEBREW_NO_ENV_HINTS=\"${HOMEBREW_NO_ENV_HINTS:-1}\"",
     `command_name=${shellQuote(command)}`,
     "candidate_rows() {",
     "  type -a -p \"$command_name\" 2>/dev/null | while IFS= read -r item; do printf '%s\\n' \"$item\"; done",
     "  for manager in brew npm pnpm yarn bun; do",
     "    if command -v \"$manager\" >/dev/null 2>&1; then",
     "      case \"$manager\" in",
-    "        brew) dir=$($manager --prefix 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/bin/$command_name\" \"$dir/sbin/$command_name\"; package_dir=$($manager --prefix \"$command_name\" 2>/dev/null); [ -n \"$package_dir\" ] && printf '%s\\n' \"$package_dir/bin/$command_name\" \"$package_dir/sbin/$command_name\" ;;",
+    "        brew) dir=$($manager --prefix 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/bin/$command_name\" \"$dir/sbin/$command_name\" ;;",
     "        npm) dir=$($manager prefix -g 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/bin/$command_name\" ;;",
     "        pnpm) dir=$($manager bin -g 2>/dev/null); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/$command_name\" ;;",
     "        yarn) dir=$($manager global bin 2>/dev/null | tail -n 1); [ -n \"$dir\" ] && printf '%s\\n' \"$dir/$command_name\" ;;",

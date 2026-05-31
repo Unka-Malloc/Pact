@@ -437,6 +437,21 @@ try {
       ""
     ].join("\n"), { mode: 0o755 });
   }
+  const packageManagerProbeBin = path.join(layeredHome, "package-manager-probe-bin");
+  const packageManagerEnvProbe = path.join(layeredHome, "package-manager-env-probe.txt");
+  if (process.platform !== "win32") {
+    await fs.mkdir(packageManagerProbeBin, { recursive: true });
+    await fs.writeFile(path.join(packageManagerProbeBin, "brew"), [
+      "#!/bin/sh",
+      "printf '%s|%s|%s|%s\\n' \"${HOMEBREW_NO_AUTO_UPDATE:-}\" \"${HOMEBREW_NO_ANALYTICS:-}\" \"${HOMEBREW_NO_ENV_HINTS:-}\" \"$*\" >> \"$PACT_MCP_BREW_ENV_PROBE\"",
+      "if [ \"$1\" = \"--prefix\" ] && [ -z \"${2:-}\" ]; then",
+      "  printf '%s\\n' \"$HOME/fake-homebrew\"",
+      "  exit 0",
+      "fi",
+      "exit 1",
+      ""
+    ].join("\n"), { mode: 0o755 });
+  }
   const plainAppGemini = path.join(layeredHome, "Applications", "Plain.app", "Contents", "Resources", "gemini");
   const agentAppGemini = path.join(layeredHome, "Applications", "Gemini Agent.app", "Contents", "Resources", "gemini");
   const fakeAppGeminiHelper = path.join(layeredHome, "app-helper-bin", "gemini");
@@ -472,7 +487,8 @@ try {
     env: {
       HOME: layeredHome,
       NVM_DIR: path.join(layeredHome, ".nvm"),
-      PATH: [fakeWorkspaceBin, "/usr/bin", "/bin"].join(path.delimiter)
+      PACT_MCP_BREW_ENV_PROBE: packageManagerEnvProbe,
+      PATH: [fakeWorkspaceBin, packageManagerProbeBin, "/usr/bin", "/bin"].filter(Boolean).join(path.delimiter)
     }
   });
   const layeredScanPayload = JSON.parse(layeredScan.stdout);
@@ -497,6 +513,19 @@ try {
   if (process.platform === "darwin") {
     assert.equal(layeredGeminiBins.includes(agentAppGemini), true);
   }
+  if (process.platform !== "win32") {
+    const packageManagerEnvProbeText = await fs.readFile(packageManagerEnvProbe, "utf8");
+    assert.match(
+      packageManagerEnvProbeText,
+      /1\|1\|1\|--prefix/,
+      "local package manager scan must disable Homebrew auto-update, analytics, and env hints"
+    );
+    assert.doesNotMatch(
+      packageManagerEnvProbeText,
+      /1\|1\|1\|--prefix[ \t]+\S/,
+      "local package manager scan must not run package-specific Homebrew prefix lookups"
+    );
+  }
 
   const fakeOrb = path.join(tempDir, "fake-orb");
   await fs.writeFile(fakeOrb, [
@@ -511,6 +540,9 @@ try {
     "  user=\"$4\"",
     "  shift 4",
     "  if [ \"$1\" = \"bash\" ] && [ \"$2\" = \"-lc\" ]; then",
+    "    if ! printf '%s' \"$3\" | grep -q \"HOMEBREW_NO_AUTO_UPDATE\"; then",
+    "      exit 1",
+    "    fi",
     "    if [ \"$vm\" = \"kate\" ] && [ \"$user\" = \"kate\" ] && printf '%s' \"$3\" | grep -q \"command_name='openclaw'\"; then",
     "      printf '/usr/bin/openclaw\\n'",
     "      exit 0",
@@ -602,6 +634,9 @@ try {
     "fi",
     "if [ \"$1\" = \"exec\" ]; then",
     "  if [ \"$2\" = \"box123\" ] && [ \"$3\" = \"sh\" ] && [ \"$4\" = \"-lc\" ]; then",
+    "    if ! printf '%s' \"$5\" | grep -q \"HOMEBREW_NO_AUTO_UPDATE\"; then",
+    "      exit 1",
+    "    fi",
     "    if printf '%s' \"$5\" | grep -q \"command_name='copilot'\"; then",
     "      printf '/usr/local/bin/copilot\\n'",
     "      exit 0",
