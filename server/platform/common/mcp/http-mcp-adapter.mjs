@@ -1265,6 +1265,56 @@ function inferMcpTargetReceipt({ operation = "", input = {}, payload = {}, envel
   };
 }
 
+function inferSharedspaceExchangeReceipt({ operation = "", input = {}, payload = {}, target = {} } = {}) {
+  const operationId = String(operation || "").trim();
+  if (!/(?:^|\.)(sharedspace|agentWorkspace)\b/i.test(operationId)) {
+    return null;
+  }
+  const paths = Array.isArray(payload.paths)
+    ? payload.paths.map((item) => String(item || "")).filter(Boolean).slice(0, 100)
+    : [];
+  const pathValue = firstString([
+    payload.file?.relativePath,
+    payload.file?.path,
+    payload.relativePath,
+    payload.path,
+    input.path,
+    paths[0]
+  ]);
+  const workspaceRef = firstString([
+    payload.workspace?.workspaceRef,
+    payload.workspaceRef,
+    target.workspaceRef,
+    input.workspaceRef,
+    input.workspaceName
+  ]);
+  let action = "operation";
+  if (/agentWorkspace\.create$/i.test(operationId)) {
+    action = "workspace-created";
+  } else if (/file\.write$/i.test(operationId)) {
+    action = "file-written";
+  } else if (/file\.(read|download)$/i.test(operationId)) {
+    action = "file-read";
+  } else if (/item\.list$/i.test(operationId)) {
+    action = "items-listed";
+  } else if (/item\.delete$/i.test(operationId)) {
+    action = "item-deleted";
+  }
+  return {
+    schemaVersion: "pact.mcp.sharedspace-exchange.v1",
+    action,
+    workspaceRef,
+    path: pathValue,
+    paths,
+    itemCount: paths.length,
+    nextOperations: [
+      "pact.sharedspace.item.list",
+      "pact.sharedspace.file.read",
+      "pact.sharedspace.file.write"
+    ]
+  };
+}
+
 function mcpReplyPayload(payload) {
   const text = JSON.stringify(payload ?? {});
   if (text.length <= 32_000) {
@@ -1548,6 +1598,12 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
       payload: publicPayload,
       envelope: parsedCall.envelope
     });
+    const exchange = inferSharedspaceExchangeReceipt({
+      operation: parsedCall.operation,
+      input: resolvedWorkspaceInput.input,
+      payload: publicPayload,
+      target
+    });
     broadcastMcpOperationReply({
       envelope: parsedCall.envelope,
       operation: parsedCall.operation,
@@ -1563,6 +1619,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
         ...mcpVersionInfo(),
         envelope: mcpEnvelopePublic(parsedCall.envelope, resolvedWorkspaceInput.workspaceDirectory),
         target: publicMcpEnvelopeValue(target, resolvedWorkspaceInput.workspaceDirectory),
+        ...(exchange ? { exchange } : {}),
         payload: publicPayload
       }
     }));

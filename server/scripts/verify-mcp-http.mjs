@@ -503,7 +503,11 @@ try {
   assert.equal(createdSharedWorkspace.status, 200);
   const createdWorkspacePayload = createdSharedWorkspace.payload.result.structuredContent.payload;
   const workspaceRef = createdWorkspacePayload.workspace.workspaceRef;
+  const createdExchange = createdSharedWorkspace.payload.result.structuredContent.exchange;
   assert.equal(workspaceRef, "workspace-1");
+  assert.equal(createdExchange.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.equal(createdExchange.action, "workspace-created");
+  assert.equal(createdExchange.workspaceRef, workspaceRef);
 
   let sharedspaceWrite = null;
   const sharedspaceWriteSse = await captureMcpSseDuring({
@@ -530,8 +534,13 @@ try {
   assert.match(sharedspaceWriteSse.text, /"status":"completed"/);
   assert.equal(sharedspaceWrite.status, 200);
   const writePayload = sharedspaceWrite.payload.result.structuredContent.payload;
+  const writeExchange = sharedspaceWrite.payload.result.structuredContent.exchange;
   assert.equal(writePayload.ok, true);
   assert.equal(writePayload.file.relativePath, "notes/hello.txt");
+  assert.equal(writeExchange.action, "file-written");
+  assert.equal(writeExchange.workspaceRef, workspaceRef);
+  assert.equal(writeExchange.path, "notes/hello.txt");
+  assert.ok(writeExchange.nextOperations.includes("pact.sharedspace.file.read"));
 
   const sharedspaceList = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
@@ -543,8 +552,12 @@ try {
   });
   assert.equal(sharedspaceList.status, 200);
   const listPayload = sharedspaceList.payload.result.structuredContent.payload;
+  const listExchange = sharedspaceList.payload.result.structuredContent.exchange;
   assert.equal(listPayload.ok, true);
   assert.ok(listPayload.paths.includes("notes/hello.txt"));
+  assert.equal(listExchange.action, "items-listed");
+  assert.equal(listExchange.itemCount, listPayload.paths.length);
+  assert.ok(listExchange.paths.includes("notes/hello.txt"));
 
   const sharedspaceRead = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
@@ -557,13 +570,20 @@ try {
   });
   assert.equal(sharedspaceRead.status, 200);
   const readPayload = sharedspaceRead.payload.result.structuredContent.payload;
+  const readExchange = sharedspaceRead.payload.result.structuredContent.exchange;
   assert.equal(readPayload.ok, true);
   assert.equal(readPayload.content, "hello pact");
+  assert.equal(readExchange.action, "file-read");
+  assert.equal(readExchange.path, "notes/hello.txt");
   const sharedspaceJson = JSON.stringify({
     createdWorkspacePayload,
+    createdExchange,
     writePayload,
+    writeExchange,
     listPayload,
-    readPayload
+    listExchange,
+    readPayload,
+    readExchange
   });
   assertNoMcpInternalLeak(sharedspaceJson, "MCP sharedspace output");
 
