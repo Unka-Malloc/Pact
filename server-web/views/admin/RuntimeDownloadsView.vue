@@ -2,43 +2,17 @@
 import { computed, onMounted, ref } from "vue";
 import StatusPill from "../../components/StatusPill.vue";
 import { usePageRefreshHandler } from "../../composables/usePageRefresh";
-import { bridge } from "../../lib/bridge";
-
-type RuntimeDependency = {
-  id: string;
-  label: string;
-  category?: string;
-  description?: string;
-  status: string;
-  present?: boolean;
-  cached?: boolean;
-  downloadable?: boolean;
-  children?: RuntimeDependency[];
-  detection?: Record<string, unknown>;
-  actions?: Record<string, unknown>;
-  accepts?: Record<string, boolean>;
-};
-
-type RuntimeDependencyListResponse = {
-  ok: boolean;
-  generatedAt?: string;
-  cacheRoot?: string;
-  sourceConfigPath?: string;
-  triggerMode?: string;
-  dependencies?: RuntimeDependency[];
-  summary?: Record<string, number>;
-};
-
-type RuntimeDependencyActionResult = {
-  ok: boolean;
-  targetId?: string;
-  status?: string;
-  reason?: string;
-  mirrorHint?: string;
-  sourceConfigPath?: string;
-  detection?: RuntimeDependency;
-  results?: RuntimeDependencyActionResult[];
-};
+import {
+  canTrigger,
+  childSummary,
+  downloadRuntimeDependency,
+  listRuntimeDependencies,
+  sourceHint,
+  statusLabel,
+  statusTone,
+  type RuntimeDependency,
+  type RuntimeDependencyActionResult,
+} from "../../lib/runtime-dependencies";
 
 const dependencies = ref<RuntimeDependency[]>([]);
 const cacheRoot = ref("");
@@ -54,21 +28,6 @@ const readyCount = computed(() => dependencies.value.filter((item) => item.prese
 const installedCount = computed(() => dependencies.value.filter((item) => item.status === "installed").length);
 const failedCount = computed(() => dependencies.value.filter((item) => item.status === "failed").length);
 
-function statusLabel(status = "") {
-  const labels: Record<string, string> = {
-    present: "已存在",
-    installed: "安装成功",
-    failed: "安装失败"
-  };
-  return labels[status] || status || "未知";
-}
-
-function statusTone(status = "") {
-  if (status === "present" || status === "installed") return "success";
-  if (status === "failed") return "danger";
-  return "neutral";
-}
-
 function formatDateTime(value = "") {
   if (!value) return "未生成";
   const date = new Date(value);
@@ -82,32 +41,11 @@ function formatDateTime(value = "") {
   });
 }
 
-function childSummary(item: RuntimeDependency) {
-  const children = item.children || [];
-  if (!children.length) return "";
-  return children.map((child) => `${child.label}: ${statusLabel(child.status)}`).join(" / ");
-}
-
-function sourceHint(item: RuntimeDependency) {
-  const detection = item.detection || {};
-  const policy = String(detection.sourcePolicy || "");
-  if (policy) return policy;
-  return item.downloadable ? "检测本机后按本地源配置安装" : "检测本机连接状态";
-}
-
-function canTrigger(item: RuntimeDependency) {
-  return item.downloadable !== false && item.status !== "present";
-}
-
-function preparePayload(item: RuntimeDependency) {
-  return { targetId: item.id };
-}
-
 async function refreshRuntimeDependencies() {
   loading.value = true;
   loadError.value = "";
   try {
-    const payload = await bridge.listRuntimeDependencies() as RuntimeDependencyListResponse;
+    const payload = await listRuntimeDependencies();
     dependencies.value = payload.dependencies || [];
     cacheRoot.value = payload.cacheRoot || "";
     sourceConfigPath.value = payload.sourceConfigPath || "";
@@ -125,7 +63,7 @@ async function prepareDependency(item: RuntimeDependency) {
   actionError.value = "";
   actionResult.value = null;
   try {
-    actionResult.value = await bridge.downloadRuntimeDependency(preparePayload(item)) as RuntimeDependencyActionResult;
+    actionResult.value = await downloadRuntimeDependency(item);
     await refreshRuntimeDependencies();
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : String(error);
