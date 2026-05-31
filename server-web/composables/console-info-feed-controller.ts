@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from "vue";
+import { computed, ref, type Ref } from "vue";
 import { bridge } from "../lib/bridge";
 import type {
   AgentExploreRunResponse,
@@ -8,20 +8,6 @@ import type {
   KnowledgeSearchResult,
 } from "../lib/types";
 import {
-  extractEvidenceRefsFromText,
-  linkifyEvidenceRefsInMarkdown,
-  markdownToSafeHtml,
-  uniqueEvidenceRefs,
-} from "../lib/rendering";
-import {
-  copyTextToClipboard,
-  downloadTextFile,
-  formatCompactDate,
-  formatMachineDate,
-  safeDownloadName,
-} from "./console-format-utils";
-import {
-  appendInfoFeedTurnSnapshotCore,
   applyInfoFeedSummaryAnswerCore,
   archiveInfoFeedExpertFeedbackCore,
   buildFallbackInfoFeedClarificationCore,
@@ -31,9 +17,7 @@ import {
   buildInfoFeedSourceSummaryCore,
   buildInfoFeedSummaryQuestionCore,
   compactInfoFeedAttachment,
-  compactInfoFeedRunForStorage as compactInfoFeedRunForStorageCore,
   createInfoFeedFollowUpContext,
-  createInfoFeedRunState,
   createInitialInfoFeedAgentState,
   createInitialInfoFeedKeywordState,
   createInitialInfoFeedSummaryState,
@@ -49,16 +33,10 @@ import {
   infoFeedSourceResultLine as infoFeedSourceResultLineCore,
   infoFeedStatusLabel,
   infoFeedStatusTone,
-  infoFeedTurnQuestionCore,
   isLowRelevanceSourceResult as isLowRelevanceSourceResultCore,
   isReadableInfoFeedAttachment,
   makeInfoFeedId,
   normalizeInfoFeedClarificationOptionCore,
-  normalizeInfoFeedHistoryCore,
-  resetInfoFeedRunForContinuationCore,
-  sanitizeInfoFeedRunModelReferences as sanitizeInfoFeedRunModelReferencesCore,
-  snapshotInfoFeedAttachments as snapshotInfoFeedAttachmentsCore,
-  snapshotInfoFeedTurnCore,
   truncateInfoFeedText,
   type InfoFeedSummaryDefaults,
 } from "./console-info-feed-utils";
@@ -81,18 +59,14 @@ import {
   normalizeAgentExploreRun,
 } from "./console-agent-explore-utils";
 import { createConsoleInfoFeedHistoryController } from "./console-info-feed-history-controller";
+import { createConsoleInfoFeedOutputController } from "./console-info-feed-output-controller";
 import { asRecord } from "./console-model-utils";
 import type {
-  HistorySessionPanelItem,
   InfoFeedAttachment,
   InfoFeedClarification,
   InfoFeedClarificationOption,
   InfoFeedExpertFeedback,
-  InfoFeedExpertFeedbackAnchor,
-  InfoFeedRetryStage,
   InfoFeedRunState,
-  InfoFeedStageStatus,
-  InfoFeedTurnSnapshot,
 } from "../types/app";
 
 type ReadonlyRef<T> = {
@@ -287,15 +261,6 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
     return infoFeedModelOptions.value.find((item) => item.value === normalized)?.label || "已移除的智能体";
   }
 
-  const infoFeedSummaryRuntime = computed(() => {
-    const summary = infoFeedCurrentRun.value?.summary;
-    return {
-      model: infoFeedModelDisplayLabel(summary?.modelAlias || selectedInfoFeedModel.value.value),
-      temperature: Number(summary?.temperature ?? infoFeedForm.value.temperature ?? 0.2),
-      maxTokens: Number(summary?.maxTokens ?? infoFeedForm.value.maxTokens ?? 1800),
-    };
-  });
-
   const infoFeedKeywordItems = computed(() => {
     const response = infoFeedCurrentRun.value?.keyword.response;
     return ((response?.items || response?.results || []) as KnowledgeSearchResult[]).filter(
@@ -350,97 +315,6 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
   });
   const infoFeedAgentSteps = computed(() => infoFeedCurrentRun.value?.agent.response?.steps || []);
   const infoFeedAgentAnswer = computed(() => String(infoFeedCurrentRun.value?.agent.response?.answer || "").trim());
-  const infoFeedSummaryEvidenceRefs = computed(() =>
-    uniqueEvidenceRefs([
-      ...infoFeedKeywordItems.value.map((item) => String(item.evidenceId || "")).filter(Boolean),
-      ...extractEvidenceRefsFromText(infoFeedAgentAnswer.value),
-      ...extractEvidenceRefsFromText(infoFeedCurrentRun.value?.summary.answer || ""),
-    ]),
-  );
-  const infoFeedVisibleSummaryText = computed(() => {
-    const answer = String(infoFeedCurrentRun.value?.summary.answer || "");
-    if (!answer) {
-      return "";
-    }
-    return infoFeedSummaryStreamText.value || answer;
-  });
-  const infoFeedStreamingSummaryHtml = computed(() =>
-    markdownToSafeHtml(
-      linkifyEvidenceRefsInMarkdown(
-        infoFeedVisibleSummaryText.value,
-        infoFeedSummaryEvidenceRefs.value,
-      ),
-    ),
-  );
-  const infoFeedSummaryIsStreaming = computed(() => {
-    const answer = String(infoFeedCurrentRun.value?.summary.answer || "");
-    return Boolean(answer && infoFeedSummaryStreamText.value.length < answer.length);
-  });
-  const infoFeedSummaryMarkdown = computed(() => {
-    const run = infoFeedCurrentRun.value;
-    const answer = String(run?.summary.answer || "").trim();
-    if (!run || !answer) {
-      return "";
-    }
-    const citationLines = infoFeedSummaryEvidenceRefs.value.length
-      ? infoFeedSummaryEvidenceRefs.value.map((refId, index) => `${index + 1}. \`${refId}\``)
-      : ["无"];
-    const turnLines = (run.turns || []).flatMap((turn, index) => [
-      `## ${infoFeedTurnTitle(turn, index)}`,
-      "",
-      `- 问题：${infoFeedTurnQuestion(turn)}`,
-      ...(infoFeedTurnAttachments(turn).length
-        ? [
-            `- 附件：${infoFeedTurnAttachments(turn)
-              .map((attachment) => `${attachment.name}（${formatFileSize(attachment.size)}，${infoFeedStatusLabel(attachment.status)}）`)
-              .join("；")}`,
-          ]
-        : []),
-      `- 生成时间：${formatMachineDate(turn.completedAt || run.startedAt, "full")}`,
-      turn.summaryFallback ? "- 状态：模型总结失败，使用本地兜底摘要" : "- 状态：模型总结完成",
-      "",
-      turn.summaryAnswer || "无输出。",
-      "",
-      ...(turn.expertFeedback || []).length
-        ? [
-            "### 人类专家意见",
-            "",
-            ...(turn.expertFeedback || []).map((item) =>
-              `- ${item.selectedLabel}：${item.followUpQuestion}`,
-            ),
-            "",
-          ]
-        : [],
-    ]);
-    return [
-      "# 信息流总结",
-      "",
-      `- 问题：${run.query}`,
-      `- 模型：${run.summary.modelAlias || "未记录"}`,
-      `- 上下文：${run.summary.contextProfileId || "未记录"}`,
-      `- 生成时间：${formatMachineDate(run.completedAt || new Date().toISOString(), "full")}`,
-      run.summary.fallback ? "- 状态：模型总结失败，使用本地兜底摘要" : "- 状态：模型总结完成",
-      "",
-      ...turnLines,
-      "## 结论",
-      "",
-      ...(run.followUp ? [`当前追问：${run.followUp.question}`, ""] : []),
-      ...(run.attachments.length
-        ? [
-            `当前附件：${run.attachments
-              .map((attachment) => `${attachment.name}（${formatFileSize(attachment.size)}，${infoFeedStatusLabel(attachment.status)}）`)
-              .join("；")}`,
-            "",
-          ]
-        : []),
-      answer,
-      "",
-      "## 引用证据",
-      "",
-      ...citationLines,
-      "",
-    ].join("\n");
-  });
   const infoFeedCanFollowUp = computed(() => {
     const run = infoFeedCurrentRun.value;
     return Boolean(run?.summary.answer?.trim() && run.summary.status !== "running");
@@ -460,18 +334,40 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
     const parent = infoFeedParentRunSnapshot.value;
     return current?.followUp?.parentRunId && parent?.runId === current.followUp.parentRunId ? parent : null;
   });
-  const infoFeedParentSummaryEvidenceRefs = computed(() => {
-    const parent = infoFeedParentRunForCurrent.value;
-    return parent ? infoFeedRunEvidenceRefs(parent) : [];
-  });
-  const infoFeedParentSummaryHtml = computed(() => {
-    const parent = infoFeedParentRunForCurrent.value;
-    return markdownToSafeHtml(
-      linkifyEvidenceRefsInMarkdown(
-        parent?.summary.answer || "",
-        infoFeedParentSummaryEvidenceRefs.value,
-      ),
-    );
+  const {
+    clearInfoFeedSummaryStreamTimer,
+    copyInfoFeedSummary,
+    exportInfoFeedSummary,
+    infoFeedCurrentUserQuestion,
+    infoFeedExpertFeedbackFor,
+    infoFeedExpertFeedbackForRun,
+    infoFeedParentSummaryEvidenceRefs,
+    infoFeedParentSummaryHtml,
+    infoFeedStreamingSummaryHtml,
+    infoFeedSummaryEvidenceRefs,
+    infoFeedSummaryIsStreaming,
+    infoFeedSummaryMarkdown,
+    infoFeedSummaryRuntime,
+    infoFeedTurnAttachments,
+    infoFeedTurnQuestion,
+    infoFeedTurnSummaryHtml,
+    infoFeedTurnTitle,
+    infoFeedUserCardTitle,
+    infoFeedVisibleSummaryText,
+    streamInfoFeedSummary,
+  } = createConsoleInfoFeedOutputController({
+    error: options.error,
+    infoFeedAgentAnswer,
+    infoFeedCurrentRun,
+    infoFeedForm,
+    infoFeedKeywordItems,
+    infoFeedParentRunForCurrent,
+    infoFeedRunEvidenceRefs,
+    infoFeedSummaryStreamText,
+    infoFeedSummaryStreamTimer,
+    modelDisplayLabel: infoFeedModelDisplayLabel,
+    recordFeedback: options.recordFeedback,
+    selectedInfoFeedModel,
   });
   const infoFeedReadyForSummary = computed(() => {
     const run = infoFeedCurrentRun.value;
@@ -499,53 +395,6 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
   });
   const infoFeedNeedsRetryContinue = computed(() => Boolean(infoFeedCurrentRun.value?.pausedForRetry));
   const infoFeedRetryMessage = computed(() => infoFeedRetryMessageForRun(infoFeedCurrentRun.value));
-
-  watch(
-    () => [
-      infoFeedCurrentRun.value?.runId || "",
-      infoFeedCurrentRun.value?.summary.status || "",
-      infoFeedCurrentRun.value?.summary.answer || "",
-    ],
-    ([runId, status, answer]) => {
-      const nextAnswer = String(answer || "");
-      clearInfoFeedSummaryStreamTimer();
-      if (!runId || !nextAnswer || status === "running") {
-        infoFeedSummaryStreamText.value = "";
-        return;
-      }
-      streamInfoFeedSummary(nextAnswer, String(runId));
-    },
-    { immediate: true },
-  );
-
-  function clearInfoFeedSummaryStreamTimer() {
-    if (infoFeedSummaryStreamTimer.value !== null) {
-      window.clearTimeout(infoFeedSummaryStreamTimer.value);
-      infoFeedSummaryStreamTimer.value = null;
-    }
-  }
-
-  function streamInfoFeedSummary(answer: string, runId: string) {
-    clearInfoFeedSummaryStreamTimer();
-    const characters = Array.from(answer);
-    let index = 0;
-    infoFeedSummaryStreamText.value = "";
-    const tick = () => {
-      const current = infoFeedCurrentRun.value;
-      if (!current || current.runId !== runId || current.summary.answer !== answer) {
-        clearInfoFeedSummaryStreamTimer();
-        return;
-      }
-      infoFeedSummaryStreamText.value += characters[index] || "";
-      index += 1;
-      if (index < characters.length) {
-        infoFeedSummaryStreamTimer.value = window.setTimeout(tick, 6);
-      } else {
-        infoFeedSummaryStreamTimer.value = null;
-      }
-    };
-    tick();
-  }
 
   async function runInfoFeedKeywordTrack(sequence: number, runId: string, query: string) {
     const run = infoFeedCurrentRun.value;
@@ -1083,87 +932,6 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
     if (infoFeedReadyForSummary.value && !run.pausedForModelSelection && !run.pausedForRetry) {
       await runInfoFeedSummaryAgent(sequence);
     }
-  }
-
-  async function copyInfoFeedSummary() {
-    const content = infoFeedSummaryMarkdown.value.trim();
-    if (!content) {
-      options.error.value = "暂无可复制的信息流总结。";
-      return;
-    }
-    try {
-      await copyTextToClipboard(content);
-      options.recordFeedback("copy", {
-        surface: "info_feed",
-        query: infoFeedCurrentRun.value?.query || "",
-        itemId: infoFeedCurrentRun.value?.runId || "",
-        evidenceRefs: infoFeedSummaryEvidenceRefs.value,
-      });
-      options.error.value = "";
-    } catch (nextError) {
-      options.error.value = nextError instanceof Error ? nextError.message : "复制信息流总结失败。";
-    }
-  }
-
-  function exportInfoFeedSummary() {
-    const content = infoFeedSummaryMarkdown.value.trim();
-    if (!content) {
-      options.error.value = "暂无可导出的信息流总结。";
-      return;
-    }
-    const query = String(infoFeedCurrentRun.value?.query || infoFeedForm.value.query || "信息流");
-    const timestamp = formatMachineDate(new Date().toISOString(), "full").replace(/[: ]/g, "-");
-    downloadTextFile(
-      `${safeDownloadName(query, "info-feed")}-${timestamp}.md`,
-      `${content}\n`,
-      "text/markdown;charset=utf-8",
-    );
-    options.recordFeedback("export", {
-      surface: "info_feed",
-      query,
-      itemId: infoFeedCurrentRun.value?.runId || "",
-      evidenceRefs: infoFeedSummaryEvidenceRefs.value,
-    });
-    options.error.value = "";
-  }
-
-  function infoFeedExpertFeedbackFor(anchor: InfoFeedExpertFeedbackAnchor) {
-    return infoFeedExpertFeedbackForRun(infoFeedCurrentRun.value, anchor);
-  }
-
-  function infoFeedExpertFeedbackForRun(run: InfoFeedRunState | null | undefined, anchor: InfoFeedExpertFeedbackAnchor) {
-    return (run?.expertFeedback || []).filter((item) => item.anchor === anchor);
-  }
-
-  function infoFeedTurnSummaryHtml(turn: InfoFeedTurnSnapshot) {
-    return markdownToSafeHtml(
-      linkifyEvidenceRefsInMarkdown(
-        turn.summaryAnswer || "",
-        turn.evidenceRefs || [],
-      ),
-    );
-  }
-
-  function infoFeedTurnTitle(turn: InfoFeedTurnSnapshot, index: number) {
-    return turn.followUpQuestion ? `第 ${index + 1} 轮追问` : `第 ${index + 1} 轮`;
-  }
-
-  function infoFeedTurnQuestion(turn: InfoFeedTurnSnapshot) {
-    return infoFeedTurnQuestionCore(turn);
-  }
-
-  function infoFeedTurnAttachments(turn: InfoFeedTurnSnapshot) {
-    return (turn.attachments || []).filter(Boolean);
-  }
-
-  function infoFeedCurrentUserQuestion(run: InfoFeedRunState) {
-    return run.followUp?.question || run.query || "未记录问题";
-  }
-
-  function infoFeedUserCardTitle(runOrTurn: InfoFeedRunState | InfoFeedTurnSnapshot) {
-    return "followUp" in runOrTurn
-      ? (runOrTurn.followUp ? "用户回复" : "用户问题")
-      : ((runOrTurn as InfoFeedTurnSnapshot).followUpQuestion ? "用户回复" : "用户问题");
   }
 
   function clearInfoFeedKeywordCache() {
