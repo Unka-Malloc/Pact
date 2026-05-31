@@ -3972,16 +3972,16 @@ function candidateIdentity(candidate) {
     return "";
   }
   if (candidate?.target === "openclaw") {
+    const openclawBin = String(overrides["openclaw-bin"] || "").trim();
     if (location === "orb") {
       const vmName = String(overrides["orb-vm"] || overrides["openclaw-vm"] || "").trim();
       const vmUser = String(overrides["orb-user"] || overrides["openclaw-user"] || "").trim();
-      return vmName && vmUser ? `openclaw:orb:${vmName}:${vmUser}` : "";
+      return vmName && vmUser && openclawBin ? `openclaw:orb:${vmName}:${vmUser}:${openclawBin}` : "";
     }
     if (isGenericRemoteLocation(location)) {
       const remoteId = String(overrides["remote-id"] || "").trim();
-      return remoteId ? `openclaw:${location}:${remoteId}` : "";
+      return remoteId && openclawBin ? `openclaw:${location}:${remoteId}:${openclawBin}` : "";
     }
-    const openclawBin = String(overrides["openclaw-bin"] || "").trim();
     return openclawBin ? `openclaw:local:${openclawBin}` : "";
   }
   if (candidate?.target === "claude-code") {

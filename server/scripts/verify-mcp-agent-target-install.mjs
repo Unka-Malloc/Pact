@@ -269,6 +269,8 @@ async function installFakeDockerRuntime() {
     "if { [ \"$1\" = \"sh\" ] || [ \"$1\" = \"bash\" ]; } && [ \"$2\" = \"-lc\" ]; then",
     "  script=\"$3\"",
     "  case \"$script\" in *\"command_name='codex'\"*) printf '/usr/local/bin/codex\\n'; exit 0 ;; esac",
+    "  case \"$script\" in *\"command_name='openclaw'\"*) printf '/usr/bin/openclaw\\n'; exit 0 ;; esac",
+    "  case \"$script\" in *\"command_name='ironclaw'\"*) printf '/opt/bin/ironclaw\\n'; exit 0 ;; esac",
     "  [ -n \"${PACT_TOKEN_ENV:-}\" ] && { write_codex_env \"$PACT_TOKEN_ENV\"; exit 0; }",
     "  case \"$script\" in *\"delete config.mcp.pact\"*) remove_opencode; printf 'removed\\n'; exit 0 ;; esac",
     "  case \"$script\" in *\".config', 'opencode'\"*) write_opencode; exit 0 ;; esac",
@@ -279,6 +281,9 @@ async function installFakeDockerRuntime() {
     "if [ \"$1\" = \"env\" ]; then",
     "  shift",
     "  while printf '%s' \"${1:-}\" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do export \"$1\"; shift; done",
+    "fi",
+    "if { [ \"$1\" = \"/usr/bin/openclaw\" ] || [ \"$1\" = \"/opt/bin/ironclaw\" ]; } && [ \"$2\" = \"mcp\" ]; then",
+    "  [ \"$3\" = \"--help\" ] && { printf 'Usage: claw mcp set show unset\\n'; exit 0; }",
     "fi",
     "if [ \"$1\" = \"/usr/local/bin/codex\" ] && [ \"$2\" = \"mcp\" ]; then",
     "  [ \"${PACT_FAKE_DOCKER_HANG_MCP:-}\" = \"1\" ] && while :; do :; done",
@@ -579,6 +584,47 @@ try {
     assert.equal(remoteCodex.optionOverrides?.["codex-bin"], "/usr/local/bin/codex");
     assert.ok(remoteCodex.installCommand?.includes("--target codex"));
     assert.ok(remoteCodex.installCommand?.includes("--execution-location"));
+  });
+
+  await testAsync("scan preserves remote openclaw-compatible alternatives", async () => {
+    const canRun = await installFakeDockerRuntime();
+    if (!canRun) {
+      return;
+    }
+    const result = await spawnConnector([
+      "scan",
+      "--json",
+      "--url", serverUrl,
+      "--orb-bin", "/nonexistent/orb",
+      "--docker-bin", fakeDockerPath,
+      "--podman-bin", "/nonexistent/podman",
+      "--nerdctl-bin", "/nonexistent/nerdctl",
+      "--wsl-bin", "/nonexistent/wsl",
+      "--lima-bin", "/nonexistent/limactl",
+      "--colima-bin", "/nonexistent/colima",
+      "--multipass-bin", "/nonexistent/multipass",
+      "--lxc-bin", "/nonexistent/lxc",
+      "--incus-bin", "/nonexistent/incus",
+      "--vagrant-bin", "/nonexistent/vagrant",
+      "--parallels-bin", "/nonexistent/prlctl"
+    ], 60000, {
+      PACT_FAKE_REMOTE_HOME: remoteOpenCodeHome,
+      PACT_FAKE_AGENT_LOG: fakeAgentCommandLog
+    });
+    assert.equal(result.code, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    const remoteOpenClawCandidates = (payload.candidates || []).filter((candidate) =>
+      candidate.target === "openclaw" &&
+        candidate.optionOverrides?.["execution-location"] === "docker"
+    );
+    const bins = remoteOpenClawCandidates
+      .map((candidate) => candidate.optionOverrides?.["openclaw-bin"])
+      .sort();
+    assert.deepEqual(bins, ["/opt/bin/ironclaw", "/usr/bin/openclaw"]);
+    for (const candidate of remoteOpenClawCandidates) {
+      assert.ok(candidate.installCommand?.includes("--target openclaw"));
+      assert.ok(candidate.installCommand?.includes("--openclaw-bin"));
+    }
   });
 
   await testAsync("cli remote codex install and uninstall use remote context", async () => {

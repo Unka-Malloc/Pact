@@ -602,16 +602,19 @@ try {
   });
   const clawScanPayload = JSON.parse(clawScan.stdout);
   const openClawCandidates = clawScanPayload.candidates.filter((candidate) => candidate.target === "openclaw");
-  assert.equal(openClawCandidates.length, 1);
-  assert.equal(openClawCandidates[0].status, "detected");
-  assert.equal(openClawCandidates[0].label, "OpenClaw (kate)");
-  assert.match(openClawCandidates[0].detail, /\/usr\/bin\/openclaw/);
-  assert.equal(openClawCandidates[0].optionOverrides["execution-location"], "orb");
-  assert.equal(openClawCandidates[0].optionOverrides["orb-vm"], "kate");
-  assert.equal(openClawCandidates[0].optionOverrides["orb-user"], "kate");
-  assert.equal(openClawCandidates[0].optionOverrides["openclaw-vm"], "kate");
-  assert.equal(openClawCandidates[0].optionOverrides["openclaw-user"], "kate");
-  assert.equal(openClawCandidates[0].optionOverrides["openclaw-bin"], "/usr/bin/openclaw");
+  assert.equal(openClawCandidates.length, 2);
+  const openClawBins = openClawCandidates.map((candidate) => candidate.optionOverrides["openclaw-bin"]).sort();
+  assert.deepEqual(openClawBins, ["/usr/bin/openclaw", "/usr/local/bin/ironclaw"]);
+  for (const candidate of openClawCandidates) {
+    assert.equal(candidate.status, "detected");
+    assert.equal(candidate.label, "OpenClaw (kate)");
+    assert.match(candidate.detail, /\/(usr\/bin\/openclaw|usr\/local\/bin\/ironclaw)/);
+    assert.equal(candidate.optionOverrides["execution-location"], "orb");
+    assert.equal(candidate.optionOverrides["orb-vm"], "kate");
+    assert.equal(candidate.optionOverrides["orb-user"], "kate");
+    assert.equal(candidate.optionOverrides["openclaw-vm"], "kate");
+    assert.equal(candidate.optionOverrides["openclaw-user"], "kate");
+  }
   const vmGemini = clawScanPayload.candidates.find((candidate) =>
     candidate.target === "gemini-cli" && candidate.optionOverrides?.["execution-location"] === "orb"
   );
