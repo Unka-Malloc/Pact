@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import BridgeDownloadButton from "./BridgeDownloadButton.vue";
 import BrowseSelectButton from "./BrowseSelectButton.vue";
 import StatusPill from "./StatusPill.vue";
-import { bridge } from "../lib/bridge";
+import { knowledgeExportUrl, normalizedKnowledgeDocumentUrl, type KnowledgeDocumentExportFormat } from "../lib/knowledge-documents";
 import type { NormalizedDocumentsManifest, SplitJob } from "../lib/types";
 
 const props = withDefaults(defineProps<{
@@ -30,12 +30,8 @@ const emit = defineEmits<{
 
 const dropActive = ref(false);
 const isBusy = computed(() => props.busyKey === "knowledge:ingest");
-const exportFormat = ref<"docx" | "markdown" | "html">("docx");
-const exportUrl = computed(() => {
-  if (exportFormat.value === "markdown") return bridge.knowledgeMarkdownExportUrl();
-  if (exportFormat.value === "html") return bridge.knowledgeHtmlExportUrl();
-  return bridge.knowledgeDocxExportUrl();
-});
+const exportFormat = ref<KnowledgeDocumentExportFormat>("docx");
+const exportUrl = computed(() => knowledgeExportUrl(exportFormat.value));
 
 function hasDraggedFiles(event: DragEvent) {
   return Array.from(event.dataTransfer?.types || []).includes("Files");
@@ -159,7 +155,7 @@ function onDrop(event: DragEvent) {
         class="job-row"
       >
         <BridgeDownloadButton
-          :href="bridge.normalizedDocumentUrl(normalizedManifest.batchId, doc.documentId)"
+          :href="normalizedKnowledgeDocumentUrl(normalizedManifest.batchId, doc.documentId)"
           :label="doc.title"
           button-class="bridge-download-link"
         />

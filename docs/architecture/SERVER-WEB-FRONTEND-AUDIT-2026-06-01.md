@@ -23,9 +23,9 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `server-web/composables` | 55 | 22934 | 121 | 9 | 0 | 81 | 25 |
 | `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 0 | 0 |
-| `server-web/views` | 21 | 7709 | 2 | 14 | 0 | 4 | 1 |
-| `server-web/components` | 37 | 6747 | 5 | 0 | 1 | 11 | 2 |
-| `server-web/lib` | 8 | 4855 | 20 | 0 | 0 | 10 | 0 |
+| `server-web/views` | 21 | 7702 | 0 | 14 | 0 | 4 | 1 |
+| `server-web/components` | 37 | 6743 | 1 | 0 | 1 | 11 | 2 |
+| `server-web/lib` | 9 | 4899 | 25 | 0 | 0 | 10 | 0 |
 | `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
 
 ### Largest Files
@@ -41,7 +41,7 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | `server-web/styles/views/debug-agent-explore.css` | 984 | View-specific stylesheet has grown into a feature module. |
 | `server-web/composables/console-word-cloud-controller.ts` | 980 | Large domain controller with bridge effects and UI orchestration. |
 | `server-web/composables/useWorkspacesConsole.ts` | 961 | Workspace page facade still depends on `useConsole()` and contains direct DOM feedback. |
-| `server-web/views/KnowledgeView.vue` | 891 | View keeps document parsing/download bridge calls near template concerns. |
+| `server-web/views/KnowledgeView.vue` | 884 | View no longer owns document parsing or normalized document URL bridge calls, but template and destructured page facade remain large. |
 | `server-web/views/admin/AgentPermissionsView.vue` | 702 | View presentation is slimmer after controller extraction, but template complexity is still high. |
 | `server-web/components/KnowledgeDistillationWorkbench.vue` | 675 | Component no longer owns bridge calls, run normalization, or model probe plumbing, but still has a large template. |
 
@@ -71,8 +71,6 @@ Direct `useConsole()` callers:
 
 Direct `bridge.*` calls from view/component files:
 
-- `server-web/components/KnowledgeImportCard.vue` - 4 calls.
-- `server-web/views/KnowledgeView.vue` - 2 calls.
 - `server-web/components/BridgeDownloadButton.vue` - 1 allowed component-level bridge boundary for controlled downloads.
 
 `v-html` sites:
@@ -96,7 +94,7 @@ Required direction:
 
 ### P0-2: UI files call `bridge` directly instead of domain controllers
 
-Several views/components still hold service calls in presentation files, especially `KnowledgeView.vue` and `KnowledgeImportCard.vue`. `KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `RuntimeDownloadsView.vue`, and `ProductionHealthView.vue` have been moved behind domain/helper modules, which should be the pattern for the remaining direct callers.
+The remaining view/component bridge call is `BridgeDownloadButton.vue`, which is the controlled download exception. `KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `RuntimeDownloadsView.vue`, `ProductionHealthView.vue`, `KnowledgeView.vue`, and `KnowledgeImportCard.vue` have been moved behind domain/helper modules, which should be the pattern for future direct callers.
 
 Required direction:
 
@@ -215,7 +213,7 @@ Required direction:
 ## Execution Order
 
 1. P0-1: Start reducing `useConsole()` as the global frontend runtime. First target should be a page/domain with clear ownership and direct bridge leakage, so the extraction reduces both singleton size and UI/service coupling.
-2. P0-2: Remove remaining direct `bridge.*` calls from views/components, prioritizing `KnowledgeView.vue` and `KnowledgeImportCard.vue`.
+2. P0-2: Keep view/component `bridge.*` calls at the single `BridgeDownloadButton.vue` allowlisted boundary, then add a verifier so new direct callers fail fast.
 3. P0-3: Split large feature components after their async operations move out.
 4. P0-5: Split `bridge.ts` and `types.ts` by domains touched by the UI extractions.
 5. P0-4: Split CSS ownership once component/domain boundaries are clearer.
@@ -228,6 +226,7 @@ Required direction:
 - `server-web/components/KnowledgeDistillationWorkbench.vue`: workbench API calls, run normalization, model probe plumbing, status labels, and model option helpers moved to `server-web/lib/knowledge-distillation-workbench.ts`. The component no longer imports `bridge` directly.
 - `server-web/views/admin/RuntimeDownloadsView.vue`: runtime dependency types, status helpers, source hints, trigger guards, and bridge calls moved to `server-web/lib/runtime-dependencies.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/admin/ProductionHealthView.vue`: production health/baseline loading, status labels, elapsed time formatting, and date formatting moved to `server-web/lib/production-health.ts`. The view no longer imports `bridge` directly.
+- `server-web/views/KnowledgeView.vue` and `server-web/components/KnowledgeImportCard.vue`: knowledge export URL generation, normalized document links, and document preview parsing moved to `server-web/lib/knowledge-documents.ts`. Both files no longer import `bridge` directly.
 
 ## Verification Gates
 

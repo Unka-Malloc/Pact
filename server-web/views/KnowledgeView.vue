@@ -12,8 +12,7 @@ import SplitToggleCard from '../components/SplitToggleCard.vue';
 import UploadFileListCard from '../components/UploadFileListCard.vue';
 import { provideKnowledgeView } from '../composables/knowledgeViewContext';
 import { useKnowledgeViewConsole } from '../composables/useKnowledgeViewConsole';
-import { bridge } from '../lib/bridge';
-import { createKnowledgeUploadedFilesPayload } from '../lib/knowledge-upload-session';
+import { normalizedKnowledgeDocumentUrl, previewKnowledgeDocuments } from '../lib/knowledge-documents';
 
 const knowledgeView = useKnowledgeViewConsole();
 provideKnowledgeView(knowledgeView);
@@ -236,15 +235,9 @@ const {
 } = knowledgeView;
 
 async function previewKnowledgeDocumentParsing() {
-  if (ingestFiles.value.length === 0) {
-    return;
-  }
-  const uploadedFiles = await createKnowledgeUploadedFilesPayload(ingestFiles.value);
-  documentPreviewResult.value = await bridge.parseDocument({
+  documentPreviewResult.value = await previewKnowledgeDocuments(ingestFiles.value, {
     pipelineId: dynamicParsingViewContract.pipelineId,
     expectedOutputs: ["preprocessResult", "chunks", "structureArtifacts", "granularityFragments"],
-    uploadedFiles,
-    dryRun: true,
     contextBudget: dynamicParsingViewContract.contextBudget,
     payloadBudget: dynamicParsingViewContract.payloadBudget,
     granularity: dynamicParsingViewContract.granularity,
@@ -375,7 +368,7 @@ async function previewKnowledgeDocumentParsing() {
                   class="job-row"
                 >
                   <BridgeDownloadButton
-                    :href="bridge.normalizedDocumentUrl(normalizedManifest.batchId, doc.documentId)"
+                    :href="normalizedKnowledgeDocumentUrl(normalizedManifest.batchId, doc.documentId)"
                     :label="doc.title"
                     button-class="bridge-download-link"
                   />
