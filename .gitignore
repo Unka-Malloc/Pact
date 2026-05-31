@@ -29,6 +29,7 @@ crash-*
 /build/*
 !/build/
 !/build/README.md
+/outputs/
 /reports/production-readiness/
 /.cache/
 
