@@ -95,6 +95,8 @@ const autoRegistryPath = path.join(opencodeConfigDir, "pact-auto-servers.json");
 const autoMarketplaceRoot = path.join(opencodeConfigDir, "codex-marketplace");
 const autoKiloConfigPath = path.join(opencodeConfigDir, "kilo", "kilo.json");
 const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "mcp_config.json");
+const noDetectHome = path.join(opencodeConfigDir, "no-detect-home");
+const noDetectRegistryPath = path.join(opencodeConfigDir, "pact-no-detect-servers.json");
 const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const fakeAgentCommandLog = path.join(opencodeConfigDir, "fake-agent-commands.log");
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
@@ -569,6 +571,52 @@ try {
     for (const target of DECLARED_AGENT_TARGETS) {
       assert.ok(targets.includes(target), `targets: ${targets.join(", ")}`);
     }
+  });
+
+  // ── SECTION 10: Machine-readable install failures ──
+  console.log("\n[10] Machine-readable install failures");
+  await testAsync("unsupported target returns next executable command", async () => {
+    const result = await spawnConnector([
+      "install",
+      "--target", "not-a-real-agent",
+      "--url", serverUrl,
+      "--token", token,
+      "--json"
+    ]);
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.errorCode, "UNSUPPORTED_TARGET");
+    assert.equal(payload.nextCommand, "pact-mcp scan --json");
+    assert.ok(payload.repairCommands?.includes("pact-mcp scan --json"));
+    for (const target of PRIORITY_AGENT_TARGETS) {
+      assert.ok(payload.supportedTargets?.includes(target), `${target} should be listed as supported`);
+    }
+  });
+
+  await testAsync("auto install with no detected clients returns machine-readable repair commands", async () => {
+    await fs.mkdir(noDetectHome, { recursive: true });
+    const result = await spawnConnector([
+      "install",
+      "--target", "auto",
+      "--url", serverUrl,
+      "--token", token,
+      "--discovery-file", noDetectRegistryPath,
+      "--no-scan",
+      "--json"
+    ], 30000, {
+      HOME: noDetectHome,
+      PATH: ["/usr/bin", "/bin"].join(path.delimiter)
+    });
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.errorCode, "NO_SUPPORTED_MCP_CLIENTS_DETECTED");
+    assert.equal(payload.nextCommand, "pact-mcp scan --json");
+    assert.ok(payload.repairCommands?.some((command) => command.includes("pact-mcp install --target codex")));
+    assert.equal(payload.candidates?.some((candidate) => candidate.target === "codex"), true);
+    assert.equal(payload.candidates?.some((candidate) => candidate.target === "claude-code"), true);
+    assert.equal(payload.candidates?.some((candidate) => candidate.target === "openclaw"), true);
   });
 
 } catch (error) {

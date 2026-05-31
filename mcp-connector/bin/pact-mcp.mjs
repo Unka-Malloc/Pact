@@ -380,6 +380,87 @@ function notDetectedTargetDetail(target) {
   return `${targetLabel(target)} was not detected.`;
 }
 
+function targetBinOption(target) {
+  if (target === "openclaw") {
+    return "openclaw-bin";
+  }
+  if (target === "hermes") {
+    return "hermes-bin";
+  }
+  const descriptor = AGENT_CLI_TARGETS.find((item) => item.target === target);
+  return descriptor?.binOption || "";
+}
+
+function shellCommandForInstall({ target = "codex", binOption = "", includeUrl = false, includeToken = false } = {}) {
+  const parts = ["pact-mcp", "install", "--target", target];
+  if (binOption) {
+    parts.push(`--${binOption}`, target === "claude-code" ? "claude" : target);
+  }
+  if (includeUrl) {
+    parts.push("--url", "http://127.0.0.1:7228");
+  }
+  if (includeToken) {
+    parts.push("--token-stdin");
+  }
+  parts.push("--json");
+  return parts.join(" ");
+}
+
+function commandFailureGuidance({ command = "", message = "", options = {} } = {}) {
+  const normalized = String(message || "");
+  const lower = normalized.toLowerCase();
+  if (/unsupported install target/i.test(normalized)) {
+    return {
+      errorCode: "UNSUPPORTED_TARGET",
+      nextCommand: "pact-mcp scan --json",
+      repairCommands: [
+        "pact-mcp scan --json",
+        shellCommandForInstall({ target: "codex" })
+      ],
+      supportedTargets: SUPPORTED_TARGETS
+    };
+  }
+  if (lower.includes("no signed pact mcp hub was discovered")) {
+    return {
+      errorCode: "PACT_HUB_NOT_DISCOVERED",
+      nextCommand: "pact-mcp discover-local --json",
+      repairCommands: [
+        "pact-mcp discover-local --json",
+        "pact-mcp server-config --set --url http://127.0.0.1:7228",
+        shellCommandForInstall({ target: "codex", includeUrl: true })
+      ]
+    };
+  }
+  if (lower.includes("missing token")) {
+    return {
+      errorCode: "MISSING_TOKEN",
+      nextCommand: shellCommandForInstall({ target: String(option(options, "target", "codex")) || "codex", includeToken: true }),
+      repairCommands: [
+        shellCommandForInstall({ target: String(option(options, "target", "codex")) || "codex", includeToken: true }),
+        `PACT_MCP_TOKEN=your-token pact-mcp ${command || "install"} --target ${String(option(options, "target", "codex")) || "codex"} --json`
+      ]
+    };
+  }
+  if (lower.includes("interactive mode requires a tty")) {
+    return {
+      errorCode: "NON_INTERACTIVE_TARGET_REQUIRED",
+      nextCommand: "pact-mcp uninstall --target codex --json",
+      repairCommands: [
+        "pact-mcp scan --json",
+        "pact-mcp uninstall --target codex --json"
+      ]
+    };
+  }
+  return {
+    errorCode: "COMMAND_FAILED",
+    nextCommand: command === "install" ? shellCommandForInstall({ target: "codex" }) : "pact-mcp doctor --json",
+    repairCommands: [
+      "pact-mcp doctor --json",
+      "pact-mcp scan --json"
+    ]
+  };
+}
+
 function redactToken(value) {
   const text = String(value || "");
   if (text.length <= 12) {
@@ -5096,9 +5177,28 @@ function summarizeInstallCandidate(candidate) {
   };
 }
 
+function noDetectedClientGuidance(candidates = []) {
+  const explicitTargets = candidates
+    .map((candidate) => candidate.target)
+    .filter((target, index, values) => target && values.indexOf(target) === index);
+  const priorityTargets = ["codex", "claude-code", "openclaw"].filter((target) => explicitTargets.includes(target));
+  const suggestedTarget = priorityTargets[0] || explicitTargets[0] || "codex";
+  const binOption = targetBinOption(suggestedTarget);
+  return {
+    errorCode: "NO_SUPPORTED_MCP_CLIENTS_DETECTED",
+    nextCommand: "pact-mcp scan --json",
+    repairCommands: [
+      "pact-mcp scan --json",
+      shellCommandForInstall({ target: suggestedTarget, binOption }),
+      "pact-mcp install --target auto --json"
+    ]
+  };
+}
+
 async function installAutoDetectedCommand(resolvedOptions) {
   const scan = await scanInstallTargets(resolvedOptions);
   const selected = scan.candidates.filter((candidate) => candidate.status === "detected");
+  const candidates = scan.candidates.map(summarizeInstallCandidate);
   if (selected.length === 0) {
     return {
       ok: false,
@@ -5107,7 +5207,8 @@ async function installAutoDetectedCommand(resolvedOptions) {
       packageVersion: packageJson.version,
       baseUrl: installerOptions(resolvedOptions).baseUrl,
       error: "No supported MCP clients were detected. Pass --target <client>, --target auto with an explicit --<client>-bin, or run in a TTY for selection.",
-      candidates: scan.candidates.map(summarizeInstallCandidate)
+      ...noDetectedClientGuidance(candidates),
+      candidates
     };
   }
   const autoUpdate = Boolean(resolvedOptions["auto-update"]);
@@ -5123,6 +5224,10 @@ async function installAutoDetectedCommand(resolvedOptions) {
 }
 
 async function installCommand(options) {
+  const initialTargetOpt = option(options, "target", "");
+  const prevalidatedTargets = initialTargetOpt && !isAutoTargetRequest(initialTargetOpt)
+    ? parseTargets(initialTargetOpt)
+    : null;
   const resolvedOptions = await resolveHubForInstall(options);
   if (resolvedOptions.__pactSkippedDiscovery) {
     return {
@@ -5143,7 +5248,7 @@ async function installCommand(options) {
   if (isAutoTargetRequest(targetOpt)) {
     return installAutoDetectedCommand(resolvedOptions);
   }
-  const targets = parseTargets(targetOpt);
+  const targets = prevalidatedTargets || parseTargets(targetOpt);
   const autoUpdate = Boolean(resolvedOptions["auto-update"]);
   resolvedOptions.__pactAutoUpdate = autoUpdate;
   const tokenInfo = await resolveInstallToken(resolvedOptions, { targets, autoUpdate });
@@ -5724,6 +5829,9 @@ function formatInstallResult(result) {
   if (result.error) {
     lines.push(`Reason: ${result.error}`, "");
   }
+  if (result.nextCommand) {
+    lines.push(`Next command: ${result.nextCommand}`, "");
+  }
   lines.push(
     "Server:",
     `  MCP URL: ${result.baseUrl ? `${result.baseUrl}/mcp` : "unknown"}`
@@ -5749,6 +5857,24 @@ function formatInstallResult(result) {
   }
   if (!result.ok) {
     lines.push("  Re-run failed clients after fixing the reason above.");
+  }
+  return lines.join("\n");
+}
+
+function formatErrorResult(result) {
+  const lines = [
+    `Pact MCP ${result.command || "command"} failed.`,
+    "",
+    `Reason: ${result.error || "Command failed."}`
+  ];
+  if (result.nextCommand) {
+    lines.push("", "Next:", `  ${result.nextCommand}`);
+  }
+  if (Array.isArray(result.repairCommands) && result.repairCommands.length > 0) {
+    lines.push("", "Repair commands:");
+    for (const command of result.repairCommands) {
+      lines.push(`  ${command}`);
+    }
   }
   return lines.join("\n");
 }
@@ -5842,6 +5968,9 @@ function formatServerConfigResult(result) {
 }
 
 function formatHumanResult(command, result) {
+  if (result?.ok === false && result?.commandFailed) {
+    return formatErrorResult(result);
+  }
   if (command === "install") {
     return formatInstallResult(result);
   }
@@ -5869,6 +5998,20 @@ function emitResult(result, options, command = "") {
   if (result?.ok === false) {
     process.exitCode = 1;
   }
+}
+
+function emitCommandError(error, options = {}, command = "") {
+  const message = error?.message || String(error);
+  const guidance = commandFailureGuidance({ command, message, options });
+  emitResult({
+    ok: false,
+    commandFailed: true,
+    command,
+    packageName: packageJson.name,
+    packageVersion: packageJson.version,
+    error: message,
+    ...guidance
+  }, options, command);
 }
 
 async function main() {
@@ -5941,6 +6084,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error?.message || String(error));
-  process.exitCode = 1;
+  const { command, options } = parseArgs(process.argv.slice(2));
+  emitCommandError(error, options, command);
 });
