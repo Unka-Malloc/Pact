@@ -298,6 +298,7 @@ try {
   assert.match(help.stdout, /--docker-bin/);
   assert.match(help.stdout, /--podman-bin/);
   assert.match(help.stdout, /--wsl-bin/);
+  assert.match(help.stdout, /--claude-bin/);
   assert.doesNotMatch(help.stdout, /\/home\/kate/);
   assert.doesNotMatch(help.stdout, /\/home\/serena/);
   const scan = await run("node", [
@@ -317,6 +318,7 @@ try {
   const scanPayload = JSON.parse(scan.stdout);
   assert.equal(scanPayload.ok, true);
   assert.equal(scanPayload.candidates.some((candidate) => candidate.target === "codex"), true);
+  assert.equal(scanPayload.candidates.some((candidate) => candidate.target === "claude-code"), true);
   assert.equal(scanPayload.serverDiscovery.ok, false);
 
   const uninstallHome = path.join(tempDir, "uninstall-home");
@@ -364,10 +366,20 @@ try {
   const fakeNvmBin = path.join(layeredHome, ".nvm", "versions", "node", "v99.0.0", "bin");
   await fs.mkdir(fakeNvmBin, { recursive: true });
   const fakeGemini = path.join(fakeNvmBin, "gemini");
+  const fakeClaude = path.join(fakeNvmBin, "claude");
   await fs.writeFile(fakeGemini, [
     "#!/bin/sh",
     "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
     "  printf 'Usage: gemini mcp add list remove\\n'",
+    "  exit 0",
+    "fi",
+    "exit 1",
+    ""
+  ].join("\n"), { mode: 0o755 });
+  await fs.writeFile(fakeClaude, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+    "  printf 'Usage: claude mcp add add-json get list remove\\n'",
     "  exit 0",
     "fi",
     "exit 1",
@@ -460,6 +472,9 @@ try {
   const layeredGeminiBins = layeredScanPayload.candidates
     .filter((candidate) => candidate.target === "gemini-cli")
     .map((candidate) => candidate.optionOverrides?.["gemini-bin"] || "");
+  const layeredClaudeBins = layeredScanPayload.candidates
+    .filter((candidate) => candidate.target === "claude-code")
+    .map((candidate) => candidate.optionOverrides?.["claude-bin"] || "");
   const layeredCodexBins = layeredScanPayload.candidates
     .filter((candidate) => candidate.target === "codex")
     .map((candidate) => candidate.optionOverrides?.["codex-bin"] || "");
@@ -467,6 +482,7 @@ try {
     .filter((candidate) => candidate.target === "copilot")
     .map((candidate) => candidate.optionOverrides?.["copilot-bin"] || "");
   assert.equal(layeredGeminiBins.includes(fakeGemini), true);
+  assert.equal(layeredClaudeBins.includes(fakeClaude), true);
   assert.equal(layeredGeminiBins.includes(plainAppGemini), false);
   assert.equal(layeredCodexBins.includes(fakeLocalCodex), false);
   assert.equal(layeredCopilotBins.includes(fakeVoltaCopilot), true);

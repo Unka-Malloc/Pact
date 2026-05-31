@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_BASE_URL = "";
 const DEFAULT_TOKEN_ENV = "PACT_MCP_TOKEN";
 const DEFAULT_CODEX_BIN = "codex";
+const DEFAULT_CLAUDE_BIN = "claude";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
@@ -26,6 +27,7 @@ const MCP_CONNECTOR_VERSION = "0.0.1";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
+  "claude-code",
   "gemini-cli",
   "kilo-code",
   "copilot",
@@ -37,6 +39,9 @@ const SUPPORTED_TARGETS = [
 const TARGET_ALIASES = new Map([
   ["gemini", "gemini-cli"],
   ["gemini_cli", "gemini-cli"],
+  ["claude", "claude-code"],
+  ["claude_code", "claude-code"],
+  ["claudecode", "claude-code"],
   ["kilo", "kilo-code"],
   ["kilocode", "kilo-code"],
   ["kilo_code", "kilo-code"],
@@ -431,6 +436,23 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
   };
 }
 
+async function installClaudeCode({ baseUrl, token, claudeBin }) {
+  const serverJson = JSON.stringify({
+    type: "http",
+    url: `${baseUrl}/mcp`,
+    headers: {
+      "X-Pact-Api-Key": token
+    }
+  });
+  await run(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await run(claudeBin, ["mcp", "add-json", "--scope", "user", MCP_SERVER_NAME, serverJson]);
+  const get = await run(claudeBin, ["mcp", "get", MCP_SERVER_NAME]);
+  return {
+    installMode: "claude-code-mcp-cli",
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
+  };
+}
+
 async function createGeminiExtension({ extensionRoot, baseUrl, token }) {
   await writeJson(path.join(extensionRoot, "gemini-extension.json"), {
     name: GEMINI_EXTENSION_NAME,
@@ -723,6 +745,7 @@ if (!baseUrl) {
 }
 const dataDir = path.resolve(argValue("--data-dir", ServerConfig.getDataDir()));
 const codexBin = argValue("--codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_CODEX_BIN);
+const claudeBin = argValue("--claude-bin", process.env.CLAUDE_CODE_CLI_PATH || DEFAULT_CLAUDE_BIN);
 const geminiBin = argValue("--gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN);
 const kiloBin = argValue("--kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN);
 const copilotBin = argValue("--copilot-bin", process.env.COPILOT_CLI_PATH || DEFAULT_COPILOT_BIN);
@@ -767,6 +790,8 @@ for (const target of targets) {
   let clientResult = null;
   if (target === "codex") {
     clientResult = await installCodex({ baseUrl, token: grantResult.token, tokenEnv, codexBin, marketplaceRoot });
+  } else if (target === "claude-code") {
+    clientResult = await installClaudeCode({ baseUrl, token: grantResult.token, claudeBin });
   } else if (target === "gemini-cli") {
     clientResult = await installGemini({ baseUrl, token: grantResult.token, geminiBin, extensionRoot: geminiExtensionRoot });
   } else if (target === "kilo-code") {

@@ -716,6 +716,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       scanCommand: `npx ${packageJson.name}@latest scan --json`,
       supportedTargets: [
         "codex",
+        "claude-code",
         "gemini-cli",
         "kilo-code",
         "copilot",

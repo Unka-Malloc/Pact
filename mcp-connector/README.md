@@ -124,4 +124,5 @@ npx pact-mcp-connector@latest scan --json
 npx pact-mcp-connector@latest uninstall --target codex
 ```
 
-Supported targets: `codex`, `gemini-cli`, `kilo-code`, `copilot`, `openclaw`, `hermes`, `antigravity`.
+Supported targets: `codex`, `claude-code`, `gemini-cli`, `kilo-code`,
+`copilot`, `openclaw`, `hermes`, `antigravity`, `opencode`.

@@ -38,6 +38,7 @@ function msg(en, zh) {
 
 const DEFAULT_TOKEN_ENV = "PACT_MCP_TOKEN";
 const DEFAULT_CODEX_BIN = "codex";
+const DEFAULT_CLAUDE_BIN = "claude";
 const DEFAULT_GEMINI_BIN = "gemini";
 const DEFAULT_KILO_BIN = "kilo";
 const DEFAULT_COPILOT_BIN = "copilot";
@@ -62,6 +63,12 @@ const AGENT_CLI_TARGETS = [
     label: "Codex",
     binOption: "codex-bin",
     commandNames: ["codex"]
+  },
+  {
+    target: "claude-code",
+    label: "Claude Code",
+    binOption: "claude-bin",
+    commandNames: ["claude"]
   },
   {
     target: "gemini-cli",
@@ -126,6 +133,7 @@ const MCP_INTERFACE_VERSION = "pact.mcp.v1";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
+  "claude-code",
   "gemini-cli",
   "kilo-code",
   "copilot",
@@ -142,6 +150,10 @@ const DEFAULT_SCAN_PORTS = [7228, 7229, 7230, 7231, 7232, 7233, 7234, 7235, 7236
 const TARGET_ALIASES = new Map([
   ["gemini", "gemini-cli"],
   ["gemini_cli", "gemini-cli"],
+  ["claude", "claude-code"],
+  ["claude_code", "claude-code"],
+  ["claudecode", "claude-code"],
+  ["anthropic-claude-code", "claude-code"],
   ["kilo", "kilo-code"],
   ["kilocode", "kilo-code"],
   ["kilo_code", "kilo-code"],
@@ -151,6 +163,7 @@ const TARGET_ALIASES = new Map([
 ]);
 const TARGET_LABELS = {
   codex: "Codex",
+  "claude-code": "Claude Code",
   "gemini-cli": "Gemini CLI",
   "kilo-code": "Kilo Code",
   copilot: "Copilot",
@@ -161,6 +174,7 @@ const TARGET_LABELS = {
 };
 const TARGET_INSTALL_MODES = {
   codex: "codex-release-plugin-and-mcp-cli",
+  "claude-code": "claude-code-release-mcp-cli",
   "gemini-cli": "gemini-release-mcp-cli",
   "kilo-code": "kilo-release-global-kilo-json",
   copilot: "copilot-release-mcp-cli",
@@ -230,6 +244,7 @@ function usage() {
     "  --discovery-file PATH         Registry file used by register/discover-local. Default: ~/.pact/mcp/servers.json.",
     "  --auto-update                 Enable automatic push updates when installing (non-interactive mode).",
     "  --codex-bin COMMAND           Codex CLI command or explicit path. Default: codex.",
+    "  --claude-bin COMMAND          Claude Code CLI command or explicit path. Default: claude.",
     "  --gemini-bin COMMAND          Gemini CLI command or explicit path. Default: gemini.",
     "  --kilo-bin COMMAND            Kilo Code CLI command or explicit path. Default: kilo.",
     "  --copilot-bin COMMAND         Copilot CLI command or explicit path. Default: copilot.",
@@ -1017,6 +1032,87 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
   };
 }
 
+function claudeCodeServerJson({ baseUrl, token }) {
+  return JSON.stringify({
+    type: "http",
+    url: `${baseUrl}/mcp`,
+    headers: {
+      "X-Pact-Api-Key": token
+    }
+  });
+}
+
+async function installClaudeCode({ baseUrl, token, claudeBin }) {
+  await run(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await run(claudeBin, [
+    "mcp",
+    "add-json",
+    "--scope",
+    "user",
+    MCP_SERVER_NAME,
+    claudeCodeServerJson({ baseUrl, token })
+  ]);
+  const get = await run(claudeBin, ["mcp", "get", MCP_SERVER_NAME]);
+  return {
+    installMode: "claude-code-release-mcp-cli",
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
+  };
+}
+
+async function installClaudeCodeOrb({ baseUrl, token, orbBin, vmName, vmUser, claudeBin }) {
+  if (!vmName || !vmUser || !claudeBin) {
+    throw new Error("Claude Code VM install requires a discovered or explicit OrbStack VM, user, and claude CLI path.");
+  }
+  const url = `${vmBaseUrl(baseUrl)}/mcp`;
+  await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    claudeBin,
+    "mcp",
+    "add-json",
+    "--scope",
+    "user",
+    MCP_SERVER_NAME,
+    claudeCodeServerJson({ baseUrl: vmBaseUrl(baseUrl), token })
+  ]);
+  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "get", MCP_SERVER_NAME]);
+  return {
+    installMode: "claude-code-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    url,
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
+  };
+}
+
+async function installClaudeCodeRemote({ baseUrl, token, context, claudeBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !claudeBin) {
+    throw new Error("Claude Code remote install requires a discovered remote context and claude CLI path.");
+  }
+  const urlBase = await remoteClientBaseUrl(context, baseUrl);
+  const url = `${urlBase}/mcp`;
+  await runRemoteLinuxCommand(context, [claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runRemoteLinuxCommand(context, [
+    claudeBin,
+    "mcp",
+    "add-json",
+    "--scope",
+    "user",
+    MCP_SERVER_NAME,
+    claudeCodeServerJson({ baseUrl: urlBase, token })
+  ]);
+  const get = await runRemoteLinuxCommand(context, [claudeBin, "mcp", "get", MCP_SERVER_NAME]);
+  return {
+    installMode: `claude-code-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    url,
+    mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(url)
+  };
+}
+
 async function createGeminiExtension({ extensionRoot, baseUrl, token }) {
   await writeJson(path.join(extensionRoot, "gemini-extension.json"), {
     name: GEMINI_EXTENSION_NAME,
@@ -1678,6 +1774,43 @@ async function uninstallCodex({ tokenEnv, codexBin, marketplaceRoot }) {
     removedPlugin: removePlugin.ok,
     pluginRoot,
     marketplaceBackupPath
+  };
+}
+
+async function uninstallClaudeCode({ claudeBin }) {
+  const remove = await run(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  return {
+    uninstallMode: "claude-code-release-mcp-cli",
+    removedMcp: remove.ok
+  };
+}
+
+async function uninstallClaudeCodeOrb({ orbBin, vmName, vmUser, claudeBin }) {
+  if (!vmName || !vmUser || !claudeBin) {
+    throw new Error("Claude Code VM uninstall requires a discovered or explicit OrbStack VM, user, and claude CLI path.");
+  }
+  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
+  return {
+    uninstallMode: "claude-code-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    removedMcp: remove.ok,
+    mcpGetHasPact: get.ok && get.stdout.includes(MCP_SERVER_NAME)
+  };
+}
+
+async function uninstallClaudeCodeRemote({ context, claudeBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !claudeBin) {
+    throw new Error("Claude Code remote uninstall requires a discovered remote context and claude CLI path.");
+  }
+  const remove = await runRemoteLinuxCommand(context, [claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const get = await runRemoteLinuxCommand(context, [claudeBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
+  return {
+    uninstallMode: `claude-code-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    removedMcp: remove.ok,
+    mcpGetHasPact: get.ok && get.stdout.includes(MCP_SERVER_NAME)
   };
 }
 
@@ -3326,6 +3459,19 @@ function candidateIdentity(candidate) {
     const openclawBin = String(overrides["openclaw-bin"] || "").trim();
     return openclawBin ? `openclaw:local:${openclawBin}` : "";
   }
+  if (candidate?.target === "claude-code") {
+    if (location === "orb") {
+      const vmName = String(overrides["orb-vm"] || "").trim();
+      const vmUser = String(overrides["orb-user"] || "").trim();
+      return vmName && vmUser ? `claude-code:orb:${vmName}:${vmUser}` : "";
+    }
+    if (isGenericRemoteLocation(location)) {
+      const remoteId = String(overrides["remote-id"] || "").trim();
+      return remoteId ? `claude-code:${location}:${remoteId}` : "";
+    }
+    const claudeBin = String(overrides["claude-bin"] || "").trim();
+    return claudeBin ? `claude-code:local:${claudeBin}` : "";
+  }
   if (location === "orb" && ["gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
     const vmName = String(overrides["orb-vm"] || "").trim();
     const vmUser = String(overrides["orb-user"] || "").trim();
@@ -3335,7 +3481,7 @@ function candidateIdentity(candidate) {
     const remoteId = String(overrides["remote-id"] || "").trim();
     return remoteId ? `${candidate.target}:${location}:${remoteId}` : "";
   }
-  if (location === "local" && ["codex", "gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
+  if (location === "local" && ["codex", "gemini-cli", "copilot", "kilo-code", "opencode", "claude-code"].includes(candidate?.target)) {
     const descriptor = AGENT_CLI_TARGETS.find((item) => item.target === candidate.target);
     const binPath = descriptor ? String(overrides[descriptor.binOption] || "").trim() : "";
     return binPath ? `${candidate.target}:local:${binPath}` : "";
@@ -3422,6 +3568,9 @@ function candidateBin(candidate, settings) {
   const overrides = candidate.optionOverrides || {};
   if (candidate.target === "codex") {
     return String(overrides["codex-bin"] || settings.codexBin || "");
+  }
+  if (candidate.target === "claude-code") {
+    return String(overrides["claude-bin"] || settings.claudeBin || "");
   }
   if (candidate.target === "gemini-cli") {
     return String(overrides["gemini-bin"] || settings.geminiBin || "");
@@ -3536,6 +3685,10 @@ async function candidateHasInstalledPactMcp(settings, candidate) {
     const result = await runCandidateClientCommand(settings, candidate, ["mcp", "get", MCP_SERVER_NAME]);
     return result.ok && mcpOutputHasPact(result);
   }
+  if (candidate.target === "claude-code") {
+    const result = await runCandidateClientCommand(settings, candidate, ["mcp", "get", MCP_SERVER_NAME]);
+    return result.ok && mcpOutputHasPact(result);
+  }
   if (candidate.target === "gemini-cli") {
     const result = await runCandidateClientCommand(settings, candidate, ["mcp", "list"]);
     return result.ok && mcpOutputHasPact(result);
@@ -3616,6 +3769,7 @@ async function detectLocalClawCompatibleTargets() {
 
 function descriptorConfiguredBin(settings, descriptor) {
   if (descriptor.target === "codex") return settings.codexBin;
+  if (descriptor.target === "claude-code") return settings.claudeBin;
   if (descriptor.target === "gemini-cli") return settings.geminiBin;
   if (descriptor.target === "copilot") return settings.copilotBin;
   if (descriptor.target === "kilo-code") return settings.kiloBin;
@@ -3647,6 +3801,32 @@ async function detectExplicitLocalAgentCliTargets(settings, options = {}) {
         }
       });
     }
+  }
+  return candidates;
+}
+
+async function detectExplicitLocalClawCompatibleTargets(settings, options = {}) {
+  const openclawBin = String(option(options, "openclaw-bin", settings.openclawBin || "")).trim();
+  if (!openclawBin || !Object.hasOwn(options, "openclaw-bin")) {
+    return [];
+  }
+  const paths = await detectLocalCommandPaths(openclawBin);
+  const candidates = [];
+  for (const detectedPath of paths) {
+    if (!await commandSupportsMcp(detectedPath)) {
+      continue;
+    }
+    candidates.push({
+      id: `claw-compatible:local:${detectedPath}`,
+      target: "openclaw",
+      label: targetLabel("openclaw"),
+      status: "detected",
+      detail: `claw-compatible MCP CLI at ${detectedPath}`,
+      optionOverrides: {
+        "execution-location": "local",
+        "openclaw-bin": detectedPath
+      }
+    });
   }
   return candidates;
 }
@@ -3998,7 +4178,10 @@ async function scanInstallTargets(options = {}) {
       mergeInstallCandidate(candidates, candidate);
     }
   } else {
-    const explicitCandidates = await detectExplicitLocalAgentCliTargets(settings, options);
+    const explicitCandidates = [
+      ...await detectExplicitLocalAgentCliTargets(settings, options),
+      ...await detectExplicitLocalClawCompatibleTargets(settings, options)
+    ];
     for (const candidate of explicitCandidates) {
       mergeInstallCandidate(candidates, candidate);
     }
@@ -4055,6 +4238,7 @@ function installerOptions(options) {
     baseUrl: normalizeBaseUrl(option(options, "resolved-url", explicitBaseUrl(options))),
     tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV)),
     codexBin: String(option(options, "codex-bin", process.env.CODEX_CLI_PATH || DEFAULT_CODEX_BIN)),
+    claudeBin: String(option(options, "claude-bin", process.env.CLAUDE_CODE_CLI_PATH || DEFAULT_CLAUDE_BIN)),
     geminiBin: String(option(options, "gemini-bin", process.env.GEMINI_CLI_PATH || DEFAULT_GEMINI_BIN)),
     kiloBin: String(option(options, "kilo-bin", process.env.KILO_CLI_PATH || DEFAULT_KILO_BIN)),
     copilotBin: String(option(options, "copilot-bin", process.env.COPILOT_CLI_PATH || DEFAULT_COPILOT_BIN)),
@@ -4619,6 +4803,28 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
           codexBin: settings.codexBin,
           marketplaceRoot: settings.marketplaceRoot
         });
+      } else if (target === "claude-code") {
+        clientResult = remoteContext
+          ? await installClaudeCodeRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext,
+              claudeBin: settings.claudeBin
+            })
+          : settings.executionLocation === "orb"
+          ? await installClaudeCodeOrb({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              claudeBin: settings.claudeBin
+            })
+          : await installClaudeCode({
+              baseUrl: settings.baseUrl,
+              token,
+              claudeBin: settings.claudeBin
+            });
       } else if (target === "gemini-cli") {
         clientResult = remoteContext
           ? await installGeminiRemote({
@@ -4954,6 +5160,22 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
           codexBin: settings.codexBin,
           marketplaceRoot: settings.marketplaceRoot
         });
+      } else if (target === "claude-code") {
+        uninstalled[target] = remoteContext
+          ? await uninstallClaudeCodeRemote({
+              context: remoteContext,
+              claudeBin: settings.claudeBin
+            })
+          : settings.executionLocation === "orb"
+          ? await uninstallClaudeCodeOrb({
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              claudeBin: settings.claudeBin
+            })
+          : await uninstallClaudeCode({
+              claudeBin: settings.claudeBin
+            });
       } else if (target === "gemini-cli") {
         uninstalled[target] = remoteContext
           ? await uninstallGeminiRemote({

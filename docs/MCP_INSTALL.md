@@ -78,8 +78,8 @@ verified MCP URL, selected clients, per-client success or failure, token source,
 and verification status. It does not dump client configuration files. Use
 `--json` only when a script needs machine-readable details.
 
-Supported targets are `codex`, `gemini-cli`, `kilo-code`, `copilot`,
-`openclaw`, `hermes`, and `antigravity`. OpenClaw-compatible OrbStack agents such
+Supported targets are `codex`, `claude-code`, `gemini-cli`, `kilo-code`,
+`copilot`, `openclaw`, `hermes`, `antigravity`, and `opencode`. OpenClaw-compatible OrbStack agents such
 as IronClaw or ZeroClaw are discovered through the same Claw-compatible scan.
 
 ## Options
@@ -105,6 +105,17 @@ Pass connector install flags after the shell command:
 ```bash
 /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --no-verify
 ```
+
+Unattended agent shells can use automatic detection directly:
+
+```bash
+~/.pact/mcp/connector/current/pact-mcp install --target auto
+```
+
+`auto` installs every supported client the connector can verify. A
+non-interactive `pact-mcp install` without `--target` uses the same
+auto-detected path. Use explicit targets such as `--target codex` when a script
+must limit the install scope.
 
 Manage local server address profiles:
 

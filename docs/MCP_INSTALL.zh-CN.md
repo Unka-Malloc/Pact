@@ -49,7 +49,7 @@ TUI 操作：
 
 安装完成后，connector 会输出精简安装报告，包括已验证 MCP URL、所选客户端、每个客户端的成功或失败状态、token 来源和验证状态。它不会把客户端配置文件完整打印出来。只有脚本需要机器可读详情时才使用 `--json`。
 
-支持的 target 是 `codex`、`gemini-cli`、`kilo-code`、`copilot`、`openclaw`、`hermes` 和 `antigravity`。OpenClaw 兼容的 OrbStack 智能体，例如 IronClaw 或 ZeroClaw，会通过同一套 Claw-compatible 扫描发现。
+支持的 target 是 `codex`、`claude-code`、`gemini-cli`、`kilo-code`、`copilot`、`openclaw`、`hermes`、`antigravity` 和 `opencode`。OpenClaw 兼容的 OrbStack 智能体，例如 IronClaw 或 ZeroClaw，会通过同一套 Claw-compatible 扫描发现。
 
 ## 选项
 

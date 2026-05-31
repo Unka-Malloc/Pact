@@ -19,6 +19,10 @@ const LOCAL_GRANT_TARGET_MATCH = Object.freeze({
     toolsets: LOCAL_GRANT_WRITE_TOOLSETS,
     agentProfileId: "pact.mcp.codex"
   },
+  "claude-code": {
+    toolsets: LOCAL_GRANT_WRITE_TOOLSETS,
+    agentProfileId: "pact.mcp.claude-code"
+  },
   "gemini-cli": {
     toolsets: LOCAL_GRANT_WRITE_TOOLSETS,
     agentProfileId: "pact.mcp.gemini-cli"

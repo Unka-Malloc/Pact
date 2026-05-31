@@ -60,39 +60,85 @@ function spawnConnector(args, timeoutMs = 30000, env = {}) {
   });
 }
 
+function unsetLaunchctlEnv(name) {
+  if (process.platform !== "darwin") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const child = spawn("launchctl", ["unsetenv", name], { stdio: "ignore" });
+    child.on("close", () => resolve());
+    child.on("error", () => resolve());
+  });
+}
+
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-opencode-install-"));
 const opencodeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-opencode-config-"));
 const opencodeConfigPath = path.join(opencodeConfigDir, "opencode.jsonc");
 const autoOpencodeConfigPath = path.join(opencodeConfigDir, "opencode-auto.jsonc");
 const tempRegistryPath = path.join(opencodeConfigDir, "pact-servers.json");
 const autoRegistryPath = path.join(opencodeConfigDir, "pact-auto-servers.json");
+const autoMarketplaceRoot = path.join(opencodeConfigDir, "codex-marketplace");
+const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
+const fakeCodexPath = path.join(fakeBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
+const fakeClaudePath = path.join(fakeBinDir, process.platform === "win32" ? "claude.cmd" : "claude");
+const fakeOpenClawPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
 const fakeOpencodePath = path.join(fakeBinDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
 
-async function installFakeOpenCodeCli() {
+async function installFakeAgentCli(filePath) {
   await fs.mkdir(fakeBinDir, { recursive: true });
   if (process.platform === "win32") {
-    await fs.writeFile(fakeOpencodePath, [
+    await fs.writeFile(filePath, [
       "@echo off",
       "if \"%1\"==\"mcp\" if \"%2\"==\"--help\" (",
-      "  echo Usage: opencode mcp add remove list",
+      "  echo Usage: fake-agent mcp add add-json get list remove set show",
       "  exit /b 0",
       ")",
+      "if \"%1\"==\"plugin\" (",
+      "  exit /b 0",
+      ")",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"remove\" exit /b 0",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"add\" exit /b 0",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"add-json\" exit /b 0",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"set\" exit /b 0",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"get\" (",
+      "  echo pact http://127.0.0.1/mcp",
+      "  exit /b 0",
+      ")",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"show\" (",
+      "  echo pact http://127.0.0.1/mcp",
+      "  exit /b 0",
+      ")",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"list\" echo pact",
       "exit /b 0",
       ""
     ].join("\r\n"));
     return;
   }
-  await fs.writeFile(fakeOpencodePath, [
+  await fs.writeFile(filePath, [
     "#!/bin/sh",
     "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
-    "  echo 'Usage: opencode mcp add remove list'",
+    "  echo 'Usage: fake-agent mcp add add-json get list remove set show'",
     "  exit 0",
+    "fi",
+    "if [ \"$1\" = \"plugin\" ]; then exit 0; fi",
+    "if [ \"$1\" = \"mcp\" ]; then",
+    "  case \"$2\" in",
+    "    remove|add|add-json|set) exit 0 ;;",
+    "    get|show) printf 'pact http://127.0.0.1/mcp\\n'; exit 0 ;;",
+    "    list) printf 'pact\\n'; exit 0 ;;",
+    "  esac",
     "fi",
     "exit 0",
     ""
   ].join("\n"));
-  await fs.chmod(fakeOpencodePath, 0o755);
+  await fs.chmod(filePath, 0o755);
+}
+
+async function installFakePriorityAgentClis() {
+  for (const filePath of [fakeCodexPath, fakeClaudePath, fakeOpenClawPath, fakeOpencodePath]) {
+    await installFakeAgentCli(filePath);
+  }
 }
 
 let serverUrl = "";
@@ -167,6 +213,18 @@ try {
     });
     assert.equal(t.status, 200);
     assert.ok(t.payload.result?.tools?.length > 0);
+  });
+  await testAsync("local-grant target match for Claude Code", async () => {
+    const g = await fetchJson(`${serverUrl}/api/mcp/local-grant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targets: ["claude-code"], label: "claude-code-test", connectorVersion: "verify" })
+    });
+    assert.equal(g.status, 201);
+    assert.equal(g.payload.targetMatch?.matched, true);
+    assert.deepEqual(g.payload.targetMatch?.matchedTargets, ["claude-code"]);
+    assert.equal(g.payload.targetMatch?.agentProfileId, "pact.mcp.claude-code");
+    assert.ok(g.payload.toolsets?.includes("pact.agent.workspace"));
   });
 
   // ── SECTION 3: Config manipulation (simulating installOpenCode) ──
@@ -264,14 +322,19 @@ try {
 
   // ── SECTION 5: Non-interactive auto install ──
   console.log("\n[5] Non-interactive auto install");
-  await testAsync("--target auto installs explicitly detected OpenCode", async () => {
-    await installFakeOpenCodeCli();
+  await testAsync("--target auto installs explicitly detected priority agents", async () => {
+    await installFakePriorityAgentClis();
     const result = await spawnConnector([
       "install",
       "--target", "auto",
       "--url", serverUrl,
       "--token", token,
+      "--token-env", autoTokenEnv,
+      "--codex-bin", fakeCodexPath,
+      "--claude-bin", fakeClaudePath,
+      "--openclaw-bin", fakeOpenClawPath,
       "--opencode-bin", fakeOpencodePath,
+      "--marketplace-root", autoMarketplaceRoot,
       "--opencode-config", autoOpencodeConfigPath,
       "--antigravity-config", path.join(opencodeConfigDir, "missing-antigravity", "mcp_config.json"),
       "--discovery-file", autoRegistryPath,
@@ -289,7 +352,13 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true, JSON.stringify(payload, null, 2));
     assert.equal(payload.autoDetected, true);
+    assert.equal(payload.selected?.some((item) => item.target === "codex"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "claude-code"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "openclaw"), true);
     assert.equal(payload.selected?.some((item) => item.target === "opencode"), true);
+    assert.equal(payload.installed?.codex?.status, "installed");
+    assert.equal(payload.installed?.["claude-code"]?.status, "installed");
+    assert.equal(payload.installed?.openclaw?.status, "installed");
     assert.equal(payload.installed?.opencode?.status, "installed");
 
     const config = JSON.parse(await fs.readFile(autoOpencodeConfigPath, "utf8"));
@@ -403,15 +472,18 @@ try {
     assert.ok(v.packageVersion);
   });
 
-  await testAsync("usage (help) includes opencode", async () => {
+  await testAsync("usage (help) includes priority agent targets", async () => {
     const result = await spawnConnector([]);
+    assert.match(result.stdout, /--claude-bin/);
     assert.match(result.stdout, /opencode/);
   });
 
-  await testAsync("supported targets include opencode", async () => {
+  await testAsync("supported targets include priority agents", async () => {
     const result = await spawnConnector(["scan", "--json", "--url", serverUrl, "--no-scan"]);
     const scan = JSON.parse(result.stdout);
     const targets = scan.candidates.map((c) => c.target);
+    assert.ok(targets.includes("codex"), `targets: ${targets.join(", ")}`);
+    assert.ok(targets.includes("claude-code"), `targets: ${targets.join(", ")}`);
     assert.ok(targets.includes("opencode"), `targets: ${targets.join(", ")}`);
   });
 
@@ -422,6 +494,7 @@ try {
   if (server?.close) {
     await server.close();
   }
+  await unsetLaunchctlEnv(autoTokenEnv);
   await fs.rm(userDataPath, { recursive: true, force: true }).catch(() => {});
   await fs.rm(opencodeConfigDir, { recursive: true, force: true }).catch(() => {});
 }
