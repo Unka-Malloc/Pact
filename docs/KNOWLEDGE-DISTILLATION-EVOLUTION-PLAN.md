@@ -154,6 +154,7 @@ flowchart LR
 使用规则：
 
 - 解析策略优先对标 Docling、MinerU、Marker、Unstructured。
+- 结构化窗口策略优先吸收 Unstructured `chunk_by_title`、表格隔离 pre-chunk、Docling DocItem label 和 LlamaIndex node metadata。
 - 大项目收敛优先对标 GraphRAG、RAGFlow。
 - Agent/API 兼容优先对标 LlamaIndex、Haystack。
 - GPL 项目只吸收行为模式和测试思路，不复制代码。
@@ -358,8 +359,10 @@ raw corpus item 标准字段：
 - 上传层支持 chunk/resume，不把大文件完整塞进单次内存处理。
 - 解析层按页、sheet、slide、section 或 block 流式产出。
 - corpus 层按结构边界建立窗口：
-  - 默认窗口按字符、页或 block 混合控制。
-  - 窗口之间保留 overlap。
+  - 默认窗口按字符、页、元素或 block 混合控制。
+  - 标记语言、后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
+  - 标题层级使用 `element-aware-by-title-windowing.v1` 建立窗口，表格、代码、公式保留隔离边界。
+  - 普通文本窗口之间保留 overlap；元素窗口保留 `headingPath`、`elementRefs` 和 `boundaryReason`。
   - 每个窗口保留 `contentHash`。
 - 蒸馏层按窗口先局部提炼，再做文档级、项目级收敛。
 - 超大文件只限制运行资源和策略，不设小尺寸硬上限。
