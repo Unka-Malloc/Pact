@@ -1324,8 +1324,11 @@ try {
       assert.equal(mountedStructuredCorpus.route.formatId, formatId);
       assert.equal(mountedStructuredCorpus.quality.suppliedPayloadKind, "file-ref-structured-zip");
       assert.equal(mountedStructuredCorpus.windowPlan.strategy, "file-ref-stream-windowing.v1");
+      assert.equal(mountedStructuredCorpus.elementPlan.strategy, "document-element-model.v1");
+      assert.ok(mountedStructuredCorpus.elementPlan.elementCount >= 1, `${sourceId} mounted structured ZIP document must expose text-line fallback elements`);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
+      assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "document.structure.elements" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
       if (formatId === "spreadsheet") {
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
