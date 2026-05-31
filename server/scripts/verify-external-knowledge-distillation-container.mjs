@@ -375,6 +375,9 @@ try {
   assert.equal(capabilities.payload.graphEvidence.query.strategy, "graph-lite-evidence-query.v1");
   assert.equal(capabilities.payload.graphEvidence.projectQuery.supported, true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.strategy, "project-graph-evidence-convergence-query.v1");
+  assert.equal(capabilities.payload.graphEvidence.query.filters.includes("domain"), true);
+  assert.equal(capabilities.payload.graphEvidence.projectQuery.filters.includes("routeId"), true);
+  assert.equal(capabilities.payload.graphEvidence.projectQuery.readModel, "domain-topic-community-source-time.v1");
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
@@ -528,7 +531,7 @@ try {
   assert.equal(createRun.payload.result.agentMessage.responseProfile, "agent");
   assert.equal(createRun.payload.result.classification.strategy, "hashing_embedding_window_community_classification_v3");
   assert.equal(createRun.payload.result.classification.communityCount >= 1, true);
-  assert.equal(createRun.payload.result.convergence.strategy, "window-community-topic-project-convergence.v2");
+  assert.equal(createRun.payload.result.convergence.strategy, "hierarchical-domain-topic-project-convergence.v3");
   assert.equal(createRun.payload.result.grounding.strategy, "claim-evidence-topk-conflict-gating.v2");
   assert.equal(createRun.payload.result.graphEvidence.strategy, "graph-lite-entity-relationship-evidence-pack.v1");
   assert.equal(createRun.payload.result.graphEvidence.summary.entityCount > 0, true);
@@ -976,8 +979,26 @@ try {
   )), true);
   assert.equal(projectPackageRun.payload.result.candidates.every((candidate) => candidate.distillationUnitId), true);
   assert.equal(projectPackageRun.payload.result.candidates.every((candidate) => candidate.promoted && candidate.promotionGate.entailed >= 1), true);
+  assert.equal(projectPackageRun.payload.result.convergence.strategy, "hierarchical-domain-topic-project-convergence.v3");
+  assert.equal(projectPackageRun.payload.result.convergence.domainReports.some((domain) => (
+    domain.domainKey === "finance" &&
+    domain.routeIds.includes("spreadsheet") &&
+    domain.sourceIds.includes("container-project-package!finance/invoice.csv")
+  )), true);
+  assert.equal(projectPackageRun.payload.result.convergence.domainReports.some((domain) => (
+    domain.domainKey === "src" &&
+    domain.routeIds.includes("source-code")
+  )), true);
+  assert.equal(projectPackageRun.payload.result.convergence.agentQueryIndex.domains.some((domain) => (
+    domain.domainKey === "docs" &&
+    domain.sourceIds.includes("container-project-package!docs/architecture.md")
+  )), true);
   assert.equal(projectPackageRun.payload.result.convergence.communityReports.length >= 2, true);
   assert.equal(projectPackageRun.payload.result.graphEvidence.summary.textUnitCount >= projectPackageRun.payload.result.corpusPlan.windowCount, true);
+  assert.equal(projectPackageRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "container-project-package!finance/invoice.csv" &&
+    unit.metadata?.projectDomain === "finance"
+  )), true);
   assert.equal(projectPackageRun.payload.result.graphEvidence.summary.relationshipCount > 0, true);
   assert.equal(projectPackageRun.payload.result.referenceGapReport.strategy, "reference-framework-gap-report.v1");
   assert.equal(projectPackageRun.payload.result.referenceGapReport.absorbedCapabilityMap.projectConvergence.references.includes("graphrag"), true);
@@ -1026,6 +1047,16 @@ try {
   assert.equal(architectureEvidence.payload.strategy, "graph-lite-evidence-query.v1");
   assert.equal(architectureEvidence.payload.text_units.length > 0, true);
   assert.equal(architectureEvidence.payload.entities.some((entity) => /namespace/i.test(entity.title)), true);
+  const financeDomainEvidence = await fetchJson(
+    `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?domain=finance&routeId=spreadsheet&limit=20`
+  );
+  assert.equal(financeDomainEvidence.status, 200);
+  assert.equal(financeDomainEvidence.payload.filters.domain, "finance");
+  assert.equal(financeDomainEvidence.payload.filters.routeId, "spreadsheet");
+  assert.equal(financeDomainEvidence.payload.text_units.some((textUnit) => (
+    textUnit.metadata?.projectDomain === "finance" &&
+    textUnit.metadata?.routeId === "spreadsheet"
+  )), true);
   const juneEvidence = await fetchJson(
     `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?sourceId=container-project-package!finance%2Finvoice.csv&timeFrom=2026-06-01&timeTo=2026-06-30&limit=20`
   );

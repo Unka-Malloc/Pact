@@ -765,6 +765,9 @@ try {
   assert.equal(capabilities.payload.graphEvidence.projectQuery.supported, true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.strategy, "project-graph-evidence-convergence-query.v1");
   assert.equal(capabilities.payload.graphEvidence.projectQuery.modes.includes("all"), true);
+  assert.equal(capabilities.payload.graphEvidence.query.filters.includes("domain"), true);
+  assert.equal(capabilities.payload.graphEvidence.projectQuery.filters.includes("routeId"), true);
+  assert.equal(capabilities.payload.graphEvidence.projectQuery.readModel, "domain-topic-community-source-time.v1");
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
@@ -1308,7 +1311,17 @@ try {
     assert.equal(createRun.payload.result.corpusPlan.inputDocumentPlan.manifests[0].format, "jsonl");
     assert.equal(createRun.payload.result.agentMessage.corpusPlan.inputDocumentPlan.manifestDocumentCount, 2);
   }
-  assert.equal(createRun.payload.result.convergence.strategy, "window-community-topic-project-convergence.v2");
+  assert.equal(createRun.payload.result.convergence.strategy, "hierarchical-domain-topic-project-convergence.v3");
+  assert.equal(createRun.payload.result.convergence.layers.includes("project-domain"), true);
+  assert.equal(createRun.payload.result.convergence.agentQueryIndex.strategy, "agent-project-convergence-query-index.v1");
+  assert.equal(createRun.payload.result.convergence.domainReports.some((domain) => (
+    domain.domainKey === "docs" &&
+    domain.sourceIds.includes("source-9!docs/architecture.md")
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-9!docs/architecture.md" &&
+    unit.metadata?.projectDomain === "docs"
+  )), true);
   assert.equal(createRun.payload.result.convergence.layers.includes("window-community"), true);
   assert.equal(createRun.payload.result.convergence.communityReports.length >= 1, true);
   assert.equal(createRun.payload.result.convergence.projectSynthesis.mode, "multi-topic-separated");
@@ -2108,6 +2121,7 @@ try {
   assert.equal(projectEvidence.payload.text_units.every((textUnit) => textUnit.sourceRunId), true);
   assert.equal(projectEvidence.payload.text_units.every((textUnit) => textUnit.sourceId === "inc-finance"), true);
   assert.equal(projectEvidence.payload.counts.original.text_units >= projectEvidence.payload.counts.returned.text_units, true);
+  assert.equal(projectEvidence.payload.filters.domain, "");
 
   const timeFilteredRun = await fetchJson(`${pactServer.url}/api/external/knowledge/distillation/runs`, {
     method: "POST",
@@ -2242,6 +2256,18 @@ try {
   assert.equal(invoiceEvidence.payload.entities.some((entity) => /invoice/i.test(entity.title)), true);
   assert.equal(invoiceEvidence.payload.counts.returned.text_units <= 20, true);
 
+  const docsDomainEvidence = await fetchJson(
+    `${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/evidence?domain=docs&routeId=markdown&limit=20`,
+    { headers: authHeaders(auth) }
+  );
+  assert.equal(docsDomainEvidence.status, 200);
+  assert.equal(docsDomainEvidence.payload.filters.domain, "docs");
+  assert.equal(docsDomainEvidence.payload.filters.routeId, "markdown");
+  assert.equal(docsDomainEvidence.payload.text_units.some((textUnit) => (
+    textUnit.metadata?.projectDomain === "docs" &&
+    textUnit.metadata?.routeId === "markdown"
+  )), true);
+
   const claimEvidence = await fetchJson(
     `${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/evidence?claimStatus=TRUE&claim=external.knowledge.distillation&limit=20`,
     { headers: authHeaders(auth) }
@@ -2298,7 +2324,8 @@ try {
   assert.equal(agentMessage.graphEvidence.summary.entityCount > 0, true);
   assert.equal(agentMessage.classification.communityCount >= agentMessage.classification.coreGroupCount, true);
   assert.equal(agentMessage.classification.groups.some((group) => group.distillationUnit?.mode === "topic-isolated"), true);
-  assert.equal(agentMessage.convergence.strategy, "window-community-topic-project-convergence.v2");
+  assert.equal(agentMessage.convergence.strategy, "hierarchical-domain-topic-project-convergence.v3");
+  assert.equal(agentMessage.convergence.agentQueryIndex.dimensions.includes("projectDomain"), true);
   assert.equal(agentMessage.outputs.every((output) => output.promotionGate.promoted), true);
   assert.equal(agentMessage.grounding.strategy, "claim-evidence-topk-conflict-gating.v2");
   const evidenceArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/evidence-pack-json`, {

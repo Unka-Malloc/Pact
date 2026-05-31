@@ -124,7 +124,7 @@ flowchart LR
 | 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v3`，已输出语义概念主题层级、分组理由、低耦合高内聚指标和垃圾排除原因 | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
 | Grounding | 外部服务已做 claim-evidence top-k、冲突证据和 promotion gate | 内建运行时补 claim 级门禁和无证据结论拦截 |
 | 时间线 | 表格日期已进入 `timeRange`、`timeConfidence`、`timeSignals` | 扩展到邮件、元数据、正文日期，并提供 agent 查询过滤 |
-| 项目收敛 | 外部服务已有 project snapshot、incremental reuse plan 和 project evidence query | 内建知识库接入窗口 hash、增量重算和项目级 convergence |
+| 项目收敛 | 外部服务已有 `hierarchical-domain-topic-project-convergence.v3`、project-domain/domainReports、cross-domain links、agent query index、project snapshot、incremental reuse plan 和 project evidence query | 内建知识库接入窗口 hash、增量重算、domain/topic/community/source/time 读模型和项目级 convergence |
 | 图证据 | 外部服务已有 graph-lite evidence pack、run evidence query 和跨 run project evidence query | 接入更多智能体检索策略和项目级图谱查询 |
 | 导出 | 外部服务产出 Markdown、DOCX、JSON、Agent JSON、snapshot、evidence pack、workspace ZIP，并为 PDF/Word/PowerPoint/Excel/Markdown/OpenDocument 输出专业格式适配矩阵、转换 adapter、质量门禁和风险边界 | 内建继续复用 openability、manifest size/hash、专业格式转换矩阵和 bridge 下载统一规则 |
 | 服务边界 | `external.knowledge.distillation` 可作为独立服务注册 | 外部能力继续采用 `external.*` 命名，内建模块保留平台内部名称 |
@@ -580,7 +580,7 @@ raw corpus item 标准字段：
 - 智能体能直接读取机器可重试动作和 trace refs。
 - 普通 API 不依赖控制台桥接逻辑。
 - 智能体可通过专用 evidence query 读取裁剪后的 text units、entities、relationships、claims 和 community reports。
-- 智能体可通过 project evidence query 按 `projectId`、时间段、实体、claim 状态和来源过滤跨 run 项目证据。
+- 智能体可通过 project evidence query 按 `projectId`、domain、route、时间段、实体、claim 状态和来源过滤跨 run 项目证据。
 
 ---
 

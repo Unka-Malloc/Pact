@@ -47,6 +47,7 @@ const GROUNDING_STRATEGY = "claim-evidence-topk-conflict-gating.v2";
 const INCREMENTAL_CONVERGENCE_STRATEGY = "project-snapshot-incremental-convergence.v1";
 const GRAPH_EVIDENCE_STRATEGY = "graph-lite-entity-relationship-evidence-pack.v1";
 const EVIDENCE_QUERY_STRATEGY = "graph-lite-evidence-query.v1";
+const PROJECT_CONVERGENCE_STRATEGY = "hierarchical-domain-topic-project-convergence.v3";
 const PROJECT_EVIDENCE_QUERY_STRATEGY = "project-graph-evidence-convergence-query.v1";
 const REFERENCE_GAP_REPORT_STRATEGY = "reference-framework-gap-report.v1";
 const REFERENCE_FRAMEWORK_AUDIT_STRATEGY = "reference-framework-local-checkout-audit.v1";
@@ -1011,9 +1012,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["layout-aware PDF to Markdown ordering", "equation/table image reconstruction"]
   },
   graphrag: {
-    absorbed: ["text_units/entities/relationships/covariates/communities/community_reports", "community reports for large project convergence", "incremental project snapshot"],
+    absorbed: ["text_units/entities/relationships/covariates/communities/community_reports", "community reports for large project convergence", "domain/topic global-local project read model", "incremental project snapshot"],
     baseline: ["local graph-lite evidence pack"],
-    gaps: ["persistent graph store adapter", "multi-run graph merge and global/local query modes"]
+    gaps: ["persistent graph store adapter", "learned graph ranking over multi-run evidence"]
   },
   haystack: {
     absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup and Markdown documents", "format conversion profiles for human and agent targets"],
@@ -1107,7 +1108,7 @@ function buildReferenceGapReport(referenceFrameworks = null, { run = null, runti
       },
       projectConvergence: {
         status: "absorbed",
-        evidence: ["window-community-topic-project-convergence.v2", INCREMENTAL_CONVERGENCE_STRATEGY],
+        evidence: [PROJECT_CONVERGENCE_STRATEGY, "agent-project-convergence-query-index.v1", "project-domain layer", INCREMENTAL_CONVERGENCE_STRATEGY],
         references: ["graphrag", "ragflow"]
       },
       graphEvidence: {
@@ -10461,8 +10462,234 @@ function buildGroundingReport({ documents = [], classification = {}, requestedCl
   };
 }
 
+function documentConvergencePath(document = {}) {
+  const explicitPath = String(document.archivePath || document.fileName || document.title || document.sourceId || "").trim();
+  if (explicitPath && explicitPath !== document.title) {
+    return explicitPath.replace(/\\/g, "/").replace(/^\/+/, "");
+  }
+  const sourceId = String(document.sourceId || "");
+  if (sourceId.includes("!")) {
+    return sourceId.split("!").slice(1).join("!").replace(/\\/g, "/").replace(/^\/+/, "");
+  }
+  return explicitPath || sourceId || "root";
+}
+
+function projectDomainKeyForDocument(document = {}) {
+  const pathName = documentConvergencePath(document);
+  const parts = pathName
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length > 1) {
+    return parts[0];
+  }
+  if (document.parentSourceId) {
+    return "root";
+  }
+  const routeId = document.route?.formatId || document.routeId || "unknown";
+  if (routeId === "archive") {
+    return "package";
+  }
+  return "root";
+}
+
+function projectDomainId(domainKey = "") {
+  return stableId("project_domain", domainKey || "root");
+}
+
+function projectDomainMetadata(document = {}) {
+  const domainKey = projectDomainKeyForDocument(document);
+  const pathName = documentConvergencePath(document);
+  return {
+    projectDomain: domainKey,
+    projectDomainId: projectDomainId(domainKey),
+    projectPath: pathName
+  };
+}
+
+function buildProjectDomainReports({ corpusPlan = {}, classification = {} } = {}) {
+  const documents = Array.isArray(corpusPlan.documents) ? corpusPlan.documents : [];
+  const groupBySourceId = new Map();
+  for (const group of classification.groups || []) {
+    for (const sourceId of group.sourceIds || []) {
+      if (!groupBySourceId.has(sourceId)) {
+        groupBySourceId.set(sourceId, []);
+      }
+      groupBySourceId.get(sourceId).push(group);
+    }
+  }
+  const domains = new Map();
+  for (const document of documents) {
+    const domain = projectDomainMetadata(document);
+    if (!domains.has(domain.projectDomain)) {
+      domains.set(domain.projectDomain, {
+        domainId: domain.projectDomainId,
+        domainKey: domain.projectDomain,
+        label: domain.projectDomain === "root" ? "root" : `${domain.projectDomain}/`,
+        sourceIds: [],
+        parentSourceIds: new Set(),
+        routeIds: new Set(),
+        groupIds: new Set(),
+        communityIds: new Set(),
+        topicLabels: new Set(),
+        paths: [],
+        windowCount: 0,
+        elementCount: 0,
+        byteSize: 0,
+        textCharacters: 0,
+        distillableSourceCount: 0
+      });
+    }
+    const report = domains.get(domain.projectDomain);
+    report.sourceIds.push(document.sourceId);
+    if (document.parentSourceId) {
+      report.parentSourceIds.add(document.parentSourceId);
+    }
+    report.routeIds.add(document.route?.formatId || document.routeId || "unknown");
+    report.paths.push(domain.projectPath);
+    report.windowCount += Number(document.windowPlan?.windowCount || 0);
+    report.elementCount += Number(document.elementPlan?.elementCount || 0);
+    report.byteSize += Number(document.byteSize || 0);
+    report.textCharacters += Number(document.quality?.textCharacters || 0);
+    if (document.quality?.distillable || Number(document.windowPlan?.windowCount || 0) > 0) {
+      report.distillableSourceCount += 1;
+    }
+    for (const group of groupBySourceId.get(document.sourceId) || []) {
+      report.groupIds.add(group.groupId);
+      report.topicLabels.add(group.label);
+      for (const community of group.windowCommunities || []) {
+        if ((community.sourceIds || []).includes(document.sourceId)) {
+          report.communityIds.add(community.communityId);
+        }
+      }
+    }
+  }
+  return Array.from(domains.values())
+    .map((report) => ({
+      domainId: report.domainId,
+      domainKey: report.domainKey,
+      label: report.label,
+      sourceCount: report.sourceIds.length,
+      distillableSourceCount: report.distillableSourceCount,
+      windowCount: report.windowCount,
+      elementCount: report.elementCount,
+      byteSize: report.byteSize,
+      textCharacters: report.textCharacters,
+      routeIds: Array.from(report.routeIds).sort(),
+      groupIds: Array.from(report.groupIds).sort(),
+      communityIds: Array.from(report.communityIds).sort(),
+      topicLabels: Array.from(report.topicLabels).sort().slice(0, 8),
+      sourceIds: report.sourceIds.slice(0, 80),
+      representativePaths: uniqueOrdered(report.paths).slice(0, 12),
+      convergenceMode: report.groupIds.size > 1
+        ? "multi-topic-domain"
+        : report.groupIds.size === 1
+          ? "single-topic-domain"
+          : "support-or-empty-domain",
+      evidenceDensity: Number((report.windowCount / Math.max(1, report.sourceIds.length)).toFixed(4))
+    }))
+    .sort((left, right) => right.distillableSourceCount - left.distillableSourceCount || left.domainKey.localeCompare(right.domainKey));
+}
+
+function buildProjectAgentQueryIndex({ domainReports = [], classification = {}, corpusPlan = {} } = {}) {
+  const domainBySourceId = new Map();
+  for (const domain of domainReports) {
+    for (const sourceId of domain.sourceIds || []) {
+      domainBySourceId.set(sourceId, domain);
+    }
+  }
+  const topicGroups = (classification.groups || [])
+    .filter((group) => !group.excludedFromCore)
+    .map((group) => {
+      const domainIds = uniqueOrdered((group.sourceIds || [])
+        .map((sourceId) => domainBySourceId.get(sourceId)?.domainId)
+        .filter(Boolean));
+      return {
+        groupId: group.groupId,
+        label: group.label,
+        topicPath: group.topicHierarchy?.path || group.distillationUnit?.topicPath || [],
+        sourceIds: group.sourceIds || [],
+        domainIds,
+        communityIds: (group.windowCommunities || []).map((community) => community.communityId),
+        cohesionScore: group.cohesionScore || 0,
+        separationScore: group.separationScore ?? null
+      };
+    });
+  const routes = new Map();
+  for (const document of corpusPlan.documents || []) {
+    const routeId = document.route?.formatId || document.routeId || "unknown";
+    if (!routes.has(routeId)) {
+      routes.set(routeId, {
+        routeId,
+        sourceIds: [],
+        domainIds: new Set()
+      });
+    }
+    const route = routes.get(routeId);
+    route.sourceIds.push(document.sourceId);
+    const domain = domainBySourceId.get(document.sourceId);
+    if (domain?.domainId) {
+      route.domainIds.add(domain.domainId);
+    }
+  }
+  return {
+    strategy: "agent-project-convergence-query-index.v1",
+    dimensions: ["projectDomain", "topicGroup", "windowCommunity", "source", "route", "timeRange"],
+    domains: domainReports.map((domain) => ({
+      domainId: domain.domainId,
+      domainKey: domain.domainKey,
+      label: domain.label,
+      sourceIds: domain.sourceIds,
+      groupIds: domain.groupIds,
+      communityIds: domain.communityIds,
+      routeIds: domain.routeIds
+    })),
+    topicGroups,
+    routes: Array.from(routes.values()).map((route) => ({
+      routeId: route.routeId,
+      sourceIds: route.sourceIds,
+      domainIds: Array.from(route.domainIds).sort()
+    })).sort((left, right) => left.routeId.localeCompare(right.routeId)),
+    recommendedQueryOrder: ["projectDomain", "topicGroup", "windowCommunity", "source", "timeRange"]
+  };
+}
+
+function buildCrossDomainLinks(domainReports = [], classification = {}) {
+  const domainBySourceId = new Map();
+  for (const domain of domainReports) {
+    for (const sourceId of domain.sourceIds || []) {
+      domainBySourceId.set(sourceId, domain);
+    }
+  }
+  return (classification.groups || [])
+    .filter((group) => !group.excludedFromCore)
+    .map((group) => {
+      const domainIds = uniqueOrdered((group.sourceIds || [])
+        .map((sourceId) => domainBySourceId.get(sourceId)?.domainId)
+        .filter(Boolean));
+      const domainKeys = uniqueOrdered((group.sourceIds || [])
+        .map((sourceId) => domainBySourceId.get(sourceId)?.domainKey)
+        .filter(Boolean));
+      return {
+        groupId: group.groupId,
+        label: group.label,
+        domainIds,
+        domainKeys,
+        sourceCount: (group.sourceIds || []).length,
+        communityCount: group.communityCount || 0,
+        relationship: domainIds.length > 1 ? "cross-domain-topic" : "single-domain-topic"
+      };
+    })
+    .filter((link) => link.domainIds.length > 1)
+    .sort((left, right) => right.sourceCount - left.sourceCount || left.label.localeCompare(right.label))
+    .slice(0, 24);
+}
+
 function buildProjectConvergence({ corpusPlan, classification }) {
   const distillableGroups = classification.groups.filter((group) => group.sourceCount > 0 && !group.excludedFromCore);
+  const domainReports = buildProjectDomainReports({ corpusPlan, classification });
+  const agentQueryIndex = buildProjectAgentQueryIndex({ domainReports, classification, corpusPlan });
+  const crossDomainLinks = buildCrossDomainLinks(domainReports, classification);
   const dominantGroups = distillableGroups
     .slice()
     .sort((left, right) => right.sourceCount - left.sourceCount || right.cohesionScore - left.cohesionScore)
@@ -10494,22 +10721,45 @@ function buildProjectConvergence({ corpusPlan, classification }) {
       ).toFixed(4))
     : 0;
   return {
-    strategy: "window-community-topic-project-convergence.v2",
-    layers: ["window", "window-community", "document", "topic-group", "project"],
+    strategy: PROJECT_CONVERGENCE_STRATEGY,
+    previousStrategies: ["window-community-topic-project-convergence.v2"],
+    layers: ["window", "window-community", "document", "project-domain", "topic-group", "project"],
     totalSources: corpusPlan.sourceCount,
     distillableSources: corpusPlan.distillableSourceCount,
     totalWindows: corpusPlan.windowCount,
     communityCount: communityReports.length,
+    domainCount: domainReports.length,
     groupCount: classification.groupCount,
     dominantGroups,
+    domainReports,
+    crossDomainLinks,
+    agentQueryIndex,
     communityReports,
     projectSynthesis: {
       mode: dominantGroups.length > 1 ? "multi-topic-separated" : "single-topic",
       averageSeparation,
+      globalLocalModes: [
+        {
+          mode: "global",
+          use: ["domainReports", "communityReports", "crossDomainLinks"],
+          purpose: "Read the whole project without downloading every text unit."
+        },
+        {
+          mode: "local",
+          use: ["agentQueryIndex.domains", "evidence?domain=..."],
+          purpose: "Drill into a project domain, topic group, or source."
+        },
+        {
+          mode: "timeline",
+          use: ["evidence?timeFrom=...&timeTo=..."],
+          purpose: "Filter date-bearing evidence without reparsing source files."
+        }
+      ],
       lowCouplingHighCohesion: distillableGroups.every((group) => (
         (group.separationScore ?? 1) >= CLASSIFICATION_SEPARATION_THRESHOLD &&
         group.cohesionScore >= LEADER_CLUSTER_THRESHOLD
-      ))
+      )),
+      largeProjectReady: corpusPlan.sourceCount >= 8 || corpusPlan.windowCount >= 20 || domainReports.length >= 4
     },
     convergenceSummary:
       dominantGroups.length > 1
@@ -10556,6 +10806,7 @@ function snapshotDocument(document = {}) {
     sourceId: document.sourceId,
     parentSourceId: document.parentSourceId || "",
     archivePath: document.archivePath || "",
+    ...projectDomainMetadata(document),
     title: document.title,
     fileName: document.fileName,
     mediaType: document.mediaType,
@@ -10835,6 +11086,9 @@ function buildGraphEvidencePack({ runId = "", createdAt = "", documents = [], cl
         covariate_ids: [],
         metadata: {
           routeId: document.route?.formatId || "unknown",
+          parentSourceId: document.parentSourceId || "",
+          archivePath: document.archivePath || "",
+          ...projectDomainMetadata(document),
           contentHash: window.contentHash || document.contentHash || "",
           timeRange: window.timeRange || document.timeRange || null,
           elementRefs: window.elementRefs || [],
@@ -11035,6 +11289,8 @@ function normalizeEvidenceQuery(searchParams = new URLSearchParams()) {
     claimStatus: statusAliases[rawStatus] || "",
     claim: read("claim", "claimQuery", "claim-query"),
     sourceId: read("sourceId", "source-id", "documentId", "document-id"),
+    domain: read("domain", "projectDomain", "project-domain", "domainId", "domain-id"),
+    routeId: read("routeId", "route-id", "format", "formatId", "format-id"),
     groupId: read("groupId", "group-id", "communityId", "community-id"),
     timeFrom,
     timeTo,
@@ -11118,6 +11374,8 @@ function buildEvidenceQueryResult({ runId = "", graphEvidence = {}, filters = {}
   );
   const hasTextUnitScopedFilters = Boolean(
     filters.sourceId ||
+    filters.domain ||
+    filters.routeId ||
     filters.groupId ||
     filters.entity ||
     filters.relationship ||
@@ -11127,6 +11385,21 @@ function buildEvidenceQueryResult({ runId = "", graphEvidence = {}, filters = {}
 
   const scopedTextUnits = textUnits.filter((textUnit) => {
     if (filters.sourceId && textUnit.sourceId !== filters.sourceId && textUnit.document_id !== filters.sourceId) {
+      return false;
+    }
+    if (filters.domain) {
+      const domainMatches = (
+        includesNormalized(textUnit.metadata?.projectDomain, filters.domain) ||
+        includesNormalized(textUnit.metadata?.projectDomainId, filters.domain) ||
+        includesNormalized(textUnit.metadata?.projectPath, filters.domain) ||
+        includesNormalized(textUnit.metadata?.archivePath, filters.domain) ||
+        includesNormalized(textUnit.sourceId, filters.domain)
+      );
+      if (!domainMatches) {
+        return false;
+      }
+    }
+    if (filters.routeId && textUnit.metadata?.routeId !== filters.routeId) {
       return false;
     }
     if (filters.groupId && !(textUnit.group_ids || []).includes(filters.groupId) && !(textUnit.community_ids || []).includes(filters.groupId)) {
@@ -11238,7 +11511,7 @@ function buildEvidenceQueryResult({ runId = "", graphEvidence = {}, filters = {}
           "Escalate to evidence-pack-json only when a wider graph traversal is required."
         ]
       : [
-          "Relax entity, claim, relationship, source, group, or time filters.",
+          "Relax entity, claim, relationship, domain, route, source, group, or time filters.",
           "Inspect counts.original to confirm the run contains graph evidence."
         ]
   };
@@ -11491,7 +11764,7 @@ function buildProjectEvidenceQueryResult({ projectId = "", runs = [], query = {}
       ? [
           "Use sourceRunId fields to distinguish evidence from each project run.",
           "Use latestRunId for the current project state and runIds for historical convergence.",
-          "Narrow with sourceId, entity, claimStatus, or time filters when the project graph is large."
+          "Narrow with domain, routeId, groupId, sourceId, entity, claimStatus, or time filters when the project graph is large."
         ]
       : [
           "Relax project evidence filters or increase runLimit.",
@@ -12138,6 +12411,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       CLASSIFICATION_STRATEGY,
       "semantic-concept-topic-hierarchy.v1",
       "leader-clustering-semantic-concept-rationale.v1",
+      PROJECT_CONVERGENCE_STRATEGY,
+      "agent-project-convergence-query-index.v1",
       "inline-or-streaming-manifest-document-input.v1",
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
@@ -12336,7 +12611,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         supported: true,
         strategy: EVIDENCE_QUERY_STRATEGY,
         endpoint: "GET /v1/distillation/runs/:runId/evidence",
-        filters: ["entity", "relationship", "claimStatus", "claim", "sourceId", "groupId", "timeFrom", "timeTo", "limit"],
+        filters: ["entity", "relationship", "claimStatus", "claim", "sourceId", "domain", "routeId", "groupId", "timeFrom", "timeTo", "limit"],
         purpose: "Return a bounded, machine-readable evidence slice for agents instead of forcing full artifact scans."
       },
       projectQuery: {
@@ -12344,8 +12619,9 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         strategy: PROJECT_EVIDENCE_QUERY_STRATEGY,
         endpoint: "GET /v1/projects/:projectId/evidence",
         modes: ["all", "latest"],
-        filters: ["mode", "runLimit", "entity", "relationship", "claimStatus", "claim", "sourceId", "groupId", "timeFrom", "timeTo", "limit"],
-        purpose: "Merge graph evidence across runs for the same projectId so agents can query large-project convergence without downloading every run artifact."
+        filters: ["mode", "runLimit", "entity", "relationship", "claimStatus", "claim", "sourceId", "domain", "routeId", "groupId", "timeFrom", "timeTo", "limit"],
+        readModel: "domain-topic-community-source-time.v1",
+        purpose: "Merge graph evidence across runs for the same projectId so agents can query large-project convergence by domain, topic, route, source, or time without downloading every run artifact."
       },
       referencePatterns: [
         "graphrag.text-units-entities-relationships",

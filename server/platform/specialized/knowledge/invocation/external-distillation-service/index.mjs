@@ -97,6 +97,8 @@ function evidenceQueryString(input = {}) {
     claimStatus: ["claimStatus", "claim-status", "status"],
     claim: ["claim", "claimQuery", "claim-query"],
     sourceId: ["sourceId", "source-id", "documentId", "document-id"],
+    domain: ["domain", "projectDomain", "project-domain", "domainId", "domain-id"],
+    routeId: ["routeId", "route-id", "format", "formatId", "format-id"],
     groupId: ["groupId", "group-id", "communityId", "community-id"],
     timeFrom: ["timeFrom", "time-from", "from"],
     timeTo: ["timeTo", "time-to", "to"],

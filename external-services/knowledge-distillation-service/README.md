@@ -4,7 +4,7 @@ Standalone HTTP service used to verify and evolve Pact external distillation reg
 
 The service is intentionally standalone. It exposes a route-first, windowed, classified distillation baseline that separates unrelated source groups before producing human-readable Markdown and an agent-readable JSON message. The local reference framework manifest tracks the open-source systems Pact uses for ongoing comparison.
 
-The service does not hide unsupported binary parsing behind a generic Tika call. Every source first receives a `routePlan` based on extension, media type, source kind, and text fallback. Archive entries and email attachments are recursively routed as child documents before distillable text is split into bounded windows, so large projects can converge through window, document, topic-group, and project layers.
+The service does not hide unsupported binary parsing behind a generic Tika call. Every source first receives a `routePlan` based on extension, media type, source kind, and text fallback. Archive entries and email attachments are recursively routed as child documents before distillable text is split into bounded windows, so large projects can converge through window, document, project-domain, topic-group, and project layers.
 
 Request payloads can provide either direct text fields or a base64 file payload:
 
@@ -54,15 +54,15 @@ Core response fields:
 - `elementPlan`: document-element model for structured sources, with element type counts, sampled element metadata, and by-title chunking references.
 - `parserTrace`: per-source parser stages, including direct text, JSON, CSV/TSV, mounted file references, chunked text windowing, MSG Tika extraction, MBOX message splitting, email attachment routing, archive child routing, and OOXML extraction.
 - `classification`: hashing-embedding document groups plus window communities before distillation, with a weak-evidence garbage pool, per-topic distillation units, group cohesion, and inter-group separation scores.
-- `convergence`: window-to-window-community-to-document-to-topic-to-project convergence plan with community reports for large project synthesis.
+- `convergence`: window-to-window-community-to-document-to-project-domain-to-topic-to-project convergence plan with domain reports, community reports, cross-domain links, and an agent query index for large project synthesis.
 - `incrementalPlan`: project snapshot and reuse plan keyed by `projectId`/`workspaceId`/`repositoryId`, with added, changed, removed, and reusable source/window counts.
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
 - `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
 - `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
-- `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, source id, group id, and time range.
-- `project evidence query`: project-level agent API that merges graph evidence from multiple runs sharing the same `projectId`, preserving `sourceRunId`, project fingerprints, incremental modes, and bounded graph tables for large-project convergence reads.
+- `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, domain, route id, source id, group id, and time range.
+- `project evidence query`: project-level agent API that merges graph evidence from multiple runs sharing the same `projectId`, preserving `sourceRunId`, project fingerprints, incremental modes, domain metadata, and bounded graph tables for large-project convergence reads.
 
 Agent/API requests can include a `timeFilter` object:
 
@@ -146,7 +146,8 @@ Built-in algorithm baseline:
 - `project-snapshot-incremental-convergence.v1`: stores a compact project snapshot and compares later runs for the same project to reuse unchanged text units/window communities and recompute only changed windows before convergence.
 - `graph-lite-entity-relationship-evidence-pack.v1`: builds deterministic text-unit, entity, relationship, claim/covariate, community, and community-report tables for agent retrieval and graph-style inspection.
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
-- `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, source, entity, claim, group, and time filters for engineering-project convergence queries.
+- `hierarchical-domain-topic-project-convergence.v3`: adds a project-domain layer, domain reports, cross-domain links, and `agent-project-convergence-query-index.v1` for global/local project reads.
+- `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, domain, route, source, entity, claim, group, and time filters for engineering-project convergence queries.
 - `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/annotation isolation, element refs, basic PDF geometry, Word annotations, Word/PowerPoint/OpenDocument table cells, spreadsheet cell coordinates and formulas, and PresentationML shape geometry on agent windows and graph text units.
 - `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates and known loss boundaries.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
@@ -156,7 +157,7 @@ Built-in algorithm baseline:
 Reference patterns currently absorbed into the local baseline:
 
 - GraphRAG-style text units, entities, relationships, covariates, communities, and community reports.
-- GraphRAG-style community reports for corpus-wide convergence.
+- GraphRAG-style community reports plus domain/topic global-local read models for corpus-wide convergence.
 - GraphRAG-style period/size snapshots and text-unit ids for incremental merges.
 - LlamaIndex-style node/window metadata attached to agent-readable outputs.
 - Haystack-style explicit pipeline stages exposed through route plans, parser traces, and capability metadata.
