@@ -1333,6 +1333,7 @@ try {
     assert.equal(payload.errorCode, "UNSUPPORTED_TARGET");
     assert.equal(payload.nextCommand, `pact-mcp scan --url '${serverUrl}' --json`);
     assert.ok(payload.repairCommands?.includes(`pact-mcp scan --url '${serverUrl}' --json`));
+    assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${serverUrl}' --json`));
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.ok(payload.supportedTargets?.includes(target), `${target} should be listed as supported`);
     }

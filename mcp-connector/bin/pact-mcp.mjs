@@ -510,7 +510,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
       nextCommand: scanCommand,
       repairCommands: [
         scanCommand,
-        shellCommandForInstall({ target: "codex", includeUrl, baseUrl, tokenEnv })
+        shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
       ],
       supportedTargets: SUPPORTED_TARGETS
     };
@@ -555,7 +555,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
   return {
     errorCode: "COMMAND_FAILED",
     nextCommand: command === "install"
-      ? shellCommandForInstall({ target: "codex", includeUrl, baseUrl, tokenEnv })
+      ? shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
       : shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
     repairCommands: [
       shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
