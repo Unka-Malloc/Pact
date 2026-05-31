@@ -74,7 +74,7 @@ Agent/API requests can include a `timeFilter` object:
 Routed format families:
 
 - PDF: text extraction, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
-- Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP with paragraph, heading, slide, PresentationML shape geometry, sheet-row, cell-coordinate, and table elements for OOXML/OpenDocument payloads.
+- Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP with paragraph, heading, Word table row/cell metadata, slide, PresentationML shape geometry, sheet-row, cell-coordinate, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
 - Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements rather than treated as plain text.
 - Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
@@ -145,7 +145,7 @@ Built-in algorithm baseline:
 - `graph-lite-entity-relationship-evidence-pack.v1`: builds deterministic text-unit, entity, relationship, claim/covariate, community, and community-report tables for agent retrieval and graph-style inspection.
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, source, entity, claim, group, and time filters for engineering-project convergence queries.
-- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code isolation, element refs, basic PDF geometry, spreadsheet cell coordinates, and PresentationML shape geometry on agent windows and graph text units.
+- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code isolation, element refs, basic PDF geometry, Word table cells, spreadsheet cell coordinates, and PresentationML shape geometry on agent windows and graph text units.
 - `office-document-professional-adaptation.v1`: exposes per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - `reference-framework-local-checkout-audit.v1`: verifies each declared local reference checkout exists, is a Git worktree, and matches the manifest commit before treating it as a current comparison source.

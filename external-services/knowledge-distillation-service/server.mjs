@@ -739,9 +739,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML table row/cell metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
-    gaps: ["full PDF and Word layout block geometry", "native table coordinate objects and formula recognition beyond text-level elements"]
+    gaps: ["full PDF and Word layout block geometry", "formula recognition beyond text-level elements"]
   },
   "llama-index": {
     absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API", "node-style element references on windows and text units"],
@@ -764,7 +764,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word table cells, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -4085,16 +4085,90 @@ function docxParagraphElementType(paragraphXml = "", style = "") {
   return { type: "paragraph", level: 0 };
 }
 
+function removeDocxTables(xml = "") {
+  return String(xml || "").replace(/<[^:>]*:?tbl\b[\s\S]*?<\/[^:>]*:?tbl>/g, " ");
+}
+
+function docxTableCells(rowXml = "") {
+  return Array.from(String(rowXml || "").matchAll(/<[^:>]*:?tc\b[\s\S]*?<\/[^:>]*:?tc>/g))
+    .map((match) => textFromXmlTextNodes(match[0]))
+    .map((cell) => compactMarkupText(cell, 1000))
+    .filter(Boolean);
+}
+
+function formatDocxTableHeader(tableLabel = "", rowNumber = 1, cells = []) {
+  return `${tableLabel} Header row ${rowNumber}: ${cells.map((cell, index) => `${xlsxColumnLabel("", index)}=${cell}`).join("; ")}`;
+}
+
+function formatDocxTableRow(tableLabel = "", rowNumber = 1, cells = [], headers = []) {
+  return `${tableLabel} Row ${rowNumber}: ${cells.map((cell, index) => {
+    const header = headers[index] || `Column ${index + 1}`;
+    return `${header}=${cell}`;
+  }).join("; ")}`;
+}
+
+function appendDocxTableElements(elements = [], tableXml = "", { name = "", tableIndex = 0, lineStart = 0 } = {}) {
+  const tableLabel = `Table ${tableIndex}`;
+  const rows = Array.from(String(tableXml || "").matchAll(/<[^:>]*:?tr\b[\s\S]*?<\/[^:>]*:?tr>/g))
+    .map((match) => docxTableCells(match[0]))
+    .filter((cells) => cells.length);
+  if (!rows.length) {
+    return { rowCount: 0, cellCount: 0, headerCells: [] };
+  }
+  const headers = rows[0];
+  let cellCount = 0;
+  for (const [rowIndex, cells] of rows.entries()) {
+    cellCount += cells.length;
+    const rowNumber = rowIndex + 1;
+    const type = rowIndex === 0 ? "table-header" : "table-row";
+    const text = rowIndex === 0
+      ? formatDocxTableHeader(tableLabel, rowNumber, cells)
+      : formatDocxTableRow(tableLabel, rowNumber, cells, headers);
+    pushStructureElement(elements, type, text, {
+      line: lineStart + rowNumber,
+      name: `${name}#table-${tableIndex}`,
+      table: {
+        format: "docx",
+        sheet: tableLabel,
+        row: rowNumber,
+        columns: cells.length
+      },
+      cells: cells.map((cell, cellIndex) => ({
+        ref: `${xlsxColumnLabel("", cellIndex)}${rowNumber}`,
+        column: xlsxColumnLabel("", cellIndex),
+        row: rowNumber,
+        header: rowIndex === 0 ? "" : headers[cellIndex] || "",
+        value: cell
+      }))
+    });
+  }
+  return { rowCount: rows.length, cellCount, headerCells: headers };
+}
+
 function parseDocx(entries = []) {
   const xmlNames = entries
     .map((entry) => entry.name)
     .filter((name) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(name));
   const elements = [];
   let paragraphCount = 0;
+  let tableCount = 0;
+  let tableRowCount = 0;
+  let tableCellCount = 0;
   for (const name of xmlNames) {
     const xml = zipEntryText(entries, name);
+    for (const tableMatch of xml.matchAll(/<[^:>]*:?tbl\b[\s\S]*?<\/[^:>]*:?tbl>/g)) {
+      tableCount += 1;
+      const table = appendDocxTableElements(elements, tableMatch[0], {
+        name,
+        tableIndex: tableCount,
+        lineStart: paragraphCount + tableRowCount
+      });
+      tableRowCount += table.rowCount;
+      tableCellCount += table.cellCount;
+    }
+    const paragraphXmlSource = removeDocxTables(xml);
     let foundParagraph = false;
-    for (const match of xml.matchAll(/<[^:>]*:?p\b[\s\S]*?<\/[^:>]*:?p>/g)) {
+    for (const match of paragraphXmlSource.matchAll(/<[^:>]*:?p\b[\s\S]*?<\/[^:>]*:?p>/g)) {
       foundParagraph = true;
       const paragraphXml = match[0];
       const text = textFromXmlTextNodes(paragraphXml);
@@ -4122,6 +4196,9 @@ function parseDocx(entries = []) {
     format: "docx",
     xmlFileCount: xmlNames.length,
     paragraphCount,
+    tableCount,
+    tableRowCount,
+    tableCellCount,
     headingCount: (counts.title || 0) + (counts.heading || 0),
     listItemCount: counts["list-item"] || 0
   };
@@ -5663,8 +5740,18 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           characters: parsed.text.length,
           elements: parsed.elements.length,
           paragraphs: parsed.paragraphCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount
+        });
+        parserTrace.push({
+          stage: "office.word.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount
         });
         if (parsed.text) {
           return {
@@ -6266,8 +6353,8 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     return {
       ...base,
       parserProfile: "wordprocessingml-paragraph-style-route",
-      preserves: [...base.preserves, "headings", "paragraphs", "lists"],
-      conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-element-refs", "evidence-pack"],
+      preserves: [...base.preserves, "headings", "paragraphs", "lists", "tables", "cellRefs"],
+      conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-table-refs", "evidence-pack"],
       knownLosses: ["advanced-openxml-styling-not-rendered"]
     };
   }
@@ -10447,6 +10534,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "archive.7z.extract",
         "office.word.structured",
         "office.presentation.slides",
+        "office.word.tables",
         "table.sheet.structured",
         "table.sheet.headers",
         "table.sheet.cells",

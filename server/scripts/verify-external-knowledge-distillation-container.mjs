@@ -424,6 +424,7 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".adoc"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".tex"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);

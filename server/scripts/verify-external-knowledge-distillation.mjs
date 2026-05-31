@@ -255,7 +255,13 @@ function msgTextBase64(text = "Outlook MSG Tika fallback extracts project schedu
 const sampleDocxBase64 = base64Zip({
   "word/document.xml": [
     "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
-    "<w:body><w:p><w:r><w:t>Standalone DOCX payload parser extracts contract decisions.</w:t></w:r></w:p></w:body>",
+    "<w:body>",
+    "<w:p><w:r><w:t>Standalone DOCX payload parser extracts contract decisions.</w:t></w:r></w:p>",
+    "<w:tbl>",
+    "<w:tr><w:tc><w:p><w:r><w:t>Owner</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Decision</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Due Date</w:t></w:r></w:p></w:tc></w:tr>",
+    "<w:tr><w:tc><w:p><w:r><w:t>Platform</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Adopt external.knowledge.distillation routing</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2026-07-10</w:t></w:r></w:p></w:tc></w:tr>",
+    "</w:tbl>",
+    "</w:body>",
     "</w:document>"
   ].join("")
 });
@@ -656,6 +662,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.file-ref.expand"), true);
@@ -1322,13 +1329,35 @@ try {
   assert.equal(epubPayloadCorpus.windowPlan.windows.some((window) => /EPUB Distillation Evidence|agent element windows/.test(window.excerpt || "")), true);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 6), true);
   assert.equal(docxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(docxPayloadCorpus.elementPlan.sourceFormat, "docx");
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "table-row" &&
+    element.table?.format === "docx" &&
+    element.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision" && cell.value.includes("external.knowledge.distillation"))
+  )), true);
   assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-row" &&
+    ref.table?.format === "docx" &&
+    ref.cells?.some((cell) => cell.ref === "B2")
+  ))), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.parserProfile, "wordprocessingml-paragraph-style-route");
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-8" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "table-row" &&
+      ref.table?.format === "docx" &&
+      ref.cells?.some((cell) => cell.ref === "B2")
+    ))
+  )), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");
   assert.equal(zipPayloadCorpus.parserTrace.some((trace) => trace.stage === "archive.manifest" && trace.status === "completed"), true);
   assert.equal(zipPayloadCorpus.parserTrace.some((trace) => trace.stage === "archive.expand-route" && trace.status === "completed"), true);
