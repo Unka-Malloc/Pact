@@ -1351,7 +1351,7 @@ function broadcastMcpNotification(payload, { grantId = "" } = {}) {
   }
 }
 
-function broadcastMcpOperationReply({ envelope, operation, status, target, payload = {}, error = null, authorization = null, workspaceDirectory = null }) {
+function broadcastMcpOperationReply({ envelope, operation, status, target, exchange = null, payload = {}, error = null, authorization = null, workspaceDirectory = null }) {
   const grantId = authorization?.grant?.id || "";
   const message = status === "completed"
     ? `已完成 ${operation} 任务`
@@ -1363,6 +1363,7 @@ function broadcastMcpOperationReply({ envelope, operation, status, target, paylo
     message,
     envelope: mcpEnvelopePublic(envelope, workspaceDirectory),
     target: publicMcpEnvelopeValue(target || {}, workspaceDirectory),
+    ...(exchange ? { exchange: publicMcpEnvelopeValue(exchange, workspaceDirectory) } : {}),
     payload: mcpReplyPayload(payload),
     error,
     completedAt: new Date().toISOString()
@@ -1562,11 +1563,18 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
         payload: publicFailurePayload,
         envelope: parsedCall.envelope
       });
+      const exchange = inferSharedspaceExchangeReceipt({
+        operation: parsedCall.operation,
+        input: resolvedWorkspaceInput.input,
+        payload: publicFailurePayload,
+        target
+      });
       broadcastMcpOperationReply({
         envelope: parsedCall.envelope,
         operation: parsedCall.operation,
         status: "failed",
         target,
+        exchange,
         payload: publicFailurePayload,
         error: {
           code: error.code || "tool_call_failed",
@@ -1609,6 +1617,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
       operation: parsedCall.operation,
       status: "completed",
       target,
+      exchange,
       payload: publicPayload,
       authorization,
       workspaceDirectory: resolvedWorkspaceInput.workspaceDirectory

@@ -532,6 +532,9 @@ try {
   assert.match(sharedspaceWriteSse.text, /notifications\/pact\/operation_reply/);
   assert.match(sharedspaceWriteSse.text, /pact\.sharedspace\.file\.write/);
   assert.match(sharedspaceWriteSse.text, /"status":"completed"/);
+  assert.match(sharedspaceWriteSse.text, /"exchange":\{"schemaVersion":"pact\.mcp\.sharedspace-exchange\.v1"/);
+  assert.match(sharedspaceWriteSse.text, /"action":"file-written"/);
+  assert.match(sharedspaceWriteSse.text, /"path":"notes\/hello\.txt"/);
   assert.equal(sharedspaceWrite.status, 200);
   const writePayload = sharedspaceWrite.payload.result.structuredContent.payload;
   const writeExchange = sharedspaceWrite.payload.result.structuredContent.exchange;
@@ -609,6 +612,9 @@ try {
   });
   assert.equal(failedSharedspaceRead.status, 200);
   assert.ok(failedSharedspaceRead.payload.error);
+  assert.match(failedSharedspaceReadSse.text, /"exchange":\{"schemaVersion":"pact\.mcp\.sharedspace-exchange\.v1"/);
+  assert.match(failedSharedspaceReadSse.text, /"action":"file-read"/);
+  assert.match(failedSharedspaceReadSse.text, /"path":"\[server-internal-path\]"/);
   assertNoMcpInternalLeak(failedSharedspaceRead.payload, "MCP failed sharedspace response");
   assertNoMcpInternalLeak(failedSharedspaceReadSse.text, "MCP failed sharedspace SSE");
 
