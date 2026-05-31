@@ -717,6 +717,14 @@ try {
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.timeFiltering.timeFields.includes("eventTime"), true);
+  assert.equal(capabilities.payload.fileCompatibility.routingStrategy, "content-signature-extension-media-shape-routing.v2");
+  assert.equal(capabilities.payload.fileCompatibility.routeOrder[0], "contentSignature");
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.strategy, "content-signature-routing.v1");
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("pdf-header"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("zip-ooxml-word"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("zip-ooxml-presentation"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("zip-ooxml-spreadsheet"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.fields.includes("parserTrace[].stage=content.signature"), true);
   assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.strategy, "pdf-subtype-routing.v1");
   assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.subtypes.includes("pdf-scanned"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.strategy, "streaming-windowed");
@@ -730,6 +738,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("content.signature"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-binary-profile"), true);
@@ -821,6 +830,7 @@ try {
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("pdf-subtype-routing.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("content-signature-routing.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("human-agent-response-profile-separation.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("professional-format-manifest.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("bounded-binary-file-profile.v1"), true);
@@ -852,7 +862,7 @@ try {
     assert.equal(adapter.qualityGates.includes(qualityGate), true);
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
-  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
+  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
       true,
@@ -1251,6 +1261,34 @@ try {
           contentBase64: sampleXlsxBase64
         },
         {
+          sourceId: "source-44",
+          title: "Signature Routed PDF",
+          fileName: "signature-routed-pdf.asset",
+          mediaType: "application/octet-stream",
+          contentBase64: samplePdfBase64
+        },
+        {
+          sourceId: "source-45",
+          title: "Signature Routed DOCX",
+          fileName: "signature-routed-docx.asset",
+          mediaType: "application/octet-stream",
+          contentBase64: sampleDocxBase64
+        },
+        {
+          sourceId: "source-46",
+          title: "Signature Routed PPTX",
+          fileName: "signature-routed-pptx.asset",
+          mediaType: "application/octet-stream",
+          contentBase64: samplePptxBase64
+        },
+        {
+          sourceId: "source-47",
+          title: "Signature Routed XLSX",
+          fileName: "signature-routed-xlsx.asset",
+          mediaType: "application/octet-stream",
+          contentBase64: sampleXlsxBase64
+        },
+        {
           sourceId: "source-10",
           title: "Supplier Settlement",
           fileName: "settlement.txt",
@@ -1342,7 +1380,8 @@ try {
   )), true);
   assert.equal(garbageGroup?.exclusionReasons?.some((reason) => reason.code === "WEAK_EVIDENCE_SIGNAL"), true);
   assert.equal(createRun.payload.result.agentMessage.responseProfile, "agent");
-  assert.equal(createRun.payload.result.routePlan.strategy, "extension-media-shape-routing.v1");
+  assert.equal(createRun.payload.result.routePlan.strategy, "content-signature-extension-media-shape-routing.v2");
+  assert.equal(createRun.payload.result.routePlan.routeOrder[0], "contentSignature");
   assert.equal(createRun.payload.result.corpusPlan.allSizePolicy, "streaming-windowed");
   if (rawDocumentsManifestPath) {
     assert.equal(createRun.payload.result.corpusPlan.inputDocumentPlan.strategy, "inline-or-streaming-manifest-document-input.v1");
@@ -1987,6 +2026,28 @@ try {
   assert.equal(xlsxPayloadCorpus.timeRange.from, "2026-05-31");
   assert.match(xlsxPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Sheet 1 Header row|A1=Vendor|B2 Total=42|C2 Payment Date=2026-05-31/);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-05-31"), true);
+  for (const [sourceId, formatId, signature, sniffedExtension, parserStage] of [
+    ["source-44", "pdf", "pdf-header", ".pdf", "pdf.text.basic"],
+    ["source-45", "word", "zip-ooxml-word", ".docx", "office.word.structured"],
+    ["source-46", "presentation", "zip-ooxml-presentation", ".pptx", "office.presentation.slides"],
+    ["source-47", "spreadsheet", "zip-ooxml-spreadsheet", ".xlsx", "table.sheet.structured"]
+  ]) {
+    const signatureRoutedCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === sourceId);
+    assert.ok(signatureRoutedCorpus, `${sourceId} content-signature routed office document must be present`);
+    assert.equal(signatureRoutedCorpus.route.formatId, formatId);
+    assert.equal(signatureRoutedCorpus.route.declaredExtension, ".asset");
+    assert.equal(signatureRoutedCorpus.route.declaredMediaType, "application/octet-stream");
+    assert.equal(signatureRoutedCorpus.route.sniffedExtension, sniffedExtension);
+    assert.equal(signatureRoutedCorpus.route.contentSignature, signature);
+    assert.equal(signatureRoutedCorpus.parserTrace.some((trace) => (
+      trace.stage === "content.signature" &&
+      trace.status === "completed" &&
+      trace.applied === true &&
+      trace.signature === signature
+    )), true);
+    assert.equal(signatureRoutedCorpus.parserTrace.some((trace) => trace.stage === parserStage && trace.status === "completed"), true);
+    assert.equal(signatureRoutedCorpus.formatConversionProfile.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
+  }
   assert.ok(
     createRun.payload.result.agentMessage.corpusPlan.documents.some((document) => document.sourceId === "source-3"),
     "agent message must include corpus window details"
@@ -2447,7 +2508,12 @@ try {
   const agentMessage = JSON.parse(await agentArtifact.text());
   assert.equal(agentMessage.responseProfile, "agent");
   assert.ok(agentMessage.classification.groupCount >= 2);
-  assert.equal(agentMessage.routePlan.strategy, "extension-media-shape-routing.v1");
+  assert.equal(agentMessage.routePlan.strategy, "content-signature-extension-media-shape-routing.v2");
+  assert.equal(agentMessage.routePlan.documents.some((document) => (
+    document.sourceId === "source-45" &&
+    document.formatId === "word" &&
+    document.contentSignature === "zip-ooxml-word"
+  )), true);
   assert.equal(agentMessage.corpusPlan.allSizePolicy, "streaming-windowed");
   assert.equal(agentMessage.incrementalPlan.strategy, "project-snapshot-incremental-convergence.v1");
   assert.equal(agentMessage.graphEvidence.strategy, "graph-lite-entity-relationship-evidence-pack.v1");

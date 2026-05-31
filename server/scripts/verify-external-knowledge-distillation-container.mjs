@@ -378,6 +378,14 @@ try {
   assert.equal(capabilities.payload.graphEvidence.query.filters.includes("domain"), true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.filters.includes("routeId"), true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.readModel, "domain-topic-community-source-time.v1");
+  assert.equal(capabilities.payload.algorithms.includes("content-signature-routing.v1"), true);
+  assert.equal(capabilities.payload.fileCompatibility.routingStrategy, "content-signature-extension-media-shape-routing.v2");
+  assert.equal(capabilities.payload.fileCompatibility.routeOrder[0], "contentSignature");
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.strategy, "content-signature-routing.v1");
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("pdf-header"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("zip-ooxml-word"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("zip-ooxml-presentation"), true);
+  assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.signatures.includes("zip-ooxml-spreadsheet"), true);
   assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.strategy, "pdf-subtype-routing.v1");
   assert.equal(capabilities.payload.fileCompatibility.pdfSubtypeRouting.subtypes.includes("pdf-scanned"), true);
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
@@ -410,6 +418,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("content.signature"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
@@ -443,6 +452,7 @@ try {
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".rtf"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".gif"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".odt"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".epub"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".pgm"), true);
@@ -1664,6 +1674,72 @@ NODE`
     }
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
     assert.ok(mountedStructured.quality.textCharacters > 0, `${sourceId} must produce distillable text`);
+  }
+
+  const signatureRoutedRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container content signature routing verification",
+      title: "Container content signature routing verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-signature-pdf",
+          title: "Container Signature PDF",
+          fileName: "mounted-pdf.asset",
+          mediaType: "application/octet-stream",
+          filePath: "/data/mounted-large-text.pdf"
+        },
+        {
+          sourceId: "container-signature-docx",
+          title: "Container Signature DOCX",
+          fileName: "mounted-docx.asset",
+          mediaType: "application/octet-stream",
+          filePath: "/data/mounted-project-plan.docx"
+        },
+        {
+          sourceId: "container-signature-pptx",
+          title: "Container Signature PPTX",
+          fileName: "mounted-pptx.asset",
+          mediaType: "application/octet-stream",
+          filePath: "/data/mounted-roadmap.pptx"
+        },
+        {
+          sourceId: "container-signature-xlsx",
+          title: "Container Signature XLSX",
+          fileName: "mounted-xlsx.asset",
+          mediaType: "application/octet-stream",
+          filePath: "/data/mounted-evidence.xlsx"
+        }
+      ],
+      maxWindowCharacters: 8000,
+      windowOverlapCharacters: 400
+    })
+  });
+  assert.equal(signatureRoutedRun.status, 201);
+  assert.equal(signatureRoutedRun.payload.status, "completed");
+  for (const [sourceId, formatId, signature, sniffedExtension, stage] of [
+    ["container-signature-pdf", "pdf", "pdf-header", ".pdf", "pdf.text.pdftotext"],
+    ["container-signature-docx", "word", "zip-ooxml-word", ".docx", "office.word.structured"],
+    ["container-signature-pptx", "presentation", "zip-ooxml-presentation", ".pptx", "office.presentation.slides"],
+    ["container-signature-xlsx", "spreadsheet", "zip-ooxml-spreadsheet", ".xlsx", "table.sheet.structured"]
+  ]) {
+    const signatureRouted = signatureRoutedRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === sourceId);
+    assert.ok(signatureRouted, `${sourceId} must be routed from content signature`);
+    assert.equal(signatureRouted.route.formatId, formatId);
+    assert.equal(signatureRouted.route.declaredExtension, ".asset");
+    assert.equal(signatureRouted.route.declaredMediaType, "application/octet-stream");
+    assert.equal(signatureRouted.route.sniffedExtension, sniffedExtension);
+    assert.equal(signatureRouted.route.contentSignature, signature);
+    assert.equal(signatureRouted.parserTrace.some((trace) => (
+      trace.stage === "content.signature" &&
+      trace.status === "completed" &&
+      trace.applied === true &&
+      trace.signature === signature
+    )), true);
+    assert.equal(signatureRouted.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
+    assert.equal(signatureRouted.formatConversionProfile.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
   }
 
   const timeFilteredRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {

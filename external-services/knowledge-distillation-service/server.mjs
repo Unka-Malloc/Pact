@@ -35,6 +35,7 @@ const FILE_REF_DIRECT_READ_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EX
 const STREAM_TEXT_CHUNK_BYTES = Math.max(4096, Number(process.env.PACT_EXTERNAL_KD_STREAM_TEXT_CHUNK_BYTES || 512 * 1024));
 const STREAM_TEXT_SAMPLE_CHARACTERS = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_STREAM_TEXT_SAMPLE_CHARACTERS || 200_000));
 const BINARY_PROFILE_SAMPLE_BYTES = Math.max(512, Number(process.env.PACT_EXTERNAL_KD_BINARY_PROFILE_SAMPLE_BYTES || 4096));
+const SIGNATURE_SNIFF_BYTES = Math.max(4096, Number(process.env.PACT_EXTERNAL_KD_SIGNATURE_SNIFF_BYTES || 256 * 1024));
 const EMBEDDING_DIMENSIONS = 128;
 const LEADER_CLUSTER_THRESHOLD = 0.34;
 const WINDOW_COMMUNITY_CLUSTER_THRESHOLD = 0.31;
@@ -288,10 +289,11 @@ const FORMAT_ROUTES = Object.freeze([
   {
     id: "image",
     label: "Image",
-    extensions: [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".pbm", ".pgm", ".pnm"],
+    extensions: [".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".pbm", ".pgm", ".pnm"],
     mediaTypes: [
       "image/png",
       "image/jpeg",
+      "image/gif",
       "image/tiff",
       "image/webp",
       "image/bmp",
@@ -792,6 +794,15 @@ const MEDIA_TYPE_BY_EXTENSION = new Map(Object.entries({
   ".ics": "text/calendar",
   ".vcs": "text/x-vcalendar"
 }));
+
+const GENERIC_MEDIA_TYPES = new Set([
+  "",
+  "application/octet-stream",
+  "binary/octet-stream",
+  "application/x-binary",
+  "application/unknown",
+  "unknown/unknown"
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -1427,6 +1438,14 @@ function inferMediaTypeFromExtension(extension = "") {
   return route?.mediaTypes?.[0] || "";
 }
 
+function routeForExtension(extension = "") {
+  return ROUTES_BY_EXTENSION.get(normalizeExtension(extension)) || null;
+}
+
+function mediaTypeForExtension(extension = "") {
+  return inferMediaTypeFromExtension(extension) || routeForExtension(extension)?.mediaTypes?.[0] || "application/octet-stream";
+}
+
 function normalizeByteSize(value, fallbackText = "") {
   const number = Number(value);
   if (Number.isFinite(number) && number >= 0) {
@@ -1452,6 +1471,214 @@ function contentPathFromDocument(document = {}, metadata = {}) {
       metadata.contentRef ||
       ""
   ).trim();
+}
+
+function readFileHeadSample(filePath = "", maxBytes = SIGNATURE_SNIFF_BYTES) {
+  const stat = fsSync.statSync(filePath);
+  const bytesToRead = Math.min(Math.max(0, Number(maxBytes || 0)), stat.size);
+  if (!bytesToRead) {
+    return Buffer.alloc(0);
+  }
+  const buffer = Buffer.alloc(bytesToRead);
+  let file = null;
+  try {
+    file = fsSync.openSync(filePath, "r");
+    const bytesRead = fsSync.readSync(file, buffer, 0, bytesToRead, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    if (file !== null) {
+      fsSync.closeSync(file);
+    }
+  }
+}
+
+function zipSignatureHint(buffer = Buffer.alloc(0)) {
+  const entries = readZipEntries(buffer);
+  const names = entries.map((entry) => String(entry.name || ""));
+  const lowerNames = names.map((name) => name.toLowerCase());
+  const mimetype = entries.find((entry) => entry.name === "mimetype")?.data?.toString("utf8").trim() || "";
+  if (lowerNames.some((name) => name === "word/document.xml" || name.startsWith("word/"))) {
+    return {
+      extension: ".docx",
+      mediaType: mediaTypeForExtension(".docx"),
+      signature: "zip-ooxml-word",
+      container: "zip",
+      evidence: names.slice(0, 12),
+      confidence: 0.99
+    };
+  }
+  if (lowerNames.some((name) => name.startsWith("ppt/"))) {
+    return {
+      extension: ".pptx",
+      mediaType: mediaTypeForExtension(".pptx"),
+      signature: "zip-ooxml-presentation",
+      container: "zip",
+      evidence: names.slice(0, 12),
+      confidence: 0.99
+    };
+  }
+  if (lowerNames.some((name) => name.startsWith("xl/"))) {
+    return {
+      extension: ".xlsx",
+      mediaType: mediaTypeForExtension(".xlsx"),
+      signature: "zip-ooxml-spreadsheet",
+      container: "zip",
+      evidence: names.slice(0, 12),
+      confidence: 0.99
+    };
+  }
+  if (/application\/vnd\.oasis\.opendocument\.spreadsheet/.test(mimetype)) {
+    return {
+      extension: ".ods",
+      mediaType: mediaTypeForExtension(".ods"),
+      signature: "zip-opendocument-spreadsheet",
+      container: "zip",
+      evidence: [mimetype, ...names].filter(Boolean).slice(0, 12),
+      confidence: 0.99
+    };
+  }
+  if (/application\/vnd\.oasis\.opendocument\.presentation/.test(mimetype)) {
+    return {
+      extension: ".odp",
+      mediaType: mediaTypeForExtension(".odp"),
+      signature: "zip-opendocument-presentation",
+      container: "zip",
+      evidence: [mimetype, ...names].filter(Boolean).slice(0, 12),
+      confidence: 0.99
+    };
+  }
+  if (/application\/vnd\.oasis\.opendocument\.text/.test(mimetype) || lowerNames.includes("content.xml")) {
+    return {
+      extension: ".odt",
+      mediaType: mediaTypeForExtension(".odt"),
+      signature: "zip-opendocument",
+      container: "zip",
+      evidence: [mimetype, ...names].filter(Boolean).slice(0, 12),
+      confidence: mimetype ? 0.99 : 0.82
+    };
+  }
+  if (/application\/epub\+zip/.test(mimetype) || lowerNames.includes("meta-inf/container.xml") || lowerNames.some((name) => name.endsWith(".xhtml"))) {
+    return {
+      extension: ".epub",
+      mediaType: mediaTypeForExtension(".epub"),
+      signature: "zip-epub",
+      container: "zip",
+      evidence: [mimetype, ...names].filter(Boolean).slice(0, 12),
+      confidence: 0.96
+    };
+  }
+  return {
+    extension: ".zip",
+    mediaType: "application/zip",
+    signature: "zip-container",
+    container: "zip",
+    evidence: names.slice(0, 12),
+    confidence: 0.9
+  };
+}
+
+function contentSignatureHint(buffer = Buffer.alloc(0)) {
+  const data = Buffer.from(buffer || []);
+  if (!data.length) {
+    return null;
+  }
+  const ascii = data.subarray(0, Math.min(data.length, 512)).toString("latin1");
+  const trimmed = ascii.replace(/^\uFEFF/, "").trimStart();
+  const starts = (value) => data.length >= value.length && data.subarray(0, value.length).equals(Buffer.from(value, "binary"));
+  if (starts("%PDF-")) {
+    return { extension: ".pdf", mediaType: "application/pdf", signature: "pdf-header", container: "pdf", evidence: ["%PDF-"], confidence: 0.99 };
+  }
+  if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { extension: ".png", mediaType: "image/png", signature: "png-header", container: "image", evidence: ["89504e470d0a1a0a"], confidence: 0.99 };
+  }
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return { extension: ".jpg", mediaType: "image/jpeg", signature: "jpeg-header", container: "image", evidence: ["ffd8ff"], confidence: 0.99 };
+  }
+  if (/^GIF8[79]a/.test(ascii)) {
+    return { extension: ".gif", mediaType: "image/gif", signature: "gif-header", container: "image", evidence: [ascii.slice(0, 6)], confidence: 0.98 };
+  }
+  if (starts("II*\x00") || starts("MM\x00*")) {
+    return { extension: ".tif", mediaType: "image/tiff", signature: "tiff-header", container: "image", evidence: [data.subarray(0, 4).toString("hex")], confidence: 0.98 };
+  }
+  if (data.length >= 12 && data.subarray(0, 4).toString("ascii") === "RIFF" && data.subarray(8, 12).toString("ascii") === "WEBP") {
+    return { extension: ".webp", mediaType: "image/webp", signature: "webp-riff-header", container: "image", evidence: ["RIFF", "WEBP"], confidence: 0.98 };
+  }
+  if (starts("BM")) {
+    return { extension: ".bmp", mediaType: "image/bmp", signature: "bmp-header", container: "image", evidence: ["BM"], confidence: 0.96 };
+  }
+  if (data.length >= 6 && data.subarray(0, 6).equals(Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]))) {
+    return { extension: ".7z", mediaType: "application/x-7z-compressed", signature: "7z-header", container: "archive", evidence: ["377abcaf271c"], confidence: 0.99 };
+  }
+  if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) {
+    return { extension: ".gz", mediaType: "application/gzip", signature: "gzip-header", container: "archive", evidence: ["1f8b"], confidence: 0.98 };
+  }
+  if (data.length >= 265 && data.subarray(257, 263).toString("ascii") === "ustar") {
+    return { extension: ".tar", mediaType: "application/x-tar", signature: "tar-ustar", container: "archive", evidence: ["ustar"], confidence: 0.98 };
+  }
+  if (data.length >= 4 && data.subarray(0, 2).toString("ascii") === "PK") {
+    return zipSignatureHint(data);
+  }
+  if (/^\{\\rtf/i.test(trimmed)) {
+    return { extension: ".rtf", mediaType: "application/rtf", signature: "rtf-header", container: "document", evidence: ["{\\rtf"], confidence: 0.94 };
+  }
+  if (/^(?:<!doctype\s+html|<html[\s>])/i.test(trimmed)) {
+    return { extension: ".html", mediaType: "text/html", signature: "html-leading-tag", container: "markup", evidence: [trimmed.slice(0, 40)], confidence: 0.88 };
+  }
+  return null;
+}
+
+function shouldApplySignatureHint(metadata = {}, hint = null) {
+  if (!hint?.extension || !hint?.mediaType) {
+    return false;
+  }
+  const currentRoute = lookupFormatRoute(metadata);
+  const hintedRoute = routeForExtension(hint.extension);
+  if (!hintedRoute) {
+    return false;
+  }
+  const currentMediaType = String(metadata.mediaType || "").toLowerCase();
+  const currentExtension = normalizeExtension(metadata.extension || "");
+  if (!currentRoute || GENERIC_MEDIA_TYPES.has(currentMediaType) || !ROUTES_BY_EXTENSION.has(currentExtension)) {
+    return true;
+  }
+  return currentRoute.id !== hintedRoute.id && Number(hint.confidence || 0) >= 0.95;
+}
+
+function applySignatureHintToMetadata(metadata = {}, hint = null) {
+  if (!shouldApplySignatureHint(metadata, hint)) {
+    return metadata;
+  }
+  return {
+    ...metadata,
+    declaredExtension: metadata.declaredExtension || metadata.extension || "",
+    declaredMediaType: metadata.declaredMediaType || metadata.mediaType || "",
+    extension: hint.extension,
+    mediaType: hint.mediaType,
+    sniffedExtension: hint.extension,
+    sniffedMediaType: hint.mediaType,
+    contentSignature: hint.signature || "",
+    contentSignatureConfidence: Number(hint.confidence || 0),
+    contentSignatureEvidence: hint.evidence || []
+  };
+}
+
+function contentSignatureTrace(hint = null, metadata = {}) {
+  if (!hint?.signature) {
+    return null;
+  }
+  return {
+    stage: "content.signature",
+    status: "completed",
+    strategy: "content-signature-routing.v1",
+    signature: hint.signature,
+    confidence: Number(hint.confidence || 0),
+    extension: hint.extension || "",
+    mediaType: hint.mediaType || "",
+    applied: metadata.contentSignature === hint.signature,
+    declaredExtension: metadata.declaredExtension || metadata.extension || "",
+    declaredMediaType: metadata.declaredMediaType || metadata.mediaType || "",
+    evidence: (hint.evidence || []).slice(0, 12)
+  };
 }
 
 function isStreamableTextRoute(route = null, metadata = {}) {
@@ -7059,7 +7286,13 @@ function buildDocumentRoute(document = {}) {
     mediaType: document.mediaType,
     byteSize: document.byteSize,
     declaredType: document.mediaType || document.extension || "unknown",
+    declaredExtension: document.declaredExtension || document.extension || "",
+    declaredMediaType: document.declaredMediaType || document.mediaType || "",
     sniffedType: route?.mediaTypes?.[0] || document.mediaType || "unknown",
+    sniffedExtension: document.sniffedExtension || document.extension || "",
+    sniffedMediaType: document.sniffedMediaType || route?.mediaTypes?.[0] || document.mediaType || "",
+    contentSignature: document.contentSignature || "",
+    contentSignatureConfidence: Number(document.contentSignatureConfidence || 0),
     formatId: route?.id || "unknown",
     pdfSubtype: route?.id === "pdf" ? document.pdfProfile?.subtype || "" : "",
     pdfSubtypeStrategy: route?.id === "pdf" ? document.pdfProfile?.strategy || PDF_SUBTYPE_ROUTING_STRATEGY : "",
@@ -8601,8 +8834,8 @@ function buildCorpusPlan(documents = [], input = {}) {
 
 function buildRoutePlan(corpusPlan) {
   return {
-    strategy: "extension-media-shape-routing.v1",
-    routeOrder: ["extension", "mediaType", "sourceKind", "textFallback"],
+    strategy: "content-signature-extension-media-shape-routing.v2",
+    routeOrder: ["contentSignature", "extension", "mediaType", "sourceKind", "textFallback"],
     supportedExtensions: Array.from(ROUTES_BY_EXTENSION.keys()).sort(),
     documents: corpusPlan.documents.map((document) => document.route)
   };
@@ -8630,10 +8863,31 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       document?.id ||
       `source-${index + 1}`
   );
-  const documentMetadata = options.metadataOverride
+  let documentMetadata = options.metadataOverride
     ? { ...options.metadataOverride }
     : normalizeDocumentMetadata(document, metadata, title, suppliedText);
-  const route = lookupFormatRoute(documentMetadata);
+  let signatureHint = null;
+  if (options.bufferOverride) {
+    signatureHint = contentSignatureHint(options.bufferOverride);
+  } else {
+    const inlineBuffer = bufferFromDocument(document, { ...metadata, ...documentMetadata });
+    if (inlineBuffer?.length) {
+      signatureHint = contentSignatureHint(inlineBuffer);
+    } else {
+      const candidatePath = options.filePathOverride || contentPathFromDocument(document, { ...metadata, ...documentMetadata });
+      const resolved = candidatePath ? resolveAllowedInputPath(candidatePath) : { path: "", error: "" };
+      if (resolved.path) {
+        try {
+          signatureHint = contentSignatureHint(readFileHeadSample(resolved.path));
+        } catch (_error) {
+          signatureHint = null;
+        }
+      }
+    }
+  }
+  documentMetadata = applySignatureHintToMetadata(documentMetadata, signatureHint);
+  const signatureTrace = contentSignatureTrace(signatureHint, documentMetadata);
+  let route = lookupFormatRoute(documentMetadata);
   let payload;
   if (options.bufferOverride) {
     payload = {
@@ -8805,7 +9059,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           pdfProfile: null
         }
     : parseSuppliedContent({ route, metadata: documentMetadata, text: suppliedText, buffer, runtimeStatus });
-  const parserTrace = [...(payload.parserTrace || []), ...parsed.parserTrace];
+  const parserTrace = [signatureTrace, ...(payload.parserTrace || []), ...parsed.parserTrace].filter(Boolean);
   const parseWarnings = [...(payload.warnings || []), ...parsed.warnings];
   const text = parsed.text.trim();
   const parsedStructureElements = Array.isArray(parsed.structureElements) ? parsed.structureElements : [];
@@ -8848,6 +9102,13 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       relativePath: documentMetadata.relativePath,
       extension: documentMetadata.extension,
       mediaType: documentMetadata.mediaType,
+      declaredExtension: documentMetadata.declaredExtension || "",
+      declaredMediaType: documentMetadata.declaredMediaType || "",
+      sniffedExtension: documentMetadata.sniffedExtension || "",
+      sniffedMediaType: documentMetadata.sniffedMediaType || "",
+      contentSignature: documentMetadata.contentSignature || "",
+      contentSignatureConfidence: Number(documentMetadata.contentSignatureConfidence || 0),
+      contentSignatureEvidence: documentMetadata.contentSignatureEvidence || [],
       byteSize: documentMetadata.byteSize,
       sourceKind: documentMetadata.sourceKind,
       manifestLine: Number(documentMetadata.manifestLine || 0),
@@ -13005,6 +13266,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
       PDF_SUBTYPE_ROUTING_STRATEGY,
+      "content-signature-routing.v1",
       "human-agent-response-profile-separation.v1",
       "professional-format-manifest.v1",
       "bounded-binary-file-profile.v1",
@@ -13021,8 +13283,41 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       corpusFields: ["timeRange", "timeConfidence", "timeSignals"]
     },
     fileCompatibility: {
-      routingStrategy: "extension-media-shape-routing.v1",
-      routeOrder: ["extension", "mediaType", "sourceKind", "textFallback"],
+      routingStrategy: "content-signature-extension-media-shape-routing.v2",
+      routeOrder: ["contentSignature", "extension", "mediaType", "sourceKind", "textFallback"],
+      contentSignatureRouting: {
+        supported: true,
+        strategy: "content-signature-routing.v1",
+        maxSniffBytes: SIGNATURE_SNIFF_BYTES,
+        signatures: [
+          "pdf-header",
+          "zip-ooxml-word",
+          "zip-ooxml-presentation",
+          "zip-ooxml-spreadsheet",
+          "zip-opendocument",
+          "zip-opendocument-spreadsheet",
+          "zip-opendocument-presentation",
+          "zip-epub",
+          "zip-container",
+          "png-header",
+          "jpeg-header",
+          "gif-header",
+          "tiff-header",
+          "webp-riff-header",
+          "bmp-header",
+          "gzip-header",
+          "tar-ustar",
+          "7z-header",
+          "rtf-header",
+          "html-leading-tag"
+        ],
+        fields: [
+          "parserTrace[].stage=content.signature",
+          "route.contentSignature",
+          "route.sniffedExtension",
+          "route.sniffedMediaType"
+        ]
+      },
       pdfSubtypeRouting: {
         supported: true,
         strategy: PDF_SUBTYPE_ROUTING_STRATEGY,
@@ -13064,6 +13359,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       builtInParsers: [
         "input.manifest.jsonl",
         "input.manifest.json",
+        "content.signature",
         "payload.file-ref",
         "payload.file-ref-deferred",
         "payload.file-ref-binary-profile",
