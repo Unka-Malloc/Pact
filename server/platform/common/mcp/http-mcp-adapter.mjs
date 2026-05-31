@@ -699,7 +699,18 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       vmMcpUrl: `${vmBaseUrl}/mcp`,
       clientPolicy: "discover-shared-hub-then-opt-in",
       defaultClientMutation: "none",
-      directHttp: true
+      directHttp: true,
+      sharedspace: {
+        outlet: MCP_SHAREDSPACE_TOOL_NAME,
+        referencePolicy: "use-public-workspace-ref",
+        exchangeReceipt: sharedspaceExchangeReceiptContract(),
+        coreOperations: [
+          "pact.agentWorkspace.create",
+          "pact.sharedspace.item.list",
+          "pact.sharedspace.file.read",
+          "pact.sharedspace.file.write"
+        ]
+      }
     },
     localDiscovery: {
       entrypoint: {

@@ -139,6 +139,11 @@ try {
   assert.equal(discovery.payload.identity.algorithm, "Ed25519");
   assert.ok(discovery.payload.identity.keyId);
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
+  assert.equal(discovery.payload.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(discovery.payload.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
+  assert.equal(discovery.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.locations.includes("notifications/pact/operation_reply.params.exchange"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
   assert.match(discovery.payload.installer.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
