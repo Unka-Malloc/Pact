@@ -81,6 +81,7 @@ const autoMarketplaceRoot = path.join(opencodeConfigDir, "codex-marketplace");
 const autoKiloConfigPath = path.join(opencodeConfigDir, "kilo", "kilo.json");
 const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "mcp_config.json");
 const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
+const fakeAgentCommandLog = path.join(opencodeConfigDir, "fake-agent-commands.log");
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
 const fakeCodexPath = path.join(fakeBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
 const fakeClaudePath = path.join(fakeBinDir, process.platform === "win32" ? "claude.cmd" : "claude");
@@ -95,6 +96,12 @@ async function installFakeAgentCli(filePath) {
   if (process.platform === "win32") {
     await fs.writeFile(filePath, [
       "@echo off",
+      "if not \"%PACT_FAKE_AGENT_LOG%\"==\"\" (",
+      "  if \"%1\"==\"mcp\" if \"%2\"==\"add-json\" echo %~n0^|mcp add-json^|%3^|%4^|%5>>\"%PACT_FAKE_AGENT_LOG%\"",
+      "  if \"%1\"==\"mcp\" if \"%2\"==\"set\" echo %~n0^|mcp set^|%3>>\"%PACT_FAKE_AGENT_LOG%\"",
+      "  if \"%1\"==\"mcp\" if \"%2\"==\"show\" echo %~n0^|mcp show^|%3>>\"%PACT_FAKE_AGENT_LOG%\"",
+      "  if \"%1\"==\"mcp\" if \"%2\"==\"add\" if \"%~n0\"==\"codex\" echo %~n0^|mcp add^|%3^|%4^|%5^|%6^|%7>>\"%PACT_FAKE_AGENT_LOG%\"",
+      ")",
       "if \"%1\"==\"mcp\" if \"%2\"==\"--help\" (",
       "  echo Usage: fake-agent mcp add add-json get list remove set show",
       "  exit /b 0",
@@ -125,6 +132,18 @@ async function installFakeAgentCli(filePath) {
   }
   await fs.writeFile(filePath, [
     "#!/bin/sh",
+    "if [ -n \"$PACT_FAKE_AGENT_LOG\" ]; then",
+    "  command_name=$(basename \"$0\")",
+    "  if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"add-json\" ]; then",
+    "    printf '%s|mcp add-json|%s|%s|%s\\n' \"$command_name\" \"$3\" \"$4\" \"$5\" >> \"$PACT_FAKE_AGENT_LOG\"",
+    "  elif [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"set\" ]; then",
+    "    printf '%s|mcp set|%s\\n' \"$command_name\" \"$3\" >> \"$PACT_FAKE_AGENT_LOG\"",
+    "  elif [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"show\" ]; then",
+    "    printf '%s|mcp show|%s\\n' \"$command_name\" \"$3\" >> \"$PACT_FAKE_AGENT_LOG\"",
+    "  elif [ \"$command_name\" = \"codex\" ] && [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"add\" ]; then",
+    "    printf '%s|mcp add|%s|%s|%s|%s|%s\\n' \"$command_name\" \"$3\" \"$4\" \"$5\" \"$6\" \"$7\" >> \"$PACT_FAKE_AGENT_LOG\"",
+    "  fi",
+    "fi",
     "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
     "  echo 'Usage: fake-agent mcp add add-json get list remove set show'",
     "  exit 0",
@@ -377,7 +396,8 @@ try {
       "--no-verify",
       "--json"
     ], 60000, {
-      PATH: `${fakeBinDir}${path.delimiter}${process.env.PATH || ""}`
+      PATH: `${fakeBinDir}${path.delimiter}${process.env.PATH || ""}`,
+      PACT_FAKE_AGENT_LOG: fakeAgentCommandLog
     });
     if (result.code !== 0) {
       console.log(`\n      stdout: ${result.stdout.slice(0, 300)}`);
@@ -413,6 +433,13 @@ try {
     assert.equal(kiloConfig.mcp?.pact?.url, `${serverUrl}/mcp`);
     const antigravityConfig = JSON.parse(await fs.readFile(autoAntigravityConfigPath, "utf8"));
     assert.equal(antigravityConfig.mcpServers?.pact?.serverUrl, `${serverUrl}/mcp`);
+
+    const commandLog = await fs.readFile(fakeAgentCommandLog, "utf8");
+    assert.match(commandLog, new RegExp(`codex\\|mcp add\\|pact\\|--url\\|${serverUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\/mcp\\|--bearer-token-env-var\\|${autoTokenEnv}`));
+    assert.match(commandLog, /claude\|mcp add-json\|--scope\|user\|pact/);
+    assert.match(commandLog, /openclaw\|mcp set\|pact/);
+    assert.match(commandLog, /openclaw\|mcp show\|pact/);
+    assert.equal(commandLog.includes(token), false, "fake agent command log must not persist grant token values");
   });
 
   // ── SECTION 6: Verify installed config works ──
