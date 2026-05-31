@@ -683,7 +683,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         `${baseUrl}/api/mcp/discovery`
       ],
       lookupOrder: [
-        "pact-mcp discover-local",
+        "pact-mcp discover-local --json",
         "PACT_MCP_URL",
         "PACT_MCP_DISCOVERY_URL",
         "PACT_MCP_DISCOVERY_FILE",

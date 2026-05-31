@@ -966,11 +966,11 @@ try {
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.equal(selectedTargets.includes(target), true, `${target} should be selected by auto install: ${selectedTargets.join(", ")}`);
     }
-    assert.equal(payload.selected?.some((item) => item.target === "gemini-cli"), true);
-    assert.equal(payload.selected?.some((item) => item.target === "kilo-code"), true);
-    assert.equal(payload.selected?.some((item) => item.target === "copilot"), true);
-    assert.equal(payload.selected?.some((item) => item.target === "antigravity"), true);
-    assert.equal(payload.selected?.some((item) => item.target === "opencode"), true);
+    assert.equal(payload.selected?.some((item) => item.target === "gemini-cli"), true, "gemini-cli should be selected by auto install");
+    assert.equal(payload.selected?.some((item) => item.target === "kilo-code"), true, "kilo-code should be selected by auto install");
+    assert.equal(payload.selected?.some((item) => item.target === "copilot"), true, "copilot should be selected by auto install");
+    assert.equal(payload.selected?.some((item) => item.target === "antigravity"), true, "antigravity should be selected by auto install");
+    assert.equal(payload.selected?.some((item) => item.target === "opencode"), true, "opencode should be selected by auto install");
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.equal(payload.installed?.[target]?.status, "installed", `${target} should be installed by auto install`);
     }
@@ -1001,6 +1001,7 @@ try {
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.codex?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.codex?.installCommand, `${npxPrefix} install --target codex --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
+    assert.ok(manifest.discovery?.lookupOrder?.includes("pact-mcp discover-local --json"));
     const uninstallResult = await spawnConnector([
       "uninstall",
       "--target", "openclaw",

@@ -232,7 +232,7 @@ function usage() {
     "  pact-mcp uninstall",
     "  pact-mcp uninstall --target claude-code,codex,openclaw",
     "  pact-mcp scan --json",
-    "  pact-mcp discover-local",
+    "  pact-mcp discover-local --json",
     "  pact-mcp doctor",
     "  pact-mcp discover",
     "  pact-mcp server-config --set --url http://host:port --name local",
@@ -2319,7 +2319,7 @@ function buildDeviceHubManifest({
       localFiles: [discoveryPath],
       env,
       lookupOrder: [
-        "pact-mcp discover-local",
+        "pact-mcp discover-local --json",
         "PACT_MCP_URL",
         "PACT_MCP_DISCOVERY_URL",
         "PACT_MCP_DISCOVERY_FILE",
@@ -2944,7 +2944,7 @@ async function resetServerConfig({ options, publishEnv = true }) {
       localFiles: [discoveryPath],
       env: {},
       lookupOrder: [
-        "pact-mcp discover-local",
+        "pact-mcp discover-local --json",
         "signed local port scan"
       ]
     },

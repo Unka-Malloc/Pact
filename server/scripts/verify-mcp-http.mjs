@@ -205,6 +205,7 @@ try {
   assert.equal(discovery.payload.localDiscovery.files.length, 1);
   assert.match(discovery.payload.localDiscovery.entrypoint.command, /discover-local/);
   assert.match(discovery.payload.localDiscovery.entrypoint.command, /--json/);
+  assert.ok(discovery.payload.localDiscovery.lookupOrder.includes("pact-mcp discover-local --json"));
   assert.equal(discovery.payload.installer.portable.requiresInstalledNode, false);
   assert.equal(discovery.payload.installer.portable.preferredArchive, "zip");
   assert.equal(discovery.payload.installer.portable.bootstrapScript, "pact-mcp-install.sh");
