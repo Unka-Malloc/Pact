@@ -7,13 +7,13 @@ Pact MCP 以 GitHub Release connector 包分发。普通用户不需要克隆 Pa
 中文安装脚本：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
 ```
 
 英文安装脚本：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 安装脚本会从 GitHub Releases 下载最新 connector，校验 SHA256，把 connector 安装到 `~/.pact/mcp/connector`，然后打开多选 TUI。机器上有 Node.js 20+ 时使用小体积源码 tarball；没有 Node.js 时下载更大的 portable zip，zip 内置 Node 运行时。
@@ -57,20 +57,20 @@ TUI 操作：
 
 ```bash
 PACT_MCP_BASE_URL=http://<host>:<port> \
-  /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
+  /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
 ```
 
 使用自定义本地安装目录：
 
 ```bash
 PACT_MCP_INSTALL_DIR="$HOME/.local/share/pact-mcp" \
-  /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
+  /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
 ```
 
 在 shell 命令后传递 connector 安装参数：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --no-verify
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --no-verify
 ```
 
 非交互智能体 shell 可以直接使用自动检测模式：
@@ -89,7 +89,7 @@ auto target 形态。它会覆盖 Codex、Claude Code、OpenClaw 以及 connecto
 能验证到的所有其它受支持客户端：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target auto
 ```
 
 管理本机服务端地址 profile：
@@ -118,13 +118,13 @@ zip 包内置 Node.js 运行时。
 中文卸载脚本：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-uninstall.zh-CN.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-uninstall.zh-CN.sh)"
 ```
 
 英文卸载脚本：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-uninstall.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-uninstall.sh)"
 ```
 
 ## 验证

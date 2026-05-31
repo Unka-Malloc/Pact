@@ -10,13 +10,13 @@ missing, it falls back to the portable package with its own runtime.
 ## One Command
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 A localized Chinese installer script is also published:
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"
 ```
 
 The command downloads the latest connector from GitHub Releases, verifies its
@@ -90,20 +90,20 @@ verification:
 
 ```bash
 PACT_MCP_BASE_URL=http://<host>:<port> \
-  /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+  /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 Use a custom local install directory:
 
 ```bash
 PACT_MCP_INSTALL_DIR="$HOME/.local/share/pact-mcp" \
-  /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+  /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 Pass connector install flags after the shell command:
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --no-verify
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --no-verify
 ```
 
 Unattended agent shells can use automatic detection directly:
@@ -122,7 +122,7 @@ auto target form. This covers Codex, Claude Code, OpenClaw, and every other
 supported client that the connector can verify:
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
 ```
 
 Manage local server address profiles:

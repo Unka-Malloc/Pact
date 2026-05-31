@@ -687,13 +687,13 @@ npx pact-mcp-connector@latest install
 GitHub Release 必须额外提供一条安装命令入口；它校验 SHA256、安装到 `~/.pact/mcp/connector`，并立即启动同一个多选 TUI。脚本默认优先下载 npm/source tarball，只有没有可用 Node.js 时才 fallback 到 portable zip：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 GitHub Release 还必须提供对称的一条卸载命令入口；它复用同一个 release connector，扫描全机/VM/container 中支持 MCP 子命令的客户端，打开多选 TUI，并只删除用户选中的客户端配置：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-uninstall.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-uninstall.sh)"
 ```
 
 脚本化安装仍使用显式 target；默认由 connector 在本机向已验证签名的 Pact 服务申请 Tool Management grant token：
@@ -705,7 +705,7 @@ npx pact-mcp-connector@latest install --target codex
 面向 Claude Code、Codex、OpenClaw 等智能体自助执行的无人值守入口必须使用 auto target，一次安装 connector 能验证到的全部受支持客户端：
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
 ```
 
 只有使用预先签发的自定义 grant 时才传入 token：

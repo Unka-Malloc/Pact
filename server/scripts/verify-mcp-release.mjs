@@ -37,6 +37,19 @@ function assertResilientOneLineCommand(command) {
   assert.match(command, /curl -fL --retry 3 --connect-timeout 20 -sS/);
 }
 
+async function assertPublishedInstallDocsUseResilientCurl() {
+  for (const filePath of [
+    path.join(projectRoot, "docs", "MCP_INSTALL.md"),
+    path.join(projectRoot, "docs", "MCP_INSTALL.zh-CN.md"),
+    path.join(projectRoot, "docs", "PROTOCOLS.md"),
+    path.join(projectRoot, "mcp-connector", "README.md")
+  ]) {
+    const text = await fs.readFile(filePath, "utf8");
+    assert.doesNotMatch(text, /curl -fsSL/);
+    assert.match(text, /curl -fL --retry 3 --connect-timeout 20 -sS/);
+  }
+}
+
 function resolveVerifyTargetPlatform() {
   if (process.platform === "darwin") {
     return "darwin-arm64";
@@ -251,6 +264,7 @@ try {
   ]) {
     assertResilientOneLineCommand(command);
   }
+  await assertPublishedInstallDocsUseResilientCurl();
   await run("sh", ["-n", result.bootstrapInstallerPath]);
   await run("sh", ["-n", result.bootstrapUninstallerPath]);
   await run("sh", ["-n", result.bootstrapInstallerZhCNPath]);
