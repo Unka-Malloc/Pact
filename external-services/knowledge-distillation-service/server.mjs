@@ -34,6 +34,7 @@ const LARGE_TEXT_CHARACTERS = 1_000_000;
 const FILE_REF_DIRECT_READ_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_FILE_REF_DIRECT_READ_MAX_BYTES || 8 * 1024 * 1024));
 const STREAM_TEXT_CHUNK_BYTES = Math.max(4096, Number(process.env.PACT_EXTERNAL_KD_STREAM_TEXT_CHUNK_BYTES || 512 * 1024));
 const STREAM_TEXT_SAMPLE_CHARACTERS = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_STREAM_TEXT_SAMPLE_CHARACTERS || 200_000));
+const BINARY_PROFILE_SAMPLE_BYTES = Math.max(512, Number(process.env.PACT_EXTERNAL_KD_BINARY_PROFILE_SAMPLE_BYTES || 4096));
 const EMBEDDING_DIMENSIONS = 128;
 const LEADER_CLUSTER_THRESHOLD = 0.34;
 const WINDOW_COMMUNITY_CLUSTER_THRESHOLD = 0.31;
@@ -1515,6 +1516,24 @@ function isTikaFileRoute(route = null, metadata = {}) {
   return false;
 }
 
+function binaryProfilePayload({ filePath = "", byteSize = 0, suppliedPayloadKind = "file-ref-binary-profile", mode = "binary-profile" } = {}) {
+  return {
+    buffer: null,
+    suppliedPayloadKind,
+    filePath,
+    binaryProfileFilePath: filePath,
+    byteSize,
+    parserTrace: [{
+      stage: "payload.file-ref",
+      status: "completed",
+      path: filePath,
+      bytes: byteSize,
+      mode
+    }],
+    warnings: []
+  };
+}
+
 function isMsgRoute(route = null, metadata = {}) {
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
   const mediaType = String(metadata.mediaType || "").toLowerCase();
@@ -1720,27 +1739,12 @@ function loadDocumentPayload(document = {}, metadata = {}, route = null) {
       };
     }
     if (stat.size > FILE_REF_DIRECT_READ_MAX_BYTES) {
-      return {
-        buffer: null,
-        suppliedPayloadKind: "file-ref-deferred",
+      return binaryProfilePayload({
         filePath: resolved.path,
         byteSize: stat.size,
-        parserTrace: [
-          {
-            stage: "payload.file-ref",
-            status: "completed",
-            path: resolved.path,
-            bytes: stat.size
-          },
-          {
-            stage: "payload.file-ref-deferred",
-            status: "requires-streaming-parser",
-            maxDirectReadBytes: FILE_REF_DIRECT_READ_MAX_BYTES,
-            routeId: route?.id || "unknown"
-          }
-        ],
-        warnings: ["file-ref-streaming-parser-required"]
-      };
+        suppliedPayloadKind: "file-ref-binary-profile",
+        mode: "bounded-binary-profile"
+      });
     }
     return {
       buffer: fsSync.readFileSync(resolved.path),
@@ -7970,6 +7974,105 @@ function streamTextFileAnalysis({ document = {}, route = null, metadata = {}, fi
   };
 }
 
+function byteEntropyScore(buffer = Buffer.alloc(0)) {
+  if (!buffer.length) {
+    return 0;
+  }
+  const counts = new Map();
+  for (const byte of buffer) {
+    counts.set(byte, (counts.get(byte) || 0) + 1);
+  }
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const probability = count / buffer.length;
+    entropy -= probability * Math.log2(probability);
+  }
+  return Number((entropy / 8).toFixed(4));
+}
+
+function readBinarySample(filePath = "", byteSize = 0) {
+  const sampleBytes = Math.min(BINARY_PROFILE_SAMPLE_BYTES, Math.max(0, byteSize));
+  if (!sampleBytes) {
+    return { head: Buffer.alloc(0), tail: Buffer.alloc(0) };
+  }
+  const head = Buffer.alloc(sampleBytes);
+  const tail = Buffer.alloc(sampleBytes);
+  let file = null;
+  try {
+    file = fsSync.openSync(filePath, "r");
+    const headBytes = fsSync.readSync(file, head, 0, sampleBytes, 0);
+    const tailOffset = Math.max(0, byteSize - sampleBytes);
+    const tailBytes = fsSync.readSync(file, tail, 0, sampleBytes, tailOffset);
+    return {
+      head: head.subarray(0, headBytes),
+      tail: tail.subarray(0, tailBytes)
+    };
+  } finally {
+    if (file !== null) {
+      fsSync.closeSync(file);
+    }
+  }
+}
+
+function hashFileStreaming(filePath = "") {
+  const hash = crypto.createHash("sha256");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  let file = null;
+  let bytes = 0;
+  try {
+    file = fsSync.openSync(filePath, "r");
+    while (true) {
+      const bytesRead = fsSync.readSync(file, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      bytes += bytesRead;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    if (file !== null) {
+      fsSync.closeSync(file);
+    }
+  }
+  return {
+    bytes,
+    contentHash: `sha256:${hash.digest("hex")}`
+  };
+}
+
+function parseBinaryFileProfile({ document = {}, metadata = {}, route = null, filePath = "" } = {}) {
+  const stat = fsSync.statSync(filePath);
+  const hashed = hashFileStreaming(filePath);
+  const sample = readBinarySample(filePath, stat.size);
+  const sampleBuffer = Buffer.concat([sample.head, sample.tail]);
+  const headHex = sample.head.toString("hex").slice(0, 128);
+  const tailHex = sample.tail.toString("hex").slice(0, 128);
+  return {
+    text: "",
+    totalCharacters: 0,
+    contentHash: hashed.contentHash,
+    windowPlan: null,
+    parserTrace: [{
+      stage: "payload.file-ref-binary-profile",
+      status: "completed",
+      strategy: "bounded-binary-file-profile.v1",
+      path: filePath,
+      bytes: stat.size,
+      hashedBytes: hashed.bytes,
+      routeId: route?.id || "unknown",
+      extension: metadata.extension || "",
+      mediaType: metadata.mediaType || "",
+      sampleBytes: sampleBuffer.length,
+      headHex,
+      tailHex,
+      entropyScore: byteEntropyScore(sampleBuffer),
+      directReadAvoided: stat.size > FILE_REF_DIRECT_READ_MAX_BYTES,
+      maxDirectReadBytes: FILE_REF_DIRECT_READ_MAX_BYTES
+    }],
+    warnings: ["binary-profile-only"]
+  };
+}
+
 function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeStatus = null, options = {} } = {}) {
   const runtime = runtimeStatus?.runtimes?.["pdf.pdftotext"];
   if (!runtime?.available) {
@@ -8549,6 +8652,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
     const mboxFilePath = isMboxRoute(route, documentMetadata) ? options.filePathOverride : "";
     const tikaFilePath = isTikaFileRoute(route, documentMetadata) ? options.filePathOverride : "";
     const hasFileParserPath = streamText || archiveFilePath || pdfFilePath || structuredZipFilePath || mboxFilePath || tikaFilePath;
+    const binaryProfileFilePath = !hasFileParserPath && stat.size > FILE_REF_DIRECT_READ_MAX_BYTES ? options.filePathOverride : "";
     payload = {
       buffer: hasFileParserPath || stat.size > FILE_REF_DIRECT_READ_MAX_BYTES
         ? null
@@ -8560,6 +8664,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       structuredZipFilePath,
       mboxFilePath,
       tikaFilePath,
+      binaryProfileFilePath,
       streamText,
       byteSize: stat.size,
       parserTrace: [{
@@ -8567,20 +8672,10 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
         status: "completed",
         path: options.filePathOverride,
         bytes: stat.size,
-        mode: streamText ? "streaming-windowed" : archiveFilePath ? "archive-file-ref" : pdfFilePath ? "pdf-file-ref" : structuredZipFilePath ? "structured-zip-file-ref" : mboxFilePath ? "mbox-file-ref" : tikaFilePath ? "tika-file-ref" : "archive-entry-file-ref"
+        mode: streamText ? "streaming-windowed" : archiveFilePath ? "archive-file-ref" : pdfFilePath ? "pdf-file-ref" : structuredZipFilePath ? "structured-zip-file-ref" : mboxFilePath ? "mbox-file-ref" : tikaFilePath ? "tika-file-ref" : binaryProfileFilePath ? "bounded-binary-profile" : "archive-entry-file-ref"
       }],
-      warnings: stat.size > FILE_REF_DIRECT_READ_MAX_BYTES && !hasFileParserPath
-        ? ["file-ref-streaming-parser-required"]
-        : []
+      warnings: []
     };
-    if (stat.size > FILE_REF_DIRECT_READ_MAX_BYTES && !hasFileParserPath) {
-      payload.parserTrace.push({
-        stage: "payload.file-ref-deferred",
-        status: "requires-streaming-parser",
-        maxDirectReadBytes: FILE_REF_DIRECT_READ_MAX_BYTES,
-        routeId: route?.id || "unknown"
-      });
-    }
   } else {
     payload = loadDocumentPayload(document, { ...metadata, ...documentMetadata }, route);
   }
@@ -8633,6 +8728,14 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
         options: options.windowOptions || {}
       })
     : null;
+  const binaryProfileAnalysis = payload.binaryProfileFilePath
+    ? parseBinaryFileProfile({
+        document: { sourceId, title, byteSize: documentMetadata.byteSize },
+        metadata: documentMetadata,
+        route,
+        filePath: payload.binaryProfileFilePath
+      })
+    : null;
   const parsed = streamAnalysis
     ? {
         text: streamAnalysis.textSample,
@@ -8678,6 +8781,15 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           structureFormat: "",
           pdfProfile: null
         }
+    : binaryProfileAnalysis
+      ? {
+          text: "",
+          parserTrace: binaryProfileAnalysis.parserTrace,
+          warnings: binaryProfileAnalysis.warnings,
+          structureElements: [],
+          structureFormat: "",
+          pdfProfile: null
+        }
     : payload.archiveFilePath && isArchiveRoute(route)
       ? {
           text: "",
@@ -8711,7 +8823,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       source: "text-lines"
     });
   }
-  const totalTextCharacters = streamAnalysis?.totalCharacters || pdfFileAnalysis?.totalCharacters || structuredZipAnalysis?.totalCharacters || mboxFileAnalysis?.totalCharacters || tikaFileAnalysis?.totalCharacters || text.length;
+  const totalTextCharacters = streamAnalysis?.totalCharacters || pdfFileAnalysis?.totalCharacters || structuredZipAnalysis?.totalCharacters || mboxFileAnalysis?.totalCharacters || tikaFileAnalysis?.totalCharacters || binaryProfileAnalysis?.totalCharacters || text.length;
   const inferredTime = inferTimeMetadataFromText(text);
   if (inferredTime.timeRange) {
     parserTrace.push({
@@ -8750,7 +8862,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       totalTextCharacters,
       structureElements,
       structureFormat,
-      streamingWindowPlan: streamAnalysis?.windowPlan || pdfFileAnalysis?.windowPlan || structuredZipAnalysis?.windowPlan || tikaFileAnalysis?.windowPlan || null,
+      streamingWindowPlan: streamAnalysis?.windowPlan || pdfFileAnalysis?.windowPlan || structuredZipAnalysis?.windowPlan || tikaFileAnalysis?.windowPlan || binaryProfileAnalysis?.windowPlan || null,
       archiveFilePath: payload.archiveFilePath || "",
       pdfFilePath: payload.pdfFilePath || "",
       mboxFilePath: payload.mboxFilePath || "",
@@ -8759,7 +8871,7 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
       parseStatus: totalTextCharacters > 0 ? "completed" : "empty",
       suppliedPayloadKind: suppliedText ? "text" : options.suppliedPayloadKind || payload.suppliedPayloadKind || (buffer?.length ? "base64" : "metadata-only"),
       capturedAt: String(document?.capturedAt || metadata.capturedAt || options.capturedAt || ""),
-      contentHash: document?.contentHash || streamAnalysis?.contentHash || pdfFileAnalysis?.contentHash || structuredZipAnalysis?.contentHash || mboxFileAnalysis?.contentHash || tikaFileAnalysis?.contentHash || `sha256:${sha(`${title}\n${text}`)}`
+      contentHash: document?.contentHash || streamAnalysis?.contentHash || pdfFileAnalysis?.contentHash || structuredZipAnalysis?.contentHash || mboxFileAnalysis?.contentHash || tikaFileAnalysis?.contentHash || binaryProfileAnalysis?.contentHash || `sha256:${sha(`${title}\n${text}`)}`
     }
   };
 }
@@ -12895,6 +13007,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       PDF_SUBTYPE_ROUTING_STRATEGY,
       "human-agent-response-profile-separation.v1",
       "professional-format-manifest.v1",
+      "bounded-binary-file-profile.v1",
       EVIDENCE_QUERY_STRATEGY,
       PROJECT_EVIDENCE_QUERY_STRATEGY,
       REFERENCE_GAP_REPORT_STRATEGY,
@@ -12939,6 +13052,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       largeTextCharacters: LARGE_TEXT_CHARACTERS,
       manifestStrategy: "inline-or-streaming-manifest-document-input.v1",
       structuredZipFileRefStrategy: "structured-zip-entry-bounded-or-streaming.v1",
+      binaryProfileStrategy: "bounded-binary-file-profile.v1",
       structuredZipEntryMaxBytes: STRUCTURED_ZIP_ENTRY_MAX_BYTES,
       manifestMaxDocuments: MANIFEST_MAX_DOCUMENTS,
       manifestJsonDirectReadMaxBytes: MANIFEST_JSON_DIRECT_READ_MAX_BYTES,
@@ -12952,6 +13066,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "input.manifest.json",
         "payload.file-ref",
         "payload.file-ref-deferred",
+        "payload.file-ref-binary-profile",
         "payload.stream-text",
         "text.direct",
         "text.markdown",

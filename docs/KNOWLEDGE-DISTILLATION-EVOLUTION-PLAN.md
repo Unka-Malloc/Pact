@@ -387,6 +387,7 @@ raw corpus item 标准字段：
 - API 层支持 `rawDocumentsManifestPath`/`rawDocumentsManifestRef` 指向 JSONL 文档清单，服务端逐行读取 manifest，再把每个条目交给 filePath/contentRef 路由，避免大工程把所有文档塞进一次请求体。
 - 解析层按页、sheet、slide、section 或 block 流式产出。
 - 结构化 ZIP 文件引用按结构 entry 读取：DOCX/PPTX/XLSX/OpenDocument/EPUB 只选择文档 XML/XHTML，不把图片、媒体和无关包内容交给解析器；单个结构 entry 超过边界时进入 `structured-zip.large-entry-stream`，保留文本窗口、错误边界和 parser trace。
+- 对没有专用文本解析器的超大或未知 filePath 使用 `bounded-binary-file-profile.v1`，流式计算 hash 和有限头尾采样，禁止整文件读入内存，也不把二进制字节伪造成文本。
 - corpus 层按结构边界建立窗口：
   - 默认窗口按字符、页、元素或 block 混合控制。
   - Markdown、标记语言、OOXML、OpenDocument、EPUB、PDF 基础文本块、PDF 文本定位几何、Word 批注/脚注/尾注、Word/PowerPoint/OpenDocument 表格单元格、PowerPoint shape 几何、Excel 单元格坐标、SpreadsheetML 公式和后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。

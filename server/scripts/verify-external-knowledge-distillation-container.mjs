@@ -406,6 +406,7 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.binaryProfileStrategy, "bounded-binary-file-profile.v1");
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
@@ -467,6 +468,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-binary-profile"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.stream-text"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("config.key-value"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
@@ -1341,6 +1343,7 @@ try {
       "printf '%s\\n' 'vendor,total,date' 'ContainerManifest,88,2026-07-03' > /data/manifest-input.csv",
       "printf '%s\\n' '{\"sourceId\":\"container-manifest-md\",\"title\":\"Container Manifest Markdown\",\"fileName\":\"manifest-input.md\",\"mediaType\":\"text/markdown\",\"filePath\":\"/data/manifest-input.md\"}' '{\"sourceId\":\"container-manifest-csv\",\"title\":\"Container Manifest CSV\",\"fileName\":\"manifest-input.csv\",\"mediaType\":\"text/csv\",\"filePath\":\"/data/manifest-input.csv\"}' > /data/raw-documents-manifest.jsonl",
       "dd if=/dev/zero of=/data/oversized-binary.pdf bs=1048576 count=9 status=none",
+      "dd if=/dev/zero of=/data/oversized-unknown.asset bs=1048576 count=9 status=none && printf '%s' 'unknown-binary-head' | dd of=/data/oversized-unknown.asset bs=1 seek=0 conv=notrunc status=none",
       "printf '%s\\n' '# Mounted Archive Project' > /tmp/pact-mounted-archive/large-project.md",
       "yes 'Mounted archive package evidence must expand from filePath and stream child windows.' | head -n 120000 >> /tmp/pact-mounted-archive/large-project.md",
       "printf '%s\\n' 'vendor,total' 'ArchiveMountCo,256' > /tmp/pact-mounted-archive/invoice.csv",
@@ -1807,6 +1810,40 @@ NODE`
   assert.equal(deferredFileRef.route.formatId, "pdf");
   assert.equal(deferredFileRef.parserTrace.some((trace) => trace.stage === "pdf.text.pdftotext" && trace.status === "failed"), true);
   assert.equal(deferredFileRef.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+
+  const binaryProfileRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container oversized unknown binary profile verification",
+      title: "Container oversized unknown binary profile verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-binary-profile-file-ref",
+          title: "Container Binary Profile File Ref",
+          fileName: "oversized-unknown.asset",
+          mediaType: "application/octet-stream",
+          filePath: "/data/oversized-unknown.asset"
+        }
+      ]
+    })
+  });
+  assert.equal(binaryProfileRun.status, 201);
+  assert.equal(binaryProfileRun.payload.status, "failed");
+  const binaryProfileFileRef = binaryProfileRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-binary-profile-file-ref");
+  assert.ok(binaryProfileFileRef, "oversized unknown filePath source must remain visible in corpus");
+  assert.equal(binaryProfileFileRef.route.formatId, "unknown");
+  assert.equal(binaryProfileFileRef.quality.suppliedPayloadKind, "file-ref-binary-profile");
+  assert.equal(/^sha256:[a-f0-9]{64}$/.test(binaryProfileFileRef.contentHash), true);
+  assert.equal(binaryProfileFileRef.parserTrace.some((trace) => (
+    trace.stage === "payload.file-ref-binary-profile" &&
+    trace.strategy === "bounded-binary-file-profile.v1" &&
+    trace.directReadAvoided === true &&
+    trace.hashedBytes === binaryProfileFileRef.byteSize &&
+    trace.sampleBytes > 0
+  )), true);
+  assert.equal(binaryProfileFileRef.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
 
   const attachedPackageBytes = zipSync({
     "mail/decision.md": strToU8("# Mail Decision\nEmail attachment archive child evidence for project distillation."),

@@ -16,7 +16,7 @@ Request payloads can provide either direct text fields or a base64 file payload:
 - Mounted PDF payloads use Poppler `pdftotext` into a temporary text stream and then the normal windowing path.
 - Mounted DOCX, PPTX, XLSX, OpenDocument, and EPUB payloads are expanded as ZIP containers from their file path. The parser selects only structural XML/XHTML entries, uses bounded in-memory reads for native element extraction, and falls back to streaming structural text when a selected entry is too large.
 - Mounted legacy Office and RTF payloads such as DOC, PPT, XLS, and RTF use Apache Tika from their file path into temporary text, then the normal windowing path is used for distillation.
-- Oversized mounted binary files without a format-specific file parser are rejected from the direct in-memory path with `payload.file-ref-deferred`; they need a streaming parser path instead of risking process memory.
+- Oversized mounted binary files without a format-specific text parser use `bounded-binary-file-profile.v1`: the service streams a hash and bounded head/tail byte sample, records route and size evidence, and avoids direct in-memory reads without pretending binary bytes are text.
 - File hints: `fileName`, `mediaType`, `byteSize`, `sourceId`, and optional `metadata`.
 
 API namespace:
@@ -113,6 +113,7 @@ Built-in payload parsers:
 - Image OCR through Tesseract when `tesseract-ocr` is installed.
 - Scanned PDF OCR through Poppler page rasterization plus Tesseract when both runtimes are installed.
 - Mounted file references from configured input roots, with chunked text windowing for streamable text formats.
+- Bounded binary file profiles for oversized or unknown file references without a text parser, emitted as `payload.file-ref-binary-profile`.
 - Mounted archive file references with child-entry file refs, so project packages do not need to be base64 encoded or fully loaded into Node memory.
 - Mounted PDF file references with Poppler `pdftotext` extraction into chunked windows.
 - Mounted structured ZIP file references for DOCX, PPTX, XLSX, ODT/ODS/ODP, and EPUB, with structural text extraction into chunked windows or element-aware windows when native OOXML structure is available.
@@ -157,6 +158,7 @@ Built-in algorithm baseline:
 - `pdf-subtype-routing.v1`: turns PDF parser signals into machine-readable subtype, risk flags, image/font/ToUnicode counts, text/OCR/Tika character counts, and route-level `pdfSubtype`.
 - `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates and known loss boundaries.
 - `human-agent-response-profile-separation.v1` and `professional-format-manifest.v1`: split control-plane summaries from agent payloads and make professional parsing/conversion evidence queryable without scanning the full result JSON.
+- `bounded-binary-file-profile.v1`: handles oversized or unknown file references with streaming hash plus bounded byte sampling, preventing memory-heavy direct reads while keeping unsupported assets visible to agents.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
 - `reference-framework-local-checkout-audit.v1`: verifies each declared local reference checkout exists, is a Git worktree, and matches the manifest commit before treating it as a current comparison source.
 - Weak or tiny inputs are assigned to a garbage group and are not promoted as core distillation candidates.

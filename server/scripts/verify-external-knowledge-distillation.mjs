@@ -377,6 +377,7 @@ const service = reuseServiceUrl
 let pactServer = null;
 let fileRefDocument = null;
 let deferredFileRefDocument = null;
+let binaryProfileFileRefDocument = null;
 let mountedArchiveDocument = null;
 let rawDocumentsManifestPath = "";
 const mountedStructuredDocuments = [];
@@ -442,6 +443,20 @@ try {
       mediaType: "application/pdf",
       byteSize: deferredStat.size,
       filePath: deferredPath
+    };
+    const binaryProfilePath = path.join(serviceDataDir, "mounted-unknown-large.asset");
+    const binaryProfileBuffer = Buffer.alloc((9 * 1024 * 1024) + 101, 0);
+    binaryProfileBuffer.write("Pact unknown binary profile should not be read fully into memory.", 0, "utf8");
+    binaryProfileBuffer.write("tail-sentinel", binaryProfileBuffer.length - "tail-sentinel".length, "utf8");
+    await fs.writeFile(binaryProfilePath, binaryProfileBuffer);
+    const binaryProfileStat = await fs.stat(binaryProfilePath);
+    binaryProfileFileRefDocument = {
+      sourceId: "source-43",
+      title: "Mounted Unknown Large Binary",
+      fileName: "mounted-unknown-large.asset",
+      mediaType: "application/octet-stream",
+      byteSize: binaryProfileStat.size,
+      filePath: binaryProfilePath
     };
     const mountedArchivePath = path.join(serviceDataDir, "mounted-project-package.tar");
     const mountedArchiveText = Array.from({ length: 80_000 }, (_, index) => (
@@ -707,6 +722,7 @@ try {
   assert.equal(capabilities.payload.largeDocumentPolicy.strategy, "streaming-windowed");
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.binaryProfileStrategy, "bounded-binary-file-profile.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestMaxDocuments >= 1000, true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("contentBase64"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
@@ -716,6 +732,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-binary-profile"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.stream-text"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("config.key-value"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
@@ -806,6 +823,7 @@ try {
   assert.equal(capabilities.payload.algorithms.includes("pdf-subtype-routing.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("human-agent-response-profile-separation.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("professional-format-manifest.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("bounded-binary-file-profile.v1"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
   assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
@@ -1207,6 +1225,7 @@ try {
         },
         ...(fileRefDocument ? [fileRefDocument] : []),
         ...(deferredFileRefDocument ? [deferredFileRefDocument] : []),
+        ...(binaryProfileFileRefDocument ? [binaryProfileFileRefDocument] : []),
         ...(mountedArchiveDocument ? [mountedArchiveDocument] : []),
         ...mountedStructuredDocuments,
         ...(directRuntime.payload.runtimes["tika.app"]?.available ? mountedLegacyOfficeDocuments : []),
@@ -1666,6 +1685,22 @@ try {
     assert.equal(deferredFileRefCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
     assert.equal(deferredFileRefCorpus.parserTrace.some((trace) => trace.stage === "pdf.text.pdftotext"), true);
     assert.equal(deferredFileRefCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+  }
+  if (binaryProfileFileRefDocument) {
+    const binaryProfileCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-43");
+    assert.ok(binaryProfileCorpus, "oversized unknown binary filePath source must remain visible in corpus");
+    assert.equal(binaryProfileCorpus.route.formatId, "unknown");
+    assert.equal(binaryProfileCorpus.quality.suppliedPayloadKind, "file-ref-binary-profile");
+    assert.equal(binaryProfileCorpus.quality.distillable, false);
+    assert.equal(/^sha256:[a-f0-9]{64}$/.test(binaryProfileCorpus.contentHash), true);
+    assert.equal(binaryProfileCorpus.parserTrace.some((trace) => (
+      trace.stage === "payload.file-ref-binary-profile" &&
+      trace.status === "completed" &&
+      trace.strategy === "bounded-binary-file-profile.v1" &&
+      trace.directReadAvoided === true &&
+      trace.hashedBytes === binaryProfileCorpus.byteSize
+    )), true);
+    assert.equal(binaryProfileCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
   }
   if (mountedArchiveDocument) {
     const mountedArchiveCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-20");
