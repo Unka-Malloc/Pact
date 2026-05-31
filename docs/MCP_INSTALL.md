@@ -114,8 +114,8 @@ Unattended agent shells can use automatic detection directly:
 
 `auto` installs every supported client the connector can verify. A
 non-interactive `pact-mcp install` without `--target` uses the same
-auto-detected path. Use explicit targets such as `--target codex` when a script
-must limit the install scope.
+auto-detected path. Use `--target claude-code,codex,openclaw --json` when a
+script must limit the install scope to the priority agent clients first.
 
 For an agent that needs one copyable GitHub Release command, use the unattended
 auto target form. This covers Codex, Claude Code, OpenClaw, and every other

@@ -39,15 +39,18 @@ function assertResilientOneLineCommand(command) {
 
 async function assertPublishedInstallDocsUseResilientCurl() {
   const connectorReadmePath = path.join(projectRoot, "mcp-connector", "README.md");
-  for (const filePath of [
+  const publishedInstallDocPaths = [
     path.join(projectRoot, "docs", "MCP_INSTALL.md"),
     path.join(projectRoot, "docs", "MCP_INSTALL.zh-CN.md"),
     path.join(projectRoot, "docs", "PROTOCOLS.md"),
     connectorReadmePath
-  ]) {
+  ];
+  for (const filePath of publishedInstallDocPaths) {
     const text = await fs.readFile(filePath, "utf8");
     assert.doesNotMatch(text, /curl -fsSL/);
     assert.match(text, /curl -fL --retry 3 --connect-timeout 20 -sS/);
+    assert.doesNotMatch(text, /install --target codex(?:\s|$)/);
+    assert.doesNotMatch(text, /uninstall --target codex(?:\s|$)/);
   }
   const connectorReadme = await fs.readFile(connectorReadmePath, "utf8");
   assert.match(connectorReadme, /install --target auto --json/);

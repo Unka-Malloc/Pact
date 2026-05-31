@@ -81,8 +81,8 @@ PACT_MCP_INSTALL_DIR="$HOME/.local/share/pact-mcp" \
 
 `auto` 会安装 connector 能验证到的所有受支持客户端。没有 TTY 且未传
 `--target` 的 `pact-mcp install` 也会走同一条自动检测路径，避免智能体脚本
-因为缺少交互菜单而直接失败。需要限制安装范围时仍使用 `--target codex` 这类
-显式目标。
+因为缺少交互菜单而直接失败。需要先限制到重点智能体客户端时，使用
+`--target claude-code,codex,openclaw --json`。
 
 如果智能体需要一条可直接复制执行的 GitHub Release 命令，使用无人值守
 auto target 形态。它会覆盖 Codex、Claude Code、OpenClaw 以及 connector
