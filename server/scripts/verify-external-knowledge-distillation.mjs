@@ -292,16 +292,22 @@ const sampleDocxBase64 = base64Zip({
 const samplePptxBase64 = base64Zip({
   "ppt/slides/slide1.xml": [
     "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" ",
-    "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
+    "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" ",
+    "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
     "<p:cSld><p:spTree>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
-    "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable.</a:t></a:r></a:p></p:txBody></p:sp>",
+    "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\" tooltip=\"Presentation evidence link\"/></a:rPr><a:t>Presentation evidence portal</a:t></a:r></a:p></p:txBody></p:sp>",
     "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"4\" name=\"Roadmap Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"2590800\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Slides</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Keep PowerPoint table cells queryable</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
     "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
     "</p:spTree></p:cSld>",
     "</p:sld>"
+  ].join(""),
+  "ppt/slides/_rels/slide1.xml.rels": [
+    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+    "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/pptx-evidence\" TargetMode=\"External\"/>",
+    "</Relationships>"
   ].join(""),
   "ppt/notesSlides/notesSlide1.xml": [
     "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" ",
@@ -555,15 +561,20 @@ try {
         mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         entries: {
           "ppt/slides/slide1.xml": [
-            "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
+            "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
             "<p:cSld><p:spTree>",
-            "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX slide route validates structured filePath parser coverage.</a:t></a:r></a:p></p:txBody></p:sp>",
+            "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX slide route validates structured filePath parser coverage. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\"/></a:rPr><a:t>mounted PPTX link</a:t></a:r></a:p></p:txBody></p:sp>",
             "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"3\" name=\"Mounted Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
             "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
             "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Mounted PPTX</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Preserve filePath PowerPoint table cells</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
             "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
             "</p:spTree></p:cSld>",
             "</p:sld>"
+          ].join(""),
+          "ppt/slides/_rels/slide1.xml.rels": [
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/mounted-pptx\" TargetMode=\"External\"/>",
+            "</Relationships>"
           ].join(""),
           "ppt/notesSlides/notesSlide1.xml": [
             "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
@@ -820,6 +831,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
@@ -930,6 +942,7 @@ try {
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".jsonc", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
@@ -1970,10 +1983,19 @@ try {
           trace.status === "completed" &&
           trace.notes === 1
         )), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.presentation.hyperlinks" &&
+          trace.status === "completed" &&
+          trace.links === 1
+        )), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "table-row" &&
           ref.table?.format === "presentationml" &&
           ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "link" &&
+          ref.href === "https://example.com/mounted-pptx"
         ))), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "speaker-note" &&
@@ -2100,12 +2122,18 @@ try {
     trace.status === "completed" &&
     trace.notes === 1
   )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.hyperlinks" &&
+    trace.status === "completed" &&
+    trace.links === 1
+  )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["slide-shape"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["speaker-note"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "heading" &&
@@ -2128,15 +2156,34 @@ try {
     element.layout?.strategy === "presentationml-speaker-notes.v1" &&
     element.text.includes("Speaker note keeps release risk")
   )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "link" &&
+    element.page === 1 &&
+    element.href === "https://example.com/pptx-evidence" &&
+    element.text.includes("Presentation evidence portal")
+  )), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("speaker-notes"), true);
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "speaker-note" &&
     ref.page === 1 &&
     ref.layout?.strategy === "presentationml-speaker-notes.v1"
   ))), true);
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.page === 1 &&
+    ref.href === "https://example.com/pptx-evidence"
+  ))), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
     unit.metadata?.elementRefs?.some((ref) => ref.type === "speaker-note")
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "link" &&
+      ref.href === "https://example.com/pptx-evidence"
+    ))
   )), true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2801,7 +2848,9 @@ try {
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "presentation" &&
+    document.evidence.linkElementCount >= 1 &&
     document.evidence.speakerNoteElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
   const professionalManifestArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/professional-format-manifest-json`, {
@@ -2825,9 +2874,12 @@ try {
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "presentation" &&
     document.parserStages.includes("office.presentation.slides") &&
+    document.parserStages.includes("office.presentation.hyperlinks") &&
     document.parserStages.includes("office.presentation.speaker-notes") &&
     document.preserves.includes("shape-bbox") &&
+    document.preserves.includes("links") &&
     document.preserves.includes("speaker-notes") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (

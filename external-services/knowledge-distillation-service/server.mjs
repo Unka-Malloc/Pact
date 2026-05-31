@@ -230,7 +230,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "presentation",
     preferredParser: "office.presentation.slides",
     fallbackParsers: ["tika.text", "ocr.slide-images"],
-    parserChain: ["office.route", "office.presentation.slides", "office.presentation.tables", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
+    parserChain: ["office.route", "office.presentation.slides", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
     streamingUnit: "slide",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -601,10 +601,10 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "PowerPoint",
     professionalFamily: "office-presentation",
     parserProfile: "presentationml-slide-route",
-    structureUnits: ["slide", "heading", "slide-shape", "table-row", "speaker-note"],
-    parserStages: ["office.presentation.slides", "office.presentation.tables", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
-    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs", "speaker-notes"],
-    conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-and-table-refs", "evidence-pack"],
+    structureUnits: ["slide", "heading", "slide-shape", "table-row", "link", "speaker-note"],
+    parserStages: ["office.presentation.slides", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
+    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "speaker-notes"],
+    conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-table-link-and-note-refs", "evidence-pack"],
     conversionAdapters: [
       {
         target: "portable-markdown",
@@ -625,7 +625,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "slides-to-agent-layout-refs.v1",
         mode: "agent",
-        stages: ["slide-refs", "shape-bbox-refs", "table-cell-refs", "speaker-note-refs"]
+        stages: ["slide-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "speaker-note-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -635,7 +635,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "slide-relationships", "claims"]
       }
     ],
-    qualityGates: ["slide-order-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-speaker-notes-preserved"],
+    qualityGates: ["slide-order-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-speaker-notes-preserved"],
     riskControls: ["speaker-notes-preserved-when-notesSlides-present", "raster-only-slide-ocr-fallback"],
     knownLosses: ["visual-layer-geometry-partial"]
   },
@@ -1041,7 +1041,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML comments, footnotes, endnotes, and hyperlink targets", "spreadsheet sheet/row/cell coordinate/formula/hyperlink metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML and PresentationML hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula/hyperlink metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1061,12 +1061,12 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["persistent graph store adapter", "learned graph ranking over multi-run evidence"]
   },
   haystack: {
-    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup and Markdown documents", "Word and Excel hyperlink preservation on element/cell refs", "format conversion profiles for human and agent targets"],
+    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup and Markdown documents", "Word, PowerPoint, and Excel hyperlink preservation on element/cell refs", "format conversion profiles for human and agent targets"],
     baseline: ["pipeline-like deterministic execution record"],
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, code, formulas, spreadsheet hyperlinks, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint hyperlinks, code, formulas, spreadsheet hyperlinks, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -4913,6 +4913,80 @@ function pptxShapeGeometry(shapeXml = "", slideNumber = 0, order = 0) {
   };
 }
 
+function pptxHyperlinkFromTag(tag = "", relationships = new Map(), text = "") {
+  const relationshipId = xmlLocalAttribute(tag, "id");
+  const relationship = relationships.get(relationshipId) || null;
+  const target = relationship?.target || xmlLocalAttribute(tag, "action");
+  const normalizedText = compactMarkupText(text, 1200);
+  if (!normalizedText || !target) {
+    return null;
+  }
+  return {
+    text: normalizedText,
+    target,
+    relationshipId,
+    targetMode: relationship?.targetMode || "",
+    type: relationship?.type || "",
+    tooltip: xmlLocalAttribute(tag, "tooltip")
+  };
+}
+
+function pptxHyperlinksFromXml(fragmentXml = "", relationships = new Map(), fallbackText = "") {
+  const links = [];
+  const consumedTags = new Set();
+  const pushTagsFromXml = (xml = "", text = "") => {
+    for (const match of String(xml || "").matchAll(/<[^:>]*:?hlink(?:Click|Hover)\b[^>]*(?:\/>|>)/g)) {
+      const tag = match[0];
+      const link = pptxHyperlinkFromTag(tag, relationships, text);
+      if (!link) {
+        continue;
+      }
+      links.push(link);
+      consumedTags.add(tag);
+    }
+  };
+  for (const match of String(fragmentXml || "").matchAll(/<[^:>]*:?r\b[\s\S]*?<\/[^:>]*:?r>/g)) {
+    const runXml = match[0];
+    pushTagsFromXml(runXml, textFromXmlTextNodes(runXml) || fallbackText);
+  }
+  for (const match of String(fragmentXml || "").matchAll(/<[^:>]*:?hlink(?:Click|Hover)\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    if (consumedTags.has(tag)) {
+      continue;
+    }
+    const link = pptxHyperlinkFromTag(tag, relationships, fallbackText || textFromXmlTextNodes(fragmentXml));
+    if (link) {
+      links.push(link);
+    }
+  }
+  return links;
+}
+
+function pushPptxLinkElements(elements = [], links = [], {
+  name = "",
+  slideNumber = 0,
+  line = 0,
+  geometry = {},
+  linkStart = 0
+} = {}) {
+  let count = 0;
+  for (const link of links) {
+    count += 1;
+    const layout = geometry.layout
+      ? { ...geometry.layout, strategy: "presentationml-link-ref.v1" }
+      : { strategy: "presentationml-link-ref.v1", page: slideNumber, order: line || count };
+    pushStructureElement(elements, "link", link.text, {
+      line: line || count,
+      name: `${name}#link-${linkStart + count}`,
+      page: slideNumber,
+      href: link.target,
+      bbox: geometry.bbox || null,
+      layout
+    });
+  }
+  return count;
+}
+
 function pptxTableCells(rowXml = "") {
   const cells = [];
   for (const match of String(rowXml || "").matchAll(/<[^:>]*:?tc\b[\s\S]*?<\/[^:>]*:?tc>/g)) {
@@ -4989,9 +5063,11 @@ function parsePptx(entries = []) {
   let tableCellCount = 0;
   let tableGeometryCount = 0;
   let speakerNoteCount = 0;
+  let hyperlinkCount = 0;
   for (const [index, name] of slideNames.entries()) {
     const slideNumber = Number(name.match(/slide(\d+)/)?.[1] || index + 1);
     const xml = zipEntryText(entries, name);
+    const relationships = docxPartRelationships(entries, name);
     const shapeBlocks = Array.from(xml.matchAll(/<[^:>]*:?sp\b[\s\S]*?<\/[^:>]*:?sp>/g))
       .map((match) => match[0])
       .filter((shapeXml) => textFromXmlTextNodes(shapeXml));
@@ -5027,11 +5103,19 @@ function parsePptx(entries = []) {
         if (shapeIndex > 0) {
           paragraphCount += Math.max(1, paragraphs.length);
         }
+        hyperlinkCount += pushPptxLinkElements(elements, pptxHyperlinksFromXml(shapeXml, relationships, text), {
+          name: `${name}#${shapeName}`,
+          slideNumber,
+          line: shapeCount,
+          geometry,
+          linkStart: hyperlinkCount
+        });
       }
     }
     if (tableFrames.length) {
       for (const frameXml of tableFrames) {
         tableCount += 1;
+        const tableGeometry = pptxShapeGeometry(frameXml, slideNumber, shapeCount + tableCount);
         const table = appendPptxTableElements(elements, frameXml, {
           slideNumber,
           tableIndex: tableCount,
@@ -5040,6 +5124,13 @@ function parsePptx(entries = []) {
         tableRowCount += table.rowCount;
         tableCellCount += table.cellCount;
         tableGeometryCount += table.geometryCount;
+        hyperlinkCount += pushPptxLinkElements(elements, pptxHyperlinksFromXml(frameXml, relationships, textFromXmlTextNodes(frameXml)), {
+          name: `${name}#table-${tableCount}`,
+          slideNumber,
+          line: shapeCount + tableCount,
+          geometry: tableGeometry,
+          linkStart: hyperlinkCount
+        });
       }
     }
     if (shapeBlocks.length || tableFrames.length) {
@@ -5067,6 +5158,12 @@ function parsePptx(entries = []) {
         page: slideNumber
       });
     }
+    hyperlinkCount += pushPptxLinkElements(elements, pptxHyperlinksFromXml(xml, relationships, slideText.join("\n")), {
+      name,
+      slideNumber,
+      line: paragraphCount || slideNumber,
+      linkStart: hyperlinkCount
+    });
   }
   for (const [index, name] of noteNames.entries()) {
     const slideNumber = Number(name.match(/notesSlide(\d+)/)?.[1] || index + 1);
@@ -5111,6 +5208,7 @@ function parsePptx(entries = []) {
     slideCount: slideNames.length,
     presentationPartCount: slideNames.length + noteNames.length,
     speakerNoteCount,
+    hyperlinkCount,
     shapeCount,
     geometryCount: shapeGeometryCount + tableGeometryCount,
     shapeGeometryCount,
@@ -5984,6 +6082,8 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
     return [
       ...collectFiles(rootDir, (name) => /^ppt\/slides\/slide\d+\.xml$/.test(name), 1000)
         .sort((left, right) => Number(left.relativePath.match(/slide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/slide(\d+)/)?.[1] || 0)),
+      ...collectFiles(rootDir, (name) => /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/slide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/slide(\d+)/)?.[1] || 0)),
       ...collectFiles(rootDir, (name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name), 1000)
         .sort((left, right) => Number(left.relativePath.match(/notesSlide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/notesSlide(\d+)/)?.[1] || 0))
     ];
@@ -6195,6 +6295,7 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
+          hyperlinks: parsed.hyperlinkCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -6207,6 +6308,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           cells: parsed.tableCellCount,
           geometries: parsed.tableGeometryCount,
           layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        },
+        {
+          stage: "office.presentation.hyperlinks",
+          status: parsed.hyperlinkCount ? "completed" : "empty",
+          links: parsed.hyperlinkCount
         },
         {
           stage: "office.presentation.speaker-notes",
@@ -7373,6 +7479,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
+          hyperlinks: parsed.hyperlinkCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -7385,6 +7492,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           cells: parsed.tableCellCount,
           geometries: parsed.tableGeometryCount,
           layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        });
+        parserTrace.push({
+          stage: "office.presentation.hyperlinks",
+          status: parsed.hyperlinkCount ? "completed" : "empty",
+          links: parsed.hyperlinkCount
         });
         parserTrace.push({
           stage: "office.presentation.speaker-notes",
@@ -8261,6 +8373,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "PowerPoint table cell references are preserved." : "No PowerPoint table cell references were required or observed."
       });
     }
+    if (gate === "presentation-link-refs-preserved") {
+      const linkSignals = maxTraceMetric(document, ["links", "hyperlinks", "hyperlinkCount"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : linkSignals > 0
+          ? evidence.linkElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { linkSignals, linkElementCount: evidence.linkElementCount },
+        required: { linksWhenPresent: true },
+        message: status === "passed" ? "PowerPoint hyperlinks are preserved as element references." : "No PowerPoint hyperlinks were required or observed."
+      });
+    }
     if (gate === "presentation-speaker-notes-preserved") {
       const noteSignals = maxTraceMetric(document, ["speakerNotes", "notes"]);
       const status = routeId !== "presentation"
@@ -9107,6 +9232,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
+          hyperlinks: parsed.hyperlinkCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -9119,6 +9245,11 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           cells: parsed.tableCellCount,
           geometries: parsed.tableGeometryCount,
           layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        });
+        parserTrace.push({
+          stage: "office.presentation.hyperlinks",
+          status: parsed.hyperlinkCount ? "completed" : "empty",
+          links: parsed.hyperlinkCount
         });
         parserTrace.push({
           stage: "office.presentation.speaker-notes",
@@ -13876,6 +14007,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.word.hyperlinks",
         "office.presentation.slides",
         "office.presentation.tables",
+        "office.presentation.hyperlinks",
         "office.presentation.speaker-notes",
         "office.word.tables",
         "office.word.annotations",

@@ -118,7 +118,7 @@ flowchart LR
 | 层级 | 当前可用基线 | 后续调整落点 |
 | --- | --- | --- |
 | 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan`，PDF 额外输出 `pdf-subtype-routing.v1` 和 `pdfProfile`，可区分文本 PDF、扫描 PDF、字体映射风险 PDF、图片密集 PDF、加密 PDF 和空/未知 PDF | 内建 file processor 与 Tika 调用前也必须统一 route-first，并回填 PDF 子类型字段 |
-| 解析链 | 外部服务已覆盖文本、配置、Markdown block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry、Word hyperlinks/comments/footnotes/endnotes、Word/PowerPoint/OpenDocument table cells、PowerPoint shape geometry、PowerPoint speaker notes、Excel cell coordinates、SpreadsheetML formulas 和 spreadsheet hyperlinks 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
+| 解析链 | 外部服务已覆盖文本、配置、Markdown block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry、Word hyperlinks/comments/footnotes/endnotes、Word/PowerPoint/OpenDocument table cells、PowerPoint hyperlinks/shape geometry/speaker notes、Excel cell coordinates、SpreadsheetML formulas 和 spreadsheet hyperlinks 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
 | 大文件 | 外部服务已支持 mounted file refs、streaming JSONL document manifests、archive refs、chunked windowing、大 JSON/JSONC file-ref streaming，并对 mounted Office/OpenDocument/EPUB 结构包执行结构 entry 选择、bounded native parse 和 large-entry streaming fallback | 上传、manifest、解析、蒸馏三层统一流式窗口协议 |
 | 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v3`，已输出语义概念主题层级、分组理由、低耦合高内聚指标和垃圾排除原因 | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
@@ -392,7 +392,7 @@ raw corpus item 标准字段：
 - 对没有专用文本解析器的超大或未知 filePath 使用 `bounded-binary-file-profile.v1`，流式计算 hash 和有限头尾采样，禁止整文件读入内存，也不把二进制字节伪造成文本。
 - corpus 层按结构边界建立窗口：
   - 默认窗口按字符、页、元素或 block 混合控制。
-  - Markdown、标记语言、OOXML、OpenDocument、EPUB、PDF 基础文本块、PDF 文本定位几何、Word 链接/批注/脚注/尾注、Word/PowerPoint/OpenDocument 表格单元格、PowerPoint shape 几何、PowerPoint speaker notes、Excel 单元格坐标、SpreadsheetML 公式、spreadsheet hyperlinks 和后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
+  - Markdown、标记语言、OOXML、OpenDocument、EPUB、PDF 基础文本块、PDF 文本定位几何、Word 链接/批注/脚注/尾注、Word/PowerPoint/OpenDocument 表格单元格、PowerPoint 链接/shape 几何/speaker notes、Excel 单元格坐标、SpreadsheetML 公式、spreadsheet hyperlinks 和后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
   - 标题层级使用 `element-aware-by-title-windowing.v1` 建立窗口，表格、代码、公式保留隔离边界。
   - 普通文本窗口之间保留 overlap；元素窗口保留 `headingPath`、`elementRefs` 和 `boundaryReason`。
   - 每个窗口保留 `contentHash`。
@@ -616,10 +616,10 @@ raw corpus item 标准字段：
 - ZIP manifest 记录文件大小、hash 和 media type。
 - Markdown 不允许包含 Tika XHTML 噪声。
 - PDF、Word、PowerPoint、Excel、Markdown、OpenDocument 必须进入 `office-document-professional-adaptation.v1` 格式矩阵，声明 parser stages、structure units、conversion adapters、preserves、quality gates、risk controls 和 known losses。
-- PDF、Word、PowerPoint、Excel、Markdown 的专业适配必须区分解析和转换：解析阶段保留 page/bbox、heading/list/table/link、comment/footnote/endnote、slide/shape/table/speaker-note、sheet/cell/formula/hyperlink/time-index、Markdown block refs；转换阶段分别输出人类可读 Markdown/DOCX 和智能体可读 Agent JSON/evidence pack。
+- PDF、Word、PowerPoint、Excel、Markdown 的专业适配必须区分解析和转换：解析阶段保留 page/bbox、heading/list/table/link、comment/footnote/endnote、slide/shape/table/link/speaker-note、sheet/cell/formula/hyperlink/time-index、Markdown block refs；转换阶段分别输出人类可读 Markdown/DOCX 和智能体可读 Agent JSON/evidence pack。
 - 每个文档的 `formatConversionPlan.documents[]` 必须能说明转换到 Markdown、DOCX、Agent JSON 和 evidence pack 时保留什么、丢失什么、如何验收可打开性。
 - `human-agent-response-profile-separation.v1` 必须把管控台摘要和智能体报文分开；管控台不展示 parser trace/full windows，智能体必须能下载 `professional-format-manifest-json` 精确筛选格式适配状态。
-- 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/链接/批注、PPT slide/shape/table/speaker-note、Excel sheet-row-cell/formula/hyperlink/time-index、Markdown heading/table、OpenDocument content/table 变成可机读的 pass/warning/fail/not_applicable。
+- 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/链接/批注、PPT slide/shape/table/link/speaker-note、Excel sheet-row-cell/formula/hyperlink/time-index、Markdown heading/table、OpenDocument content/table 变成可机读的 pass/warning/fail/not_applicable。
 - `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body、文本节点、heading style、list/code style 和表格 XML 可用性。
 - 下载链路统一走 bridge-mediated fetch/blob。
 - 下载 UI 显示文件大小。
