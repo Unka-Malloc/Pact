@@ -151,7 +151,9 @@ try {
   assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
   assert.equal(discovery.payload.installer.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
-  assert.match(discovery.payload.installer.scanCommand, /pact-mcp-connector@latest scan --json/);
+  assert.match(discovery.payload.installer.scanCommand, /pact-mcp-connector@latest scan/);
+  assert.match(discovery.payload.installer.scanCommand, /--json/);
+  assert.match(discovery.payload.installer.autoInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
   const expectedInstallTargets = [
     "codex",
@@ -169,8 +171,10 @@ try {
   for (const targetId of expectedInstallTargets) {
     const target = clientTargetsById.get(targetId);
     assert.ok(target, `${targetId} should be present in discovery clientTargets`);
-    assert.equal(target.install.npx, `npx pact-mcp-connector@latest install --target ${targetId}`);
+    assert.equal(target.install.npx, `npx pact-mcp-connector@latest install --target ${targetId} --url '${server.url}'`);
     assert.match(target.install.oneCommand, new RegExp(`--target ${targetId}`));
+    assert.match(target.install.oneCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+    assert.equal(target.install.npx.includes("token-stdin"), false);
     assert.equal(target.tokenInput, "auto-local-grant-or-stdin-or-env");
   }
   for (const targetId of ["codex", "claude-code", "openclaw", "opencode"]) {

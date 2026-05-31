@@ -520,6 +520,15 @@ function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
   return { baseUrl, vmBaseUrl };
 }
 
+function shellQuote(value) {
+  return `'${String(value || "").replace(/'/g, "'\\''")}'`;
+}
+
+function commandUrlArgs(baseUrl) {
+  const text = String(baseUrl || "").trim();
+  return text ? ` --url ${shellQuote(text)}` : "";
+}
+
 function mcpTargetConfigTemplate(target, { baseUrl = "", vmBaseUrl = "" } = {}) {
   const mcpUrl = `${baseUrl}/mcp`;
   const vmMcpUrl = `${vmBaseUrl}/mcp`;
@@ -588,6 +597,7 @@ function mcpTargetConfigTemplate(target, { baseUrl = "", vmBaseUrl = "" } = {}) 
 }
 
 function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineCommand = "" } = {}) {
+  const urlArgs = commandUrlArgs(baseUrl);
   return MCP_CLIENT_TARGETS.map((client) => ({
     ...client,
     endpoints: {
@@ -595,11 +605,11 @@ function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineComm
       vmMcpUrl: `${vmBaseUrl}/mcp`
     },
     install: {
-      oneCommand: `${githubOneLineCommand} -- --target ${client.target}`,
-      npx: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}`,
-      portable: `./pact-mcp install --target ${client.target}`,
-      uninstall: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target ${client.target}`,
-      doctor: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor --json`
+      oneCommand: `${githubOneLineCommand} -- --target ${client.target}${urlArgs}`,
+      npx: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}${urlArgs}`,
+      portable: `./pact-mcp install --target ${client.target}${urlArgs}`,
+      uninstall: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target ${client.target}${urlArgs}`,
+      doctor: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs} --json`
     },
     tokenInput: "auto-local-grant-or-stdin-or-env",
     configTemplate: mcpTargetConfigTemplate(client.target, { baseUrl, vmBaseUrl })
@@ -608,16 +618,17 @@ function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineComm
 
 export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
-  const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`;
-  const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>`;
-  const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto`;
-  const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install`;
+  const urlArgs = commandUrlArgs(baseUrl);
+  const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register${urlArgs}`;
+  const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs}`;
+  const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs}`;
+  const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
   const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
-  const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto`;
-  const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>`;
-  const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor`;
-  const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local`;
-  const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan --json`;
+  const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto${urlArgs}`;
+  const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>${urlArgs}`;
+  const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs}`;
+  const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local${urlArgs}`;
+  const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan${urlArgs} --json`;
   const clientTargets = mcpClientTargetGuides({ baseUrl, vmBaseUrl, githubOneLineCommand });
   return {
     schemaVersion: 1,
