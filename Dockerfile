@@ -10,7 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 RUN npm ci
-RUN npm run build:renderer
+RUN npm run build:renderer:raw
 RUN npm prune --omit=dev
 
 # ── runtime-deps stage ────────────────────────────────────────────────────────

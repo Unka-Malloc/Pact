@@ -65,6 +65,7 @@ const allowedRootNames = new Set([
   "client-gui",
   "docker-compose.yml",
   "docs",
+  "external-services",
   "mcp-connector",
   "modules",
   "node_modules",
