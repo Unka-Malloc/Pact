@@ -149,6 +149,7 @@ import {
 } from "./console-agent-explore-utils";
 import { createConsoleAuthController } from "./console-auth-controller";
 import { createConsoleAgentExploreSessionController } from "./console-agent-explore-session-controller";
+import { createConsoleExpertRulesController } from "./console-expert-rules-controller";
 import { createConsoleKnowledgeSourceController } from "./console-knowledge-source-controller";
 import { createConsolePathPickerController } from "./console-path-picker-controller";
 import { createConsoleRuntimeMountController } from "./console-runtime-mount-controller";
@@ -162,6 +163,7 @@ import { createConsoleMaintenanceAgentController } from "./console-maintenance-a
 import { createConsoleMcpAuthorizationController } from "./console-mcp-authorization-controller";
 import { createConsoleModelLibraryController } from "./console-model-library-controller";
 import { createConsoleOpsMonitorController } from "./console-ops-monitor-controller";
+import { createConsoleRuleAuthoringController } from "./console-rule-authoring-controller";
 import { createConsoleToolManagementController } from "./console-tool-management-controller";
 import { createConsoleWordCloudController } from "./console-word-cloud-controller";
 
@@ -229,10 +231,8 @@ import type {
   EmailRuleSet,
   AgentExploreRunResponse,
   ExpertVocabulary,
-  ExpertVocabularyEntry,
   KnowledgeConfigSchema,
   KnowledgeConsoleState,
-  KnowledgeRuleAuthoringResponse,
   KnowledgeSearchResponse,
   KnowledgeSearchResult,
   KnowledgeSource,
@@ -320,13 +320,6 @@ const viewTitle = computed(() => {
 const settingsDraft = ref<AgentSettings>({ ...emptySettings });
 const discoveryDraft = ref<DiscoveryConfig>({ ...emptyDiscovery });
 const mountDraft = ref<Record<string, string>>({});
-const rulesText = ref("");
-const vocabularySearch = ref("");
-const showAllVocabularyEntries = ref(false);
-const expertVocabularyDraft = ref<ExpertVocabulary>({
-  ...emptyExpertVocabulary,
-  entries: [],
-});
 const error = ref("");
 // busyKey tracks ALL currently in-flight operations as a Set so concurrent
 // requests do not clobber each other's loading indicators.
@@ -355,8 +348,6 @@ const agentModelOptionLabelCache = ref<Record<string, string>>({});
 const settingsDraftDirty = ref(false);
 const discoveryDraftDirty = ref(false);
 const mountDraftDirty = ref(false);
-const rulesDraftDirty = ref(false);
-const expertVocabularyDraftDirty = ref(false);
 // Module-level router instance (set the first time useConsole() is called)
 let _appRouter: ReturnType<typeof useRouter> | null = null;
 let consoleLifecycleRefCount = 0;
@@ -448,20 +439,6 @@ const agentExploreSplitLeftPercent = ref(42);
 const agentExploreTraceOpen = ref(true);
 const agentExploreHiddenRunIds = ref<Set<string>>(new Set());
 const agentExploreClosedTabIds = ref<Set<string>>(new Set());
-const ruleAuthoringForm = ref({
-  message: "",
-  modelAlias: "",
-  ruleName: "",
-  scope: "knowledge",
-  matchStrategy: "semantic_duplicate",
-  action: "skip_duplicate",
-  confidence: 0.85,
-  notes: "",
-});
-const ruleCreationMode = ref<RuleAuthoringMode>("chat");
-const ruleAuthoringResult = ref<KnowledgeRuleAuthoringResponse | null>(null);
-const ruleAuthoringHistory = ref<KnowledgeRuleAuthoringResponse[]>([]);
-const goldenRulesState = ref<Record<string, unknown> | null>(null);
 const contextProfilesResponse = ref<Record<string, unknown> | null>(null);
 const contextBuildRecordsResponse = ref<Record<string, unknown> | null>(null);
 const contextPreviewTask = ref("总结最近一个月邮件中的账单风险，必须保留证据编号。");
@@ -1130,26 +1107,6 @@ watch(
 );
 
 watch(
-  rulesText,
-  () => {
-    if (!applyingRemoteConsoleDrafts) {
-      rulesDraftDirty.value = true;
-    }
-  },
-  { flush: "sync" },
-);
-
-watch(
-  expertVocabularyDraft,
-  () => {
-    if (!applyingRemoteConsoleDrafts) {
-      expertVocabularyDraftDirty.value = true;
-    }
-  },
-  { deep: true, flush: "sync" },
-);
-
-watch(
   agentExploreForm,
   () => {
     persistAgentExploreState();
@@ -1264,45 +1221,50 @@ function replaceMountDraftFromServer(
   });
 }
 
-function replaceRulesDraftFromServer(
-  rules: EmailRuleSet,
-  options: { markClean?: boolean } = {},
-) {
-  const nextText = JSON.stringify(rules, null, 2);
-  if (rulesText.value === nextText) {
-    if (options.markClean !== false) {
-      rulesDraftDirty.value = false;
-    }
-    return;
-  }
-  applyRemoteConsoleDraftUpdate(() => {
-    rulesText.value = nextText;
-    if (options.markClean !== false) {
-      rulesDraftDirty.value = false;
-    }
-  });
-}
-
-function replaceExpertVocabularyDraftFromServer(
-  vocabulary: ExpertVocabulary | null | undefined,
-  options: { markClean?: boolean } = {},
-) {
-  const nextDraft = cloneExpertVocabulary(
-    vocabulary || emptyExpertVocabulary,
-  );
-  if (remoteDraftEquals(expertVocabularyDraft.value, nextDraft)) {
-    if (options.markClean !== false) {
-      expertVocabularyDraftDirty.value = false;
-    }
-    return;
-  }
-  applyRemoteConsoleDraftUpdate(() => {
-    expertVocabularyDraft.value = nextDraft;
-    if (options.markClean !== false) {
-      expertVocabularyDraftDirty.value = false;
-    }
-  });
-}
+const {
+  addVocabularyEntry,
+  cloneExpertVocabulary,
+  deleteVocabularyEntry,
+  displayedVocabularyEntries,
+  emailDepartmentRules,
+  emailReportSeriesRules,
+  emailRulesDraft,
+  emailSynonymRules,
+  expertRuleEnabled,
+  expertVocabularyDraft,
+  expertVocabularyDraftDirty,
+  goldenRuleItems,
+  goldenRulePackageTitle,
+  goldenRulePackages,
+  goldenRulesState,
+  hiddenVocabularyEntryCount,
+  parseEmailRulesDraft,
+  refreshExpertRules,
+  replaceExpertVocabularyDraftFromServer,
+  replaceRulesDraftFromServer,
+  rulesDraftDirty,
+  rulesText,
+  saveExpertVocabulary,
+  saveRules,
+  setEmailRuleEntryEnabled,
+  setVocabularyEntryEnabled,
+  showAllVocabularyEntries,
+  splitVocabularyList,
+  toggleGoldenRuleEnabled,
+  updateVocabularyDomains,
+  updateVocabularyEntry,
+  updateVocabularyKeywords,
+  updateVocabularyPath,
+  vocabularyEntryPath,
+  vocabularySearch,
+} = createConsoleExpertRulesController({
+  applyRemoteConsoleDraftUpdate,
+  clearAllBusy,
+  error,
+  isApplyingRemoteConsoleDrafts: () => applyingRemoteConsoleDrafts,
+  refreshState,
+  setBusy,
+});
 
 function applyConsoleState(
   nextState: ServerConsoleState,
@@ -2035,7 +1997,6 @@ function agentOptionsForModule(moduleId: string) {
 }
 
 const agentExploreAgentOptions = computed(() => agentOptionsForModule("agentTools"));
-const ruleAuthoringModelOptions = computed(() => agentSelectorOptions.value);
 
 const agentModelOptionValueSet = computed(
   () => new Set(agentSelectorOptions.value.map((item) => item.value)),
@@ -2209,8 +2170,32 @@ function watchAgentSelectionReference(
 const selectedAgentExploreModel = computed(() => {
   return selectedAgentFromOptions(agentExploreAgentOptions.value, agentExploreForm.value.modelAlias);
 });
-const selectedRuleAuthoringModel = computed(() => {
-  return selectedAgentFromOptions(ruleAuthoringModelOptions.value, ruleAuthoringForm.value.modelAlias);
+const {
+  publishRuleAuthoringPackage,
+  ruleActionOptionBarOptions,
+  ruleActionOptions,
+  ruleAuthoringCanSubmit,
+  ruleAuthoringDraftPayload,
+  ruleAuthoringEffectiveMessage,
+  ruleAuthoringForm,
+  ruleAuthoringHistory,
+  ruleAuthoringManualSummary,
+  ruleAuthoringModelOptions,
+  ruleAuthoringResult,
+  ruleAuthoringStatusLabel,
+  ruleCreationMode,
+  ruleMatchStrategyOptionBarOptions,
+  ruleMatchStrategyOptions,
+  ruleScopeOptionBarOptions,
+  ruleScopeOptions,
+  runRuleAuthoringChat,
+  selectedRuleAuthoringModel,
+} = createConsoleRuleAuthoringController({
+  agentSelectorOptions,
+  canMaintainKnowledge,
+  clearAllBusy,
+  error,
+  setBusy,
 });
 const {
   addChildWordCloud,
@@ -2290,176 +2275,6 @@ const {
   setBusy,
 });
 
-const ruleScopeOptions = [
-  { value: "knowledge", label: "知识库", description: "对入库文档、证据和知识对象生效。" },
-  { value: "mail", label: "邮件", description: "对 EML/MSG、线程和事务接续生效。" },
-  { value: "source", label: "数据源", description: "对原始文件、目录和采集来源生效。" },
-  { value: "all", label: "全局", description: "跨来源执行，需要更谨慎审核。" },
-];
-const ruleMatchStrategyOptions = [
-  { value: "semantic_duplicate", label: "语义重复", description: "标题、正文和实体近似相同时命中。" },
-  { value: "exact_source", label: "来源一致", description: "文件 hash、路径、邮件 ID 等强证据一致时命中。" },
-  { value: "same_entity_time", label: "同实体时间窗", description: "同客户、合同、账号、订单等在相近时间内命中。" },
-  { value: "manual_condition", label: "人工条件", description: "使用补充说明中的明确条件。" },
-];
-const ruleActionOptions = [
-  { value: "skip_duplicate", label: "跳过重复", description: "命中后不重复写入知识库。" },
-  { value: "merge", label: "融合", description: "保留证据并生成融合建议。" },
-  { value: "replace", label: "覆盖", description: "以新记录替换旧记录，需要审慎使用。" },
-  { value: "manual_review", label: "人工审核", description: "只产生审核任务，不自动处理。" },
-];
-let syncingRuleAuthoringDraft = false;
-
-function optionLabel(options: Array<{ value: string; label: string }>, value: string) {
-  return options.find((item) => item.value === value)?.label || value;
-}
-
-function inferRuleDraftFromMessage(message: string) {
-  const text = String(message || "").toLowerCase();
-  const patch: Partial<typeof ruleAuthoringForm.value> = {};
-  if (/邮件|eml|msg|thread|事务|账单|订单/.test(text)) {
-    patch.scope = "mail";
-  } else if (/目录|数据源|文件夹|路径|source/.test(text)) {
-    patch.scope = "source";
-  } else if (/全局|所有|全部/.test(text)) {
-    patch.scope = "all";
-  } else if (/知识|文档|证据|入库|docx/.test(text)) {
-    patch.scope = "knowledge";
-  }
-  if (/完全一样|重复|相同|duplicate|相似|近似/.test(text)) {
-    patch.matchStrategy = "semantic_duplicate";
-    if (!/融合|合并|覆盖|替换|人工|审核/.test(text)) {
-      patch.action = "skip_duplicate";
-    }
-  }
-  if (/hash|哈希|路径|文件名|message-id|message id|来源一致/.test(text)) {
-    patch.matchStrategy = "exact_source";
-  }
-  if (/客户|供应商|合同|订单|账号|账户|金额|时间窗|连续|月度/.test(text)) {
-    patch.matchStrategy = "same_entity_time";
-  }
-  if (/人工条件|自定义条件|条件是/.test(text)) {
-    patch.matchStrategy = "manual_condition";
-  }
-  if (/融合|合并|merge/.test(text)) {
-    patch.action = "merge";
-  } else if (/覆盖|替换|replace/.test(text)) {
-    patch.action = "replace";
-  } else if (/人工|审核|确认|review/.test(text)) {
-    patch.action = "manual_review";
-  } else if (/跳过|忽略|不写入|不重复/.test(text)) {
-    patch.action = "skip_duplicate";
-  }
-  const percentMatch = text.match(/(\d{1,3})\s*%/);
-  const decimalMatch = text.match(/\b(0\.\d+|1(?:\.0+)?)\b/);
-  if (percentMatch) {
-    patch.confidence = Math.max(0, Math.min(Number(percentMatch[1]) / 100, 1));
-  } else if (decimalMatch) {
-    patch.confidence = Math.max(0, Math.min(Number(decimalMatch[1]), 1));
-  }
-  if (!String(ruleAuthoringForm.value.ruleName || "").trim()) {
-    if (/重复|相同|duplicate/.test(text)) {
-      patch.ruleName = "重复知识处理规则";
-    } else if (/账单/.test(text)) {
-      patch.ruleName = "账单事务接续规则";
-    } else if (/邮件|eml|msg/.test(text)) {
-      patch.ruleName = "邮件知识治理规则";
-    } else if (message.trim()) {
-      patch.ruleName = message.trim().replace(/\s+/g, " ").slice(0, 28);
-    }
-  }
-  return patch;
-}
-
-function buildRuleAuthoringManualMessage() {
-  const draft = ruleAuthoringForm.value;
-  return [
-    `创建规则：${String(draft.ruleName || "").trim() || "未命名规则"}`,
-    `适用范围：${optionLabel(ruleScopeOptions, draft.scope)}`,
-    `匹配方式：${optionLabel(ruleMatchStrategyOptions, draft.matchStrategy)}`,
-    `执行动作：${optionLabel(ruleActionOptions, draft.action)}`,
-    `最低置信度：${Number(draft.confidence || 0).toFixed(2)}`,
-    String(draft.notes || "").trim() ? `补充说明：${String(draft.notes || "").trim()}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-const ruleAuthoringEffectiveMessage = computed(() =>
-  ruleCreationMode.value === "manual"
-    ? buildRuleAuthoringManualMessage()
-    : String(ruleAuthoringForm.value.message || "").trim(),
-);
-const ruleAuthoringCanSubmit = computed(() =>
-  Boolean(
-    ruleAuthoringEffectiveMessage.value.trim() &&
-      canMaintainKnowledge.value &&
-      (ruleCreationMode.value !== "chat" || selectedRuleAuthoringModel.value.enabled),
-  ),
-);
-const ruleAuthoringDraftPayload = computed(() => ({
-  mode: ruleCreationMode.value,
-  ruleName: String(ruleAuthoringForm.value.ruleName || "").trim(),
-  scope: ruleAuthoringForm.value.scope,
-  matchStrategy: ruleAuthoringForm.value.matchStrategy,
-  action: ruleAuthoringForm.value.action,
-  confidence: Number(ruleAuthoringForm.value.confidence || 0),
-  notes: String(ruleAuthoringForm.value.notes || "").trim(),
-}));
-const ruleAuthoringManualSummary = computed(() =>
-  [
-    optionLabel(ruleScopeOptions, ruleAuthoringForm.value.scope),
-    optionLabel(ruleMatchStrategyOptions, ruleAuthoringForm.value.matchStrategy),
-    optionLabel(ruleActionOptions, ruleAuthoringForm.value.action),
-    `置信度 ${Number(ruleAuthoringForm.value.confidence || 0).toFixed(2)}`,
-  ].join(" / "),
-);
-
-watch(
-  () => ruleAuthoringForm.value.message,
-  (message) => {
-    if (syncingRuleAuthoringDraft || ruleCreationMode.value !== "chat") {
-      return;
-    }
-    syncingRuleAuthoringDraft = true;
-    Object.assign(ruleAuthoringForm.value, inferRuleDraftFromMessage(message));
-    syncingRuleAuthoringDraft = false;
-  },
-);
-
-watch(
-  () => [
-    ruleAuthoringForm.value.ruleName,
-    ruleAuthoringForm.value.scope,
-    ruleAuthoringForm.value.matchStrategy,
-    ruleAuthoringForm.value.action,
-    ruleAuthoringForm.value.confidence,
-    ruleAuthoringForm.value.notes,
-  ],
-  () => {
-    if (syncingRuleAuthoringDraft || ruleCreationMode.value !== "manual") {
-      return;
-    }
-    const nextMessage = buildRuleAuthoringManualMessage();
-    if (ruleAuthoringForm.value.message === nextMessage) {
-      return;
-    }
-    syncingRuleAuthoringDraft = true;
-    ruleAuthoringForm.value.message = nextMessage;
-    syncingRuleAuthoringDraft = false;
-  },
-);
-
-watch(ruleCreationMode, (mode) => {
-  if (mode === "manual") {
-    const nextMessage = buildRuleAuthoringManualMessage();
-    if (!String(ruleAuthoringForm.value.message || "").trim() || ruleAuthoringForm.value.message.startsWith("创建规则：")) {
-      syncingRuleAuthoringDraft = true;
-      ruleAuthoringForm.value.message = nextMessage;
-      syncingRuleAuthoringDraft = false;
-    }
-    return;
-  }
-  Object.assign(ruleAuthoringForm.value, inferRuleDraftFromMessage(ruleAuthoringForm.value.message));
-});
 const selectedAgentExploreContextProfile = computed(() => {
   const configured = String(
     agentExploreForm.value.contextProfileId ||
@@ -3326,86 +3141,6 @@ async function refreshKnowledgeConsole(options: { skipReviewItems?: boolean } = 
   }
 }
 
-function ruleAuthoringStatusLabel(status: unknown) {
-  const value = String(status || "");
-  if (value === "pending_human_confirmation") return "待人类确认";
-  if (value === "no_rule_needed") return "未触发规则";
-  if (value === "gate_failed") return "门禁未通过";
-  if (value === "template_unavailable") return "模板不可用";
-  if (value === "invalid_input") return "输入无效";
-  if (value === "runtime_unavailable") return "运行时不可用";
-  if (value === "published") return "已发布";
-  return value || "未知";
-}
-
-async function runRuleAuthoringChat() {
-  const message = ruleAuthoringEffectiveMessage.value.trim();
-  if (!message) {
-    error.value = "请输入规则生成需求。";
-    return;
-  }
-  if (!canMaintainKnowledge.value) {
-    error.value = "当前账号没有知识库维护权限。";
-    return;
-  }
-  if (ruleCreationMode.value === "chat" && !selectedRuleAuthoringModel.value.enabled) {
-    error.value = "请选择可用的创建规则智能体。";
-    return;
-  }
-  setBusy("knowledge:rule-authoring");
-  error.value = "";
-  try {
-    const result = await bridge.chatKnowledgeRuleAuthoring({
-      message,
-      draft: ruleAuthoringDraftPayload.value,
-      modelAlias: ruleCreationMode.value === "chat" ? selectedRuleAuthoringModel.value.value : "",
-      modelEnabled: ruleCreationMode.value === "chat",
-    });
-    ruleAuthoringResult.value = result;
-    ruleAuthoringHistory.value = [
-      result,
-      ...ruleAuthoringHistory.value.filter((item: any) => item.runId !== result.runId),
-    ].slice(0, 8);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "规则生成失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function publishRuleAuthoringPackage() {
-  const confirmation = ruleAuthoringResult.value?.confirmation;
-  if (!confirmation?.packageId) {
-    error.value = "没有可确认发布的规则包。";
-    return;
-  }
-  if (!canMaintainKnowledge.value) {
-    error.value = "当前账号没有知识库维护权限。";
-    return;
-  }
-  setBusy("knowledge:rule-authoring:publish");
-  error.value = "";
-  try {
-    const result = await bridge.publishGoldenRules(confirmation.packageId, {
-      version: confirmation.version,
-    });
-    ruleAuthoringResult.value = {
-      ...(ruleAuthoringResult.value || {
-        protocolVersion: "pact.knowledge-rule-authoring.v1",
-        ok: true,
-        status: "published",
-      }),
-      status: "published",
-      package: asRecord(result.package) || ruleAuthoringResult.value?.package,
-      manifest: asRecord(result.manifest) || ruleAuthoringResult.value?.manifest,
-    };
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "规则发布失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
 async function runKnowledgeAgentExplore() {
   const query = agentExploreForm.value.query.trim();
   if (!query) {
@@ -3912,256 +3647,6 @@ function openDrawer(tab: DrawerTab) {
 
 function closeDrawer() {
   drawerOpen.value = false;
-}
-
-function cloneExpertVocabulary(vocabulary: ExpertVocabulary): ExpertVocabulary {
-  return {
-    ...emptyExpertVocabulary,
-    ...JSON.parse(JSON.stringify(vocabulary || emptyExpertVocabulary)),
-  };
-}
-
-function splitVocabularyList(value: string) {
-  return value
-    .split(/[,，\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function vocabularyEntryPath(entry: ExpertVocabularyEntry) {
-  return (entry.pathSegments || []).join("/");
-}
-
-const displayedVocabularyEntries = computed(() => {
-  const query = vocabularySearch.value.trim().toLowerCase();
-  const entries = (expertVocabularyDraft.value.entries || []).map((entry, index) => ({
-    entry,
-    index,
-  }));
-  const filtered = query
-    ? entries.filter(({ entry }) => {
-        const haystack = [
-          vocabularyEntryPath(entry),
-          entry.label,
-          ...(entry.keywords || []),
-          ...(entry.domains || []),
-          entry.status,
-          entry.notes,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(query);
-      })
-    : entries;
-
-  return showAllVocabularyEntries.value || query
-    ? filtered
-    : filtered.slice(0, 8);
-});
-
-const hiddenVocabularyEntryCount = computed(() =>
-  vocabularySearch.value.trim()
-    ? 0
-    : Math.max(0, (expertVocabularyDraft.value.entries || []).length - displayedVocabularyEntries.value.length),
-);
-
-function updateVocabularyEntry(index: number, patch: Partial<ExpertVocabularyEntry>) {
-  expertVocabularyDraft.value.entries = expertVocabularyDraft.value.entries.map(
-    (entry, entryIndex) =>
-      entryIndex === index
-        ? {
-            ...entry,
-            ...patch,
-          }
-        : entry,
-  );
-}
-
-function updateVocabularyPath(index: number, value: string) {
-  updateVocabularyEntry(index, {
-    pathSegments: value
-      .split("/")
-      .map((item) => item.trim())
-      .filter(Boolean),
-  });
-}
-
-function updateVocabularyKeywords(index: number, value: string) {
-  updateVocabularyEntry(index, {
-    keywords: splitVocabularyList(value),
-  });
-}
-
-function updateVocabularyDomains(index: number, value: string) {
-  updateVocabularyEntry(index, {
-    domains: splitVocabularyList(value),
-  });
-}
-
-function addVocabularyEntry() {
-  const now = Date.now();
-  showAllVocabularyEntries.value = true;
-  expertVocabularyDraft.value.entries = [
-    ...expertVocabularyDraft.value.entries,
-    {
-      id: `draft-${now}`,
-      pathSegments: ["未分类"],
-      label: "新词条",
-      keywords: [],
-      domains: [],
-      status: "draft",
-      notes: "",
-    },
-  ];
-}
-
-function deleteVocabularyEntry(index: number) {
-  expertVocabularyDraft.value.entries =
-    expertVocabularyDraft.value.entries.filter((_, entryIndex) => entryIndex !== index);
-}
-
-function parseEmailRulesDraft(): EmailRuleSet {
-  try {
-    return JSON.parse(rulesText.value || "{}") as EmailRuleSet;
-  } catch {
-    return {
-      schemaVersion: 1,
-      updatedAt: "",
-      reportSeries: [],
-      synonymDictionary: [],
-      departmentDictionary: [],
-      keywordStopwords: [],
-      transactionMergeRules: {
-        highSimilarity: 0.32,
-        mediumSimilarity: 0.18,
-        mediumParticipantOverlap: 0.34,
-        highParticipantOverlap: 0.6,
-      },
-    };
-  }
-}
-
-const emailRulesDraft = computed(() => parseEmailRulesDraft());
-const emailReportSeriesRules = computed(() =>
-  (emailRulesDraft.value.reportSeries || []).map((rule, index) => ({ rule, index })),
-);
-const emailSynonymRules = computed(() =>
-  (emailRulesDraft.value.synonymDictionary || []).map((rule, index) => ({ rule, index })),
-);
-const emailDepartmentRules = computed(() =>
-  (emailRulesDraft.value.departmentDictionary || []).map((rule, index) => ({ rule, index })),
-);
-
-function expertRuleEnabled(value: unknown) {
-  return (asRecord(value)?.enabled as boolean | undefined) !== false;
-}
-
-function setEmailRuleEntryEnabled(
-  collection: "reportSeries" | "synonymDictionary" | "departmentDictionary",
-  index: number,
-  enabled: boolean,
-) {
-  const rules = parseEmailRulesDraft() as EmailRuleSet & Record<string, unknown>;
-  const list = Array.isArray(rules[collection]) ? [...(rules[collection] as unknown[])] : [];
-  const current = asRecord(list[index]) || {};
-  list[index] = {
-    ...current,
-    enabled,
-  };
-  (rules as unknown as Record<string, unknown[]>)[collection] = list;
-  rulesText.value = JSON.stringify(rules, null, 2);
-}
-
-function setVocabularyEntryEnabled(index: number, enabled: boolean) {
-  updateVocabularyEntry(index, {
-    status: enabled ? "active" : "retired",
-  });
-}
-
-const goldenRulePackages = computed(() => {
-  const state = asRecord(goldenRulesState.value) || {};
-  const packages = Array.isArray(state.packages) ? state.packages : [];
-  return packages
-    .map((item) => asRecord(item))
-    .filter((item): item is Record<string, unknown> => Boolean(item));
-});
-
-function goldenRulePackageTitle(pkg: Record<string, unknown>) {
-  return `${String(pkg.packageId || "golden-rules")} v${String(pkg.version || "0")}`;
-}
-
-function goldenRuleItems(pkg: Record<string, unknown>) {
-  return (Array.isArray(pkg.rules) ? pkg.rules : [])
-    .map((rule, index) => ({
-      rule: asRecord(rule) || {},
-      index,
-    }));
-}
-
-async function refreshExpertRules(options: { silent?: boolean; forceDrafts?: boolean } = {}) {
-  const showBusy = !options.silent;
-  const forceDrafts = options.forceDrafts === true;
-  if (showBusy) {
-    setBusy("expert-rules:refresh");
-  }
-  error.value = "";
-
-  try {
-    const [emailRulesResult, vocabularyResult, goldenRulesResult] = await Promise.all([
-      bridge.getEmailRules(),
-      bridge.getExpertVocabulary(),
-      bridge.getGoldenRules(),
-    ]);
-    if (forceDrafts || !rulesDraftDirty.value) {
-      replaceRulesDraftFromServer(emailRulesResult.rules);
-    }
-    if (forceDrafts || !expertVocabularyDraftDirty.value) {
-      replaceExpertVocabularyDraftFromServer(vocabularyResult.vocabulary);
-    }
-    goldenRulesState.value = goldenRulesResult;
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "加载专家规则失败。";
-  } finally {
-    if (showBusy) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function toggleGoldenRuleEnabled(pkg: Record<string, unknown>, ruleIndex: number, enabled: boolean) {
-  const packageId = String(pkg.packageId || "");
-  if (!packageId) {
-    return;
-  }
-  setBusy(`golden-rule:${packageId}:${ruleIndex}`);
-  error.value = "";
-
-  try {
-    const nextRules = goldenRuleItems(pkg).map(({ rule, index }) =>
-      index === ruleIndex
-        ? {
-            ...rule,
-            enabled,
-          }
-        : rule,
-    );
-    const saved = await bridge.saveGoldenRules({
-      ...pkg,
-      version: undefined,
-      status: "draft",
-      rules: nextRules,
-    });
-    const savedPackage = asRecord(saved.package) || {};
-    await bridge.publishGoldenRules(packageId, {
-      version: Number(savedPackage.version || 0),
-    });
-    await refreshExpertRules({ silent: true });
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "更新黄金规则失败。";
-  } finally {
-    clearAllBusy();
-  }
 }
 
 function normalizeRefreshStateOptions(options: RefreshStateOptions = {}): RefreshStateOptions {
@@ -4760,36 +4245,6 @@ async function saveDiscovery() {
   }
 }
 
-async function saveRules() {
-  setBusy("rules");
-  error.value = "";
-
-  try {
-    await bridge.saveEmailRules(JSON.parse(rulesText.value) as EmailRuleSet);
-    rulesDraftDirty.value = false;
-    await refreshState({ forceDrafts: false });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "保存规则库失败。";
-    clearAllBusy();
-  }
-}
-
-async function saveExpertVocabulary() {
-  setBusy("expert-vocabulary");
-  error.value = "";
-
-  try {
-    await bridge.saveExpertVocabulary(expertVocabularyDraft.value);
-    expertVocabularyDraftDirty.value = false;
-    await refreshState({ forceDrafts: false });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "保存专家词汇库失败。";
-    clearAllBusy();
-  }
-}
-
 async function deleteJob(jobId: string) {
   if (!window.confirm(`删除任务“${jobId}”？`)) {
     return;
@@ -4896,15 +4351,6 @@ const moduleAccessModeOptionBarOptions: OptionBarOption[] = [
   { value: "all", label: "默认公开给所有功能" },
   { value: "selected", label: "仅公开给选定功能" },
 ];
-const ruleScopeOptionBarOptions = computed<OptionBarOption[]>(() =>
-  ruleScopeOptions.map((option) => ({ value: option.value, label: option.label })),
-);
-const ruleMatchStrategyOptionBarOptions = computed<OptionBarOption[]>(() =>
-  ruleMatchStrategyOptions.map((option) => ({ value: option.value, label: option.label })),
-);
-const ruleActionOptionBarOptions = computed<OptionBarOption[]>(() =>
-  ruleActionOptions.map((option) => ({ value: option.value, label: option.label })),
-);
 const knowledgeLogStatusOptionBarOptions = computed<OptionBarOption[]>(() => [
   { value: "", label: "全部状态" },
   ...knowledgeLogStatusOptions.value.map((status) => ({ value: status, label: status })),
@@ -5477,7 +4923,6 @@ onUnmounted(() => {
     buildInfoFeedSourceSearchQuery, 
     buildInfoFeedSummaryQuestion, 
     buildKnowledgeRecallSearchPayload, 
-    buildRuleAuthoringManualMessage, 
     busyKey, 
     cacheAgentModelOptionLabels, 
     canAdminAuth, 
@@ -5713,7 +5158,6 @@ onUnmounted(() => {
     imageEvidenceAssets, 
     importClients, 
     inactiveAgentModelOption, 
-    inferRuleDraftFromMessage, 
     infoFeedAgentAnswer, 
     infoFeedAgentExpertGuidance, 
     infoFeedAgentProgressFromResult, 
@@ -6013,7 +5457,6 @@ onUnmounted(() => {
     openSettingsPathPicker, 
     openWordCloudCorpusDirectoryPicker, 
     openWordCloudCorpusFilePicker, 
-    optionLabel, 
     parseEmailHeaders, 
     parseEmailRulesDraft, 
     parseFilterDate, 
@@ -6282,7 +5725,6 @@ onUnmounted(() => {
     syncInfoFeedExpertFeedback, 
     syncKnowledgeLogTableScrollLeft, 
     syncLocalSourceLabelFromPath, 
-    syncingRuleAuthoringDraft, 
     thinkingModeOptionBarOptions, 
     toggleGoldenRuleEnabled, 
     toggleGrantScope, 
