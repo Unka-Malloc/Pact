@@ -534,8 +534,18 @@ function mcpVersionInfo() {
 
 function mcpRuntimeMetadata({ listenUrl = "", discoveryState = null } = {}) {
   const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
+  const version = mcpVersionInfo();
   return {
-    ...mcpVersionInfo(),
+    ...version,
+    connector: {
+      ...version.connector,
+      autoInstallCommand: discovery.installer.autoInstallCommand,
+      priorityInstallCommand: discovery.installer.priorityInstallCommand,
+      oneCommandAutoInstall: discovery.installer.oneCommandAutoInstall,
+      oneCommandPriorityInstall: discovery.installer.oneCommandPriorityInstall,
+      portableAutoInstallCommand: discovery.installer.portable.autoInstallCommand,
+      portablePriorityInstallCommand: discovery.installer.portable.priorityInstallCommand
+    },
     sharedHub: discovery.sharedHub,
     priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
     supportedTargets: mcpSupportedTargetDetails()

@@ -313,6 +313,15 @@ try {
   assert.equal(initialize.payload.result._meta.stableToolName, "pact.call");
   assert.equal(initialize.payload.result._meta.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
   assert.equal(initialize.payload.result._meta.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(
+    initialize.payload.result._meta.connector.autoInstallCommand,
+    `npx pact-mcp-connector@latest install --target auto --url '${server.url}' --json`
+  );
+  assert.equal(
+    initialize.payload.result._meta.connector.priorityInstallCommand,
+    `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
+  );
+  assert.match(initialize.payload.result._meta.connector.oneCommandPriorityInstall, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.deepEqual(initialize.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(initialize.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
@@ -446,6 +455,15 @@ try {
   assert.equal(localGrantBearerList.payload.result._meta.stableToolName, "pact.call");
   assert.equal(localGrantBearerList.payload.result._meta.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
   assert.equal(localGrantBearerList.payload.result._meta.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(
+    localGrantBearerList.payload.result._meta.connector.autoInstallCommand,
+    `npx pact-mcp-connector@latest install --target auto --url '${server.url}' --json`
+  );
+  assert.equal(
+    localGrantBearerList.payload.result._meta.connector.priorityInstallCommand,
+    `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
+  );
+  assert.match(localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstall, /pact-mcp-install\.sh.+--target auto/);
   assert.deepEqual(localGrantBearerList.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrantBearerList.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
