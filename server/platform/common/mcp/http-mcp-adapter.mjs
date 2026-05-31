@@ -634,6 +634,16 @@ function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineComm
   }));
 }
 
+function mcpSupportedTargetDetails() {
+  return MCP_CLIENT_TARGETS.map(({ target, label, priority, installMode, locations }) => ({
+    target,
+    label,
+    priority,
+    installMode,
+    locations: [...locations]
+  }));
+}
+
 export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } = {}) {
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
   const urlArgs = commandUrlArgs(baseUrl);
@@ -653,6 +663,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local${urlArgs} --json`;
   const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan${urlArgs} --json`;
   const clientTargets = mcpClientTargetGuides({ baseUrl, vmBaseUrl, githubOneLineCommand });
+  const supportedTargets = mcpSupportedTargetDetails();
   return {
     schemaVersion: 1,
     name: "Pact",
@@ -699,13 +710,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       packageName: MCP_CONNECTOR_PACKAGE_NAME,
       packageVersion: MCP_CONNECTOR_VERSION,
       releaseChannel: "stable",
-      supportedTargets: clientTargets.map(({ target, label, priority, installMode, locations }) => ({
-        target,
-        label,
-        priority,
-        installMode,
-        locations
-      })),
+      supportedTargets,
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       githubOneLineCommand,
       githubOneLineInstallCommand,
@@ -1121,7 +1126,8 @@ function pactMetaResult({
         installCommand: githubOneLineAutoInstallCommand,
         autoInstallCommand: githubOneLineAutoInstallCommand,
         priorityInstallCommand: githubOneLinePriorityInstallCommand,
-        priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS]
+        priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+        supportedTargets: mcpSupportedTargetDetails()
       }
     });
   }

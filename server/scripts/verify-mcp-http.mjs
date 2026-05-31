@@ -422,6 +422,11 @@ try {
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /--json/);
   assert.deepEqual(updateProbe.payload.result.structuredContent.priorityTargets, ["claude-code", "codex", "openclaw"]);
+  const updateTargetDetails = new Map(updateProbe.payload.result.structuredContent.supportedTargets.map((target) => [target.target, target]));
+  assert.deepEqual([...updateTargetDetails.keys()], expectedInstallTargets);
+  assert.equal(updateTargetDetails.get("claude-code").label, "Claude Code");
+  assert.equal(updateTargetDetails.get("openclaw").priority, true);
+  assert.deepEqual(updateTargetDetails.get("hermes").locations, ["orbstack", "remote-linux"]);
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(updateProbe.payload.result.content[0].text, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(updateProbe.payload.result.content[0].text, /claude-code,codex,openclaw/);
