@@ -40,6 +40,7 @@ export const PACT_MCP_URL_ENV = "PACT_MCP_URL";
 export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
 export const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
 export const PACT_MCP_DISCOVERY_FILE = "~/.pact/mcp/servers.json";
+const MCP_BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
 const MCP_CLIENT_TARGETS = Object.freeze([
   { target: "codex", label: "Codex", priority: true, installMode: "codex-release-plugin-and-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
   { target: "claude-code", label: "Claude Code", priority: true, installMode: "claude-code-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
@@ -530,7 +531,7 @@ function commandUrlArgs(baseUrl) {
 }
 
 function githubOneLineMcpInstallCommand() {
-  return `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
+  return `/bin/sh -c "$(curl ${MCP_BOOTSTRAP_CURL_FLAGS} https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
 }
 
 function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {

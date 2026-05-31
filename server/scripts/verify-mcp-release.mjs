@@ -32,6 +32,11 @@ async function sha256(filePath) {
   return hash.digest("hex");
 }
 
+function assertResilientOneLineCommand(command) {
+  assert.match(command, /\/bin\/sh -c/);
+  assert.match(command, /curl -fL --retry 3 --connect-timeout 20 -sS/);
+}
+
 function resolveVerifyTargetPlatform() {
   if (process.platform === "darwin") {
     return "darwin-arm64";
@@ -183,10 +188,16 @@ try {
   assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("--target auto"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
-  assert.ok(manifest.install.githubOneLineCommand.startsWith("/bin/sh -c"));
-  assert.ok(manifest.install.githubOneLineCommandZhCN.startsWith("/bin/sh -c"));
-  assert.ok(manifest.install.githubOneLineUninstallCommand.startsWith("/bin/sh -c"));
-  assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.startsWith("/bin/sh -c"));
+  for (const command of [
+    manifest.install.githubOneLineCommand,
+    manifest.install.githubOneLineCommandZhCN,
+    manifest.install.githubOneLineAutoInstallCommand,
+    manifest.install.githubOneLineAutoInstallCommandZhCN,
+    manifest.install.githubOneLineUninstallCommand,
+    manifest.install.githubOneLineUninstallCommandZhCN
+  ]) {
+    assertResilientOneLineCommand(command);
+  }
   assert.ok(manifest.install.portableCommand.includes("pact-mcp register"));
   assert.ok(manifest.install.interactiveInstallCommand.includes("pact-mcp-connector@latest install"));
   assert.ok(manifest.install.autoInstallCommand.includes("pact-mcp-connector@latest install --target auto"));
@@ -230,6 +241,16 @@ try {
   assert.ok(result.githubOneLineCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(result.githubOneLineAutoInstallCommandZhCN.includes("--target auto"));
   assert.ok(result.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
+  for (const command of [
+    result.githubOneLineCommand,
+    result.githubOneLineCommandZhCN,
+    result.githubOneLineAutoInstallCommand,
+    result.githubOneLineAutoInstallCommandZhCN,
+    result.githubOneLineUninstallCommand,
+    result.githubOneLineUninstallCommandZhCN
+  ]) {
+    assertResilientOneLineCommand(command);
+  }
   await run("sh", ["-n", result.bootstrapInstallerPath]);
   await run("sh", ["-n", result.bootstrapUninstallerPath]);
   await run("sh", ["-n", result.bootstrapInstallerZhCNPath]);

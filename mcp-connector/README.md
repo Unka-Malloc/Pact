@@ -9,7 +9,7 @@ This package is the client-side connector only. It does not contain the Pact ser
 One command from GitHub Release:
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"
 ```
 
 This downloads the connector from GitHub Releases, verifies its checksum,
@@ -62,7 +62,7 @@ with no `--target` uses the same auto-detected path.
 For a single copyable GitHub Release command in an unattended agent shell:
 
 ```bash
-/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
 ```
 
 Use `--token-stdin` only when installing with a pre-issued custom grant token.

@@ -19,6 +19,7 @@ import {
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const connectorRoot = path.join(projectRoot, "mcp-connector");
+const BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
 
 function parseArgs(argv) {
   const args = {
@@ -620,26 +621,26 @@ async function createBootstrapInstaller({ outputDir, packageJson, tarballName, t
     scriptPath,
     sha256: await sha256(scriptPath),
     githubLatestUrl: `https://github.com/${repo}/releases/latest/download/${scriptName}`,
-    oneLineCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${scriptName})"`,
-    oneLineAutoInstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${scriptName})" -- --target auto`,
+    oneLineCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${scriptName})"`,
+    oneLineAutoInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${scriptName})" -- --target auto`,
     uninstallScriptName,
     uninstallScriptPath,
     uninstallSha256: await sha256(uninstallScriptPath),
     githubLatestUninstallUrl: `https://github.com/${repo}/releases/latest/download/${uninstallScriptName}`,
-    oneLineUninstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${uninstallScriptName})"`,
+    oneLineUninstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${uninstallScriptName})"`,
     localized: {
       zhCN: {
         scriptName: zhCnScriptName,
         scriptPath: zhCnScriptPath,
         sha256: zhCnSha256,
         githubLatestUrl: `https://github.com/${repo}/releases/latest/download/${zhCnScriptName}`,
-        oneLineCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${zhCnScriptName})"`,
-        oneLineAutoInstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${zhCnScriptName})" -- --target auto`,
+        oneLineCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnScriptName})"`,
+        oneLineAutoInstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnScriptName})" -- --target auto`,
         uninstallScriptName: zhCnUninstallScriptName,
         uninstallScriptPath: zhCnUninstallScriptPath,
         uninstallSha256: zhCnUninstallSha256,
         githubLatestUninstallUrl: `https://github.com/${repo}/releases/latest/download/${zhCnUninstallScriptName}`,
-        oneLineUninstallCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${repo}/releases/latest/download/${zhCnUninstallScriptName})"`
+        oneLineUninstallCommand: `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${repo}/releases/latest/download/${zhCnUninstallScriptName})"`
       }
     }
   };

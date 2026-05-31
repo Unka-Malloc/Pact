@@ -141,6 +141,7 @@ try {
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
+  assert.match(discovery.payload.installer.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
   assert.match(discovery.payload.installer.githubOneLineInstallCommand, /pact-mcp-install\.sh.+--url/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
