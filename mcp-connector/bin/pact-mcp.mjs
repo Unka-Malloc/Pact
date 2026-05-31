@@ -410,19 +410,33 @@ function targetDefaultCommand(target) {
   return target || "codex";
 }
 
-function shellCommandForInstall({ target = "codex", binOption = "", includeUrl = false, baseUrl = "http://127.0.0.1:7228", includeToken = false } = {}) {
+function shellCommandForInstall({
+  target = "codex",
+  binOption = "",
+  includeUrl = false,
+  baseUrl = "http://127.0.0.1:7228",
+  includeToken = false,
+  tokenEnv = ""
+} = {}) {
   const parts = ["pact-mcp", "install", "--target", target];
   if (binOption) {
     parts.push(`--${binOption}`, targetDefaultCommand(target));
   }
   if (includeUrl) {
-    parts.push("--url", baseUrl);
+    parts.push("--url", shellQuote(baseUrl));
+  }
+  if (tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV) {
+    parts.push("--token-env", shellQuote(tokenEnv));
   }
   if (includeToken) {
     parts.push("--token-stdin");
   }
   parts.push("--json");
   return parts.join(" ");
+}
+
+function commandGuidanceBaseUrl(options = {}) {
+  return normalizeBaseUrl(option(options, "resolved-url", explicitBaseUrl(options)));
 }
 
 function commandFailureGuidance({ command = "", message = "", options = {} } = {}) {
@@ -451,12 +465,17 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
     };
   }
   if (lower.includes("missing token")) {
+    const target = String(option(options, "target", "codex")) || "codex";
+    const baseUrl = commandGuidanceBaseUrl(options);
+    const tokenEnv = String(option(options, "token-env", DEFAULT_TOKEN_ENV));
+    const urlArgs = baseUrl ? ` --url ${shellQuote(baseUrl)}` : "";
+    const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
     return {
       errorCode: "MISSING_TOKEN",
-      nextCommand: shellCommandForInstall({ target: String(option(options, "target", "codex")) || "codex", includeToken: true }),
+      nextCommand: shellCommandForInstall({ target, includeToken: true, includeUrl: Boolean(baseUrl), baseUrl, tokenEnv }),
       repairCommands: [
-        shellCommandForInstall({ target: String(option(options, "target", "codex")) || "codex", includeToken: true }),
-        `PACT_MCP_TOKEN=your-token pact-mcp ${command || "install"} --target ${String(option(options, "target", "codex")) || "codex"} --json`
+        shellCommandForInstall({ target, includeToken: true, includeUrl: Boolean(baseUrl), baseUrl, tokenEnv }),
+        `${tokenEnv}=your-token pact-mcp ${command || "install"} --target ${target}${urlArgs}${tokenEnvArgs} --json`
       ]
     };
   }

@@ -118,6 +118,7 @@ const remoteOpenCodeRegistryPath = path.join(opencodeConfigDir, "pact-remote-ope
 const remoteCodexRegistryPath = path.join(opencodeConfigDir, "pact-remote-codex-servers.json");
 const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const missingDoctorTokenEnv = `PACT_VERIFY_DOCTOR_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
+const missingInstallTokenEnv = `PACT_VERIFY_INSTALL_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const remoteCodexTokenEnv = `PACT_VERIFY_REMOTE_CODEX_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const fakeAgentCommandLog = path.join(opencodeConfigDir, "fake-agent-commands.log");
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
@@ -1086,6 +1087,27 @@ try {
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.ok(payload.supportedTargets?.includes(target), `${target} should be listed as supported`);
     }
+  });
+
+  await testAsync("missing token guidance preserves explicit server url", async () => {
+    const result = await spawnConnector([
+      "install",
+      "--target", "codex",
+      "--url", serverUrl,
+      "--token-env", missingInstallTokenEnv,
+      "--no-auto-token",
+      "--json"
+    ]);
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.errorCode, "MISSING_TOKEN");
+    assert.ok(payload.nextCommand?.includes("--token-stdin"));
+    assert.ok(payload.nextCommand?.includes(`--url '${serverUrl}'`));
+    assert.ok(payload.nextCommand?.includes(`--token-env '${missingInstallTokenEnv}'`));
+    assert.ok(payload.repairCommands?.every((command) => command.includes(`--url '${serverUrl}'`)));
+    assert.ok(payload.repairCommands?.every((command) => command.includes(missingInstallTokenEnv)));
+    assert.equal(result.stdout.includes(token), false, "missing-token guidance must not expose grant tokens");
   });
 
   await testAsync("auto install with no detected clients returns machine-readable repair commands", async () => {
