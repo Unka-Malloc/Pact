@@ -645,7 +645,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   } = githubOneLineMcpInstallCommands({ baseUrl });
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>${urlArgs}`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs}`;
-  const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local${urlArgs}`;
+  const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local${urlArgs} --json`;
   const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan${urlArgs} --json`;
   const clientTargets = mcpClientTargetGuides({ baseUrl, vmBaseUrl, githubOneLineCommand });
   return {

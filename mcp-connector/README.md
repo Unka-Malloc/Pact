@@ -113,7 +113,7 @@ one automatically.
 ## Discover Local Hub
 
 ```bash
-npx pact-mcp-connector@latest discover-local
+npx pact-mcp-connector@latest discover-local --json
 ```
 
 Agents should use this command as the unified local discovery entrypoint.

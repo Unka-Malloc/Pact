@@ -224,6 +224,7 @@ try {
   assert.equal(Object.hasOwn(manifest.install, "bulkInstallCommand"), false);
   assert.ok(manifest.install.uninstallCommand.includes("npx pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.discoverCommand.includes("pact-mcp-connector@latest discover-local"));
+  assert.ok(manifest.install.discoverCommand.includes("--json"));
   assert.ok(manifest.install.scanCommand.includes("pact-mcp-connector@latest scan"));
   assert.equal(manifest.bootstrap.scriptName, "pact-mcp-install.sh");
   assert.equal(manifest.bootstrap.uninstallScriptName, "pact-mcp-uninstall.sh");

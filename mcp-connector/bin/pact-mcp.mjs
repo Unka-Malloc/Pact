@@ -2283,7 +2283,7 @@ function buildDeviceHubManifest({
   const packageExec = `npx ${packageJson.name}@${packageJson.version}`;
   const urlArgs = ` --url ${shellQuote(baseUrl)}`;
   const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
-  const discoverCommand = `${packageExec} discover-local${urlArgs}`;
+  const discoverCommand = `${packageExec} discover-local${urlArgs} --json`;
   const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
   const scanCommand = `${packageExec} scan${urlArgs}${tokenEnvArgs} --json`;
   const codexInstallCommand = `${packageExec} install --target codex${urlArgs}${tokenEnvArgs}`;
@@ -2937,7 +2937,7 @@ async function resetServerConfig({ options, publishEnv = true }) {
       strategy: "shared-device-hub",
       localEntry: {
         type: "pact-mcp-discover-local",
-        command: `npx ${packageJson.name}@${packageJson.version} discover-local`,
+        command: `npx ${packageJson.name}@${packageJson.version} discover-local --json`,
         registryFile: discoveryPath
       },
       registryFile: discoveryPath,

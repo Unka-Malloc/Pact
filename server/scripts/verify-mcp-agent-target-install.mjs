@@ -996,7 +996,7 @@ try {
     assert.equal(connector.interactiveInstallCommand, `${npxPrefix} install --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     assert.equal(connector.installCommand, `${npxPrefix} install --target <client> --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     assert.equal(connector.uninstallCommand, `${npxPrefix} uninstall --target <client> --url '${serverUrl}'`);
-    assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}'`);
+    assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}' --json`);
     assert.equal(connector.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.codex?.tokenEnv, autoTokenEnv);

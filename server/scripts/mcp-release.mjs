@@ -347,7 +347,7 @@ async function createPortableBundle({ outputDir, packageJson, target, bundledVer
     "The connector scans local Pact candidates and verifies the MCP identity signature before using a URL.",
     "",
     "Discover the local shared hub:",
-    "  ./pact-mcp discover-local",
+    "  ./pact-mcp discover-local --json",
     "",
     "Connect clients interactively:",
     "  ./pact-mcp install",
@@ -719,7 +719,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       interactiveUninstallCommand: `npx ${packageJson.name}@latest uninstall`,
       uninstallCommand: `npx ${packageJson.name}@latest uninstall --target <client>`,
       doctorCommand: `npx ${packageJson.name}@latest doctor`,
-      discoverCommand: `npx ${packageJson.name}@latest discover-local`,
+      discoverCommand: `npx ${packageJson.name}@latest discover-local --json`,
       scanCommand: `npx ${packageJson.name}@latest scan --json`,
       supportedTargets: [
         "codex",

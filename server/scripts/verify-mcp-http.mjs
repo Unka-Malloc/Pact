@@ -161,6 +161,8 @@ try {
   assert.equal(discovery.payload.installer.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.match(discovery.payload.installer.scanCommand, /pact-mcp-connector@latest scan/);
   assert.match(discovery.payload.installer.scanCommand, /--json/);
+  assert.match(discovery.payload.installer.discoverCommand, /pact-mcp-connector@latest discover-local/);
+  assert.match(discovery.payload.installer.discoverCommand, /--json/);
   assert.match(discovery.payload.installer.autoInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.equal(discovery.payload.installer.portable.installCommand, `./pact-mcp register --url '${server.url}'`);
   assert.equal(discovery.payload.installer.portable.interactiveInstallCommand, `./pact-mcp install --url '${server.url}'`);
@@ -202,6 +204,7 @@ try {
   assert.equal(clientTargetsById.get("opencode").configTemplate.mcp.pact.type, "remote");
   assert.equal(discovery.payload.localDiscovery.files.length, 1);
   assert.match(discovery.payload.localDiscovery.entrypoint.command, /discover-local/);
+  assert.match(discovery.payload.localDiscovery.entrypoint.command, /--json/);
   assert.equal(discovery.payload.installer.portable.requiresInstalledNode, false);
   assert.equal(discovery.payload.installer.portable.preferredArchive, "zip");
   assert.equal(discovery.payload.installer.portable.bootstrapScript, "pact-mcp-install.sh");
