@@ -1,6 +1,6 @@
 use crate::paths::portable_data_dir;
-use anyhow::{anyhow, Result};
-use serde_json::{json, Map, Value};
+use anyhow::{Result, anyhow};
+use serde_json::{Map, Value, json};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};

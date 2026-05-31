@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Result};
+use crate::client_state::ClientStateStore;
+use anyhow::{Result, anyhow};
 use directories::UserDirs;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -41,8 +42,18 @@ pub struct TargetCandidate {
     pub config_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binary_path: Option<String>,
+    pub manual: bool,
     pub adapter_status: String,
     pub supported_actions: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ManualTarget {
+    target: String,
+    label: String,
+    kind: String,
+    config_path: Option<PathBuf>,
+    binary_path: Option<PathBuf>,
 }
 
 fn target_defs() -> Vec<TargetDef> {
@@ -100,9 +111,18 @@ fn target_defs() -> Vec<TargetDef> {
 }
 
 pub fn scan_targets() -> Result<Value> {
+    scan_targets_with_params(&json!({}))
+}
+
+pub fn scan_targets_with_params(params: &Value) -> Result<Value> {
+    let store = client_state_store(params)?;
+    let manual_targets = manual_targets(&store)?;
     let candidates = target_defs()
         .iter()
-        .map(scan_target)
+        .map(|def| {
+            let manual = manual_targets.iter().find(|item| item.target == def.id);
+            scan_target_with_manual(def, manual)
+        })
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({
         "ok": true,
@@ -115,21 +135,39 @@ pub fn scan_targets() -> Result<Value> {
 pub fn add_target(params: &Value) -> Result<Value> {
     let target = target_param(params)?;
     let def = target_def(&target)?;
+    let store = client_state_store(params)?;
+    let saved = upsert_manual_target(&store, &def, params)?;
+    let activity = store.activity_log().append(
+        "target.manual.saved",
+        json!({
+            "target": def.id,
+            "configPath": saved.get("configPath").cloned().unwrap_or_else(|| json!("")),
+            "binaryPath": saved.get("binaryPath").cloned().unwrap_or_else(|| json!(""))
+        }),
+    )?;
     Ok(json!({
         "ok": true,
         "status": "accepted",
         "target": def.id,
         "label": def.label,
         "manual": true,
-        "configPath": params.get("configPath").and_then(Value::as_str),
-        "binaryPath": params.get("binaryPath").and_then(Value::as_str),
+        "record": saved,
+        "activity": activity,
         "nextAction": "mcp.config.plan",
     }))
 }
 
 pub fn inspect_target(target: &str) -> Result<Value> {
-    let def = target_def(target)?;
-    let candidate = scan_target(&def)?;
+    inspect_target_with_params(&json!({ "target": target }))
+}
+
+pub fn inspect_target_with_params(params: &Value) -> Result<Value> {
+    let target = target_param(params)?;
+    let def = target_def(&target)?;
+    let store = client_state_store(params)?;
+    let manual_targets = manual_targets(&store)?;
+    let manual = manual_targets.iter().find(|item| item.target == def.id);
+    let candidate = scan_target_with_manual(&def, manual)?;
     Ok(json!({
         "ok": true,
         "target": candidate,
@@ -191,18 +229,40 @@ pub fn mcp_config_apply(params: &Value) -> Result<Value> {
     }
     let fields = target_fields_with_values(def.id, &base_url, &token_ref);
     let new_content = apply_structured_patch(def.id, &current, &base_url, &token_ref)?;
-    let snapshot = write_snapshot(&config_path, def.id, &current)?;
+    let store = client_state_store(params)?;
+    let snapshot = store.snapshot_store().capture(
+        def.id,
+        &config_path,
+        json!({
+            "operation": "mcp.config.apply",
+            "configPath": display_path(config_path.clone()),
+            "beforeHash": before_hash.clone(),
+            "fields": fields.clone()
+        }),
+    )?;
     atomic_write(&config_path, &new_content)?;
     let after_hash = hash_text(&new_content);
+    let activity = store.activity_log().append(
+        "mcp.config.applied",
+        json!({
+            "target": def.id,
+            "configPath": display_path(config_path.clone()),
+            "snapshotId": snapshot.snapshot_id.clone(),
+            "snapshotPath": display_path(snapshot.snapshot_path.clone()),
+            "beforeHash": before_hash.clone(),
+            "afterHash": after_hash.clone()
+        }),
+    )?;
     Ok(json!({
         "ok": true,
         "status": "applied",
         "target": def.id,
         "configPath": display_path(config_path),
-        "snapshotId": snapshot.0,
-        "snapshotPath": display_path(snapshot.1),
+        "snapshotId": snapshot.snapshot_id,
+        "snapshotPath": display_path(snapshot.snapshot_path),
         "beforeHash": before_hash,
         "afterHash": after_hash,
+        "activity": activity,
         "patch": {
             "type": "structured",
             "fields": fields
@@ -213,14 +273,40 @@ pub fn mcp_config_apply(params: &Value) -> Result<Value> {
 pub fn mcp_config_rollback(params: &Value) -> Result<Value> {
     let target = target_param(params)?;
     let def = target_def(&target)?;
-    let snapshot_path = snapshot_path_from_params(params)?;
+    let store = client_state_store(params)?;
+    let Some(snapshot_path) = params.get("snapshotPath").and_then(Value::as_str) else {
+        let snapshot_id = snapshot_id_from_params(params)?;
+        let restore = store.snapshot_store().restore(&snapshot_id)?;
+        let activity = store.activity_log().append(
+            "mcp.config.rolled_back",
+            json!({
+                "target": def.id,
+                "snapshotId": snapshot_id.clone(),
+                "snapshotPath": restore.get("snapshotPath").cloned().unwrap_or_else(|| json!("")),
+                "configPath": restore.get("sourcePath").cloned().unwrap_or_else(|| json!(""))
+            }),
+        )?;
+        return Ok(json!({
+            "ok": true,
+            "status": "rolled_back",
+            "target": def.id,
+            "configPath": restore.get("sourcePath").cloned().unwrap_or_else(|| json!("")),
+            "restoredSnapshotId": snapshot_id,
+            "restoredSnapshotPath": restore.get("snapshotPath").cloned().unwrap_or_else(|| json!("")),
+            "preRollbackSnapshotId": restore.get("preRestoreSnapshotId").cloned().unwrap_or_else(|| json!("")),
+            "preRollbackSnapshotPath": restore.get("preRestoreSnapshotPath").cloned().unwrap_or_else(|| json!("")),
+            "activity": activity
+        }));
+    };
+    let snapshot_path = PathBuf::from(snapshot_path);
     let raw = fs::read_to_string(&snapshot_path)?;
     let snapshot: Value = serde_json::from_str(&raw)?;
     let config_path = snapshot
-        .get("configPath")
+        .get("sourcePath")
+        .or_else(|| snapshot.get("configPath"))
         .and_then(Value::as_str)
         .map(PathBuf::from)
-        .ok_or_else(|| anyhow!("Snapshot is missing configPath"))?;
+        .ok_or_else(|| anyhow!("Snapshot is missing sourcePath"))?;
     let existed = snapshot
         .get("existed")
         .and_then(Value::as_bool)
@@ -229,27 +315,58 @@ pub fn mcp_config_rollback(params: &Value) -> Result<Value> {
         .get("content")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let before_rollback = fs::read_to_string(&config_path).unwrap_or_default();
-    let rollback_snapshot = write_snapshot(&config_path, def.id, &before_rollback)?;
+    let rollback_snapshot = store.snapshot_store().capture(
+        def.id,
+        &config_path,
+        json!({
+            "operation": "mcp.config.rollback",
+            "restoringSnapshotPath": display_path(snapshot_path.clone())
+        }),
+    )?;
     if existed {
         atomic_write(&config_path, original_content)?;
     } else if config_path.exists() {
         fs::remove_file(&config_path)?;
     }
+    let snapshot_id = snapshot
+        .get("snapshotId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let activity = store.activity_log().append(
+        "mcp.config.rolled_back",
+        json!({
+            "target": def.id,
+            "configPath": display_path(config_path.clone()),
+            "snapshotId": snapshot_id.clone(),
+            "snapshotPath": display_path(snapshot_path.clone()),
+            "preRollbackSnapshotId": rollback_snapshot.snapshot_id.clone(),
+            "preRollbackSnapshotPath": display_path(rollback_snapshot.snapshot_path.clone())
+        }),
+    )?;
     Ok(json!({
         "ok": true,
         "status": "rolled_back",
         "target": def.id,
         "configPath": display_path(config_path),
+        "restoredSnapshotId": snapshot_id,
         "restoredSnapshotPath": display_path(snapshot_path),
-        "preRollbackSnapshotId": rollback_snapshot.0,
-        "preRollbackSnapshotPath": display_path(rollback_snapshot.1)
+        "preRollbackSnapshotId": rollback_snapshot.snapshot_id,
+        "preRollbackSnapshotPath": display_path(rollback_snapshot.snapshot_path),
+        "activity": activity
     }))
 }
 
-fn scan_target(def: &TargetDef) -> Result<TargetCandidate> {
-    let config_path = default_config_path(def.id);
-    let binary_path = find_binary(def.binary_names);
+fn scan_target_with_manual(
+    def: &TargetDef,
+    manual: Option<&ManualTarget>,
+) -> Result<TargetCandidate> {
+    let config_path = manual
+        .and_then(|item| item.config_path.clone())
+        .or_else(|| default_config_path(def.id));
+    let binary_path = manual
+        .and_then(|item| item.binary_path.clone())
+        .or_else(|| find_binary(def.binary_names));
     let configured = config_path
         .as_ref()
         .map(|path| config_has_pact(path))
@@ -259,10 +376,13 @@ fn scan_target(def: &TargetDef) -> Result<TargetCandidate> {
         .map(|path| path.exists())
         .unwrap_or(false);
     let detected = config_exists || binary_path.is_some();
+    let manual_entry = manual.is_some();
     let status = if configured {
         "configured"
     } else if detected {
         "detected"
+    } else if manual_entry {
+        "manual"
     } else {
         "not-detected"
     };
@@ -273,7 +393,7 @@ fn scan_target(def: &TargetDef) -> Result<TargetCandidate> {
     } else {
         0.15
     };
-    let detail = match (&config_path, &binary_path) {
+    let base_detail = match (&config_path, &binary_path) {
         (Some(config), Some(binary)) => {
             format!(
                 "{}: {}; binary: {}",
@@ -286,22 +406,136 @@ fn scan_target(def: &TargetDef) -> Result<TargetCandidate> {
         (None, Some(binary)) => format!("binary: {}", binary.display()),
         (None, None) => def.config_hint.to_string(),
     };
+    let detail = if manual_entry {
+        format!("Manual entry: {}", base_detail)
+    } else {
+        base_detail
+    };
     Ok(TargetCandidate {
         target: def.id.to_string(),
-        label: def.label.to_string(),
-        kind: def.kind.to_string(),
+        label: manual
+            .map(|item| item.label.clone())
+            .unwrap_or_else(|| def.label.to_string()),
+        kind: manual
+            .map(|item| item.kind.clone())
+            .unwrap_or_else(|| def.kind.to_string()),
         status: status.to_string(),
         configured,
         confidence,
         detail,
         config_path: config_path.map(display_path),
         binary_path: binary_path.map(display_path),
+        manual: manual_entry,
         adapter_status: "implemented".to_string(),
         supported_actions: SUPPORTED_ACTIONS
             .iter()
             .map(|item| item.to_string())
             .collect(),
     })
+}
+
+fn manual_targets(store: &ClientStateStore) -> Result<Vec<ManualTarget>> {
+    let document = store.read_collection("targets")?;
+    let items = document
+        .get("items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut manual = Vec::new();
+    for item in items {
+        let Some(target) = item
+            .get("target")
+            .and_then(Value::as_str)
+            .map(normalize_target)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let Ok(def) = target_def(&target) else {
+            continue;
+        };
+        manual.push(ManualTarget {
+            target: def.id.to_string(),
+            label: item
+                .get("label")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(def.label)
+                .to_string(),
+            kind: item
+                .get("kind")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(def.kind)
+                .to_string(),
+            config_path: optional_path(&item, "configPath"),
+            binary_path: optional_path(&item, "binaryPath"),
+        });
+    }
+    Ok(manual)
+}
+
+fn upsert_manual_target(
+    store: &ClientStateStore,
+    def: &TargetDef,
+    params: &Value,
+) -> Result<Value> {
+    let mut document = store.read_collection("targets")?;
+    let mut items = document
+        .get("items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let now = timestamp();
+    let existing = items.iter().position(|item| {
+        item.get("target")
+            .and_then(Value::as_str)
+            .map(normalize_target)
+            .as_deref()
+            == Some(def.id)
+    });
+    let created_at = existing
+        .and_then(|index| {
+            items[index]
+                .get("createdAt")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| now.clone());
+    let record = json!({
+        "target": def.id,
+        "label": param_string(params, "label").unwrap_or_else(|| def.label.to_string()),
+        "kind": param_string(params, "kind").unwrap_or_else(|| def.kind.to_string()),
+        "manual": true,
+        "configPath": param_string(params, "configPath"),
+        "binaryPath": param_string(params, "binaryPath"),
+        "createdAt": created_at,
+        "updatedAt": now
+    });
+    match existing {
+        Some(index) => items[index] = record.clone(),
+        None => items.push(record.clone()),
+    }
+    document["items"] = Value::Array(items);
+    store.write_collection("targets", document)?;
+    Ok(record)
+}
+
+fn optional_path(item: &Value, key: &str) -> Option<PathBuf> {
+    item.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn param_string(params: &Value, key: &str) -> Option<String> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn target_def(target: &str) -> Result<TargetDef> {
@@ -566,8 +800,17 @@ fn resolve_config_path(def: &TargetDef, params: &Value) -> Result<PathBuf> {
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .map(PathBuf::from)
+        .or_else(|| stored_config_path(def, params).ok().flatten())
         .or_else(|| default_config_path(def.id))
         .ok_or_else(|| anyhow!("{} requires --config-path for config writes", def.label))
+}
+
+fn stored_config_path(def: &TargetDef, params: &Value) -> Result<Option<PathBuf>> {
+    let store = client_state_store(params)?;
+    Ok(manual_targets(&store)?
+        .into_iter()
+        .find(|item| item.target == def.id)
+        .and_then(|item| item.config_path))
 }
 
 fn normalize_base_url(params: &Value) -> String {
@@ -600,44 +843,42 @@ fn mcp_url(base_url: &str) -> String {
     }
 }
 
-fn write_snapshot(config_path: &Path, target: &str, content: &str) -> Result<(String, PathBuf)> {
-    let snapshot_id = format!("{}-{}", target, snapshot_stamp());
-    let snapshot_dir = config_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(".pact-snapshots");
-    fs::create_dir_all(&snapshot_dir)?;
-    let snapshot_path = snapshot_dir.join(format!("{}.json", snapshot_id));
-    let record = json!({
-        "schemaVersion": 1,
-        "snapshotId": snapshot_id,
-        "target": target,
-        "configPath": display_path(config_path.to_path_buf()),
-        "capturedAt": snapshot_stamp(),
-        "existed": config_path.exists(),
-        "hash": hash_text(content),
-        "content": content,
-    });
-    atomic_write(&snapshot_path, &serde_json::to_string_pretty(&record)?)?;
-    Ok((snapshot_id, snapshot_path))
-}
-
-fn snapshot_path_from_params(params: &Value) -> Result<PathBuf> {
-    if let Some(path) = params.get("snapshotPath").and_then(Value::as_str) {
-        return Ok(PathBuf::from(path));
-    }
-    let snapshot_id = params
+fn snapshot_id_from_params(params: &Value) -> Result<String> {
+    params
         .get("snapshotId")
         .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing --snapshot-id or --snapshot-path"))?;
-    let target = target_param(params)?;
-    let def = target_def(&target)?;
-    let config_path = resolve_config_path(&def, params)?;
-    Ok(config_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(".pact-snapshots")
-        .join(format!("{}.json", snapshot_id)))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("Missing --snapshot-id or --snapshot-path"))
+}
+
+fn client_state_store(params: &Value) -> Result<ClientStateStore> {
+    if let Some(root) = params
+        .get("stateRoot")
+        .or_else(|| params.get("clientStateRoot"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return ClientStateStore::new(PathBuf::from(root));
+    }
+    if let Some(portable_dir) = params
+        .get("portableDir")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return ClientStateStore::new(PathBuf::from(portable_dir).join("future-client"));
+    }
+    ClientStateStore::portable()
+}
+
+fn timestamp() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}-{}", now.as_secs(), now.subsec_nanos())
 }
 
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
@@ -679,9 +920,10 @@ fn hash_text(content: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+#[cfg(test)]
 fn snapshot_stamp() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}-{}", now.as_secs(), now.subsec_nanos())
 }
@@ -782,6 +1024,63 @@ mod tests {
     }
 
     #[test]
+    fn targets_add_persists_manual_entry_and_scan_uses_it() {
+        let dir = temp_test_dir("manual-target");
+        let state_root = dir.join("future-client");
+        let config_path = dir.join("openclaw-mcp.json");
+
+        let added = add_target(&json!({
+            "target": "openclaw",
+            "stateRoot": display_path(state_root.clone()),
+            "configPath": display_path(config_path.clone()),
+            "label": "OpenClaw VM"
+        }))
+        .unwrap();
+
+        assert_eq!(added["ok"], true);
+        assert_eq!(added["record"]["target"], "openclaw");
+        assert_eq!(added["activity"]["type"], "target.manual.saved");
+
+        let store = crate::client_state::ClientStateStore::new(state_root.clone()).unwrap();
+        let saved = store.read_collection("targets").unwrap();
+        assert_eq!(saved["items"][0]["target"], "openclaw");
+        assert_eq!(saved["items"][0]["manual"], true);
+
+        let scan = scan_targets_with_params(&json!({
+            "stateRoot": display_path(state_root.clone())
+        }))
+        .unwrap();
+        let openclaw = scan["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["target"] == "openclaw")
+            .unwrap();
+        assert_eq!(openclaw["manual"], true);
+        assert_eq!(openclaw["label"], "OpenClaw VM");
+        assert_eq!(openclaw["status"], "manual");
+        assert_eq!(openclaw["configPath"], display_path(config_path.clone()));
+
+        let inspected = inspect_target_with_params(&json!({
+            "target": "openclaw",
+            "stateRoot": display_path(state_root.clone())
+        }))
+        .unwrap();
+        assert_eq!(inspected["target"]["manual"], true);
+        assert_eq!(
+            inspected["target"]["configPath"],
+            display_path(config_path.clone())
+        );
+
+        let plan = mcp_config_plan(&json!({
+            "target": "openclaw",
+            "stateRoot": display_path(state_root)
+        }))
+        .unwrap();
+        assert_eq!(plan["plan"]["configPath"], display_path(config_path));
+    }
+
+    #[test]
     fn opencode_plan_exposes_real_remote_mcp_shape() {
         let plan = mcp_config_plan(&json!({"target": "opencode"})).unwrap();
         let fields = plan["plan"]["fields"].as_array().unwrap();
@@ -798,6 +1097,7 @@ mod tests {
     fn config_write_opencode_apply_uses_snapshot_and_preserves_unrelated_config() {
         let dir = temp_test_dir("opencode-apply");
         let config_path = dir.join("opencode.jsonc");
+        let state_root = dir.join("future-client");
         fs::write(
             &config_path,
             r#"{
@@ -816,6 +1116,7 @@ mod tests {
         let result = mcp_config_apply(&json!({
             "target": "opencode",
             "configPath": display_path(config_path.clone()),
+            "stateRoot": display_path(state_root.clone()),
             "baseUrl": "http://127.0.0.1:7228",
             "token": "test-token"
         }))
@@ -834,18 +1135,35 @@ mod tests {
             "test-token"
         );
         assert_eq!(updated["mcp"]["pact"]["enabled"], true);
-        assert!(PathBuf::from(result["snapshotPath"].as_str().unwrap()).exists());
+        let snapshot_path = PathBuf::from(result["snapshotPath"].as_str().unwrap());
+        assert!(snapshot_path.exists());
+        assert!(snapshot_path.starts_with(state_root.join("snapshots")));
+        assert!(!dir.join(".pact-snapshots").exists());
+        assert_eq!(result["activity"]["type"], "mcp.config.applied");
+        let store = crate::client_state::ClientStateStore::new(state_root).unwrap();
+        let activity = store
+            .activity_log()
+            .list(&json!({"type": "mcp.config.applied", "target": "opencode"}))
+            .unwrap();
+        assert_eq!(activity["events"].as_array().unwrap().len(), 1);
+        let snapshots = store
+            .snapshot_store()
+            .list(&json!({"target": "opencode"}))
+            .unwrap();
+        assert_eq!(snapshots["snapshots"].as_array().unwrap().len(), 1);
     }
 
     #[test]
     fn config_write_rollback_restores_snapshot_content() {
         let dir = temp_test_dir("opencode-rollback");
         let config_path = dir.join("opencode.jsonc");
+        let state_root = dir.join("future-client");
         let original = r#"{"mcp":{"other":{"enabled":true}}}"#;
         fs::write(&config_path, original).unwrap();
         let apply = mcp_config_apply(&json!({
             "target": "opencode",
             "configPath": display_path(config_path.clone()),
+            "stateRoot": display_path(state_root.clone()),
             "baseUrl": "http://localhost:7228",
             "token": "rollback-token"
         }))
@@ -855,11 +1173,14 @@ mod tests {
         let rollback = mcp_config_rollback(&json!({
             "target": "opencode",
             "configPath": display_path(config_path.clone()),
-            "snapshotPath": apply["snapshotPath"].as_str().unwrap()
+            "stateRoot": display_path(state_root.clone()),
+            "snapshotId": apply["snapshotId"].as_str().unwrap()
         }))
         .unwrap();
 
         assert_eq!(rollback["ok"], true);
+        assert_eq!(rollback["restoredSnapshotId"], apply["snapshotId"]);
+        assert_eq!(rollback["activity"]["type"], "mcp.config.rolled_back");
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
     }
 

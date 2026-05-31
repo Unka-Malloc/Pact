@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::{env, fs, path::PathBuf};
 
 pub fn portable_data_dir() -> Result<PathBuf> {

@@ -1,11 +1,15 @@
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::env;
 
 fn main() -> Result<()> {
     env_logger::init();
     let args = env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() || matches!(args.first().map(String::as_str), Some("--help" | "-h" | "help"))
+    if args.is_empty()
+        || matches!(
+            args.first().map(String::as_str),
+            Some("--help" | "-h" | "help")
+        )
     {
         print_usage();
         return Ok(());
@@ -89,18 +93,21 @@ fn main() -> Result<()> {
             if scope == "skill" && area == "visibility" && action == "set" =>
         {
             let params = cli_params(rest);
-            print_json(&pact_client_native::skill_hub::skill_visibility(
-                &params,
-            )?);
+            print_json(&pact_client_native::skill_hub::skill_visibility(&params)?);
             Ok(())
         }
-        [scope, area, action, rest @ ..] if scope == "skill" && area == "pin" && action == "set" => {
+        [scope, area, action, rest @ ..]
+            if scope == "skill" && area == "pin" && action == "set" =>
+        {
             let params = cli_params(rest);
             print_json(&pact_client_native::skill_hub::skill_pin(&params)?);
             Ok(())
         }
-        [scope, action] if scope == "targets" && action == "scan" => {
-            print_json(&pact_client_native::targets::scan_targets()?);
+        [scope, action, rest @ ..] if scope == "targets" && action == "scan" => {
+            let params = cli_params(rest);
+            print_json(&pact_client_native::targets::scan_targets_with_params(
+                &params,
+            )?);
             Ok(())
         }
         [scope, action, rest @ ..] if scope == "targets" && action == "add" => {
@@ -108,8 +115,14 @@ fn main() -> Result<()> {
             print_json(&pact_client_native::targets::add_target(&params)?);
             Ok(())
         }
-        [scope, action, target] if scope == "targets" && action == "inspect" => {
-            print_json(&pact_client_native::targets::inspect_target(target)?);
+        [scope, action, target, rest @ ..] if scope == "targets" && action == "inspect" => {
+            let mut params = cli_params(rest);
+            if let Some(object) = params.as_object_mut() {
+                object.insert("target".to_string(), json!(target));
+            }
+            print_json(&pact_client_native::targets::inspect_target_with_params(
+                &params,
+            )?);
             Ok(())
         }
         [scope, area, action, rest @ ..]
@@ -224,12 +237,12 @@ fn print_usage() {
   pact-client skill get <skill-id> --agent AGENT --json
   pact-client skill visibility set <skill-id> --agent AGENT --hidden true|false
   pact-client skill pin set <skill-id> --agent AGENT --version VERSION
-  pact-client targets scan
-  pact-client targets add --target <target> [--config-path PATH] [--binary-path PATH]
-  pact-client targets inspect <target>
-  pact-client mcp plugin status|update|rollback --target <target> [--config-path PATH]
-  pact-client mcp config plan --target <target> [--config-path PATH]
-  pact-client mcp config apply --target <target> [--config-path PATH]
-  pact-client mcp config rollback --target <target> [--snapshot-id ID]"
+  pact-client targets scan [--state-root PATH]
+  pact-client targets add --target <target> [--config-path PATH] [--binary-path PATH] [--state-root PATH]
+  pact-client targets inspect <target> [--state-root PATH]
+  pact-client mcp plugin status|update|rollback --target <target> [--config-path PATH] [--state-root PATH]
+  pact-client mcp config plan --target <target> [--config-path PATH] [--state-root PATH]
+  pact-client mcp config apply --target <target> [--config-path PATH] [--state-root PATH]
+  pact-client mcp config rollback --target <target> [--snapshot-id ID] [--state-root PATH]"
     );
 }

@@ -1,6 +1,6 @@
 use crate::client_state::ClientStateStore;
-use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use anyhow::{Result, anyhow};
+use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const STATUS_REQUESTED: &str = "requested";
@@ -304,7 +304,10 @@ fn is_hidden(store: &ClientStateStore, agent_id: &str, skill_id: &str) -> Result
         .and_then(Value::as_array)
         .map(|items| {
             items.iter().any(|item| {
-                item.get("kind").and_then(Value::as_str).unwrap_or("visibility") != "skill"
+                item.get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("visibility")
+                    != "skill"
                     && item.get("agentId").and_then(Value::as_str) == Some(agent_id)
                     && item.get("skillId").and_then(Value::as_str) == Some(skill_id)
                     && item.get("hidden").and_then(Value::as_bool).unwrap_or(false)
@@ -329,7 +332,11 @@ fn is_agent_approved(store: &ClientStateStore, agent_id: &str) -> Result<bool> {
 
 fn upsert_policy_item(items: &mut Vec<Value>, agent_id: &str, skill_id: &str, replacement: Value) {
     items.retain(|item| {
-        !(item.get("kind").and_then(Value::as_str).unwrap_or("visibility") != "skill"
+        !(item
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("visibility")
+            != "skill"
             && item.get("agentId").and_then(Value::as_str) == Some(agent_id)
             && item.get("skillId").and_then(Value::as_str) == Some(skill_id))
     });
@@ -378,8 +385,7 @@ fn target_id(params: &Value) -> Option<String> {
 }
 
 fn skill_id(params: &Value) -> Result<String> {
-    string_param(params, &["skill", "skillId", "id"], 0)
-        .ok_or_else(|| anyhow!("missing skill id"))
+    string_param(params, &["skill", "skillId", "id"], 0).ok_or_else(|| anyhow!("missing skill id"))
 }
 
 fn string_param(params: &Value, keys: &[&str], positional_index: usize) -> Option<String> {
@@ -481,11 +487,13 @@ mod tests {
         let result = skill_get_in(&store, &json!({"agent": "codex", "skill": "future"})).unwrap();
         assert_eq!(result["ok"], false);
         assert_eq!(result["error"], "protocol_deferred");
-        assert!(result["protocols"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|item| item.as_str() == Some("server Skill Registry")));
+        assert!(
+            result["protocols"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some("server Skill Registry"))
+        );
     }
 
     #[test]
@@ -495,9 +503,11 @@ mod tests {
         pair_approve_in(&store, &json!({"agent": "codex"})).unwrap();
         seed_skill(&store, "review", "1.0.0");
 
-        let pinned =
-            skill_pin_in(&store, &json!({"agent": "codex", "skill": "review", "version": "1.0.0"}))
-                .unwrap();
+        let pinned = skill_pin_in(
+            &store,
+            &json!({"agent": "codex", "skill": "review", "version": "1.0.0"}),
+        )
+        .unwrap();
         assert_eq!(pinned["version"], "1.0.0");
 
         let result = skill_get_in(&store, &json!({"agent": "codex", "skill": "review"})).unwrap();
