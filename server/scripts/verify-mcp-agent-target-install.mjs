@@ -97,6 +97,8 @@ const autoKiloConfigPath = path.join(opencodeConfigDir, "kilo", "kilo.json");
 const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "mcp_config.json");
 const noDetectHome = path.join(opencodeConfigDir, "no-detect-home");
 const noDetectRegistryPath = path.join(opencodeConfigDir, "pact-no-detect-servers.json");
+const remoteOpenCodeHome = path.join(opencodeConfigDir, "remote-opencode-home");
+const remoteOpenCodeRegistryPath = path.join(opencodeConfigDir, "pact-remote-opencode-servers.json");
 const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const missingDoctorTokenEnv = `PACT_VERIFY_DOCTOR_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const fakeAgentCommandLog = path.join(opencodeConfigDir, "fake-agent-commands.log");
@@ -108,6 +110,7 @@ const fakeKiloPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo.
 const fakeCopilotPath = path.join(fakeBinDir, process.platform === "win32" ? "copilot.cmd" : "copilot");
 const fakeOpenClawPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
 const fakeOpencodePath = path.join(fakeBinDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
+const fakeDockerPath = path.join(fakeBinDir, process.platform === "win32" ? "docker.cmd" : "docker");
 
 async function installFakeAgentCli(filePath) {
   await fs.mkdir(fakeBinDir, { recursive: true });
@@ -193,6 +196,38 @@ async function installFakePriorityAgentClis() {
   ]) {
     await installFakeAgentCli(filePath);
   }
+}
+
+async function installFakeDockerRuntime() {
+  if (process.platform === "win32") {
+    return false;
+  }
+  await fs.mkdir(fakeBinDir, { recursive: true });
+  await fs.mkdir(remoteOpenCodeHome, { recursive: true });
+  await fs.writeFile(fakeDockerPath, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"exec\" ]; then",
+    "  shift",
+    "  if [ \"$1\" = \"-i\" ]; then shift; fi",
+    "  while [ \"$1\" = \"-e\" ]; do",
+    "    export \"$2\"",
+    "    shift 2",
+    "  done",
+    "  container=\"$1\"",
+    "  shift",
+    "  if [ \"$container\" = \"box123\" ] && [ \"$1\" = \"sh\" ] && [ \"$2\" = \"-lc\" ]; then",
+    "    HOME=\"$PACT_FAKE_REMOTE_HOME\" sh -lc \"$3\"",
+    "    exit $?",
+    "  fi",
+    "  if [ \"$container\" = \"box123\" ] && [ \"$1\" = \"bash\" ] && [ \"$2\" = \"-lc\" ]; then",
+    "    HOME=\"$PACT_FAKE_REMOTE_HOME\" bash -lc \"$3\"",
+    "    exit $?",
+    "  fi",
+    "fi",
+    "exit 1",
+    ""
+  ].join("\n"), { mode: 0o755 });
+  return true;
 }
 
 let serverUrl = "";
@@ -386,6 +421,44 @@ try {
       output.includes("opencode") || output.includes("OpenCode"),
       `Output should mention opencode: ${output.slice(0, 200)}`
     );
+  });
+
+  await testAsync("cli remote opencode install writes remote config", async () => {
+    const canRun = await installFakeDockerRuntime();
+    if (!canRun) {
+      return;
+    }
+    const result = await spawnConnector([
+      "install",
+      "--target", "opencode",
+      "--url", serverUrl,
+      "--token", token,
+      "--execution-location", "docker",
+      "--remote-kind", "docker",
+      "--remote-id", "box123",
+      "--remote-name", "agentbox",
+      "--remote-bin", fakeDockerPath,
+      "--discovery-file", remoteOpenCodeRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 60000, {
+      PACT_FAKE_REMOTE_HOME: remoteOpenCodeHome
+    });
+    if (result.code !== 0) {
+      console.log(`\n      stdout: ${result.stdout.slice(0, 300)}`);
+      console.log(`      stderr: ${result.stderr.slice(0, 300)}`);
+    }
+    assert.equal(result.code, 0, `exit code ${result.code}`);
+    assert.equal(result.stdout.includes(token), false, "remote install output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.installed?.opencode?.status, "installed");
+    assert.equal(payload.installed?.opencode?.installMode, "opencode-docker-mcp-config");
+
+    const remoteConfig = JSON.parse(await fs.readFile(path.join(remoteOpenCodeHome, ".config", "opencode", "opencode.jsonc"), "utf8"));
+    assert.equal(remoteConfig.mcp?.pact?.type, "remote");
+    assert.match(remoteConfig.mcp?.pact?.url || "", /\/mcp$/);
+    assert.ok(remoteConfig.mcp?.pact?.headers?.["X-Pact-Api-Key"]);
   });
 
   // ── SECTION 5: Non-interactive auto install ──
@@ -622,6 +695,37 @@ try {
     assert.equal(grant.enabled, false);
     assert.ok(grant.metadata?.uninstalledTargets?.includes("opencode"));
     assert.ok(grant.metadata?.uninstalledAt);
+  });
+
+  await testAsync("cli remote opencode uninstall removes remote config", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const result = await spawnConnector([
+      "uninstall",
+      "--target", "opencode",
+      "--execution-location", "docker",
+      "--remote-kind", "docker",
+      "--remote-id", "box123",
+      "--remote-name", "agentbox",
+      "--remote-bin", fakeDockerPath,
+      "--discovery-file", remoteOpenCodeRegistryPath,
+      "--json"
+    ], 60000, {
+      PACT_FAKE_REMOTE_HOME: remoteOpenCodeHome,
+      PACT_MCP_URL: ""
+    });
+    if (result.code !== 0) {
+      console.log(`\n      stdout: ${result.stdout.slice(0, 300)}`);
+      console.log(`      stderr: ${result.stderr.slice(0, 300)}`);
+    }
+    assert.equal(result.code, 0, `exit code ${result.code}`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.uninstalled?.opencode?.status, "not-installed");
+    assert.equal(payload.uninstalled?.opencode?.uninstallMode, "opencode-docker-mcp-config");
+    const remoteConfig = JSON.parse(await fs.readFile(path.join(remoteOpenCodeHome, ".config", "opencode", "opencode.jsonc"), "utf8"));
+    assert.equal(remoteConfig.mcp?.pact, undefined);
   });
 
   // ── SECTION 8: Scan detection ──

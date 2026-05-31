@@ -1698,6 +1698,101 @@ async function installOpenCode({ baseUrl, token, configPath }) {
   };
 }
 
+function openCodeRemoteInstallScript() {
+  return [
+    "set -e",
+    "IFS= read -r token",
+    "node - \"$PACT_URL\" \"$token\" <<'NODE'",
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "const path = require('path');",
+    "const url = process.argv[2];",
+    "const token = process.argv[3];",
+    "const filePath = path.join(os.homedir(), '.config', 'opencode', 'opencode.jsonc');",
+    "fs.mkdirSync(path.dirname(filePath), { recursive: true });",
+    "let config = {};",
+    "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}",
+    "config.mcp = {",
+    "  ...(config.mcp || {}),",
+    "  pact: {",
+    "    type: 'remote',",
+    "    url,",
+    "    headers: { 'X-Pact-Api-Key': token },",
+    "    enabled: true",
+    "  }",
+    "};",
+    "fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\\n`);",
+    "NODE"
+  ].join("\n");
+}
+
+function openCodeRemoteUninstallScript() {
+  return [
+    "set -e",
+    "node - <<'NODE'",
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "const path = require('path');",
+    "const filePath = path.join(os.homedir(), '.config', 'opencode', 'opencode.jsonc');",
+    "let config = {};",
+    "try { config = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { console.log('not-installed'); process.exit(0); }",
+    "const removed = Boolean(config.mcp && Object.prototype.hasOwnProperty.call(config.mcp, 'pact'));",
+    "if (removed) {",
+    "  delete config.mcp.pact;",
+    "  fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\\n`);",
+    "}",
+    "console.log(removed ? 'removed' : 'not-installed');",
+    "NODE"
+  ].join("\n");
+}
+
+async function installOpenCodeOrb({ baseUrl, token, orbBin, vmName, vmUser }) {
+  if (!vmName || !vmUser) {
+    throw new Error("OpenCode VM install requires a discovered or explicit OrbStack VM and user.");
+  }
+  const url = `${vmBaseUrl(baseUrl)}/mcp`;
+  const result = await runWithInput(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    "env",
+    `PACT_URL=${url}`,
+    "bash",
+    "-lc",
+    openCodeRemoteInstallScript()
+  ], `${token}\n`, { allowFailure: true });
+  if (!result.ok) {
+    throw new Error(`OpenCode VM install failed: ${result.stderr || result.stdout}`);
+  }
+  return {
+    installMode: "opencode-orbstack-mcp-config",
+    vm: vmName,
+    vmUser,
+    url,
+    configPath: "~/.config/opencode/opencode.jsonc"
+  };
+}
+
+async function installOpenCodeRemote({ baseUrl, token, context }) {
+  if (!context?.kind || !context?.id || !context?.bin) {
+    throw new Error("OpenCode remote install requires a discovered remote context.");
+  }
+  const url = `${await remoteClientBaseUrl(context, baseUrl)}/mcp`;
+  const result = await remoteLinuxShellWithInput(context, openCodeRemoteInstallScript(), `${token}\n`, {
+    PACT_URL: url
+  });
+  if (!result.ok) {
+    throw new Error(`OpenCode remote install failed in ${remoteContextLabel(context)}: ${result.stderr || result.stdout}`);
+  }
+  return {
+    installMode: `opencode-${context.kind}-mcp-config`,
+    remote: remoteContextLabel(context),
+    url,
+    configPath: "~/.config/opencode/opencode.jsonc"
+  };
+}
+
 async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, openclawBin }) {
   if (!openclawBin) {
     throw new Error("OpenClaw install requires a discovered or explicit OpenClaw-like CLI path.");
@@ -2199,6 +2294,33 @@ async function uninstallOpenCode({ configPath }) {
     configPath,
     backupPath: removed.backupPath,
     removedConfigEntry: removed.removed
+  };
+}
+
+async function uninstallOpenCodeOrb({ orbBin, vmName, vmUser }) {
+  if (!vmName || !vmUser) {
+    throw new Error("OpenCode VM uninstall requires a discovered or explicit OrbStack VM and user.");
+  }
+  const result = await run(orbBin, ["-m", vmName, "-u", vmUser, "bash", "-lc", openCodeRemoteUninstallScript()], {
+    allowFailure: true
+  });
+  return {
+    uninstallMode: "opencode-orbstack-mcp-config",
+    vm: vmName,
+    vmUser,
+    removedConfigEntry: result.ok && /removed/.test(result.stdout)
+  };
+}
+
+async function uninstallOpenCodeRemote({ context }) {
+  if (!context?.kind || !context?.id || !context?.bin) {
+    throw new Error("OpenCode remote uninstall requires a discovered remote context.");
+  }
+  const result = await remoteLinuxShell(context, openCodeRemoteUninstallScript(), { timeoutMs: SCAN_COMMAND_TIMEOUT_MS });
+  return {
+    uninstallMode: `opencode-${context.kind}-mcp-config`,
+    remote: remoteContextLabel(context),
+    removedConfigEntry: result.ok && /removed/.test(result.stdout)
   };
 }
 
@@ -3863,7 +3985,9 @@ async function candidateHasInstalledPactMcp(settings, candidate) {
     return localJsonConfigHasPact(settings.antigravityConfigPath);
   }
   if (candidate.target === "opencode") {
-    return localJsonConfigHasPact(settings.opencodeConfigPath);
+    return candidateLocation(candidate) === "local"
+      ? localJsonConfigHasPact(settings.opencodeConfigPath)
+      : remoteHomeConfigHasPact(settings, candidate, ".config/opencode/opencode.jsonc");
   }
   if (candidate.status !== "detected") {
     return false;
@@ -5131,11 +5255,25 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
           configPath: settings.antigravityConfigPath
         });
       } else if (target === "opencode") {
-        clientResult = await installOpenCode({
-          baseUrl: settings.baseUrl,
-          token,
-          configPath: settings.opencodeConfigPath
-        });
+        clientResult = remoteContext
+          ? await installOpenCodeRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              context: remoteContext
+            })
+          : settings.executionLocation === "orb"
+          ? await installOpenCodeOrb({
+              baseUrl: settings.baseUrl,
+              token,
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser
+            })
+          : await installOpenCode({
+              baseUrl: settings.baseUrl,
+              token,
+              configPath: settings.opencodeConfigPath
+            });
       }
       const httpVerification = verify ? await verifyMcpTools({ baseUrl: settings.baseUrl, token }) : null;
       installed[target] = {
@@ -5481,9 +5619,19 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
           configPath: settings.antigravityConfigPath
         });
       } else if (target === "opencode") {
-        uninstalled[target] = await uninstallOpenCode({
-          configPath: settings.opencodeConfigPath
-        });
+        uninstalled[target] = remoteContext
+          ? await uninstallOpenCodeRemote({
+              context: remoteContext
+            })
+          : settings.executionLocation === "orb"
+          ? await uninstallOpenCodeOrb({
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser
+            })
+          : await uninstallOpenCode({
+              configPath: settings.opencodeConfigPath
+            });
       }
       uninstalled[target] = {
         ok: true,
