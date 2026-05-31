@@ -739,7 +739,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML table row/cell metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML and OpenDocument table row/cell metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond text-level elements"]
   },
@@ -764,7 +764,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word table cells, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/OpenDocument table cells, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -4532,14 +4532,100 @@ function parseXlsx(entries = []) {
   return parseXlsxDetailed(entries).text;
 }
 
+function removeOpenDocumentTables(xml = "") {
+  return String(xml || "").replace(/<(?:[\w.-]+:)?table(?:\s|>)[\s\S]*?<\/(?:[\w.-]+:)?table>/g, " ");
+}
+
+function openDocumentRepeatedCount(tag = "", localName = "number-columns-repeated") {
+  const value = Number(xmlLocalAttribute(tag, localName) || 1);
+  return Number.isFinite(value) && value > 0 ? Math.min(1000, Math.floor(value)) : 1;
+}
+
+function openDocumentTableCells(rowXml = "") {
+  const cells = [];
+  for (const match of String(rowXml || "").matchAll(/<[^:>]*:?table-cell\b[\s\S]*?<\/[^:>]*:?table-cell>/g)) {
+    const cellXml = match[0];
+    const tag = cellXml.match(/^<[^>]+>/)?.[0] || "";
+    const repeat = openDocumentRepeatedCount(tag, "number-columns-repeated");
+    const text = compactMarkupText(textFromXmlTextNodes(cellXml), 1000);
+    for (let index = 0; index < repeat; index += 1) {
+      cells.push(text);
+    }
+  }
+  return cells;
+}
+
+function appendOpenDocumentTableElements(elements = [], tableXml = "", { name = "", tableIndex = 0, lineStart = 0 } = {}) {
+  const tableTag = String(tableXml || "").match(/^<[^>]+>/)?.[0] || "";
+  const tableLabel = xmlLocalAttribute(tableTag, "name") || `Table ${tableIndex}`;
+  const rows = [];
+  for (const match of String(tableXml || "").matchAll(/<[^:>]*:?table-row\b[\s\S]*?<\/[^:>]*:?table-row>/g)) {
+    const rowXml = match[0];
+    const tag = rowXml.match(/^<[^>]+>/)?.[0] || "";
+    const repeat = openDocumentRepeatedCount(tag, "number-rows-repeated");
+    const cells = openDocumentTableCells(rowXml);
+    if (!cells.some(Boolean)) {
+      continue;
+    }
+    for (let index = 0; index < repeat; index += 1) {
+      rows.push(cells);
+    }
+  }
+  if (!rows.length) {
+    return { rowCount: 0, cellCount: 0 };
+  }
+  const headers = rows[0];
+  let cellCount = 0;
+  for (const [rowIndex, cells] of rows.entries()) {
+    const rowNumber = rowIndex + 1;
+    cellCount += cells.length;
+    const type = rowIndex === 0 ? "table-header" : "table-row";
+    const text = rowIndex === 0
+      ? `${tableLabel} Header row ${rowNumber}: ${cells.map((cell, cellIndex) => `${xlsxColumnLabel("", cellIndex)}=${cell}`).join("; ")}`
+      : `${tableLabel} Row ${rowNumber}: ${cells.map((cell, cellIndex) => `${headers[cellIndex] || `Column ${cellIndex + 1}`}=${cell}`).join("; ")}`;
+    pushStructureElement(elements, type, text, {
+      line: lineStart + rowNumber,
+      name: `${name}#table-${tableIndex}`,
+      table: {
+        format: "open-document",
+        sheet: tableLabel,
+        row: rowNumber,
+        columns: cells.length
+      },
+      cells: cells.map((cell, cellIndex) => ({
+        ref: `${xlsxColumnLabel("", cellIndex)}${rowNumber}`,
+        column: xlsxColumnLabel("", cellIndex),
+        row: rowNumber,
+        header: rowIndex === 0 ? "" : headers[cellIndex] || "",
+        value: cell
+      }))
+    });
+  }
+  return { rowCount: rows.length, cellCount };
+}
+
 function parseOpenDocument(entries = []) {
   const contentNames = entries
     .map((entry) => entry.name)
     .filter((name) => /^(content|styles|meta)\.xml$/.test(name));
   const elements = [];
   let sequence = 0;
+  let tableCount = 0;
+  let tableRowCount = 0;
+  let tableCellCount = 0;
   for (const name of contentNames) {
     const xml = zipEntryText(entries, name);
+    for (const match of xml.matchAll(/<(?:[\w.-]+:)?table(?:\s|>)[\s\S]*?<\/(?:[\w.-]+:)?table>/g)) {
+      tableCount += 1;
+      const table = appendOpenDocumentTableElements(elements, match[0], {
+        name,
+        tableIndex: tableCount,
+        lineStart: sequence + tableRowCount
+      });
+      tableRowCount += table.rowCount;
+      tableCellCount += table.cellCount;
+    }
+    const nonTableXml = removeOpenDocumentTables(xml);
     for (const match of xml.matchAll(/<(?:[\w.-]+:)?h\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?h>/g)) {
       const tag = match[0].match(/^<[^>]+>/)?.[0] || "";
       const level = Number(xmlLocalAttribute(tag, "outline-level") || 1);
@@ -4550,17 +4636,9 @@ function parseOpenDocument(entries = []) {
         name
       });
     }
-    for (const match of xml.matchAll(/<(?:[\w.-]+:)?p\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?p>/g)) {
+    for (const match of nonTableXml.matchAll(/<(?:[\w.-]+:)?p\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?p>/g)) {
       sequence += 1;
       pushStructureElement(elements, "paragraph", textFromXmlTextNodes(match[0]), { line: sequence, name });
-    }
-    for (const match of xml.matchAll(/<(?:[\w.-]+:)?table-row\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?table-row>/g)) {
-      sequence += 1;
-      pushStructureElement(elements, "table-row", textFromXmlTextNodes(match[0]), {
-        line: sequence,
-        name,
-        limit: 2000
-      });
     }
   }
   const fallback = contentNames
@@ -4575,7 +4653,9 @@ function parseOpenDocument(entries = []) {
     xmlFileCount: contentNames.length,
     headingCount: counts.heading || 0,
     paragraphCount: counts.paragraph || 0,
-    tableRowCount: counts["table-row"] || 0
+    tableCount,
+    tableRowCount,
+    tableCellCount
   };
 }
 
@@ -5840,7 +5920,16 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           elements: parsed.elements.length,
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount,
-          tableRows: parsed.tableRowCount
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount
+        });
+        parserTrace.push({
+          stage: "open-document.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount
         });
         if (parsed.text) {
           return {
@@ -6389,8 +6478,8 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     return {
       ...base,
       parserProfile: "opendocument-content-xml-route",
-      preserves: [...base.preserves, "headings", "paragraphs", "tables"],
-      conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-element-refs", "evidence-pack"],
+      preserves: [...base.preserves, "headings", "paragraphs", "tables", "cellRefs"],
+      conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-opendocument-cell-refs", "evidence-pack"],
       knownLosses: ["advanced-odf-styling-not-rendered"]
     };
   }
@@ -10540,6 +10629,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.sheet.cells",
         "table.time-index",
         "open-document.structured",
+        "open-document.tables",
         "ebook.epub",
         "tika.text.app",
         "tika.text.file-ref",

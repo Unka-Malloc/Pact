@@ -297,10 +297,15 @@ const sampleOpenDocumentBase64 = base64Zip({
   "content.xml": [
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
     "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" ",
-    "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">",
+    "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" ",
+    "xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\">",
     "<office:body><office:text>",
     "<text:h text:outline-level=\"1\">OpenDocument Distillation Plan</text:h>",
     "<text:p>OpenDocument parser preserves project convergence evidence as structured elements.</text:p>",
+    "<table:table table:name=\"ODF Decisions\">",
+    "<table:table-row><table:table-cell><text:p>Owner</text:p></table:table-cell><table:table-cell><text:p>Decision</text:p></table:table-cell><table:table-cell><text:p>Due Date</text:p></table:table-cell></table:table-row>",
+    "<table:table-row><table:table-cell><text:p>Platform</text:p></table:table-cell><table:table-cell><text:p>Keep OpenDocument cells queryable</text:p></table:table-cell><table:table-cell><text:p>2026-07-11</text:p></table:table-cell></table:table-row>",
+    "</table:table>",
     "</office:text></office:body>",
     "</office:document-content>"
   ].join("")
@@ -674,6 +679,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.mbox"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.attachment-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.structured"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
@@ -1311,13 +1317,35 @@ try {
   )), true);
   const openDocumentPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-40");
   assert.equal(openDocumentPayloadCorpus.route.formatId, "open-document");
-  assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed" && trace.elements >= 2 && trace.headings >= 1 && trace.paragraphs >= 1), true);
+  assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed" && trace.elements >= 4 && trace.headings >= 1 && trace.paragraphs >= 1 && trace.tableRows >= 2), true);
+  assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 6), true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(openDocumentPayloadCorpus.elementPlan.sourceFormat, "open-document");
   assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "table-row" &&
+    element.table?.format === "open-document" &&
+    element.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision" && cell.value.includes("OpenDocument cells"))
+  )), true);
   assert.equal(openDocumentPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(openDocumentPayloadCorpus.windowPlan.windows.some((window) => /OpenDocument Distillation Plan|project convergence evidence/.test(window.excerpt || "")), true);
+  assert.equal(openDocumentPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-row" &&
+    ref.table?.format === "open-document" &&
+    ref.cells?.some((cell) => cell.ref === "B2")
+  ))), true);
+  assert.equal(openDocumentPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-40" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "table-row" &&
+      ref.table?.format === "open-document" &&
+      ref.cells?.some((cell) => cell.ref === "B2")
+    ))
+  )), true);
   const epubPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-41");
   assert.equal(epubPayloadCorpus.route.formatId, "ebook");
   assert.equal(epubPayloadCorpus.parserTrace.some((trace) => trace.stage === "ebook.epub" && trace.status === "completed" && trace.elements >= 2 && trace.chapters >= 1 && trace.headings >= 1 && trace.paragraphs >= 1), true);
