@@ -21,7 +21,7 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `server-web/composables` | 55 | 23004 | 121 | 5 | 0 | 200 | 25 |
+| `server-web/composables` | 56 | 23031 | 121 | 5 | 0 | 200 | 25 |
 | `server-web/styles` | 22 | 12348 | 0 | 0 | 0 | 150 | 0 |
 | `server-web/views` | 21 | 7723 | 0 | 0 | 0 | 75 | 1 |
 | `server-web/components` | 37 | 6780 | 1 | 0 | 1 | 21 | 2 |
@@ -40,7 +40,7 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | `server-web/lib/bridge.ts` | 1206 | One frontend API bridge for all domains. |
 | `server-web/styles/views/debug-agent-explore.css` | 984 | View-specific stylesheet has grown into a feature module. |
 | `server-web/composables/console-word-cloud-controller.ts` | 980 | Large domain controller with bridge effects and UI orchestration. |
-| `server-web/composables/useWorkspacesConsole.ts` | 961 | Workspace page facade still depends on `useConsole()` and contains direct DOM feedback. |
+| `server-web/composables/useWorkspacesConsole.ts` | 962 | Workspace page facade now consumes shell context, but still contains direct DOM feedback and loose workspace payload typing. |
 | `server-web/views/KnowledgeView.vue` | 884 | View no longer owns document parsing or normalized document URL bridge calls, but template and destructured page facade remain large. |
 | `server-web/views/admin/AgentPermissionsView.vue` | 702 | View presentation is slimmer after controller extraction, but template complexity is still high. |
 | `server-web/components/KnowledgeDistillationWorkbench.vue` | 675 | Component no longer owns bridge calls, run normalization, or model probe plumbing, but still has a large template. |
@@ -88,7 +88,7 @@ Required direction:
 
 ### P0-3: Large feature components mix rendering, workflow state, and side effects
 
-`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, but their templates still need focused child components.
+`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, and the debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, but the remaining large templates still need focused child components.
 
 Required direction:
 
@@ -214,6 +214,7 @@ Required direction:
 - `server-web/views/DashboardView.vue`: dashboard state now comes from `serverConsoleShellContext`; the view no longer imports `useConsole()` directly.
 - `server-web/views/ApprovalFlowView.vue`, `server-web/views/FeedView.vue`, `server-web/views/SourcesView.vue`, and admin views under `server-web/views/admin`: shell-owned state now comes from `serverConsoleShellContext`; these views no longer import `useConsole()` directly.
 - `server-web/composables/useDebugViewConsole.ts`, `server-web/composables/useKnowledgeViewConsole.ts`, `server-web/composables/useWorkspacesConsole.ts`, and `server-web/composables/console-agent-permissions-view-controller.ts`: compatibility dependencies now flow through `serverConsoleShellContext`, reducing direct `useConsole()` callers to the shell boundary.
+- `server-web/composables/useDebugViewConsole.ts`: knowledge distillation upload, parse polling, run polling, and result file assembly moved to `server-web/composables/console-debug-distillation-controller.ts`. The debug facade is now a 155-line composition layer with no direct `bridge` calls.
 - `server/scripts/verify-frontend-architecture.mjs`: enforces the current bridge, safe-html, and `useConsole()` compatibility boundaries. The script is wired into `server:verify` as `server:verify:frontend-architecture`.
 
 ## Verification Gates
