@@ -230,7 +230,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "presentation",
     preferredParser: "office.presentation.slides",
     fallbackParsers: ["tika.text", "ocr.slide-images"],
-    parserChain: ["office.route", "office.presentation.slides", "tika.text", "ocr.slide-images"],
+    parserChain: ["office.route", "office.presentation.slides", "office.presentation.tables", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
     streamingUnit: "slide",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -602,8 +602,8 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     professionalFamily: "office-presentation",
     parserProfile: "presentationml-slide-route",
     structureUnits: ["slide", "heading", "slide-shape", "table-row", "speaker-note"],
-    parserStages: ["office.presentation.slides", "office.presentation.tables", "tika.text", "ocr.slide-images"],
-    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs"],
+    parserStages: ["office.presentation.slides", "office.presentation.tables", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
+    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order", "tables", "cellRefs", "speaker-notes"],
     conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-and-table-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -625,7 +625,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "slides-to-agent-layout-refs.v1",
         mode: "agent",
-        stages: ["slide-refs", "shape-bbox-refs", "table-cell-refs"]
+        stages: ["slide-refs", "shape-bbox-refs", "table-cell-refs", "speaker-note-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -635,9 +635,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "slide-relationships", "claims"]
       }
     ],
-    qualityGates: ["slide-order-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved"],
-    riskControls: ["speaker-notes-partial", "raster-only-slide-ocr-fallback"],
-    knownLosses: ["speaker-notes-and-visual-layer-geometry-partial"]
+    qualityGates: ["slide-order-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-speaker-notes-preserved"],
+    riskControls: ["speaker-notes-preserved-when-notesSlides-present", "raster-only-slide-ocr-fallback"],
+    knownLosses: ["visual-layer-geometry-partial"]
   },
   spreadsheet: {
     label: "Excel",
@@ -4909,6 +4909,10 @@ function parsePptx(entries = []) {
     .map((entry) => entry.name)
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((left, right) => Number(left.match(/slide(\d+)/)?.[1] || 0) - Number(right.match(/slide(\d+)/)?.[1] || 0));
+  const noteNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name))
+    .sort((left, right) => Number(left.match(/notesSlide(\d+)/)?.[1] || 0) - Number(right.match(/notesSlide(\d+)/)?.[1] || 0));
   const elements = [];
   let paragraphCount = 0;
   let shapeCount = 0;
@@ -4917,8 +4921,9 @@ function parsePptx(entries = []) {
   let tableRowCount = 0;
   let tableCellCount = 0;
   let tableGeometryCount = 0;
+  let speakerNoteCount = 0;
   for (const [index, name] of slideNames.entries()) {
-    const slideNumber = index + 1;
+    const slideNumber = Number(name.match(/slide(\d+)/)?.[1] || index + 1);
     const xml = zipEntryText(entries, name);
     const shapeBlocks = Array.from(xml.matchAll(/<[^:>]*:?sp\b[\s\S]*?<\/[^:>]*:?sp>/g))
       .map((match) => match[0])
@@ -4996,16 +5001,49 @@ function parsePptx(entries = []) {
       });
     }
   }
-  const fallback = slideNames
-    .map((name, index) => `Slide ${index + 1}: ${textFromXmlTextNodes(zipEntryText(entries, name))}`)
-    .filter((line) => !line.endsWith(": "))
-    .join("\n");
+  for (const [index, name] of noteNames.entries()) {
+    const slideNumber = Number(name.match(/notesSlide(\d+)/)?.[1] || index + 1);
+    const xml = zipEntryText(entries, name);
+    const paragraphs = uniqueOrdered(Array.from(xml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
+      .map((match) => compactMarkupText(textFromXmlTextNodes(match[0]), 1500))
+      .filter(Boolean));
+    const noteText = paragraphs.length
+      ? paragraphs.join("\n")
+      : compactMarkupText(textFromXmlTextNodes(xml), 2000);
+    if (!noteText) {
+      continue;
+    }
+    speakerNoteCount += 1;
+    pushStructureElement(elements, "speaker-note", `Slide ${slideNumber} speaker notes: ${noteText}`, {
+      line: speakerNoteCount,
+      name,
+      page: slideNumber,
+      layout: {
+        strategy: "presentationml-speaker-notes.v1",
+        page: slideNumber,
+        order: speakerNoteCount
+      }
+    });
+  }
+  const fallback = [
+    ...slideNames
+      .map((name, index) => `Slide ${Number(name.match(/slide(\d+)/)?.[1] || index + 1)}: ${textFromXmlTextNodes(zipEntryText(entries, name))}`)
+      .filter((line) => !line.endsWith(": ")),
+    ...noteNames
+      .map((name, index) => {
+        const noteText = compactMarkupText(textFromXmlTextNodes(zipEntryText(entries, name)), 2000);
+        return noteText ? `Slide ${Number(name.match(/notesSlide(\d+)/)?.[1] || index + 1)} speaker notes: ${noteText}` : "";
+      })
+      .filter(Boolean)
+  ].join("\n");
   const counts = elementTypeCounts(elements);
   return {
     text: structureElementsToText("pptx", elements, fallback),
     elements,
     format: "pptx",
     slideCount: slideNames.length,
+    presentationPartCount: slideNames.length + noteNames.length,
+    speakerNoteCount,
     shapeCount,
     geometryCount: shapeGeometryCount + tableGeometryCount,
     shapeGeometryCount,
@@ -5665,8 +5703,12 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
     ), 240);
   }
   if (route?.id === "presentation") {
-    return collectFiles(rootDir, (name) => /^ppt\/slides\/slide\d+\.xml$/.test(name), 1000)
-      .sort((left, right) => Number(left.relativePath.match(/slide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/slide(\d+)/)?.[1] || 0));
+    return [
+      ...collectFiles(rootDir, (name) => /^ppt\/slides\/slide\d+\.xml$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/slide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/slide(\d+)/)?.[1] || 0)),
+      ...collectFiles(rootDir, (name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/notesSlide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/notesSlide(\d+)/)?.[1] || 0))
+    ];
   }
   if (route?.id === "spreadsheet") {
     return [
@@ -5864,6 +5906,7 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tableRows: parsed.tableRowCount,
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
+          speakerNotes: parsed.speakerNoteCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -5876,6 +5919,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           cells: parsed.tableCellCount,
           geometries: parsed.tableGeometryCount,
           layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        },
+        {
+          stage: "office.presentation.speaker-notes",
+          status: parsed.speakerNoteCount ? "completed" : "empty",
+          notes: parsed.speakerNoteCount
         }
       ]
     };
@@ -7024,6 +7072,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tableRows: parsed.tableRowCount,
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
+          speakerNotes: parsed.speakerNoteCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -7036,6 +7085,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           cells: parsed.tableCellCount,
           geometries: parsed.tableGeometryCount,
           layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        });
+        parserTrace.push({
+          stage: "office.presentation.speaker-notes",
+          status: parsed.speakerNoteCount ? "completed" : "empty",
+          notes: parsed.speakerNoteCount
         });
         if (parsed.text) {
           return {
@@ -7478,7 +7532,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "code", "code-boundary", "formula", "comment", "footnote", "endnote"].includes(element.type);
+  return ["table-header", "table-row", "code", "code-boundary", "formula", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -7877,6 +7931,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "PowerPoint table cell references are preserved." : "No PowerPoint table cell references were required or observed."
       });
     }
+    if (gate === "presentation-speaker-notes-preserved") {
+      const noteSignals = maxTraceMetric(document, ["speakerNotes", "notes"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : noteSignals > 0
+          ? evidence.speakerNoteElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { noteSignals, speakerNoteElementCount: evidence.speakerNoteElementCount },
+        required: { speakerNotesWhenPresent: true },
+        message: status === "passed" ? "PowerPoint speaker notes are preserved as element references." : "No PowerPoint speaker notes were required or observed."
+      });
+    }
     if (gate === "sheet-row-cell-refs-preserved") {
       const cellSignals = maxTraceMetric(document, ["cells", "cellCount"]);
       const status = routeId !== "spreadsheet"
@@ -8010,6 +8077,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     ), 0);
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
+    const speakerNoteElementCount = sampleElements.filter((element) => element.type === "speaker-note").length;
     const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
     const evidence = {
       elementCount: Number(document.elementPlan?.elementCount || 0),
@@ -8018,7 +8086,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       cellRefCount,
       formulaRefCount,
       geometryElementCount,
-      annotationElementCount
+      annotationElementCount,
+      speakerNoteElementCount
     };
     const qualityGateResults = buildProfessionalQualityGateResults({
       document,
@@ -8657,7 +8726,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
       if (parsed.text && canUseBoundedEntries) {
         directText = parsed.text || "";
         totalCharacters = directText.length;
-        structuredFileCount = parsed.slideCount;
+        structuredFileCount = parsed.presentationPartCount;
         structureElements = parsed.elements || [];
         structureFormat = parsed.format || "pptx";
         parserTrace.push({
@@ -8675,6 +8744,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           tableRows: parsed.tableRowCount,
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
+          speakerNotes: parsed.speakerNoteCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -8687,6 +8757,11 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           cells: parsed.tableCellCount,
           geometries: parsed.tableGeometryCount,
           layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        });
+        parserTrace.push({
+          stage: "office.presentation.speaker-notes",
+          status: parsed.speakerNoteCount ? "completed" : "empty",
+          notes: parsed.speakerNoteCount
         });
       }
     } else {
@@ -13438,6 +13513,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.word.structured",
         "office.presentation.slides",
         "office.presentation.tables",
+        "office.presentation.speaker-notes",
         "office.word.tables",
         "office.word.annotations",
         "table.sheet.structured",
@@ -13460,7 +13536,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref", "cells.formula"],
       graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.annotation", "elementRefs.cells", "elementRefs.cells.formula"],

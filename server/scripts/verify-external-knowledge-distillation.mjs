@@ -296,6 +296,12 @@ const samplePptxBase64 = base64Zip({
     "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
     "</p:spTree></p:cSld>",
     "</p:sld>"
+  ].join(""),
+  "ppt/notesSlides/notesSlide1.xml": [
+    "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" ",
+    "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
+    "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Speaker note keeps release risk and operator follow-up evidence queryable.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
+    "</p:notes>"
   ].join("")
 });
 
@@ -540,6 +546,11 @@ try {
             "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
             "</p:spTree></p:cSld>",
             "</p:sld>"
+          ].join(""),
+          "ppt/notesSlides/notesSlide1.xml": [
+            "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
+            "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Mounted speaker note keeps filePath slide decisions queryable.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
+            "</p:notes>"
           ].join("")
         }
       },
@@ -784,6 +795,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.file-ref.expand"), true);
@@ -846,6 +858,7 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("speaker-note"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
@@ -1882,10 +1895,19 @@ try {
           trace.tables === 1 &&
           trace.cells === 4
         )), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.presentation.speaker-notes" &&
+          trace.status === "completed" &&
+          trace.notes === 1
+        )), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "table-row" &&
           ref.table?.format === "presentationml" &&
           ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "speaker-note" &&
+          ref.layout?.strategy === "presentationml-speaker-notes.v1"
         ))), true);
       } else if (formatId === "spreadsheet") {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -1997,12 +2019,18 @@ try {
     trace.cells === 4 &&
     trace.layoutStrategy === "presentationml-table-geometry.v1"
   )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.speaker-notes" &&
+    trace.status === "completed" &&
+    trace.notes === 1
+  )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["slide-shape"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["speaker-note"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "heading" &&
     element.page === 1 &&
@@ -2017,6 +2045,22 @@ try {
     element.bbox?.y === 204 &&
     element.table?.format === "presentationml" &&
     element.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision" && cell.value.includes("PowerPoint table cells"))
+  )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "speaker-note" &&
+    element.page === 1 &&
+    element.layout?.strategy === "presentationml-speaker-notes.v1" &&
+    element.text.includes("Speaker note keeps release risk")
+  )), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("speaker-notes"), true);
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "speaker-note" &&
+    ref.page === 1 &&
+    ref.layout?.strategy === "presentationml-speaker-notes.v1"
+  ))), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => ref.type === "speaker-note")
   )), true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2651,6 +2695,11 @@ try {
     document.evidence.annotationElementCount >= 1 &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
   )), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "presentation" &&
+    document.evidence.speakerNoteElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
+  )), true);
   const professionalManifestArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/professional-format-manifest-json`, {
     headers: authHeaders(auth)
   });
@@ -2669,7 +2718,10 @@ try {
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "presentation" &&
     document.parserStages.includes("office.presentation.slides") &&
-    document.preserves.includes("shape-bbox")
+    document.parserStages.includes("office.presentation.speaker-notes") &&
+    document.preserves.includes("shape-bbox") &&
+    document.preserves.includes("speaker-notes") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "spreadsheet" &&
