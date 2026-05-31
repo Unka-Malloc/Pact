@@ -445,6 +445,8 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("bbox"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("layout.width"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.dateIso"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.dateSerial"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.hyperlink.target"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("shape.placeholderType"), true);
@@ -461,6 +463,8 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.shape.placeholderType"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.table.sheetName"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateIso"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateSerial"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.binaryProfileStrategy, "bounded-binary-file-profile.v1");
@@ -505,6 +509,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-date-serials-normalized"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
@@ -585,6 +590,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.workbook.sheets"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.date-styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
@@ -1217,9 +1223,14 @@ try {
     document.conversionTargets.includes("agent-json-with-workbook-sheet-cell-coordinates-and-formulas") &&
     document.professionalFamily === "office-spreadsheet" &&
     document.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved") &&
+    document.qualityGates.includes("spreadsheet-date-serials-normalized") &&
     document.qualityGates.includes("formula-text-preserved") &&
     document.qualityGates.includes("spreadsheet-hyperlink-refs-preserved") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && ["passed", "not_applicable"].includes(gate.status)) &&
+    document.qualityGateResults.some((gate) => (
+      gate.gate === "spreadsheet-date-serials-normalized" &&
+      ["passed", "warning", "not_applicable"].includes(gate.status)
+    )) &&
     document.qualityGateResults.some((gate) => (
       gate.gate === "sheet-row-cell-refs-preserved" &&
       ["passed", "warning", "not_applicable"].includes(gate.status)
@@ -1520,9 +1531,10 @@ try {
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-pptx\" TargetMode=\"External\"/></Relationships>' > /tmp/pact-mounted-structured/pptx/ppt/slides/_rels/slide1.xml.rels",
       "printf '%s' '<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Container mounted speaker notes remain queryable for agents.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>' > /tmp/pact-mounted-structured/pptx/ppt/notesSlides/notesSlide1.xml",
       "printf '%s' '<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>Evidence Score</t></si><si><t>mounted xlsx</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si></sst>' > /tmp/pact-mounted-structured/xlsx/xl/sharedStrings.xml",
+      "printf '%s' '<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><cellXfs count=\"2\"><xf numFmtId=\"0\"/><xf numFmtId=\"14\" applyNumberFormat=\"1\"/></cellXfs></styleSheet>' > /tmp/pact-mounted-structured/xlsx/xl/styles.xml",
       "printf '%s' '<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"Container Evidence\" sheetId=\"11\" r:id=\"rIdSheet1\"/></sheets></workbook>' > /tmp/pact-mounted-structured/xlsx/xl/workbook.xml",
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdSheet1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>' > /tmp/pact-mounted-structured/xlsx/xl/_rels/workbook.xml.rels",
-      "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\" display=\"completed docs\"/></hyperlinks></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
+      "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c r=\"C2\" s=\"1\"><v>46188</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\" display=\"completed docs\"/></hyperlinks></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-xlsx\" TargetMode=\"External\"/></Relationships>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/_rels/sheet1.xml.rels",
       "printf '%s' 'application/vnd.oasis.opendocument.text' > /tmp/pact-mounted-structured/odt/mimetype",
       "printf '%s' '<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><office:body><office:text><text:p>Mounted ODT filePath extraction keeps OpenDocument evidence distillable. <text:a xlink:href=\"https://example.com/container-mounted-odf\">container mounted ODF link</text:a></text:p></office:text></office:body></office:document-content>' > /tmp/pact-mounted-structured/odt/content.xml",
@@ -1531,7 +1543,7 @@ try {
       "printf '%s' '<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Mounted EPUB Evidence</h1><p>Mounted EPUB filePath chapter routing verifies ebook compatibility.</p></body></html>' > /tmp/pact-mounted-structured/epub/OEBPS/chapter1.xhtml",
       "cd /tmp/pact-mounted-structured/docx && (7zz a -tzip /data/mounted-project-plan.docx word/document.xml word/_rels/document.xml.rels word/comments.xml word/footnotes.xml >/dev/null || 7z a -tzip /data/mounted-project-plan.docx word/document.xml word/_rels/document.xml.rels word/comments.xml word/footnotes.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/pptx && (7zz a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml ppt/slides/_rels/slide1.xml.rels ppt/notesSlides/notesSlide1.xml >/dev/null || 7z a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml ppt/slides/_rels/slide1.xml.rels ppt/notesSlides/notesSlide1.xml >/dev/null)",
-      "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels >/dev/null)",
+      "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/styles.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/styles.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels >/dev/null)",
       "cd /tmp/pact-mounted-structured/odt && (7zz a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null || 7z a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/epub && (7zz a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null || 7z a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null)",
 `node <<'NODE'
@@ -1872,6 +1884,7 @@ NODE`
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.workbook.sheets" && trace.status === "completed" && trace.sheets === 1 && trace.sheetRefs === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.date-styles" && trace.status === "completed" && trace.dateStyles === 1 && trace.dateCells === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.hyperlinks" && trace.status === "completed" && trace.hyperlinks === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-06-15"), true);
@@ -1885,6 +1898,19 @@ NODE`
         ref.table?.sheetName === "Container Evidence" &&
         ref.table?.sheetId === "11" &&
         ref.cells?.some((cell) => cell.ref === "D2" && cell.header === "Evidence Score" && cell.formula === "LEN(B2)")
+      ))), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "table-row" &&
+        ref.table?.format === "xlsx" &&
+        ref.table?.sheetName === "Container Evidence" &&
+        ref.cells?.some((cell) => (
+          cell.ref === "C2" &&
+          cell.header === "Report Date" &&
+          cell.value === "2026-06-15" &&
+          cell.rawValue === "46188" &&
+          cell.dateIso === "2026-06-15" &&
+          cell.dateSerial === "46188"
+        ))
       ))), true);
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
         ref.type === "table-row" &&

@@ -251,7 +251,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "spreadsheet",
     preferredParser: "table.sheet.structured",
     fallbackParsers: ["tika.text", "text.direct"],
-    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
+    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
     streamingUnit: "sheet",
     referenceFrameworks: ["docling", "mineru", "unstructured", "haystack"]
   },
@@ -644,8 +644,8 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     professionalFamily: "office-spreadsheet",
     parserProfile: "spreadsheetml-sheet-row-cell-route",
     structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "cell", "formula", "hyperlink", "time-signal"],
-    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
-    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "formulas", "hyperlinks", "timeSignals"],
+    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
+    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "dateStyles", "dateSerials", "formulas", "hyperlinks", "timeSignals"],
     conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-workbook-sheet-cell-coordinates-and-formulas", "evidence-pack"],
     conversionAdapters: [
       {
@@ -667,7 +667,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "sheets-to-agent-cell-refs.v1",
         mode: "agent",
-        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "formula-refs", "hyperlink-refs", "time-signals"]
+        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "time-signals"]
       },
       {
         target: "evidence-pack-json",
@@ -677,7 +677,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["row-text-units", "entity-columns", "claim-values"]
       }
     ],
-    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
+    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
     riskControls: ["formula-results-not-recomputed", "merged-cell-normalization-risk"],
     knownLosses: ["formula-results-not-recomputed"]
   },
@@ -5638,23 +5638,98 @@ function xlsxTableMetadata(sheet = {}, sheetLabel = "", rowNumber = 0, columnCou
   };
 }
 
-function xlsxCellValue(cellXml = "", sharedStrings = []) {
+const XLSX_BUILTIN_DATE_NUMFMT_IDS = new Set([
+  14, 15, 16, 17, 18, 19, 20, 21, 22,
+  27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+  45, 46, 47,
+  50, 51, 52, 53, 54, 55, 56, 57, 58
+]);
+
+function xlsxNumberFormatLooksDate(formatCode = "") {
+  const normalized = String(formatCode || "")
+    .replace(/"[^"]*"/g, "")
+    .replace(/\[[^\]]*]/g, "")
+    .replace(/\\./g, "")
+    .replace(/_.?/g, "")
+    .replace(/\*.?/g, "")
+    .toLowerCase();
+  return /(^|[^a-z])([ymd]{1,4}|h{1,2}:?m{0,2}|s{1,2})([^a-z]|$)/.test(normalized);
+}
+
+function parseXlsxStylesXml(xml = "") {
+  const customFormats = new Map();
+  for (const match of String(xml || "").matchAll(/<numFmt\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    const id = Number(xmlAttribute(tag, "numFmtId"));
+    if (Number.isFinite(id)) {
+      customFormats.set(id, xmlAttribute(tag, "formatCode"));
+    }
+  }
+  const cellXfsXml = String(xml || "").match(/<cellXfs\b[\s\S]*?<\/cellXfs>/i)?.[0] || "";
+  const cellXfs = [];
+  for (const match of cellXfsXml.matchAll(/<xf\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    const numFmtId = Number(xmlAttribute(tag, "numFmtId") || 0);
+    const formatCode = customFormats.get(numFmtId) || "";
+    cellXfs.push({
+      numFmtId,
+      formatCode,
+      isDate: XLSX_BUILTIN_DATE_NUMFMT_IDS.has(numFmtId) || xlsxNumberFormatLooksDate(formatCode)
+    });
+  }
+  return {
+    customFormatCount: customFormats.size,
+    dateStyleCount: cellXfs.filter((style) => style.isDate).length,
+    cellXfs
+  };
+}
+
+function xlsxCellStyle(openTag = "", styles = null) {
+  const styleIndexRaw = xmlAttribute(openTag, "s");
+  if (styleIndexRaw === "") {
+    return null;
+  }
+  const styleIndex = Number(styleIndexRaw);
+  if (!Number.isInteger(styleIndex) || styleIndex < 0) {
+    return null;
+  }
+  const style = styles?.cellXfs?.[styleIndex] || null;
+  if (!style) {
+    return { styleIndex };
+  }
+  return {
+    styleIndex,
+    numFmtId: style.numFmtId,
+    formatCode: style.formatCode,
+    isDate: Boolean(style.isDate)
+  };
+}
+
+function xlsxCellValue(cellXml = "", sharedStrings = [], styles = null) {
   const openTag = String(cellXml || "").match(/^<c\b[^>]*>/)?.[0] || "";
   const type = xmlAttribute(openTag, "t");
   if (type === "inlineStr") {
-    return textFromXmlTextNodes(cellXml);
+    return { value: textFromXmlTextNodes(cellXml), rawValue: textFromXmlTextNodes(cellXml), style: xlsxCellStyle(openTag, styles), dateIso: "" };
   }
   const raw = decodeXmlEntities(String(cellXml || "").match(/<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/)?.[1] || "").trim();
   if (!raw) {
-    return "";
+    return { value: "", rawValue: "", style: xlsxCellStyle(openTag, styles), dateIso: "" };
   }
+  const style = xlsxCellStyle(openTag, styles);
   if (type === "s") {
-    return sharedStrings[Number(raw)] || raw;
+    return { value: sharedStrings[Number(raw)] || raw, rawValue: raw, style, dateIso: "" };
   }
   if (type === "b") {
-    return raw === "1" ? "TRUE" : "FALSE";
+    return { value: raw === "1" ? "TRUE" : "FALSE", rawValue: raw, style, dateIso: "" };
   }
-  return raw;
+  const dateIso = style?.isDate ? isoDateFromExcelSerial(raw) : "";
+  return {
+    value: dateIso || raw,
+    rawValue: raw,
+    style,
+    dateIso,
+    dateSerial: dateIso ? raw : ""
+  };
 }
 
 function xlsxCellFormula(cellXml = "") {
@@ -5674,7 +5749,7 @@ function xlsxCellFormula(cellXml = "") {
   };
 }
 
-function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map()) {
+function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map(), styles = null) {
   const rowOpenTag = String(rowXml || "").match(/^<row\b[^>]*>/)?.[0] || "";
   const rowNumber = Number(xmlAttribute(rowOpenTag, "r") || fallbackRowNumber || 0);
   const cells = [];
@@ -5685,8 +5760,8 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
     const ref = xmlAttribute(openTag, "r") || `${xlsxColumnLabel("", fallbackCellIndex)}${rowNumber || ""}`;
     const column = xlsxColumnLabel(ref, fallbackCellIndex);
     const hyperlink = hyperlinks.get(String(ref || "").toUpperCase()) || null;
-    const rawValue = xlsxCellValue(cellXml, sharedStrings);
-    const value = rawValue || hyperlink?.display || "";
+    const valueRecord = xlsxCellValue(cellXml, sharedStrings, styles);
+    const value = valueRecord.value || hyperlink?.display || "";
     const formula = xlsxCellFormula(cellXml);
     fallbackCellIndex += 1;
     if (value || formula || hyperlink) {
@@ -5694,6 +5769,10 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
         ref,
         column,
         value,
+        ...(valueRecord.rawValue && valueRecord.rawValue !== value ? { rawValue: valueRecord.rawValue } : {}),
+        ...(valueRecord.dateIso ? { dateIso: valueRecord.dateIso } : {}),
+        ...(valueRecord.dateSerial ? { dateSerial: valueRecord.dateSerial } : {}),
+        ...(valueRecord.style ? { style: valueRecord.style } : {}),
         ...(formula ? formula : {}),
         ...(hyperlink ? { hyperlink } : {})
       });
@@ -5755,6 +5834,17 @@ function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
     row: rowNumber,
     ...(header ? { header } : {}),
     value: cell.value,
+    ...(cell.rawValue ? { rawValue: cell.rawValue } : {}),
+    ...(cell.dateIso ? { dateIso: cell.dateIso } : {}),
+    ...(cell.dateSerial ? { dateSerial: cell.dateSerial } : {}),
+    ...(cell.style ? {
+      style: {
+        styleIndex: Number(cell.style.styleIndex || 0),
+        numFmtId: Number(cell.style.numFmtId || 0),
+        formatCode: String(cell.style.formatCode || ""),
+        isDate: Boolean(cell.style.isDate)
+      }
+    } : {}),
     ...(cell.formula ? { formula: cell.formula } : {}),
     ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
     ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
@@ -5774,6 +5864,7 @@ function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
 
 function parseXlsxDetailed(entries = []) {
   const sharedStrings = parseSharedStringsXml(zipEntryText(entries, "xl/sharedStrings.xml"));
+  const styles = parseXlsxStylesXml(zipEntryText(entries, "xl/styles.xml"));
   const workbookSheets = parseWorkbookSheets(
     zipEntryText(entries, "xl/workbook.xml"),
     zipEntryText(entries, "xl/_rels/workbook.xml.rels")
@@ -5788,6 +5879,7 @@ function parseXlsxDetailed(entries = []) {
   let cellCount = 0;
   let formulaCount = 0;
   let hyperlinkCount = 0;
+  let dateCellCount = 0;
   let headerRows = 0;
   const elements = [];
   for (const [index, record] of sheetRecords.entries()) {
@@ -5798,13 +5890,14 @@ function parseXlsxDetailed(entries = []) {
     );
     const rows = [];
     for (const match of zipEntryText(entries, name).matchAll(/<row\b[\s\S]*?<\/row>/g)) {
-      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks);
+      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks, styles);
       if (row.cells.length) {
         rows.push(row);
         rowCount += 1;
         cellCount += row.cells.length;
         formulaCount += row.cells.filter((cell) => cell.formula).length;
         hyperlinkCount += row.cells.filter((cell) => cell.hyperlink).length;
+        dateCellCount += row.cells.filter((cell) => cell.dateIso).length;
       }
     }
     const sheetLabel = xlsxSheetLabel(sheet, index);
@@ -5847,6 +5940,8 @@ function parseXlsxDetailed(entries = []) {
     elements,
     format: "xlsx",
     sharedStringCount: sharedStrings.length,
+    dateStyleCount: styles.dateStyleCount,
+    dateCellCount,
     sheetCount: sheetNames.length,
     workbookSheetCount: workbookSheets.length,
     sheetRefCount: sheetRecords.filter((record) => (
@@ -6193,7 +6288,15 @@ function parseSharedStringsFile(filePath = "") {
   return strings;
 }
 
-function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], outputPath = "" } = {}) {
+function parseXlsxStylesFile(filePath = "") {
+  return parseXlsxStylesXml(
+    filePath && fsSync.existsSync(filePath)
+      ? fsSync.readFileSync(filePath, "utf8")
+      : ""
+  );
+}
+
+function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], styles = null, outputPath = "" } = {}) {
   const hyperlinks = parseXlsxHyperlinksFile(sheetPath, worksheetRelationshipFilePath(sheetPath));
   const headersByColumn = new Map();
   let headerCaptured = false;
@@ -6201,6 +6304,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
   let cellCount = 0;
   let formulaCount = 0;
   let hyperlinkCount = 0;
+  let dateCellCount = 0;
   let headerRows = 0;
   let totalCharacters = 0;
   const appendLine = (line = "") => {
@@ -6209,7 +6313,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     totalCharacters += text.length;
   };
   scanXmlElementsFromFile(sheetPath, "row", (xml) => {
-    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks);
+    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks, styles);
     if (!row.cells.length) {
       return;
     }
@@ -6217,6 +6321,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     cellCount += row.cells.length;
     formulaCount += row.cells.filter((cell) => cell.formula).length;
     hyperlinkCount += row.cells.filter((cell) => cell.hyperlink).length;
+    dateCellCount += row.cells.filter((cell) => cell.dateIso).length;
     if (!headerCaptured && row.cells.length >= 2) {
       for (const cell of row.cells) {
         headersByColumn.set(cell.column, cell.value);
@@ -6228,11 +6333,12 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     }
     appendLine(formatXlsxDataRow(sheetLabel, row, headersByColumn));
   });
-  return { rowCount, cellCount, formulaCount, hyperlinkCount, headerRows, totalCharacters };
+  return { rowCount, cellCount, formulaCount, hyperlinkCount, dateCellCount, headerRows, totalCharacters };
 }
 
 function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
   const sharedStrings = parseSharedStringsFile(path.join(rootDir, "xl/sharedStrings.xml"));
+  const styles = parseXlsxStylesFile(path.join(rootDir, "xl/styles.xml"));
   const workbookSheets = parseWorkbookSheets(
     fsSync.existsSync(path.join(rootDir, "xl/workbook.xml"))
       ? fsSync.readFileSync(path.join(rootDir, "xl/workbook.xml"), "utf8")
@@ -6252,6 +6358,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
   let cellCount = 0;
   let formulaCount = 0;
   let hyperlinkCount = 0;
+  let dateCellCount = 0;
   let headerRows = 0;
   for (const [index, record] of sheetRecords.entries()) {
     const sheetLabel = xlsxSheetLabel(record.sheet, index);
@@ -6259,6 +6366,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
       sheetPath: record.file.absolutePath,
       sheetLabel,
       sharedStrings,
+      styles,
       outputPath
     });
     totalCharacters += stats.totalCharacters;
@@ -6266,11 +6374,14 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     cellCount += stats.cellCount;
     formulaCount += stats.formulaCount;
     hyperlinkCount += stats.hyperlinkCount;
+    dateCellCount += stats.dateCellCount;
     headerRows += stats.headerRows;
   }
   return {
     totalCharacters,
     sharedStringCount: sharedStrings.length,
+    dateStyleCount: styles.dateStyleCount,
+    dateCellCount,
     sheetCount: sheetFiles.length,
     workbookSheetCount: workbookSheets.length,
     sheetRefCount: sheetRecords.length,
@@ -6299,6 +6410,12 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
         cells: cellCount,
         rows: rowCount,
         sharedStrings: sharedStrings.length
+      },
+      {
+        stage: "table.sheet.date-styles",
+        status: dateCellCount ? "completed" : styles.dateStyleCount ? "empty" : "not_applicable",
+        dateStyles: styles.dateStyleCount,
+        dateCells: dateCellCount
       },
       {
         stage: "table.sheet.formulas",
@@ -6334,6 +6451,7 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
   if (route?.id === "spreadsheet") {
     return [
       ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
+      ...collectFiles(rootDir, (name) => name === "xl/styles.xml", 1),
       ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
       ...collectFiles(rootDir, (name) => name === "xl/_rels/workbook.xml.rels", 1),
       ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
@@ -6367,6 +6485,7 @@ function structuredZipEntryFiles(route = null, rootDir = "") {
   return route?.id === "spreadsheet"
     ? [
         ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
+        ...collectFiles(rootDir, (name) => name === "xl/styles.xml", 1),
         ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
         ...collectFiles(rootDir, (name) => name === "xl/_rels/workbook.xml.rels", 1),
         ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
@@ -6608,6 +6727,8 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           hiddenSheets: parsed.hiddenSheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
+          dateStyles: parsed.dateStyleCount,
+          dateCells: parsed.dateCellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         },
@@ -6629,6 +6750,12 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           cells: parsed.cellCount,
           rows: parsed.rowCount,
           sharedStrings: parsed.sharedStringCount
+        },
+        {
+          stage: "table.sheet.date-styles",
+          status: parsed.dateCellCount ? "completed" : parsed.dateStyleCount ? "empty" : "not_applicable",
+          dateStyles: parsed.dateStyleCount,
+          dateCells: parsed.dateCellCount
         },
         {
           stage: "table.sheet.formulas",
@@ -7942,6 +8069,8 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           hiddenSheets: parsed.hiddenSheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
+          dateStyles: parsed.dateStyleCount,
+          dateCells: parsed.dateCellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         });
@@ -7962,6 +8091,12 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           status: parsed.cellCount ? "completed" : "empty",
           cells: parsed.cellCount,
           sharedStrings: parsed.sharedStringCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.date-styles",
+          status: parsed.dateCellCount ? "completed" : parsed.dateStyleCount ? "empty" : "not_applicable",
+          dateStyles: parsed.dateStyleCount,
+          dateCells: parsed.dateCellCount
         });
         parserTrace.push({
           stage: "table.sheet.formulas",
@@ -8383,6 +8518,17 @@ function normalizedStructureElements(document = {}) {
             row: Number(cell.row || 0),
             header: String(cell.header || ""),
             value: String(cell.value || ""),
+            rawValue: String(cell.rawValue || ""),
+            dateIso: String(cell.dateIso || ""),
+            dateSerial: String(cell.dateSerial || ""),
+            style: cell.style
+              ? {
+                  styleIndex: Number(cell.style.styleIndex || 0),
+                  numFmtId: Number(cell.style.numFmtId || 0),
+                  formatCode: String(cell.style.formatCode || ""),
+                  isDate: Boolean(cell.style.isDate)
+                }
+              : null,
             formula: String(cell.formula || ""),
             formulaType: String(cell.formulaType || ""),
             formulaRef: String(cell.formulaRef || ""),
@@ -8962,6 +9108,22 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Spreadsheet formula text is preserved." : "No spreadsheet formulas were required or observed."
       });
     }
+    if (gate === "spreadsheet-date-serials-normalized") {
+      const dateSignals = maxTraceMetric(document, ["dateCells"]);
+      const styleSignals = maxTraceMetric(document, ["dateStyles"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : dateSignals > 0
+          ? evidence.dateCellRefCount > 0 ? "passed" : "failed"
+          : styleSignals > 0
+            ? "warning"
+            : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { dateSignals, styleSignals, dateCellRefCount: evidence.dateCellRefCount },
+        required: { dateSerialRefsWhenDateCellsExist: true },
+        message: status === "passed" ? "Spreadsheet date-formatted serial values are normalized to ISO date refs." : "No date-formatted spreadsheet serial values were required or observed."
+      });
+    }
     if (gate === "spreadsheet-hyperlink-refs-preserved") {
       const hyperlinkSignals = maxTraceMetric(document, ["hyperlinks", "hyperlinkCount"]);
       const status = routeId !== "spreadsheet"
@@ -9120,6 +9282,9 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const hyperlinkRefCount = sampleElements.reduce((sum, element) => (
       sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.hyperlink?.target || cell.hyperlink?.location).length : 0)
     ), 0);
+    const dateCellRefCount = sampleElements.reduce((sum, element) => (
+      sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.dateIso).length : 0)
+    ), 0);
     const sheetRefCount = sampleElements.filter((element) => (
       element.table?.sheetName ||
       element.table?.sheetId ||
@@ -9143,6 +9308,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       cellRefCount,
       formulaRefCount,
       hyperlinkRefCount,
+      dateCellRefCount,
       sheetRefCount,
       geometryElementCount,
       annotationElementCount,
@@ -9210,6 +9376,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithGeometryCount: plannedDocuments.filter((document) => document.evidence.geometryElementCount > 0).length,
       documentWithCellRefsCount: plannedDocuments.filter((document) => document.evidence.cellRefCount > 0).length,
       documentWithSheetRefsCount: plannedDocuments.filter((document) => document.evidence.sheetRefCount > 0).length,
+      documentWithDateCellRefsCount: plannedDocuments.filter((document) => document.evidence.dateCellRefCount > 0).length,
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
       documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
@@ -9780,6 +9947,8 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           hiddenSheets: parsed.hiddenSheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
+          dateStyles: parsed.dateStyleCount,
+          dateCells: parsed.dateCellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         });
@@ -9801,6 +9970,12 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           cells: parsed.cellCount,
           rows: parsed.rowCount,
           sharedStrings: parsed.sharedStringCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.date-styles",
+          status: parsed.dateCellCount ? "completed" : parsed.dateStyleCount ? "empty" : "not_applicable",
+          dateStyles: parsed.dateStyleCount,
+          dateCells: parsed.dateCellCount
         });
         parserTrace.push({
           stage: "table.sheet.formulas",
@@ -9825,7 +10000,9 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           characters: totalCharacters,
           workbookSheets: spreadsheet.workbookSheetCount,
           sheetRefs: spreadsheet.sheetRefCount,
-          hiddenSheets: spreadsheet.hiddenSheetCount
+          hiddenSheets: spreadsheet.hiddenSheetCount,
+          dateStyles: spreadsheet.dateStyleCount,
+          dateCells: spreadsheet.dateCellCount
         });
         parserTrace.push(...spreadsheet.parserTrace);
       }
@@ -14787,6 +14964,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.workbook.sheets",
         "table.sheet.headers",
         "table.sheet.cells",
+        "table.sheet.date-styles",
         "table.sheet.formulas",
         "table.sheet.hyperlinks",
         "table.time-index",
@@ -14808,8 +14986,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       windowingStrategy: "element-aware-by-title-windowing.v1",
       elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "cells.ref", "cells.formula", "cells.hyperlink.target"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.cells", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -14830,7 +15008,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "links", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "dateSerials", "links", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),
