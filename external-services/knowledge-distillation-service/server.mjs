@@ -359,6 +359,18 @@ const FORMAT_ROUTES = Object.freeze([
     referenceFrameworks: ["llama-index", "haystack"]
   },
   {
+    id: "notebook",
+    label: "Jupyter Notebook",
+    extensions: [".ipynb"],
+    mediaTypes: ["application/x-ipynb+json", "application/vnd.jupyter", "application/x-jupyter-notebook"],
+    contentShape: "notebook",
+    preferredParser: "notebook.cells",
+    fallbackParsers: ["structured.json", "text.direct"],
+    parserChain: ["notebook.route", "notebook.cells", "structured.json"],
+    streamingUnit: "cell",
+    referenceFrameworks: ["llama-index", "haystack", "unstructured"]
+  },
+  {
     id: "source-code",
     label: "Source code",
     extensions: [
@@ -946,7 +958,7 @@ function isStreamableTextRoute(route = null, metadata = {}) {
   if (!route) {
     return false;
   }
-  if (["markdown", "plain-text", "source-code", "config", "diagram"].includes(route.id)) {
+  if (["markdown", "plain-text", "source-code", "config", "diagram", "notebook"].includes(route.id)) {
     return true;
   }
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
@@ -1324,6 +1336,286 @@ function parseJsonLike(text = "") {
   } catch (_error) {
     return trimmed;
   }
+}
+
+function notebookCellSource(cell = {}) {
+  const source = cell?.source ?? "";
+  if (Array.isArray(source)) {
+    return source.join("");
+  }
+  return String(source || "");
+}
+
+function notebookOutputText(output = {}) {
+  const data = output?.data && typeof output.data === "object" ? output.data : {};
+  const text = output?.text ?? data["text/plain"] ?? output?.ename ?? "";
+  if (Array.isArray(text)) {
+    return text.join("");
+  }
+  return String(text || "");
+}
+
+function parseNotebookText(text = "") {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    return {
+      text: "",
+      cellCount: 0,
+      markdownCount: 0,
+      codeCount: 0,
+      outputCount: 0,
+      fallback: false
+    };
+  }
+  try {
+    const notebook = JSON.parse(trimmed);
+    const cells = Array.isArray(notebook?.cells) ? notebook.cells : [];
+    const records = [];
+    const metadata = notebook?.metadata && typeof notebook.metadata === "object" ? notebook.metadata : {};
+    const language = metadata.language_info?.name || metadata.kernelspec?.language || metadata.kernelspec?.name || "";
+    if (language) {
+      records.push(`Notebook language: ${language}`);
+    }
+    let markdownCount = 0;
+    let codeCount = 0;
+    let outputCount = 0;
+    for (const [index, cell] of cells.slice(0, 1000).entries()) {
+      const cellType = String(cell?.cell_type || "unknown");
+      const source = notebookCellSource(cell).replace(/\r\n/g, "\n").trim();
+      if (cellType === "markdown") {
+        markdownCount += 1;
+      }
+      if (cellType === "code") {
+        codeCount += 1;
+      }
+      if (source) {
+        records.push(`Notebook ${cellType} cell ${index + 1}: ${source.replace(/\s+/g, " ").slice(0, 1800)}`);
+      }
+      const outputs = Array.isArray(cell?.outputs) ? cell.outputs : [];
+      for (const [outputIndex, output] of outputs.slice(0, 5).entries()) {
+        const outputText = notebookOutputText(output).replace(/\r\n/g, "\n").trim();
+        if (outputText) {
+          outputCount += 1;
+          records.push(`Notebook output cell ${index + 1}.${outputIndex + 1}: ${outputText.replace(/\s+/g, " ").slice(0, 1000)}`);
+        }
+      }
+    }
+    return {
+      text: records.join("\n"),
+      cellCount: cells.length,
+      markdownCount,
+      codeCount,
+      outputCount,
+      fallback: false
+    };
+  } catch (_error) {
+    return {
+      text: parseJsonLike(trimmed),
+      cellCount: 0,
+      markdownCount: 0,
+      codeCount: 0,
+      outputCount: 0,
+      fallback: true
+    };
+  }
+}
+
+function sourceLanguageFromMetadata(metadata = {}) {
+  const explicit = String(metadata.language || metadata.lang || "").trim().toLowerCase();
+  if (explicit) {
+    return explicit;
+  }
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const languages = {
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript-react",
+    ".py": "python",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".c": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".h": "c-header",
+    ".hpp": "cpp-header"
+  };
+  return languages[extension] || extension.replace(/^\./, "") || "source";
+}
+
+function parseSourceCodeText(text = "", metadata = {}) {
+  const language = sourceLanguageFromMetadata(metadata);
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const records = [`Code language: ${language}`];
+  const imports = [];
+  const symbols = [];
+  const entryPoints = [];
+  const todos = [];
+
+  const pushUnique = (target, value) => {
+    if (!value || target.includes(value)) {
+      return;
+    }
+    target.push(value);
+  };
+
+  const pushImport = (lineNumber, value) => pushUnique(imports, `line ${lineNumber}: ${value.trim()}`);
+  const pushSymbol = (lineNumber, kind, name) => pushUnique(symbols, `${kind} ${name} line ${lineNumber}`);
+  const pushEntry = (lineNumber, value) => pushUnique(entryPoints, `line ${lineNumber}: ${value.trim()}`);
+  const pushTodo = (lineNumber, value) => pushUnique(todos, `line ${lineNumber}: ${value.trim().slice(0, 220)}`);
+
+  for (const [index, rawLine] of lines.slice(0, 20_000).entries()) {
+    const lineNumber = index + 1;
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    if (/\b(TODO|FIXME|HACK|XXX)\b/i.test(line)) {
+      pushTodo(lineNumber, line);
+    }
+
+    let match;
+    if (/^(javascript|typescript|typescript-react)$/.test(language)) {
+      if (/^(import\s|export\s+\{)|\brequire\s*\(/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\b/);
+      if (match) pushSymbol(lineNumber, "function", match[1]);
+      match = line.match(/^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)\b/);
+      if (match) pushSymbol(lineNumber, "class", match[1]);
+      match = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(?/);
+      if (match) pushSymbol(lineNumber, "binding", match[1]);
+      match = line.match(/^(?:export\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)\b/);
+      if (match) pushSymbol(lineNumber, "type", match[1]);
+      if (line.includes("createServer(") || line.includes("listen(")) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (language === "python") {
+      if (/^(import|from)\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/^(?:async\s+)?def\s+([A-Za-z_][\w]*)\s*\(/);
+      if (match) pushSymbol(lineNumber, "function", match[1]);
+      match = line.match(/^class\s+([A-Za-z_][\w]*)\b/);
+      if (match) pushSymbol(lineNumber, "class", match[1]);
+      if (line.includes("__name__") && line.includes("__main__")) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (language === "go") {
+      if (/^import\b/.test(line) || /^package\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/^func\s+(?:\([^)]+\)\s*)?([A-Za-z_]\w*)\s*\(/);
+      if (match) pushSymbol(lineNumber, "function", match[1]);
+      if (/^func\s+main\s*\(/.test(line)) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (language === "rust") {
+      if (/^(use|mod)\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/^(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)\s*\(/);
+      if (match) pushSymbol(lineNumber, "function", match[1]);
+      match = line.match(/^(?:pub\s+)?(?:struct|enum|trait)\s+([A-Za-z_]\w*)\b/);
+      if (match) pushSymbol(lineNumber, "type", match[1]);
+      if (/^fn\s+main\s*\(/.test(line)) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (language === "swift") {
+      if (/^import\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/^(?:public\s+|private\s+|internal\s+)?(?:func|class|struct|enum|protocol)\s+([A-Za-z_]\w*)\b/);
+      if (match) pushSymbol(lineNumber, line.split(/\s+/)[0], match[1]);
+      if (/@main\b/.test(line)) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (language === "kotlin") {
+      if (/^import\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/^(?:data\s+)?(?:class|object|interface)\s+([A-Za-z_]\w*)\b/);
+      if (match) pushSymbol(lineNumber, "type", match[1]);
+      match = line.match(/^fun\s+([A-Za-z_]\w*)\s*\(/);
+      if (match) pushSymbol(lineNumber, "function", match[1]);
+      if (/^fun\s+main\s*\(/.test(line)) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (language === "java") {
+      if (/^(package|import)\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/\b(class|interface|enum|record)\s+([A-Za-z_]\w*)\b/);
+      if (match) pushSymbol(lineNumber, match[1], match[2]);
+      match = line.match(/\b(?:public|private|protected|static|final|synchronized|native|\s)+[\w<>\[\], ?]+\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/);
+      if (match) pushSymbol(lineNumber, "method", match[1]);
+      if (/public\s+static\s+void\s+main\s*\(/.test(line)) {
+        pushEntry(lineNumber, line);
+      }
+      continue;
+    }
+
+    if (/^(c|cpp|c-header|cpp-header)$/.test(language)) {
+      if (/^#\s*include\s+/.test(line)) {
+        pushImport(lineNumber, line);
+      }
+      match = line.match(/\b(?:class|struct|enum)\s+([A-Za-z_]\w*)\b/);
+      if (match) pushSymbol(lineNumber, "type", match[1]);
+      match = line.match(/^(?:static\s+|inline\s+|extern\s+)?[\w:*&<>\s]+\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/);
+      if (match) pushSymbol(lineNumber, "function", match[1]);
+      if (/\bmain\s*\(/.test(line)) {
+        pushEntry(lineNumber, line);
+      }
+    }
+  }
+
+  for (const item of imports.slice(0, 60)) {
+    records.push(`Code import ${item}`);
+  }
+  for (const item of symbols.slice(0, 120)) {
+    records.push(`Code symbol ${item}`);
+  }
+  for (const item of entryPoints.slice(0, 20)) {
+    records.push(`Code entry ${item}`);
+  }
+  for (const item of todos.slice(0, 40)) {
+    records.push(`Code todo ${item}`);
+  }
+  const excerpt = lines.slice(0, 80).join("\n").trim();
+  if (excerpt) {
+    records.push(`Code source excerpt lines 1-${Math.min(lines.length, 80)}:\n${excerpt}`);
+  }
+
+  return {
+    text: records.join("\n"),
+    language,
+    lineCount: lines.length,
+    importCount: imports.length,
+    symbolCount: symbols.length,
+    entryPointCount: entryPoints.length,
+    todoCount: todos.length
+  };
 }
 
 function parseDelimitedText(text = "", delimiter = ",") {
@@ -3215,6 +3507,35 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       });
       return { text: parsed.text || text, parserTrace, warnings: [] };
     }
+    if (route?.id === "notebook") {
+      const parsed = parseNotebookText(text);
+      parserTrace.push({
+        stage: "notebook.cells",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        cells: parsed.cellCount,
+        markdownCells: parsed.markdownCount,
+        codeCells: parsed.codeCount,
+        outputs: parsed.outputCount,
+        fallback: parsed.fallback
+      });
+      return { text: parsed.text || text, parserTrace, warnings: [] };
+    }
+    if (route?.id === "source-code") {
+      const parsed = parseSourceCodeText(text, metadata);
+      parserTrace.push({
+        stage: "code.structure",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        language: parsed.language,
+        lines: parsed.lineCount,
+        imports: parsed.importCount,
+        symbols: parsed.symbolCount,
+        entryPoints: parsed.entryPointCount,
+        todos: parsed.todoCount
+      });
+      return { text: parsed.text || text, parserTrace, warnings: [] };
+    }
     if (route?.id === "diagram") {
       const parsed = parseDiagramText(text, metadata);
       parserTrace.push({
@@ -3278,6 +3599,35 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       const parsed = parseJsonLike(plain);
       parserTrace.push({ stage: "structured.json", status: "completed", characters: parsed.length });
       return { text: parsed, parserTrace, warnings };
+    }
+    if (route?.id === "notebook") {
+      const parsed = parseNotebookText(plain);
+      parserTrace.push({
+        stage: "notebook.cells",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        cells: parsed.cellCount,
+        markdownCells: parsed.markdownCount,
+        codeCells: parsed.codeCount,
+        outputs: parsed.outputCount,
+        fallback: parsed.fallback
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+    }
+    if (route?.id === "source-code") {
+      const parsed = parseSourceCodeText(plain, metadata);
+      parserTrace.push({
+        stage: "code.structure",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        language: parsed.language,
+        lines: parsed.lineCount,
+        imports: parsed.importCount,
+        symbols: parsed.symbolCount,
+        entryPoints: parsed.entryPointCount,
+        todos: parsed.todoCount
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
     }
     if (route?.id === "config") {
       const parsed = parseConfigText(plain, metadata);
@@ -3640,9 +3990,10 @@ function buildWindowRecord(document = {}, index = 0, startOffset = 0, endOffset 
 
 function streamParserStage(route = null, metadata = {}) {
   if (route?.id === "markdown") return "text.markdown";
-  if (route?.id === "source-code") return "text.direct";
+  if (route?.id === "source-code") return "code.structure";
   if (route?.id === "config") return "config.key-value";
   if (route?.id === "diagram") return "diagram.structure";
+  if (route?.id === "notebook") return "notebook.cells";
   if (route?.id === "spreadsheet" && metadata.extension === ".csv") return "table.csv";
   if (route?.id === "spreadsheet" && metadata.extension === ".tsv") return "table.tsv";
   if (route?.id === "json") return "structured.jsonl";
@@ -3655,6 +4006,12 @@ function transformStreamingTextChunk(chunk = "", route = null, metadata = {}) {
   }
   if (route?.id === "diagram") {
     return parseDiagramText(chunk, metadata).text || String(chunk || "");
+  }
+  if (route?.id === "notebook") {
+    return parseNotebookText(chunk).text || String(chunk || "");
+  }
+  if (route?.id === "source-code") {
+    return parseSourceCodeText(chunk, metadata).text || String(chunk || "");
   }
   if (metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml") {
     return stripMarkup(chunk);
@@ -7578,6 +7935,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "structured.json",
         "config.key-value",
         "diagram.structure",
+        "notebook.cells",
+        "code.structure",
         "table.csv",
         "table.tsv",
         "email.headers-body",

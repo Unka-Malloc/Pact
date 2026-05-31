@@ -573,6 +573,8 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.stream-text"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("config.key-value"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("notebook.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
@@ -617,7 +619,7 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
-  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml"]) {
+  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
       true,
@@ -738,6 +740,71 @@ try {
             "    </root></mxGraphModel>",
             "  </diagram>",
             "</mxfile>"
+          ].join("\n"))
+        },
+        {
+          sourceId: "source-34",
+          title: "Experiment Notebook",
+          fileName: "experiment.ipynb",
+          mediaType: "application/x-ipynb+json",
+          contentBase64: base64Text(JSON.stringify({
+            cells: [
+              {
+                cell_type: "markdown",
+                source: [
+                  "# Distillation Experiment\n",
+                  "The notebook records evaluation metrics for external knowledge distillation and classification routing."
+                ]
+              },
+              {
+                cell_type: "code",
+                execution_count: 1,
+                source: [
+                  "accuracy = 0.91\n",
+                  "grounding_recall = 0.87\n",
+                  "print('experiment accuracy', accuracy)"
+                ],
+                outputs: [
+                  {
+                    output_type: "stream",
+                    name: "stdout",
+                    text: ["experiment accuracy 0.91\n"]
+                  }
+                ]
+              }
+            ],
+            metadata: {
+              kernelspec: { name: "python3", language: "python" },
+              language_info: { name: "python" }
+            },
+            nbformat: 4,
+            nbformat_minor: 5
+          }))
+        },
+        {
+          sourceId: "source-35",
+          title: "Distillation Runtime Source",
+          fileName: "runtime.ts",
+          mediaType: "text/x-source-code",
+          contentBase64: base64Text([
+            "import { createServer } from 'node:http';",
+            "import { buildEvidencePack } from './graph-evidence';",
+            "",
+            "export interface RuntimeOptions {",
+            "  responseProfile: 'agent' | 'console' | 'api';",
+            "}",
+            "",
+            "export class DistillationRuntime {",
+            "  constructor(private readonly options: RuntimeOptions) {}",
+            "  async routeSource(source: unknown) {",
+            "    // TODO: preserve parser trace for code-aware evidence.",
+            "    return buildEvidencePack(source);",
+            "  }",
+            "}",
+            "",
+            "export function startServer(port: number) {",
+            "  return createServer().listen(port);",
+            "}"
           ].join("\n"))
         },
         {
@@ -938,6 +1005,14 @@ try {
   assert.equal(diagramPayloadCorpus.route.formatId, "diagram");
   assert.equal(diagramPayloadCorpus.parserTrace.some((trace) => trace.stage === "diagram.structure" && trace.status === "completed" && trace.nodes >= 3 && trace.edges >= 2), true);
   assert.match(diagramPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /External API|Agent Message|Graph Evidence Pack/);
+  const notebookPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-34");
+  assert.equal(notebookPayloadCorpus.route.formatId, "notebook");
+  assert.equal(notebookPayloadCorpus.parserTrace.some((trace) => trace.stage === "notebook.cells" && trace.status === "completed" && trace.cells === 2 && trace.markdownCells === 1 && trace.codeCells === 1 && trace.outputs === 1), true);
+  assert.match(notebookPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Distillation Experiment|experiment accuracy/);
+  const sourcePayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-35");
+  assert.equal(sourcePayloadCorpus.route.formatId, "source-code");
+  assert.equal(sourcePayloadCorpus.parserTrace.some((trace) => trace.stage === "code.structure" && trace.status === "completed" && trace.language === "typescript" && trace.imports >= 2 && trace.symbols >= 3 && trace.entryPoints >= 1 && trace.todos >= 1), true);
+  assert.match(sourcePayloadCorpus.windowPlan.windows[0]?.excerpt || "", /DistillationRuntime|routeSource|startServer/);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");

@@ -391,6 +391,9 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".svg"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".drawio"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".mmd"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ipynb"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ts"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".py"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
@@ -398,6 +401,8 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.stream-text"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("config.key-value"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("notebook.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
@@ -702,6 +707,41 @@ try {
               "  API --> Agent[Agent machine message]",
               "  API --> Evidence[Graph evidence pack]",
               "  Evidence --> Project[Project convergence report]"
+            ].join("\n"),
+            "notebooks/experiment.ipynb": JSON.stringify({
+              cells: [
+                {
+                  cell_type: "markdown",
+                  source: ["# Container Experiment\n", "Notebook evidence tracks project convergence and grounding metrics."]
+                },
+                {
+                  cell_type: "code",
+                  source: ["project_score = 0.88\n", "print('project convergence score', project_score)"],
+                  outputs: [{ output_type: "stream", name: "stdout", text: ["project convergence score 0.88\n"] }]
+                }
+              ],
+              metadata: { kernelspec: { name: "python3", language: "python" }, language_info: { name: "python" } },
+              nbformat: 4,
+              nbformat_minor: 5
+            }),
+            "src/runtime.py": [
+              "import json",
+              "from pathlib import Path",
+              "",
+              "class ProjectConvergenceRuntime:",
+              "    def __init__(self, root: Path):",
+              "        self.root = root",
+              "",
+              "    def build_evidence_pack(self, source):",
+              "        # TODO: connect code symbols to graph evidence.",
+              "        return json.dumps({'source': str(source)})",
+              "",
+              "def main():",
+              "    runtime = ProjectConvergenceRuntime(Path('.'))",
+              "    print(runtime.build_evidence_pack('container'))",
+              "",
+              "if __name__ == '__main__':",
+              "    main()"
             ].join("\n")
           })
         }
@@ -734,11 +774,23 @@ try {
   assert.equal(diagramChild.parentSourceId, "container-project-package");
   assert.equal(diagramChild.route.formatId, "diagram");
   assert.equal(diagramChild.parserTrace.some((trace) => trace.stage === "diagram.structure" && trace.status === "completed"), true);
+  const notebookChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!notebooks/experiment.ipynb");
+  assert.ok(notebookChild, "project package Notebook child must be expanded");
+  assert.equal(notebookChild.parentSourceId, "container-project-package");
+  assert.equal(notebookChild.route.formatId, "notebook");
+  assert.equal(notebookChild.parserTrace.some((trace) => trace.stage === "notebook.cells" && trace.status === "completed" && trace.cells === 2), true);
+  const sourceChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!src/runtime.py");
+  assert.ok(sourceChild, "project package source code child must be expanded");
+  assert.equal(sourceChild.parentSourceId, "container-project-package");
+  assert.equal(sourceChild.route.formatId, "source-code");
+  assert.equal(sourceChild.parserTrace.some((trace) => trace.stage === "code.structure" && trace.status === "completed" && trace.language === "python" && trace.imports >= 2 && trace.symbols >= 3 && trace.entryPoints >= 1), true);
   const candidateSourceIds = new Set(projectPackageRun.payload.result.candidates.flatMap((candidate) => candidate.sourceIds || []));
   assert.equal(candidateSourceIds.has("container-project-package!docs/architecture.md"), true);
   assert.equal(candidateSourceIds.has("container-project-package!finance/invoice.csv"), true);
   assert.equal(candidateSourceIds.has("container-project-package!ops/service.env"), true);
   assert.equal(candidateSourceIds.has("container-project-package!diagrams/system.mmd"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!notebooks/experiment.ipynb"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!src/runtime.py"), true);
   assert.equal(projectPackageRun.payload.result.classification.coreGroupCount >= 2, true);
   assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
     group.sourceIds.includes("container-project-package!docs/architecture.md") &&
