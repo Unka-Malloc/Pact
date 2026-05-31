@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch } from 'vue';
-import { useConsole } from './useConsole';
+import { useServerConsoleShellContext } from './serverConsoleShellContext';
 import { usePageRefreshHandler } from './usePageRefresh';
 import type { HistorySessionPanelItem } from '../types/app';
 import type {
@@ -21,7 +21,7 @@ export function useWorkspacesConsole() {
     isAuthenticated,
     authState,
     refreshAuthState
-  } = useConsole();
+  } = useServerConsoleShellContext();
   const localBusyKey = ref('');
   const busyKey = computed(() => localBusyKey.value || globalBusyKey.value);
 

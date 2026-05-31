@@ -21,7 +21,7 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `server-web/composables` | 55 | 23003 | 121 | 9 | 0 | 200 | 25 |
+| `server-web/composables` | 55 | 23004 | 121 | 5 | 0 | 200 | 25 |
 | `server-web/styles` | 22 | 12348 | 0 | 0 | 0 | 150 | 0 |
 | `server-web/views` | 21 | 7723 | 0 | 0 | 0 | 75 | 1 |
 | `server-web/components` | 37 | 6780 | 1 | 0 | 1 | 21 | 2 |
@@ -50,12 +50,8 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 Direct `useConsole()` callers:
 
 - `server-web/composables/useServerConsoleShell.ts`
-- `server-web/composables/useKnowledgeViewConsole.ts`
-- `server-web/composables/useDebugViewConsole.ts`
-- `server-web/composables/useWorkspacesConsole.ts`
-- `server-web/composables/console-agent-permissions-view-controller.ts`
 
-Leaf view direct `useConsole()` callers are now zero. Views consume `serverConsoleShellContext`, `knowledgeViewContext`, `workspacesViewContext`, or feature controllers. The remaining five callers are compatibility facades/controllers and are enforced by `npm run server:verify:frontend-architecture`.
+Leaf view direct `useConsole()` callers are now zero. Page facades and feature controllers consume `serverConsoleShellContext`, `knowledgeViewContext`, `workspacesViewContext`, or feature controllers. The only remaining external caller is the shell compatibility boundary, enforced by `npm run server:verify:frontend-architecture`.
 
 Direct `bridge.*` calls from view/component files:
 
@@ -71,14 +67,14 @@ Page-level HTML rendering now goes through `SafeHtmlBlock`, which requires calle
 
 ### P0-1: `useConsole.ts` is still the cross-page frontend runtime
 
-`useConsole.ts` remains the central state/effect container for unrelated pages and admin sections. It exposes route state, auth, jobs, settings, runtime mounts, knowledge management, maintenance, OAuth, browser effects, and admin actions from one 4486-line singleton. Leaf views no longer call it directly, but `useServerConsoleShell.ts` still spreads the full compatibility singleton into route context, so the public surface is still too broad.
+`useConsole.ts` remains the central state/effect container for unrelated pages and admin sections. It exposes route state, auth, jobs, settings, runtime mounts, knowledge management, maintenance, OAuth, browser effects, and admin actions from one 4486-line singleton. Leaf views and page facades no longer call it directly, but `useServerConsoleShell.ts` still spreads the full compatibility singleton into route context, so the public surface is still too broad.
 
 Required direction:
 
 - Keep `useConsole()` temporarily as a compatibility shell only.
 - Move page/domain state into cohesive controllers or contexts: shell, auth, jobs, settings/model library, runtime modules/downloads, production health, knowledge management, knowledge distillation, workspaces, debug, and admin permissions.
 - Leaf views should continue consuming route/domain contexts, not import `useConsole()` directly.
-- The next extraction wave should replace the broad `...consoleContext` shell spread with narrower admin/feed/approval/source contexts and remove one compatibility caller group at a time.
+- The next extraction wave should replace the broad `...consoleContext` shell spread with narrower admin/feed/approval/source contexts.
 
 ### P0-2: UI files call `bridge` directly instead of domain controllers
 
@@ -143,13 +139,13 @@ Required direction:
 
 ### P1-3: Route contexts exist but are not consistently used
 
-`serverConsoleShellContext.ts`, `knowledgeViewContext.ts`, and `workspacesViewContext.ts` are present. Leaf views now use contexts instead of importing `useConsole()` directly, but the shell context still exposes a broad compatibility surface.
+`serverConsoleShellContext.ts`, `knowledgeViewContext.ts`, and `workspacesViewContext.ts` are present. Leaf views and page facades now use contexts instead of importing `useConsole()` directly, but the shell context still exposes a broad compatibility surface.
 
 Required direction:
 
 - Keep route-level providers as the default way to pass shell/page state.
 - Add missing admin/debug contexts where the page has multiple child views.
-- Burn down the five remaining compatibility callers and narrow the shell return surface.
+- Narrow the shell return surface so route contexts stop inheriting the full singleton.
 
 ### P1-4: Type looseness remains in shared utilities
 
@@ -196,11 +192,11 @@ Existing server architecture verifiers protect backend boundaries. A dedicated f
 Required direction:
 
 - Keep `server:verify:frontend-architecture` in the aggregate server gate.
-- Burn down the explicit `useConsole()` allowlist as route/domain contexts replace compatibility callers.
+- Keep the explicit `useConsole()` allowlist at the shell-only boundary until the singleton is split.
 
 ## Execution Order
 
-1. P0-1: Continue reducing `useConsole()` as the global frontend runtime. Leaf views are migrated; next target is the compatibility facade layer (`useDebugViewConsole`, `useKnowledgeViewConsole`, `useWorkspacesConsole`, agent permissions controller, then shell spread).
+1. P0-1: Continue reducing `useConsole()` as the global frontend runtime. Leaf views and page facades are migrated; next target is the broad shell spread and then the singleton internals.
 2. P0-2: Keep view/component `bridge.*` calls at the single `BridgeDownloadButton.vue` allowlisted boundary; the frontend architecture verifier now fails new direct callers.
 3. P0-3: Split large feature components after their async operations move out.
 4. P0-5: Split `bridge.ts` and `types.ts` by domains touched by the UI extractions.
@@ -217,6 +213,7 @@ Required direction:
 - `server-web/views/KnowledgeView.vue` and `server-web/components/KnowledgeImportCard.vue`: knowledge export URL generation, normalized document links, and document preview parsing moved to `server-web/lib/knowledge-documents.ts`. Both files no longer import `bridge` directly.
 - `server-web/views/DashboardView.vue`: dashboard state now comes from `serverConsoleShellContext`; the view no longer imports `useConsole()` directly.
 - `server-web/views/ApprovalFlowView.vue`, `server-web/views/FeedView.vue`, `server-web/views/SourcesView.vue`, and admin views under `server-web/views/admin`: shell-owned state now comes from `serverConsoleShellContext`; these views no longer import `useConsole()` directly.
+- `server-web/composables/useDebugViewConsole.ts`, `server-web/composables/useKnowledgeViewConsole.ts`, `server-web/composables/useWorkspacesConsole.ts`, and `server-web/composables/console-agent-permissions-view-controller.ts`: compatibility dependencies now flow through `serverConsoleShellContext`, reducing direct `useConsole()` callers to the shell boundary.
 - `server/scripts/verify-frontend-architecture.mjs`: enforces the current bridge, safe-html, and `useConsole()` compatibility boundaries. The script is wired into `server:verify` as `server:verify:frontend-architecture`.
 
 ## Verification Gates

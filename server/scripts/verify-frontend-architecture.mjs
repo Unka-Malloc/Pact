@@ -14,11 +14,7 @@ const allowedHtmlRenderFiles = new Set([
 ]);
 
 const allowedUseConsoleFiles = new Set([
-  "server-web/composables/console-agent-permissions-view-controller.ts",
-  "server-web/composables/useDebugViewConsole.ts",
-  "server-web/composables/useKnowledgeViewConsole.ts",
   "server-web/composables/useServerConsoleShell.ts",
-  "server-web/composables/useWorkspacesConsole.ts",
 ]);
 
 function normalizePosix(input) {

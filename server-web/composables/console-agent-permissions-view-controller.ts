@@ -1,7 +1,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { bridge } from '../lib/bridge';
 import { usePageRefreshHandler } from './usePageRefresh';
-import { useConsole } from './useConsole';
+import { useServerConsoleShellContext } from './serverConsoleShellContext';
 
 type GovernanceItem = Record<string, unknown>;
 
@@ -243,7 +243,7 @@ export function useAgentPermissionsViewConsole() {
     toolScopes,
     toolsetLabel,
     updateGrant,
-  } = useConsole();
+  } = useServerConsoleShellContext();
 
   function handleSelectedToolChange(event: Event) {
     const target = event.target as HTMLSelectElement | null;

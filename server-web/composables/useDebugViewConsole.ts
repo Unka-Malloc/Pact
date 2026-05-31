@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { useConsole } from './useConsole';
 import type { DebugTab } from './useConsole';
+import { useServerConsoleShellContext } from './serverConsoleShellContext';
 import { bridge } from '../lib/bridge';
 import { createKnowledgeUploadSession } from '../lib/knowledge-upload-session';
 import type { SplitJob } from '../lib/types';
@@ -87,7 +87,7 @@ export function useDebugViewConsole() {
     switchAgentExploreTab,
     thinkingModeOptionBarOptions,
     visibleDebugTabs,
-  } = useConsole();
+  } = useServerConsoleShellContext();
 
   const route = useRoute();
   const activeDebugTab = computed<DebugTab>(() => {

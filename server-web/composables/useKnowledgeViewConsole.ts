@@ -1,6 +1,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { useConsole, type KnowledgeTab } from './useConsole';
+import type { KnowledgeTab } from './useConsole';
+import { useServerConsoleShellContext } from './serverConsoleShellContext';
 import { knowledgeRouteTabToViewTab } from '../router/routes';
 import { usePageRefreshHandler } from './usePageRefresh';
 import { bridge } from '../lib/bridge';
@@ -159,7 +160,7 @@ export function useKnowledgeViewConsole() {
     fuseKnowledgeReview,
     runRuleAuthoringChat,
     shortId,
-  } = useConsole();
+  } = useServerConsoleShellContext();
 
   const route = useRoute();
   const activeKnowledgeTab = computed<KnowledgeTab>(() => {
