@@ -214,6 +214,48 @@ function mcpOutletSummary(operations = []) {
   return outlets;
 }
 
+function mcpOutletForOperation({ operation = "", toolSkillManagementProvider, authorization = null } = {}) {
+  const operationId = String(operation || "").trim();
+  if (operationId === "pact.mcp.version" || operationId === "pact.version" || operationId === "pact.capabilities.list") {
+    return MCP_OUTLET_METADATA[MCP_DISCOVERY_TOOL_NAME];
+  }
+  const tools = toolSkillManagementProvider
+    .listVisibleTools({ authorization })
+    .filter((tool) =>
+      tool.id === operationId ||
+        tool.operationId === operationId ||
+        tool.name === operationId
+    );
+  if (tools.length === 0) {
+    return null;
+  }
+  return mcpOutletForTool(tools[0]);
+}
+
+function operationOutletMismatchError({ id, operation, requestedTool, expectedOutlet }) {
+  return {
+    httpStatus: 200,
+    body: jsonRpcError(id, -32602, `Operation ${operation} must be called through ${expectedOutlet.toolName}, not ${requestedTool}.`, {
+      code: "operation_outlet_mismatch",
+      operation,
+      requestedTool,
+      expectedTool: expectedOutlet.toolName,
+      architectureCategory: expectedOutlet.architectureCategory,
+      discoveryTool: MCP_DISCOVERY_TOOL_NAME,
+      discoveryOperation: "pact.capabilities.list",
+      stableToolName: MCP_STABLE_TOOL_NAME,
+      example: {
+        name: expectedOutlet.toolName,
+        arguments: {
+          apiVersion: MCP_INTERFACE_VERSION,
+          operation,
+          input: {}
+        }
+      }
+    })
+  };
+}
+
 function publicMcpTool(tool) {
   const inputSchema = publicMcpInputSchema(tool.inputSchema || { type: "object" });
   const outlet = mcpOutletForTool(tool);
@@ -1278,6 +1320,21 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
       const error = parsedCall.error;
       error.id = id;
       return error;
+    }
+    if (toolName !== MCP_STABLE_TOOL_NAME) {
+      const expectedOutlet = mcpOutletForOperation({
+        operation: parsedCall.operation,
+        toolSkillManagementProvider,
+        authorization
+      });
+      if (expectedOutlet && expectedOutlet.toolName !== toolName) {
+        return operationOutletMismatchError({
+          id,
+          operation: parsedCall.operation,
+          requestedTool: toolName,
+          expectedOutlet
+        });
+      }
     }
     const metaResult = pactMetaResult({
       operation: parsedCall.operation,

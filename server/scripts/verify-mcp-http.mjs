@@ -335,6 +335,21 @@ try {
   assert.ok(localOutlets["pact.skillHub"].operations.includes("pact.knowledge.skills.list"));
   assert.ok(localOutlets["pact.knowledge"].operations.includes("pact.knowledge.search"));
 
+  const mismatchedOutletCall = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(localGrant.payload.token),
+    body: JSON.stringify(mcpToolCall("pact.knowledge", "pact.sharedspace.file.write", {
+      workspaceRef: "workspace-1",
+      path: "notes/hello.txt",
+      content: "wrong outlet"
+    }, 33))
+  });
+  assert.equal(mismatchedOutletCall.status, 200);
+  assert.equal(mismatchedOutletCall.payload.error.data.code, "operation_outlet_mismatch");
+  assert.equal(mismatchedOutletCall.payload.error.data.requestedTool, "pact.knowledge");
+  assert.equal(mismatchedOutletCall.payload.error.data.expectedTool, "pact.sharedspace");
+  assert.equal(mismatchedOutletCall.payload.error.data.example.name, "pact.sharedspace");
+
   const sharedspaceGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -353,7 +368,7 @@ try {
     body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.agentWorkspace.create", {
       title: "MCP sharedspace exchange",
       objective: "Verify agent-to-agent file exchange through Pact MCP"
-    }, 33))
+    }, 34))
   });
   assert.equal(createdSharedWorkspace.status, 200);
   const createdWorkspacePayload = createdSharedWorkspace.payload.result.structuredContent.payload;
@@ -367,7 +382,7 @@ try {
       workspaceRef,
       path: "notes/hello.txt",
       content: "hello pact"
-    }, 34))
+    }, 35))
   });
   assert.equal(sharedspaceWrite.status, 200);
   const writePayload = sharedspaceWrite.payload.result.structuredContent.payload;
@@ -380,7 +395,7 @@ try {
     body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.item.list", {
       workspaceRef,
       path: "notes"
-    }, 35))
+    }, 36))
   });
   assert.equal(sharedspaceList.status, 200);
   const listPayload = sharedspaceList.payload.result.structuredContent.payload;
@@ -394,7 +409,7 @@ try {
       workspaceRef,
       path: "notes/hello.txt",
       includeText: true
-    }, 36))
+    }, 37))
   });
   assert.equal(sharedspaceRead.status, 200);
   const readPayload = sharedspaceRead.payload.result.structuredContent.payload;
