@@ -532,6 +532,16 @@ function mcpVersionInfo() {
   };
 }
 
+function mcpRuntimeMetadata({ listenUrl = "", discoveryState = null } = {}) {
+  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
+  return {
+    ...mcpVersionInfo(),
+    sharedHub: discovery.sharedHub,
+    priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+    supportedTargets: mcpSupportedTargetDetails()
+  };
+}
+
 function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
   const baseUrl = String(discoveryState?.activeServiceUrl || listenUrl || "").replace(/\/+$/, "");
   let vmBaseUrl = "";
@@ -908,7 +918,6 @@ function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
 }
 
 function mcpInitializeResult({ listenUrl = "", discoveryState = null } = {}) {
-  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   return {
     protocolVersion: MCP_PROTOCOL_VERSION,
     capabilities: {
@@ -920,12 +929,7 @@ function mcpInitializeResult({ listenUrl = "", discoveryState = null } = {}) {
       name: "Pact",
       version: MCP_SERVER_VERSION
     },
-    _meta: {
-      ...mcpVersionInfo(),
-      sharedHub: discovery.sharedHub,
-      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
-      supportedTargets: mcpSupportedTargetDetails()
-    }
+    _meta: mcpRuntimeMetadata({ listenUrl, discoveryState })
   };
 }
 
@@ -1420,12 +1424,8 @@ async function sendMcpSseVersionEvent(request, response, toolSkillManagementProv
   const authorization = hasMcpAuthToken(request)
     ? await toolSkillManagementProvider.authorizeRequest({ request, requiredScopes: [] })
     : { ok: false };
-  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   const payload = jsonRpcNotification("notifications/tools/list_changed", {
-    ...mcpVersionInfo(),
-    sharedHub: discovery.sharedHub,
-    priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
-    supportedTargets: mcpSupportedTargetDetails(),
+    ...mcpRuntimeMetadata({ listenUrl, discoveryState }),
     reason: "Pact MCP tool surface or schema version changed."
   });
   response.writeHead(200, {
@@ -1492,7 +1492,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
     }
     return jsonRpcResult(id, {
       tools: pactCategorizedTools(),
-      _meta: mcpVersionInfo()
+      _meta: mcpRuntimeMetadata({ listenUrl, discoveryState })
     });
   }
 

@@ -444,6 +444,10 @@ try {
   assert.equal(localGrantBearerList.status, 200);
   assert.equal(localGrantBearerList.payload.result.tools.length, 5);
   assert.equal(localGrantBearerList.payload.result._meta.stableToolName, "pact.call");
+  assert.equal(localGrantBearerList.payload.result._meta.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.equal(localGrantBearerList.payload.result._meta.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.deepEqual(localGrantBearerList.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
+  assert.deepEqual(localGrantBearerList.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
   const updateProbe = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
