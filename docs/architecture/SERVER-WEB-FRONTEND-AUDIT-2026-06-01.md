@@ -23,9 +23,9 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `server-web/composables` | 55 | 22934 | 121 | 9 | 0 | 81 | 25 |
 | `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 0 | 0 |
-| `server-web/views` | 21 | 7748 | 5 | 14 | 0 | 4 | 1 |
+| `server-web/views` | 21 | 7709 | 2 | 14 | 0 | 4 | 1 |
 | `server-web/components` | 37 | 6747 | 5 | 0 | 1 | 11 | 2 |
-| `server-web/lib` | 7 | 4778 | 17 | 0 | 0 | 10 | 0 |
+| `server-web/lib` | 8 | 4855 | 20 | 0 | 0 | 10 | 0 |
 | `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
 
 ### Largest Files
@@ -72,7 +72,6 @@ Direct `useConsole()` callers:
 Direct `bridge.*` calls from view/component files:
 
 - `server-web/components/KnowledgeImportCard.vue` - 4 calls.
-- `server-web/views/admin/ProductionHealthView.vue` - 3 calls.
 - `server-web/views/KnowledgeView.vue` - 2 calls.
 - `server-web/components/BridgeDownloadButton.vue` - 1 allowed component-level bridge boundary for controlled downloads.
 
@@ -97,7 +96,7 @@ Required direction:
 
 ### P0-2: UI files call `bridge` directly instead of domain controllers
 
-Several views/components still hold service calls in presentation files, especially `ProductionHealthView.vue`, `KnowledgeView.vue`, and `KnowledgeImportCard.vue`. `KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, and `RuntimeDownloadsView.vue` have been moved behind domain/helper modules, which should be the pattern for the remaining direct callers.
+Several views/components still hold service calls in presentation files, especially `KnowledgeView.vue` and `KnowledgeImportCard.vue`. `KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `RuntimeDownloadsView.vue`, and `ProductionHealthView.vue` have been moved behind domain/helper modules, which should be the pattern for the remaining direct callers.
 
 Required direction:
 
@@ -216,7 +215,7 @@ Required direction:
 ## Execution Order
 
 1. P0-1: Start reducing `useConsole()` as the global frontend runtime. First target should be a page/domain with clear ownership and direct bridge leakage, so the extraction reduces both singleton size and UI/service coupling.
-2. P0-2: Remove remaining direct `bridge.*` calls from views/components, prioritizing `ProductionHealthView.vue`, `KnowledgeView.vue`, and `KnowledgeImportCard.vue`.
+2. P0-2: Remove remaining direct `bridge.*` calls from views/components, prioritizing `KnowledgeView.vue` and `KnowledgeImportCard.vue`.
 3. P0-3: Split large feature components after their async operations move out.
 4. P0-5: Split `bridge.ts` and `types.ts` by domains touched by the UI extractions.
 5. P0-4: Split CSS ownership once component/domain boundaries are clearer.
@@ -228,7 +227,7 @@ Required direction:
 - `server-web/views/admin/AgentPermissionsView.vue`: authorization governance loading/saving, editor samples, page refresh handling, and `useConsole()` compatibility dependencies moved to `server-web/composables/console-agent-permissions-view-controller.ts`. The view no longer imports `useConsole()` or `bridge` directly.
 - `server-web/components/KnowledgeDistillationWorkbench.vue`: workbench API calls, run normalization, model probe plumbing, status labels, and model option helpers moved to `server-web/lib/knowledge-distillation-workbench.ts`. The component no longer imports `bridge` directly.
 - `server-web/views/admin/RuntimeDownloadsView.vue`: runtime dependency types, status helpers, source hints, trigger guards, and bridge calls moved to `server-web/lib/runtime-dependencies.ts`. The view no longer imports `bridge` directly.
-- `server-web/views/admin/RuntimeDownloadsView.vue`: runtime dependency types, status helpers, source hints, trigger checks, and download/list calls moved to `server-web/lib/runtime-dependencies.ts`. The view no longer imports `bridge` directly.
+- `server-web/views/admin/ProductionHealthView.vue`: production health/baseline loading, status labels, elapsed time formatting, and date formatting moved to `server-web/lib/production-health.ts`. The view no longer imports `bridge` directly.
 
 ## Verification Gates
 

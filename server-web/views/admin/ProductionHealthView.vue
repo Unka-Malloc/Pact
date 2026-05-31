@@ -2,25 +2,21 @@
 import { computed, onMounted, ref } from "vue";
 import StatusPill from "../../components/StatusPill.vue";
 import { usePageRefreshHandler } from "../../composables/usePageRefresh";
-import { bridge } from "../../lib/bridge";
-import type { ProductionHealthGate, ProductionHealthResponse, V001BaselineStatus } from "../../lib/types";
+import {
+  elapsedText,
+  formatDateTime,
+  loadProductionHealthSnapshot,
+  statusLabel,
+  statusTone,
+  type ProductionHealthResponse,
+  type V001BaselineStatus,
+} from "../../lib/production-health";
 
 const health = ref<ProductionHealthResponse | null>(null);
 const baseline = ref<V001BaselineStatus | null>(null);
 const loading = ref(false);
 const loadError = ref("");
 const baselineError = ref("");
-
-const statusLabels: Record<string, string> = {
-  pass: "通过",
-  fail: "失败",
-  timeout: "超时",
-  blocked: "阻塞",
-  missing: "缺失",
-  partial: "部分",
-  warning: "预警",
-  unknown: "未知"
-};
 
 const reportGeneratedAt = computed(() => formatDateTime(health.value?.latestReport?.generatedAt || health.value?.generatedAt || ""));
 const latestCommit = computed(() => {
@@ -36,55 +32,20 @@ const baselinePortLabels = computed(() => (baseline.value?.ports || []).map((por
   value: port.verificationMode || port.implementation
 })));
 
-function statusLabel(status: string) {
-  return statusLabels[status] || status || "未知";
-}
-
-function statusTone(status: string) {
-  if (status === "pass") return "success";
-  if (status === "fail" || status === "timeout" || status === "blocked") return "danger";
-  if (status === "missing" || status === "partial" || status === "warning") return "warning";
-  return "neutral";
-}
-
-function formatDateTime(value: string) {
-  if (!value) return "未生成";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-function elapsedText(gate: ProductionHealthGate) {
-  const ms = Number(gate.commandSummary?.elapsedMs || 0);
-  if (!ms) return "0ms";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}s`;
-}
-
 async function refreshProductionHealth() {
   loading.value = true;
   loadError.value = "";
   baselineError.value = "";
   try {
-    const [healthState, baselineState] = await Promise.all([
-      bridge.getProductionHealth(),
-      bridge.getV001BaselineStatus()
-    ]);
-    health.value = healthState;
-    baseline.value = baselineState;
-  } catch (error) {
-    loadError.value = error instanceof Error ? error.message : String(error);
-    try {
-      baseline.value = await bridge.getV001BaselineStatus();
-    } catch (baselineLoadError) {
-      baselineError.value = baselineLoadError instanceof Error ? baselineLoadError.message : String(baselineLoadError);
+    const snapshot = await loadProductionHealthSnapshot();
+    if (snapshot.health !== undefined) {
+      health.value = snapshot.health;
     }
+    if (snapshot.baseline !== undefined) {
+      baseline.value = snapshot.baseline;
+    }
+    loadError.value = snapshot.loadError || "";
+    baselineError.value = snapshot.baselineError || "";
   } finally {
     loading.value = false;
   }
