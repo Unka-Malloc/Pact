@@ -21,10 +21,10 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 | Directory | Files | Lines | Bridge Calls | `useConsole()` Calls | `v-html` | Browser DOM / Storage | `any` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `server-web/composables` | 57 | 22994 | 121 | 5 | 0 | 108 | 25 |
+| `server-web/composables` | 58 | 23012 | 121 | 5 | 0 | 108 | 25 |
 | `server-web/styles` | 22 | 12326 | 0 | 0 | 0 | 100 | 0 |
-| `server-web/views` | 21 | 6771 | 0 | 0 | 0 | 4 | 1 |
-| `server-web/components` | 40 | 7548 | 1 | 0 | 1 | 21 | 2 |
+| `server-web/views` | 21 | 6513 | 0 | 0 | 0 | 4 | 1 |
+| `server-web/components` | 41 | 7821 | 1 | 0 | 1 | 21 | 2 |
 | `server-web/lib` | 10 | 5081 | 25 | 0 | 0 | 12 | 0 |
 | `server-web/i18n` | 1 | 1644 | 0 | 0 | 0 | 5 | 0 |
 
@@ -46,11 +46,16 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 | `server-web/composables/console-info-feed-utils.ts` | 852 | Feed utilities mix formatting, filtering, and presentation helpers. |
 | `server-web/composables/useKnowledgeViewConsole.ts` | 817 | Knowledge page facade still aggregates maintenance, rules, library, ingest, and word cloud state. |
 | `server-web/composables/console-model-library-controller.ts` | 812 | Model-library controller remains broad. |
-| `server-web/views/admin/AgentPermissionsView.vue` | 702 | View presentation is slimmer after controller extraction, but template complexity is still high. |
 | `server-web/composables/console-agent-explore-session-controller.ts` | 687 | Agent explore session controller still combines history/session orchestration. |
 | `server-web/styles/views/knowledge-sources.css` | 685 | Knowledge source styling remains broad. |
 | `server-web/components/UploadFileListCard.vue` | 685 | Upload component no longer owns file-entry normalization or progress derivation, but still combines upload/download rendering and scoped styles. |
 | `server-web/components/KnowledgeDistillationWorkbench.vue` | 675 | Component no longer owns bridge calls, run normalization, or model probe plumbing, but still has a large template. |
+| `server-web/views/KnowledgeView.vue` | 667 | Ingest has been split out, but source review, evidence, rules, library, and word cloud composition still share one route template. |
+| `server-web/composables/console-info-feed-controller.ts` | 664 | Feed controller still owns execution, form state, history, and output coordination. |
+| `server-web/styles/layout.css` | 659 | Shared layout selectors remain broad and can influence unrelated routes. |
+| `server-web/styles/views/info-feed-flow.css` | 658 | Feed route styling is still a large feature stylesheet. |
+| `server-web/styles/views/admin-runtime-tools.css` | 638 | Admin runtime/tool styling remains broad. |
+| `server-web/views/admin/ProductionHealthView.vue` | 630 | Production health route still combines multiple report panels and release-readiness sections. |
 
 ### Direct Coupling Hotspots
 
@@ -95,7 +100,7 @@ Required direction:
 
 ### P0-3: Large feature components mix rendering, workflow state, and side effects
 
-`KnowledgeDistillationWorkbench.vue`, `AgentPermissionsView.vue`, `KnowledgeView.vue`, `WorkspacesView.vue`, `FeedView.vue`, and `UploadFileListCard.vue` are still large enough to make stable iteration hard. The first two now have narrower script sections, the debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, KnowledgeView's ingest panel has been split into `KnowledgeIngestPanel.vue`, WorkspacesView's right-side action/detail panel has been split into `WorkspaceDetailPanel.vue`, FeedView's composer/advanced-options area has been split into `InfoFeedComposerPanel.vue`, and UploadFileListCard's pure file/progress derivation has been moved to `upload-file-list.ts`, but the remaining large templates still need focused child components.
+`KnowledgeDistillationWorkbench.vue`, `KnowledgeView.vue`, `FeedView.vue`, `UploadFileListCard.vue`, `ProductionHealthView.vue`, and `WorkspaceExpandedDetail.vue` are still large enough to make stable iteration hard. The debug page distillation workflow has been moved out of `useDebugViewConsole.ts`, KnowledgeView's ingest panel has been split into `KnowledgeIngestPanel.vue`, WorkspacesView's right-side action/detail panel has been split into `WorkspaceDetailPanel.vue`, FeedView's composer/advanced-options area has been split into `InfoFeedComposerPanel.vue`, UploadFileListCard's pure file/progress derivation has been moved to `upload-file-list.ts`, and AgentPermissionsView's unified governance card has been split into `AuthorizationGovernanceCard.vue`; the remaining large templates still need focused child components.
 
 Required direction:
 
@@ -146,7 +151,7 @@ Required direction:
 
 ### P1-3: Route contexts exist but are not consistently used
 
-`serverConsoleShellContext.ts`, `knowledgeViewContext.ts`, and `workspacesViewContext.ts` are present. Leaf views and page facades now use contexts instead of importing `useConsole()` directly, but the shell context still exposes a broad compatibility surface.
+`serverConsoleShellContext.ts`, `knowledgeViewContext.ts`, `workspacesViewContext.ts`, `feedViewContext.ts`, and `agentPermissionsViewContext.ts` are present. Leaf views and page facades now use contexts instead of importing `useConsole()` directly, but the shell context still exposes a broad compatibility surface.
 
 Required direction:
 
@@ -214,6 +219,7 @@ Required direction:
 ## Refactor Ledger
 
 - `server-web/views/admin/AgentPermissionsView.vue`: authorization governance loading/saving, editor samples, page refresh handling, and `useConsole()` compatibility dependencies moved to `server-web/composables/console-agent-permissions-view-controller.ts`. The view no longer imports `useConsole()` or `bridge` directly.
+- `server-web/views/admin/AgentPermissionsView.vue`: unified authorization governance rendering/editor moved to `server-web/components/admin/AuthorizationGovernanceCard.vue`; route state is provided through `server-web/composables/agentPermissionsViewContext.ts`.
 - `server-web/components/KnowledgeDistillationWorkbench.vue`: workbench API calls, run normalization, model probe plumbing, status labels, and model option helpers moved to `server-web/lib/knowledge-distillation-workbench.ts`. The component no longer imports `bridge` directly.
 - `server-web/views/admin/RuntimeDownloadsView.vue`: runtime dependency types, status helpers, source hints, trigger guards, and bridge calls moved to `server-web/lib/runtime-dependencies.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/admin/ProductionHealthView.vue`: production health/baseline loading, status labels, elapsed time formatting, and date formatting moved to `server-web/lib/production-health.ts`. The view no longer imports `bridge` directly.
