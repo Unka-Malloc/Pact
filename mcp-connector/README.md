@@ -49,6 +49,16 @@ For scripts:
 npx pact-mcp-connector@latest install --target codex
 ```
 
+For unattended agent shells:
+
+```bash
+npx pact-mcp-connector@latest install --target auto
+```
+
+`auto` installs every supported client that the connector can verify on this
+machine or in a detected runtime context. A non-interactive `pact-mcp install`
+with no `--target` uses the same auto-detected path.
+
 Use `--token-stdin` only when installing with a pre-issued custom grant token.
 
 ## Server Config

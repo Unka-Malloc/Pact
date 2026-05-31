@@ -202,6 +202,7 @@ function usage() {
     "Usage:",
     "  pact-mcp register",
     "  pact-mcp install",
+    "  pact-mcp install --target auto",
     "  pact-mcp install --target codex",
     "  pact-mcp uninstall",
     "  pact-mcp uninstall --target codex",
@@ -215,7 +216,7 @@ function usage() {
     "  pact-mcp server-config --reset",
     "",
     "Options:",
-    "  --target LIST                 Comma-separated targets for non-interactive install. Default: codex.",
+    "  --target LIST                 Comma-separated targets for non-interactive install. Use auto for detected clients.",
     "  --url URL                     Explicit Pact base URL. Still requires signed MCP handshake.",
     "  --scan-ports LIST            Local ports to scan when --url is omitted. Default: 7228-7237.",
     "  --token TOKEN                 Pact MCP token. Prefer --token-stdin or --token-env.",
@@ -327,6 +328,11 @@ function parseTargets(rawTarget) {
     }
   }
   return deduped;
+}
+
+function isAutoTargetRequest(rawTarget) {
+  const target = normalizeTarget(rawTarget);
+  return ["auto", "detected", "all-detected"].includes(target);
 }
 
 function targetLabel(target) {
@@ -3608,6 +3614,43 @@ async function detectLocalClawCompatibleTargets() {
   return candidates;
 }
 
+function descriptorConfiguredBin(settings, descriptor) {
+  if (descriptor.target === "codex") return settings.codexBin;
+  if (descriptor.target === "gemini-cli") return settings.geminiBin;
+  if (descriptor.target === "copilot") return settings.copilotBin;
+  if (descriptor.target === "kilo-code") return settings.kiloBin;
+  if (descriptor.target === "opencode") return settings.opencodeBin;
+  return "";
+}
+
+async function detectExplicitLocalAgentCliTargets(settings, options = {}) {
+  const candidates = [];
+  for (const descriptor of AGENT_CLI_TARGETS) {
+    if (!Object.hasOwn(options, descriptor.binOption)) {
+      continue;
+    }
+    const configuredBin = descriptorConfiguredBin(settings, descriptor);
+    const paths = await detectLocalCommandPaths(configuredBin);
+    for (const detectedPath of paths) {
+      if (!await commandSupportsMcp(detectedPath)) {
+        continue;
+      }
+      candidates.push({
+        id: `${descriptor.target}:local:${detectedPath}`,
+        target: descriptor.target,
+        label: descriptor.label,
+        status: "detected",
+        detail: detectedPath,
+        optionOverrides: {
+          "execution-location": "local",
+          [descriptor.binOption]: detectedPath
+        }
+      });
+    }
+  }
+  return candidates;
+}
+
 async function detectLocalAgentCliTargets() {
   const candidates = [];
   for (const descriptor of AGENT_CLI_TARGETS) {
@@ -3955,8 +3998,15 @@ async function scanInstallTargets(options = {}) {
       mergeInstallCandidate(candidates, candidate);
     }
   } else {
+    const explicitCandidates = await detectExplicitLocalAgentCliTargets(settings, options);
+    for (const candidate of explicitCandidates) {
+      mergeInstallCandidate(candidates, candidate);
+    }
     for (const descriptor of AGENT_CLI_TARGETS) {
-      candidates.push({
+      if (explicitCandidates.some((candidate) => candidate.target === descriptor.target)) {
+        continue;
+      }
+      mergeInstallCandidate(candidates, {
         id: descriptor.target,
         target: descriptor.target,
         label: descriptor.label,
@@ -4809,6 +4859,42 @@ async function installSelectedCandidates({ options, selected, tokenInfo }) {
   };
 }
 
+function summarizeInstallCandidate(candidate) {
+  return {
+    id: candidate.id,
+    target: candidate.target,
+    label: candidate.label,
+    detail: candidate.detail || "",
+    installed: Boolean(candidate.installed)
+  };
+}
+
+async function installAutoDetectedCommand(resolvedOptions) {
+  const scan = await scanInstallTargets(resolvedOptions);
+  const selected = scan.candidates.filter((candidate) => candidate.status === "detected");
+  if (selected.length === 0) {
+    return {
+      ok: false,
+      autoDetected: true,
+      packageName: packageJson.name,
+      packageVersion: packageJson.version,
+      baseUrl: installerOptions(resolvedOptions).baseUrl,
+      error: "No supported MCP clients were detected. Pass --target <client>, --target auto with an explicit --<client>-bin, or run in a TTY for selection.",
+      candidates: scan.candidates.map(summarizeInstallCandidate)
+    };
+  }
+  const autoUpdate = Boolean(resolvedOptions["auto-update"]);
+  resolvedOptions.__pactAutoUpdate = autoUpdate;
+  const selectedTargets = [...new Set(selected.map((candidate) => candidate.target))];
+  const tokenInfo = await resolveInstallToken(resolvedOptions, { targets: selectedTargets, autoUpdate });
+  const result = await installSelectedCandidates({ options: resolvedOptions, selected, tokenInfo });
+  return {
+    ...result,
+    autoDetected: true,
+    selected: selected.map(summarizeInstallCandidate)
+  };
+}
+
 async function installCommand(options) {
   const resolvedOptions = await resolveHubForInstall(options);
   if (resolvedOptions.__pactSkippedDiscovery) {
@@ -4825,12 +4911,10 @@ async function installCommand(options) {
   }
   const targetOpt = option(resolvedOptions, "target", "");
   if (!targetOpt) {
-    return {
-      ok: false,
-      packageName: packageJson.name,
-      packageVersion: packageJson.version,
-      error: "Interactive mode requires a TTY. Please specify --target <client> for non-interactive use."
-    };
+    return installAutoDetectedCommand(resolvedOptions);
+  }
+  if (isAutoTargetRequest(targetOpt)) {
+    return installAutoDetectedCommand(resolvedOptions);
   }
   const targets = parseTargets(targetOpt);
   const autoUpdate = Boolean(resolvedOptions["auto-update"]);

@@ -73,6 +73,17 @@ PACT_MCP_INSTALL_DIR="$HOME/.local/share/pact-mcp" \
 /bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --no-verify
 ```
 
+非交互智能体 shell 可以直接使用自动检测模式：
+
+```bash
+~/.pact/mcp/connector/current/pact-mcp install --target auto
+```
+
+`auto` 会安装 connector 能验证到的所有受支持客户端。没有 TTY 且未传
+`--target` 的 `pact-mcp install` 也会走同一条自动检测路径，避免智能体脚本
+因为缺少交互菜单而直接失败。需要限制安装范围时仍使用 `--target codex` 这类
+显式目标。
+
 管理本机服务端地址 profile：
 
 ```bash

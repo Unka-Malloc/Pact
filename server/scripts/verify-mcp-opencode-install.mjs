@@ -44,10 +44,10 @@ async function testAsync(name, fn) {
   }
 }
 
-function spawnConnector(args, timeoutMs = 30000) {
+function spawnConnector(args, timeoutMs = 30000, env = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [connectorScript, ...args], {
-      env: { ...process.env },
+      env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"],
       timeout: timeoutMs
     });
@@ -63,7 +63,37 @@ function spawnConnector(args, timeoutMs = 30000) {
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-opencode-install-"));
 const opencodeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "pact-opencode-config-"));
 const opencodeConfigPath = path.join(opencodeConfigDir, "opencode.jsonc");
+const autoOpencodeConfigPath = path.join(opencodeConfigDir, "opencode-auto.jsonc");
 const tempRegistryPath = path.join(opencodeConfigDir, "pact-servers.json");
+const autoRegistryPath = path.join(opencodeConfigDir, "pact-auto-servers.json");
+const fakeBinDir = path.join(opencodeConfigDir, "bin");
+const fakeOpencodePath = path.join(fakeBinDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
+
+async function installFakeOpenCodeCli() {
+  await fs.mkdir(fakeBinDir, { recursive: true });
+  if (process.platform === "win32") {
+    await fs.writeFile(fakeOpencodePath, [
+      "@echo off",
+      "if \"%1\"==\"mcp\" if \"%2\"==\"--help\" (",
+      "  echo Usage: opencode mcp add remove list",
+      "  exit /b 0",
+      ")",
+      "exit /b 0",
+      ""
+    ].join("\r\n"));
+    return;
+  }
+  await fs.writeFile(fakeOpencodePath, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"--help\" ]; then",
+    "  echo 'Usage: opencode mcp add remove list'",
+    "  exit 0",
+    "fi",
+    "exit 0",
+    ""
+  ].join("\n"));
+  await fs.chmod(fakeOpencodePath, 0o755);
+}
 
 let serverUrl = "";
 console.log("\n=== Pact OpenCode MCP Install Verification ===\n");
@@ -232,8 +262,44 @@ try {
     );
   });
 
-  // ── SECTION 5: Verify installed config works ──
-  console.log("\n[5] Verify installed config");
+  // ── SECTION 5: Non-interactive auto install ──
+  console.log("\n[5] Non-interactive auto install");
+  await testAsync("--target auto installs explicitly detected OpenCode", async () => {
+    await installFakeOpenCodeCli();
+    const result = await spawnConnector([
+      "install",
+      "--target", "auto",
+      "--url", serverUrl,
+      "--token", token,
+      "--opencode-bin", fakeOpencodePath,
+      "--opencode-config", autoOpencodeConfigPath,
+      "--antigravity-config", path.join(opencodeConfigDir, "missing-antigravity", "mcp_config.json"),
+      "--discovery-file", autoRegistryPath,
+      "--no-scan",
+      "--no-verify",
+      "--json"
+    ], 60000, {
+      PATH: `${fakeBinDir}${path.delimiter}${process.env.PATH || ""}`
+    });
+    if (result.code !== 0) {
+      console.log(`\n      stdout: ${result.stdout.slice(0, 300)}`);
+      console.log(`      stderr: ${result.stderr.slice(0, 300)}`);
+    }
+    assert.equal(result.code, 0, `exit code ${result.code}`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true, JSON.stringify(payload, null, 2));
+    assert.equal(payload.autoDetected, true);
+    assert.equal(payload.selected?.some((item) => item.target === "opencode"), true);
+    assert.equal(payload.installed?.opencode?.status, "installed");
+
+    const config = JSON.parse(await fs.readFile(autoOpencodeConfigPath, "utf8"));
+    assert.equal(config.mcp?.pact?.type, "remote");
+    assert.equal(config.mcp?.pact?.url, `${serverUrl}/mcp`);
+    assert.ok(config.mcp?.pact?.headers?.["X-Pact-Api-Key"]);
+  });
+
+  // ── SECTION 6: Verify installed config works ──
+  console.log("\n[6] Verify installed config");
   await testAsync("installed token calls MCP tools/list", async () => {
     const config = JSON.parse(await fs.readFile(opencodeConfigPath, "utf8"));
     const installedToken = config.mcp?.pact?.headers?.["X-Pact-Api-Key"];
@@ -274,8 +340,8 @@ try {
     assert.equal(t.payload.error.data.code, "missing_token");
   });
 
-  // ── SECTION 6: End-to-end CLI uninstall ──
-  console.log("\n[6] End-to-end CLI uninstall --target opencode");
+  // ── SECTION 7: End-to-end CLI uninstall ──
+  console.log("\n[7] End-to-end CLI uninstall --target opencode");
   let cliUninstallPayload = null;
   await testAsync("cli uninstall succeeds", async () => {
     const result = await spawnConnector([
@@ -317,8 +383,8 @@ try {
     assert.ok(grant.metadata?.uninstalledAt);
   });
 
-  // ── SECTION 7: Scan detection ──
-  console.log("\n[7] Scan detection");
+  // ── SECTION 8: Scan detection ──
+  console.log("\n[8] Scan detection");
   await testAsync("scan --json includes opencode", async () => {
     const result = await spawnConnector(["scan", "--json", "--url", serverUrl, "--no-scan"]);
     const scan = JSON.parse(result.stdout);
@@ -327,8 +393,8 @@ try {
     assert.equal(oc.label, "OpenCode");
   });
 
-  // ── SECTION 8: Connector self-checks ──
-  console.log("\n[8] Connector self-checks");
+  // ── SECTION 9: Connector self-checks ──
+  console.log("\n[9] Connector self-checks");
   await testAsync("--version works", async () => {
     const result = await spawnConnector(["--version"]);
     assert.equal(result.code, 0);
