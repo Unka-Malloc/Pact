@@ -295,9 +295,9 @@ async function installFakeDockerRuntime() {
     "[ \"$container\" = \"box123\" ] || exit 1",
     "if { [ \"$1\" = \"sh\" ] || [ \"$1\" = \"bash\" ]; } && [ \"$2\" = \"-lc\" ]; then",
     "  script=\"$3\"",
-    "  case \"$script\" in *\"command_name='codex'\"*) printf '/usr/local/bin/codex\\n'; exit 0 ;; esac",
-    "  case \"$script\" in *\"command_name='openclaw'\"*) printf '/usr/bin/openclaw\\n'; exit 0 ;; esac",
-    "  case \"$script\" in *\"command_name='ironclaw'\"*) printf '/opt/bin/ironclaw\\n'; exit 0 ;; esac",
+    "  case \"$script\" in *\"command_name=\"*\"codex\"*) printf '/usr/local/bin/codex\\n'; exit 0 ;; esac",
+    "  case \"$script\" in *\"command_name=\"*\"openclaw\"*) printf '/usr/bin/openclaw\\n'; exit 0 ;; esac",
+    "  case \"$script\" in *\"command_name=\"*\"ironclaw\"*) printf '/opt/bin/ironclaw\\n'; exit 0 ;; esac",
     "  [ -n \"${PACT_TOKEN_ENV:-}\" ] && { write_codex_env \"$PACT_TOKEN_ENV\"; exit 0; }",
     "  case \"$script\" in *\"delete config.mcp.pact\"*) remove_opencode; printf 'removed\\n'; exit 0 ;; esac",
     "  case \"$script\" in *\".config', 'opencode'\"*) write_opencode; exit 0 ;; esac",
@@ -977,6 +977,7 @@ try {
     for (const target of PRIORITY_AGENT_TARGETS) {
       const selected = payload.selected?.find((item) => item.target === target);
       assert.ok(selected?.installCommand?.includes(`pact-mcp install --target ${target}`), `${target} should include a copyable install command`);
+      assert.ok(["supported", "inconclusive"].includes(selected.mcpProbe), `${target} should include explicit-bin probe state`);
       assert.equal(selected.installCommand.includes(token), false, `${target} install command must not expose token values`);
     }
     assert.equal(payload.installed?.["gemini-cli"]?.status, "installed");

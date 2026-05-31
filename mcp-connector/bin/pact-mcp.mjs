@@ -4477,6 +4477,7 @@ async function detectExplicitLocalAgentCliTargets(settings, options = {}) {
         target: descriptor.target,
         label: descriptor.label,
         status: "detected",
+        mcpProbe: supportsMcp ? "supported" : "inconclusive",
         detail: supportsMcp ? detectedPath : `${detectedPath} (explicit path; MCP probe inconclusive)`,
         optionOverrides: {
           "execution-location": "local",
@@ -4502,6 +4503,7 @@ async function detectExplicitLocalClawCompatibleTargets(settings, options = {}) 
       target: "openclaw",
       label: targetLabel("openclaw"),
       status: "detected",
+      mcpProbe: supportsMcp ? "supported" : "inconclusive",
       detail: supportsMcp
         ? `claw-compatible MCP CLI at ${detectedPath}`
         : `claw-compatible explicit CLI at ${detectedPath}; MCP probe inconclusive`,
@@ -5799,6 +5801,7 @@ function summarizeInstallCandidate(candidate) {
     target: candidate.target,
     label: candidate.label,
     detail: candidate.detail || "",
+    ...(candidate.mcpProbe ? { mcpProbe: candidate.mcpProbe } : {}),
     installed: Boolean(candidate.installed),
     installCommand: candidate.installCommand || "",
     repairCommand: candidate.repairCommand || "",
