@@ -1,0 +1,1472 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import http from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
+import { strToU8, unzipSync, zipSync } from "fflate";
+
+const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const serviceDir = path.join(repoRoot, "external-services/knowledge-distillation-service");
+const imageTag = process.env.PACT_EXTERNAL_KD_IMAGE || "pact-external-knowledge-distillation:local";
+const containerName = `pact-external-kd-verify-${process.pid}-${Date.now()}`;
+
+const FONT_5X7 = Object.freeze({
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01111", "10000", "10000", "10111", "10001", "10001", "01111"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00010", "00010", "00010", "10010", "10010", "01100"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"]
+});
+
+async function freePort() {
+  const server = http.createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return address.port;
+}
+
+function run(command, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: repoRoot,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      ...options
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error(`${command} ${args.join(" ")} failed with ${code}\n${stdout}\n${stderr}`.trim()));
+    });
+  });
+}
+
+async function docker(args = []) {
+  return run("docker", args);
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  return {
+    status: response.status,
+    ok: response.ok,
+    headers: response.headers,
+    payload: text.trim() ? JSON.parse(text) : {}
+  };
+}
+
+async function waitForService(url, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const health = await fetchJson(`${url}/health`);
+      if (health.status === 200 && health.payload.ok === true) {
+        return health.payload;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`Containerized external distillation service did not become healthy: ${lastError?.message || "timeout"}`);
+}
+
+function drawOcrRaster(lines = []) {
+  const scale = 10;
+  const glyphWidth = 5;
+  const glyphHeight = 7;
+  const glyphGap = 2;
+  const lineGap = 3;
+  const margin = 6;
+  const normalizedLines = lines.map((line) => String(line || "").toUpperCase());
+  const widest = normalizedLines.reduce((max, line) => Math.max(max, line.length), 1);
+  const widthUnits = (margin * 2) + (widest * glyphWidth) + (Math.max(0, widest - 1) * glyphGap);
+  const heightUnits = (margin * 2) + (normalizedLines.length * glyphHeight) + (Math.max(0, normalizedLines.length - 1) * lineGap);
+  const width = widthUnits * scale;
+  const height = heightUnits * scale;
+  const pixels = Buffer.alloc(width * height, 255);
+  const setBlock = (unitX, unitY) => {
+    const startX = unitX * scale;
+    const startY = unitY * scale;
+    for (let y = startY; y < startY + scale; y += 1) {
+      for (let x = startX; x < startX + scale; x += 1) {
+        pixels[(y * width) + x] = 0;
+      }
+    }
+  };
+  normalizedLines.forEach((line, lineIndex) => {
+    const yBase = margin + (lineIndex * (glyphHeight + lineGap));
+    Array.from(line).forEach((character, charIndex) => {
+      const glyph = FONT_5X7[character] || FONT_5X7[" "];
+      const xBase = margin + (charIndex * (glyphWidth + glyphGap));
+      glyph.forEach((row, rowIndex) => {
+        Array.from(row).forEach((bit, colIndex) => {
+          if (bit === "1") {
+            setBlock(xBase + colIndex, yBase + rowIndex);
+          }
+        });
+      });
+    });
+  });
+  return { width, height, pixels };
+}
+
+function drawOcrPgm(lines = []) {
+  const raster = drawOcrRaster(lines);
+  return {
+    ...raster,
+    buffer: Buffer.concat([Buffer.from(`P5\n${raster.width} ${raster.height}\n255\n`, "ascii"), raster.pixels])
+  };
+}
+
+function pdfStreamObject(number, header, stream) {
+  return Buffer.concat([
+    Buffer.from(`${number} 0 obj\n${header}\nstream\n`, "ascii"),
+    Buffer.from(stream),
+    Buffer.from("\nendstream\nendobj\n", "ascii")
+  ]);
+}
+
+function pdfTextObject(number, body) {
+  return Buffer.from(`${number} 0 obj\n${body}\nendobj\n`, "ascii");
+}
+
+function buildImageOnlyPdf(raster) {
+  const pageWidth = raster.width + 144;
+  const pageHeight = raster.height + 144;
+  const content = Buffer.from(`q\n${raster.width} 0 0 ${raster.height} 72 72 cm\n/Im1 Do\nQ\n`, "ascii");
+  const objects = [
+    pdfTextObject(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+    pdfTextObject(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+    pdfTextObject(
+      3,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>`
+    ),
+    pdfStreamObject(
+      4,
+      `<< /Type /XObject /Subtype /Image /Width ${raster.width} /Height ${raster.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${raster.pixels.length} >>`,
+      raster.pixels
+    ),
+    pdfStreamObject(5, `<< /Length ${content.length} >>`, content)
+  ];
+  const chunks = [Buffer.from("%PDF-1.4\n", "ascii")];
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+    chunks.push(object);
+  }
+  const xrefOffset = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const xrefEntries = [
+    "0000000000 65535 f ",
+    ...offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n `)
+  ];
+  chunks.push(Buffer.from([
+    "xref",
+    `0 ${objects.length + 1}`,
+    ...xrefEntries,
+    "trailer",
+    `<< /Size ${objects.length + 1} /Root 1 0 R >>`,
+    "startxref",
+    String(xrefOffset),
+    "%%EOF",
+    ""
+  ].join("\n"), "ascii"));
+  return Buffer.concat(chunks);
+}
+
+function zipBase64(entries) {
+  return Buffer.from(zipSync(Object.fromEntries(
+    Object.entries(entries).map(([name, text]) => [name, typeof text === "string" ? strToU8(text) : text])
+  ))).toString("base64");
+}
+
+function tarOctal(value, length) {
+  return String(Math.max(0, Number(value) || 0).toString(8)).padStart(length - 1, "0").slice(-(length - 1));
+}
+
+function writeTarField(header, offset, length, value) {
+  header.write(String(value || "").slice(0, length), offset, length, "utf8");
+}
+
+function tarBuffer(entries = {}) {
+  const chunks = [];
+  for (const [name, text] of Object.entries(entries)) {
+    const data = Buffer.isBuffer(text) ? text : Buffer.from(String(text), "utf8");
+    const header = Buffer.alloc(512, 0);
+    writeTarField(header, 0, 100, name);
+    writeTarField(header, 100, 8, `${tarOctal(0o644, 7)}\0`);
+    writeTarField(header, 108, 8, `${tarOctal(0, 7)}\0`);
+    writeTarField(header, 116, 8, `${tarOctal(0, 7)}\0`);
+    writeTarField(header, 124, 12, `${tarOctal(data.length, 11)}\0`);
+    writeTarField(header, 136, 12, `${tarOctal(Math.floor(Date.now() / 1000), 11)}\0`);
+    header.fill(0x20, 148, 156);
+    writeTarField(header, 156, 1, "0");
+    writeTarField(header, 257, 6, "ustar\0");
+    writeTarField(header, 263, 2, "00");
+    const checksum = header.reduce((sum, byte) => sum + byte, 0);
+    writeTarField(header, 148, 8, `${tarOctal(checksum, 6)}\0 `);
+    chunks.push(header, data);
+    const padding = (512 - (data.length % 512)) % 512;
+    if (padding) {
+      chunks.push(Buffer.alloc(padding, 0));
+    }
+  }
+  chunks.push(Buffer.alloc(1024, 0));
+  return Buffer.concat(chunks);
+}
+
+function tarBase64(entries = {}) {
+  return tarBuffer(entries).toString("base64");
+}
+
+function tgzBase64(entries = {}) {
+  return gzipSync(tarBuffer(entries)).toString("base64");
+}
+
+function multipartEmailBase64({ boundary = "container-boundary", attachments = [] } = {}) {
+  const lines = [
+    "From: sender@example.test",
+    "To: pact@example.test",
+    "Subject: Container attachment routing",
+    "Date: Sun, 31 May 2026 10:30:00 +0000",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Container email body includes project package attachment routing evidence."
+  ];
+  for (const attachment of attachments) {
+    lines.push(
+      `--${boundary}`,
+      `Content-Type: ${attachment.mediaType}; name="${attachment.fileName}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${attachment.fileName}"`,
+      "",
+      Buffer.from(attachment.bytes).toString("base64")
+    );
+  }
+  lines.push(`--${boundary}--`, "");
+  return Buffer.from(lines.join("\r\n"), "utf8").toString("base64");
+}
+
+function mboxBase64() {
+  const attachmentBase64 = Buffer.from("vendor,total\nContainerMboxCo,288", "utf8").toString("base64");
+  return Buffer.from([
+    "From analyst@example.test Sun May 31 10:00:00 2026",
+    "From: analyst@example.test",
+    "To: pact@example.test",
+    "Subject: Container MBOX Architecture",
+    "Date: Sun, 31 May 2026 10:00:00 +0000",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Container MBOX first message records parser routing evidence.",
+    "From finance@example.test Sun May 31 10:05:00 2026",
+    "From: finance@example.test",
+    "To: pact@example.test",
+    "Subject: Container MBOX Attachment",
+    "Date: Sun, 31 May 2026 10:05:00 +0000",
+    "Content-Type: multipart/mixed; boundary=\"container-mbox-boundary\"",
+    "",
+    "--container-mbox-boundary",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Container MBOX second message contains invoice attachment evidence.",
+    "--container-mbox-boundary",
+    "Content-Type: text/csv; name=\"container-mbox-invoice.csv\"",
+    "Content-Transfer-Encoding: base64",
+    "Content-Disposition: attachment; filename=\"container-mbox-invoice.csv\"",
+    "",
+    attachmentBase64,
+    "--container-mbox-boundary--",
+    ""
+  ].join("\r\n"), "utf8").toString("base64");
+}
+
+await docker(["version"]);
+
+if (process.env.PACT_EXTERNAL_KD_SKIP_DOCKER_BUILD !== "1") {
+  await docker(["build", "-t", imageTag, serviceDir]);
+}
+
+const port = await freePort();
+const serviceUrl = `http://127.0.0.1:${port}`;
+let started = false;
+
+try {
+  await docker([
+    "run",
+    "--rm",
+    "-d",
+    "--name",
+    containerName,
+    "-p",
+    `127.0.0.1:${port}:8799`,
+    imageTag
+  ]);
+  started = true;
+
+  await waitForService(serviceUrl);
+
+  const runtime = await fetchJson(`${serviceUrl}/v1/runtime/health?refresh=1`);
+  assert.equal(runtime.status, 200);
+  assert.equal(runtime.payload.runtimes["tika.app"].available, true, "container must include runnable Tika app fallback");
+  assert.equal(runtime.payload.runtimes["ocr.tesseract"].available, true, "container must include runnable Tesseract OCR");
+  assert.equal(runtime.payload.runtimes["pdf.poppler"].available, true, "container must include runnable Poppler pdftoppm");
+  assert.equal(runtime.payload.runtimes["pdf.pdftotext"].available, true, "container must include runnable Poppler pdftotext");
+  assert.equal(runtime.payload.runtimes["archive.7zip"].available, true, "container must include runnable 7z archive extractor");
+  assert.equal(runtime.payload.summary.ocrAvailable, true, "container runtime doctor must advertise OCR availability");
+
+  const capabilities = await fetchJson(`${serviceUrl}/v1/capabilities`);
+  assert.equal(capabilities.status, 200);
+  assert.equal(capabilities.payload.classification.strategy, "hashing_embedding_window_community_classification_v2");
+  assert.equal(capabilities.payload.classification.referencePatterns.includes("graphrag.community-reports"), true);
+  assert.equal(capabilities.payload.grounding.strategy, "claim-evidence-topk-conflict-gating.v2");
+  assert.equal(capabilities.payload.grounding.promotionGate, "claim-grounded-promotion");
+  assert.equal(capabilities.payload.incrementalConvergence.supported, true);
+  assert.equal(capabilities.payload.incrementalConvergence.strategy, "project-snapshot-incremental-convergence.v1");
+  assert.equal(capabilities.payload.artifacts.includes("project-snapshot-json"), true);
+  assert.equal(capabilities.payload.graphEvidence.supported, true);
+  assert.equal(capabilities.payload.graphEvidence.strategy, "graph-lite-entity-relationship-evidence-pack.v1");
+  assert.equal(capabilities.payload.graphEvidence.tables.includes("relationships"), true);
+  assert.equal(capabilities.payload.graphEvidence.query.supported, true);
+  assert.equal(capabilities.payload.graphEvidence.query.strategy, "graph-lite-evidence-query.v1");
+  assert.equal(capabilities.payload.graphEvidence.projectQuery.supported, true);
+  assert.equal(capabilities.payload.graphEvidence.projectQuery.strategy, "project-graph-evidence-convergence-query.v1");
+  assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
+  assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
+  assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
+  assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
+  assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
+  assert.equal(capabilities.payload.timeFiltering.supported, true);
+  assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".rtf"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".odt"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".epub"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".pgm"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".yaml"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".toml"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".properties"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".env"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".svg"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".drawio"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".mmd"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
+  assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref-deferred"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.stream-text"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("config.key-value"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.file-ref.expand"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.entry-file-ref"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.tar.container"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.gzip.decompress"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.7z.extract"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.msg.tika"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.mbox"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.attachment-route"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.structured"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ocr.image.tesseract"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.ocr.poppler-tesseract"), true);
+  const referenceGapReport = await fetchJson(`${serviceUrl}/v1/reference-gap-report`);
+  assert.equal(referenceGapReport.status, 200);
+  assert.equal(referenceGapReport.payload.strategy, "reference-framework-gap-report.v1");
+  assert.equal(referenceGapReport.payload.frameworks.some((framework) => framework.id === "mineru" && framework.absorbedPatterns.length > 0), true);
+
+  const image = drawOcrPgm([
+    "PACT OCR ROUTING",
+    "PARSER EVIDENCE WINDOW",
+    "DEPLOYMENT PROJECT"
+  ]);
+  const createRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container OCR route verification",
+      title: "Container OCR route verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-ocr-image",
+          title: "Container OCR Image",
+          fileName: "container-ocr.pgm",
+          mediaType: "image/x-portable-graymap",
+          byteSize: image.buffer.length,
+          contentBase64: image.buffer.toString("base64")
+        }
+      ]
+    })
+  });
+  assert.equal(createRun.status, 201);
+  assert.equal(createRun.payload.status, "completed");
+  const document = createRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-ocr-image");
+  assert.ok(document, "OCR image document must be present in the corpus plan");
+  assert.equal(document.route.formatId, "image");
+  assert.equal(document.parserTrace.some((trace) => trace.stage === "ocr.image" && trace.status === "completed"), true);
+  assert.ok(document.quality.textCharacters > 0, "container OCR must produce distillable text");
+  assert.equal(createRun.payload.result.agentMessage.responseProfile, "agent");
+  assert.equal(createRun.payload.result.classification.strategy, "hashing_embedding_window_community_classification_v2");
+  assert.equal(createRun.payload.result.classification.communityCount >= 1, true);
+  assert.equal(createRun.payload.result.convergence.strategy, "window-community-topic-project-convergence.v2");
+  assert.equal(createRun.payload.result.grounding.strategy, "claim-evidence-topk-conflict-gating.v2");
+  assert.equal(createRun.payload.result.graphEvidence.strategy, "graph-lite-entity-relationship-evidence-pack.v1");
+  assert.equal(createRun.payload.result.graphEvidence.summary.entityCount > 0, true);
+
+  const markdown = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/portable-markdown`);
+  assert.equal(markdown.status, 200);
+  assert.match(markdown.headers.get("content-type") || "", /text\/markdown/);
+  const docx = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/portable-docx`);
+  assert.equal(docx.status, 200);
+  const docxEntries = unzipSync(new Uint8Array(await docx.arrayBuffer()));
+  assert.ok(docxEntries["[Content_Types].xml"], "container DOCX artifact must include OpenXML content types");
+  assert.ok(docxEntries["word/document.xml"], "container DOCX artifact must include word/document.xml");
+  assert.match(Buffer.from(docxEntries["word/document.xml"]).toString("utf8"), /Container OCR|Category Distillations/);
+
+  const scannedPdfRaster = drawOcrRaster([
+    "SCANNED PDF ROUTING",
+    "POPLER TESSERACT OCR",
+    "PROJECT EVIDENCE"
+  ]);
+  const scannedPdf = buildImageOnlyPdf(scannedPdfRaster);
+  const scannedPdfRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container scanned PDF OCR verification",
+      title: "Container scanned PDF OCR verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-scanned-pdf",
+          title: "Container Scanned PDF",
+          fileName: "container-scanned.pdf",
+          mediaType: "application/pdf",
+          byteSize: scannedPdf.length,
+          contentBase64: scannedPdf.toString("base64")
+        }
+      ]
+    })
+  });
+  assert.equal(scannedPdfRun.status, 201);
+  assert.equal(scannedPdfRun.payload.status, "completed");
+  const scannedPdfDocument = scannedPdfRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-scanned-pdf");
+  assert.ok(scannedPdfDocument, "scanned PDF must be present in the corpus plan");
+  assert.equal(scannedPdfDocument.route.formatId, "pdf");
+  assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "empty"), true);
+  assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "pdf.page-rasterize" && trace.status === "completed"), true);
+  assert.equal(scannedPdfDocument.parserTrace.some((trace) => trace.stage === "ocr.page" && trace.status === "completed"), true);
+  assert.ok(scannedPdfDocument.quality.textCharacters > 0, "container scanned PDF OCR must produce distillable text");
+
+  const legacyDocText = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\f0\\fs24 Legacy Tika Office fallback extracts project deployment evidence.\\par}";
+  const legacyOfficeRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container legacy Office Tika verification",
+      title: "Container legacy Office Tika verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-legacy-doc",
+          title: "Container Legacy DOC",
+          fileName: "container-legacy.doc",
+          mediaType: "application/msword",
+          byteSize: Buffer.byteLength(legacyDocText, "utf8"),
+          contentBase64: Buffer.from(legacyDocText, "utf8").toString("base64")
+        }
+      ]
+    })
+  });
+  assert.equal(legacyOfficeRun.status, 201);
+  assert.equal(legacyOfficeRun.payload.status, "completed");
+  const legacyDocument = legacyOfficeRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-legacy-doc");
+  assert.ok(legacyDocument, "legacy Office document must be present in the corpus plan");
+  assert.equal(legacyDocument.route.formatId, "word");
+  assert.equal(legacyDocument.parserTrace.some((trace) => trace.stage === "tika.text" && trace.status === "completed"), true);
+  assert.ok(legacyDocument.quality.textCharacters > 0, "Tika fallback must produce distillable text for legacy Office routes");
+
+  const msgText = "Container Outlook MSG Tika parser extracts service escalation schedule evidence.";
+  const msgRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container Outlook MSG Tika verification",
+      title: "Container Outlook MSG Tika verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-msg",
+          title: "Container Outlook MSG",
+          fileName: "container-message.msg",
+          mediaType: "application/vnd.ms-outlook",
+          byteSize: Buffer.byteLength(msgText, "utf8"),
+          contentBase64: Buffer.from(msgText, "utf8").toString("base64")
+        }
+      ]
+    })
+  });
+  assert.equal(msgRun.status, 201);
+  assert.equal(msgRun.payload.status, "completed");
+  const msgDocument = msgRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-msg");
+  assert.ok(msgDocument, "MSG document must be present in the corpus plan");
+  assert.equal(msgDocument.route.formatId, "email");
+  assert.equal(msgDocument.parserTrace.some((trace) => trace.stage === "email.msg.tika" && trace.status === "completed"), true);
+  assert.equal(msgDocument.parserTrace.some((trace) => trace.stage === "email.headers-body"), false);
+  assert.ok(msgDocument.quality.textCharacters > 0, "Tika parser must produce distillable text for MSG routes");
+
+  const openDocumentRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container OpenDocument structured parser verification",
+      title: "Container OpenDocument structured parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-open-document",
+          title: "Container OpenDocument",
+          fileName: "container-project.odt",
+          mediaType: "application/vnd.oasis.opendocument.text",
+          contentBase64: zipBase64({
+            "mimetype": "application/vnd.oasis.opendocument.text",
+            "content.xml": [
+              "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+              "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" ",
+              "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">",
+              "<office:body><office:text><text:p>OpenDocument project convergence evidence for external distillation.</text:p></office:text></office:body>",
+              "</office:document-content>"
+            ].join("")
+          })
+        }
+      ]
+    })
+  });
+  assert.equal(openDocumentRun.status, 201);
+  assert.equal(openDocumentRun.payload.status, "completed");
+  const openDocument = openDocumentRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-open-document");
+  assert.ok(openDocument, "OpenDocument source must be present in the corpus plan");
+  assert.equal(openDocument.route.formatId, "open-document");
+  assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed"), true);
+  assert.ok(openDocument.quality.textCharacters > 0, "OpenDocument parser must produce distillable text");
+
+  const epubRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container EPUB parser verification",
+      title: "Container EPUB parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-epub",
+          title: "Container EPUB",
+          fileName: "container-project.epub",
+          mediaType: "application/epub+zip",
+          contentBase64: zipBase64({
+            "mimetype": "application/epub+zip",
+            "META-INF/container.xml": "<?xml version=\"1.0\"?><container version=\"1.0\"></container>",
+            "OEBPS/chapter1.xhtml": [
+              "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body>",
+              "<h1>Project Evidence</h1>",
+              "<p>EPUB chapter evidence belongs to the document distillation corpus.</p>",
+              "</body></html>"
+            ].join("")
+          })
+        }
+      ]
+    })
+  });
+  assert.equal(epubRun.status, 201);
+  assert.equal(epubRun.payload.status, "completed");
+  const epubDocument = epubRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-epub");
+  assert.ok(epubDocument, "EPUB source must be present in the corpus plan");
+  assert.equal(epubDocument.route.formatId, "ebook");
+  assert.equal(epubDocument.parserTrace.some((trace) => trace.stage === "ebook.epub" && trace.status === "completed"), true);
+  assert.ok(epubDocument.quality.textCharacters > 0, "EPUB parser must produce distillable text");
+
+  const mboxRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container MBOX parser verification",
+      title: "Container MBOX parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-mbox",
+          title: "Container MBOX",
+          fileName: "mailbox.mbox",
+          mediaType: "application/mbox",
+          contentBase64: mboxBase64()
+        }
+      ]
+    })
+  });
+  assert.equal(mboxRun.status, 201);
+  assert.equal(mboxRun.payload.status, "completed");
+  const mboxParent = mboxRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-mbox");
+  assert.ok(mboxParent, "MBOX parent must be present in corpus");
+  assert.equal(mboxParent.route.formatId, "email");
+  assert.equal(mboxParent.parserTrace.some((trace) => trace.stage === "email.mbox" && trace.status === "completed" && trace.messages === 2), true);
+  assert.equal(mboxParent.parserTrace.some((trace) => trace.stage === "email.mbox-route" && trace.status === "completed"), true);
+  const mboxMessage = mboxRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-mbox!message:1");
+  assert.ok(mboxMessage, "MBOX message must be expanded");
+  assert.equal(mboxMessage.parentSourceId, "container-mbox");
+  assert.equal(mboxMessage.parserTrace.some((trace) => trace.stage === "email.mbox-message" && trace.status === "expanded"), true);
+  assert.equal(mboxMessage.parserTrace.some((trace) => trace.stage === "email.headers-body" && trace.status === "completed"), true);
+  const mboxAttachment = mboxRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-mbox!message:2!attachment:container-mbox-invoice.csv");
+  assert.ok(mboxAttachment, "MBOX attachment must be expanded");
+  assert.equal(mboxAttachment.route.formatId, "spreadsheet");
+  assert.equal(mboxAttachment.parserTrace.some((trace) => trace.stage === "table.csv" && trace.status === "completed"), true);
+
+  const projectPackageRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container project package recursive parser verification",
+      title: "Container project package recursive parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-project-package",
+          title: "Container Project Package",
+          fileName: "project-package.zip",
+          mediaType: "application/zip",
+          contentBase64: zipBase64({
+            "docs/architecture.md": [
+              "# Architecture",
+              "External API namespace registration, route fallback, parser runtime health, deployment topology, and service capability contracts."
+            ].join("\n"),
+            "finance/invoice.csv": "vendor,total,tax,payment_date\nAcme,42000,2100,2026-05-31\nGlobex,91000,4550,2026-06-30",
+            "data/config.json": JSON.stringify({ parser: "archive child route", project: "distillation", ocr: true, grounding: true }),
+            "ops/service.env": [
+              "PACT_MODE=container",
+              "DISTILLATION_SERVICE_NAMESPACE=external.knowledge.distillation",
+              "PARSER_STRATEGY=route-first",
+              "PROJECT_CONVERGENCE_LAYER=window-community-topic-project",
+              "GROUNDING_REQUIRED=true",
+              "AGENT_RESPONSE_PROFILE=agent"
+            ].join("\n"),
+            "diagrams/system.mmd": [
+              "flowchart LR",
+              "  Console[Human console] --> API[external.knowledge.distillation API]",
+              "  API --> Agent[Agent machine message]",
+              "  API --> Evidence[Graph evidence pack]",
+              "  Evidence --> Project[Project convergence report]"
+            ].join("\n")
+          })
+        }
+      ]
+    })
+  });
+  assert.equal(projectPackageRun.status, 201);
+  assert.equal(projectPackageRun.payload.status, "completed");
+  const projectPackage = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package");
+  assert.ok(projectPackage, "project ZIP package must remain visible as the parent corpus document");
+  assert.equal(projectPackage.route.formatId, "archive");
+  assert.equal(projectPackage.parserTrace.some((trace) => trace.stage === "archive.expand-route" && trace.status === "completed"), true);
+  const markdownChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!docs/architecture.md");
+  assert.ok(markdownChild, "project package Markdown child must be expanded");
+  assert.equal(markdownChild.parentSourceId, "container-project-package");
+  assert.equal(markdownChild.route.formatId, "markdown");
+  assert.equal(markdownChild.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+  const csvChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!finance/invoice.csv");
+  assert.ok(csvChild, "project package CSV child must be expanded");
+  assert.equal(csvChild.parentSourceId, "container-project-package");
+  assert.equal(csvChild.route.formatId, "spreadsheet");
+  assert.equal(csvChild.parserTrace.some((trace) => trace.stage === "table.csv" && trace.status === "completed"), true);
+  const configChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!ops/service.env");
+  assert.ok(configChild, "project package dotenv child must be expanded");
+  assert.equal(configChild.parentSourceId, "container-project-package");
+  assert.equal(configChild.route.formatId, "config");
+  assert.equal(configChild.parserTrace.some((trace) => trace.stage === "config.key-value" && trace.status === "completed"), true);
+  const diagramChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!diagrams/system.mmd");
+  assert.ok(diagramChild, "project package Mermaid child must be expanded");
+  assert.equal(diagramChild.parentSourceId, "container-project-package");
+  assert.equal(diagramChild.route.formatId, "diagram");
+  assert.equal(diagramChild.parserTrace.some((trace) => trace.stage === "diagram.structure" && trace.status === "completed"), true);
+  const candidateSourceIds = new Set(projectPackageRun.payload.result.candidates.flatMap((candidate) => candidate.sourceIds || []));
+  assert.equal(candidateSourceIds.has("container-project-package!docs/architecture.md"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!finance/invoice.csv"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!ops/service.env"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!diagrams/system.mmd"), true);
+  assert.equal(projectPackageRun.payload.result.classification.coreGroupCount >= 2, true);
+  assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
+    group.sourceIds.includes("container-project-package!docs/architecture.md") &&
+    group.windowCommunities.length >= 1 &&
+    group.distillationUnit.mode === "topic-isolated"
+  )), true);
+  assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
+    group.sourceIds.includes("container-project-package!finance/invoice.csv") &&
+    typeof group.separationScore === "number"
+  )), true);
+  assert.equal(projectPackageRun.payload.result.candidates.every((candidate) => candidate.distillationUnitId), true);
+  assert.equal(projectPackageRun.payload.result.candidates.every((candidate) => candidate.promoted && candidate.promotionGate.entailed >= 1), true);
+  assert.equal(projectPackageRun.payload.result.convergence.communityReports.length >= 2, true);
+  assert.equal(projectPackageRun.payload.result.graphEvidence.summary.textUnitCount >= projectPackageRun.payload.result.corpusPlan.windowCount, true);
+  assert.equal(projectPackageRun.payload.result.graphEvidence.summary.relationshipCount > 0, true);
+  assert.equal(projectPackageRun.payload.result.referenceGapReport.strategy, "reference-framework-gap-report.v1");
+  assert.equal(projectPackageRun.payload.result.referenceGapReport.absorbedCapabilityMap.projectConvergence.references.includes("graphrag"), true);
+  const evidenceArtifact = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/artifacts/evidence-pack-json`);
+  assert.equal(evidenceArtifact.status, 200);
+  const evidencePack = JSON.parse(await evidenceArtifact.text());
+  assert.equal(evidencePack.strategy, "graph-lite-entity-relationship-evidence-pack.v1");
+  assert.equal(evidencePack.entities.length > 0, true);
+  assert.equal(evidencePack.relationships.length > 0, true);
+  assert.equal(evidencePack.covariates.some((claim) => claim.covariate_type === "claim"), true);
+  const architectureEvidence = await fetchJson(
+    `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?entity=namespace&sourceId=container-project-package!docs%2Farchitecture.md&limit=20`
+  );
+  assert.equal(architectureEvidence.status, 200);
+  assert.equal(architectureEvidence.payload.strategy, "graph-lite-evidence-query.v1");
+  assert.equal(architectureEvidence.payload.text_units.length > 0, true);
+  assert.equal(architectureEvidence.payload.entities.some((entity) => /namespace/i.test(entity.title)), true);
+  const juneEvidence = await fetchJson(
+    `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?sourceId=container-project-package!finance%2Finvoice.csv&timeFrom=2026-06-01&timeTo=2026-06-30&limit=20`
+  );
+  assert.equal(juneEvidence.status, 200);
+  assert.equal(juneEvidence.payload.strategy, "graph-lite-evidence-query.v1");
+  assert.equal(juneEvidence.payload.text_units.length > 0, true);
+  assert.equal(juneEvidence.payload.text_units.every((textUnit) => textUnit.metadata?.timeRange), true);
+  const workspacePackage = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/artifacts/workspace-package-zip`);
+  assert.equal(workspacePackage.status, 200);
+  const workspaceEntries = unzipSync(new Uint8Array(await workspacePackage.arrayBuffer()));
+  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "reference-gap-report.json"]) {
+    assert.ok(workspaceEntries[entryName], `container workspace package must include ${entryName}`);
+  }
+  const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));
+  assert.equal(workspaceManifest.artifacts.every((item) => item.byteSize > 0 && /^[a-f0-9]{64}$/.test(item.sha256)), true);
+
+  const contradictionRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container conflict evidence gate verification",
+      title: "Container conflict evidence gate verification",
+      responseProfile: "agent",
+      requestedClaims: [
+        "Legacy FTP upload is permitted for production evidence."
+      ],
+      rawDocuments: [
+        {
+          sourceId: "container-conflict-policy",
+          title: "Container Conflict Policy",
+          fileName: "conflict-policy.md",
+          mediaType: "text/markdown",
+          text: "Legacy FTP upload is not permitted for production evidence. Use signed object storage instead."
+        }
+      ]
+    })
+  });
+  assert.equal(contradictionRun.status, 201);
+  assert.equal(contradictionRun.payload.status, "completed");
+  const contradictedClaim = contradictionRun.payload.result.grounding.claims.find((claim) => claim.source === "requested-claim");
+  assert.equal(contradictedClaim.status, "contradicted");
+  assert.equal(contradictedClaim.conflictEvidence.length >= 1, true);
+  assert.equal(contradictedClaim.evidenceRefs.length, 0);
+
+  const incrementalFirstRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId: "container-incremental-project",
+      query: "Container incremental first snapshot",
+      title: "Container incremental first snapshot",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-inc-architecture",
+          title: "Container Incremental Architecture",
+          fileName: "architecture.md",
+          mediaType: "text/markdown",
+          text: "Container project routing supports signed object storage and parser runtime health."
+        },
+        {
+          sourceId: "container-inc-finance",
+          title: "Container Incremental Finance",
+          fileName: "finance.csv",
+          mediaType: "text/csv",
+          text: "vendor,total,payment_date\nAlpha,100,2026-06-01"
+        }
+      ]
+    })
+  });
+  assert.equal(incrementalFirstRun.status, 201);
+  assert.equal(incrementalFirstRun.payload.result.incrementalPlan.mode, "full-snapshot");
+  assert.equal(incrementalFirstRun.payload.result.incrementalPlan.snapshot.projectId, "container-incremental-project");
+
+  const incrementalSecondRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId: "container-incremental-project",
+      query: "Container incremental changed snapshot",
+      title: "Container incremental changed snapshot",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-inc-architecture",
+          title: "Container Incremental Architecture",
+          fileName: "architecture.md",
+          mediaType: "text/markdown",
+          text: "Container project routing supports signed object storage and parser runtime health."
+        },
+        {
+          sourceId: "container-inc-finance",
+          title: "Container Incremental Finance",
+          fileName: "finance.csv",
+          mediaType: "text/csv",
+          text: "vendor,total,payment_date\nAlpha,140,2026-06-15"
+        }
+      ]
+    })
+  });
+  assert.equal(incrementalSecondRun.status, 201);
+  assert.equal(incrementalSecondRun.payload.result.incrementalPlan.mode, "incremental");
+  assert.equal(incrementalSecondRun.payload.result.incrementalPlan.previousRunId, incrementalFirstRun.payload.runId);
+  assert.equal(incrementalSecondRun.payload.result.incrementalPlan.reusedSourceIds.includes("container-inc-architecture"), true);
+  assert.equal(incrementalSecondRun.payload.result.incrementalPlan.changedSourceIds.includes("container-inc-finance"), true);
+  assert.equal(incrementalSecondRun.payload.result.incrementalPlan.reusedWindowCount >= 1, true);
+  const snapshotArtifact = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(incrementalSecondRun.payload.runId)}/artifacts/project-snapshot-json`);
+  assert.equal(snapshotArtifact.status, 200);
+  const snapshotPayload = JSON.parse(await snapshotArtifact.text());
+  assert.equal(snapshotPayload.projectId, "container-incremental-project");
+  assert.equal(snapshotPayload.previousRunId, incrementalFirstRun.payload.runId);
+  const projectEvidence = await fetchJson(
+    `${serviceUrl}/v1/projects/container-incremental-project/evidence?mode=all&runLimit=10&sourceId=container-inc-finance&timeFrom=2026-06-01&timeTo=2026-06-30&limit=50`
+  );
+  assert.equal(projectEvidence.status, 200);
+  assert.equal(projectEvidence.payload.strategy, "project-graph-evidence-convergence-query.v1");
+  assert.equal(projectEvidence.payload.evidenceQueryStrategy, "graph-lite-evidence-query.v1");
+  assert.equal(projectEvidence.payload.matchedRunCount >= 2, true);
+  assert.equal(projectEvidence.payload.runIds.includes(incrementalFirstRun.payload.runId), true);
+  assert.equal(projectEvidence.payload.runIds.includes(incrementalSecondRun.payload.runId), true);
+  assert.equal(projectEvidence.payload.text_units.length > 0, true);
+  assert.equal(projectEvidence.payload.text_units.every((textUnit) => textUnit.sourceRunId), true);
+  assert.equal(projectEvidence.payload.text_units.every((textUnit) => textUnit.sourceId === "container-inc-finance"), true);
+
+  const tarPackageRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container TAR package recursive parser verification",
+      title: "Container TAR package recursive parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-tar-package",
+          title: "Container TAR Package",
+          fileName: "project-package.tar",
+          mediaType: "application/x-tar",
+          contentBase64: tarBase64({
+            "tar/architecture.md": "# TAR Architecture\nTAR routing expands child documents for project convergence.",
+            "tar/payment.csv": "vendor,total\nTarContainer,128"
+          })
+        }
+      ]
+    })
+  });
+  assert.equal(tarPackageRun.status, 201);
+  assert.equal(tarPackageRun.payload.status, "completed");
+  const tarPackage = tarPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-tar-package");
+  assert.equal(tarPackage.parserTrace.some((trace) => trace.stage === "archive.tar.container" && trace.status === "completed"), true);
+  const tarChild = tarPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-tar-package!tar/architecture.md");
+  assert.ok(tarChild, "TAR Markdown child must be expanded");
+  assert.equal(tarChild.route.formatId, "markdown");
+  assert.equal(tarChild.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+
+  const tgzPackageRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container TGZ package recursive parser verification",
+      title: "Container TGZ package recursive parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-tgz-package",
+          title: "Container TGZ Package",
+          fileName: "project-package.tgz",
+          mediaType: "application/gzip",
+          contentBase64: tgzBase64({
+            "tgz/decision.md": "# TGZ Decision\nGzip decompression feeds TAR child routing.",
+            "tgz/status.json": JSON.stringify({ archive: "tgz", childRouting: true })
+          })
+        }
+      ]
+    })
+  });
+  assert.equal(tgzPackageRun.status, 201);
+  assert.equal(tgzPackageRun.payload.status, "completed");
+  const tgzPackage = tgzPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-tgz-package");
+  assert.equal(tgzPackage.parserTrace.some((trace) => trace.stage === "archive.gzip.decompress" && trace.status === "completed"), true);
+  assert.equal(tgzPackage.parserTrace.some((trace) => trace.stage === "archive.tar.container" && trace.status === "completed"), true);
+  const tgzChild = tgzPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-tgz-package!tgz/status.json");
+  assert.ok(tgzChild, "TGZ JSON child must be expanded");
+  assert.equal(tgzChild.route.formatId, "json");
+  assert.equal(tgzChild.parserTrace.some((trace) => trace.stage === "structured.json" && trace.status === "completed"), true);
+
+  const sevenZipPayload = (await docker([
+    "exec",
+    containerName,
+    "sh",
+    "-lc",
+    [
+      "rm -rf /tmp/pact-7z-src /tmp/pact-verify.7z",
+      "mkdir -p /tmp/pact-7z-src",
+      "printf '%s\\n' '# 7z Decision' '7z external extraction feeds child routing.' > /tmp/pact-7z-src/decision.md",
+      "printf '%s\\n' 'vendor,total' 'SevenZipCo,700' > /tmp/pact-7z-src/payment.csv",
+      "cd /tmp/pact-7z-src",
+      "(7zz a -t7z /tmp/pact-verify.7z decision.md payment.csv >/dev/null || 7z a -t7z /tmp/pact-verify.7z decision.md payment.csv >/dev/null)",
+      "base64 -w0 /tmp/pact-verify.7z"
+    ].join(" && ")
+  ])).stdout.trim();
+  const sevenZipRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container 7z package recursive parser verification",
+      title: "Container 7z package recursive parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-7z-package",
+          title: "Container 7z Package",
+          fileName: "project-package.7z",
+          mediaType: "application/x-7z-compressed",
+          contentBase64: sevenZipPayload
+        }
+      ]
+    })
+  });
+  assert.equal(sevenZipRun.status, 201);
+  assert.equal(sevenZipRun.payload.status, "completed");
+  const sevenZipPackage = sevenZipRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-7z-package");
+  assert.equal(sevenZipPackage.parserTrace.some((trace) => trace.stage === "archive.7z.extract" && trace.status === "completed"), true);
+  const sevenZipChild = sevenZipRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-7z-package!decision.md");
+  assert.ok(sevenZipChild, "7z Markdown child must be expanded");
+  assert.equal(sevenZipChild.route.formatId, "markdown");
+  assert.equal(sevenZipChild.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+
+  await docker([
+    "exec",
+    containerName,
+    "sh",
+    "-lc",
+    [
+      "mkdir -p /data /tmp/pact-mounted-archive",
+      "printf '%s\\n' '# Mounted Input' 'Mounted filePath payloads avoid JSON base64 transport and enter normal distillation windows.' > /data/mounted-input.md",
+      "dd if=/dev/zero of=/data/oversized-binary.pdf bs=1048576 count=9 status=none",
+      "printf '%s\\n' '# Mounted Archive Project' > /tmp/pact-mounted-archive/large-project.md",
+      "yes 'Mounted archive package evidence must expand from filePath and stream child windows.' | head -n 120000 >> /tmp/pact-mounted-archive/large-project.md",
+      "printf '%s\\n' 'vendor,total' 'ArchiveMountCo,256' > /tmp/pact-mounted-archive/invoice.csv",
+      "tar -cf /data/mounted-project-package.tar -C /tmp/pact-mounted-archive large-project.md invoice.csv",
+      "rm -rf /tmp/pact-mounted-structured",
+      "mkdir -p /tmp/pact-mounted-structured/docx/word /tmp/pact-mounted-structured/pptx/ppt/slides /tmp/pact-mounted-structured/xlsx/xl/worksheets /tmp/pact-mounted-structured/odt /tmp/pact-mounted-structured/epub/META-INF /tmp/pact-mounted-structured/epub/OEBPS",
+      "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
+      "printf '%s' '<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Mounted PPTX filePath slide evidence enters structured parser windows.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>' > /tmp/pact-mounted-structured/pptx/ppt/slides/slide1.xml",
+      "printf '%s' '<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>Parser</t></si><si><t>Status</t></si><si><t>Report Date</t></si><si><t>mounted xlsx</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si></sst>' > /tmp/pact-mounted-structured/xlsx/xl/sharedStrings.xml",
+      "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c></row><row><c t=\"s\"><v>3</v></c><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c></row></sheetData></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
+      "printf '%s' 'application/vnd.oasis.opendocument.text' > /tmp/pact-mounted-structured/odt/mimetype",
+      "printf '%s' '<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"><office:body><office:text><text:p>Mounted ODT filePath extraction keeps OpenDocument evidence distillable.</text:p></office:text></office:body></office:document-content>' > /tmp/pact-mounted-structured/odt/content.xml",
+      "printf '%s' 'application/epub+zip' > /tmp/pact-mounted-structured/epub/mimetype",
+      "printf '%s' '<?xml version=\"1.0\"?><container version=\"1.0\"></container>' > /tmp/pact-mounted-structured/epub/META-INF/container.xml",
+      "printf '%s' '<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Mounted EPUB Evidence</h1><p>Mounted EPUB filePath chapter routing verifies ebook compatibility.</p></body></html>' > /tmp/pact-mounted-structured/epub/OEBPS/chapter1.xhtml",
+      "cd /tmp/pact-mounted-structured/docx && (7zz a -tzip /data/mounted-project-plan.docx word/document.xml >/dev/null || 7z a -tzip /data/mounted-project-plan.docx word/document.xml >/dev/null)",
+      "cd /tmp/pact-mounted-structured/pptx && (7zz a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml >/dev/null || 7z a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml >/dev/null)",
+      "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/worksheets/sheet1.xml >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/worksheets/sheet1.xml >/dev/null)",
+      "cd /tmp/pact-mounted-structured/odt && (7zz a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null || 7z a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null)",
+      "cd /tmp/pact-mounted-structured/epub && (7zz a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null || 7z a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null)",
+      `node <<'NODE'
+const fs = require("fs");
+const largeLegacyRtf = [
+  "{\\\\rtf1\\\\ansi\\\\deff0{\\\\fonttbl{\\\\f0 Arial;}}\\\\f0\\\\fs24",
+  Array.from({ length: 90000 }, (_, index) => "Mounted legacy DOC paragraph " + (index + 1) + " proves Tika filePath extraction avoids direct memory reads for oversized Office payloads.\\\\par").join("\\n"),
+  "}"
+].join("\\n");
+fs.writeFileSync("/data/mounted-legacy-large.doc", largeLegacyRtf);
+fs.writeFileSync("/data/mounted-notes.rtf", "{\\\\rtf1\\\\ansi\\\\deff0{\\\\fonttbl{\\\\f0 Arial;}}\\\\f0\\\\fs24 Mounted RTF filePath extraction keeps legacy text distillable.\\\\par}");
+fs.writeFileSync("/data/mounted-legacy.ppt", "{\\\\rtf1\\\\ansi\\\\deff0{\\\\fonttbl{\\\\f0 Arial;}}\\\\f0\\\\fs24 Mounted legacy PPT route uses Tika filePath extraction.\\\\par}");
+fs.writeFileSync("/data/mounted-legacy.xls", "{\\\\rtf1\\\\ansi\\\\deff0{\\\\fonttbl{\\\\f0 Arial;}}\\\\f0\\\\fs24 Mounted legacy XLS route uses Tika filePath extraction.\\\\par}");
+fs.writeFileSync("/data/mounted-outlook.msg", "Mounted Outlook MSG filePath extraction uses Tika without direct memory reads.");
+function obj(number, body) {
+  return Buffer.from(number + " 0 obj\\n" + body + "\\nendobj\\n", "utf8");
+}
+function streamObj(number, body) {
+  const stream = Buffer.from(body, "utf8");
+  return Buffer.concat([
+    Buffer.from(number + " 0 obj\\n<< /Length " + stream.length + " >>\\nstream\\n", "utf8"),
+    stream,
+    Buffer.from("\\nendstream\\nendobj\\n", "utf8")
+  ]);
+}
+function escapePdfText(value) {
+  return String(value).replace(/\\\\/g, "\\\\\\\\").replace(/\\(/g, "\\\\(").replace(/\\)/g, "\\\\)");
+}
+const pageCount = 160;
+const objects = [
+  obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+  obj(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+];
+const kids = [];
+for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+  const pageNumber = 4 + (pageIndex * 2);
+  const contentNumber = pageNumber + 1;
+  kids.push(pageNumber + " 0 R");
+  const lines = [];
+  for (let lineIndex = 0; lineIndex < 45; lineIndex += 1) {
+    const index = (pageIndex * 45) + lineIndex;
+    lines.push("(" + escapePdfText("Mounted PDF filePath extraction evidence window " + index + " parser routing grounding project convergence.") + ") Tj T*");
+  }
+  const content = "BT /F1 10 Tf 72 760 Td 12 TL\\n" + lines.join("\\n") + "\\nET";
+  objects.push(
+    obj(pageNumber, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents " + contentNumber + " 0 R >>"),
+    streamObj(contentNumber, content)
+  );
+}
+objects.splice(1, 0, obj(2, "<< /Type /Pages /Kids [" + kids.join(" ") + "] /Count " + pageCount + " >>"));
+const chunks = [Buffer.from("%PDF-1.4\\n", "utf8")];
+const offsets = [0];
+for (const object of objects) {
+  offsets.push(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  chunks.push(object);
+}
+const xrefOffset = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+const xrefEntries = ["0000000000 65535 f ", ...offsets.slice(1).map((offset) => String(offset).padStart(10, "0") + " 00000 n ")];
+chunks.push(Buffer.from(["xref", "0 " + (objects.length + 1), ...xrefEntries, "trailer", "<< /Size " + (objects.length + 1) + " /Root 1 0 R >>", "startxref", String(xrefOffset), "%%EOF", ""].join("\\n"), "utf8"));
+fs.writeFileSync("/data/mounted-large-text.pdf", Buffer.concat(chunks));
+NODE`
+    ].join(" && ")
+  ]);
+  const filePathRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container filePath payload verification",
+      title: "Container filePath payload verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-file-ref",
+          title: "Container Mounted Input",
+          fileName: "mounted-input.md",
+          mediaType: "text/markdown",
+          filePath: "/data/mounted-input.md"
+        }
+      ]
+    })
+  });
+  assert.equal(filePathRun.status, 201);
+  assert.equal(filePathRun.payload.status, "completed");
+  const fileRef = filePathRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-file-ref");
+  assert.ok(fileRef, "filePath source must be present in corpus");
+  assert.equal(fileRef.quality.suppliedPayloadKind, "file-ref-stream");
+  assert.equal(fileRef.windowPlan.strategy, "file-ref-stream-windowing.v1");
+  assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
+  assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+  assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+
+  const mountedArchiveRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container mounted archive filePath verification",
+      title: "Container mounted archive filePath verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-mounted-archive",
+          title: "Container Mounted Archive",
+          fileName: "mounted-project-package.tar",
+          mediaType: "application/x-tar",
+          filePath: "/data/mounted-project-package.tar"
+        }
+      ],
+      maxWindowCharacters: 8000,
+      windowOverlapCharacters: 400
+    })
+  });
+  assert.equal(mountedArchiveRun.status, 201);
+  assert.equal(mountedArchiveRun.payload.status, "completed");
+  const mountedArchive = mountedArchiveRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-mounted-archive");
+  assert.ok(mountedArchive, "mounted archive parent must be present in corpus");
+  assert.equal(mountedArchive.route.formatId, "archive");
+  assert.equal(mountedArchive.quality.suppliedPayloadKind, "file-ref-archive");
+  assert.equal(mountedArchive.parserTrace.some((trace) => trace.stage === "archive.tar.extract" && trace.status === "completed"), true);
+  assert.equal(mountedArchive.parserTrace.some((trace) => trace.stage === "archive.file-ref.entries" && trace.status === "completed"), true);
+  assert.equal(mountedArchive.parserTrace.some((trace) => trace.stage === "archive.file-ref.expand" && trace.status === "completed"), true);
+  assert.equal(mountedArchive.parserTrace.some((trace) => trace.stage === "archive.expand-route" && trace.status === "completed"), true);
+  const mountedArchiveChild = mountedArchiveRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-mounted-archive!large-project.md");
+  assert.ok(mountedArchiveChild, "mounted archive Markdown child must be expanded");
+  assert.equal(mountedArchiveChild.route.formatId, "markdown");
+  assert.equal(mountedArchiveChild.windowPlan.strategy, "file-ref-stream-windowing.v1");
+  assert.equal(mountedArchiveChild.parserTrace.some((trace) => trace.stage === "archive.entry-file-ref" && trace.status === "expanded"), true);
+  assert.equal(mountedArchiveChild.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+  assert.equal(mountedArchiveChild.windowPlan.windowCount > 1, true);
+
+  const mountedPdfRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container mounted PDF filePath verification",
+      title: "Container mounted PDF filePath verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-mounted-pdf",
+          title: "Container Mounted PDF",
+          fileName: "mounted-large-text.pdf",
+          mediaType: "application/pdf",
+          filePath: "/data/mounted-large-text.pdf"
+        }
+      ],
+      maxWindowCharacters: 8000,
+      windowOverlapCharacters: 400
+    })
+  });
+  assert.equal(mountedPdfRun.status, 201);
+  assert.equal(mountedPdfRun.payload.status, "completed");
+  const mountedPdf = mountedPdfRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-mounted-pdf");
+  assert.ok(mountedPdf, "mounted PDF filePath source must be present in corpus");
+  assert.equal(mountedPdf.route.formatId, "pdf");
+  assert.equal(mountedPdf.quality.suppliedPayloadKind, "file-ref-pdf");
+  assert.equal(mountedPdf.windowPlan.strategy, "file-ref-stream-windowing.v1");
+  assert.equal(mountedPdf.parserTrace.some((trace) => trace.stage === "pdf.text.pdftotext" && trace.status === "completed"), true);
+  assert.equal(mountedPdf.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+  assert.equal(mountedPdf.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+  assert.equal(mountedPdf.windowPlan.windowCount > 1, true);
+
+  const mountedStructuredRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container mounted structured ZIP filePath verification",
+      title: "Container mounted structured ZIP filePath verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-mounted-docx",
+          title: "Container Mounted DOCX",
+          fileName: "mounted-project-plan.docx",
+          mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          filePath: "/data/mounted-project-plan.docx"
+        },
+        {
+          sourceId: "container-mounted-pptx",
+          title: "Container Mounted PPTX",
+          fileName: "mounted-roadmap.pptx",
+          mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          filePath: "/data/mounted-roadmap.pptx"
+        },
+        {
+          sourceId: "container-mounted-xlsx",
+          title: "Container Mounted XLSX",
+          fileName: "mounted-evidence.xlsx",
+          mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          filePath: "/data/mounted-evidence.xlsx"
+        },
+        {
+          sourceId: "container-mounted-odt",
+          title: "Container Mounted ODT",
+          fileName: "mounted-notes.odt",
+          mediaType: "application/vnd.oasis.opendocument.text",
+          filePath: "/data/mounted-notes.odt"
+        },
+        {
+          sourceId: "container-mounted-epub",
+          title: "Container Mounted EPUB",
+          fileName: "mounted-handbook.epub",
+          mediaType: "application/epub+zip",
+          filePath: "/data/mounted-handbook.epub"
+        }
+      ],
+      maxWindowCharacters: 8000,
+      windowOverlapCharacters: 400
+    })
+  });
+  assert.equal(mountedStructuredRun.status, 201);
+  assert.equal(mountedStructuredRun.payload.status, "completed");
+  for (const [sourceId, formatId, stage] of [
+    ["container-mounted-docx", "word", "office.word.structured"],
+    ["container-mounted-pptx", "presentation", "office.presentation.slides"],
+    ["container-mounted-xlsx", "spreadsheet", "table.sheet.structured"],
+    ["container-mounted-odt", "open-document", "open-document.structured"],
+    ["container-mounted-epub", "ebook", "ebook.epub"]
+  ]) {
+    const mountedStructured = mountedStructuredRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === sourceId);
+    assert.ok(mountedStructured, `${sourceId} must be present in mounted structured corpus`);
+    assert.equal(mountedStructured.route.formatId, formatId);
+    assert.equal(mountedStructured.quality.suppliedPayloadKind, "file-ref-structured-zip");
+    assert.equal(mountedStructured.windowPlan.strategy, "file-ref-stream-windowing.v1");
+    assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
+    assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
+    assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
+    if (formatId === "spreadsheet") {
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-06-15"), true);
+      assert.equal(mountedStructured.eventTime, "2026-06-15");
+      assert.equal(mountedStructured.timeRange.from, "2026-06-15");
+      assert.match(mountedStructured.windowPlan.windows[0]?.excerpt || "", /Sheet 1 Header row|A1=Parser|B2 Status=completed|C2 Report Date=2026-06-15/);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
+    }
+    assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+    assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+    assert.ok(mountedStructured.quality.textCharacters > 0, `${sourceId} must produce distillable text`);
+  }
+
+  const timeFilteredRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container time-filtered corpus verification",
+      title: "Container time-filtered corpus verification",
+      responseProfile: "agent",
+      timeFilter: {
+        from: "2026-06-01",
+        to: "2026-06-30",
+        timeField: "eventTime",
+        confidenceMin: 0.9,
+        excludeWeakEvidence: true
+      },
+      rawDocuments: [
+        {
+          sourceId: "container-time-may",
+          title: "Container May Payment",
+          fileName: "container-may-payment.csv",
+          mediaType: "text/csv",
+          contentBase64: Buffer.from("vendor,total,payment_date\nMayCo,10,2026-05-31", "utf8").toString("base64")
+        },
+        {
+          sourceId: "container-time-june",
+          title: "Container June Payment",
+          fileName: "container-june-payment.csv",
+          mediaType: "text/csv",
+          contentBase64: Buffer.from("vendor,total,payment_date\nJuneCo,20,2026-06-15", "utf8").toString("base64")
+        },
+        {
+          sourceId: "container-time-undated",
+          title: "Container Undated",
+          fileName: "container-undated.md",
+          mediaType: "text/markdown",
+          text: "# Undated\nThis note should not survive strict time filtering."
+        }
+      ]
+    })
+  });
+  assert.equal(timeFilteredRun.status, 201);
+  assert.equal(timeFilteredRun.payload.status, "completed");
+  assert.equal(timeFilteredRun.payload.result.corpusPlan.timeFilter.active, true);
+  assert.deepEqual(timeFilteredRun.payload.result.corpusPlan.documents.map((document) => document.sourceId), ["container-time-june"]);
+  assert.equal(timeFilteredRun.payload.result.corpusPlan.timeFilter.filteredOutSourceIds.includes("container-time-may"), true);
+  assert.equal(timeFilteredRun.payload.result.corpusPlan.timeFilter.filteredOutSourceIds.includes("container-time-undated"), true);
+  assert.equal(timeFilteredRun.payload.result.corpusPlan.documents[0].timeRange.from, "2026-06-15");
+  assert.equal(timeFilteredRun.payload.result.corpusPlan.documents[0].windowPlan.windows.every((window) => window.timeRange?.from === "2026-06-15"), true);
+  assert.equal(timeFilteredRun.payload.result.candidates.some((candidate) => candidate.sourceIds.includes("container-time-may")), false);
+  assert.equal(timeFilteredRun.payload.result.agentMessage.corpusPlan.timeFilter.matchedSourceIds.includes("container-time-june"), true);
+
+  const mountedLegacyRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container mounted legacy Office filePath verification",
+      title: "Container mounted legacy Office filePath verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-mounted-legacy-doc",
+          title: "Container Mounted Legacy DOC",
+          fileName: "mounted-legacy-large.doc",
+          mediaType: "application/msword",
+          filePath: "/data/mounted-legacy-large.doc"
+        },
+        {
+          sourceId: "container-mounted-legacy-rtf",
+          title: "Container Mounted RTF",
+          fileName: "mounted-notes.rtf",
+          mediaType: "application/rtf",
+          filePath: "/data/mounted-notes.rtf"
+        },
+        {
+          sourceId: "container-mounted-legacy-ppt",
+          title: "Container Mounted Legacy PPT",
+          fileName: "mounted-legacy.ppt",
+          mediaType: "application/vnd.ms-powerpoint",
+          filePath: "/data/mounted-legacy.ppt"
+        },
+        {
+          sourceId: "container-mounted-legacy-xls",
+          title: "Container Mounted Legacy XLS",
+          fileName: "mounted-legacy.xls",
+          mediaType: "application/vnd.ms-excel",
+          filePath: "/data/mounted-legacy.xls"
+        },
+        {
+          sourceId: "container-mounted-msg",
+          title: "Container Mounted Outlook MSG",
+          fileName: "mounted-outlook.msg",
+          mediaType: "application/vnd.ms-outlook",
+          filePath: "/data/mounted-outlook.msg"
+        }
+      ],
+      maxWindowCharacters: 8000,
+      windowOverlapCharacters: 400
+    })
+  });
+  assert.equal(mountedLegacyRun.status, 201);
+  assert.equal(mountedLegacyRun.payload.status, "completed");
+  for (const [sourceId, formatId, tikaStage] of [
+    ["container-mounted-legacy-doc", "word", "tika.text.file-ref"],
+    ["container-mounted-legacy-rtf", "word", "tika.text.file-ref"],
+    ["container-mounted-legacy-ppt", "presentation", "tika.text.file-ref"],
+    ["container-mounted-legacy-xls", "spreadsheet", "tika.text.file-ref"],
+    ["container-mounted-msg", "email", "email.msg.tika.file-ref"]
+  ]) {
+    const mountedLegacy = mountedLegacyRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === sourceId);
+    assert.ok(mountedLegacy, `${sourceId} must be present in mounted legacy corpus`);
+    assert.equal(mountedLegacy.route.formatId, formatId);
+    assert.equal(mountedLegacy.quality.suppliedPayloadKind, "file-ref-tika");
+    assert.equal(mountedLegacy.windowPlan.strategy, "file-ref-stream-windowing.v1");
+    assert.equal(mountedLegacy.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
+    assert.equal(mountedLegacy.parserTrace.some((trace) => trace.stage === tikaStage && trace.status === "completed"), true);
+    assert.equal(mountedLegacy.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+    assert.equal(mountedLegacy.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+    assert.ok(mountedLegacy.quality.textCharacters > 0, `${sourceId} must produce distillable text`);
+  }
+
+  const deferredFilePathRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container oversized filePath deferral verification",
+      title: "Container oversized filePath deferral verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-deferred-file-ref",
+          title: "Container Deferred File Ref",
+          fileName: "oversized-binary.pdf",
+          mediaType: "application/pdf",
+          filePath: "/data/oversized-binary.pdf"
+        }
+      ]
+    })
+  });
+  assert.equal(deferredFilePathRun.status, 201);
+  assert.equal(deferredFilePathRun.payload.status, "failed");
+  const deferredFileRef = deferredFilePathRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-deferred-file-ref");
+  assert.ok(deferredFileRef, "oversized binary filePath source must remain visible in corpus");
+  assert.equal(deferredFileRef.route.formatId, "pdf");
+  assert.equal(deferredFileRef.parserTrace.some((trace) => trace.stage === "pdf.text.pdftotext" && trace.status === "failed"), true);
+  assert.equal(deferredFileRef.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+
+  const attachedPackageBytes = zipSync({
+    "mail/decision.md": strToU8("# Mail Decision\nEmail attachment archive child evidence for project distillation."),
+    "mail/payment.csv": strToU8("vendor,total\nMailCo,77")
+  });
+  const emailAttachmentRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container email attachment recursive parser verification",
+      title: "Container email attachment recursive parser verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-email",
+          title: "Container Email",
+          fileName: "container-email.eml",
+          mediaType: "message/rfc822",
+          contentBase64: multipartEmailBase64({
+            attachments: [
+              {
+                fileName: "mail-package.zip",
+                mediaType: "application/zip",
+                bytes: Buffer.from(attachedPackageBytes)
+              }
+            ]
+          })
+        }
+      ]
+    })
+  });
+  assert.equal(emailAttachmentRun.status, 201);
+  assert.equal(emailAttachmentRun.payload.status, "completed");
+  const emailParent = emailAttachmentRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-email");
+  assert.ok(emailParent, "email parent must remain visible as the parent corpus document");
+  assert.equal(emailParent.route.formatId, "email");
+  assert.equal(emailParent.parserTrace.some((trace) => trace.stage === "email.attachment-route" && trace.status === "completed"), true);
+  const zipAttachment = emailAttachmentRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-email!attachment:mail-package.zip");
+  assert.ok(zipAttachment, "email ZIP attachment must be expanded");
+  assert.equal(zipAttachment.parentSourceId, "container-email");
+  assert.equal(zipAttachment.route.formatId, "archive");
+  assert.equal(zipAttachment.parserTrace.some((trace) => trace.stage === "email.attachment" && trace.status === "expanded"), true);
+  const mailDecisionChild = emailAttachmentRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-email!attachment:mail-package.zip!mail/decision.md");
+  assert.ok(mailDecisionChild, "email ZIP attachment Markdown child must be recursively expanded");
+  assert.equal(mailDecisionChild.parentSourceId, "container-email!attachment:mail-package.zip");
+  assert.equal(mailDecisionChild.route.formatId, "markdown");
+  assert.equal(mailDecisionChild.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+} catch (error) {
+  if (started) {
+    const logs = await docker(["logs", containerName]).catch(() => ({ stdout: "", stderr: "" }));
+    if (logs.stdout || logs.stderr) {
+      console.error([logs.stdout, logs.stderr].filter(Boolean).join("\n"));
+    }
+  }
+  throw error;
+} finally {
+  if (started) {
+    await docker(["rm", "-f", containerName]).catch(() => {});
+  }
+}
+
+console.log("external knowledge distillation container verification passed");

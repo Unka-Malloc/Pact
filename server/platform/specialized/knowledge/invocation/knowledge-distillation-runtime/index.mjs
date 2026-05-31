@@ -398,8 +398,8 @@ function rawCorpusDocumentsFromInput(input = {}) {
     .filter((item) => item.title || item.snippet || asArray(item.blocks).some((block) => block.text));
 }
 
-function buildRawCorpusBatchPlan(items = [], maxCharacters = 24000) {
-  const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 24000), 200000));
+function buildRawCorpusBatchPlan(items = [], maxCharacters = 160000) {
+  const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 160000), 500000));
   const batches = [];
   let current = {
     batchNumber: 1,
@@ -682,8 +682,8 @@ function compactGoldenRuleForModel(decision = {}) {
   });
 }
 
-function rawCorpusBatchPayload(batch = {}, items = [], maxCharacters = 16000) {
-  const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 16000), 50000));
+function rawCorpusBatchPayload(batch = {}, items = [], maxCharacters = 32000) {
+  const safeMax = Math.max(4000, Math.min(Number(maxCharacters || 32000), 50000));
   const indexes = asArray(batch.itemIndexes);
   const selectedItems = indexes.length
     ? indexes.map((index) => items[index]).filter(Boolean)

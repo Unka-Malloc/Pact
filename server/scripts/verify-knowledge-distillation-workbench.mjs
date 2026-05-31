@@ -223,6 +223,7 @@ const requiredOperationIds = [
   "knowledge.distillation.workbench.runs.delete",
   "knowledge.distillation.workbench.stage.rerun",
   "knowledge.distillation.workbench.stage.export",
+  "knowledge.distillation.workbench.runs.artifacts",
   "knowledge.distillation.workbench.runs.package",
   "knowledge.distillation.workbench.runs.compare"
 ];
@@ -288,6 +289,14 @@ const docx = await workbench.exportStage({
 });
 assert.equal(docx.contentType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 assert.ok(docx.buffer.length > 1000);
+
+const artifacts = await workbench.listRunArtifacts({ runId: created.runId });
+assert.equal(artifacts.count, 4);
+const artifactsById = new Map(artifacts.items.map((item) => [item.artifactId, item]));
+assert.equal(artifactsById.get("knowledge-distillation:markdown")?.byteSize, markdown.buffer.length);
+assert.ok(Math.abs(Number(artifactsById.get("knowledge-distillation:docx")?.byteSize || 0) - docx.buffer.length) <= 64);
+assert.ok(Number(artifactsById.get("knowledge-distillation:json")?.byteSize || 0) > 0);
+assert.ok(Number(artifactsById.get("run:package")?.byteSize || 0) > 0);
 
 const gatewayCalls = [];
 const modelDecisionRuntime = createModelDecisionRuntime({
@@ -513,5 +522,38 @@ assert.equal(deleted.ok, true);
 
 const listing = await workbench.listRuns();
 assert.equal(listing.items.some((item) => item.runId === created.runId), true);
+
+const runsRoot = path.join(tempRoot, "knowledge-distillation-workbench", "runs");
+const createdRunPath = (await Promise.all(
+  (await fs.readdir(runsRoot)).map(async (entry) => {
+    const runPath = path.join(runsRoot, entry, "run.json");
+    const stored = JSON.parse(await fs.readFile(runPath, "utf8"));
+    return stored.runId === created.runId ? runPath : "";
+  })
+)).find(Boolean);
+assert.ok(createdRunPath, "created run must be persisted");
+const storedRun = JSON.parse(await fs.readFile(createdRunPath, "utf8"));
+const storedCoreStage = storedRun.stages.find((stage) => stage.stageId === "knowledge-distillation");
+storedCoreStage.output.markdown = [
+  "# Legacy export",
+  "",
+  "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head>",
+  "<meta name=\"X-TIKA:Parsed-By\" content=\"org.apache.tika.parser.DefaultParser\" />",
+  "</head><body><p># Legacy Markdown",
+  "",
+  "&gt; quoted text",
+  "",
+  "- list item</p></body></html>"
+].join("\n");
+await fs.writeFile(createdRunPath, JSON.stringify(storedRun, null, 2));
+const sanitizedLegacyMarkdown = await workbench.exportStage({
+  runId: created.runId,
+  stageId: "knowledge-distillation",
+  format: "markdown"
+});
+const sanitizedLegacyText = sanitizedLegacyMarkdown.buffer.toString("utf8");
+assert.doesNotMatch(sanitizedLegacyText, /X-TIKA|<html|<meta/i);
+assert.match(sanitizedLegacyText, /# Legacy Markdown/);
+assert.match(sanitizedLegacyText, /> quoted text/);
 
 console.log("knowledge distillation workbench verification passed");

@@ -1562,6 +1562,10 @@ export function createAgentExplorationRuntime({
       keywordOnly,
       learningEnabled: keywordOnly ? false : args.learningEnabled !== false,
       clientId: normalizeText(args.clientId || "agent-exploration"),
+      requestSurface: "agent-exploration",
+      responseProfile: "agent",
+      machineReadable: true,
+      agentMessage: true,
       explain: true,
       modalityPolicy: "multimodal",
       scopeSourceIds: uniqueStrings([
@@ -1577,6 +1581,7 @@ export function createAgentExplorationRuntime({
       hierarchy: result.hierarchy || null,
       queryIntent: result.queryIntent || null,
       items: compactSearchItems(result, limit),
+      agentMessage: result.agentMessage || null,
       explain: {
         candidateCount: result.explain?.candidateCount,
         generatedCandidateCount: result.explain?.generatedCandidateCount,

@@ -1,19 +1,219 @@
-import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { viewToPath, adminSectionToSlug, slugToAdminView } from "../router/routes";
+import {
+  viewToPath,
+  adminSectionToSlug,
+  slugToAdminView,
+  knowledgeRouteTabToViewTab,
+} from "../router/routes";
 // Note: common components are NOT imported here — that would create a circular
 // dependency (components → useConsole → components). Each view imports the
 // component files it needs directly.
 import { bridge, type McpAuthorizationRequest } from "../lib/bridge";
 import { createKnowledgeUploadSession } from "../lib/knowledge-upload-session";
+import {
+  base64ToBytes,
+  decodeBytes,
+  decodeMimeWords,
+  decodeMimeBody,
+  decodeQuotedPrintableToBytes,
+  emailHeaderValue,
+  escapeRegexText,
+  escapeHtmlText,
+  extractEmailRenderablePart,
+  evidenceIdFromHref,
+  evidenceRefHref,
+  extractEvidenceRefsFromText,
+  linkifyEvidenceRefsInMarkdown,
+  markdownToSafeHtml,
+  normalizeCharset,
+  parseEmailHeaders,
+  parseHeaderParams,
+  plainTextToHtml,
+  safeLinkHref,
+  safeMediaSrc,
+  sanitizeHtmlContent,
+  splitMimeParts,
+  uniqueEvidenceRefs,
+} from "../lib/rendering";
+import {
+  adminViewTitleMap,
+  debugTabs,
+  emptyDiscovery,
+  emptyExpertVocabulary,
+  emptySettings,
+  intelligentModuleDefinitions,
+  jobStatusLabels,
+  knowledgeTabs,
+  migrationStateLabels,
+  modelLibraryProviderDefinitions,
+  moduleGroupDefinitions,
+  moduleNameDescriptions,
+  moduleNameLabels,
+  viewTitleMap,
+} from "./console-defaults";
+import {
+  CLEAR_LOCAL_STATE_PARAM,
+  clearBrowserCacheStorage,
+  clearBrowserLocalStateFromUrl as clearBrowserLocalStateFromUrlCore,
+  clearIndexedDbDatabases,
+  unregisterServiceWorkers,
+} from "./console-browser-state-utils";
+import {
+  copyTextToClipboard,
+  csvCell,
+  downloadTextFile,
+  formatBytes,
+  formatCompactDate,
+  formatDate,
+  formatDuration,
+  formatMachineDate,
+  jobStatusTone,
+  parseFilterDate,
+  parseTime,
+  safeDownloadName,
+} from "./console-format-utils";
+import {
+  sourceDownloadStatusLabel,
+  sourceIndexStatusLabel,
+  sourceJobProgress,
+  sourceSyncLabel,
+  sourceSyncTone,
+  traceProgressPercent,
+  uploadTraceDetailText,
+  uploadTraceTone,
+} from "./console-knowledge-source-utils";
+import {
+  jaccardSimilarity,
+  knowledgeReviewCanResolveWithDocument,
+  knowledgeReviewCurrentDocuments,
+  knowledgeReviewDetailText,
+  knowledgeReviewDocumentLine,
+  knowledgeReviewFusionPrompt,
+  knowledgeReviewIncomingDocument,
+  knowledgeReviewPrimaryCurrentDocument,
+  knowledgeReviewReasonLabel,
+  knowledgeReviewRecordPreview,
+  knowledgeReviewResolvedAction,
+  knowledgeReviewSimilarity,
+  knowledgeReviewSourceLabel,
+  knowledgeReviewStatusLabel,
+  knowledgeReviewTitle,
+  knowledgeReviewTone,
+  tokenizeKnowledgeReviewText,
+} from "./console-knowledge-review-utils";
+import {
+  candidateTextFromRecord,
+  compactReadableText,
+  emailSubjectFromText,
+  evidenceDisplayTitle,
+  htmlMetaHeader,
+  htmlToReadableText,
+  knowledgeFusionSummary,
+  knowledgeResultAssetCount,
+  knowledgeResultEvidenceId,
+  knowledgeResultHierarchyPath,
+  knowledgeResultScore,
+  knowledgeResultSnippet,
+  knowledgeResultTitle,
+  normalizeSearchResults,
+  readableSnippetFromText,
+} from "./console-knowledge-search-utils";
+import {
+  assetIdsEmbeddedInHtml,
+  decodeURIComponentSafe,
+  evidenceAssetHintValues,
+  isHiddenEmailElement,
+  isImageAsset,
+  normalizeAssetReference,
+  normalizeCidToken,
+  normalizeRenderedText,
+  renderedHtmlHasBlocks,
+} from "./console-evidence-utils";
+import {
+  AGENT_EXPLORE_STORAGE_KEY,
+  agentExploreEventLabel,
+  agentExploreEventStatus,
+  agentExploreHistorySortValue,
+  agentExplorePhaseLabel,
+  agentExploreResultKey,
+  agentExploreRunStatus,
+  agentExploreStepSummary,
+  agentExploreTabMeta,
+  agentExploreTabTitle,
+  isAgentExploreDraftSession,
+  normalizeAgentExploreRun,
+  readAgentExplorePersistence,
+  shortId,
+  writeAgentExplorePersistence,
+  type AgentExploreFormState,
+} from "./console-agent-explore-utils";
+import { createConsoleAuthController } from "./console-auth-controller";
+import { createConsoleAgentExploreSessionController } from "./console-agent-explore-session-controller";
+import { createConsoleKnowledgeSourceController } from "./console-knowledge-source-controller";
+import { createConsolePathPickerController } from "./console-path-picker-controller";
+import { createConsoleRuntimeMountController } from "./console-runtime-mount-controller";
+import { createConsoleDashboardAlertController } from "./console-dashboard-alert-controller";
+import { createConsoleInfoFeedController } from "./console-info-feed-controller";
+import { createConsoleKnowledgeEvidenceController } from "./console-knowledge-evidence-controller";
+import { createConsoleKnowledgeRecallController } from "./console-knowledge-recall-controller";
+import { createConsoleModelLibraryController } from "./console-model-library-controller";
+import { createConsoleToolManagementController } from "./console-tool-management-controller";
+import { createConsoleWordCloudController } from "./console-word-cloud-controller";
+
+export const consoleKnowledgeGovernanceContract = Object.freeze({
+  knowledgeBase: "knowledgeBase",
+  runtimeMountActions: ["saveRuntimeMounts", "reloadRuntimeMounts", "enableMountModule", "disableMountModule"],
+  uploadFlow: "async function uploadFilesToKnowledge() -> createKnowledgeUploadSession(filesToUpload -> bridge.createJob({",
+});
+
+import {
+  asRecord,
+  modelAgentUid,
+  modelEntryParameters,
+  modelEntryStringField,
+  moduleAgentProfileJson,
+  normalizeAgentLocalCommandsForDraft,
+  normalizeAgentModuleAccess,
+  normalizeAgentPermissionGroupDraft,
+  normalizeAgentPermissionGroupsDraft,
+  normalizeModelLibraryEntries,
+  normalizeModuleAgentProfile,
+  normalizeModuleAgentProfilesForDraft,
+  redactAgentModelEntryForExport,
+  redactedProviderSettingsForAgentExport,
+} from "./console-model-utils";
+import {
+  analysisExecutionModeLabel,
+  analysisModuleDescriptionForModule,
+  backgroundProcessLabel,
+  backgroundProcessTone,
+  clientRuntimeCoolingLabel,
+  clientRuntimeCoolingTone,
+  clientRuntimeHeatStyle,
+  clientRuntimeReasonLabel,
+  clientRuntimeSurfaceText,
+  clientRuntimeTaskText,
+  maintenanceAgentRiskLabel,
+  maintenanceAgentStatusLabel,
+  maintenanceAgentStatusTone,
+  migrationProgress,
+  migrationTone,
+  monitorAlertSeverityLabel,
+  monitorAlertSeverityTone,
+  processRelationText,
+  processTypeLabel,
+  queueLifecycleLabel,
+  queueLifecycleTone,
+  queueMonitorDetail,
+  queueSourceLabel,
+} from "./console-status-utils";
 import type {
   AgentSettings,
   AgentModelConfig,
   AgentModuleAccess,
   AgentSelectorOption,
   BackgroundProcessStatus,
-  ClientRuntimeHeatRow,
   ClientMigrationState,
   CodexOAuthLogin,
   CodexOAuthStatus,
@@ -25,10 +225,8 @@ import type {
   DiscoveryConfigResponse,
   EmailRuleSet,
   AgentExploreRunResponse,
-  EvidencePack,
   ExpertVocabulary,
   ExpertVocabularyEntry,
-  KnowledgeAssetRef,
   KnowledgeConfigSchema,
   KnowledgeConsoleState,
   KnowledgeIngestTarget,
@@ -39,11 +237,7 @@ import type {
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeSourceState,
-  KnowledgeWordCloud,
-  KnowledgeWordCloudCorpusPath,
   KnowledgeWordCloudSet,
-  KnowledgeWordCloudState,
-  KnowledgeWordCloudTerm,
   MaintenanceAgentConfig,
   MaintenanceAgentRun,
   MaintenanceSettings,
@@ -53,8 +247,6 @@ import type {
   NormalizedDocumentsManifest,
   ProtocolEvent,
   QueueMonitorItem,
-  ServerPathBrowseEntry,
-  ServerPathBrowseResponse,
   ServerConsoleState,
   SplitJob,
   SplitJobStatus,
@@ -73,11 +265,8 @@ import type {
   KnowledgeTab, KnowledgeManagementPanel, OptionBarValue, OptionBarOption,
   KnowledgeLogRow, AgentExploreSession, KnowledgeRecallDebugRun,
   HistorySessionPanelItem, ModelEntryBinding, AgentConfigurationAlert,
-  DashboardAlert, WorkQueueRow, InfoFeedStageStatus, InfoFeedAttachment,
-  InfoFeedClarificationOption, InfoFeedExpertFeedbackAnchor, InfoFeedClarification,
-  InfoFeedExpertFeedback, InfoFeedTurnSnapshot, InfoFeedRetryStage,
-  InfoFeedRetryState, InfoFeedRunState, PathPickerMode, PathPickerState,
-  WordCloudCorpusAuditAction, RefreshStateOptions, CloudProvider,
+  DashboardAlert, WorkQueueRow, PathPickerMode,
+  RefreshStateOptions, CloudProvider,
 } from "../types/app";
 export type {
   DrawerTab, AppView, AdminView, DebugTab, RuleAuthoringMode,
@@ -103,365 +292,6 @@ const knowledgeManagementPanel = ref<KnowledgeManagementPanel>("knowledge");
 // component that calls useConsole().  Only onMounted / onUnmounted stay inside
 // the exported function so Vue can bind them to the component lifecycle.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const modelLibraryProviderDefinitions: Array<{
-  id: CloudProvider;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    description: "OpenAI-compatible Chat Completions，API Key 由服务端代理使用。",
-  },
-  {
-    id: "google-gemini",
-    label: "Google Gemini",
-    description: "Google Generative Language API Key 与 Gemini 模型。",
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    description: "OpenRouter API Key、Base URL 与模型 ID。",
-  },
-  {
-    id: "openai-chatgpt",
-    label: "ChatGPT OAuth",
-    description: "使用 Codex ChatGPT OAuth，不在页面维护 API Key。",
-  },
-  {
-    id: "copilot",
-    label: "Copilot / 企业代理",
-    description: "企业代理或兼容 Chat Completions 的内部模型服务。",
-  },
-  {
-    id: "custom-http",
-    label: "自定义 HTTP Adapter",
-    description: "Pact agent 报文格式的外部智能体网关。",
-  },
-  {
-    id: "local-model",
-    label: "本地模型服务",
-    description: "本机或局域网内的模型服务 Endpoint。",
-  },
-];
-
-type IntelligentModuleDefinition = {
-  id: string;
-  label: string;
-  description: string;
-  alertRequired?: boolean;
-};
-
-const intelligentModuleDefinitions: IntelligentModuleDefinition[] = [
-  {
-    id: "knowledgeTaxonomy",
-    label: "文档分类智能体",
-    description: "邮件和文档进入图谱前的领域、关键词和意图分类。",
-    alertRequired: false,
-  },
-  {
-    id: "graphInsight",
-    label: "知识图谱智能体",
-    description: "节点聚合、关系解释和高频实体抽象。",
-  },
-  {
-    id: "timelineDistillation",
-    label: "时序提炼智能体",
-    description: "围绕具体事务提炼阶段、事件和关键节点。",
-  },
-  {
-    id: "agentTools",
-    label: "智能体工具调用",
-    description: "智能体可使用服务端工具的权限范围，不需要单独绑定智能体。",
-    alertRequired: false,
-  },
-  {
-    id: "localOcr",
-    label: "本地 OCR",
-    description: "默认不需要大模型，只有开启多模态解释时才分配模型。",
-  },
-];
-
-const emptySettings: AgentSettings = {
-  tikaJarPath: "",
-  javaBinPath: "",
-  modelIntelligenceEnabled: false,
-  googleApiKey: "",
-  googleApiKeyConfigured: false,
-  googleModel: "gemini-flash-lite-latest",
-  openAiModel: "gpt-5.4-mini",
-  defaultModelProvider: "",
-  defaultModel: "",
-  modelLibraryEntries: [],
-  modelLibraryAgents: [],
-  agentPermissionGroups: [],
-  agentExploreDefaults: {
-    systemPrompt:
-      "You are Pact Knowledge Explorer. You are stateless; use the supplied ContextPack as your only memory.",
-    toolPolicyPrompt:
-      "Always search from coarse to fine. For counts, totals, rankings, frequency, or 'which has the most' questions, first call knowledge_aggregate. For normal evidence recall, first call keyword_search with broad but meaningful keywords, then open_evidence only for promising evidenceId values.",
-    continuationPrompt:
-      "Continue from the tool results. Call another tool only if more local evidence is needed; otherwise give the final answer with evidenceId citations.",
-    answerTemplate: [
-      "默认使用以下 Markdown 报告格式输出，除非用户明确要求其他格式。必须保留分割线。",
-      "如果用户问题不是风险分析，把“风险”自然替换成“发现 / 事项 / 结论”，但保留同样结构。",
-      "",
-      "根据对【分析范围】的分析，发现以下【数量】项【风险/发现】：",
-      "",
-      "---",
-      "",
-      "1. 【风险图标】 【标题】",
-      "",
-      "【一段可读说明：写清事实、时间、影响和风险。关键日期、金额、IP、账号、服务名称用加粗突出。不要编造证据中没有的信息。】",
-      "",
-      "📎 证据来源：evidence::xxxx, evidence::yyyy",
-      "",
-      "---",
-      "",
-      "2. 【风险图标】 【标题】",
-      "",
-      "【说明】",
-      "",
-      "📎 证据来源：evidence::zzzz",
-      "",
-      "---",
-      "",
-      "建议行动：",
-      "",
-      "- 【行动 1】",
-      "- 【行动 2】",
-      "- 【行动 3】",
-      "",
-      "要求：证据 ID 必须保持原样；不要写不存在的 evidenceId；证据不足时添加“不确定项”小节。",
-    ].join("\n"),
-    contextProfileId: "context-128k",
-    thinkingMode: "default",
-    temperature: 0.2,
-    maxTokens: 1800,
-    maxIterations: 4,
-    limit: 8,
-    toolChoice: "auto",
-    reviewFusionModelAlias: "",
-    reviewFusionSystemPrompt:
-      "你是 Pact 知识冲突融合智能体。你只能基于输入的原始记录、新录入记录、冲突原因和证据字段进行分析。请判断两份知识是完全重合、部分重合还是明显不同；给出相似度、应采取的审核动作和可复核理由。不得改写原始证据，不得编造未提供的信息。",
-    reviewFusionTemperature: 0.1,
-    reviewFusionMaxTokens: 1200,
-  },
-  agentToolExecution: {
-    functionCallSchema: {
-      http_request: {
-        method: "GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS",
-        url: "http://127.0.0.1:7228/api/tool-management/v1/execute",
-        headers: {},
-        query: {},
-        body: {},
-        timeoutMs: 30000,
-      },
-      local_command: {
-        commandId: "node-version",
-        variables: {
-          flag: "--version",
-        },
-        args: [],
-        cwd: "",
-        stdin: "",
-        timeoutMs: 30000,
-      },
-    },
-    http: {
-      enabled: true,
-      allowedHosts: ["127.0.0.1", "localhost"],
-      timeoutMs: 30000,
-      maxResponseBytes: 65536,
-    },
-    local: {
-      enabled: true,
-      allowDirectCommands: false,
-      timeoutMs: 30000,
-      maxOutputBytes: 65536,
-      nodeCommand: "",
-      commands: [
-        {
-          commandId: "node-version",
-          label: "Node.js version",
-          command: "node",
-          args: ["{{flag}}"],
-          cwd: "",
-          description: "跨平台 Node 运行时探测命令。",
-          variables: [
-            {
-              name: "flag",
-              label: "版本参数",
-              required: false,
-              defaultValue: "--version",
-              allowedValues: ["--version"],
-              description: "智能体通过 function call variables 填入的 Node.js 版本探测参数。",
-            },
-          ],
-          allowExtraArgs: false,
-        },
-      ],
-    },
-  },
-  moduleModelAssignments: {},
-  moduleAgentProfiles: {},
-  moduleIntelligence: {
-    knowledgeTaxonomy: false,
-    graphInsight: true,
-    timelineDistillation: true,
-    agentTools: false,
-    localOcr: false,
-  },
-  openRouterApiKey: "",
-  openRouterApiKeyConfigured: false,
-  openRouterBaseUrl: "https://openrouter.ai/api/v1",
-  openRouterModel: "openai/gpt-4.1-mini",
-  deepSeekApiKey: "",
-  deepSeekApiKeyConfigured: false,
-  deepSeekBaseUrl: "https://api.deepseek.com",
-  deepSeekModel: "deepseek-v4-pro",
-  deepSeekTimeoutMs: 120000,
-  copilotEndpoint: "",
-  copilotApiKey: "",
-  copilotApiKeyConfigured: false,
-  copilotModel: "copilot-default",
-  localModelEndpoint: "",
-  localModelName: "local-default",
-  customModelAlias: "external-agent",
-  customModelLabel: "自定义 HTTP 模型",
-  customModelApiKey: "",
-  customModelApiKeyConfigured: false,
-  customHttpAdapter: {
-    alias: "external-agent",
-    url: "",
-    token: "",
-    tokenConfigured: false,
-    tokenHeader: "token",
-    tokenPrefix: "",
-    agentName: "",
-    pluginList: [],
-    engine: "",
-    parameters: {},
-    timeoutMs: 120000,
-  },
-  customHttpAdapters: [],
-  analysisModuleId: "builtin:heuristic-hybrid-v1",
-  ocrEnabled: true,
-  ocrPythonPath: "",
-  ocrLanguage: "ch",
-  retrievalHalfLifeDays: 45,
-  staleAfterDays: 180,
-  transactionWindowDays: 30,
-};
-
-
-const emptyDiscovery: DiscoveryConfig = {
-  serverId: "",
-  serverLabel: "",
-  bootstrapBaseUrl: "",
-  advertisedBaseUrl: "",
-  activeServiceUrl: "",
-  forwardBaseUrl: "",
-  mode: "active",
-  configVersion: "",
-  refreshIntervalSeconds: 30,
-  checkInIntervalSeconds: 30,
-  offlineAfterSeconds: 180,
-};
-
-const emptyExpertVocabulary: ExpertVocabulary = {
-  schemaVersion: 1,
-  version: 0,
-  updatedAt: "",
-  publishedAt: "",
-  source: "",
-  checksum: "",
-  entries: [],
-};
-
-const jobStatusLabels: Record<SplitJobStatus, string> = {
-  queued: "排队中",
-  running: "运行中",
-  completed: "已完成",
-  failed: "失败",
-};
-
-const migrationStateLabels: Record<ClientMigrationState, string> = {
-  aligned: "已切换",
-  outdated: "待切换",
-  draining: "迁移中",
-  "bootstrap-only": "仅引导",
-  offline: "离线",
-  unknown: "未知",
-};
-
-const moduleNameLabels: Record<string, string> = {
-  analysis: "分析引擎",
-  ocr: "OCR 识别",
-  multimodalParser: "多模态解析",
-  documentParser: "文档解析",
-  pdfProcessor: "PDF 处理",
-  knowledgeBase: "知识库",
-  vectorStore: "向量存储",
-  graphStore: "图谱存储",
-};
-
-const moduleNameDescriptions: Record<string, string> = {
-  analysis: "事务、人物、时间线和检索网络的核心分析管线。",
-  ocr: "图片、扫描件和不可复制文本的兜底识别模块。",
-  multimodalParser: "图片、表格、版式等多模态文档理解入口。",
-  documentParser: "Office、邮件和纯文本文件的结构化提取入口。",
-  pdfProcessor: "PDF 专用处理流程，可以先转入 Tika，再按需要触发后续处理。",
-  knowledgeBase: "批次提交后的知识沉淀与外部知识库同步。",
-  vectorStore: "检索向量写入、召回和相似度计算适配器。",
-  graphStore: "关系图谱写入、节点边同步和外部图数据库适配器。",
-};
-
-const moduleGroupDefinitions = [
-  {
-    id: "analysis",
-    label: "分析引擎",
-    description: "面向事务、人物、时间线与关联网络的分析模块。",
-    names: ["analysis"],
-  },
-  {
-    id: "image",
-    label: "图片处理",
-    description: "扫描件、图片和多模态文档的识别与理解模块。",
-    names: ["ocr", "multimodalParser"],
-  },
-  {
-    id: "document",
-    label: "文档处理",
-    description: "PDF、Office、邮件和文本文件的结构化解析模块。",
-    names: ["documentParser", "pdfProcessor"],
-  },
-  {
-    id: "knowledge",
-    label: "知识管理",
-    description: "批次完成后的知识沉淀、同步和检索前置模块。",
-    names: ["knowledgeBase"],
-  },
-  {
-    id: "storage",
-    label: "存储管理",
-    description: "向量库与图数据库等外部存储适配模块。",
-    names: ["vectorStore", "graphStore"],
-  },
-];
-
-const debugTabs: Array<{ id: DebugTab; label: string }> = [
-  { id: "knowledgeDistillation", label: "知识蒸馏" },
-  { id: "knowledgeRecall", label: "知识召回" },
-  { id: "agentRetrieval", label: "智能检索" },
-];
-
-const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
-  { id: "management", label: "知识管理" },
-  { id: "wordCloud", label: "词汇库" },
-  { id: "maintenance", label: "知识库配置" },
-];
 
 const consoleState = ref<ServerConsoleState | null>(null);
 const serverAvailable = ref(false);
@@ -494,32 +324,6 @@ const visibleDebugTabs = computed(() =>
     return true;
   })
 );
-const adminViewTitleMap: Partial<Record<AdminView, string>> = {
-  jobs: "任务队列",
-  logs: "日志记录",
-  tools: "工具列表",
-  toolList: "工具列表",
-  toolStats: "工具统计",
-  agentPermissions: "权限组",
-  agentConfig: "智能体仓库",
-  contextManagement: "上下文管理",
-  maintenanceAgent: "智能巡检",
-  opsMonitor: "运维监控",
-  runtimeDownloads: "运行时下载",
-  clients: "客户端",
-  storage: "系统概览",
-  modules: "接入模块",
-};
-const viewTitleMap: Record<AppView, string> = {
-  dashboard: "工作台",
-  feed: "信息流",
-  approval: "审批流",
-  sources: "数据源",
-  knowledge: "团队资产",
-  workspaces: "协作空间",
-  debug: "调试面板",
-  admin: "管理",
-};
 const viewTitle = computed(() => {
   if (currentView.value === "admin") {
     return adminViewTitleMap[adminView.value] || "管理";
@@ -574,7 +378,6 @@ let consoleLifecycleInitialized = false;
 let applyingRemoteSettings = false;
 let applyingRemoteConsoleDrafts = false;
 let codexOAuthPollTimer: number | null = null;
-let agentExplorePollTimer: number | null = null;
 let configTargetHighlightTimer: number | null = null;
 let serverEventCursor = 0;
 let serverEventSubscriptionStopped = false;
@@ -588,8 +391,6 @@ let pendingRefreshStateTimer: number | null = null;
 let pendingRefreshStateOptions: RefreshStateOptions | null = null;
 let pendingRefreshStatePromise: Promise<void> | null = null;
 let pendingRefreshStateResolve: (() => void) | null = null;
-const AGENT_EXPLORE_STORAGE_KEY = "pact.agentExplore.sessions.v1";
-const INFO_FEED_STORAGE_KEY = "pact.infoFeed.history.v1";
 const filter = ref("");
 const drawerOpen = ref(false);
 const drawerTab = ref<DrawerTab>("discovery");
@@ -600,19 +401,6 @@ const highlightedConfigTarget = ref("");
 const clientSearchQuery = ref("");
 const clientStateFilter = ref<ClientMigrationState | "all">("all");
 const editingMountPaths = ref<Record<string, boolean>>({});
-const newGrantLabel = ref("默认智能体");
-const newGrantScopes = ref<string[]>(["knowledge:read"]);
-const newGrantToolsets = ref<string[]>(["pact.knowledge.read"]);
-const issuedToolToken = ref("");
-const toolManagementCatalogState = ref<ToolManagementCatalog | null>(null);
-const toolManagementGrantsState = ref<ToolManagementGrant[]>([]);
-const toolManagementMetricsState = ref<ToolManagementMetrics | null>(null);
-const toolManagementAuditItems = ref<ToolManagementAuditItem[]>([]);
-const selectedToolManagementToolId = ref("pact.knowledge.health");
-const policyPreviewToolId = ref("pact.knowledge.health");
-const policyPreviewProfileId = ref("external-knowledge-reader");
-const policyPreviewGrantId = ref("");
-const policyPreviewResult = ref<Record<string, unknown> | null>(null);
 const authState = ref<ConsoleAuthSummary | null>(null);
 const authBootstrapping = ref(true);
 const loginForm = ref({ username: "", password: "" });
@@ -637,8 +425,6 @@ const maintenanceAgentResultJson = ref("");
 const backgroundProcessStatus = ref<BackgroundProcessStatus | null>(null);
 const monitorAlertState = ref<MonitorAlertState | null>(null);
 const monitorAlertConfigText = ref("");
-const dashboardAlertInbox = ref<Record<string, DashboardAlert>>({});
-const dismissedDashboardAlertIds = ref<Set<string>>(new Set());
 const oidcDraft = ref<ConsoleOidcConfig & { clientSecret?: string }>({
   enabled: false,
   issuer: "",
@@ -655,25 +441,6 @@ const oidcRoleMappingText = ref("{}");
 const knowledgeConsole = ref<KnowledgeConsoleState | null>(null);
 const knowledgeSchema = ref<KnowledgeConfigSchema | null>(null);
 const knowledgeSourceState = ref<KnowledgeSourceState | null>(null);
-const wordCloudState = ref<KnowledgeWordCloudState | null>(null);
-const wordCloudDraft = ref<KnowledgeWordCloudSet | null>(null);
-const wordCloudPrompt = ref("");
-const wordCloudModelAlias = ref("");
-const wordCloudCorpusPaths = ref<KnowledgeWordCloudCorpusPath[]>([]);
-const selectedWordBagId = ref("");
-const wordBagActionMenuId = ref("");
-const collapsedWordBagIds = ref<Set<string>>(new Set());
-const pinnedWordBagIds = ref<Set<string>>(new Set());
-const wordCloudTermInputs = ref<Record<string, string>>({});
-const fillingWordBagIds = ref<Set<string>>(new Set());
-const fillTargetWordBagId = ref<string | null>(null);
-const fillSourceWordBagSetId = ref<string | null>(null);
-const wordCloudMessages = ref<Array<{
-  id: string;
-  role: "user" | "agent" | "system";
-  text: string;
-  at: string;
-}>>([]);
 const knowledgeMaintenanceDraft = ref<MaintenanceSettings>({});
 const maintenanceJson = ref("{}");
 const knowledgeSearchForm = ref({
@@ -689,7 +456,7 @@ const knowledgeRecallDebugForm = ref({
 });
 const knowledgeRecallBackendSpacesResult = ref<Record<string, unknown> | null>(null);
 const knowledgeRecallDebugRuns = ref<KnowledgeRecallDebugRun[]>([]);
-const agentExploreForm = ref({
+const agentExploreForm = ref<AgentExploreFormState>({
   query: "",
   modelAlias: "",
   contextProfileId: "context-128k",
@@ -732,24 +499,6 @@ const contextPreviewTask = ref("总结最近一个月邮件中的账单风险，
 const contextPreviewRequiredEvidence = ref("");
 const contextPreviewResult = ref<Record<string, unknown> | null>(null);
 const contextEvaluationResult = ref<Record<string, unknown> | null>(null);
-const infoFeedForm = ref({
-  query: "",
-  modelAlias: "",
-  contextProfileId: "context-32k",
-  temperature: 0.2,
-  maxTokens: 1800,
-});
-const infoFeedCurrentRun = ref<InfoFeedRunState | null>(null);
-const infoFeedParentRunSnapshot = ref<InfoFeedRunState | null>(null);
-const infoFeedHistory = ref<InfoFeedRunState[]>([]);
-const infoFeedAttachments = ref<InfoFeedAttachment[]>([]);
-const infoFeedSummaryStreamText = ref("");
-let infoFeedRunSequence = 0;
-let infoFeedSummaryStreamTimer: number | null = null;
-const infoFeedKeywordCache = new Map<string, { response: KnowledgeSearchResponse; cachedAt: number }>();
-const INFO_FEED_FETCH_RETRY_LIMIT = 10;
-const INFO_FEED_CONTEXT_CHARS_PER_TOKEN = 3;
-const CLEAR_LOCAL_STATE_PARAM = "clearLocalState";
 const knowledgeLogAdvancedOpen = ref(false);
 const knowledgeLogFilters = ref({
   id: "",
@@ -836,14 +585,59 @@ const selectedKnowledgeReviewItem = computed(() => {
 const knowledgeSearchResults = ref<KnowledgeSearchResult[]>([]);
 const knowledgeSearchResponse = ref<KnowledgeSearchResponse | null>(null);
 const lastKnowledgeSearchQuery = ref("");
-const selectedEvidence = ref<EvidencePack | null>(null);
-const selectedEvidenceId = ref("");
-const evidenceLoadError = ref("");
-const agentEvidencePreviewOpen = ref(false);
-const selectedEvidenceDisplayTitle = computed(() =>
-  selectedEvidence.value ? evidenceDisplayTitle(selectedEvidence.value) : selectedEvidenceId.value || "来源详情",
-);
-let evidenceLoadSequence = 0;
+const {
+  agentEvidencePreviewOpen,
+  assetUrlForReference,
+  closeAgentEvidencePreview,
+  emailToSafeHtml,
+  embedEvidenceAssets,
+  evidenceAssets,
+  evidenceLoadError,
+  evidenceLoadSequence,
+  evidenceMainText,
+  evidencePrimaryText,
+  evidenceReadableHtml,
+  evidenceReadableKind,
+  evidenceReadableKindLabel,
+  evidenceReasonText,
+  evidenceSourceDetails,
+  evidenceSourceHint,
+  handleAgentAnswerClick,
+  hydrateSearchResultPreview,
+  imageEvidenceAssets,
+  loadEvidence,
+  openAgentEvidencePreview,
+  openKnowledgeSearchResult,
+  renderEmailFrame,
+  renderEmailImage,
+  renderEmailNode,
+  renderEvidenceImageGallery,
+  renderEvidenceReadableHtml,
+  renderReadableHtmlDocument,
+  rewriteInlineAssetRefs,
+  safeEmailImageSrc,
+  sanitizeEmailCssUrls,
+  sanitizeEmailFrameDocument,
+  selectedEvidence,
+  selectedEvidenceBlocks,
+  selectedEvidenceDisplayTitle,
+  selectedEvidenceDocument,
+  selectedEvidenceId,
+  selectedEvidencePayload,
+  selectedEvidenceSection,
+} = createConsoleKnowledgeEvidenceController({
+  busyKey,
+  clearAllBusy,
+  currentAgentExploreQuery,
+  error,
+  infoFeedQuery: () => infoFeedCurrentRun.value?.query || "",
+  knowledgeSearchResults,
+  agentExploreContextBuildRecordId: () =>
+    String(asRecord(agentExploreResult.value?.contextPack)?.contextBuildRecordId || ""),
+  openDebugTab,
+  recordFeedback: recordConsoleKnowledgeFeedback,
+  setBusy,
+});
 const ingestFiles = ref<File[]>([]);
 const ingestProgress = ref("");
 const ingestJob = ref<SplitJob | null>(null);
@@ -860,25 +654,63 @@ const knowledgeIngestTeamRefs = ref("");
 const knowledgeIngestUserRefs = ref("");
 const uploadTraceEvents = ref<ProtocolEvent[]>([]);
 const normalizedManifest = ref<NormalizedDocumentsManifest | null>(null);
-const localSourceForm = ref({
-  label: "",
-  directoryPath: "",
-  autoSync: true,
-  recursive: true,
-  hydrationEnabled: true,
+const {
+  activeKnowledgeSources,
+  addKnowledgeSource,
+  applyJobToKnowledgeSources,
+  applyKnowledgeSourceState,
+  applyLocalSourceDirectoryPath,
+  deleteKnowledgeSource,
+  directoryNameFromPath,
+  localSourceForm,
+  refreshKnowledgeSource,
+  refreshKnowledgeSources,
+  syncLocalSourceLabelFromPath,
+  updateKnowledgeSource,
+} = createConsoleKnowledgeSourceController({
+  clearAllBusy,
+  error,
+  ingestJob,
+  knowledgeConsole,
+  knowledgeSourceState,
+  setBusy,
 });
-const pathPicker = ref<PathPickerState>({
-  open: false,
-  title: "选择路径",
-  mode: "directory",
-  value: "",
-  extensions: [],
-  includeHidden: false,
-  loading: false,
-  error: "",
-  response: null,
-  closeOnSelect: true,
-  applyPath: () => {},
+const {
+  closeServerPathPicker,
+  confirmServerPathPicker,
+  openPathEntry,
+  openServerPathPicker,
+  pathEntryMeta,
+  pathPicker,
+  pathPickerModeLabel,
+  refreshServerPathBrowser,
+  selectServerPath,
+} = createConsolePathPickerController({
+  formatBytes,
+  formatCompactDate,
+});
+const {
+  analysisModuleDescription,
+  currentAnalysisModule,
+  currentModulePathPlaceholder,
+  enabledMountCount,
+  isMountPathEditing,
+  moduleAvailabilityLabel,
+  moduleCapabilityText,
+  moduleEnabledLabel,
+  moduleGroups,
+  moduleRows,
+  moduleStatusText,
+  openMountPathPicker,
+  toggleMountPathEdit,
+  totalMountCount,
+} = createConsoleRuntimeMountController({
+  consoleState,
+  editingMountPaths,
+  mountDraft,
+  openServerPathPicker,
+  saveMountModules,
+  settingsDraft,
 });
 
 const baseServerEventTopics = [
@@ -926,103 +758,6 @@ function currentServerEventTopics() {
     return true;
   });
   return topics.join(",");
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function normalizeModelLibraryEntries(value: unknown): CloudProvider[] {
-  const allowed = new Set(modelLibraryProviderDefinitions.map((item) => item.id));
-  const entries = Array.isArray(value) ? value : [];
-  const seen = new Set<string>();
-  return entries
-    .map((item) => String(item || "").trim() as CloudProvider)
-    .filter((item: any) => {
-      if (!allowed.has(item) || seen.has(item)) {
-        return false;
-      }
-      seen.add(item);
-      return true;
-    });
-}
-
-function modelAgentUid(...parts: unknown[]) {
-  const source = parts
-    .map((part) => String(part ?? "").trim())
-    .filter(Boolean)
-    .join("\n") || String(Date.now());
-  let hash = 2166136261;
-  let hash2 = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    const code = source.charCodeAt(index);
-    hash ^= code;
-    hash = Math.imul(hash, 16777619);
-    hash2 ^= code + index + 1;
-    hash2 = Math.imul(hash2, 16777619);
-  }
-  const partA = (hash >>> 0).toString(16).padStart(8, "0");
-  const partB = (hash2 >>> 0).toString(16).padStart(8, "0");
-  return `agent_${partA}${partB}`;
-}
-
-function modelEntryStringField(entry: Partial<AgentModelConfig>, keys: string[]) {
-  const record = asRecord(entry) || {};
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(record, key)) {
-      return String(record[key] ?? "").trim();
-    }
-  }
-  return undefined;
-}
-
-function normalizeAgentModuleAccess(value?: Partial<AgentModuleAccess>): AgentModuleAccess {
-  const record = asRecord(value) || {};
-  const mode = String(record.mode || "").trim() === "selected" ? "selected" : "all";
-  const moduleIds = Array.isArray(record.moduleIds)
-    ? record.moduleIds.map((item) => String(item || "").trim()).filter(Boolean)
-    : [];
-  return {
-    mode,
-    moduleIds: [...new Set(moduleIds)],
-  };
-}
-
-function normalizeAgentPermissionGroupDraft(
-  value: Partial<AgentPermissionGroup>,
-  index = 0,
-): AgentPermissionGroup {
-  const record = asRecord(value) || {};
-  const id =
-    String(record.id || "").trim() ||
-    `agent-permission-${Date.now()}-${index + 1}`;
-  const normalizeList = (input: unknown) =>
-    [...new Set(Array.isArray(input) ? input.map((item) => String(item || "").trim()).filter(Boolean) : [])];
-  return {
-    id,
-    label: String(record.label || id).trim(),
-    description: String(record.description || "").trim(),
-    enabled: record.enabled !== false,
-    scopeIds: normalizeList(record.scopeIds),
-    toolsetIds: normalizeList(record.toolsetIds),
-    toolAllow: normalizeList(record.toolAllow),
-    toolDeny: normalizeList(record.toolDeny),
-  };
-}
-
-function normalizeAgentPermissionGroupsDraft(value: unknown): AgentPermissionGroup[] {
-  const seen = new Set<string>();
-  return (Array.isArray(value) ? value : [])
-    .map((item, index) => normalizeAgentPermissionGroupDraft(item as Partial<AgentPermissionGroup>, index))
-    .filter((item: any) => {
-      if (!item.id || seen.has(item.id)) {
-        return false;
-      }
-      seen.add(item.id);
-      return true;
-    });
 }
 
 function normalizeModelEntry(entry: Partial<AgentModelConfig>, index = 0): AgentModelConfig {
@@ -1076,73 +811,6 @@ function normalizeModelLibraryAgents(settings: AgentSettings): AgentModelConfig[
   return models.map((item, index) => normalizeModelEntry(item, index));
 }
 
-function modelEntryParameters(entry: AgentModelConfig) {
-  try {
-    return JSON.parse(String(entry.parametersText || "{}"));
-  } catch {
-    return asRecord(entry.parameters) || {};
-  }
-}
-
-function moduleAgentProfileJson(value?: string, fallback?: Record<string, unknown>) {
-  try {
-    const parsed = JSON.parse(String(value || "{}"));
-    return asRecord(parsed) || {};
-  } catch {
-    return fallback || {};
-  }
-}
-
-function normalizeModuleAgentProfile(profile?: Partial<ModuleAgentProfile>): ModuleAgentProfile {
-  const incoming = profile || {};
-  const parameters = moduleAgentProfileJson(incoming.parametersText, asRecord(incoming.parameters) || {});
-  const dependencyContext = moduleAgentProfileJson(
-    incoming.dependencyContextText,
-    asRecord(incoming.dependencyContext) || {},
-  );
-  return {
-    enabled: incoming.enabled !== false,
-    role: String(incoming.role || "primary").trim() || "primary",
-    contextProfileId: String(incoming.contextProfileId || "").trim(),
-    systemPrompt: String(incoming.systemPrompt || "").trim(),
-    parameters,
-    parametersText: String(incoming.parametersText || "").trim() || JSON.stringify(parameters, null, 2),
-    dependencyContext,
-    dependencyContextText:
-      String(incoming.dependencyContextText || "").trim() ||
-      JSON.stringify(dependencyContext, null, 2),
-  };
-}
-
-function normalizeModuleAgentProfilesForDraft(settings: AgentSettings) {
-  const incoming = asRecord(settings.moduleAgentProfiles) || {};
-  const next: AgentSettings["moduleAgentProfiles"] = {};
-  for (const moduleDefinition of moduleGroupDefinitions) {
-    const group = asRecord(incoming[moduleDefinition.id]) || {};
-    const agents = asRecord(group.agents) || {};
-    const nextAgents: Record<string, ModuleAgentProfile> = {};
-    for (const [agentId, profile] of Object.entries(agents)) {
-      const normalizedAgentId = String(agentId || "").trim();
-      if (!normalizedAgentId) {
-        continue;
-      }
-      nextAgents[normalizedAgentId] = normalizeModuleAgentProfile(profile as Partial<ModuleAgentProfile>);
-    }
-    const assignment = settings.moduleModelAssignments?.[moduleDefinition.id];
-    const primaryAgent = String(group.primaryAgent || assignment?.model || "").trim();
-    if (primaryAgent && !nextAgents[primaryAgent]) {
-      nextAgents[primaryAgent] = normalizeModuleAgentProfile({ role: "primary" });
-    }
-    if (primaryAgent || Object.keys(nextAgents).length > 0) {
-      next[moduleDefinition.id] = {
-        primaryAgent,
-        agents: nextAgents,
-      };
-    }
-  }
-  return next;
-}
-
 function moduleAgentProfilesPayload() {
   const next: AgentSettings["moduleAgentProfiles"] = {};
   for (const [moduleId, group] of Object.entries(settingsDraft.value.moduleAgentProfiles || {})) {
@@ -1170,47 +838,6 @@ function moduleAgentProfilesPayload() {
     }
   }
   return next;
-}
-
-function isAbsoluteCommandPath(value: string) {
-  return value.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(value);
-}
-
-function normalizeAgentLocalCommandsForDraft(settings: AgentSettings) {
-  const localSettings = settings.agentToolExecution?.local || emptySettings.agentToolExecution.local;
-  const nodeCommand = String(localSettings.nodeCommand || "").trim() || "node";
-  const commands = Array.isArray(localSettings.commands)
-    ? localSettings.commands
-    : emptySettings.agentToolExecution.local.commands;
-  return commands
-    .map((item, index) => {
-      const commandId = String(item.commandId || `command-${index + 1}`).trim();
-      const command = String(item.command || "").trim();
-      const isNodeVersion = commandId === "node-version";
-      const variables = Array.isArray(item.variables) && item.variables.length > 0
-        ? item.variables
-        : isNodeVersion
-          ? emptySettings.agentToolExecution.local.commands[0].variables
-          : [];
-      const rawArgs = Array.isArray(item.args) ? item.args.map((arg) => String(arg)) : [];
-      return {
-        ...item,
-        commandId,
-        label: String(item.label || item.commandId || `Command ${index + 1}`).trim(),
-        command:
-          commandId === "node-version" && (!command || isAbsoluteCommandPath(command))
-            ? nodeCommand
-            : command,
-        args: isNodeVersion && !rawArgs.some((arg) => /\{\{\s*flag\s*\}\}/.test(arg))
-          ? ["{{flag}}"]
-          : rawArgs,
-        cwd: String(item.cwd || "").trim(),
-        description: String(item.description || "").trim(),
-        variables,
-        allowExtraArgs: isNodeVersion ? item.allowExtraArgs === true : item.allowExtraArgs,
-      };
-    })
-    .filter((item) => item.commandId && item.command);
 }
 
 function normalizeHttpAdapterSettings(settings: AgentSettings): AgentSettings {
@@ -1348,12 +975,15 @@ const agentExploreConfiguredMaxTokens = computed(() =>
 const agentExploreConfiguredToolChoice = computed(() =>
   String(settingsDraft.value.agentExploreDefaults?.toolChoice || emptySettings.agentExploreDefaults.toolChoice || "auto").trim() || "auto",
 );
-const agentExploreTabs = computed(() =>
-  normalizeAgentExploreHistoryList([
-    ...agentExploreDraftTabs.value,
-    ...agentExploreHistory.value,
-  ]).filter((session) => !agentExploreClosedTabIds.value.has(session.runId)),
-);
+function agentExploreDefaults() {
+  return {
+    temperature: agentExploreConfiguredTemperature.value,
+    maxTokens: agentExploreConfiguredMaxTokens.value,
+    maxIterations: agentExploreConfiguredMaxIterations.value,
+    limit: agentExploreConfiguredLimit.value,
+    toolChoice: agentExploreConfiguredToolChoice.value,
+  };
+}
 const agentExploreSplitStyle = computed<Record<string, string>>(() => ({
   "--agent-explore-left": `${agentExploreSplitLeftPercent.value}%`,
 }));
@@ -1494,81 +1124,10 @@ function handleAgentExploreTraceToggle(event: Event) {
   agentExploreTraceOpen.value = Boolean((event.currentTarget as HTMLDetailsElement | null)?.open);
 }
 
-async function clearIndexedDbDatabases() {
-  if (!("indexedDB" in window) || typeof window.indexedDB.databases !== "function") {
-    return [];
-  }
-  const databases = await window.indexedDB.databases();
-  const names = databases
-    .map((database) => String(database.name || "").trim())
-    .filter(Boolean);
-  await Promise.all(
-    names.map(
-      (name) =>
-        new Promise<void>((resolve) => {
-          const request = window.indexedDB.deleteDatabase(name);
-          request.onsuccess = () => resolve();
-          request.onerror = () => resolve();
-          request.onblocked = () => resolve();
-        }),
-    ),
-  );
-  return names;
-}
-
-async function clearBrowserCacheStorage() {
-  if (!("caches" in window)) {
-    return [];
-  }
-  const names = await window.caches.keys();
-  await Promise.all(names.map((name) => window.caches.delete(name)));
-  return names;
-}
-
-async function unregisterServiceWorkers() {
-  if (!("serviceWorker" in navigator)) {
-    return 0;
-  }
-  const registrations = await navigator.serviceWorker.getRegistrations();
-  await Promise.all(registrations.map((registration) => registration.unregister()));
-  return registrations.length;
-}
-
 async function clearBrowserLocalStateFromUrl() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  const url = new URL(window.location.href);
-  if (url.searchParams.get(CLEAR_LOCAL_STATE_PARAM) !== "1") {
-    return false;
-  }
-  const report: Record<string, unknown> = {
-    localStorageKeys: Object.keys(window.localStorage || {}),
-    sessionStorageKeys: Object.keys(window.sessionStorage || {}),
-    clearedAt: new Date().toISOString(),
-  };
-  try {
-    report.indexedDbNames = await clearIndexedDbDatabases();
-  } catch (nextError) {
-    report.indexedDbError = nextError instanceof Error ? nextError.message : String(nextError);
-  }
-  try {
-    report.cacheNames = await clearBrowserCacheStorage();
-  } catch (nextError) {
-    report.cacheStorageError = nextError instanceof Error ? nextError.message : String(nextError);
-  }
-  try {
-    report.serviceWorkers = await unregisterServiceWorkers();
-  } catch (nextError) {
-    report.serviceWorkerError = nextError instanceof Error ? nextError.message : String(nextError);
-  }
-  window.localStorage.clear();
-  window.sessionStorage.clear();
-  infoFeedKeywordCache.clear();
-  url.searchParams.delete(CLEAR_LOCAL_STATE_PARAM);
-  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  (window as Window & { __pactLocalStateClearReport?: Record<string, unknown> }).__pactLocalStateClearReport = report;
-  return true;
+  return clearBrowserLocalStateFromUrlCore({
+    clearMemoryCaches: clearInfoFeedKeywordCache,
+  });
 }
 
 watch(
@@ -1877,26 +1436,6 @@ function upsertJobFromEvent(job: SplitJob) {
   return true;
 }
 
-function applyJobToKnowledgeSources(job: SplitJob) {
-  if (!knowledgeSourceState.value || !job?.id) {
-    return;
-  }
-  knowledgeSourceState.value = {
-    ...knowledgeSourceState.value,
-    sources: knowledgeSourceState.value.sources.map((source) =>
-      source.lastJobId === job.id
-        ? {
-            ...source,
-            lastJobStatus: job.status,
-            lastJobStage: job.stage,
-            lastJobProgressPercent: Number(job.progressPercent || 0),
-            lastJobUpdatedAt: job.updatedAt,
-          }
-        : source,
-    ),
-  };
-}
-
 function removeJobFromEvent(jobId: string) {
   if (!consoleState.value || !jobId) {
     return false;
@@ -1980,29 +1519,7 @@ function applyServerEvent(event: ProtocolEvent) {
     if (!wordBagSet) {
       return false;
     }
-    // If this SSE event is the result of an auto-fill operation, merge terms
-    // into the target word bag instead of replacing the whole word bag set.
-    if (fillSourceWordBagSetId.value && wordBagSet.wordBagSetId === fillSourceWordBagSetId.value) {
-      const targetId = fillTargetWordBagId.value;
-      if (targetId) {
-        const allTerms = (wordBagSet.wordBags || []).flatMap((c) => [
-          ...(c.terms || []),
-          ...(c.children || []).flatMap((ch) => ch.terms || []),
-        ]);
-        for (const term of allTerms) {
-          addTermToCloud(targetId, term);
-        }
-        const isDone = wordBagSet.status === "ready" || wordBagSet.status === "completed" || wordBagSet.status === "error";
-        if (isDone) {
-          fillTargetWordBagId.value = null;
-          fillSourceWordBagSetId.value = null;
-          fillingWordBagIds.value = new Set([...fillingWordBagIds.value].filter((id) => id !== targetId));
-        }
-      }
-      return true;
-    }
-    applySavedWordCloudSet(wordBagSet);
-    return true;
+    return applyWordCloudEvent(wordBagSet);
   }
 
   if (event.topic === "knowledge.review_items" || event.topic === "knowledge.changes") {
@@ -2148,736 +1665,160 @@ function applyServerEvent(event: ProtocolEvent) {
   return false;
 }
 
-function providerLabel(provider: CloudProvider | string) {
-  switch (provider) {
-    case "openai-chatgpt":
-      return "ChatGPT";
-    case "google-gemini":
-      return "Gemini";
-    case "openrouter":
-      return "OpenRouter";
-    case "deepseek":
-      return "DeepSeek";
-    case "copilot":
-      return "Copilot";
-    case "custom-http":
-      return "HTTP Adapter";
-    case "local-model":
-      return "本地模型";
-    default:
-      return provider || "未知";
-  }
-}
-
-function modelRef(provider: string, model: string) {
-  return `${provider}:${model || ""}`;
-}
-
-function parseModelRef(refValue: string) {
-  const [provider, ...modelParts] = String(refValue || "").split(":");
-  return {
-    provider: (provider || "") as CloudProvider,
-    model: modelParts.join(":") || "",
-  };
-}
-
-function customHttpAdapterAlias() {
-  return String(
-    settingsDraft.value.customModelAlias ||
-      settingsDraft.value.customHttpAdapter?.alias ||
-      settingsDraft.value.customModelLabel ||
-      "external-agent",
-  ).trim();
-}
-
-function customHttpAdapterLabel() {
-  return String(
-    settingsDraft.value.customModelLabel ||
-      settingsDraft.value.customHttpAdapter?.label ||
-      "自定义 HTTP 模型",
-  ).trim();
-}
-
-function modelProviderDefinition(provider: CloudProvider | string) {
-  return modelLibraryProviderDefinitions.find((item) => item.id === provider);
-}
-
-const visibleModelProviders = computed(() =>
-  normalizeModelLibraryEntries(settingsDraft.value.modelLibraryEntries),
-);
-
-const visibleModelEntries = computed(() => settingsDraft.value.modelLibraryAgents || []);
-
-const addableModelProviders = computed(() => modelLibraryProviderDefinitions);
-
-function providerConfigured(provider: CloudProvider) {
-  switch (provider) {
-    case "google-gemini":
-      return settingsDraft.value.googleApiKeyConfigured || Boolean(settingsDraft.value.googleApiKey);
-    case "openai-chatgpt":
-      return Boolean(codexOAuthStatus.value?.valid);
-    case "deepseek":
-      return settingsDraft.value.deepSeekApiKeyConfigured || Boolean(settingsDraft.value.deepSeekApiKey);
-    case "openrouter":
-      return settingsDraft.value.openRouterApiKeyConfigured || Boolean(settingsDraft.value.openRouterApiKey);
-    case "copilot":
-      return Boolean(settingsDraft.value.copilotEndpoint || settingsDraft.value.copilotApiKeyConfigured || settingsDraft.value.copilotApiKey);
-    case "custom-http":
-      return Boolean(settingsDraft.value.customHttpAdapter?.url || settingsDraft.value.customHttpAdapter?.tokenConfigured || settingsDraft.value.customHttpAdapter?.token);
-    case "local-model":
-      return Boolean(settingsDraft.value.localModelEndpoint);
-    default:
-      return false;
-  }
-}
-
-function modelEntryConfigured(entry: AgentModelConfig) {
-  const hasModel = Boolean(String(entry.model ?? entry.engine ?? "").trim());
-  if (entry.provider === "deepseek") {
-    return hasModel && Boolean(entry.apiKey || entry.apiKeyConfigured || settingsDraft.value.deepSeekApiKey || settingsDraft.value.deepSeekApiKeyConfigured);
-  }
-  if (entry.provider === "custom-http") {
-    return hasModel && Boolean((entry.url || settingsDraft.value.customHttpAdapter?.url) && (entry.token || entry.tokenConfigured || settingsDraft.value.customHttpAdapter?.tokenConfigured));
-  }
-  return hasModel && providerConfigured(entry.provider as CloudProvider);
-}
-
-function modelEntryStatusKey(entry: AgentModelConfig) {
-  return entry.uid || entry.instanceId || entry.alias;
-}
-
-function modelEntryUidSet(entry: AgentModelConfig) {
-  return new Set(
-    [
-      entry.uid,
-      entry.instanceId,
-      entry.alias,
-    ]
-      .map((item) => String(item || "").trim())
-      .filter(Boolean),
-  );
-}
-
-function modelEntryMatchesUid(entry: AgentModelConfig, value?: string) {
-  const normalized = String(value || "").trim();
-  return Boolean(normalized && modelEntryUidSet(entry).has(normalized));
-}
-
-function modelEntryMatchesAssignment(
-  entry: AgentModelConfig,
-  provider?: string,
-  modelUid?: string,
-) {
-  const normalizedProvider = String(provider || "").trim();
-  const normalizedModelUid = String(modelUid || "").trim();
-  if (!normalizedProvider || !normalizedModelUid || normalizedProvider !== entry.provider) {
-    return false;
-  }
-  return modelEntryUidSet(entry).has(normalizedModelUid);
-}
-
-function addModelEntryBinding(
-  bindings: ModelEntryBinding[],
-  binding: ModelEntryBinding,
-) {
-  if (bindings.some((item) => item.bindingId === binding.bindingId)) {
-    return;
-  }
-  bindings.push(binding);
-}
-
-function collectModelEntryBindings(entry: AgentModelConfig): ModelEntryBinding[] {
-  const bindings: ModelEntryBinding[] = [];
-  if (modelEntryMatchesUid(entry, infoFeedForm.value.modelAlias)) {
-    addModelEntryBinding(bindings, {
-      bindingId: "info-feed:form",
-      category: "信息流",
-      label: "信息流智能体",
-      detail: "当前信息流页面选用的智能体。",
-      source: "draft",
-    });
-  }
-  if (
-    modelEntryMatchesUid(entry, infoFeedCurrentRun.value?.summary.modelAlias) &&
-    infoFeedCurrentRun.value?.summary.status === "running"
-  ) {
-    addModelEntryBinding(bindings, {
-      bindingId: `info-feed:running:${infoFeedCurrentRun.value.runId}`,
-      category: "信息流",
-      label: "正在运行的信息流",
-      detail: `运行 ${infoFeedCurrentRun.value.runId} 正在使用该智能体。`,
-      source: "runtime",
-    });
-  }
-  if (modelEntryMatchesUid(entry, agentExploreForm.value.modelAlias)) {
-    addModelEntryBinding(bindings, {
-      bindingId: "agent-explore:form",
-      category: "信息流",
-      label: "智能检索",
-      detail: "信息流中的智能检索面板显式选用了该智能体。",
-      source: "draft",
-    });
-  }
-  if (modelEntryMatchesUid(entry, ruleAuthoringForm.value.modelAlias)) {
-    addModelEntryBinding(bindings, {
-      bindingId: "rule-authoring:form",
-      category: "知识库",
-      label: "规则生成",
-      detail: "知识库规则库的智能生成入口正在引用该智能体。",
-      source: "draft",
-    });
-  }
-  if (
-    modelEntryMatchesUid(
-      entry,
-      settingsDraft.value.agentExploreDefaults?.reviewFusionModelAlias,
-    )
-  ) {
-    addModelEntryBinding(bindings, {
-      bindingId: "knowledge-review:fusion",
-      category: "知识库",
-      label: "知识融合智能体",
-      detail: "工作台审批流中的知识融合流程显式绑定该智能体。",
-      source: "settings",
-    });
-  }
-  for (const moduleDefinition of intelligentModuleDefinitions) {
-    if (!moduleNeedsIntelligence(moduleDefinition.id)) {
-      continue;
-    }
-    const assignment = settingsDraft.value.moduleModelAssignments?.[moduleDefinition.id];
-    if (modelEntryMatchesAssignment(entry, assignment?.provider, assignment?.model)) {
-      addModelEntryBinding(bindings, {
-        bindingId: `module:${moduleDefinition.id}`,
-        category: "模块模型分配",
-        label: moduleDefinition.label,
-        detail: moduleDefinition.description,
-        source: "settings",
-      });
-    }
-    const profileGroup = settingsDraft.value.moduleAgentProfiles?.[moduleDefinition.id];
-    if (profileGroup?.agents?.[modelEntryStatusKey(entry)]) {
-      addModelEntryBinding(bindings, {
-        bindingId: `module-profile:${moduleDefinition.id}:${modelEntryStatusKey(entry)}`,
-        category: "模块专属参数",
-        label: `${moduleDefinition.label} 专属配置`,
-        detail: "该智能体保存了模块/功能专属调用参数或依赖上下文。",
-        source: "settings",
-      });
-    }
-  }
-  return bindings;
-}
-
-const modelEntryBindingsByKey = computed<Record<string, ModelEntryBinding[]>>(() => {
-  const next: Record<string, ModelEntryBinding[]> = {};
-  for (const entry of visibleModelEntries.value) {
-    next[modelEntryStatusKey(entry)] = collectModelEntryBindings(entry);
-  }
-  return next;
+const {
+  addModelEntryBinding,
+  addModelProvider,
+  addModuleAgentProfileFromDraft,
+  addableModelProviders,
+  agentExploreModelOptionLabel,
+  agentModelAssignmentOptions,
+  collectModelEntryBindings,
+  customHttpAdapterAlias,
+  customHttpAdapterLabel,
+  duplicateModelEntry,
+  ensureModuleAgentGroup,
+  ensureModuleAgentProfile,
+  hasOpenAiModelUsage,
+  isModelLibraryCardExpanded,
+  modelEntryBindingSummary,
+  modelEntryBindings,
+  modelEntryBindingsByKey,
+  modelEntryAllowsModule,
+  modelEntryConfigured,
+  modelEntryIsBound,
+  modelEntryMatchesAssignment,
+  modelEntryMatchesUid,
+  modelEntryModuleAccess,
+  modelEntryProbeResult,
+  modelEntryProbeStatusLabel,
+  modelEntryProbeStatusTone,
+  modelEntryStatusKey,
+  modelEntryStatusLabel,
+  modelEntryStatusTone,
+  modelEntryUidSet,
+  modelProbeFailureResult,
+  modelProbeSettingsForEntry,
+  modelProviderDefinition,
+  modelProviderFromRef,
+  modelRef,
+  moduleAgentProfileRows,
+  moduleModelAssignmentOptions,
+  moduleModelAssignmentStats,
+  moduleModelRef,
+  moduleNeedsIntelligence,
+  parseModelRef,
+  probeModelEntry,
+  probeModelLibraryBeforeSave,
+  providerConfigured,
+  providerLabel,
+  providerStatusLabel,
+  providerStatusTone,
+  removeModelProvider,
+  removeModuleAgentProfile,
+  runModelEntryProbe,
+  setModelEntryModuleAccessMode,
+  setModuleAgentProfileEnabled,
+  setModuleModelRef,
+  setModuleNeedsIntelligence,
+  toggleModelEntryModuleAccess,
+  toggleModelLibraryCard,
+  visibleModelEntries,
+  visibleModelProviders,
+} = createConsoleModelLibraryController({
+  agentExploreModelAlias: () => agentExploreForm.value.modelAlias,
+  codexOAuthStatus,
+  clearAllBusy,
+  currentAgentModelOptionLabel,
+  ensureCodexOAuthReady,
+  error,
+  infoFeedModelAlias: () => infoFeedForm.value.modelAlias,
+  infoFeedRunningSummary: () => ({
+    modelAlias: infoFeedCurrentRun.value?.summary.modelAlias,
+    runId: infoFeedCurrentRun.value?.runId,
+    status: infoFeedCurrentRun.value?.summary.status,
+  }),
+  modelLibraryExpandedCards,
+  modelProbeResults,
+  moduleAgentCandidateDrafts,
+  normalizeModelEntry,
+  replaceSettingsDraftFromServer,
+  ruleAuthoringModelAlias: () => ruleAuthoringForm.value.modelAlias,
+  selectedModelProvider,
+  setBusy,
+  settingsDraft,
+  settingsPayloadForSave,
 });
 
-function modelEntryBindings(entry: AgentModelConfig): ModelEntryBinding[] {
-  return modelEntryBindingsByKey.value[modelEntryStatusKey(entry)] || [];
-}
-
-function modelEntryIsBound(entry: AgentModelConfig) {
-  return modelEntryBindings(entry).length > 0;
-}
-
-function modelEntryBindingSummary(entry: AgentModelConfig) {
-  const bindings = modelEntryBindings(entry);
-  if (bindings.length === 0) {
-    return "";
-  }
-  return bindings.map((item) => item.label).join("、");
-}
-
-function isModelLibraryCardExpanded(entry: AgentModelConfig) {
-  return modelLibraryExpandedCards.value[modelEntryStatusKey(entry)] === true;
-}
-
-function toggleModelLibraryCard(entry: AgentModelConfig) {
-  const key = modelEntryStatusKey(entry);
-  modelLibraryExpandedCards.value = {
-    ...modelLibraryExpandedCards.value,
-    [key]: !modelLibraryExpandedCards.value[key],
-  };
-}
-
-function modelEntryStatusLabel(entry: AgentModelConfig) {
-  const probe = modelProbeResults.value[modelEntryStatusKey(entry)];
-  if (probe) {
-    return probe.ok ? "探测通过" : "探测失败";
-  }
-  return modelEntryConfigured(entry) ? "已配置" : "未配置";
-}
-
-function modelEntryStatusTone(entry: AgentModelConfig) {
-  const probe = modelProbeResults.value[modelEntryStatusKey(entry)];
-  if (probe) {
-    return probe.ok ? "success" : "danger";
-  }
-  return modelEntryConfigured(entry) ? "neutral" : "muted";
-}
-
-function modelEntryProbeResult(entry: AgentModelConfig) {
-  return modelProbeResults.value[modelEntryStatusKey(entry)] || null;
-}
-
-function modelEntryProbeStatusLabel(entry: AgentModelConfig) {
-  const probe = modelEntryProbeResult(entry);
-  if (!probe) {
-    return "";
-  }
-  return probe.ok ? "探测通过" : "探测失败";
-}
-
-function modelEntryProbeStatusTone(entry: AgentModelConfig) {
-  const probe = modelEntryProbeResult(entry);
-  if (!probe) {
-    return "neutral";
-  }
-  return probe.ok ? "success" : "danger";
-}
-
-function providerStatusLabel(provider: CloudProvider) {
-  const probe = modelProbeResults.value[provider];
-  if (probe) {
-    return probe.ok ? "探测通过" : "探测失败";
-  }
-  return providerConfigured(provider) ? "已配置" : "未配置";
-}
-
-function providerStatusTone(provider: CloudProvider) {
-  const probe = modelProbeResults.value[provider];
-  if (probe) {
-    return probe.ok ? "success" : "danger";
-  }
-  return providerConfigured(provider) ? "neutral" : "muted";
-}
-
-function addModelProvider() {
-  const provider = selectedModelProvider.value;
-  if (!provider) {
-    return;
-  }
-  const entry = normalizeModelEntry({
-    provider,
-    model: "",
-    label: `${providerLabel(provider)} 智能体`,
-    baseUrl: provider === "deepseek" ? settingsDraft.value.deepSeekBaseUrl : "",
-    timeoutMs: provider === "deepseek" ? settingsDraft.value.deepSeekTimeoutMs : 120000,
-  }, Date.now());
-  const key = modelEntryStatusKey(entry);
-  settingsDraft.value.modelLibraryAgents = [
-    entry,
-    ...visibleModelEntries.value,
-  ];
-  modelLibraryExpandedCards.value = {
-    ...modelLibraryExpandedCards.value,
-    [key]: true,
-  };
-}
-
-async function removeModelProvider(provider: CloudProvider | AgentModelConfig) {
-  const entry = typeof provider === "string" ? null : provider;
-  const removeKey = entry ? modelEntryStatusKey(entry) : String(provider);
-  if (entry && modelEntryIsBound(entry)) {
-    error.value = `智能体已绑定到 ${modelEntryBindingSummary(entry)}，请先解除引用后再删除。`;
-    return;
-  }
-  const previousModels = [...visibleModelEntries.value];
-  const previousEntries = [...visibleModelProviders.value];
-  settingsDraft.value.modelLibraryAgents = entry
-    ? visibleModelEntries.value.filter((item: any) => modelEntryStatusKey(item) !== removeKey)
-    : visibleModelEntries.value.filter((item: any) => item.provider !== provider);
-  const remainingExpandedCards = { ...modelLibraryExpandedCards.value };
-  delete remainingExpandedCards[removeKey];
-  modelLibraryExpandedCards.value = remainingExpandedCards;
-  settingsDraft.value.modelLibraryEntries = [
-    ...new Set(settingsDraft.value.modelLibraryAgents.map((item) => item.provider)),
-  ] as CloudProvider[];
-  setBusy(`model-remove:${removeKey}`);
-  error.value = "";
-  try {
-    const saved = await bridge.saveSettings(settingsPayloadForSave());
-    replaceSettingsDraftFromServer(saved);
-  } catch (nextError) {
-    settingsDraft.value.modelLibraryAgents = previousModels;
-    settingsDraft.value.modelLibraryEntries = previousEntries;
-    error.value =
-      nextError instanceof Error ? nextError.message : "移除模型配置失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-function duplicateModelEntry(entry: AgentModelConfig) {
-  const copy = normalizeModelEntry({
-    ...entry,
-    uid: "",
-    instanceId: "",
-    alias: "",
-    label: `${entry.label || entry.alias} 副本`,
-    apiKey: "",
-    token: "",
-  }, Date.now());
-  const key = modelEntryStatusKey(copy);
-  settingsDraft.value.modelLibraryAgents = [copy, ...visibleModelEntries.value];
-  modelLibraryExpandedCards.value = {
-    ...modelLibraryExpandedCards.value,
-    [key]: true,
-  };
-}
-
-function modelProbeFailureResult(entry: AgentModelConfig, message: string): ModelProbeResponse {
-  return {
-    ok: false,
-    configured: modelEntryConfigured(entry),
-    provider: entry.provider,
-    model: String(entry.model || entry.engine || ""),
-    statusCode: 0,
-    latencyMs: 0,
-    checkedAt: new Date().toISOString(),
-    message,
-  };
-}
-
-function modelProbeSettingsForEntry(entry: AgentModelConfig) {
-  const settings = settingsPayloadForSave();
-  const cleanParameters = modelEntryParameters(entry);
-  if (entry.provider === "google-gemini") {
-    settings.googleModel = String(entry.model ?? "");
-  }
-  if (entry.provider === "openai-chatgpt") {
-    settings.openAiModel = String(entry.model ?? "");
-  }
-  if (entry.provider === "deepseek") {
-    settings.deepSeekBaseUrl = entry.baseUrl || settings.deepSeekBaseUrl;
-    settings.deepSeekModel = String(entry.model ?? "");
-    settings.deepSeekApiKey = entry.apiKey || "";
-    settings.deepSeekApiKeyConfigured = Boolean(entry.apiKey || entry.apiKeyConfigured);
-    settings.deepSeekTimeoutMs = Number(entry.timeoutMs || settings.deepSeekTimeoutMs);
-  }
-  if (entry.provider === "openrouter") {
-    settings.openRouterModel = String(entry.model ?? "");
-  }
-  if (entry.provider === "copilot") {
-    settings.copilotModel = String(entry.model ?? "");
-  }
-  if (entry.provider === "local-model") {
-    settings.localModelName = String(entry.model ?? "");
-  }
-  if (entry.provider === "custom-http") {
-    settings.customModelAlias = modelEntryStatusKey(entry);
-    settings.customModelLabel = entry.label || modelEntryStatusKey(entry);
-    const adapter = {
-      ...settings.customHttpAdapter,
-      alias: modelEntryStatusKey(entry),
-      label: entry.label || modelEntryStatusKey(entry),
-      url: entry.url || "",
-      token: entry.token || "",
-      tokenConfigured: entry.tokenConfigured,
-      tokenHeader: entry.tokenHeader || "token",
-      tokenPrefix: entry.tokenPrefix || "",
-      agentName: entry.label || "",
-      engine: entry.engine || entry.model || "",
-      pluginList: entry.pluginList || [],
-      parameters: cleanParameters,
-      timeoutMs: Number(entry.timeoutMs || 120000),
-    };
-    settings.customHttpAdapter = adapter;
-    settings.customHttpAdapters = [adapter];
-  }
-  return settings;
-}
-
-async function runModelEntryProbe(entry: AgentModelConfig): Promise<ModelProbeResponse> {
-  if (!modelEntryConfigured(entry)) {
-    return modelProbeFailureResult(entry, "模型配置不完整，未执行远程探测。");
-  }
-  return bridge.probeModel({
-    provider: entry.provider,
-    modelAlias: modelEntryStatusKey(entry),
-    settings: modelProbeSettingsForEntry(entry),
-  });
-}
-
-async function probeModelEntry(entry: AgentModelConfig) {
-  const key = modelEntryStatusKey(entry);
-  setBusy(`model-probe:${key}`);
-  error.value = "";
-  try {
-    const result = await runModelEntryProbe(entry);
-    modelProbeResults.value = {
-      ...modelProbeResults.value,
-      [key]: result,
-    };
-  } catch (nextError) {
-    const message = nextError instanceof Error ? nextError.message : "模型探测失败。";
-    modelProbeResults.value = {
-      ...modelProbeResults.value,
-      [key]: modelProbeFailureResult(entry, message),
-    };
-    error.value = message;
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function probeModelLibraryBeforeSave() {
-  const failures: Array<{ entry: AgentModelConfig; result: ModelProbeResponse }> = [];
-  const nextResults: Record<string, ModelProbeResponse> = {};
-  for (const entry of visibleModelEntries.value) {
-    const key = modelEntryStatusKey(entry);
-    try {
-      const result = await runModelEntryProbe(entry);
-      nextResults[key] = result;
-      if (!result.ok) {
-        failures.push({ entry, result });
-      }
-    } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : "模型探测失败。";
-      const result = modelProbeFailureResult(entry, message);
-      nextResults[key] = result;
-      failures.push({ entry, result });
-    }
-  }
-  modelProbeResults.value = {
-    ...modelProbeResults.value,
-    ...nextResults,
-  };
-  return failures;
-}
-
-const agentModelAssignmentOptions = computed(() =>
-  visibleModelEntries.value
-    .map((entry) => ({
-      provider: entry.provider as CloudProvider,
-      value: modelEntryStatusKey(entry),
-      label: agentExploreModelOptionLabel(entry),
-      ref: modelRef(entry.provider, modelEntryStatusKey(entry)),
-      enabled: modelEntryConfigured(entry),
-    })),
-);
-
-function modelEntryModuleAccess(entry: AgentModelConfig): AgentModuleAccess {
-  return normalizeAgentModuleAccess(entry.moduleAccess);
-}
-
-function modelEntryAllowsModule(entry: AgentModelConfig, moduleId: string) {
-  const access = modelEntryModuleAccess(entry);
-  return access.mode !== "selected" || access.moduleIds.includes(moduleId);
-}
-
-function setModelEntryModuleAccessMode(entry: AgentModelConfig, mode: string) {
-  entry.moduleAccess = {
-    ...modelEntryModuleAccess(entry),
-    mode: mode === "selected" ? "selected" : "all",
-  };
-}
-
-function toggleModelEntryModuleAccess(entry: AgentModelConfig, moduleId: string, checked: boolean) {
-  const access = modelEntryModuleAccess(entry);
-  const next = new Set(access.moduleIds);
-  if (checked) {
-    next.add(moduleId);
-  } else {
-    next.delete(moduleId);
-  }
-  entry.moduleAccess = {
-    mode: "selected",
-    moduleIds: [...next],
-  };
-}
-
-function moduleModelAssignmentOptions(moduleId: string) {
-  return agentModelAssignmentOptions.value.filter((option) => {
-    const entry = visibleModelEntries.value.find((model) => modelEntryStatusKey(model) === option.value);
-    return Boolean(entry && modelEntryAllowsModule(entry, moduleId));
-  });
-}
-
-function modelProviderFromRef(refValue: string) {
-  return parseModelRef(refValue).provider;
-}
-
-function moduleNeedsIntelligence(moduleId: string) {
-  if (moduleModelRef(moduleId)) {
-    return true;
-  }
-  return settingsDraft.value.moduleIntelligence?.[moduleId] !== false;
-}
-
-function setModuleNeedsIntelligence(moduleId: string, enabled: boolean) {
-  settingsDraft.value.moduleIntelligence = {
-    ...(settingsDraft.value.moduleIntelligence || {}),
-    [moduleId]: enabled,
-  };
-}
-
-function ensureModuleAgentGroup(moduleId: string) {
-  const groups = { ...(settingsDraft.value.moduleAgentProfiles || {}) };
-  const group = groups[moduleId] || { primaryAgent: "", agents: {} };
-  groups[moduleId] = {
-    primaryAgent: String(group.primaryAgent || "").trim(),
-    agents: { ...(group.agents || {}) },
-  };
-  settingsDraft.value.moduleAgentProfiles = groups;
-  return groups[moduleId];
-}
-
-function ensureModuleAgentProfile(moduleId: string, agentId: string, defaults: Partial<ModuleAgentProfile> = {}) {
-  const normalizedAgentId = String(agentId || "").trim();
-  if (!normalizedAgentId) {
-    return null;
-  }
-  const group = ensureModuleAgentGroup(moduleId);
-  group.agents[normalizedAgentId] = normalizeModuleAgentProfile({
-    ...(group.agents[normalizedAgentId] || {}),
-    ...defaults,
-    role: defaults.role || (group.primaryAgent === normalizedAgentId ? "primary" : "assistant"),
-  });
-  return group.agents[normalizedAgentId];
-}
-
-function removeModuleAgentProfile(moduleId: string, agentId: string) {
-  const group = ensureModuleAgentGroup(moduleId);
-  delete group.agents[agentId];
-  if (group.primaryAgent === agentId) {
-    group.primaryAgent = "";
-    const nextAssignments = { ...(settingsDraft.value.moduleModelAssignments || {}) };
-    delete nextAssignments[moduleId];
-    settingsDraft.value.moduleModelAssignments = nextAssignments;
-  }
-}
-
-function moduleAgentProfileRows(moduleId: string) {
-  const group = settingsDraft.value.moduleAgentProfiles?.[moduleId];
-  const agents = group?.agents || {};
-  return Object.entries(agents).map(([agentId, profile]) => {
-    const entry = visibleModelEntries.value.find((model) => modelEntryStatusKey(model) === agentId);
-    return {
-      agentId,
-      label: entry ? agentExploreModelOptionLabel(entry) : currentAgentModelOptionLabel(agentId) || agentId,
-      isPrimary: group?.primaryAgent === agentId,
-      profile,
-    };
-  });
-}
-
-function moduleModelRef(moduleId: string) {
-  const assignment = settingsDraft.value.moduleModelAssignments?.[moduleId];
-  if (!assignment?.provider || !assignment?.model) {
-    return "";
-  }
-  const refValue = modelRef(assignment.provider, assignment.model);
-  return moduleModelAssignmentOptions(moduleId).some((option) => option.ref === refValue)
-    ? refValue
-    : "";
-}
-
-function setModuleModelRef(moduleId: string, refValue: string) {
-  if (!String(refValue || "").trim()) {
-    const nextAssignments = { ...(settingsDraft.value.moduleModelAssignments || {}) };
-    delete nextAssignments[moduleId];
-    settingsDraft.value.moduleModelAssignments = nextAssignments;
-    const group = ensureModuleAgentGroup(moduleId);
-    group.primaryAgent = "";
-    const moduleDefinition = intelligentModuleDefinitions.find((item) => item.id === moduleId);
-    if (moduleDefinition?.alertRequired === false) {
-      setModuleNeedsIntelligence(moduleId, false);
-    }
-    return;
-  }
-  const parsed = parseModelRef(refValue);
-  settingsDraft.value.moduleModelAssignments = {
-    ...(settingsDraft.value.moduleModelAssignments || {}),
-    [moduleId]: {
-      provider: parsed.provider,
-      model: parsed.model,
-    },
-  };
-  const group = ensureModuleAgentGroup(moduleId);
-  group.primaryAgent = parsed.model;
-  ensureModuleAgentProfile(moduleId, parsed.model, { role: "primary" });
-  setModuleNeedsIntelligence(moduleId, true);
-  if (parsed.provider === "openai-chatgpt") {
-    void ensureCodexOAuthReady(true);
-  }
-}
-
-function setModuleAgentProfileEnabled(moduleId: string, agentId: string, enabled: boolean) {
-  const profile = ensureModuleAgentProfile(moduleId, agentId);
-  if (profile) {
-    profile.enabled = enabled;
-  }
-}
-
-function addModuleAgentProfileFromDraft(moduleId: string) {
-  const refValue = String(moduleAgentCandidateDrafts.value[moduleId] || "").trim();
-  if (!refValue) {
-    return;
-  }
-  const parsed = parseModelRef(refValue);
-  ensureModuleAgentProfile(moduleId, parsed.model, { role: "assistant" });
-  moduleAgentCandidateDrafts.value = {
-    ...moduleAgentCandidateDrafts.value,
-    [moduleId]: "",
-  };
-}
-
-const moduleModelAssignmentStats = computed(() => {
-  const enabled = intelligentModuleDefinitions.filter((item: any) => moduleNeedsIntelligence(item.id)).length;
-  const assigned = intelligentModuleDefinitions.filter((item: any) => moduleNeedsIntelligence(item.id) && moduleModelRef(item.id)).length;
-  return {
-    assigned,
-    enabled,
-    total: intelligentModuleDefinitions.length,
-  };
+const {
+  activeToolManagementToolCount,
+  addAgentPermissionGroup,
+  agentPermissionGroupOptionBarOptions,
+  agentPermissionGroups,
+  copyIssuedToolToken,
+  createGrant,
+  defaultAgentPermissionGroups,
+  deleteGrant,
+  enabledToolGrantCount,
+  ensureAgentPermissionGroupsDraft,
+  grantHasScope,
+  grantHasToolset,
+  grantToolRuleState,
+  internalToolManagementToolCount,
+  issuedToolToken,
+  newGrantLabel,
+  newGrantScopes,
+  newGrantToolsets,
+  permissionGroupHasScope,
+  permissionGroupHasToolset,
+  permissionGroupLabel,
+  policyPreviewGrant,
+  policyPreviewGrantId,
+  policyPreviewProfileId,
+  policyPreviewProfileOptionBarOptions,
+  policyPreviewResult,
+  policyPreviewToolId,
+  policyPreviewToolOptionBarOptions,
+  previewToolDefinition,
+  previewToolPolicy,
+  profileLabel,
+  refreshToolManagement,
+  removeAgentPermissionGroup,
+  rotateGrant,
+  scopeLabel,
+  selectToolForManagement,
+  selectedToolManagementTool,
+  selectedToolManagementToolId,
+  setGrantToolRule,
+  setModelEntryPermissionGroup,
+  toggleGrantScope,
+  toggleGrantToolset,
+  toggleNewGrantScope,
+  toggleNewGrantToolset,
+  togglePermissionGroupScope,
+  togglePermissionGroupToolset,
+  toolCatalog,
+  toolGrants,
+  toolManagementAuditItems,
+  toolManagementCatalogState,
+  toolManagementGrantsState,
+  toolManagementMetricsState,
+  toolManagementProfiles,
+  toolManagementRiskRows,
+  toolManagementStatusRows,
+  toolManagementTools,
+  toolManagementToolsets,
+  toolRiskLabel,
+  toolScopes,
+  toolStatusLabel,
+  toolsetLabel,
+  updateGrant,
+} = createConsoleToolManagementController({
+  clearAllBusy,
+  error,
+  setBusy,
+  settingsDraft,
+  visibleModelEntries,
 });
-
-function hasOpenAiModelUsage() {
-  return intelligentModuleDefinitions.some(
-    (item) =>
-      moduleNeedsIntelligence(item.id) &&
-      moduleModelRef(item.id) &&
-      modelProviderFromRef(moduleModelRef(item.id)) === "openai-chatgpt",
-  );
-}
-
-const toolScopes = computed(() => toolManagementCatalogState.value?.scopes || []);
-const toolCatalog = computed(() => toolManagementCatalogState.value?.tools || []);
-const toolGrants = computed(() => toolManagementGrantsState.value);
-const enabledToolGrantCount = computed(
-  () => toolGrants.value.filter((grant) => grant.enabled).length,
-);
-const toolManagementTools = computed<ToolManagementTool[]>(() => toolManagementCatalogState.value?.tools || []);
-const toolManagementToolsets = computed<ToolManagementToolset[]>(
-  () => toolManagementCatalogState.value?.toolsets || [],
-);
-const toolManagementProfiles = computed<ToolManagementProfile[]>(
-  () => toolManagementCatalogState.value?.profiles || [],
-);
-const activeToolManagementToolCount = computed(
-  () => toolManagementTools.value.filter((tool) => tool.status === "active").length,
-);
-const internalToolManagementToolCount = computed(
-  () => toolManagementTools.value.filter((tool) => tool.status === "internal").length,
-);
-const toolManagementStatusRows = computed(() =>
-  Object.entries(toolManagementMetricsState.value?.byStatus || {}).map(([label, value]) => ({
-    label,
-    value,
-  })),
-);
-const toolManagementRiskRows = computed(() =>
-  Object.entries(toolManagementMetricsState.value?.byRisk || {}).map(([label, value]) => ({
-    label,
-    value,
-  })),
-);
 
 const knowledgeManagementPanelOptionBarOptions = computed<OptionBarOption[]>(() => [
   { value: "knowledge", label: "知识" },
@@ -2889,75 +1830,6 @@ function selectKnowledgeManagementPanel(panel: OptionBarValue) {
     knowledgeManagementPanel.value = panel;
   }
 }
-
-const defaultAgentPermissionGroups = computed<AgentPermissionGroup[]>(() => {
-  const readScopes = toolScopes.value
-    .filter((scope) => /read|knowledge/i.test(scope.id))
-    .map((scope) => scope.id);
-  const writeScopes = toolScopes.value
-    .filter((scope) => /write|execute|tool|maintenance|admin/i.test(scope.id))
-    .map((scope) => scope.id);
-  const readToolsets = toolManagementToolsets.value
-    .filter((toolset) => toolset.maxRisk === "read_only" && toolset.grantable !== false)
-    .map((toolset) => toolset.id);
-  const safeToolsets = toolManagementToolsets.value
-    .filter((toolset) => ["read_only", "safe_write"].includes(toolset.maxRisk) && toolset.grantable !== false)
-    .map((toolset) => toolset.id);
-  const allToolsets = toolManagementToolsets.value
-    .filter((toolset) => toolset.grantable !== false)
-    .map((toolset) => toolset.id);
-  return [
-    {
-      id: "agent-permission-knowledge-reader",
-      label: "知识读取组",
-      description: "只允许读取知识、执行只读召回和健康检查。",
-      enabled: true,
-      scopeIds: readScopes,
-      toolsetIds: readToolsets,
-      toolAllow: [],
-      toolDeny: [],
-    },
-    {
-      id: "agent-permission-operator",
-      label: "运维操作组",
-      description: "允许只读和安全写入工具，适合巡检、索引校验和轻量维护。",
-      enabled: true,
-      scopeIds: [...new Set([...readScopes, ...writeScopes])],
-      toolsetIds: safeToolsets,
-      toolAllow: [],
-      toolDeny: [],
-    },
-    {
-      id: "agent-permission-admin-review",
-      label: "管理员审批组",
-      description: "保留全部工具集入口，高风险工具仍受审批和策略预览约束。",
-      enabled: true,
-      scopeIds: toolScopes.value.map((scope) => scope.id),
-      toolsetIds: allToolsets,
-      toolAllow: [],
-      toolDeny: [],
-    },
-  ];
-});
-
-const agentPermissionGroups = computed<AgentPermissionGroup[]>(() =>
-  normalizeAgentPermissionGroupsDraft(settingsDraft.value.agentPermissionGroups),
-);
-
-const agentPermissionGroupOptionBarOptions = computed<OptionBarOption[]>(() => [
-  { value: "", label: "未分配" },
-  ...agentPermissionGroups.value
-    .filter((group) => group.enabled)
-    .map((group) => ({
-      value: group.id,
-      label: group.label || group.id,
-    })),
-]);
-
-const selectedToolManagementTool = computed(() => {
-  const selectedId = selectedToolManagementToolId.value || policyPreviewToolId.value;
-  return toolManagementTools.value.find((tool) => tool.id === selectedId) || toolManagementTools.value[0] || null;
-});
 const currentUser = computed(() => authState.value?.session.user || null);
 const isAuthenticated = computed(
   () => authState.value?.session.authenticated === true,
@@ -2975,6 +1847,71 @@ const canReadMaintenanceAgent = computed(() => hasScope("maintenance:read"));
 const canRunMaintenanceAgent = computed(() => hasScope("maintenance:run"));
 const canApproveMaintenanceAgent = computed(() => hasScope("maintenance:approve"));
 const canAdminMaintenanceAgent = computed(() => hasScope("maintenance:admin"));
+const {
+  buildKnowledgeRecallSearchPayload,
+  currentKnowledgeLearningEnabled,
+  currentKnowledgeRetrievalSettings,
+  currentKnowledgeSearchLimit,
+  knowledgeRecallDebugGridStyle,
+  knowledgeRecallDebugModeOptionBarOptions,
+  knowledgeRecallDebugTargetOptions,
+  refreshKnowledgeRecallBackendSpaces,
+  runKnowledgeRecallDebugBatch,
+  searchKnowledge,
+} = createConsoleKnowledgeRecallController({
+  activeKnowledgeSources,
+  canReadKnowledge,
+  clearAllBusy,
+  clearSelectedEvidence: () => {
+    selectedEvidence.value = null;
+    selectedEvidenceId.value = "";
+  },
+  error,
+  knowledgeConsole,
+  knowledgeMaintenanceDraft,
+  knowledgeRecallBackendSpacesResult,
+  knowledgeRecallDebugForm,
+  knowledgeRecallDebugRuns,
+  knowledgeSearchForm,
+  knowledgeSearchResponse,
+  knowledgeSearchResults,
+  lastKnowledgeSearchQuery,
+  loadEvidence,
+  openDebugTab,
+  setBusy,
+});
+const {
+  logoutConsole,
+  refreshAuthAdmin,
+  refreshAuthState,
+  revokeConsoleSession,
+  saveOidcConfig,
+  submitLoginAuth,
+  updateConsoleUser,
+  updateConsoleUserRole,
+  updateConsoleUserRoleFromEvent,
+} = createConsoleAuthController({
+  authAudit,
+  authBootstrapping,
+  authSessions,
+  authState,
+  authUsers,
+  canAdminAuth,
+  clearAllBusy,
+  consoleState,
+  error,
+  loginForm,
+  oidcAllowedDomainsText,
+  oidcDraft,
+  oidcRoleMappingText,
+  refreshState,
+  resetServerEventCursor: () => {
+    serverEventCursor = 0;
+  },
+  setBusy,
+  startServerEventSubscription,
+  stopServerEventSubscription,
+});
 const errorNeedsKnowledgeImportAction = computed(() =>
   /语料词频表为空|完成文档入库|重建语料词频/.test(error.value),
 );
@@ -3018,35 +1955,6 @@ function knowledgeConfigGroupDescription(groupId: string) {
   }
 }
 
-const selectedEvidencePayload = computed(() =>
-  asRecord(selectedEvidence.value?.payload) || null,
-);
-const selectedEvidenceDocument = computed(() =>
-  (asRecord(selectedEvidence.value?.document) ||
-    asRecord(selectedEvidencePayload.value?.document) ||
-    null) as Record<string, unknown> | null,
-);
-const selectedEvidenceSection = computed(() =>
-  (asRecord(selectedEvidence.value?.section) ||
-    asRecord(selectedEvidencePayload.value?.section) ||
-    null) as Record<string, unknown> | null,
-);
-const selectedEvidenceBlocks = computed(() => {
-  const direct = Array.isArray(selectedEvidence.value?.blocks)
-    ? selectedEvidence.value?.blocks
-    : Array.isArray(selectedEvidencePayload.value?.blocks)
-      ? selectedEvidencePayload.value?.blocks
-      : [];
-  return (direct || []).map((item) => asRecord(item)).filter(Boolean) as Record<string, unknown>[];
-});
-const evidenceAssets = computed(() => {
-  const direct = selectedEvidence.value?.assets || [];
-  const payloadAssets = Array.isArray(selectedEvidencePayload.value?.assets)
-    ? selectedEvidencePayload.value?.assets
-    : [];
-  return [...direct, ...payloadAssets].filter(Boolean) as KnowledgeAssetRef[];
-});
-const activeKnowledgeSources = computed(() => knowledgeSourceState.value?.sources || []);
 const agentExploreContextWindowOptions = [
   {
     value: "context-32k",
@@ -3111,13 +2019,6 @@ const agentExploreThinkingModeOptions = [
     description: "向 DeepSeek / OpenAI-compatible 请求传入 thinking disabled；Qwen-compatible 同步 enable_thinking=false。",
   },
 ];
-function agentExploreModelOptionLabel(entry: AgentModelConfig) {
-  const modelName = String(
-    entry.label || entry.agentName || entry.alias || modelEntryStatusKey(entry),
-  ).trim();
-  const modelId = String(entry.model || entry.engine || modelEntryStatusKey(entry)).trim();
-  return modelId && modelId !== modelName ? `${modelName} · ${modelId}` : modelName;
-}
 
 type AgentSelectorUiOption = AgentSelectorOption & {
   enabled: boolean;
@@ -3143,10 +2044,8 @@ function agentOptionsForModule(moduleId: string) {
   );
 }
 
-const infoFeedModelOptions = computed(() => agentSelectorOptions.value);
 const agentExploreAgentOptions = computed(() => agentOptionsForModule("agentTools"));
 const ruleAuthoringModelOptions = computed(() => agentSelectorOptions.value);
-const wordCloudModelOptions = computed(() => agentSelectorOptions.value);
 
 const agentModelOptionValueSet = computed(
   () => new Set(agentSelectorOptions.value.map((item) => item.value)),
@@ -3323,908 +2222,83 @@ const selectedAgentExploreModel = computed(() => {
 const selectedRuleAuthoringModel = computed(() => {
   return selectedAgentFromOptions(ruleAuthoringModelOptions.value, ruleAuthoringForm.value.modelAlias);
 });
-const selectedWordCloudModel = computed(() => {
-  return selectedAgentFromOptions(wordCloudModelOptions.value, wordCloudModelAlias.value);
+const {
+  addChildWordCloud,
+  addManualWordCloud,
+  addTermActionToCloud,
+  addTermInputToCloud,
+  addTermToCloud,
+  addWordCloudCorpusPaths,
+  applySavedWordCloudSet,
+  applyWordCloudEvent,
+  autoFillCloudWithAgent,
+  clearRemovedTermsFromCloud,
+  clearWordCloudCorpusPaths,
+  cloneWordCloudSet,
+  collapsedWordBagIds,
+  createDefaultWordCloudSet,
+  fillingWordBagIds,
+  findWordCloudInTree,
+  flattenWordCloudCards,
+  formatWordCloudThreshold,
+  mutateWordCloudDraft,
+  normalizeWordCloudCloudForUi,
+  normalizeWordCloudCorpusPathForUi,
+  normalizeWordCloudCorpusPathsForUi,
+  normalizeWordCloudSetForUi,
+  normalizeWordCloudTermForUi,
+  persistWordCloudCorpusPaths,
+  pinWordCloud,
+  pinnedWordBagIds,
+  preferredWordCloudCorpusPaths,
+  proposeWordCloud,
+  refreshWordCloud,
+  refreshWordCloudCorpusTerms,
+  removeSelectedWordCloud,
+  removeTermFromCloud,
+  removeWordCloudCorpusPath,
+  resolveWordCloudCorpusPathsForQuery,
+  saveWordCloud,
+  selectWordCloud,
+  selectedWordBagId,
+  selectedWordCloud,
+  selectedWordCloudModel,
+  setWordCloudDraftCorpusPaths,
+  setWordCloudDraftFromState,
+  setWordCloudTermInput,
+  toggleWordCloudActionMenu,
+  toggleWordCloudCollapsed,
+  updateSelectedWordCloudField,
+  updateWordCloudField,
+  wordBagActionMenuId,
+  wordCloudCanvasClouds,
+  wordCloudCardRows,
+  wordCloudCardStyle,
+  wordCloudCorpusPathLabel,
+  wordCloudCorpusPathSummary,
+  wordCloudCorpusPaths,
+  wordCloudDraft,
+  wordCloudMessages,
+  wordCloudModelAlias,
+  wordCloudModelOptions,
+  wordCloudPalette,
+  wordCloudPrompt,
+  wordCloudState,
+  wordCloudTermFrequencyMap,
+  wordCloudTermIdentity,
+  wordCloudTermInputs,
+  wordCloudTermWithFrequency,
+  wordCloudTerms,
+  wordCloudVisibleTerms,
+} = createConsoleWordCloudController({
+  agentSelectorOptions,
+  busyKey,
+  canReadKnowledge,
+  canWriteKnowledge,
+  clearAllBusy,
+  error,
+  setBusy,
 });
-const wordCloudPalette = [
-  { accent: "#2563eb", fill: "rgba(37, 99, 235, 0.09)" },
-  { accent: "#059669", fill: "rgba(5, 150, 105, 0.1)" },
-  { accent: "#b45309", fill: "rgba(180, 83, 9, 0.1)" },
-  { accent: "#7c3aed", fill: "rgba(124, 58, 237, 0.09)" },
-  { accent: "#dc2626", fill: "rgba(220, 38, 38, 0.08)" },
-  { accent: "#0891b2", fill: "rgba(8, 145, 178, 0.1)" },
-  { accent: "#4d7c0f", fill: "rgba(77, 124, 15, 0.1)" },
-  { accent: "#be185d", fill: "rgba(190, 24, 93, 0.08)" },
-];
-
-function cloneWordCloudSet(value: KnowledgeWordCloudSet): KnowledgeWordCloudSet {
-  return JSON.parse(JSON.stringify(value)) as KnowledgeWordCloudSet;
-}
-
-function normalizeWordCloudTermForUi(value: Partial<KnowledgeWordCloudTerm> | string): KnowledgeWordCloudTerm {
-  const record = typeof value === "string" ? { term: value } : value || {};
-  return {
-    term: String(record.term || "").trim(),
-    frequency: Math.max(0, Number(record.frequency || 0)),
-    weight: record.weight === undefined ? undefined : Number(record.weight),
-  };
-}
-
-function wordCloudTermIdentity(value: Partial<KnowledgeWordCloudTerm> | string) {
-  return normalizeWordCloudTermForUi(value).term.toLowerCase();
-}
-
-function normalizeWordCloudCorpusPathForUi(value: Partial<KnowledgeWordCloudCorpusPath> | string): KnowledgeWordCloudCorpusPath | null {
-  const record = typeof value === "string" ? { path: value } : value || {};
-  const selectedPath = String(record.path || "").trim();
-  if (!selectedPath) {
-    return null;
-  }
-  const type = String(record.type || "").trim();
-  return {
-    path: selectedPath,
-    type: type === "file" || type === "directory" ? type : "",
-  };
-}
-
-function normalizeWordCloudCorpusPathsForUi(values: Array<Partial<KnowledgeWordCloudCorpusPath> | string> = []) {
-  const seen = new Set<string>();
-  const paths: KnowledgeWordCloudCorpusPath[] = [];
-  for (const value of values || []) {
-    const normalized = normalizeWordCloudCorpusPathForUi(value);
-    if (!normalized) {
-      continue;
-    }
-    const key = `${normalized.type || ""}:${normalized.path}`.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    paths.push(normalized);
-  }
-  return paths;
-}
-
-type WordCloudTreeMatch = {
-  cloud: KnowledgeWordCloud;
-  parent: KnowledgeWordCloud | null;
-  path: KnowledgeWordCloud[];
-};
-
-type WordCloudCardRow = {
-  cloud: KnowledgeWordCloud;
-  depth: number;
-  parent: KnowledgeWordCloud | null;
-};
-
-type WordCloudAbsorptionCandidate = {
-  cloud: KnowledgeWordCloud;
-  depth: number;
-  threshold: number;
-  labelText: string;
-  summaryText: string;
-  termTexts: string[];
-};
-
-const DEFAULT_WORD_CLOUD_ABSORB_THRESHOLD = 0.78;
-
-function normalizeWordCloudThreshold(value: unknown, fallback = DEFAULT_WORD_CLOUD_ABSORB_THRESHOLD) {
-  const next = Number(value);
-  if (!Number.isFinite(next)) {
-    return fallback;
-  }
-  return Math.max(0, Math.min(1, next));
-}
-
-function formatWordCloudThreshold(value: unknown) {
-  return normalizeWordCloudThreshold(value).toFixed(2);
-}
-
-function normalizeWordCloudText(value: unknown) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
-}
-
-function wordCloudCharacterSet(value: string) {
-  return new Set(Array.from(normalizeWordCloudText(value)).filter(Boolean));
-}
-
-function wordCloudCharacterOverlapScore(leftText: string, rightText: string) {
-  const leftSet = wordCloudCharacterSet(leftText);
-  const rightSet = wordCloudCharacterSet(rightText);
-  if (leftSet.size === 0 || rightSet.size === 0) {
-    return 0;
-  }
-  let shared = 0;
-  for (const character of leftSet) {
-    if (rightSet.has(character)) {
-      shared += 1;
-    }
-  }
-  return shared / Math.max(leftSet.size, rightSet.size);
-}
-
-function collectWordCloudAbsorptionCandidates(
-  wordBags: KnowledgeWordCloud[] = [],
-  depth = 0,
-  target: WordCloudAbsorptionCandidate[] = [],
-) {
-  for (const cloud of wordBags) {
-    target.push({
-      cloud,
-      depth,
-      threshold: normalizeWordCloudThreshold(cloud.absorbThreshold),
-      labelText: normalizeWordCloudText(cloud.label),
-      summaryText: normalizeWordCloudText(cloud.summary || ""),
-      termTexts: (cloud.terms || []).map((term: any) => normalizeWordCloudText(term.term)).filter(Boolean),
-    });
-    collectWordCloudAbsorptionCandidates(cloud.children || [], depth + 1, target);
-  }
-  return target;
-}
-
-function wordCloudAffinityScore(candidate: WordCloudAbsorptionCandidate, term: KnowledgeWordCloudTerm) {
-  const termText = normalizeWordCloudText(term.term);
-  if (!termText) {
-    return 0;
-  }
-  let score = 0;
-  const sources = [candidate.labelText, candidate.summaryText, ...candidate.termTexts];
-  for (const sourceText of sources) {
-    if (!sourceText) {
-      continue;
-    }
-    if (sourceText === termText) {
-      return 1;
-    }
-    if (sourceText.includes(termText) || termText.includes(sourceText)) {
-      score = Math.max(score, 0.95);
-    }
-    score = Math.max(score, wordCloudCharacterOverlapScore(sourceText, termText) * 0.82);
-  }
-  if (candidate.cloud.relation === "contains") {
-    score += 0.03;
-  } else if (candidate.cloud.relation === "overlap") {
-    score += 0.02;
-  }
-  return Math.min(1, score);
-}
-
-function autoAbsorbWordCloudTerms(draft: KnowledgeWordCloudSet) {
-  const unassignedTerms = Array.isArray(draft.unassignedTerms) ? [...draft.unassignedTerms] : [];
-  if (unassignedTerms.length === 0) {
-    return 0;
-  }
-  const candidates = collectWordCloudAbsorptionCandidates(draft.wordBags || []);
-  if (candidates.length === 0) {
-    return 0;
-  }
-  const absorbedTermIds = new Set<string>();
-  const absorbedByCloud = new Map<string, KnowledgeWordCloudTerm[]>();
-  for (const term of unassignedTerms) {
-    const identity = wordCloudTermIdentity(term);
-    if (!identity) {
-      continue;
-    }
-    let bestCandidate: WordCloudAbsorptionCandidate | null = null;
-    let bestScore = 0;
-    for (const candidate of candidates) {
-      const score = wordCloudAffinityScore(candidate, term);
-      if (score < candidate.threshold) {
-        continue;
-      }
-      if (!bestCandidate || score > bestScore || (score === bestScore && candidate.depth > bestCandidate.depth)) {
-        bestCandidate = candidate;
-        bestScore = score;
-      }
-    }
-    if (!bestCandidate) {
-      continue;
-    }
-    absorbedTermIds.add(identity);
-    const nextTerms = absorbedByCloud.get(bestCandidate.cloud.wordBagId) || [];
-    nextTerms.push(wordCloudTermWithFrequency(term));
-    absorbedByCloud.set(bestCandidate.cloud.wordBagId, nextTerms);
-  }
-  if (absorbedTermIds.size === 0) {
-    return 0;
-  }
-  const absorbIntoClouds = (wordBags: KnowledgeWordCloud[]) => {
-    for (const cloud of wordBags) {
-      const nextTerms = absorbedByCloud.get(cloud.wordBagId);
-      if (nextTerms?.length) {
-        const existingIds = new Set((cloud.terms || []).map((item) => wordCloudTermIdentity(item)));
-        cloud.terms = [
-          ...(cloud.terms || []),
-          ...nextTerms.filter((item: any) => !existingIds.has(wordCloudTermIdentity(item))),
-        ];
-      }
-      absorbIntoClouds(cloud.children || []);
-    }
-  };
-  absorbIntoClouds(draft.wordBags || []);
-  draft.unassignedTerms = unassignedTerms.filter((term) => !absorbedTermIds.has(wordCloudTermIdentity(term)));
-  return absorbedTermIds.size;
-}
-
-function normalizeWordCloudCloudForUi(cloud: KnowledgeWordCloud, parentWordBagId = ""): KnowledgeWordCloud {
-  const wordBagId = String(cloud.wordBagId || `word-bag-${Date.now().toString(36)}`).trim();
-  return {
-    ...cloud,
-    wordBagId,
-    label: String(cloud.label || "词云").trim() || "词云",
-    parentWordBagId,
-    terms: (cloud.terms || []).map((term: any) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
-    removedTerms: (cloud.removedTerms || [])
-      .map((term: any) => ({ ...normalizeWordCloudTermForUi(term), removed: true }))
-      .filter((term) => term.term),
-    children: (cloud.children || []).map((child) => normalizeWordCloudCloudForUi(child, wordBagId)),
-  };
-}
-
-function normalizeWordCloudSetForUi(value: KnowledgeWordCloudSet): KnowledgeWordCloudSet {
-  return {
-    ...value,
-    termsSnapshot: (value.termsSnapshot || []).map((term: any) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
-    unassignedTerms: (value.unassignedTerms || []).map((term: any) => normalizeWordCloudTermForUi(term)).filter((term) => term.term),
-    corpusPaths: normalizeWordCloudCorpusPathsForUi(value.corpusPaths || []),
-    wordBags: (value.wordBags || []).map((cloud) => normalizeWordCloudCloudForUi(cloud)),
-  };
-}
-
-function findWordCloudInTree(
-  wordBags: KnowledgeWordCloud[] = [],
-  wordBagId = "",
-  parent: KnowledgeWordCloud | null = null,
-  path: KnowledgeWordCloud[] = [],
-): WordCloudTreeMatch | null {
-  for (const cloud of wordBags) {
-    const nextPath = [...path, cloud];
-    if (cloud.wordBagId === wordBagId) {
-      return { cloud, parent, path: nextPath };
-    }
-    const child = findWordCloudInTree(cloud.children || [], wordBagId, cloud, nextPath);
-    if (child) {
-      return child;
-    }
-  }
-  return null;
-}
-
-function flattenWordCloudCards(
-  wordBags: KnowledgeWordCloud[] = [],
-  depth = 0,
-  parent: KnowledgeWordCloud | null = null,
-): WordCloudCardRow[] {
-  const rows: WordCloudCardRow[] = [];
-  for (const cloud of wordBags) {
-    rows.push({ cloud, depth, parent });
-    if (!collapsedWordBagIds.value.has(cloud.wordBagId)) {
-      rows.push(...flattenWordCloudCards(cloud.children || [], depth + 1, cloud));
-    }
-  }
-  return rows;
-}
-
-function mutateWordCloudDraft(mutator: (draft: KnowledgeWordCloudSet) => void) {
-  const draft = wordCloudDraft.value || createDefaultWordCloudSet(wordCloudTerms.value);
-  mutator(draft);
-  autoAbsorbWordCloudTerms(draft);
-  draft.updatedAt = new Date().toISOString();
-  wordCloudDraft.value = normalizeWordCloudSetForUi({ ...draft });
-}
-
-function createDefaultWordCloudSet(terms: KnowledgeWordCloudTerm[] = []): KnowledgeWordCloudSet {
-  const now = new Date().toISOString();
-  return {
-    schemaVersion: 1,
-    wordBagSetId: `word-cloud-${Date.now().toString(36)}`,
-    title: "语料词云",
-    status: "draft",
-    wordBagCount: 0,
-    termsSnapshot: terms,
-    wordBags: [],
-    unassignedTerms: terms,
-    corpusPaths: normalizeWordCloudCorpusPathsForUi(wordCloudCorpusPaths.value),
-    modelAlias: wordCloudModelAlias.value,
-    agentResponse: {},
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function preferredWordCloudCorpusPaths(
-  remotePaths: Array<Partial<KnowledgeWordCloudCorpusPath> | string> = [],
-  fallbackPaths: Array<Partial<KnowledgeWordCloudCorpusPath> | string> = wordCloudCorpusPaths.value,
-) {
-  const normalizedRemotePaths = normalizeWordCloudCorpusPathsForUi(remotePaths);
-  if (normalizedRemotePaths.length > 0) {
-    return normalizedRemotePaths;
-  }
-  return normalizeWordCloudCorpusPathsForUi(fallbackPaths);
-}
-
-function resolveWordCloudCorpusPathsForQuery(options: {
-  corpusPaths?: Array<Partial<KnowledgeWordCloudCorpusPath> | string> | null;
-} = {}) {
-  if (options.corpusPaths !== undefined) {
-    return normalizeWordCloudCorpusPathsForUi(options.corpusPaths || []);
-  }
-  const draftPaths = normalizeWordCloudCorpusPathsForUi(wordCloudDraft.value?.corpusPaths || []);
-  if (draftPaths.length > 0) {
-    return draftPaths;
-  }
-  const statePaths = normalizeWordCloudCorpusPathsForUi(
-    (wordCloudState.value?.wordBagSet?.corpusPaths || wordCloudState.value?.corpusPaths || []),
-  );
-  if (statePaths.length > 0) {
-    return statePaths;
-  }
-  return normalizeWordCloudCorpusPathsForUi(wordCloudCorpusPaths.value);
-}
-
-function setWordCloudDraftFromState(state: KnowledgeWordCloudState | null) {
-  const next = state?.wordBagSet
-    ? normalizeWordCloudSetForUi(cloneWordCloudSet(state.wordBagSet))
-    : createDefaultWordCloudSet(state?.terms || []);
-  const nextCorpusPaths = preferredWordCloudCorpusPaths(
-    next.corpusPaths?.length ? next.corpusPaths : state?.corpusPaths || [],
-  );
-  next.corpusPaths = nextCorpusPaths;
-  autoAbsorbWordCloudTerms(next);
-  // On first load collapse all; on subsequent updates only collapse newly added clouds
-  const isFirstLoad = wordCloudDraft.value === null;
-  const prevWordBagIds = new Set((wordCloudDraft.value?.wordBags || []).map((c) => c.wordBagId));
-  wordCloudDraft.value = next;
-  selectedWordBagId.value = findWordCloudInTree(next.wordBags, selectedWordBagId.value)
-    ? selectedWordBagId.value
-    : "";
-  if (next.modelAlias) {
-    wordCloudModelAlias.value = next.modelAlias;
-  }
-  wordCloudCorpusPaths.value = nextCorpusPaths;
-  const idsToCollapse = (next.wordBags || [])
-    .filter((c) => isFirstLoad || !prevWordBagIds.has(c.wordBagId))
-    .map((c) => c.wordBagId);
-  if (idsToCollapse.length > 0) {
-    collapsedWordBagIds.value = new Set([...collapsedWordBagIds.value, ...idsToCollapse]);
-  }
-}
-
-const wordCloudTerms = computed(() => {
-  return wordCloudState.value?.terms?.length
-    ? wordCloudState.value.terms
-    : wordCloudDraft.value?.termsSnapshot || [];
-});
-const wordCloudTermFrequencyMap = computed(() => {
-  const next = new Map<string, number>();
-  for (const item of wordCloudTerms.value) {
-    const term = wordCloudTermIdentity(item);
-    if (term) {
-      next.set(term, Math.max(next.get(term) || 0, Number(item.frequency || 0)));
-    }
-  }
-  return next;
-});
-const wordCloudCanvasClouds = computed(() => wordCloudDraft.value?.wordBags || []);
-const WORD_CLOUD_TAIL_LABELS = new Set(["default", "其它", "others"]);
-function isWordCloudTailCard(cloud: KnowledgeWordCloud): boolean {
-  return WORD_CLOUD_TAIL_LABELS.has(String(cloud.label || "").trim().toLowerCase());
-}
-const wordCloudCardRows = computed(() => {
-  const clouds = wordCloudCanvasClouds.value;
-  const pinned = clouds.filter((c) => pinnedWordBagIds.value.has(c.wordBagId) && !isWordCloudTailCard(c));
-  const normal = clouds.filter((c) => !pinnedWordBagIds.value.has(c.wordBagId) && !isWordCloudTailCard(c));
-  const tail = clouds.filter((c) => isWordCloudTailCard(c));
-  return flattenWordCloudCards([...pinned, ...normal, ...tail]);
-});
-const selectedWordCloud = computed(() => {
-  return findWordCloudInTree(wordCloudCanvasClouds.value, selectedWordBagId.value)?.cloud || null;
-});
-
-function wordCloudTermWithFrequency(term: KnowledgeWordCloudTerm): KnowledgeWordCloudTerm {
-  const key = wordCloudTermIdentity(term);
-  return {
-    ...term,
-    frequency: Math.max(Number(term.frequency || 0), wordCloudTermFrequencyMap.value.get(key) || 0),
-  };
-}
-
-function selectWordCloud(cloud: KnowledgeWordCloud) {
-  selectedWordBagId.value = cloud.wordBagId;
-}
-
-function addManualWordCloud() {
-  mutateWordCloudDraft((draft) => {
-    const index = draft.wordBags.length + 1;
-    const cloud: KnowledgeWordCloud = {
-      wordBagId: `word-bag-${Date.now().toString(36)}`,
-      label: `词云 ${index}`,
-      summary: "",
-      relation: "overlap",
-      absorbThreshold: DEFAULT_WORD_CLOUD_ABSORB_THRESHOLD,
-      terms: [],
-      removedTerms: [],
-      children: [],
-    };
-    draft.wordBags = [cloud, ...draft.wordBags];
-    draft.wordBagCount = draft.wordBags.length;
-    selectedWordBagId.value = cloud.wordBagId;
-    collapsedWordBagIds.value = new Set([...collapsedWordBagIds.value].filter((id) => id !== cloud.wordBagId));
-  });
-}
-
-async function autoFillCloudWithAgent(wordBagId: string) {
-  const match = findWordCloudInTree(wordCloudDraft.value?.wordBags || [], wordBagId);
-  const cloud = match?.cloud;
-  if (!cloud) return;
-  const label = (cloud.label || "").trim();
-  if (!label) {
-    error.value = "请先填写词云名称后再调用智能体填充。";
-    return;
-  }
-  if (!selectedWordCloudModel.value.enabled) {
-    error.value = selectedWordCloudModel.value.disabledReason || "请选择一个可用智能体。";
-    return;
-  }
-  const corpusPaths = resolveWordCloudCorpusPathsForQuery();
-  if (corpusPaths.length === 0) {
-    error.value = "请先添加语料范围后再启动填充任务。";
-    return;
-  }
-  fillingWordBagIds.value = new Set([...fillingWordBagIds.value, wordBagId]);
-  error.value = "";
-  try {
-    const result = await bridge.proposeKnowledgeWordClouds({
-      modelAlias: selectedWordCloudModel.value.value,
-      prompt: label,
-      minFrequency: 1,
-      corpusPaths,
-    });
-    // Register this wordBagSet as a fill operation so the SSE handler
-    // knows to merge terms into our cloud instead of replacing the draft.
-    fillTargetWordBagId.value = wordBagId;
-    fillSourceWordBagSetId.value = result.wordBagSet.wordBagSetId;
-  } catch (err) {
-    fillingWordBagIds.value = new Set([...fillingWordBagIds.value].filter((id) => id !== wordBagId));
-    error.value = err instanceof Error ? err.message : "智能体填充词云失败。";
-  }
-}
-
-function removeSelectedWordCloud() {
-  const cloud = selectedWordCloud.value;
-  if (!cloud) {
-    return;
-  }
-  mutateWordCloudDraft((draft) => {
-    const removeFrom = (items: KnowledgeWordCloud[]): KnowledgeWordCloud[] =>
-      items
-        .filter((item: any) => item.wordBagId !== cloud.wordBagId)
-        .map((item) => ({ ...item, children: removeFrom(item.children || []) }));
-    draft.wordBags = removeFrom(draft.wordBags || []);
-    draft.wordBagCount = draft.wordBags.length;
-    selectedWordBagId.value = "";
-  });
-}
-
-function updateSelectedWordCloudField(field: "label" | "summary" | "relation", value: string) {
-  const cloud = selectedWordCloud.value;
-  if (!cloud) {
-    return;
-  }
-  updateWordCloudField(cloud.wordBagId, field, value);
-}
-
-function updateWordCloudField(wordBagId: string, field: "label" | "summary" | "relation" | "absorbThreshold", value: string) {
-  mutateWordCloudDraft((draft) => {
-    const match = findWordCloudInTree(draft.wordBags || [], wordBagId);
-    if (!match) {
-      return;
-    }
-    if (field === "absorbThreshold") {
-      match.cloud.absorbThreshold = normalizeWordCloudThreshold(value);
-      return;
-    }
-    match.cloud[field] = value;
-  });
-}
-
-function wordCloudVisibleTerms(cloud: KnowledgeWordCloud) {
-  return [
-    ...(cloud.terms || []).map((term: any) => ({ ...term, removed: false })),
-    ...(cloud.removedTerms || []).map((term: any) => ({ ...term, removed: true })),
-  ];
-}
-
-function wordCloudCardStyle(row: WordCloudCardRow, index: number) {
-  const palette = wordCloudPalette[index % wordCloudPalette.length];
-  return {
-    "--word-cloud-accent": palette.accent,
-    "--word-cloud-fill": palette.fill,
-    marginLeft: `${Math.min(row.depth * 22, 132)}px`,
-  };
-}
-
-function toggleWordCloudCollapsed(wordBagId: string) {
-  const next = new Set(collapsedWordBagIds.value);
-  if (next.has(wordBagId)) {
-    next.delete(wordBagId);
-  } else {
-    next.add(wordBagId);
-  }
-  collapsedWordBagIds.value = next;
-}
-
-function pinWordCloud(wordBagId: string) {
-  const next = new Set(pinnedWordBagIds.value);
-  if (next.has(wordBagId)) {
-    next.delete(wordBagId);
-  } else {
-    next.add(wordBagId);
-  }
-  pinnedWordBagIds.value = next;
-}
-
-function toggleWordCloudActionMenu(wordBagId: string) {
-  wordBagActionMenuId.value = wordBagActionMenuId.value === wordBagId ? "" : wordBagId;
-}
-
-function addTermToCloud(wordBagId: string, term: KnowledgeWordCloudTerm | string) {
-  const normalized = wordCloudTermWithFrequency(normalizeWordCloudTermForUi(term));
-  if (!normalized.term) {
-    return;
-  }
-  const corpusTerm = wordCloudTerms.value.find((item) => wordCloudTermIdentity(item) === wordCloudTermIdentity(normalized));
-  if (corpusTerm) {
-    normalized.term = corpusTerm.term;
-    normalized.frequency = Math.max(normalized.frequency, Number(corpusTerm.frequency || 0));
-  }
-  const identity = wordCloudTermIdentity(normalized);
-  mutateWordCloudDraft((draft) => {
-    const match = findWordCloudInTree(draft.wordBags || [], wordBagId);
-    if (!match) {
-      return;
-    }
-    for (const ancestor of match.path.slice(0, -1)) {
-      ancestor.terms = (ancestor.terms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
-      ancestor.removedTerms = (ancestor.removedTerms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
-    }
-    match.cloud.removedTerms = (match.cloud.removedTerms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
-    if (!(match.cloud.terms || []).some((item) => wordCloudTermIdentity(item) === identity)) {
-      match.cloud.terms = [...(match.cloud.terms || []), normalized];
-    }
-    draft.unassignedTerms = (draft.unassignedTerms || []).filter((item: any) => wordCloudTermIdentity(item) !== identity);
-  });
-}
-
-function addTermInputToCloud(wordBagId: string) {
-  const value = String(wordCloudTermInputs.value[wordBagId] || "").trim();
-  if (!value) {
-    return;
-  }
-  addTermToCloud(wordBagId, value);
-  wordCloudTermInputs.value = {
-    ...wordCloudTermInputs.value,
-    [wordBagId]: "",
-  };
-}
-
-function setWordCloudTermInput(wordBagId: string, value: string) {
-  wordCloudTermInputs.value = {
-    ...wordCloudTermInputs.value,
-    [wordBagId]: value,
-  };
-}
-
-function removeTermFromCloud(wordBagId: string, term: KnowledgeWordCloudTerm) {
-  const identity = wordCloudTermIdentity(term);
-  mutateWordCloudDraft((draft) => {
-    const match = findWordCloudInTree(draft.wordBags || [], wordBagId);
-    if (!match) {
-      return;
-    }
-    const removed = wordCloudTermWithFrequency(term);
-    match.cloud.terms = (match.cloud.terms || []).filter((candidate) => wordCloudTermIdentity(candidate) !== identity);
-    if (!(match.cloud.removedTerms || []).some((candidate) => wordCloudTermIdentity(candidate) === identity)) {
-      match.cloud.removedTerms = [...(match.cloud.removedTerms || []), { ...removed, removed: true }];
-    }
-  });
-}
-
-function clearRemovedTermsFromCloud(wordBagId: string) {
-  mutateWordCloudDraft((draft) => {
-    const match = findWordCloudInTree(draft.wordBags || [], wordBagId);
-    if (match) {
-      match.cloud.removedTerms = [];
-    }
-  });
-}
-
-function addChildWordCloud(parentWordBagId: string) {
-  mutateWordCloudDraft((draft) => {
-    const match = findWordCloudInTree(draft.wordBags || [], parentWordBagId);
-    if (!match) {
-      return;
-    }
-    const child: KnowledgeWordCloud = {
-      wordBagId: `word-bag-${Date.now().toString(36)}`,
-      parentWordBagId,
-      label: "新分组",
-      summary: "",
-      relation: "contains",
-      absorbThreshold: normalizeWordCloudThreshold(match.cloud.absorbThreshold),
-      terms: [],
-      removedTerms: [],
-      children: [],
-    };
-    match.cloud.children = [...(match.cloud.children || []), child];
-    selectedWordBagId.value = child.wordBagId;
-    const next = new Set(collapsedWordBagIds.value);
-    next.delete(parentWordBagId);
-    collapsedWordBagIds.value = next;
-    wordBagActionMenuId.value = "";
-  });
-}
-
-function addTermActionToCloud(wordBagId: string) {
-  selectedWordBagId.value = wordBagId;
-  wordCloudTermInputs.value = {
-    ...wordCloudTermInputs.value,
-    [wordBagId]: wordCloudTermInputs.value[wordBagId] || "",
-  };
-  wordBagActionMenuId.value = "";
-}
-
-function applySavedWordCloudSet(
-  wordBagSet: KnowledgeWordCloudSet,
-  options: { fallbackCorpusPaths?: KnowledgeWordCloudCorpusPath[] } = {},
-) {
-  const normalized = normalizeWordCloudSetForUi(cloneWordCloudSet(wordBagSet));
-  normalized.corpusPaths = preferredWordCloudCorpusPaths(
-    normalized.corpusPaths || [],
-    options.fallbackCorpusPaths || wordCloudCorpusPaths.value,
-  );
-  if (wordCloudState.value) {
-    wordCloudState.value = {
-      ...wordCloudState.value,
-      wordBagSet: normalized,
-      wordBagSets: [
-        normalized,
-        ...(wordCloudState.value.wordBagSets || []).filter((item: any) => item.wordBagSetId !== normalized.wordBagSetId),
-      ],
-    };
-  }
-  // Collapse all cards on first load; subsequent saves only collapse newly added clouds
-  const isFirstLoad = wordCloudDraft.value === null;
-  const prevWordBagIds = new Set((wordCloudDraft.value?.wordBags || []).map((c) => c.wordBagId));
-  wordCloudDraft.value = normalized;
-  wordCloudCorpusPaths.value = normalizeWordCloudCorpusPathsForUi(normalized.corpusPaths || []);
-  selectedWordBagId.value = findWordCloudInTree(normalized.wordBags, selectedWordBagId.value)
-    ? selectedWordBagId.value
-    : "";
-  const idsToCollapse = (normalized.wordBags || [])
-    .filter((c) => isFirstLoad || !prevWordBagIds.has(c.wordBagId))
-    .map((c) => c.wordBagId);
-  if (idsToCollapse.length > 0) {
-    collapsedWordBagIds.value = new Set([...collapsedWordBagIds.value, ...idsToCollapse]);
-  }
-}
-
-function wordCloudCorpusPathLabel(item: KnowledgeWordCloudCorpusPath) {
-  return item.type === "file" ? "文件" : "目录";
-}
-
-const wordCloudCorpusPathSummary = computed(() =>
-  wordCloudCorpusPaths.value.length
-    ? `已绑定 ${wordCloudCorpusPaths.value.length} 个目录/文件`
-    : "",
-);
-
-function setWordCloudDraftCorpusPaths() {
-  if (!wordCloudDraft.value) {
-    wordCloudDraft.value = createDefaultWordCloudSet(wordCloudTerms.value);
-  }
-  wordCloudDraft.value = {
-    ...wordCloudDraft.value,
-    corpusPaths: normalizeWordCloudCorpusPathsForUi(wordCloudCorpusPaths.value),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-async function persistWordCloudCorpusPaths(
-  corpusPaths: KnowledgeWordCloudCorpusPath[] = wordCloudCorpusPaths.value,
-  options: {
-    auditAction?: WordCloudCorpusAuditAction;
-    auditPaths?: KnowledgeWordCloudCorpusPath[];
-  } = {},
-) {
-  if (!canWriteKnowledge.value) {
-    return;
-  }
-  const draft = wordCloudDraft.value || createDefaultWordCloudSet(wordCloudTerms.value);
-  const selectedCorpusPaths = normalizeWordCloudCorpusPathsForUi(corpusPaths);
-  try {
-    const result = await bridge.saveKnowledgeWordClouds({
-      wordBagSet: {
-        ...draft,
-        wordBagCount: draft.wordBags.length,
-        termsSnapshot: draft.termsSnapshot?.length ? draft.termsSnapshot : wordCloudTerms.value,
-        corpusPaths: selectedCorpusPaths,
-        modelAlias: wordCloudModelAlias.value,
-      },
-      auditAction: options.auditAction || "save",
-      auditPaths: normalizeWordCloudCorpusPathsForUi(options.auditPaths || selectedCorpusPaths),
-      limit: 100000,
-      minFrequency: 1,
-    });
-    applySavedWordCloudSet(result.wordBagSet, {
-      fallbackCorpusPaths: selectedCorpusPaths,
-    });
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "保存词云语料范围失败。";
-  }
-}
-
-async function refreshWordCloudCorpusTerms(options: {
-  silent?: boolean;
-  forceRebuild?: boolean;
-  corpusPaths?: Array<Partial<KnowledgeWordCloudCorpusPath> | string> | null;
-} = {}) {
-  if (!canReadKnowledge.value) {
-    return [];
-  }
-  const targetCorpusPaths = resolveWordCloudCorpusPathsForQuery({ corpusPaths: options.corpusPaths });
-  if (!options.silent) {
-    setBusy("knowledge:word-clouds:scope");
-  }
-  error.value = "";
-  let state = null as KnowledgeWordCloudState | null;
-  try {
-    state = await bridge.getKnowledgeWordClouds({
-      limit: 100000,
-      minFrequency: 1,
-      corpusPaths: targetCorpusPaths,
-    });
-    const savedCorpusPaths = normalizeWordCloudCorpusPathsForUi(state.wordBagSet?.corpusPaths || []);
-    if (targetCorpusPaths.length === 0 && savedCorpusPaths.length > 0) {
-      state = await bridge.getKnowledgeWordClouds({
-        limit: 100000,
-        minFrequency: 1,
-        corpusPaths: savedCorpusPaths,
-      });
-    }
-    if (
-      options.forceRebuild &&
-      targetCorpusPaths.length > 0 &&
-      (state.terms || []).length === 0
-    ) {
-      const rebuildProgressMessage = {
-        id: `word-cloud-scope-rebuild-${Date.now()}`,
-        role: "system" as const,
-        text: "已检测到语料范围内无本地词频，正在重建词频索引。",
-        at: new Date().toISOString(),
-      };
-      wordCloudMessages.value = [rebuildProgressMessage, ...wordCloudMessages.value].slice(0, 20);
-      await bridge.rebuildSourceVocabulary();
-      state = await bridge.getKnowledgeWordClouds({
-        limit: 100000,
-        minFrequency: 1,
-        corpusPaths: targetCorpusPaths,
-      });
-      const suffixText = state.terms?.length
-        ? `已重建并读取 ${state.terms.length} 个语料词。`
-        : "语料范围重建后仍无可用词频。请确认目录下存在已入库文档。";
-      wordCloudMessages.value = [{
-        id: `word-cloud-scope-rebuild-${Date.now()}`,
-        role: "system" as const,
-        text: suffixText,
-        at: new Date().toISOString(),
-      }, ...wordCloudMessages.value].slice(0, 20);
-    }
-    wordCloudState.value = {
-      ...(wordCloudState.value || state),
-      terms: state.terms || [],
-      corpusPaths: state.corpusPaths || targetCorpusPaths,
-    };
-    if (!wordCloudDraft.value) {
-      wordCloudDraft.value = createDefaultWordCloudSet(state.terms || []);
-    }
-    wordCloudDraft.value = normalizeWordCloudSetForUi({
-      ...wordCloudDraft.value,
-      termsSnapshot: state.terms || [],
-      unassignedTerms: state.terms || [],
-      corpusPaths: targetCorpusPaths,
-    });
-    autoAbsorbWordCloudTerms(wordCloudDraft.value);
-    if (targetCorpusPaths.length > 0) {
-      wordCloudCorpusPaths.value = targetCorpusPaths;
-    }
-    wordCloudMessages.value = [{
-      id: `word-cloud-scope-${Date.now()}`,
-      role: "system" as const,
-      text: `已按绑定路径读取 ${state.terms?.length || 0} 个语料词。`,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "刷新词云语料范围失败。";
-    wordCloudMessages.value = [{
-      id: `word-cloud-scope-error-${Date.now()}`,
-      role: "system" as const,
-      text: error.value,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-    if (state && state.terms) {
-      return state.terms || [];
-    }
-  } finally {
-    if (!options.silent && busyKey.value === "knowledge:word-clouds:scope") {
-      clearAllBusy();
-    }
-  }
-  return state?.terms || [];
-}
-
-function addWordCloudCorpusPaths(nextItems: Array<{ path: string; type: "directory" | "file" }>) {
-  const normalizedItems = nextItems
-    .map((item) => normalizeWordCloudCorpusPathForUi(item))
-    .filter((item): item is KnowledgeWordCloudCorpusPath => Boolean(item));
-  const existingKeys = new Set(
-    wordCloudCorpusPaths.value.map((item) => `${item.type || ""}:${item.path}`.toLowerCase()),
-  );
-  const addedItems = normalizedItems.filter(
-    (item) => !existingKeys.has(`${item.type || ""}:${item.path}`.toLowerCase()),
-  );
-  if (addedItems.length === 0) {
-    return;
-  }
-  wordCloudCorpusPaths.value = normalizeWordCloudCorpusPathsForUi([
-    ...wordCloudCorpusPaths.value,
-    ...addedItems,
-  ]);
-  const selectedCorpusPaths = normalizeWordCloudCorpusPathsForUi(wordCloudCorpusPaths.value);
-  setWordCloudDraftCorpusPaths();
-  wordCloudMessages.value = [{
-    id: `word-cloud-corpus-${Date.now()}`,
-    role: "system" as const,
-    text: `已绑定 ${addedItems.length} 个语料范围，正在刷新词频。`,
-    at: new Date().toISOString(),
-  }, ...wordCloudMessages.value].slice(0, 20);
-  void persistWordCloudCorpusPaths(selectedCorpusPaths, {
-    auditAction: "add",
-    auditPaths: addedItems,
-  });
-  if (canReadKnowledge.value) {
-    void refreshWordCloudCorpusTerms({ corpusPaths: selectedCorpusPaths });
-  }
-}
-
-function removeWordCloudCorpusPath(index: number) {
-  const removedPath = wordCloudCorpusPaths.value[index];
-  wordCloudCorpusPaths.value = wordCloudCorpusPaths.value.filter((_, itemIndex) => itemIndex !== index);
-  setWordCloudDraftCorpusPaths();
-  void persistWordCloudCorpusPaths(wordCloudCorpusPaths.value, {
-    auditAction: "remove",
-    auditPaths: removedPath ? [removedPath] : [],
-  });
-  if (canReadKnowledge.value) {
-    void refreshWordCloudCorpusTerms({ corpusPaths: wordCloudCorpusPaths.value });
-  }
-}
-
-function clearWordCloudCorpusPaths() {
-  const removedPaths = wordCloudCorpusPaths.value;
-  wordCloudCorpusPaths.value = [];
-  setWordCloudDraftCorpusPaths();
-  void persistWordCloudCorpusPaths(wordCloudCorpusPaths.value, {
-    auditAction: "clear",
-    auditPaths: removedPaths,
-  });
-  if (canReadKnowledge.value) {
-    void refreshWordCloudCorpusTerms({ corpusPaths: [] });
-  }
-}
 
 const ruleScopeOptions = [
   { value: "knowledge", label: "知识库", description: "对入库文档、证据和知识对象生效。" },
@@ -4407,8 +2481,147 @@ const selectedAgentExploreContextProfile = computed(() => {
   );
   return selected || agentExploreContextWindowOptions[1];
 });
-const selectedInfoFeedModel = computed(() => {
-  return selectedAgentFromOptions(infoFeedModelOptions.value, infoFeedForm.value.modelAlias);
+const {
+  INFO_FEED_CONTEXT_CHARS_PER_TOKEN,
+  INFO_FEED_FETCH_RETRY_LIMIT,
+  INFO_FEED_STORAGE_KEY,
+  appendInfoFeedTurnSnapshot,
+  applyInfoFeedSummaryAnswer,
+  archiveInfoFeedExpertFeedback,
+  buildFallbackInfoFeedClarification,
+  buildInfoFeedAgentQuery,
+  buildInfoFeedSourceContext,
+  buildInfoFeedSourceSearchQuery,
+  buildInfoFeedSummaryQuestion,
+  chooseInfoFeedClarification,
+  clearInfoFeedKeywordCache,
+  clearInfoFeedRetryState,
+  clearInfoFeedSummaryStreamTimer,
+  clearInvalidInfoFeedModelReferences,
+  compactInfoFeedAttachment,
+  compactInfoFeedRunForStorage,
+  continueInfoFeedAfterModelSelection,
+  continueInfoFeedAfterRetry,
+  continueInfoFeedCurrentRun,
+  copyInfoFeedSummary,
+  createInfoFeedFollowUpContext,
+  createInfoFeedRun,
+  createInitialInfoFeedAgentState,
+  createInitialInfoFeedKeywordState,
+  createInitialInfoFeedSummaryState,
+  deleteInfoFeedHistory,
+  deleteInfoFeedHistoryItem,
+  delayMs,
+  estimateInfoFeedContextTokens,
+  executeInfoFeedRunIteration,
+  exportInfoFeedSummary,
+  extractInfoFeedClarification,
+  fallbackInfoFeedSummary,
+  formatFileSize,
+  handleInfoFeedAttachmentFiles,
+  infoFeedAgentAnswer,
+  infoFeedAgentExpertGuidance,
+  infoFeedAgentProgressFromResult,
+  infoFeedAgentRecentTurns,
+  infoFeedAgentSteps,
+  infoFeedAllKeywordItems,
+  infoFeedAttachments,
+  infoFeedCanFollowUp,
+  infoFeedClarification,
+  infoFeedContextGateNotice,
+  infoFeedCurrentRun,
+  infoFeedCurrentUserQuestion,
+  infoFeedExpertFeedbackFor,
+  infoFeedExpertFeedbackForRun,
+  infoFeedForm,
+  infoFeedHistory,
+  infoFeedHistoryPanelItems,
+  infoFeedInputPlaceholder,
+  infoFeedKeywordCache,
+  infoFeedKeywordItems,
+  infoFeedKeywordProgressLabel,
+  infoFeedKeywordScanExplain,
+  infoFeedLowRelevanceKeywordItems,
+  infoFeedModelDisplayLabel,
+  infoFeedModelOptions,
+  infoFeedModelSelectionMessage,
+  infoFeedNeedsModelSelection,
+  infoFeedNeedsRetryContinue,
+  infoFeedParentRunForCurrent,
+  infoFeedParentRunSnapshot,
+  infoFeedParentSummaryEvidenceRefs,
+  infoFeedParentSummaryHtml,
+  infoFeedReadyForSummary,
+  infoFeedRestorableModelAlias,
+  infoFeedRetryMessage,
+  infoFeedRetryStageLabel,
+  infoFeedRunEvidenceRefs,
+  infoFeedRunSequence,
+  infoFeedSearchCacheKey,
+  infoFeedSourceContextBudgetChars,
+  infoFeedSourceResultLine,
+  infoFeedSourceSummary,
+  infoFeedStatusLabel,
+  infoFeedStatusTone,
+  infoFeedStreamingSummaryHtml,
+  infoFeedSubmitLabel,
+  infoFeedSummaryEvidenceRefs,
+  infoFeedSummaryIsStreaming,
+  infoFeedSummaryMarkdown,
+  infoFeedSummaryRuntime,
+  infoFeedSummaryStreamText,
+  infoFeedSummaryStreamTimer,
+  infoFeedTurnAttachments,
+  infoFeedTurnQuestion,
+  infoFeedTurnSummaryHtml,
+  infoFeedTurnTitle,
+  infoFeedUserCardTitle,
+  infoFeedVisibleSummaryText,
+  initialInfoFeedAgentState,
+  initialInfoFeedKeywordState,
+  initialInfoFeedSummaryState,
+  isInfoFeedRetryExhaustedError,
+  isLowRelevanceSourceResult,
+  isModelConfigurationError,
+  isReadableInfoFeedAttachment,
+  isTransientFetchError,
+  makeInfoFeedId,
+  normalizeInfoFeedClarificationOption,
+  normalizeInfoFeedHistory,
+  openInfoFeedHistoryRun,
+  persistInfoFeedHistory,
+  readInfoFeedAttachment,
+  removeInfoFeedAttachment,
+  resetInfoFeedRunForContinuation,
+  restoreInfoFeedHistory,
+  runInfoFeed,
+  runInfoFeedAgentTrack,
+  runInfoFeedKeywordTrack,
+  runInfoFeedSummaryAgent,
+  sanitizeInfoFeedRunModelReferences,
+  selectedInfoFeedContextProfile,
+  selectedInfoFeedModel,
+  selectInfoFeedHistoryItem,
+  setInfoFeedRetryState,
+  snapshotInfoFeedAttachments,
+  snapshotInfoFeedTurn,
+  streamInfoFeedSummary,
+  syncInfoFeedExpertFeedback,
+  truncateInfoFeedText,
+  upsertInfoFeedHistory,
+  withInfoFeedFetchRetry,
+} = createConsoleInfoFeedController({
+  agentExploreConfiguredLimit,
+  agentExploreConfiguredMaxIterations,
+  agentExploreContextWindowOptions,
+  agentExploreForm,
+  agentExploreThinkingModeOptions,
+  agentSelectorOptions,
+  canReadKnowledge,
+  contextProfileRows,
+  error,
+  recordFeedback: recordConsoleKnowledgeFeedback,
+  settingsDraft,
 });
 const selectedKnowledgeReviewFusionModel = computed(() => {
   return selectedAgentFromOptions(
@@ -4446,305 +2659,6 @@ watchAgentSelectionReference(
   () => wordCloudModelAlias.value,
   () => selectedWordCloudModel.value,
 );
-function agentSelectionAlert(
-  params: Omit<AgentConfigurationAlert, "status" | "tone"> & { value: string; options: Array<{ value: string; enabled: boolean; disabledReason?: string }> },
-): AgentConfigurationAlert | null {
-  const value = String(params.value || "").trim();
-  if (!value) {
-    return {
-      alertId: params.alertId,
-      category: params.category,
-      title: params.title,
-      detail: params.detail,
-      status: "未配置智能体",
-      tone: "warning",
-      view: params.view,
-      adminView: params.adminView,
-      targetId: params.targetId,
-    };
-  }
-  const option = params.options.find((item) => item.value === value);
-  if (!option?.enabled) {
-    return {
-      alertId: params.alertId,
-      category: params.category,
-      title: params.title,
-      detail: option?.disabledReason
-        ? `${params.detail} 当前选择不可用：${option.disabledReason}。`
-        : `${params.detail} 当前选择已不在模型库或尚未完成授权。`,
-      status: "智能体不可用",
-      tone: "danger",
-      view: params.view,
-      adminView: params.adminView,
-      targetId: params.targetId,
-    };
-  }
-  return null;
-}
-
-const agentConfigurationAlerts = computed<AgentConfigurationAlert[]>(() => {
-  const alerts: AgentConfigurationAlert[] = [];
-  if (visibleModelEntries.value.length === 0) {
-    alerts.push({
-      alertId: "model-library-empty",
-      category: "模型库",
-      title: "模型库为空",
-      detail: "需要先新增至少一个智能体模型，后续功能和模块才能显式绑定。",
-      status: "无可用智能体",
-      tone: "danger",
-      view: "admin",
-      adminView: "agentConfig",
-      targetId: "agent-model-library",
-    });
-  }
-  for (const item of [
-    agentSelectionAlert({
-      alertId: "info-feed-summary-agent",
-      category: "信息流",
-      title: "信息流智能体",
-      detail: "信息流最终报告需要一个可用智能体来融合原文检索、智能规划和附件结果。",
-      value: infoFeedForm.value.modelAlias,
-      options: infoFeedModelOptions.value,
-      view: "feed",
-      targetId: "info-feed-summary-agent",
-    }),
-    agentSelectionAlert({
-      alertId: "agent-explore-agent",
-      category: "信息流",
-      title: "知识检索智能体",
-      detail: "智能检索需要一个可用智能体来规划工具调用和打开证据。",
-      value: agentExploreForm.value.modelAlias,
-      options: agentExploreAgentOptions.value,
-      view: "feed",
-      targetId: "agent-explore-agent",
-    }),
-    agentSelectionAlert({
-      alertId: "rule-authoring-agent",
-      category: "工作台",
-      title: "创建规则智能体",
-      detail: "创建规则的智能对话模式需要一个可用智能体辅助生成规则草稿。",
-      value: ruleAuthoringForm.value.modelAlias,
-      options: ruleAuthoringModelOptions.value,
-      view: "dashboard",
-      targetId: "rule-authoring-agent",
-    }),
-    agentSelectionAlert({
-      alertId: "knowledge-review-fusion-agent",
-      category: "知识库",
-      title: "知识融合智能体",
-      detail: "知识融合分析需要显式绑定一个可用智能体，用于合并多路知识证据与结构化结果。",
-      value: settingsDraft.value.agentExploreDefaults?.reviewFusionModelAlias || "",
-      options: agentSelectorOptions.value,
-      view: "admin",
-      adminView: "agentConfig",
-      targetId: "knowledge-review-fusion-agent",
-    }),
-  ]) {
-    if (item) {
-      alerts.push(item);
-    }
-  }
-  for (const moduleDefinition of intelligentModuleDefinitions) {
-    if (!moduleNeedsIntelligence(moduleDefinition.id)) {
-      continue;
-    }
-    const refValue = moduleModelRef(moduleDefinition.id);
-    const option = agentModelAssignmentOptions.value.find((item) => item.ref === refValue);
-    if (!refValue) {
-      if (moduleDefinition.alertRequired === false) {
-        continue;
-      }
-      alerts.push({
-        alertId: `module:${moduleDefinition.id}`,
-        category: "模块模型分配",
-        title: moduleDefinition.label,
-        detail: moduleDefinition.description,
-        status: "未配置智能体",
-        tone: "warning",
-        view: "admin",
-        adminView: "agentConfig",
-        targetId: "agent-model-library",
-      });
-      continue;
-    }
-    if (!option?.enabled) {
-      alerts.push({
-        alertId: `module:${moduleDefinition.id}`,
-        category: "模块模型分配",
-        title: moduleDefinition.label,
-        detail: `${moduleDefinition.description} 当前绑定的智能体不可用或未完成授权。`,
-        status: "智能体不可用",
-        tone: "danger",
-        view: "admin",
-        adminView: "agentConfig",
-        targetId: "agent-model-library",
-      });
-    }
-  }
-  return alerts;
-});
-const agentConfigurationAlertSummary = computed(() => {
-  const dangerCount = agentConfigurationAlerts.value.filter((item: any) => item.tone === "danger").length;
-  const warningCount = agentConfigurationAlerts.value.length - dangerCount;
-  if (agentConfigurationAlerts.value.length === 0) {
-    return "所有需要智能体的功能都已显式绑定可用智能体。";
-  }
-  return [
-    dangerCount ? `${dangerCount} 项不可用` : "",
-    warningCount ? `${warningCount} 项未配置` : "",
-  ].filter(Boolean).join("，");
-});
-const dashboardMonitorAlerts = computed<DashboardAlert[]>(() =>
-  activeMonitorAlerts.value.map((alert) => {
-    const recovered = alert.ackRequired || alert.active === false || alert.status === "recovered";
-    const isQueueInterruption = alert.ruleId === "queueInterrupted";
-    return {
-      alertId: alert.alertId,
-      category: isQueueInterruption ? "中断报警" : "后台报警",
-      title: alert.title,
-      detail: alert.queueId ? `${alert.message} 队列 ID：${alert.queueId}` : alert.message,
-      status: recovered ? "已恢复，待确认" : monitorAlertSeverityLabel(alert.severity),
-      tone: recovered ? "success" : alert.severity === "critical" ? "danger" : "warning",
-      actionLabel: recovered ? "确认关闭" : "查看报警",
-      source: "monitor",
-      monitorAlert: alert,
-    };
-  }),
-);
-const liveDashboardAlerts = computed<DashboardAlert[]>(() => [
-  ...dashboardMonitorAlerts.value,
-  ...agentConfigurationAlerts.value.map((alert) => ({
-    alertId: alert.alertId,
-    category: "空配置报警",
-    title: alert.title,
-    detail: alert.detail,
-    status: alert.status,
-    tone: alert.tone,
-    actionLabel: "去配置",
-    source: "configuration" as const,
-    configAlert: alert,
-  })),
-]);
-function dashboardAlertInboxId(alertItem: DashboardAlert) {
-  return `${alertItem.source}:${alertItem.alertId}`;
-}
-
-function shouldDropResolvedDashboardAlert(alertItem: DashboardAlert) {
-  if (alertItem.source !== "monitor") {
-    return false;
-  }
-  const alertId = String(alertItem.alertId || "");
-  const processIsHealthy = (role: string) => {
-    const processItem = backgroundProcesses.value.find((item: any) => item.role === role);
-    return processItem?.alive === true && ["running", "standby"].includes(String(processItem.status || ""));
-  };
-  if (alertId === "monitor.supervisor.stopped") {
-    return processIsHealthy("background-supervisor");
-  }
-  for (const role of ["background-supervisor", "system-inspection"]) {
-    if (alertId.startsWith(`monitor.process.${role}.`)) {
-      return processIsHealthy(role);
-    }
-  }
-  const demandManagedRoles = ["import-worker", "source-watcher", "maintenance-worker", "agent-worker"];
-  const role = demandManagedRoles.find((item) => alertId.startsWith(`monitor.process.${item}.`));
-  if (!role) {
-    return false;
-  }
-  const processItem = backgroundProcesses.value.find((item: any) => item.role === role);
-  return processItem?.desired === false;
-}
-
-function syncDashboardAlertInbox(liveAlerts: DashboardAlert[]) {
-  const now = new Date().toISOString();
-  const liveById = new Map<string, DashboardAlert>(
-    liveAlerts.map((alertItem) => [dashboardAlertInboxId(alertItem), alertItem]),
-  );
-  const nextDismissedIds = new Set<string>();
-  for (const alertId of dismissedDashboardAlertIds.value) {
-    if (liveById.has(alertId)) {
-      nextDismissedIds.add(alertId);
-    }
-  }
-  const nextInbox: Record<string, DashboardAlert> = {};
-  for (const [alertId, previousAlert] of Object.entries(dashboardAlertInbox.value)) {
-    if (nextDismissedIds.has(alertId)) {
-      continue;
-    }
-    if (!liveById.has(alertId)) {
-      if (shouldDropResolvedDashboardAlert(previousAlert)) {
-        continue;
-      }
-      nextInbox[alertId] = previousAlert.live === false
-        ? previousAlert
-        : {
-            ...previousAlert,
-            status: "已恢复，待确认",
-            tone: "success",
-            actionLabel: "确认关闭",
-            live: false,
-            resolvedAt: now,
-          };
-    }
-  }
-  for (const [alertId, liveAlert] of liveById.entries()) {
-    if (nextDismissedIds.has(alertId)) {
-      continue;
-    }
-    const previousAlert = dashboardAlertInbox.value[alertId];
-    nextInbox[alertId] = {
-      ...previousAlert,
-      ...liveAlert,
-      firstSeenAt: previousAlert?.firstSeenAt || now,
-      lastSeenAt: now,
-      live: true,
-      resolvedAt: "",
-    };
-  }
-  dismissedDashboardAlertIds.value = nextDismissedIds;
-  dashboardAlertInbox.value = nextInbox;
-}
-
-const dashboardAlerts = computed<DashboardAlert[]>(() => {
-  const severityRank: Record<DashboardAlert["tone"], number> = {
-    danger: 0,
-    warning: 1,
-    success: 2,
-  };
-  return Object.values(dashboardAlertInbox.value)
-    .filter((alertItem) => !dismissedDashboardAlertIds.value.has(dashboardAlertInboxId(alertItem)))
-    .sort((left, right) => {
-      const severityDiff = severityRank[left.tone] - severityRank[right.tone];
-      if (severityDiff !== 0) {
-        return severityDiff;
-      }
-      return String(left.firstSeenAt || "").localeCompare(String(right.firstSeenAt || ""));
-    });
-});
-const dashboardAlertSummary = computed(() => {
-  const dangerCount = dashboardAlerts.value.filter((item: any) => item.tone === "danger").length;
-  const warningCount = dashboardAlerts.value.filter((item: any) => item.tone === "warning").length;
-  const recoveredCount = dashboardAlerts.value.filter((item: any) => item.tone === "success").length;
-  if (dashboardAlerts.value.length === 0) {
-    return "当前没有需要处理的报警。";
-  }
-  return [
-    dangerCount ? `${dangerCount} 项严重` : "",
-    warningCount ? `${warningCount} 项警告` : "",
-    recoveredCount ? `${recoveredCount} 项已恢复待确认` : "",
-  ].filter(Boolean).join("，");
-});
-const selectedInfoFeedContextProfile = computed(() => {
-  const configured = String(
-    infoFeedForm.value.contextProfileId ||
-      settingsDraft.value.agentExploreDefaults?.contextProfileId ||
-      "context-32k",
-  ).trim();
-  const selected = agentExploreContextWindowOptions.find(
-    (item) => item.value === configured,
-  );
-  return selected || agentExploreContextWindowOptions[0];
-});
 function normalizedAgentExploreThinkingMode(value?: string) {
   const mode = String(value || "default").trim();
   return agentExploreThinkingModeOptions.some((item) => item.value === mode) ? mode : "default";
@@ -4769,44 +2683,56 @@ function agentExploreThinkingParameters() {
   }
   return {};
 }
-function infoFeedModelDisplayLabel(value?: string) {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return "未记录";
-  }
-  return infoFeedModelOptions.value.find((item) => item.value === normalized)?.label || "已移除的智能体";
-}
-const infoFeedSummaryRuntime = computed(() => {
-  const summary = infoFeedCurrentRun.value?.summary;
-  return {
-    model: infoFeedModelDisplayLabel(summary?.modelAlias || selectedInfoFeedModel.value.value),
-    temperature: Number(summary?.temperature ?? infoFeedForm.value.temperature ?? 0.2),
-    maxTokens: Number(summary?.maxTokens ?? infoFeedForm.value.maxTokens ?? 1800),
-  };
+const {
+  agentExploreHistoryPanelItems,
+  agentExplorePollTimer,
+  agentExploreSessionFromResult,
+  agentExploreSessionLabel,
+  agentExploreTabBusy,
+  agentExploreTabs,
+  applyAgentExploreDraftTab,
+  clearInvalidAgentExploreModelReferences,
+  closeAgentExploreTab,
+  createAgentExploreDraftTab,
+  deleteAgentExploreHistoryItem,
+  deleteAgentExploreHistorySession,
+  loadAgentExploreHistoryFromServer,
+  loadAgentExploreSession,
+  normalizeAgentExploreHistoryList,
+  persistAgentExploreState,
+  restoreAgentExploreState,
+  sanitizeAgentExploreSessionModelReference,
+  selectAgentExploreHistoryItem,
+  startAgentExplorePolling,
+  stopAgentExplorePolling,
+  switchAgentExploreTab,
+  syncActiveAgentExploreDraftFromForm,
+  upsertAgentExploreHistory,
+} = createConsoleAgentExploreSessionController({
+  agentExploreActiveTabId,
+  agentExploreClosedTabIds,
+  agentExploreDraftTabs,
+  agentExploreForm,
+  agentExploreHiddenRunIds,
+  agentExploreHistory,
+  agentExploreHydrated,
+  agentExploreResult,
+  agentExploreTraceOpen,
+  agentExploreDefaults,
+  busyKey,
+  clearAllBusy,
+  error,
+  hasAgentModelOption,
+  normalizeThinkingMode: normalizedAgentExploreThinkingMode,
+  selectedAgentExploreContextProfile,
+  selectedAgentExploreThinkingMode,
+  setBusy,
+  validAgentModelAlias,
 });
-
 watch(
   agentSelectorOptions,
   (options) => {
     cacheAgentModelOptionLabels(options);
-  },
-  { immediate: true },
-);
-
-watch(
-  () => [
-    infoFeedCurrentRun.value?.runId || "",
-    infoFeedCurrentRun.value?.summary.status || "",
-    infoFeedCurrentRun.value?.summary.answer || "",
-  ],
-  ([runId, status, answer]) => {
-    const nextAnswer = String(answer || "");
-    clearInfoFeedSummaryStreamTimer();
-    if (!runId || !nextAnswer || status === "running") {
-      infoFeedSummaryStreamText.value = "";
-      return;
-    }
-    streamInfoFeedSummary(nextAnswer, String(runId));
   },
   { immediate: true },
 );
@@ -4958,262 +2884,6 @@ const agentExploreDocumentMarkdown = computed(() => {
     "",
   ].join("\n");
 });
-const infoFeedKeywordItems = computed(() => {
-  const response = infoFeedCurrentRun.value?.keyword.response;
-  return ((response?.items || response?.results || []) as KnowledgeSearchResult[]).filter(
-    (item) => !isLowRelevanceSourceResult(item),
-  );
-});
-const infoFeedLowRelevanceKeywordItems = computed(() => {
-  const response = infoFeedCurrentRun.value?.keyword.response;
-  return ((response?.items || response?.results || []) as KnowledgeSearchResult[]).filter(isLowRelevanceSourceResult);
-});
-const infoFeedAllKeywordItems = computed(() => {
-  const response = infoFeedCurrentRun.value?.keyword.response;
-  return ((response?.items || response?.results || []) as KnowledgeSearchResult[]);
-});
-const infoFeedContextGateNotice = computed(() => buildInfoFeedSourceContext(infoFeedCurrentRun.value).report);
-const infoFeedKeywordScanExplain = computed(() => {
-  const explain = asRecord(infoFeedCurrentRun.value?.keyword.response?.explain) || {};
-  return {
-    scannedFiles: Number(explain.scannedFiles || 0),
-    candidateFileCount: Number(explain.candidateFileCount || 0),
-    matchedUniqueFiles: Number(explain.matchedUniqueFiles || 0),
-    returned: Number(explain.returned || 0),
-    highRelevanceCount: Number(explain.highRelevanceCount || 0),
-    lowRelevanceCount: Number(explain.lowRelevanceCount || 0),
-    elapsedMs: Number(explain.elapsedMs || 0),
-    candidateElapsedMs: Number(explain.candidateElapsedMs || 0),
-    inspectElapsedMs: Number(explain.inspectElapsedMs || 0),
-    candidateSearch: String(explain.candidateSearch || ""),
-  };
-});
-const infoFeedKeywordProgressLabel = computed(() => {
-  const run = infoFeedCurrentRun.value;
-  if (!run) {
-    return "";
-  }
-  if (run.keyword.status === "running") {
-    return run.keyword.stage || "服务端检索中，等待扫描结果返回";
-  }
-  if (run.keyword.status === "completed") {
-    const scan = infoFeedKeywordScanExplain.value;
-    if (scan.scannedFiles || scan.candidateFileCount || scan.elapsedMs) {
-      return [
-        scan.candidateFileCount ? `候选 ${scan.candidateFileCount}` : "",
-        scan.scannedFiles ? `扫描 ${scan.scannedFiles}` : "",
-        scan.matchedUniqueFiles ? `命中 ${scan.matchedUniqueFiles}` : "",
-        scan.elapsedMs ? `${scan.elapsedMs}ms` : "",
-      ].filter(Boolean).join(" · ");
-    }
-    return run.keyword.fromCache ? "已使用缓存结果" : "检索完成";
-  }
-  return run.keyword.error || "";
-});
-const infoFeedAgentSteps = computed(() => infoFeedCurrentRun.value?.agent.response?.steps || []);
-const infoFeedAgentAnswer = computed(() => String(infoFeedCurrentRun.value?.agent.response?.answer || "").trim());
-const infoFeedSummaryEvidenceRefs = computed(() =>
-  uniqueEvidenceRefs([
-    ...infoFeedKeywordItems.value.map((item) => String(item.evidenceId || "")).filter(Boolean),
-    ...extractEvidenceRefsFromText(infoFeedAgentAnswer.value),
-    ...extractEvidenceRefsFromText(infoFeedCurrentRun.value?.summary.answer || ""),
-  ]),
-);
-const infoFeedVisibleSummaryText = computed(() => {
-  const answer = String(infoFeedCurrentRun.value?.summary.answer || "");
-  if (!answer) {
-    return "";
-  }
-  return infoFeedSummaryStreamText.value || answer;
-});
-const infoFeedStreamingSummaryHtml = computed(() =>
-  markdownToSafeHtml(
-    linkifyEvidenceRefsInMarkdown(
-      infoFeedVisibleSummaryText.value,
-      infoFeedSummaryEvidenceRefs.value,
-    ),
-  ),
-);
-const infoFeedSummaryIsStreaming = computed(() => {
-  const answer = String(infoFeedCurrentRun.value?.summary.answer || "");
-  return Boolean(answer && infoFeedSummaryStreamText.value.length < answer.length);
-});
-const infoFeedSummaryMarkdown = computed(() => {
-  const run = infoFeedCurrentRun.value;
-  const answer = String(run?.summary.answer || "").trim();
-  if (!run || !answer) {
-    return "";
-  }
-  const citationLines = infoFeedSummaryEvidenceRefs.value.length
-    ? infoFeedSummaryEvidenceRefs.value.map((refId, index) => `${index + 1}. \`${refId}\``)
-    : ["无"];
-  const turnLines = (run.turns || []).flatMap((turn, index) => [
-    `## ${infoFeedTurnTitle(turn, index)}`,
-    "",
-    `- 问题：${infoFeedTurnQuestion(turn)}`,
-    ...(infoFeedTurnAttachments(turn).length
-      ? [
-          `- 附件：${infoFeedTurnAttachments(turn)
-            .map((attachment) => `${attachment.name}（${formatFileSize(attachment.size)}，${infoFeedStatusLabel(attachment.status)}）`)
-            .join("；")}`,
-        ]
-      : []),
-    `- 生成时间：${formatMachineDate(turn.completedAt || run.startedAt, "full")}`,
-    turn.summaryFallback ? "- 状态：模型总结失败，使用本地兜底摘要" : "- 状态：模型总结完成",
-    "",
-    turn.summaryAnswer || "无输出。",
-    "",
-    ...(turn.expertFeedback || []).length
-      ? [
-          "### 人类专家意见",
-          "",
-          ...(turn.expertFeedback || []).map((item) =>
-            `- ${item.selectedLabel}：${item.followUpQuestion}`,
-          ),
-          "",
-        ]
-      : [],
-  ]);
-  return [
-    "# 信息流总结",
-    "",
-    `- 问题：${run.query}`,
-    `- 模型：${run.summary.modelAlias || "未记录"}`,
-    `- 上下文：${run.summary.contextProfileId || "未记录"}`,
-    `- 生成时间：${formatMachineDate(run.completedAt || new Date().toISOString(), "full")}`,
-    run.summary.fallback ? "- 状态：模型总结失败，使用本地兜底摘要" : "- 状态：模型总结完成",
-    "",
-    ...turnLines,
-    "## 结论",
-    "",
-    ...(run.followUp ? [`当前追问：${run.followUp.question}`, ""] : []),
-    ...(run.attachments.length
-      ? [
-          `当前附件：${run.attachments
-            .map((attachment) => `${attachment.name}（${formatFileSize(attachment.size)}，${infoFeedStatusLabel(attachment.status)}）`)
-            .join("；")}`,
-          "",
-        ]
-      : []),
-    answer,
-    "",
-    "## 引用证据",
-    "",
-    ...citationLines,
-    "",
-  ].join("\n");
-});
-const infoFeedCanFollowUp = computed(() => {
-  const run = infoFeedCurrentRun.value;
-  return Boolean(run?.summary.answer?.trim() && run.summary.status !== "running");
-});
-const infoFeedInputPlaceholder = computed(() =>
-  infoFeedCanFollowUp.value
-    ? "继续追问当前信息流结果。"
-    : "输入问题，信息流会并行对比原文检索和智能规划。",
-);
-const infoFeedSubmitLabel = computed(() => (infoFeedCanFollowUp.value ? "追问" : "开始信息流"));
-const infoFeedClarification = computed(() => {
-  const clarification = infoFeedCurrentRun.value?.clarification;
-  return clarification?.status === "open" ? clarification : null;
-});
-function infoFeedExpertFeedbackFor(anchor: InfoFeedExpertFeedbackAnchor) {
-  return infoFeedExpertFeedbackForRun(infoFeedCurrentRun.value, anchor);
-}
-function infoFeedExpertFeedbackForRun(run: InfoFeedRunState | null | undefined, anchor: InfoFeedExpertFeedbackAnchor) {
-  return (run?.expertFeedback || []).filter((item: any) => item.anchor === anchor);
-}
-const infoFeedParentRunForCurrent = computed(() => {
-  const current = infoFeedCurrentRun.value;
-  const parent = infoFeedParentRunSnapshot.value;
-  return current?.followUp?.parentRunId && parent?.runId === current.followUp.parentRunId ? parent : null;
-});
-const infoFeedParentSummaryEvidenceRefs = computed(() => {
-  const parent = infoFeedParentRunForCurrent.value;
-  return parent ? infoFeedRunEvidenceRefs(parent) : [];
-});
-const infoFeedParentSummaryHtml = computed(() => {
-  const parent = infoFeedParentRunForCurrent.value;
-  return markdownToSafeHtml(
-    linkifyEvidenceRefsInMarkdown(
-      parent?.summary.answer || "",
-      infoFeedParentSummaryEvidenceRefs.value,
-    ),
-  );
-});
-function infoFeedTurnSummaryHtml(turn: InfoFeedTurnSnapshot) {
-  return markdownToSafeHtml(
-    linkifyEvidenceRefsInMarkdown(
-      turn.summaryAnswer || "",
-      turn.evidenceRefs || [],
-    ),
-  );
-}
-function infoFeedTurnTitle(turn: InfoFeedTurnSnapshot, index: number) {
-  return turn.followUpQuestion ? `第 ${index + 1} 轮追问` : `第 ${index + 1} 轮`;
-}
-function infoFeedTurnQuestion(turn: InfoFeedTurnSnapshot) {
-  return turn.followUpQuestion || turn.query || "未记录问题";
-}
-function infoFeedTurnAttachments(turn: InfoFeedTurnSnapshot) {
-  return (turn.attachments || []).filter(Boolean);
-}
-function infoFeedCurrentUserQuestion(run: InfoFeedRunState) {
-  return run.followUp?.question || run.query || "未记录问题";
-}
-function infoFeedUserCardTitle(runOrTurn: InfoFeedRunState | InfoFeedTurnSnapshot) {
-  return "followUp" in runOrTurn
-    ? (runOrTurn.followUp ? "用户回复" : "用户问题")
-    : ((runOrTurn as InfoFeedTurnSnapshot).followUpQuestion ? "用户回复" : "用户问题");
-}
-const infoFeedReadyForSummary = computed(() => {
-  const run = infoFeedCurrentRun.value;
-  if (!run) {
-    return false;
-  }
-  if (run.pausedForModelSelection) {
-    return false;
-  }
-  if (run.pausedForRetry) {
-    return false;
-  }
-  return ["completed", "failed"].includes(run.keyword.status) &&
-    ["completed", "failed"].includes(run.agent.status);
-});
-const infoFeedNeedsModelSelection = computed(() => Boolean(infoFeedCurrentRun.value?.pausedForModelSelection));
-const infoFeedModelSelectionMessage = computed(() => {
-  const run = infoFeedCurrentRun.value;
-  if (!run?.pausedForModelSelection) {
-    return "";
-  }
-  const stageLabel = run.pausedForModelSelection === "summary" ? "总结智能体" : "智能规划";
-  const stageError = run.pausedForModelSelection === "summary" ? run.summary.error : run.agent.error;
-  return `${stageLabel}的智能体没有可用 URL 或配置不完整。请选择一个可用智能体后继续。${stageError ? `（${stageError}）` : ""}`;
-});
-const infoFeedNeedsRetryContinue = computed(() => Boolean(infoFeedCurrentRun.value?.pausedForRetry));
-function infoFeedRetryStageLabel(stage?: InfoFeedRetryStage | "") {
-  if (stage === "keyword") {
-    return "原文检索";
-  }
-  if (stage === "agent") {
-    return "智能规划";
-  }
-  if (stage === "summary") {
-    return "知识归纳";
-  }
-  return "请求";
-}
-const infoFeedRetryMessage = computed(() => {
-  const run = infoFeedCurrentRun.value;
-  if (!run?.pausedForRetry) {
-    return "";
-  }
-  const retry = run.retry;
-  const attempts = retry?.attempts || INFO_FEED_FETCH_RETRY_LIMIT;
-  const limit = retry?.limit || INFO_FEED_FETCH_RETRY_LIMIT;
-  const detail = retry?.error || "网络请求失败。";
-  return `${infoFeedRetryStageLabel(run.pausedForRetry)}请求失败，已自动重试 ${attempts}/${limit} 次。检查服务恢复后可以点击继续从当前阶段重试。${detail ? `（${detail}）` : ""}`;
-});
 const knowledgeRecentJobs = computed(() => knowledgeConsole.value?.recentJobs || []);
 const baseServerLogRows = computed<KnowledgeLogRow[]>(() => {
   const traceRows = uploadTraceEvents.value.map((event) => {
@@ -5357,8 +3027,6 @@ const knowledgeLogColumnDividers = computed(() => {
     };
   });
 });
-const evidenceReadableHtml = computed(() => renderEvidenceReadableHtml());
-const evidenceReadableKind = computed(() => evidenceReadableKindLabel());
 
 function hasScope(scopeId: string) {
   return isAuthenticated.value && currentUserScopes.value.includes(scopeId);
@@ -5366,32 +3034,6 @@ function hasScope(scopeId: string) {
 
 function jsonPreview(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
-}
-
-function agentExplorePhaseLabel(phase: unknown) {
-  const value = String(phase || "");
-  if (value === "model_calling") {
-    return "模型决策";
-  }
-  if (value === "tool_selected") {
-    return "已选择工具";
-  }
-  if (value === "tool_calling") {
-    return "调用工具";
-  }
-  if (value === "tool_result") {
-    return "工具返回";
-  }
-  if (value === "answer_ready") {
-    return "生成答案";
-  }
-  if (value === "completed") {
-    return "已完成";
-  }
-  if (value === "failed") {
-    return "失败";
-  }
-  return value || "运行中";
 }
 
 function agentExploreStepOpen(step: unknown) {
@@ -5403,148 +3045,9 @@ function agentExploreStepOpen(step: unknown) {
   );
 }
 
-function agentExploreStepSummary(step: unknown) {
-  const value = asRecord(step) || {};
-  const toolCount = Array.isArray(value.toolCalls) ? value.toolCalls.length : 0;
-  const resultCount = Array.isArray(value.toolResults) ? value.toolResults.length : 0;
-  const phase = agentExplorePhaseLabel(value.phase || value.status);
-  if (!toolCount && !resultCount) {
-    return phase;
-  }
-  return `${phase} · 工具 ${toolCount} · 返回 ${resultCount}`;
-}
-
-function agentExploreResultKey(step: unknown, toolResult: unknown, index: number) {
-  const stepValue = asRecord(step) || {};
-  const resultValue = asRecord(toolResult) || {};
-  return [
-    stepValue.iteration || "step",
-    resultValue.tool || "tool",
-    resultValue.startedAt || "",
-    resultValue.completedAt || "",
-    index,
-  ].join(":");
-}
-
-function agentExploreSessionLabel(session: AgentExploreSession) {
-  const time = formatCompactDate(session.updatedAt);
-  return `${time ? `${time} · ` : ""}${session.query || "未命名探索"}`;
-}
-
-function isAgentExploreDraftSession(session: AgentExploreSession | null | undefined) {
-  return String(session?.runId || "").startsWith("draft:");
-}
-
-function agentExploreTabTitle(session: AgentExploreSession) {
-  if (isAgentExploreDraftSession(session) && !session.query.trim()) {
-    return "新会话";
-  }
-  return session.query || "未命名探索";
-}
-
-function agentExploreTabMeta(session: AgentExploreSession) {
-  if (isAgentExploreDraftSession(session)) {
-    return "草稿";
-  }
-  return `${session.status || "unknown"} · ${shortId(session.runId)}`;
-}
-
-function agentExploreEventLabel(event: unknown) {
-  const value = asRecord(event) || {};
-  return String(value.label || value.type || "状态更新");
-}
-
-function agentExploreEventStatus(event: unknown) {
-  const value = asRecord(event) || {};
-  return String(value.status || "running");
-}
-
 function agentExploreEventTime(event: unknown) {
   const value = asRecord(event) || {};
   return formatCompactDate(String(value.createdAt || ""));
-}
-
-function shortId(value: unknown) {
-  const text = String(value || "").trim();
-  if (text.length <= 16) {
-    return text || "--";
-  }
-  return `${text.slice(0, 8)}…${text.slice(-4)}`;
-}
-
-function parseFilterDate(value: string, boundary: "start" | "end") {
-  if (!value) {
-    return 0;
-  }
-  const suffix = boundary === "start" ? "T00:00:00" : "T23:59:59";
-  const time = new Date(`${value}${suffix}`).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
-function padDatePart(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-function formatMachineDate(value: string, mode: "compact" | "full") {
-  if (!value) {
-    return "未记录";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  const month = padDatePart(date.getMonth() + 1);
-  const day = padDatePart(date.getDate());
-  const hour = padDatePart(date.getHours());
-  const minute = padDatePart(date.getMinutes());
-  if (mode === "compact") {
-    return `${month}-${day} ${hour}:${minute}`;
-  }
-  return [
-    date.getFullYear(),
-    month,
-    day,
-  ].join("-") + ` ${hour}:${minute}:${padDatePart(date.getSeconds())}`;
-}
-
-function csvCell(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
-}
-
-function downloadTextFile(fileName: string, content: string, contentType = "text/plain;charset=utf-8") {
-  const blob = new Blob([content], { type: contentType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function safeDownloadName(value: string, fallback = "export") {
-  const normalized = String(value || "")
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 80);
-  return normalized || fallback;
-}
-
-async function copyTextToClipboard(content: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(content);
-    return;
-  }
-  const textArea = document.createElement("textarea");
-  textArea.value = content;
-  textArea.setAttribute("readonly", "true");
-  textArea.style.position = "fixed";
-  textArea.style.left = "-9999px";
-  document.body.appendChild(textArea);
-  textArea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textArea);
 }
 
 function currentAgentExploreQuery() {
@@ -5612,87 +3115,6 @@ function exportAgentExploreDocument() {
   error.value = "";
 }
 
-function redactAgentModelEntryForExport(entry: AgentModelConfig) {
-  return {
-    ...entry,
-    apiKey: "",
-    apiKeyConfigured: Boolean(entry.apiKey || entry.apiKeyConfigured),
-    token: "",
-    tokenConfigured: Boolean(entry.token || entry.tokenConfigured),
-  };
-}
-
-function redactedProviderSettingsForAgentExport(entry: AgentModelConfig, settings: AgentSettings) {
-  const provider = String(entry.provider || "");
-  if (provider === "google-gemini") {
-    return {
-      provider,
-      googleModel: entry.model || settings.googleModel,
-      googleApiKeyConfigured: Boolean(settings.googleApiKey || settings.googleApiKeyConfigured),
-    };
-  }
-  if (provider === "openai-chatgpt") {
-    return {
-      provider,
-      openAiModel: entry.model || settings.openAiModel,
-      codexOAuthConfigured: Boolean(codexOAuthStatus.value?.valid),
-    };
-  }
-  if (provider === "deepseek") {
-    return {
-      provider,
-      deepSeekBaseUrl: entry.baseUrl || settings.deepSeekBaseUrl,
-      deepSeekModel: entry.model || settings.deepSeekModel,
-      deepSeekApiKeyConfigured: Boolean(
-        entry.apiKey ||
-          entry.apiKeyConfigured ||
-          settings.deepSeekApiKey ||
-          settings.deepSeekApiKeyConfigured,
-      ),
-      deepSeekTimeoutMs: Number(entry.timeoutMs || settings.deepSeekTimeoutMs || 120000),
-    };
-  }
-  if (provider === "openrouter") {
-    return {
-      provider,
-      openRouterBaseUrl: settings.openRouterBaseUrl,
-      openRouterModel: entry.model || settings.openRouterModel,
-      openRouterApiKeyConfigured: Boolean(settings.openRouterApiKey || settings.openRouterApiKeyConfigured),
-    };
-  }
-  if (provider === "copilot") {
-    return {
-      provider,
-      copilotEndpoint: settings.copilotEndpoint,
-      copilotModel: entry.model || settings.copilotModel,
-      copilotApiKeyConfigured: Boolean(settings.copilotApiKey || settings.copilotApiKeyConfigured),
-    };
-  }
-  if (provider === "local-model") {
-    return {
-      provider,
-      localModelEndpoint: settings.localModelEndpoint,
-      localModelName: entry.model || settings.localModelName,
-    };
-  }
-  if (provider === "custom-http") {
-    return {
-      provider,
-      url: entry.url || settings.customHttpAdapter?.url || "",
-      tokenHeader: entry.tokenHeader || settings.customHttpAdapter?.tokenHeader || "token",
-      tokenPrefix: entry.tokenPrefix || settings.customHttpAdapter?.tokenPrefix || "",
-      tokenConfigured: Boolean(
-        entry.token ||
-          entry.tokenConfigured ||
-          settings.customHttpAdapter?.token ||
-          settings.customHttpAdapter?.tokenConfigured,
-      ),
-      timeoutMs: Number(entry.timeoutMs || settings.customHttpAdapter?.timeoutMs || 120000),
-    };
-  }
-  return { provider };
-}
-
 function exportAgentModelEntryConfig(entry: AgentModelConfig) {
   const payload = settingsPayloadForSave();
   const entryIndex = visibleModelEntries.value.findIndex(
@@ -5710,7 +3132,9 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
     source: "server-console-model-library",
     note: "导出的是当前智能体仓库配置；密钥和 Token 字段已脱敏，未包含其它智能体仓库配置。",
     model: redactAgentModelEntryForExport(normalizedEntry),
-    providerSettings: redactedProviderSettingsForAgentExport(normalizedEntry, payload),
+    providerSettings: redactedProviderSettingsForAgentExport(normalizedEntry, payload, {
+      codexOAuthConfigured: Boolean(codexOAuthStatus.value?.valid),
+    }),
   };
   downloadTextFile(
     `pact-agent-${safeDownloadName(normalizedEntry.label || modelEntryStatusKey(normalizedEntry), "model")}-${timestamp}.json`,
@@ -5720,1836 +3144,12 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
   error.value = "";
 }
 
-function isModelConfigurationError(value: unknown) {
-  const message = String(value instanceof Error ? value.message : value || "");
-  return /URL\s*未配置|url\s*未配置|模型.*未配置|智能体.*未配置|not configured|missing.*url/i.test(message);
-}
-
-class InfoFeedRetryExhaustedError extends Error {
-  stage: InfoFeedRetryStage;
-  attempts: number;
-  causeError: unknown;
-
-  constructor(stage: InfoFeedRetryStage, attempts: number, causeError: unknown) {
-    const message = causeError instanceof Error ? causeError.message : String(causeError || "请求失败。");
-    super(`${infoFeedRetryStageLabel(stage)}请求失败，已自动重试 ${attempts}/${INFO_FEED_FETCH_RETRY_LIMIT} 次：${message}`);
-    this.name = "InfoFeedRetryExhaustedError";
-    this.stage = stage;
-    this.attempts = attempts;
-    this.causeError = causeError;
-  }
-}
-
-function isInfoFeedRetryExhaustedError(value: unknown): value is InfoFeedRetryExhaustedError {
-  return value instanceof InfoFeedRetryExhaustedError;
-}
-
-function isTransientFetchError(value: unknown) {
-  const message = String(value instanceof Error ? value.message : value || "");
-  return /failed to fetch|networkerror|load failed|network request failed|fetch failed|connection.*(lost|refused|reset)|err_network/i.test(message);
-}
-
-function setInfoFeedRetryState(run: InfoFeedRunState, stage: InfoFeedRetryStage, attempts: number, value: unknown) {
-  run.retry = {
-    stage,
-    attempts,
-    limit: INFO_FEED_FETCH_RETRY_LIMIT,
-    error: value instanceof Error ? value.message : String(value || "请求失败。"),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function clearInfoFeedRetryState(run: InfoFeedRunState, stage?: InfoFeedRetryStage) {
-  if (run.pausedForRetry && (!stage || run.pausedForRetry === stage)) {
-    run.pausedForRetry = "";
-  }
-  if (run.retry && (!stage || run.retry.stage === stage)) {
-    run.retry = undefined;
-  }
-}
-
-async function withInfoFeedFetchRetry<T>(
-  run: InfoFeedRunState,
-  stage: InfoFeedRetryStage,
-  operation: () => Promise<T>,
-): Promise<T> {
-  let lastError: unknown = null;
-  clearInfoFeedRetryState(run, stage);
-  for (let attempt = 1; attempt <= INFO_FEED_FETCH_RETRY_LIMIT; attempt += 1) {
-    try {
-      const result = await operation();
-      clearInfoFeedRetryState(run, stage);
-      return result;
-    } catch (nextError) {
-      lastError = nextError;
-      if (!isTransientFetchError(nextError)) {
-        throw nextError;
-      }
-      setInfoFeedRetryState(run, stage, attempt, nextError);
-      if (attempt >= INFO_FEED_FETCH_RETRY_LIMIT) {
-        run.pausedForRetry = stage;
-        throw new InfoFeedRetryExhaustedError(stage, attempt, nextError);
-      }
-      await delayMs(Math.min(2200, 280 + attempt * 220));
-    }
-  }
-  run.pausedForRetry = stage;
-  throw new InfoFeedRetryExhaustedError(stage, INFO_FEED_FETCH_RETRY_LIMIT, lastError);
-}
-
-function delayMs(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-function makeInfoFeedId(prefix = "info-feed") {
-  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${random}`;
-}
-
-function truncateInfoFeedText(value: unknown, maxLength = 600) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
-}
-
-function formatFileSize(size: number) {
-  const value = Number(size || 0);
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  if (value < 1024 * 1024) {
-    return `${(value / 1024).toFixed(1)} KB`;
-  }
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function infoFeedStatusLabel(status: InfoFeedStageStatus) {
-  if (status === "running") return "运行中";
-  if (status === "completed") return "完成";
-  if (status === "failed") return "失败";
-  return "待开始";
-}
-
-function infoFeedStatusTone(status: InfoFeedStageStatus) {
-  if (status === "completed") return "success";
-  if (status === "failed") return "danger";
-  if (status === "running") return "info";
-  return "muted";
-}
-
-function isReadableInfoFeedAttachment(file: File) {
-  const name = file.name.toLowerCase();
-  const textExtensions = [
-    ".txt", ".md", ".markdown", ".json", ".jsonl", ".csv", ".tsv", ".xml", ".html", ".htm", ".eml",
-    ".log", ".yaml", ".yml", ".toml", ".ini", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue",
-    ".py", ".java", ".go", ".rs", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php", ".rb", ".swift",
-    ".kt", ".kts", ".sh", ".bash", ".zsh", ".fish", ".sql", ".css", ".scss", ".less",
-  ];
-  return file.type.startsWith("text/") ||
-    file.type === "message/rfc822" ||
-    textExtensions.some((extension) => name.endsWith(extension));
-}
-
-async function readInfoFeedAttachment(file: File): Promise<InfoFeedAttachment> {
-  const attachment: InfoFeedAttachment = {
-    id: makeInfoFeedId("attachment"),
-    name: file.name,
-    size: file.size,
-    type: file.type || "application/octet-stream",
-    status: "running",
-    progress: 10,
-    text: "",
-    error: "",
-  };
-  if (file.size > 2 * 1024 * 1024) {
-    return {
-      ...attachment,
-      status: "failed",
-      progress: 100,
-      error: "附件超过 2MB，信息流输入暂不直接读取。",
-    };
-  }
-  if (!isReadableInfoFeedAttachment(file)) {
-    return {
-      ...attachment,
-      status: "failed",
-      progress: 100,
-      error: "当前格式无法在页面侧直接读取。",
-    };
-  }
-  try {
-    const text = await file.text();
-    if (!text.trim() || text.includes("\u0000")) {
-      return {
-        ...attachment,
-        status: "failed",
-        progress: 100,
-        error: "文件内容为空或疑似二进制内容。",
-      };
-    }
-    return {
-      ...attachment,
-      status: "completed",
-      progress: 100,
-      text: text.slice(0, 20000),
-    };
-  } catch (nextError) {
-    return {
-      ...attachment,
-      status: "failed",
-      progress: 100,
-      error: nextError instanceof Error ? nextError.message : "读取失败。",
-    };
-  }
-}
-
-async function handleInfoFeedAttachmentFiles(selectedFiles: File[]) {
-  const files = Array.from(selectedFiles || []);
-  if (!files.length) {
-    return;
-  }
-  const pending = files.map((file) => ({
-    id: makeInfoFeedId("attachment"),
-    name: file.name,
-    size: file.size,
-    type: file.type || "application/octet-stream",
-    status: "running" as InfoFeedStageStatus,
-    progress: 5,
-    text: "",
-    error: "",
-  }));
-  infoFeedAttachments.value = [...infoFeedAttachments.value, ...pending];
-  await Promise.all(files.map(async (file, index) => {
-    const result = await readInfoFeedAttachment(file);
-    const pendingId = pending[index].id;
-    infoFeedAttachments.value = infoFeedAttachments.value.map((attachment) =>
-      attachment.id === pendingId
-        ? {
-            ...result,
-            id: pendingId,
-          }
-        : attachment,
-    );
-  }));
-}
-
-function removeInfoFeedAttachment(attachmentId: string) {
-  infoFeedAttachments.value = infoFeedAttachments.value.filter((attachment) => attachment.id !== attachmentId);
-}
-
-function compactInfoFeedAttachment(attachment: InfoFeedAttachment): InfoFeedAttachment {
-  return {
-    ...attachment,
-    text: String(attachment.text || "").slice(0, 4000),
-    error: String(attachment.error || "").slice(0, 1000),
-  };
-}
-
-function snapshotInfoFeedAttachments(attachments: InfoFeedAttachment[] = infoFeedAttachments.value) {
-  return attachments.map(compactInfoFeedAttachment);
-}
-
-function createInfoFeedFollowUpContext(previousRun: InfoFeedRunState | null, question: string): InfoFeedRunState["followUp"] | undefined {
-  if (!previousRun?.summary.answer?.trim()) {
-    return undefined;
-  }
-  return {
-    parentRunId: previousRun.runId,
-    parentQuery: previousRun.query,
-    question,
-    parentSummary: truncateInfoFeedText(previousRun.summary.answer, 2600),
-    parentEvidenceRefs: uniqueEvidenceRefs([
-      ...(((previousRun.keyword.response?.items || previousRun.keyword.response?.results || []) as KnowledgeSearchResult[])
-        .map((item) => String(item.evidenceId || ""))
-        .filter(Boolean)),
-      ...extractEvidenceRefsFromText(previousRun.agent.response?.answer || ""),
-      ...extractEvidenceRefsFromText(previousRun.summary.answer || ""),
-    ]).slice(0, 16),
-  };
-}
-
-function createInfoFeedRun(query: string, followUp?: InfoFeedRunState["followUp"]): InfoFeedRunState {
-  return {
-    runId: makeInfoFeedId("run"),
-    query,
-    startedAt: new Date().toISOString(),
-    completedAt: "",
-    attachments: snapshotInfoFeedAttachments(),
-    ...(followUp ? { followUp } : {}),
-    expertFeedback: [],
-    turns: [],
-    keyword: {
-      status: "idle",
-      progress: 0,
-      stage: "",
-      fromCache: false,
-      response: null,
-      error: "",
-    },
-    agent: {
-      status: "idle",
-      progress: 0,
-      runId: "",
-      workspaceId: "",
-      response: null,
-      error: "",
-    },
-    summary: {
-      status: "idle",
-      progress: 0,
-      modelAlias: selectedInfoFeedModel.value.value,
-      contextProfileId: selectedInfoFeedContextProfile.value.value,
-      parametersOpen: false,
-      temperature: Number(infoFeedForm.value.temperature || 0.2),
-      maxTokens: Number(infoFeedForm.value.maxTokens || 1800),
-      answer: "",
-      error: "",
-      fallback: false,
-    },
-    pausedForModelSelection: "",
-    pausedForRetry: "",
-    retry: undefined,
-  };
-}
-
-function initialInfoFeedKeywordState(): InfoFeedRunState["keyword"] {
-  return {
-    status: "idle",
-    progress: 0,
-    stage: "",
-    fromCache: false,
-    response: null,
-    error: "",
-  };
-}
-
-function initialInfoFeedAgentState(): InfoFeedRunState["agent"] {
-  return {
-    status: "idle",
-    progress: 0,
-    runId: "",
-    workspaceId: "",
-    response: null,
-    error: "",
-  };
-}
-
-function initialInfoFeedSummaryState(): InfoFeedRunState["summary"] {
-  return {
-    status: "idle",
-    progress: 0,
-    modelAlias: selectedInfoFeedModel.value.value,
-    contextProfileId: selectedInfoFeedContextProfile.value.value,
-    parametersOpen: false,
-    temperature: Number(infoFeedForm.value.temperature || 0.2),
-    maxTokens: Number(infoFeedForm.value.maxTokens || 1800),
-    answer: "",
-    error: "",
-    fallback: false,
-  };
-}
-
-function snapshotInfoFeedTurn(run: InfoFeedRunState): InfoFeedTurnSnapshot | null {
-  const summaryAnswer = String(run.summary.answer || "").trim();
-  const expertFeedback = run.expertFeedback || [];
-  if (!summaryAnswer && expertFeedback.length === 0) {
-    return null;
-  }
-  return {
-    turnId: makeInfoFeedId("turn"),
-    query: run.query,
-    followUpQuestion: run.followUp?.question || "",
-    attachments: snapshotInfoFeedAttachments(run.attachments),
-    completedAt: run.completedAt || new Date().toISOString(),
-    summaryAnswer,
-    summaryError: run.summary.error || "",
-    summaryFallback: Boolean(run.summary.fallback),
-    summaryModelAlias: run.summary.modelAlias || selectedInfoFeedModel.value.value,
-    evidenceRefs: infoFeedRunEvidenceRefs(run),
-    expertFeedback: [...expertFeedback],
-  };
-}
-
-function appendInfoFeedTurnSnapshot(run: InfoFeedRunState) {
-  const snapshot = snapshotInfoFeedTurn(run);
-  if (!snapshot) {
-    return null;
-  }
-  run.turns = [...(run.turns || []), snapshot].slice(-8);
-  return snapshot;
-}
-
-function resetInfoFeedRunForContinuation(run: InfoFeedRunState, question: string) {
-  const followUp = createInfoFeedFollowUpContext(run, question);
-  appendInfoFeedTurnSnapshot(run);
-  run.followUp = followUp;
-  run.completedAt = "";
-  run.attachments = snapshotInfoFeedAttachments();
-  run.clarification = undefined;
-  run.expertFeedback = [];
-  run.keyword = initialInfoFeedKeywordState();
-  run.agent = initialInfoFeedAgentState();
-  run.summary = initialInfoFeedSummaryState();
-  run.pausedForModelSelection = "";
-  run.pausedForRetry = "";
-  run.retry = undefined;
-}
-
-function compactInfoFeedRunForStorage(run: InfoFeedRunState): InfoFeedRunState {
-  const keywordItems = ((run.keyword.response?.items || run.keyword.response?.results || []) as KnowledgeSearchResult[])
-    .slice(0, 12);
-  const keywordResponse = run.keyword.response
-    ? {
-        ...run.keyword.response,
-        items: keywordItems,
-        results: keywordItems,
-      }
-    : null;
-  const agentResponse = run.agent.response
-    ? {
-        ...run.agent.response,
-        steps: (run.agent.response.steps || []).slice(-8),
-        toolResults: (run.agent.response.toolResults || []).slice(-12),
-        answer: String(run.agent.response.answer || "").slice(0, 12000),
-      }
-    : null;
-  return {
-    ...run,
-    followUp: run.followUp
-      ? {
-          ...run.followUp,
-          parentSummary: String(run.followUp.parentSummary || "").slice(0, 4000),
-          parentEvidenceRefs: (run.followUp.parentEvidenceRefs || []).slice(0, 24),
-        }
-      : undefined,
-    attachments: run.attachments.map((attachment) => ({
-      ...compactInfoFeedAttachment(attachment),
-    })),
-    turns: (run.turns || []).slice(-8).map((turn) => ({
-      ...turn,
-      query: String(turn.query || "").slice(0, 1200),
-      followUpQuestion: String(turn.followUpQuestion || "").slice(0, 1200),
-      attachments: snapshotInfoFeedAttachments(turn.attachments || []).slice(0, 12),
-      summaryAnswer: String(turn.summaryAnswer || "").slice(0, 16000),
-      summaryError: String(turn.summaryError || "").slice(0, 1000),
-      evidenceRefs: (turn.evidenceRefs || []).slice(0, 32),
-      expertFeedback: (turn.expertFeedback || []).slice(-8).map((item) => ({
-        ...item,
-        prompt: String(item.prompt || "").slice(0, 600),
-        reason: String(item.reason || "").slice(0, 600),
-        selectedDescription: String(item.selectedDescription || "").slice(0, 600),
-        followUpQuestion: String(item.followUpQuestion || "").slice(0, 1200),
-        sourceQuery: String(item.sourceQuery || "").slice(0, 1200),
-      })),
-    })),
-    expertFeedback: (run.expertFeedback || []).slice(-16).map((item) => ({
-      ...item,
-      prompt: String(item.prompt || "").slice(0, 600),
-      reason: String(item.reason || "").slice(0, 600),
-      selectedDescription: String(item.selectedDescription || "").slice(0, 600),
-      followUpQuestion: String(item.followUpQuestion || "").slice(0, 1200),
-      sourceQuery: String(item.sourceQuery || "").slice(0, 1200),
-    })),
-    clarification: run.clarification
-      ? {
-          ...run.clarification,
-          anchor: run.clarification.anchor || "report",
-          options: (run.clarification.options || []).slice(0, 4),
-        }
-      : undefined,
-    keyword: {
-      ...run.keyword,
-      response: keywordResponse,
-    },
-    agent: {
-      ...run.agent,
-      response: agentResponse,
-    },
-    summary: {
-      ...run.summary,
-      temperature: Number(run.summary.temperature ?? infoFeedForm.value.temperature ?? 0.2),
-      maxTokens: Number(run.summary.maxTokens ?? infoFeedForm.value.maxTokens ?? 1800),
-      answer: String(run.summary.answer || "").slice(0, 20000),
-    },
-  };
-}
-
-function sanitizeInfoFeedRunModelReferences(run: InfoFeedRunState): InfoFeedRunState {
-  const summaryModelAlias = validAgentModelAlias(run.summary?.modelAlias);
-  return {
-    ...run,
-    turns: (run.turns || []).map((turn) => ({
-      ...turn,
-      summaryModelAlias: validAgentModelAlias(turn.summaryModelAlias),
-    })),
-    summary: {
-      ...run.summary,
-      modelAlias: summaryModelAlias,
-    },
-  };
-}
-
-function infoFeedRestorableModelAlias(run: InfoFeedRunState) {
-  const agentRunInput = asRecord(asRecord(run.agent?.response?.run)?.input) || {};
-  return (
-    validAgentModelAlias(run.summary?.modelAlias) ||
-    validAgentModelAlias(String(agentRunInput.modelAlias || ""))
-  );
-}
-
-function clearInvalidInfoFeedModelReferences() {
-  let historyChanged = false;
-  const nextHistory = infoFeedHistory.value.map((run) => {
-    const sanitized = sanitizeInfoFeedRunModelReferences(run);
-    if (
-      sanitized.summary.modelAlias !== run.summary?.modelAlias ||
-      sanitized.turns.some((turn, index) => turn.summaryModelAlias !== run.turns?.[index]?.summaryModelAlias)
-    ) {
-      historyChanged = true;
-    }
-    return sanitized;
-  });
-  if (historyChanged) {
-    infoFeedHistory.value = nextHistory;
-    persistInfoFeedHistory();
-  }
-  if (infoFeedCurrentRun.value?.summary?.modelAlias && !hasAgentModelOption(infoFeedCurrentRun.value.summary.modelAlias)) {
-    infoFeedCurrentRun.value = sanitizeInfoFeedRunModelReferences(infoFeedCurrentRun.value);
-  }
-}
-
-function buildInfoFeedSourceSearchQuery(run: InfoFeedRunState) {
-  if (!run.followUp) {
-    return run.query;
-  }
-  return [
-    run.followUp.parentQuery,
-    run.followUp.question,
-  ].filter(Boolean).join("\n");
-}
-
-function buildInfoFeedAgentQuery(run: InfoFeedRunState) {
-  if (!run.followUp) {
-    return run.query;
-  }
-  return [
-    "这是一次基于上一轮信息流结果的追问。",
-    "",
-    `上一轮问题：${run.followUp.parentQuery}`,
-    "",
-    "上一轮总结：",
-    run.followUp.parentSummary,
-    "",
-    run.followUp.parentEvidenceRefs.length
-      ? `上一轮证据编号：${run.followUp.parentEvidenceRefs.join("、")}`
-      : "上一轮证据编号：无",
-    "",
-    `用户追问：${run.followUp.question}`,
-    "",
-    "请优先利用上一轮上下文；需要新证据时继续调用工具检索。回答必须保留可复核证据编号。",
-  ].join("\n");
-}
-
-function infoFeedAgentRecentTurns(run: InfoFeedRunState) {
-  return [
-    ...(run.turns || []).map((turn) => ({
-      role: "assistant",
-      query: infoFeedTurnQuestion(turn),
-      summary: truncateInfoFeedText(turn.summaryAnswer, 1800),
-      evidenceRefs: turn.evidenceRefs || [],
-      completedAt: turn.completedAt,
-    })),
-    ...(run.followUp
-      ? [
-          {
-            role: "user" as const,
-            query: run.followUp.question,
-            parentQuery: run.followUp.parentQuery,
-          },
-        ]
-      : []),
-  ].slice(-12);
-}
-
-function infoFeedAgentExpertGuidance(run: InfoFeedRunState) {
-  return [
-    ...(run.turns || []).flatMap((turn) => turn.expertFeedback || []),
-    ...(run.expertFeedback || []),
-  ].map((item) => ({
-    feedbackId: item.feedbackId,
-    query: item.sourceQuery,
-    label: item.selectedLabel,
-    instruction: item.followUpQuestion,
-    reason: item.reason || item.prompt,
-    evidenceRefs: [],
-    createdAt: item.createdAt,
-    context: {
-      gold: true,
-      humanExpert: true,
-      selectedOption: {
-        label: item.selectedLabel,
-        followUpQuestion: item.followUpQuestion,
-      },
-    },
-  }));
-}
-
-function normalizeInfoFeedHistory(runs: InfoFeedRunState[]) {
-  const seen = new Set<string>();
-  return runs
-    .filter((run) => {
-      const runId = String(run?.runId || "").trim();
-      if (!runId || seen.has(runId)) {
-        return false;
-      }
-      seen.add(runId);
-      return true;
-    })
-    .sort((left, right) => {
-      const leftTime = Date.parse(String(left.completedAt || left.startedAt || ""));
-      const rightTime = Date.parse(String(right.completedAt || right.startedAt || ""));
-      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
-    })
-    .slice(0, 20)
-    .map((run) => sanitizeInfoFeedRunModelReferences(compactInfoFeedRunForStorage(run)));
-}
-
-function persistInfoFeedHistory() {
-  try {
-    window.localStorage.setItem(
-      INFO_FEED_STORAGE_KEY,
-      JSON.stringify({
-        history: infoFeedHistory.value.map((run) =>
-          sanitizeInfoFeedRunModelReferences(compactInfoFeedRunForStorage(run)),
-        ),
-      }),
-    );
-  } catch {
-    // History is a UI cache; storage failures should not block the active run.
-  }
-}
-
-function restoreInfoFeedHistory() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(INFO_FEED_STORAGE_KEY) || "{}");
-    const history = Array.isArray(parsed?.history) ? parsed.history : [];
-    infoFeedHistory.value = normalizeInfoFeedHistory(history as InfoFeedRunState[]);
-    if (history.length > 0) {
-      persistInfoFeedHistory();
-    }
-  } catch {
-    infoFeedHistory.value = [];
-  }
-}
-
-function upsertInfoFeedHistory(run: InfoFeedRunState | null) {
-  if (!run) {
-    return;
-  }
-  infoFeedHistory.value = normalizeInfoFeedHistory([
-    compactInfoFeedRunForStorage(run),
-    ...infoFeedHistory.value.filter((item: any) => item.runId !== run.runId),
-  ]);
-  persistInfoFeedHistory();
-}
-
-function deleteInfoFeedHistory(runId: string) {
-  infoFeedHistory.value = infoFeedHistory.value.filter((run) => run.runId !== runId);
-  if (infoFeedCurrentRun.value?.runId === runId) {
-    infoFeedCurrentRun.value = null;
-  }
-  persistInfoFeedHistory();
-}
-
-const infoFeedHistoryPanelItems = computed<HistorySessionPanelItem[]>(() =>
-  infoFeedHistory.value.map((run) => ({
-    id: run.runId,
-    title: run.query || "未命名问题",
-    meta: `${formatCompactDate(run.completedAt || run.startedAt)} · ${run.summary.status || "unknown"}`,
-    preview: truncateInfoFeedText(run.summary.answer || run.agent.response?.answer || "", 140),
-    active: infoFeedCurrentRun.value?.runId === run.runId,
-    deleteLabel: `删除历史记录 ${run.query || run.runId}`,
-  })),
-);
-
-function selectInfoFeedHistoryItem(runId: string) {
-  const run = infoFeedHistory.value.find((item) => item.runId === runId);
-  if (run) {
-    openInfoFeedHistoryRun(run);
-  }
-}
-
-function deleteInfoFeedHistoryItem(runId: string) {
-  deleteInfoFeedHistory(runId);
-}
-
-function openInfoFeedHistoryRun(run: InfoFeedRunState) {
-  infoFeedParentRunSnapshot.value = null;
-  const sanitizedRun = sanitizeInfoFeedRunModelReferences(compactInfoFeedRunForStorage(run));
-  infoFeedCurrentRun.value = sanitizedRun;
-  infoFeedForm.value = {
-    ...infoFeedForm.value,
-    query: "",
-    modelAlias: infoFeedRestorableModelAlias(sanitizedRun),
-    contextProfileId: sanitizedRun.summary.contextProfileId || infoFeedForm.value.contextProfileId,
-  };
-}
-
-function clearInfoFeedSummaryStreamTimer() {
-  if (infoFeedSummaryStreamTimer !== null) {
-    window.clearTimeout(infoFeedSummaryStreamTimer);
-    infoFeedSummaryStreamTimer = null;
-  }
-}
-
-function streamInfoFeedSummary(answer: string, runId: string) {
-  clearInfoFeedSummaryStreamTimer();
-  const characters = Array.from(answer);
-  let index = 0;
-  infoFeedSummaryStreamText.value = "";
-  const tick = () => {
-    const current = infoFeedCurrentRun.value;
-    if (!current || current.runId !== runId || current.summary.answer !== answer) {
-      clearInfoFeedSummaryStreamTimer();
-      return;
-    }
-    infoFeedSummaryStreamText.value += characters[index] || "";
-    index += 1;
-    if (index < characters.length) {
-      infoFeedSummaryStreamTimer = window.setTimeout(tick, 6);
-    } else {
-      infoFeedSummaryStreamTimer = null;
-    }
-  };
-  tick();
-}
-
-function infoFeedSearchCacheKey(query: string) {
-  return String(query || "").trim().toLowerCase();
-}
-
-async function runInfoFeedKeywordTrack(sequence: number, runId: string, query: string) {
-  const run = infoFeedCurrentRun.value;
-  if (!run || run.runId !== runId) {
-    return;
-  }
-  run.keyword.status = "running";
-  run.keyword.progress = 0;
-  run.keyword.stage = "提交原文检索请求";
-  const cacheKey = infoFeedSearchCacheKey(query);
-  const cached = infoFeedKeywordCache.get(cacheKey);
-  if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) {
-    run.keyword.response = cached.response;
-    run.keyword.fromCache = true;
-    run.keyword.status = "completed";
-    run.keyword.progress = 100;
-    run.keyword.stage = "已使用缓存结果";
-    return;
-  }
-  try {
-    run.keyword.progress = 0;
-    run.keyword.stage = "服务端正在扫描原始文件，完成后返回真实扫描数";
-    const response = await withInfoFeedFetchRetry(run, "keyword", () =>
-      bridge.searchKnowledge({
-        query,
-        limit: 12,
-        retrievalMode: "raw-source-keyword",
-        keywordOnly: true,
-        rawSourceSearch: true,
-        sourceSearch: true,
-        returnAll: true,
-        learningEnabled: false,
-        explain: true,
-      }),
-    );
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== runId) {
-      return;
-    }
-    run.keyword.response = response;
-    run.keyword.fromCache = false;
-    run.keyword.status = "completed";
-    run.keyword.progress = 100;
-    const explain = asRecord(response.explain) || {};
-    run.keyword.stage = [
-      explain.candidateFileCount ? `候选 ${Number(explain.candidateFileCount)}` : "",
-      explain.scannedFiles ? `扫描 ${Number(explain.scannedFiles)}` : "",
-      explain.matchedUniqueFiles ? `命中 ${Number(explain.matchedUniqueFiles)}` : "",
-      explain.elapsedMs ? `${Number(explain.elapsedMs)}ms` : "",
-    ].filter(Boolean).join(" · ") || "检索完成";
-    infoFeedKeywordCache.set(cacheKey, {
-      response,
-      cachedAt: Date.now(),
-    });
-  } catch (nextError) {
-    run.keyword.status = "failed";
-    run.keyword.progress = 100;
-    if (isInfoFeedRetryExhaustedError(nextError)) {
-      run.pausedForRetry = "keyword";
-    }
-    run.keyword.error = nextError instanceof Error ? nextError.message : "原文检索失败。";
-    run.keyword.stage = run.keyword.error;
-  }
-}
-
-function infoFeedAgentProgressFromResult(result: AgentExploreRunResponse | null, maxIterations: number) {
-  const status = agentExploreRunStatus(result);
-  if (status === "completed") {
-    return 100;
-  }
-  if (status === "failed") {
-    return 100;
-  }
-  const steps = result?.steps || [];
-  const active = Math.max(1, Math.min(Number(steps[steps.length - 1]?.iteration || 1), maxIterations));
-  const phase = String(steps[steps.length - 1]?.phase || status || "running");
-  const phaseWeight =
-    phase === "model_calling"
-      ? 0.18
-      : phase === "tool_selected"
-        ? 0.38
-        : phase === "tool_calling"
-          ? 0.64
-          : phase === "tool_result" || phase === "answer_ready"
-            ? 0.84
-            : 0.12;
-  return Math.max(6, Math.min(98, Math.round(((active - 1 + phaseWeight) / maxIterations) * 100)));
-}
-
-function isLowRelevanceSourceResult(item: KnowledgeSearchResult) {
-  return String(item.relevanceTier || "").toLowerCase() === "low" ||
-    item.lowRelevance === true ||
-    item.contextEligible === false;
-}
-
-function infoFeedSourceResultLine(item: KnowledgeSearchResult, index: number) {
-  const tier = isLowRelevanceSourceResult(item) ? "低关联" : "高关联";
-  return [
-    `${index + 1}. ${item.title || "未命名来源"}（${tier}）`,
-    item.evidenceId ? `证据：${item.evidenceId}` : "",
-    item.score !== undefined ? `分数：${Number(item.score).toFixed(3)}` : "",
-    item.snippet ? `片段：${truncateInfoFeedText(item.snippet, 260)}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-function estimateInfoFeedContextTokens(chars: number) {
-  return Math.ceil(Math.max(0, Number(chars || 0)) / INFO_FEED_CONTEXT_CHARS_PER_TOKEN);
-}
-
-function infoFeedSourceContextBudgetChars(run: InfoFeedRunState | null | undefined) {
-  const profileId = String(
-    run?.summary.contextProfileId ||
-      selectedInfoFeedContextProfile.value.value ||
-      infoFeedForm.value.contextProfileId ||
-      "context-128k",
-  );
-  const profile = contextProfileRows.value.find((item) => item.profileId === profileId);
-  const tokenBudget = Number(
-    profile?.knowledgeBudget ||
-      (profile?.contextWindowTokens ? Math.floor(profile.contextWindowTokens * 0.28) : 0) ||
-      (profileId.includes("1m") ? 320000 : profileId.includes("32k") ? 8000 : 36000),
-  );
-  return Math.max(4000, tokenBudget * INFO_FEED_CONTEXT_CHARS_PER_TOKEN);
-}
-
-function buildInfoFeedSourceContext(run: InfoFeedRunState | null | undefined) {
-  const response = run?.keyword.response;
-  const allItems = ((response?.items || response?.results || []) as KnowledgeSearchResult[]);
-  const highItems = allItems.filter((item: any) => !isLowRelevanceSourceResult(item));
-  const lowItems = allItems.filter(isLowRelevanceSourceResult);
-  const budget = infoFeedSourceContextBudgetChars(run);
-  const hasLowItems = lowItems.length > 0;
-  const lowReserve = hasLowItems
-    ? Math.min(Math.max(2400, Math.floor(budget * 0.12)), Math.floor(budget * 0.22))
-    : 0;
-  const highBudget = Math.max(1200, budget - lowReserve);
-  const lines: string[] = [];
-  let usedChars = 0;
-  let highUsedChars = 0;
-  let includedHigh = 0;
-  for (const item of highItems) {
-    const line = infoFeedSourceResultLine(item, includedHigh);
-    if (lines.length > 0 && usedChars + line.length + 2 > highBudget) {
-      break;
-    }
-    lines.push(line);
-    usedChars += line.length + 2;
-    highUsedChars += line.length + 2;
-    includedHigh += 1;
-  }
-  const highOmitted = Math.max(0, highItems.length - includedHigh);
-  let includedLow = 0;
-  const lowLines: string[] = [];
-  const lowHeader = "【低关联原始命中】";
-  let lowUsedChars = 0;
-  const lowBudget = Math.max(0, budget - usedChars - (hasLowItems ? lowHeader.length + 4 : 0));
-  for (const item of lowItems) {
-    const line = infoFeedSourceResultLine(item, includedLow);
-    if (includedLow > 0 && lowUsedChars + line.length + 2 > lowBudget) {
-      break;
-    }
-    if (includedLow === 0 && line.length + 2 > lowBudget) {
-      break;
-    }
-    lowLines.push(line);
-    lowUsedChars += line.length + 2;
-    includedLow += 1;
-  }
-  if (lowLines.length > 0) {
-    lines.push("【低关联原始命中】");
-    lines.push(lowLines.join("\n\n"));
-    usedChars += lowHeader.length + lowUsedChars + 4;
-  }
-  const lowOmitted = Math.max(0, lowItems.length - includedLow);
-  const gateLines = [];
-  const budgetTokens = estimateInfoFeedContextTokens(budget);
-  const usedTokens = estimateInfoFeedContextTokens(usedChars);
-  const highUsedTokens = estimateInfoFeedContextTokens(highUsedChars);
-  const lowUsedTokens = Math.max(0, usedTokens - highUsedTokens);
-  if (highOmitted > 0) {
-    gateLines.push(`高关联邮件进入 ${includedHigh}/${highItems.length} 封，省略 ${highOmitted} 封。`);
-  } else if (highItems.length > 0) {
-    gateLines.push(`高关联邮件已全部进入上下文（${includedHigh}/${highItems.length}）。`);
-  }
-  if (lowOmitted > 0) {
-    gateLines.push(`低关联邮件进入 ${includedLow}/${lowItems.length} 封，省略 ${lowOmitted} 封。`);
-  } else if (lowItems.length > 0) {
-    gateLines.push(`低关联邮件已全部进入上下文（${includedLow}/${lowItems.length}）。`);
-  }
-  gateLines.push(`原文检索上下文预算约 ${budgetTokens.toLocaleString()} tokens，已使用约 ${usedTokens.toLocaleString()} tokens。`);
-  return {
-    text: lines.join("\n\n"),
-    report: {
-      budgetChars: budget,
-      usedChars,
-      remainingChars: Math.max(0, budget - usedChars),
-      budgetTokens,
-      usedTokens,
-      remainingTokens: Math.max(0, budgetTokens - usedTokens),
-      highBudgetChars: highBudget,
-      lowReserveChars: lowReserve,
-      highUsedTokens,
-      lowUsedTokens,
-      totalCount: allItems.length,
-      highCount: highItems.length,
-      lowCount: lowItems.length,
-      includedHigh,
-      includedLow,
-      omittedHigh: highOmitted,
-      omittedLow: lowOmitted,
-      message: gateLines.join(" "),
-    },
-  };
-}
-
-async function runInfoFeedAgentTrack(sequence: number, runId: string, query: string) {
-  const run = infoFeedCurrentRun.value;
-  if (!run || run.runId !== runId) {
-    return;
-  }
-  run.pausedForModelSelection = "";
-  run.agent.status = "running";
-  run.agent.progress = 8;
-  run.agent.error = "";
-  const maxIterations = agentExploreConfiguredMaxIterations.value;
-  try {
-    let result = normalizeAgentExploreRun(await withInfoFeedFetchRetry(run, "agent", () =>
-      bridge.runKnowledgeAgentExplore({
-        query,
-        modelAlias: selectedInfoFeedModel.value.value,
-        contextProfileId: selectedInfoFeedContextProfile.value.value,
-        thinkingMode: selectedAgentExploreThinkingMode.value,
-        maxIterations,
-        limit: agentExploreConfiguredLimit.value,
-        recentTurns: infoFeedAgentRecentTurns(run),
-        expertGuidance: infoFeedAgentExpertGuidance(run),
-        async: true,
-        realtime: true,
-      }),
-    ));
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== runId) {
-      return;
-    }
-    run.agent.response = result;
-    run.agent.runId = String(asRecord(result.run)?.runId || "");
-    run.agent.workspaceId = String(result.workspace?.workspaceId || "");
-    run.agent.progress = infoFeedAgentProgressFromResult(result, maxIterations);
-    for (let pollIndex = 0; pollIndex < 240; pollIndex += 1) {
-      const status = agentExploreRunStatus(result);
-      if (!["queued", "running"].includes(status)) {
-        break;
-      }
-      if (!run.agent.runId || !run.agent.workspaceId) {
-        break;
-      }
-      await delayMs(800);
-      result = normalizeAgentExploreRun(await withInfoFeedFetchRetry(run, "agent", () =>
-        bridge.getKnowledgeAgentExploreRun(run.agent.runId, {
-          workspaceId: run.agent.workspaceId,
-        }),
-      ));
-      if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== runId) {
-        return;
-      }
-      run.agent.response = result;
-      run.agent.progress = infoFeedAgentProgressFromResult(result, maxIterations);
-    }
-    const finalStatus = agentExploreRunStatus(run.agent.response);
-    run.agent.status = finalStatus === "failed" || run.agent.response?.ok === false ? "failed" : "completed";
-    run.agent.progress = 100;
-    if (run.agent.status === "failed") {
-      run.agent.error = run.agent.response?.error || "智能检索失败。";
-      if (isModelConfigurationError(run.agent.error)) {
-        run.pausedForModelSelection = "agent";
-      }
-    }
-  } catch (nextError) {
-    run.agent.status = "failed";
-    run.agent.progress = 100;
-    if (isInfoFeedRetryExhaustedError(nextError)) {
-      run.pausedForRetry = "agent";
-    }
-    run.agent.error = nextError instanceof Error ? nextError.message : "智能检索失败。";
-    if (isModelConfigurationError(nextError)) {
-      run.pausedForModelSelection = "agent";
-    }
-  }
-}
-
-function infoFeedSourceSummary(run: InfoFeedRunState) {
-  const sourceContext = buildInfoFeedSourceContext(run);
-  const sourceContextText = [
-    sourceContext.report.message ? `上下文门禁：${sourceContext.report.message}` : "",
-    sourceContext.text,
-  ].filter(Boolean).join("\n\n");
-  const attachmentLines = run.attachments.map((attachment, index) => [
-    `${index + 1}. ${attachment.name}（${infoFeedStatusLabel(attachment.status)}，${formatFileSize(attachment.size)}）`,
-    attachment.text ? `摘录：${truncateInfoFeedText(attachment.text, 420)}` : "",
-    attachment.error ? `错误：${attachment.error}` : "",
-  ].filter(Boolean).join("\n"));
-  const followUpLines = run.followUp
-    ? [
-        "【上一轮信息流上下文】",
-        `上一轮问题：${run.followUp.parentQuery}`,
-        `当前追问：${run.followUp.question}`,
-        run.followUp.parentEvidenceRefs.length
-          ? `上一轮证据编号：${run.followUp.parentEvidenceRefs.join("、")}`
-          : "上一轮证据编号：无",
-        "",
-        "上一轮总结：",
-        run.followUp.parentSummary,
-        "",
-      ]
-    : [];
-  return [
-    ...followUpLines,
-    "【附件处理】",
-    attachmentLines.length ? attachmentLines.join("\n\n") : "无附件。",
-    "",
-    "【原文检索结果】",
-    sourceContextText || run.keyword.error || "未找到原文检索结果。",
-    "",
-    "【智能规划 + 知识库检索结果】",
-    run.agent.response?.answer
-      ? truncateInfoFeedText(run.agent.response.answer, 4200)
-      : (run.agent.error || "智能规划未返回最终回答。"),
-  ].join("\n");
-}
-
-function buildInfoFeedSummaryQuestion(run: InfoFeedRunState) {
-  return [
-    run.followUp ? `用户追问：${run.followUp.question}` : `用户问题：${run.query}`,
-    "",
-    infoFeedSourceSummary(run),
-    "",
-    "请把以上两路检索和附件处理结果合并成一份面向用户的最终回答。",
-    "要求：",
-    "1. 先给出直接结论，再列出关键证据和不确定性。",
-    "2. 保留 evidence:: 或 ev_ 证据编号，便于页面点击查看。",
-    "3. 如果原文检索和智能规划互相冲突，要明确说明冲突。",
-    "4. 不要编造附件、证据、日期、金额或来源。",
-    "5. 不要频繁提问。只有在没有人类选择就无法继续检索、归纳或执行下一步时，才在答案末尾追加 fenced block：```pact_user_options 换行 JSON 换行 ```。",
-    "   JSON 示例：{\"prompt\":\"你希望优先确认哪类内容？\",\"reason\":\"当前证据覆盖不足。\",\"options\":[{\"label\":\"继续补证据\",\"description\":\"扩大检索范围。\",\"followUpQuestion\":\"请继续补充直接证据。\"}]}",
-  ].join("\n");
-}
-
-function fallbackInfoFeedSummary(run: InfoFeedRunState) {
-  const keywordItems = ((run.keyword.response?.items || run.keyword.response?.results || []) as KnowledgeSearchResult[]).slice(0, 5);
-  const lines = [
-    run.followUp
-      ? `根据本次信息流追问，问题「${run.followUp.question}」已有以下可用结果：`
-      : `根据本次信息流检索，问题「${run.query}」已有以下可用结果：`,
-    run.followUp ? `上一轮问题：${run.followUp.parentQuery}` : "",
-    "",
-    "---",
-    "",
-    "1. 原文检索",
-    keywordItems.length
-      ? keywordItems.map((item, index) =>
-          `${index + 1}. ${item.title || "未命名来源"}${item.evidenceId ? `（${item.evidenceId}）` : ""}\n${truncateInfoFeedText(item.snippet || "", 220)}`,
-        ).join("\n\n")
-      : (run.keyword.error || "没有找到可展示的原文检索结果。"),
-    "",
-    "---",
-    "",
-    "2. 智能规划",
-    run.agent.response?.answer
-      ? truncateInfoFeedText(run.agent.response.answer, 1800)
-      : (run.agent.error || "智能规划没有返回可用回答。"),
-  ];
-  return lines.join("\n");
-}
-
-function normalizeInfoFeedClarificationOption(value: unknown, index: number): InfoFeedClarificationOption | null {
-  const record = asRecord(value) || {};
-  const label = String(record.label || record.title || "").trim();
-  const followUpQuestion = String(record.followUpQuestion || record.query || record.value || label || "").trim();
-  if (!label || !followUpQuestion) {
-    return null;
-  }
-  return {
-    optionId: String(record.optionId || record.id || `option-${index + 1}`),
-    label: label.slice(0, 64),
-    description: String(record.description || record.reason || "").trim().slice(0, 180),
-    followUpQuestion: followUpQuestion.slice(0, 800),
-  };
-}
-
-function extractInfoFeedClarification(answer: string): { answer: string; clarification?: InfoFeedClarification } {
-  const source = String(answer || "");
-  let cleaned = source;
-  let clarification: InfoFeedClarification | undefined;
-  const blockPattern = /```(?:pact_user_options|pact-options|json)\s*([\s\S]*?)```/gi;
-  for (const match of source.matchAll(blockPattern)) {
-    try {
-      const parsed = JSON.parse(match[1].trim().replace(/^json\s*/i, ""));
-      const record = asRecord(parsed) || {};
-      const options = Array.isArray(record.options)
-        ? record.options
-            .map((item, index) => normalizeInfoFeedClarificationOption(item, index))
-            .filter((item): item is InfoFeedClarificationOption => Boolean(item))
-            .slice(0, 4)
-        : [];
-      if (options.length > 0) {
-        clarification = {
-          questionId: String(record.questionId || makeInfoFeedId("question")),
-          prompt: String(record.prompt || record.question || "需要你确认下一步方向。").trim().slice(0, 220),
-          reason: String(record.reason || "").trim().slice(0, 240),
-          anchor: record.anchor === "summary" ? "summary" : "report",
-          status: "open",
-          selectedOptionId: "",
-          options,
-        };
-        cleaned = cleaned.replace(match[0], "").trim();
-        break;
-      }
-    } catch {
-      // Ignore regular JSON/code blocks that are not clarification options.
-    }
-  }
-  return {
-    answer: cleaned.trim() || source.trim(),
-    clarification,
-  };
-}
-
-function buildFallbackInfoFeedClarification(run: InfoFeedRunState): InfoFeedClarification | undefined {
-  const needsChoice = run.summary.fallback || Boolean(run.summary.error);
-  if (!needsChoice) {
-    return undefined;
-  }
-  return {
-    questionId: makeInfoFeedId("question"),
-    prompt: "这次结果存在不确定内容，你希望下一步怎么处理？",
-    reason: run.summary.error || "当前证据不足或结论范围不够明确。",
-    anchor: run.summary.answer ? "report" : "summary",
-    status: "open",
-    selectedOptionId: "",
-    options: [
-      {
-        optionId: "more-evidence",
-        label: "继续补证据",
-        description: "扩大原文检索和智能规划范围，优先找直接证据。",
-        followUpQuestion: "请继续补充直接证据，扩大检索范围，并标明哪些结论仍然无法确认。",
-      },
-      {
-        optionId: "strict-only",
-        label: "只保留已证实",
-        description: "删除推测内容，只输出现有证据能支持的结论。",
-        followUpQuestion: "请基于现有证据重新整理，只保留已经被证据直接支持的结论。",
-      },
-      {
-        optionId: "change-angle",
-        label: "换角度查",
-        description: "从主体、时间、金额、来源等角度重新规划检索。",
-        followUpQuestion: "请从主体、时间、金额、来源几个角度重新规划检索，并说明每个角度的命中情况。",
-      },
-    ],
-  };
-}
-
-function applyInfoFeedSummaryAnswer(run: InfoFeedRunState, answer: string, fallback: boolean, error = "") {
-  const extracted = extractInfoFeedClarification(answer);
-  run.summary.answer = extracted.answer || answer;
-  run.summary.fallback = fallback;
-  run.summary.error = error;
-  run.clarification = extracted.clarification || buildFallbackInfoFeedClarification(run);
-}
-
-function infoFeedRunEvidenceRefs(run: InfoFeedRunState) {
-  return uniqueEvidenceRefs([
-    ...(((run.keyword.response?.items || run.keyword.response?.results || []) as KnowledgeSearchResult[])
-      .map((item) => String(item.evidenceId || ""))
-      .filter(Boolean)),
-    ...extractEvidenceRefsFromText(run.agent.response?.answer || ""),
-    ...extractEvidenceRefsFromText(run.summary.answer || ""),
-  ]);
-}
-
-function archiveInfoFeedExpertFeedback(
-  run: InfoFeedRunState,
-  clarification: InfoFeedClarification,
-  option: InfoFeedClarificationOption,
-) {
-  const createdAt = new Date().toISOString();
-  const feedbackId = `feedback::info-feed::${modelAgentUid(
-    run.runId,
-    clarification.questionId,
-    option.optionId,
-    option.followUpQuestion,
-  ).replace(/^agent_/, "")}`;
-  const archived: InfoFeedExpertFeedback = {
-    feedbackId,
-    questionId: clarification.questionId,
-    anchor: clarification.anchor || "report",
-    prompt: clarification.prompt,
-    reason: clarification.reason,
-    selectedOptionId: option.optionId,
-    selectedLabel: option.label,
-    selectedDescription: option.description,
-    followUpQuestion: option.followUpQuestion,
-    sourceQuery: run.followUp?.question || run.query,
-    createdAt,
-    syncedAt: "",
-    syncStatus: "pending",
-    syncError: "",
-  };
-  run.expertFeedback = [
-    ...(run.expertFeedback || []).filter((item: any) => item.feedbackId !== feedbackId),
-    archived,
-  ];
-  return archived;
-}
-
-async function syncInfoFeedExpertFeedback(run: InfoFeedRunState, feedbackItem: InfoFeedExpertFeedback) {
-  try {
-    await bridge.recordKnowledgeFeedback({
-      feedbackId: feedbackItem.feedbackId,
-      clientId: "server-console-info-feed",
-      query: feedbackItem.sourceQuery || run.query,
-      action: "human_expert_clarification",
-      itemId: run.runId,
-      evidenceId: infoFeedRunEvidenceRefs(run)[0] || "",
-      resultRank: 0,
-      createdAt: feedbackItem.createdAt,
-      context: {
-        type: "info_feed_expert_feedback",
-        gold: true,
-        humanExpert: true,
-        source: "clarification_option",
-        runId: run.runId,
-        questionId: feedbackItem.questionId,
-        anchor: feedbackItem.anchor,
-        prompt: feedbackItem.prompt,
-        reason: feedbackItem.reason,
-        selectedOption: {
-          optionId: feedbackItem.selectedOptionId,
-          label: feedbackItem.selectedLabel,
-          description: feedbackItem.selectedDescription,
-          followUpQuestion: feedbackItem.followUpQuestion,
-        },
-        evidenceRefs: infoFeedRunEvidenceRefs(run),
-        modelAlias: run.summary.modelAlias,
-        summaryStatus: run.summary.status,
-        keywordCount: ((run.keyword.response?.items || run.keyword.response?.results || []) as KnowledgeSearchResult[]).length,
-        agentRunId: run.agent.runId,
-      },
-    });
-    feedbackItem.syncStatus = "synced";
-    feedbackItem.syncedAt = new Date().toISOString();
-    feedbackItem.syncError = "";
-  } catch (nextError) {
-    feedbackItem.syncStatus = "failed";
-    feedbackItem.syncError = nextError instanceof Error ? nextError.message : "专家意见同步失败。";
-  } finally {
-    upsertInfoFeedHistory(run);
-  }
-}
-
-async function runInfoFeedSummaryAgent(sequence = infoFeedRunSequence) {
-  const run = infoFeedCurrentRun.value;
-  if (!run || !infoFeedReadyForSummary.value) {
-    return;
-  }
-  run.pausedForModelSelection = "";
-  run.summary.status = "running";
-  run.summary.progress = 15;
-  run.summary.modelAlias = selectedInfoFeedModel.value.value;
-  run.summary.contextProfileId = selectedInfoFeedContextProfile.value.value;
-  const summaryTemperature = Number(infoFeedForm.value.temperature || 0.2);
-  const summaryMaxTokens = Number(infoFeedForm.value.maxTokens || 1800);
-  run.summary.temperature = summaryTemperature;
-  run.summary.maxTokens = summaryMaxTokens;
-  run.summary.answer = "";
-  run.summary.error = "";
-  run.summary.fallback = false;
-  try {
-    const response = await withInfoFeedFetchRetry(run, "summary", () =>
-      bridge.callAgentGateway({
-        modelAlias: selectedInfoFeedModel.value.value,
-        alias: selectedInfoFeedModel.value.value,
-        moduleId: "agentTools",
-        taskId: run.runId,
-        sessionId: run.agent?.workspaceId || run.runId,
-        question: buildInfoFeedSummaryQuestion(run),
-        systemPrompt:
-          "你是 Pact 信息流智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
-        parameters: {
-          ...agentExploreThinkingParameters(),
-          temperature: summaryTemperature,
-          max_tokens: summaryMaxTokens,
-        },
-      }),
-    );
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== run.runId) {
-      return;
-    }
-    const answer = String(response.answer || response.text || "").trim();
-    applyInfoFeedSummaryAnswer(
-      run,
-      answer || fallbackInfoFeedSummary(run),
-      !answer,
-      answer ? "" : "总结智能体没有返回可用回答，已展示本地兜底摘要。",
-    );
-    run.summary.status = answer ? "completed" : "failed";
-    run.summary.progress = 100;
-  } catch (nextError) {
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== run.runId) {
-      return;
-    }
-    if (isModelConfigurationError(nextError)) {
-      run.summary.answer = "";
-      run.summary.fallback = false;
-      run.summary.status = "failed";
-      run.summary.progress = 0;
-      run.summary.error = nextError instanceof Error ? nextError.message : "总结智能体未配置。";
-      run.pausedForModelSelection = "summary";
-      return;
-    }
-    if (isInfoFeedRetryExhaustedError(nextError)) {
-      run.summary.answer = "";
-      run.summary.fallback = false;
-      run.summary.status = "failed";
-      run.summary.progress = 100;
-      run.summary.error = nextError.message;
-      run.pausedForRetry = "summary";
-      return;
-    }
-    applyInfoFeedSummaryAnswer(
-      run,
-      fallbackInfoFeedSummary(run),
-      true,
-      nextError instanceof Error ? nextError.message : "总结智能体调用失败。",
-    );
-    run.summary.status = "failed";
-    run.summary.progress = 100;
-  } finally {
-    if (infoFeedCurrentRun.value?.runId === run.runId) {
-      run.completedAt = new Date().toISOString();
-      if (run.summary.answer || run.summary.status === "failed") {
-        upsertInfoFeedHistory(run);
-      }
-    }
-  }
-}
-
-async function executeInfoFeedRunIteration(sequence: number, run: InfoFeedRunState) {
-  const sourceSearchQuery = buildInfoFeedSourceSearchQuery(run);
-  const agentQuery = buildInfoFeedAgentQuery(run);
-  await Promise.allSettled([
-    runInfoFeedKeywordTrack(sequence, run.runId, sourceSearchQuery),
-    runInfoFeedAgentTrack(sequence, run.runId, agentQuery),
-  ]);
-  if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== run.runId) {
-    return;
-  }
-  if (run.pausedForModelSelection || run.pausedForRetry) {
-    upsertInfoFeedHistory(run);
-    return;
-  }
-  await runInfoFeedSummaryAgent(sequence);
-}
-
-async function continueInfoFeedCurrentRun(question: string) {
-  const run = infoFeedCurrentRun.value;
-  if (!run) {
-    return;
-  }
-  if (!canReadKnowledge.value) {
-    error.value = "当前账号没有知识库读取权限。";
-    return;
-  }
-  if (!selectedInfoFeedModel.value.enabled) {
-    error.value = "请选择模型库中已配置且支持智能体调用的模型。";
-    return;
-  }
-  error.value = "";
-  infoFeedParentRunSnapshot.value = null;
-  resetInfoFeedRunForContinuation(run, question);
-  upsertInfoFeedHistory(run);
-  const sequence = infoFeedRunSequence + 1;
-  infoFeedRunSequence = sequence;
-  await executeInfoFeedRunIteration(sequence, run);
-}
-
-async function runInfoFeed() {
-  const query = infoFeedForm.value.query.trim();
-  if (!query) {
-    error.value = "请输入信息流问题。";
-    return;
-  }
-  if (!canReadKnowledge.value) {
-    error.value = "当前账号没有知识库读取权限。";
-    return;
-  }
-  if (!selectedInfoFeedModel.value.enabled) {
-    error.value = "请选择模型库中已配置且支持智能体调用的模型。";
-    return;
-  }
-  if (infoFeedCanFollowUp.value && infoFeedCurrentRun.value) {
-    infoFeedForm.value.query = "";
-    await continueInfoFeedCurrentRun(query);
-    return;
-  }
-  error.value = "";
-  infoFeedParentRunSnapshot.value = null;
-  const sequence = infoFeedRunSequence + 1;
-  infoFeedRunSequence = sequence;
-  const run = createInfoFeedRun(query);
-  infoFeedCurrentRun.value = run;
-  infoFeedForm.value.query = "";
-  await executeInfoFeedRunIteration(sequence, run);
-}
-
-async function chooseInfoFeedClarification(option: InfoFeedClarificationOption) {
-  const run = infoFeedCurrentRun.value;
-  if (!run?.clarification || run.summary.status === "running") {
-    return;
-  }
-  const clarification = run.clarification;
-  const archived = archiveInfoFeedExpertFeedback(run, clarification, option);
-  run.clarification = {
-    ...clarification,
-    status: "answered",
-    selectedOptionId: option.optionId,
-  };
-  upsertInfoFeedHistory(run);
-  await syncInfoFeedExpertFeedback(run, archived);
-  await continueInfoFeedCurrentRun(option.followUpQuestion);
-}
-
-async function continueInfoFeedAfterModelSelection() {
-  const run = infoFeedCurrentRun.value;
-  if (!run?.pausedForModelSelection) {
-    return;
-  }
-  if (!selectedInfoFeedModel.value.enabled) {
-    error.value = "请选择一个已配置且可用的模型。";
-    return;
-  }
-  error.value = "";
-  const pausedStage = run.pausedForModelSelection;
-  const sequence = infoFeedRunSequence + 1;
-  infoFeedRunSequence = sequence;
-  run.pausedForModelSelection = "";
-  run.summary.modelAlias = selectedInfoFeedModel.value.value;
-  run.summary.contextProfileId = selectedInfoFeedContextProfile.value.value;
-  if (pausedStage === "agent") {
-    run.agent = {
-      status: "idle",
-      progress: 0,
-      runId: "",
-      workspaceId: "",
-      response: null,
-      error: "",
-    };
-    await runInfoFeedAgentTrack(sequence, run.runId, buildInfoFeedAgentQuery(run));
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== run.runId || run.pausedForModelSelection) {
-      upsertInfoFeedHistory(run);
-      return;
-    }
-  }
-  if (infoFeedReadyForSummary.value) {
-    await runInfoFeedSummaryAgent(sequence);
-  }
-}
-
-async function continueInfoFeedAfterRetry() {
-  const run = infoFeedCurrentRun.value;
-  if (!run?.pausedForRetry) {
-    return;
-  }
-  const pausedStage = run.pausedForRetry;
-  const sequence = infoFeedRunSequence + 1;
-  infoFeedRunSequence = sequence;
-  clearInfoFeedRetryState(run, pausedStage);
-  error.value = "";
-
-  if (pausedStage === "keyword") {
-    run.keyword = {
-      status: "idle",
-      progress: 0,
-      stage: "",
-      fromCache: false,
-      response: null,
-      error: "",
-    };
-    await runInfoFeedKeywordTrack(sequence, run.runId, buildInfoFeedSourceSearchQuery(run));
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== run.runId || run.pausedForRetry) {
-      upsertInfoFeedHistory(run);
-      return;
-    }
-  }
-
-  if (pausedStage === "agent") {
-    run.agent = {
-      status: "idle",
-      progress: 0,
-      runId: "",
-      workspaceId: "",
-      response: null,
-      error: "",
-    };
-    await runInfoFeedAgentTrack(sequence, run.runId, buildInfoFeedAgentQuery(run));
-    if (sequence !== infoFeedRunSequence || infoFeedCurrentRun.value?.runId !== run.runId || run.pausedForRetry) {
-      upsertInfoFeedHistory(run);
-      return;
-    }
-  }
-
-  if (pausedStage === "summary") {
-    run.summary.answer = "";
-    run.summary.error = "";
-    run.summary.fallback = false;
-  }
-
-  if (infoFeedReadyForSummary.value && !run.pausedForModelSelection && !run.pausedForRetry) {
-    await runInfoFeedSummaryAgent(sequence);
-  }
-}
-
-async function copyInfoFeedSummary() {
-  const content = infoFeedSummaryMarkdown.value.trim();
-  if (!content) {
-    error.value = "暂无可复制的信息流总结。";
-    return;
-  }
-  try {
-    await copyTextToClipboard(content);
-    recordConsoleKnowledgeFeedback("copy", {
-      surface: "info_feed",
-      query: infoFeedCurrentRun.value?.query || "",
-      itemId: infoFeedCurrentRun.value?.runId || "",
-      evidenceRefs: infoFeedSummaryEvidenceRefs.value,
-    });
-    error.value = "";
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "复制信息流总结失败。";
-  }
-}
-
-function exportInfoFeedSummary() {
-  const content = infoFeedSummaryMarkdown.value.trim();
-  if (!content) {
-    error.value = "暂无可导出的信息流总结。";
-    return;
-  }
-  const query = String(infoFeedCurrentRun.value?.query || infoFeedForm.value.query || "信息流");
-  const timestamp = formatMachineDate(new Date().toISOString(), "full").replace(/[: ]/g, "-");
-  downloadTextFile(
-    `${safeDownloadName(query, "info-feed")}-${timestamp}.md`,
-    `${content}\n`,
-    "text/markdown;charset=utf-8",
-  );
-  recordConsoleKnowledgeFeedback("export", {
-    surface: "info_feed",
-    query,
-    itemId: infoFeedCurrentRun.value?.runId || "",
-    evidenceRefs: infoFeedSummaryEvidenceRefs.value,
-  });
-  error.value = "";
-}
-
-function knowledgeReviewReasonLabel(reason: unknown) {
-  const value = String(reason || "");
-  if (value === "source_path_content_conflict") {
-    return "同路径内容冲突";
-  }
-  if (value === "duplicate_source_document") {
-    return "重复来源";
-  }
-  if (value === "revision_conflict") {
-    return "版本冲突";
-  }
-  if (value === "missing_entity") {
-    return "对象缺失";
-  }
-  return value || "待审核";
-}
-
-function knowledgeReviewStatusLabel(status: unknown) {
-  const value = String(status || "");
-  if (value === "pending") return "待决策";
-  if (value === "resolved") return "已解决";
-  if (value === "rejected") return "已忽略";
-  return value || "未知";
-}
-
-function knowledgeReviewTone(item: KnowledgeReviewItem) {
-  if (item.status === "resolved") return "success";
-  if (item.status === "rejected") return "muted";
-  if (item.severity === "high" || item.reason === "source_path_content_conflict") return "danger";
-  return "warning";
-}
-
-function knowledgeReviewTitle(item: KnowledgeReviewItem) {
-  const incoming = knowledgeReviewIncomingDocument(item);
-  const current = knowledgeReviewCurrentDocuments(item)[0];
-  return (
-    item.title ||
-    String(incoming?.title || current?.title || item.entityId || item.reviewId || "知识冲突")
-  );
-}
-
-function knowledgeReviewCurrentDocuments(item: KnowledgeReviewItem) {
-  const currentRecord = asRecord(item.currentRecord) || {};
-  const documents = Array.isArray(currentRecord.documents)
-    ? currentRecord.documents
-    : currentRecord.document
-      ? [currentRecord.document]
-      : item.serverRecord
-        ? [item.serverRecord]
-        : [];
-  return documents.map((entry) => asRecord(entry)).filter(Boolean) as Record<string, unknown>[];
-}
-
-function knowledgeReviewIncomingDocument(item: KnowledgeReviewItem) {
-  const incomingRecord = asRecord(item.incomingRecord) || {};
-  return asRecord(incomingRecord.document) || asRecord(item.fieldPatch) || null;
-}
-
-function knowledgeReviewDocumentLine(record: Record<string, unknown> | null | undefined) {
-  if (!record) {
-    return "无";
-  }
-  const title = String(record.title || record.documentId || record.itemId || "未命名");
-  const path = String(record.sourcePath || "");
-  const hash = String(record.sourceHash || "");
-  return [title, path, hash ? `hash:${shortId(hash)}` : ""].filter(Boolean).join(" / ");
-}
-
-function knowledgeReviewPrimaryCurrentDocument(item: KnowledgeReviewItem) {
-  return knowledgeReviewCurrentDocuments(item)[0] || null;
-}
-
-function knowledgeReviewRecordPreview(record: Record<string, unknown> | null | undefined) {
-  if (!record) {
-    return {
-      title: "无记录",
-      sourcePath: "",
-      sourceHash: "",
-      batchId: "",
-      documentId: "",
-      text: "暂无可比较内容。",
-    };
-  }
-  const title = String(record.title || record.documentId || record.itemId || "未命名");
-  const sourcePath = String(record.sourcePath || "");
-  const sourceHash = String(record.sourceHash || "");
-  const batchId = String(record.batchId || "");
-  const documentId = String(record.documentId || record.itemId || "");
-  const text = truncateInfoFeedText(
-    [
-      record.summary,
-      record.textPreview,
-      record.bodyPreview,
-      record.contentPreview,
-      record.excerpt,
-      record.text,
-      record.content,
-    ]
-      .map((value) => String(value || "").trim())
-      .find(Boolean) || knowledgeReviewDocumentLine(record),
-    1200,
-  );
-  return {
-    title,
-    sourcePath,
-    sourceHash,
-    batchId,
-    documentId,
-    text,
-  };
-}
-
-function tokenizeKnowledgeReviewText(value: string) {
-  const normalized = String(value || "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const tokens = new Set<string>();
-  for (const token of normalized.split(" ").filter(Boolean)) {
-    tokens.add(token);
-    if (token.length > 3) {
-      for (let index = 0; index < token.length - 1; index += 1) {
-        tokens.add(token.slice(index, index + 2));
-      }
-    }
-  }
-  return tokens;
-}
-
-function jaccardSimilarity(left: Set<string>, right: Set<string>) {
-  if (!left.size && !right.size) {
-    return 0;
-  }
-  let intersection = 0;
-  for (const token of left) {
-    if (right.has(token)) {
-      intersection += 1;
-    }
-  }
-  return intersection / Math.max(1, left.size + right.size - intersection);
-}
-
-function knowledgeReviewSimilarity(item: KnowledgeReviewItem) {
-  const current = knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(item));
-  const incoming = knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(item));
-  const sameHash = Boolean(
-    current.sourceHash &&
-      incoming.sourceHash &&
-      current.sourceHash.toLowerCase() === incoming.sourceHash.toLowerCase(),
-  );
-  const samePath = Boolean(
-    current.sourcePath &&
-      incoming.sourcePath &&
-      current.sourcePath.toLowerCase() === incoming.sourcePath.toLowerCase(),
-  );
-  const left = tokenizeKnowledgeReviewText(
-    [current.title, current.sourcePath, current.sourceHash, current.text].join("\n"),
-  );
-  const right = tokenizeKnowledgeReviewText(
-    [incoming.title, incoming.sourcePath, incoming.sourceHash, incoming.text].join("\n"),
-  );
-  const score = sameHash ? 1 : Math.max(jaccardSimilarity(left, right), samePath ? 0.62 : 0);
-  const roundedScore = Math.round(score * 100);
-  if (score >= 0.98) {
-    return {
-      score,
-      percent: `${roundedScore}%`,
-      label: "完全重合",
-      tone: "danger",
-      disableKeepBoth: true,
-      suggestion: "两份记录可判定为同一内容，建议放弃新知识或覆盖旧知识；不建议保留两者。",
-    };
-  }
-  if (score >= 0.5) {
-    return {
-      score,
-      percent: `${roundedScore}%`,
-      label: "部分重合",
-      tone: "warning",
-      disableKeepBoth: false,
-      suggestion: "两份记录存在重叠但仍有差异，建议优先执行知识融合，或人工核对后再覆盖。",
-    };
-  }
-  return {
-    score,
-    percent: `${roundedScore}%`,
-    label: "差异明显",
-    tone: "success",
-    disableKeepBoth: false,
-    suggestion: "两份记录差异较大，建议保留两者；如果属于同一业务对象，再使用知识融合生成合并建议。",
-  };
-}
-
 function selectKnowledgeReviewItem(row: KnowledgeReviewItem) {
   selectedKnowledgeReviewId.value = String(row.reviewId || "");
 }
 
 function knowledgeReviewRowClassName({ row }: { row: KnowledgeReviewItem }) {
   return row.reviewId === selectedKnowledgeReviewId.value ? "is-selected-review-row" : "";
-}
-
-function knowledgeReviewFusionPrompt(item: KnowledgeReviewItem) {
-  const current = knowledgeReviewRecordPreview(knowledgeReviewPrimaryCurrentDocument(item));
-  const incoming = knowledgeReviewRecordPreview(knowledgeReviewIncomingDocument(item));
-  return [
-    "请对以下知识入库冲突做融合分析，并输出 Markdown。",
-    "",
-    "必须包含：",
-    "1. 重合判定：完全重合 / 部分重合 / 差异明显。",
-    "2. 相似度估计和依据。",
-    "3. 建议审核动作：保留两者 / 覆盖旧知识 / 放弃新知识 / 知识融合。",
-    "4. 如果建议融合，列出应保留的字段、应保留的证据、需要人工确认的差异。",
-    "",
-    `冲突原因：${knowledgeReviewReasonLabel(item.reason)}`,
-    `当前记录：${JSON.stringify(current, null, 2)}`,
-    `新录入记录：${JSON.stringify(incoming, null, 2)}`,
-    `审核项：${JSON.stringify(
-      {
-        reviewId: item.reviewId,
-        entityId: item.entityId,
-        entityType: item.entityType,
-        summary: item.summary,
-        evidenceRefs: item.evidenceRefs,
-      },
-      null,
-      2,
-    )}`,
-  ].join("\n");
-}
-
-function knowledgeReviewDetailText(item: KnowledgeReviewItem) {
-  const current = knowledgeReviewCurrentDocuments(item)
-    .map(knowledgeReviewDocumentLine)
-    .join("\n");
-  const incoming = knowledgeReviewDocumentLine(knowledgeReviewIncomingDocument(item));
-  return [`当前：${current || "无"}`, `新录入：${incoming}`].join("\n");
-}
-
-function knowledgeReviewSourceLabel(item: KnowledgeReviewItem) {
-  if (item.source === "knowledge-core") {
-    return "入库";
-  }
-  if (item.source === "metadata-store") {
-    return "结构化变更";
-  }
-  return item.source || "知识库";
-}
-
-function knowledgeReviewCanResolveWithDocument(item: KnowledgeReviewItem) {
-  const incomingRecord = asRecord(item.incomingRecord) || {};
-  return Boolean(asRecord(incomingRecord.documentSnapshot));
-}
-
-function knowledgeReviewResolvedAction(item: KnowledgeReviewItem) {
-  const resolution = asRecord(item.resolution) || {};
-  return String(resolution.resolution || resolution.action || "");
 }
 
 function exportKnowledgeLogRows() {
@@ -7638,623 +3238,8 @@ function setMaintenanceFieldFromEvent(
   setMaintenanceFieldValue(fieldName, value);
 }
 
-function currentKnowledgeRetrievalSettings() {
-  const retrieval = asRecord(knowledgeMaintenanceDraft.value.retrieval) || {};
-  return { ...retrieval };
-}
-
-function currentKnowledgeLearningEnabled() {
-  const learning = asRecord(knowledgeMaintenanceDraft.value.learning) || {};
-  const retrieval = currentKnowledgeRetrievalSettings();
-  return learning.enabled !== false && retrieval.learningEnabled !== false;
-}
-
-function normalizeModeOptions(value: unknown, fallback: OptionBarOption[] = []): OptionBarOption[] {
-  const rawItems = Array.isArray(value) ? value : value ? [value] : [];
-  const options = rawItems
-    .map((item) => {
-      if (item && typeof item === "object" && !Array.isArray(item)) {
-        const record = item as Record<string, unknown>;
-        const optionValue = String(record.value || record.id || record.mode || record.name || "").trim();
-        if (!optionValue) {
-          return null;
-        }
-        return {
-          value: optionValue,
-          label: String(record.label || record.title || optionValue),
-        } as OptionBarOption;
-      }
-      const optionValue = String(item || "").trim();
-      return optionValue ? ({ value: optionValue, label: optionValue } as OptionBarOption) : null;
-    })
-    .filter(Boolean) as OptionBarOption[];
-  const unique = options.filter(
-    (option, index, list) => list.findIndex((candidate) => candidate.value === option.value) === index,
-  );
-  return unique.length ? unique : fallback;
-}
-
-function currentKnowledgeCoreModeOptions() {
-  const capabilities = asRecord(knowledgeConsole.value?.capabilities) || {};
-  const healthCapabilities = asRecord(knowledgeConsole.value?.health?.capabilities) || {};
-  const retrievalPolicy = asRecord(capabilities.retrievalPolicy) || asRecord(healthCapabilities.retrievalPolicy) || {};
-  return normalizeModeOptions(
-    capabilities.retrievalModes || healthCapabilities.retrievalModes || retrievalPolicy.modes,
-    [
-      { value: "hybrid", label: "Hybrid" },
-      { value: "keyword", label: "Keyword" },
-    ],
-  );
-}
-
-function externalKnowledgeSpaceModeOptions(space: Record<string, unknown>) {
-  return normalizeModeOptions(
-    space.retrievalModes || space.searchModes,
-    [{ value: "backendContract", label: "Backend Contract" }],
-  );
-}
-
-const knowledgeRecallBackendSpaces = computed<Array<Record<string, unknown>>>(() => {
-  const spaces = knowledgeRecallBackendSpacesResult.value?.spaces;
-  return Array.isArray(spaces) ? spaces as Array<Record<string, unknown>> : [];
-});
-
-type KnowledgeRecallDebugTarget = {
-  value: string;
-  label: string;
-  kind: "internal" | "source" | "external";
-  provider?: string;
-  spaceId?: string;
-  sourceId?: string;
-  modeOptions: OptionBarOption[];
-};
-
-const knowledgeRecallDebugTargets = computed<KnowledgeRecallDebugTarget[]>(() => {
-  const coreModes = currentKnowledgeCoreModeOptions();
-  const targets: KnowledgeRecallDebugTarget[] = [{
-    value: "internal:global",
-    label: "全局知识空间",
-    kind: "internal",
-    modeOptions: coreModes,
-  }];
-  for (const source of activeKnowledgeSources.value) {
-    targets.push({
-      value: `source:${source.sourceId}`,
-      label: source.label || source.directoryPath || "受管知识目录",
-      kind: "source",
-      sourceId: source.sourceId,
-      modeOptions: coreModes,
-    });
-  }
-  for (const space of knowledgeRecallBackendSpaces.value) {
-    const provider = String(space.provider || "").trim();
-    const spaceId = String(space.spaceId || "").trim();
-    if (!spaceId) {
-      continue;
-    }
-    targets.push({
-      value: `external:${spaceId}`,
-      label: `${String(space.label || provider || "外部知识库")} · ${provider || "external"}`,
-      kind: "external",
-      provider,
-      spaceId,
-      modeOptions: externalKnowledgeSpaceModeOptions(space),
-    });
-  }
-  return targets;
-});
-
-const knowledgeRecallDebugTargetOptions = computed<OptionBarOption[]>(() =>
-  knowledgeRecallDebugTargets.value.map((target) => ({
-    value: target.value,
-    label: target.label,
-  })),
-);
-
-const selectedKnowledgeRecallDebugTarget = computed<KnowledgeRecallDebugTarget>(() =>
-  knowledgeRecallDebugTargets.value.find((target) => target.value === knowledgeRecallDebugForm.value.targetId) ||
-    knowledgeRecallDebugTargets.value[0],
-);
-
-const knowledgeRecallDebugModeOptionBarOptions = computed<OptionBarOption[]>(() =>
-  selectedKnowledgeRecallDebugTarget.value?.modeOptions?.length
-    ? selectedKnowledgeRecallDebugTarget.value.modeOptions
-    : currentKnowledgeCoreModeOptions(),
-);
-
-function ensureKnowledgeRecallDebugSelection() {
-  const targets = knowledgeRecallDebugTargets.value;
-  if (!targets.length) {
-    return;
-  }
-  if (!targets.some((target) => target.value === knowledgeRecallDebugForm.value.targetId)) {
-    knowledgeRecallDebugForm.value.targetId = targets[0].value;
-  }
-  const modes = knowledgeRecallDebugModeOptionBarOptions.value;
-  if (modes.length && !modes.some((option) => option.value === knowledgeRecallDebugForm.value.retrievalMode)) {
-    knowledgeRecallDebugForm.value.retrievalMode = String(modes[0].value);
-  }
-}
-
-watch(knowledgeRecallDebugTargets, ensureKnowledgeRecallDebugSelection, { immediate: true });
-watch(() => knowledgeRecallDebugForm.value.targetId, ensureKnowledgeRecallDebugSelection);
-watch(knowledgeRecallDebugModeOptionBarOptions, ensureKnowledgeRecallDebugSelection);
-
-async function refreshKnowledgeRecallBackendSpaces() {
-  try {
-    knowledgeRecallBackendSpacesResult.value = await bridge.listKnowledgeSpaces();
-  } catch {
-    knowledgeRecallBackendSpacesResult.value = null;
-  } finally {
-    ensureKnowledgeRecallDebugSelection();
-  }
-}
-
-function currentKnowledgeSearchLimit() {
-  const retrieval = currentKnowledgeRetrievalSettings();
-  const topK = Number(retrieval.topK || 20);
-  return Math.max(1, Math.min(Number.isFinite(topK) ? topK : 20, 100));
-}
-
-function normalizeSearchResults(payload: unknown): KnowledgeSearchResult[] {
-  const record = asRecord(payload);
-  if (!record) {
-    return [];
-  }
-  const items = Array.isArray(record.items)
-    ? record.items
-    : Array.isArray(record.results)
-      ? record.results
-      : Array.isArray(record.evidencePacks)
-        ? record.evidencePacks
-        : [];
-  return items.map((item) => item as KnowledgeSearchResult);
-}
-
-function compactReadableText(value: string, maxLength = 220) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
-}
-
-function htmlMetaHeader(rawHtml: string, headerName: string) {
-  if (!/<meta[\s>]/i.test(rawHtml)) {
-    return "";
-  }
-  try {
-    const doc = new DOMParser().parseFromString(String(rawHtml || ""), "text/html");
-    const wanted = `message:raw-header:${headerName}`.toLowerCase();
-    for (const meta of Array.from(doc.querySelectorAll("meta"))) {
-      if (String(meta.getAttribute("name") || "").toLowerCase() === wanted) {
-        return decodeMimeWords(String(meta.getAttribute("content") || "").trim());
-      }
-    }
-  } catch {
-    return "";
-  }
-  return "";
-}
-
-function htmlToReadableText(rawHtml: string) {
-  try {
-    const doc = new DOMParser().parseFromString(
-      String(rawHtml || "").replace(/<head[\s\S]*?<\/head>/i, ""),
-      "text/html",
-    );
-    for (const element of Array.from(doc.querySelectorAll("script, style, noscript, template"))) {
-      element.remove();
-    }
-    return compactReadableText(doc.body?.textContent || doc.documentElement.textContent || "");
-  } catch {
-    return compactReadableText(String(rawHtml || "").replace(/<[^>]+>/g, " "));
-  }
-}
-
-function candidateTextFromRecord(record: Record<string, unknown> | KnowledgeSearchResult | EvidencePack | null | undefined) {
-  if (!record) {
-    return "";
-  }
-  const payload = asRecord(record.payload);
-  const blocks = Array.isArray(record.blocks)
-    ? record.blocks
-    : Array.isArray(payload?.blocks)
-      ? payload?.blocks
-      : [];
-  const blockText = blocks
-    .map((block) => asRecord(block))
-    .filter(Boolean)
-    .map((block) => String(block?.text || block?.snippet || "").trim())
-    .filter(Boolean)
-    .join("\n\n");
-  return String(
-    blockText ||
-    record.text ||
-    record.summary ||
-    record.snippet ||
-    "",
-  ).trim();
-}
-
-function emailSubjectFromText(text: string) {
-  return (
-    htmlMetaHeader(text, "Subject") ||
-    emailHeaderValue(parseEmailHeaders(text).headers, "Subject") ||
-    ""
-  );
-}
-
-function readableSnippetFromText(text: string) {
-  const value = String(text || "").trim();
-  if (!value) {
-    return "";
-  }
-  if (/<\/?[a-z][\s\S]*>/i.test(value)) {
-    return htmlToReadableText(value);
-  }
-  return compactReadableText(value);
-}
-
-function evidenceDisplayTitle(record: Record<string, unknown> | KnowledgeSearchResult | EvidencePack) {
-  const text = candidateTextFromRecord(record);
-  const subject = emailSubjectFromText(text);
-  return subject || String(record.title || record.documentId || record.itemId || record.evidenceId || "来源详情");
-}
-
-function knowledgeResultTitle(item: KnowledgeSearchResult) {
-  return evidenceDisplayTitle(item);
-}
-
-function knowledgeResultSnippet(item: KnowledgeSearchResult) {
-  const text = candidateTextFromRecord(item);
-  return readableSnippetFromText(text);
-}
-
-function hydrateSearchResultPreview(evidence: EvidencePack) {
-  const evidenceId = String(evidence.evidenceId || selectedEvidenceId.value || "");
-  if (!evidenceId) {
-    return;
-  }
-  const title = evidenceDisplayTitle(evidence);
-  const snippet = readableSnippetFromText(candidateTextFromRecord(evidence));
-  knowledgeSearchResults.value = knowledgeSearchResults.value.map((item) => {
-    if (knowledgeResultEvidenceId(item) !== evidenceId) {
-      return item;
-    }
-    return {
-      ...item,
-      title: title || item.title,
-      snippet: snippet || item.snippet,
-    };
-  });
-}
-
-function knowledgeResultEvidenceId(item: KnowledgeSearchResult) {
-  return String(item.evidenceId || item.itemId || "");
-}
-
-function knowledgeResultAssetCount(item: KnowledgeSearchResult) {
-  if (Array.isArray(item.assets)) {
-    return item.assets.length;
-  }
-  if (Array.isArray(item.relatedAssetIds)) {
-    return item.relatedAssetIds.length;
-  }
-  if (Array.isArray(item.assetIds)) {
-    return item.assetIds.length;
-  }
-  return 0;
-}
-
-function knowledgeResultScore(item: KnowledgeSearchResult) {
-  return Number(item.score || item.finalScore || item.relevanceScore || 0).toFixed(3);
-}
-
-function knowledgeResultHierarchyPath(item: KnowledgeSearchResult) {
-  const hierarchy = item.hierarchy || null;
-  if (!hierarchy) {
-    return "";
-  }
-  if (hierarchy.path) {
-    return hierarchy.path;
-  }
-  return [hierarchy.documentId ? `document:${hierarchy.documentId}` : "", hierarchy.sectionId ? `section:${hierarchy.sectionId}` : ""]
-    .filter(Boolean)
-    .join(" > ");
-}
-
-function knowledgeFusionSummary(response: KnowledgeSearchResponse | null | undefined) {
-  const fusion = asRecord(response?.fusion);
-  if (!fusion) {
-    return "";
-  }
-  const mode = String(fusion.mode || "server-index-only");
-  const localHitCount = Number(fusion.localHitCount || 0);
-  const localMergedCount = Number(fusion.localMergedCount || 0);
-  const localAppendedCount = Number(fusion.localAppendedCount || 0);
-  if (!localHitCount) {
-    return `${mode} · 无本地 mirror 命中`;
-  }
-  return `${mode} · 本地 mirror ${localHitCount} 条，合并 ${localMergedCount} 条，补充 ${localAppendedCount} 条`;
-}
-
-function formatBytes(value: unknown) {
-  const bytes = Number(value || 0);
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  }
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
-}
-
-function sourceSyncLabel(source: KnowledgeSource) {
-  if (source.error) {
-    return "异常";
-  }
-  if (Number(source.lastHydrationFailedCount || 0) > 0) {
-    return "待下载";
-  }
-  if (["queued", "running"].includes(String(source.lastJobStatus || ""))) {
-    return "处理中";
-  }
-  if (source.status === "pending") {
-    return "等待同步";
-  }
-  if (source.indexStatus === "indexing") {
-    return "建索引中";
-  }
-  if (!source.enabled) {
-    return "已停用";
-  }
-  if (source.watcherStatus === "watching") {
-    return "自动监听";
-  }
-  if (source.watcherStatus === "partial") {
-    return "部分监听";
-  }
-  return "待同步";
-}
-
-function sourceSyncTone(source: KnowledgeSource) {
-  if (source.error || source.watcherStatus === "error" || source.lastJobStatus === "failed") {
-    return "danger";
-  }
-  if (Number(source.lastHydrationFailedCount || 0) > 0) {
-    return "warning";
-  }
-  if (["queued", "running"].includes(String(source.lastJobStatus || "")) || source.status === "pending") {
-    return "warning";
-  }
-  if (source.indexStatus === "indexing") {
-    return "warning";
-  }
-  if (source.indexStatus === "failed") {
-    return "danger";
-  }
-  if (source.enabled && ["watching", "partial"].includes(String(source.watcherStatus || ""))) {
-    return "success";
-  }
-  return "neutral";
-}
-
-function sourceDownloadStatusLabel(source: KnowledgeSource) {
-  if (source.hydrationEnabled === false) {
-    return "已关闭";
-  }
-  switch (source.lastHydrationStatus) {
-    case "readable":
-      return "可读取";
-    case "hydrated":
-      return "已下载";
-    case "partial":
-      return "部分完成";
-    default:
-      return "未执行";
-  }
-}
-
-function sourceIndexStatusLabel(source: KnowledgeSource) {
-  switch (source.indexStatus) {
-    case "indexing":
-      return "建索引中";
-    case "indexed":
-      return "已建索引";
-    case "failed":
-      return "索引失败";
-    default:
-      return "未建索引";
-  }
-}
-
-function sourceJobProgress(source: KnowledgeSource) {
-  if (!source.lastJobId) {
-    return 0;
-  }
-  if (source.lastJobStatus === "completed") {
-    return 100;
-  }
-  return Math.max(0, Math.min(100, Number(source.lastJobProgressPercent || 0)));
-}
-
-function uploadTraceTone(level: string) {
-  if (level === "error") {
-    return "danger";
-  }
-  if (level === "warning") {
-    return "warning";
-  }
-  return "neutral";
-}
-
-function traceProgressPercent(payload: Record<string, unknown>) {
-  const session = asRecord(payload.session);
-  const files = Array.isArray(session?.files) ? session.files : [];
-  const totals = files.reduce(
-    (acc, file) => {
-      const record = asRecord(file) || {};
-      acc.received += Number(record.receivedBytes || 0);
-      acc.total += Number(record.byteSize || 0);
-      return acc;
-    },
-    { received: 0, total: 0 },
-  );
-  if (totals.total > 0) {
-    return Math.max(0, Math.min(100, (totals.received / totals.total) * 100));
-  }
-  if (payload.stage === "response_sent" || payload.stage === "accepted") {
-    return 100;
-  }
-  return 0;
-}
-
-function uploadTraceDetailText(payload: Record<string, unknown>) {
-  const detail = {
-    message: payload.message || "",
-    requestId: payload.requestId || "",
-    sessionId: payload.sessionId || asRecord(payload.session)?.sessionId || "",
-    checkpointId: payload.checkpointId || asRecord(payload.session)?.checkpointId || "",
-    code: payload.code || "",
-    expectedOffset: payload.expectedOffset ?? "",
-    offset: payload.offset ?? "",
-    chunkBytes: payload.chunkBytes ?? "",
-    request: payload.request || undefined,
-    session: payload.session || undefined,
-    redaction: payload.redaction || undefined,
-  };
-  return JSON.stringify(detail, null, 2);
-}
-
 function splitJobStatusLabel(status?: string) {
   return jobStatusLabels[status as SplitJobStatus] || status || "待处理";
-}
-
-function pathPickerModeLabel(mode: PathPickerMode) {
-  return mode === "file" ? "文件" : "目录";
-}
-
-function pathEntryMeta(entry: ServerPathBrowseEntry) {
-  if (entry.type === "directory") {
-    return "";
-  }
-  return `${formatBytes(entry.byteSize)} / ${formatCompactDate(entry.modifiedAt)}`;
-}
-
-function openServerPathPicker(options: {
-  title: string;
-  mode: PathPickerMode;
-  value?: string;
-  extensions?: string[];
-  closeOnSelect?: boolean;
-  applyPath: (nextPath: string) => void;
-}) {
-  pathPicker.value = {
-    open: true,
-    title: options.title,
-    mode: options.mode,
-    value: options.value || "",
-    extensions: options.extensions || [],
-    includeHidden: false,
-    loading: false,
-    error: "",
-    response: null,
-    closeOnSelect: options.closeOnSelect !== false,
-    applyPath: options.applyPath,
-  };
-  void refreshServerPathBrowser(options.value || "");
-}
-
-async function refreshServerPathBrowser(nextPath?: string) {
-  const current = pathPicker.value;
-  current.loading = true;
-  current.error = "";
-  try {
-    const response = await bridge.browseServerPath({
-      path: nextPath ?? current.response?.currentPath ?? current.value,
-      mode: current.mode,
-      extensions: current.extensions,
-      includeHidden: current.includeHidden,
-    });
-    pathPicker.value = {
-      ...current,
-      loading: false,
-      response,
-      error: response.error || "",
-    };
-  } catch (nextError) {
-    pathPicker.value = {
-      ...current,
-      loading: false,
-      error: nextError instanceof Error ? nextError.message : "打开路径浏览器失败。",
-    };
-  }
-}
-
-function closeServerPathPicker() {
-  pathPicker.value = {
-    ...pathPicker.value,
-    open: false,
-  };
-}
-
-function selectServerPath(nextPath: string) {
-  if (!nextPath) {
-    return;
-  }
-  pathPicker.value.applyPath(nextPath);
-  if (pathPicker.value.closeOnSelect) {
-    closeServerPathPicker();
-  }
-}
-
-function confirmServerPathPicker() {
-  const currentPath = String(pathPicker.value.response?.currentPath || pathPicker.value.value || "").trim();
-  if (pathPicker.value.mode === "directory" && currentPath) {
-    pathPicker.value.applyPath(currentPath);
-  }
-  closeServerPathPicker();
-}
-
-function directoryNameFromPath(directoryPath: string) {
-  const normalized = String(directoryPath || "")
-    .trim()
-    .replace(/[\\/]+$/g, "");
-  if (!normalized) {
-    return "";
-  }
-  return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized;
-}
-
-function applyLocalSourceDirectoryPath(nextPath: string) {
-  const currentPath = localSourceForm.value.directoryPath;
-  const currentDefaultName = directoryNameFromPath(currentPath);
-  const currentLabel = localSourceForm.value.label.trim();
-  const shouldUseDirectoryName = !currentLabel || currentLabel === currentDefaultName;
-  localSourceForm.value.directoryPath = nextPath;
-  if (shouldUseDirectoryName) {
-    localSourceForm.value.label = directoryNameFromPath(nextPath);
-  }
-}
-
-function syncLocalSourceLabelFromPath() {
-  if (!localSourceForm.value.label.trim()) {
-    localSourceForm.value.label = directoryNameFromPath(localSourceForm.value.directoryPath);
-  }
-}
-
-function openPathEntry(entry: ServerPathBrowseEntry) {
-  if (!entry.browsable) {
-    return;
-  }
-  void refreshServerPathBrowser(entry.path);
 }
 
 function openLocalSourceDirectoryPicker() {
@@ -8309,927 +3294,6 @@ function openSettingsPathPicker(
   });
 }
 
-function openMountPathPicker(name: string) {
-  editingMountPaths.value = {
-    ...editingMountPaths.value,
-    [name]: true,
-  };
-  openServerPathPicker({
-    title: `选择${moduleNameLabels[name] || name}模块文件`,
-    mode: "file",
-    value: String(mountDraft.value[name] || ""),
-    extensions: [".mjs", ".js", ".cjs"],
-    applyPath: (nextPath) => {
-      mountDraft.value = {
-        ...mountDraft.value,
-        [name]: nextPath,
-      };
-    },
-  });
-}
-
-function evidencePrimaryText() {
-  const blockText = selectedEvidenceBlocks.value
-    .map((block) => String(block.text || block.snippet || "").trim())
-    .filter(Boolean)
-    .join("\n\n");
-  return String(
-    blockText ||
-    selectedEvidence.value?.text ||
-    selectedEvidence.value?.snippet ||
-    "",
-  ).trim();
-}
-
-function evidenceMainText() {
-  return evidencePrimaryText() || "当前证据没有可展示的正文。";
-}
-
-function escapeHtmlText(value: unknown) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function safeLinkHref(value: string) {
-  const href = value.trim();
-  if (!href) {
-    return "";
-  }
-  if (/^(https?:|mailto:|#|\/(?!\/))/i.test(href)) {
-    return href;
-  }
-  return "";
-}
-
-function safeMediaSrc(value: string) {
-  const src = value.trim();
-  if (!src) {
-    return "";
-  }
-  if (/^(https?:|\/(?!\/)|data:image\/|blob:)/i.test(src)) {
-    return src;
-  }
-  return "";
-}
-
-function safeEmailImageSrc(value: string) {
-  const raw = String(value || "").trim();
-  const assetUrl = assetUrlForReference(raw);
-  const src = (assetUrl || raw).trim();
-  if (!src) {
-    return "";
-  }
-  if (/^(\/api\/knowledge\/assets\/|data:image\/|blob:)/i.test(src)) {
-    return src;
-  }
-  try {
-    const url = new URL(src, window.location.origin);
-    const host = url.hostname.toLowerCase();
-    const path = url.pathname.toLowerCase();
-    const isTrackingHost =
-      host.includes("click.") ||
-      host.includes("track.") ||
-      host.includes("tracking.") ||
-      host.includes("doubleclick.") ||
-      host.includes("analytics.");
-    const isTrackingPath = /\/(ci0|track|pixel|open|beacon)\b/i.test(path);
-    if (url.protocol === "https:" && !url.search && !isTrackingHost && !isTrackingPath) {
-      return url.href;
-    }
-  } catch {
-    return "";
-  }
-  return "";
-}
-
-function sanitizeEmailCssUrls(value: string) {
-  return String(value || "").replace(/url\(([^)]+)\)/gi, (match, rawValue) => {
-    const raw = String(rawValue || "").trim().replace(/^["']|["']$/g, "");
-    const safe = safeEmailImageSrc(raw);
-    return safe ? `url("${safe.replace(/"/g, "%22")}")` : "none";
-  });
-}
-
-function sanitizeEmailFrameDocument(rawHtml: string) {
-  const source = rewriteInlineAssetRefs(String(rawHtml || ""));
-  const doc = new DOMParser().parseFromString(
-    /<html[\s>]|<body[\s>]|<!doctype/i.test(source)
-      ? source
-      : `<!doctype html><html><body>${source}</body></html>`,
-    "text/html",
-  );
-  for (const element of Array.from(doc.querySelectorAll("script, iframe, object, embed, form, input, button, textarea, select"))) {
-    element.remove();
-  }
-  for (const element of Array.from(doc.querySelectorAll("style"))) {
-    element.textContent = sanitizeEmailCssUrls(element.textContent || "");
-  }
-  for (const element of Array.from(doc.querySelectorAll("*"))) {
-    for (const attribute of Array.from(element.attributes)) {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value || "";
-      if (name.startsWith("on")) {
-        element.removeAttribute(attribute.name);
-        continue;
-      }
-      if (name === "style") {
-        element.setAttribute(attribute.name, sanitizeEmailCssUrls(value));
-        continue;
-      }
-      if (name === "href") {
-        const href = safeLinkHref(value);
-        href ? element.setAttribute(attribute.name, href) : element.removeAttribute(attribute.name);
-        if (href) {
-          element.setAttribute("target", "_blank");
-          element.setAttribute("rel", "noreferrer noopener");
-        }
-        continue;
-      }
-      if (name === "src" || name === "background") {
-        const safe = safeEmailImageSrc(value);
-        safe ? element.setAttribute(attribute.name, safe) : element.removeAttribute(attribute.name);
-        continue;
-      }
-      if (name === "srcset") {
-        element.removeAttribute(attribute.name);
-      }
-    }
-    if (element.tagName.toLowerCase() === "img") {
-      element.setAttribute("loading", "lazy");
-      element.setAttribute("referrerpolicy", "no-referrer");
-      if (!element.getAttribute("alt")) {
-        element.setAttribute("alt", "");
-      }
-    }
-  }
-  const headStyles = Array.from(doc.head?.querySelectorAll("style") || [])
-    .map((style) => style.outerHTML)
-    .join("\n");
-  const body = doc.body || doc.documentElement;
-  const bodyAttributes = body instanceof HTMLElement
-    ? Array.from(body.attributes)
-        .filter((attribute) => ["style", "class", "bgcolor", "text", "link", "vlink", "alink"].includes(attribute.name.toLowerCase()))
-        .map((attribute) => `${attribute.name}="${escapeHtmlText(attribute.value)}"`)
-        .join(" ")
-    : "";
-  const csp = [
-    "default-src 'none'",
-    `img-src 'self' ${window.location.origin} data: blob: https:`,
-    "style-src 'unsafe-inline'",
-    "font-src data: https:",
-    "media-src data: blob: https:",
-    "frame-src 'none'",
-    "script-src 'none'",
-    "connect-src 'none'",
-  ].join("; ");
-  return `<!doctype html>
-<html>
-<head>
-<base href="${escapeHtmlText(window.location.origin)}/">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${escapeHtmlText(csp)}">
-<style>
-html, body { margin: 0; padding: 0; background: #fff; color: #111827; }
-body { overflow-wrap: anywhere; }
-img { max-width: 100%; height: auto; }
-table { max-width: 100%; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-</style>
-${headStyles}
-</head>
-<body ${bodyAttributes}>${body.innerHTML}</body>
-</html>`;
-}
-
-function renderEmailFrame(rawHtml: string) {
-  const srcdoc = sanitizeEmailFrameDocument(rawHtml);
-  return `<div class="rendered-email-frame-shell"><iframe class="rendered-email-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="${escapeHtmlText(srcdoc)}"></iframe></div>`;
-}
-
-function sanitizeHtmlContent(rawHtml: string) {
-  const template = document.createElement("template");
-  template.innerHTML = rawHtml;
-  const blockedTags = new Set([
-    "script",
-    "style",
-    "iframe",
-    "object",
-    "embed",
-    "link",
-    "meta",
-    "form",
-    "input",
-    "button",
-    "svg",
-  ]);
-  const allowedAttrs = new Set(["href", "src", "alt", "title", "colspan", "rowspan"]);
-  for (const element of Array.from(template.content.querySelectorAll("*"))) {
-    const tag = element.tagName.toLowerCase();
-    if (blockedTags.has(tag)) {
-      element.remove();
-      continue;
-    }
-    for (const attr of Array.from(element.attributes)) {
-      const name = attr.name.toLowerCase();
-      if (name.startsWith("on") || name === "style" || !allowedAttrs.has(name)) {
-        element.removeAttribute(attr.name);
-        continue;
-      }
-      if (name === "href") {
-        const href = safeLinkHref(attr.value);
-        if (!href) {
-          element.removeAttribute(attr.name);
-        } else {
-          element.setAttribute("href", href);
-          element.setAttribute("target", "_blank");
-          element.setAttribute("rel", "noreferrer noopener");
-        }
-      }
-      if (name === "src") {
-        const src = safeMediaSrc(attr.value);
-        if (!src) {
-          element.removeAttribute(attr.name);
-        } else {
-          element.setAttribute("src", src);
-          element.setAttribute("loading", "lazy");
-        }
-      }
-    }
-  }
-  return template.innerHTML;
-}
-
-function markdownToSafeHtml(markdown: string) {
-  const rendered = marked.parse(String(markdown || ""), {
-    async: false,
-    breaks: false,
-    gfm: true,
-  });
-  return sanitizeHtmlContent(String(rendered));
-}
-
-function escapeRegexText(value: string) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function uniqueEvidenceRefs(values: string[]) {
-  const seen = new Set<string>();
-  return values
-    .map((value) => String(value || "").trim())
-    .filter((value) => {
-      if (!value || seen.has(value)) {
-        return false;
-      }
-      seen.add(value);
-      return true;
-    });
-}
-
-function extractEvidenceRefsFromText(value: string) {
-  const text = String(value || "");
-  return uniqueEvidenceRefs(
-    Array.from(text.matchAll(/\b(?:source-evidence::[A-Za-z0-9:_-]+|evidence::[A-Za-z0-9:_-]+|ev_[A-Za-z0-9_-]+)\b/g))
-      .map((match) => match[0]),
-  );
-}
-
-function evidenceRefHref(evidenceId: string) {
-  return `#pact-evidence-${encodeURIComponent(evidenceId)}`;
-}
-
-function evidenceIdFromHref(href: string) {
-  const prefix = "#pact-evidence-";
-  if (!String(href || "").startsWith(prefix)) {
-    return "";
-  }
-  try {
-    return decodeURIComponent(String(href).slice(prefix.length));
-  } catch {
-    return String(href).slice(prefix.length);
-  }
-}
-
-function linkifyEvidenceRefsInMarkdown(markdown: string, refs: string[]) {
-  let next = String(markdown || "");
-  for (const refId of [...refs].sort((left, right) => right.length - left.length)) {
-    const escaped = escapeRegexText(refId);
-    const href = evidenceRefHref(refId);
-    next = next.replace(new RegExp(`\\[(${escaped})\\](?!\\()`, "g"), `[${refId}](${href})`);
-    next = next.replace(
-      new RegExp(`(^|[\\s(（,，;；:：])(${escaped})(?=$|[\\s)）,.，。;；:：])`, "g"),
-      (_match, prefix) => `${prefix}[${refId}](${href})`,
-    );
-  }
-  return next;
-}
-
-function plainTextToHtml(text: string) {
-  return String(text || "")
-    .replace(/\r\n/g, "\n")
-    .split(/\n{2,}/)
-    .map((paragraph) => `<p>${escapeHtmlText(paragraph).replace(/\n/g, "<br />")}</p>`)
-    .join("\n");
-}
-
-function normalizeCharset(value: string) {
-  const charset = String(value || "utf-8").trim().toLowerCase().replace(/^["']|["']$/g, "");
-  if (!charset || charset === "utf8") {
-    return "utf-8";
-  }
-  if (charset === "us-ascii") {
-    return "windows-1252";
-  }
-  return charset;
-}
-
-function decodeBytes(bytes: number[], charset = "utf-8") {
-  try {
-    return new TextDecoder(normalizeCharset(charset)).decode(new Uint8Array(bytes));
-  } catch {
-    return new TextDecoder("utf-8").decode(new Uint8Array(bytes));
-  }
-}
-
-function base64ToBytes(value: string) {
-  const clean = String(value || "").replace(/\s+/g, "");
-  if (!clean) {
-    return [];
-  }
-  try {
-    return Array.from(atob(clean), (char) => char.charCodeAt(0));
-  } catch {
-    return [];
-  }
-}
-
-function decodeQuotedPrintableToBytes(value: string, headerMode = false) {
-  const text = String(value || "")
-    .replace(/=\r?\n/g, "")
-    .replace(/\r\n/g, "\n");
-  const bytes: number[] = [];
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (headerMode && char === "_") {
-      bytes.push(0x20);
-      continue;
-    }
-    if (char === "=" && /^[0-9a-f]{2}$/i.test(text.slice(index + 1, index + 3))) {
-      bytes.push(parseInt(text.slice(index + 1, index + 3), 16));
-      index += 2;
-      continue;
-    }
-    const code = char.charCodeAt(0);
-    if (code <= 0xff) {
-      bytes.push(code);
-    } else {
-      bytes.push(...Array.from(new TextEncoder().encode(char)));
-    }
-  }
-  return bytes;
-}
-
-function decodeMimeWords(value: string) {
-  return String(value || "").replace(
-    /=\?([^?]+)\?([bq])\?([^?]*)\?=/gi,
-    (_match, charset, encoding, content) => {
-      const bytes =
-        String(encoding).toLowerCase() === "b"
-          ? base64ToBytes(String(content))
-          : decodeQuotedPrintableToBytes(String(content), true);
-      return decodeBytes(bytes, String(charset));
-    },
-  );
-}
-
-function parseHeaderParams(value: string) {
-  const parts = String(value || "").split(";").map((part) => part.trim());
-  const type = (parts.shift() || "").toLowerCase();
-  const params: Record<string, string> = {};
-  for (const part of parts) {
-    const index = part.indexOf("=");
-    if (index <= 0) {
-      continue;
-    }
-    const key = part.slice(0, index).trim().toLowerCase();
-    const raw = part.slice(index + 1).trim();
-    params[key] = raw.replace(/^["']|["']$/g, "");
-  }
-  return { type, params };
-}
-
-function evidenceAssetHintValues(asset: KnowledgeAssetRef) {
-  const record = asRecord(asset as unknown) || {};
-  const metadata = asRecord(record.metadata) || {};
-  const locator = asRecord(asset.sourceLocator) || {};
-  return [
-    asset.assetId,
-    asset.title,
-    asset.caption,
-    asset.thumbnailAssetId,
-    metadata.contentId,
-    metadata.contentID,
-    metadata["content-id"],
-    metadata["Content-ID"],
-    metadata.cid,
-    metadata.CID,
-    metadata.filename,
-    metadata.fileName,
-    metadata.name,
-    metadata.path,
-    metadata.originalRelativePath,
-    locator.sourceId,
-    locator.sourcePath,
-    locator.originalRelativePath,
-  ]
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-}
-
-function normalizeCidToken(value: string) {
-  const decoded = decodeURIComponentSafe(String(value || "").trim()).trim();
-  return decoded
-    .replace(/^cid:/i, "")
-    .replace(/^["']|["']$/g, "")
-    .replace(/^<|>$/g, "")
-    .replace(/[?#].*$/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeAssetReference(value: string) {
-  const normalized = normalizeCidToken(value)
-    .replace(/^file:\/\//i, "")
-    .replace(/\\/g, "/");
-  const parts = normalized.split("/").filter(Boolean);
-  return {
-    full: normalized,
-    basename: parts[parts.length - 1] || normalized,
-  };
-}
-
-function isImageAsset(asset: KnowledgeAssetRef) {
-  const mediaType = String(asset.mediaType || "").toLowerCase();
-  if (mediaType.startsWith("image/")) {
-    return true;
-  }
-  return evidenceAssetHintValues(asset).some((hint) =>
-    /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)$/i.test(hint),
-  );
-}
-
-function imageEvidenceAssets() {
-  return evidenceAssets.value.filter((asset) => isImageAsset(asset));
-}
-
-function assetUrlForReference(reference: string) {
-  const { full, basename } = normalizeAssetReference(reference);
-  if (!full) {
-    return "";
-  }
-  const images = imageEvidenceAssets();
-  const exact = images.find((asset) =>
-    evidenceAssetHintValues(asset).some((hint) => {
-      const candidate = normalizeAssetReference(hint);
-      return candidate.full === full || candidate.basename === full || candidate.basename === basename;
-    }),
-  );
-  if (exact?.assetId) {
-    return bridge.knowledgeAssetUrl(String(exact.assetId));
-  }
-  const loose = images.find((asset) =>
-    evidenceAssetHintValues(asset).some((hint) => {
-      const candidate = normalizeAssetReference(hint);
-      return (
-        candidate.full &&
-        (candidate.full.includes(full) ||
-          full.includes(candidate.full) ||
-          candidate.basename.includes(basename) ||
-          basename.includes(candidate.basename))
-      );
-    }),
-  );
-  if (loose?.assetId) {
-    return bridge.knowledgeAssetUrl(String(loose.assetId));
-  }
-  return images.length === 1 && images[0]?.assetId
-    ? bridge.knowledgeAssetUrl(String(images[0].assetId))
-    : "";
-}
-
-function rewriteInlineAssetRefs(html: string) {
-  return String(html || "").replace(
-    /\b(src|background)\s*=\s*(["'])([^"']+)\2/gi,
-    (match, attr, quote, reference) => {
-      const raw = String(reference || "");
-      if (/^(https?:|data:image\/|blob:|\/api\/knowledge\/assets\/)/i.test(raw.trim())) {
-        return match;
-      }
-      const url = assetUrlForReference(raw);
-      return url ? `${attr}=${quote}${url}${quote}` : match;
-    },
-  );
-}
-
-function normalizeRenderedText(value: string) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function renderedHtmlHasBlocks(value: string) {
-  return /<(p|div|section|article|ul|ol|li|table|blockquote|h[1-6]|pre|figure)\b/i.test(value);
-}
-
-function isHiddenEmailElement(element: Element) {
-  const style = String(element.getAttribute("style") || "").toLowerCase();
-  return (
-    element.hasAttribute("hidden") ||
-    element.getAttribute("aria-hidden") === "true" ||
-    /display\s*:\s*none/.test(style) ||
-    /visibility\s*:\s*hidden/.test(style) ||
-    /opacity\s*:\s*0/.test(style) ||
-    /font-size\s*:\s*0/.test(style) ||
-    /max-height\s*:\s*0/.test(style)
-  );
-}
-
-function renderEmailImage(element: Element) {
-  const src = safeEmailImageSrc(element.getAttribute("src") || "");
-  const alt = normalizeRenderedText(element.getAttribute("alt") || element.getAttribute("title") || "");
-  if (!src) {
-    return alt ? `<span class="email-image-alt">${escapeHtmlText(alt)}</span>` : "";
-  }
-  return `<figure class="email-inline-image"><img src="${escapeHtmlText(src)}" alt="${escapeHtmlText(alt || "email image")}" loading="lazy" referrerpolicy="no-referrer" /><figcaption>${escapeHtmlText(alt)}</figcaption></figure>`;
-}
-
-function renderEmailNode(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) {
-    return escapeHtmlText(normalizeRenderedText(node.textContent || ""));
-  }
-  if (node.nodeType !== Node.ELEMENT_NODE) {
-    return "";
-  }
-  const element = node as Element;
-  const tag = element.tagName.toLowerCase();
-  if (
-    isHiddenEmailElement(element) ||
-    ["script", "style", "meta", "link", "head", "title", "noscript", "template", "svg", "iframe", "object", "embed"].includes(tag)
-  ) {
-    return "";
-  }
-  if (tag === "br") {
-    return "<br />";
-  }
-  if (tag === "img") {
-    return renderEmailImage(element);
-  }
-  const children = Array.from(element.childNodes)
-    .map((child) => renderEmailNode(child))
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+(<\/?(?:br|p|div|ul|ol|li|h4|blockquote|pre|figure)\b)/g, "$1")
-    .replace(/(<\/(?:br|p|div|ul|ol|li|h4|blockquote|pre|figure)>)\s+/g, "$1")
-    .trim();
-  if (!children) {
-    return "";
-  }
-  if (tag === "a") {
-    const href = safeLinkHref(element.getAttribute("href") || "");
-    return href
-      ? `<a href="${escapeHtmlText(href)}" target="_blank" rel="noreferrer noopener">${children}</a>`
-      : children;
-  }
-  if (tag === "li") {
-    return `<li>${children}</li>`;
-  }
-  if (tag === "ul" || tag === "ol") {
-    return `<${tag}>${children}</${tag}>`;
-  }
-  if (/^h[1-6]$/.test(tag)) {
-    return `<h4>${children}</h4>`;
-  }
-  if (tag === "pre" || tag === "code") {
-    return `<pre>${escapeHtmlText(element.textContent || "")}</pre>`;
-  }
-  if (tag === "blockquote") {
-    return `<blockquote>${children}</blockquote>`;
-  }
-  if (tag === "figure") {
-    return `<figure>${children}</figure>`;
-  }
-  if (["table", "tbody", "thead", "tfoot", "tr"].includes(tag)) {
-    return `<div class="email-reader-group">${children}</div>`;
-  }
-  if (["td", "th", "div", "p", "section", "article", "main", "center"].includes(tag)) {
-    return renderedHtmlHasBlocks(children)
-      ? `<div class="email-reader-group">${children}</div>`
-      : `<p>${children}</p>`;
-  }
-  return children;
-}
-
-function renderReadableHtmlDocument(rawHtml: string, options: { headers?: Array<[string, string]>; title?: string } = {}) {
-  const source = rewriteInlineAssetRefs(String(rawHtml || ""));
-  const doc = new DOMParser().parseFromString(
-    /<html[\s>]|<body[\s>]|<!doctype/i.test(source)
-      ? source
-      : `<!doctype html><html><body>${source}</body></html>`,
-    "text/html",
-  );
-  const headers = options.headers || [];
-  const importantHeaders = ["Subject", "From", "To", "Cc", "Date"];
-  const headerHtml = `<dl class="rendered-email-headers">${importantHeaders
-    .map((name) => {
-      const value = emailHeaderValue(headers, name) || htmlMetaHeader(source, name);
-      return value ? `<div><dt>${escapeHtmlText(name)}</dt><dd>${escapeHtmlText(value)}</dd></div>` : "";
-    })
-    .join("")}</dl>`;
-  const body = doc.body || doc.documentElement;
-  const content = Array.from(body.childNodes)
-    .map((child) => renderEmailNode(child))
-    .filter(Boolean)
-    .join("")
-    .trim();
-  const fallback = plainTextToHtml(body.textContent || source);
-  return `<article class="rendered-email rendered-email-reader">${headerHtml}<div class="email-reader-body">${content || fallback}</div></article>`;
-}
-
-function parseEmailHeaders(rawText: string) {
-  const normalized = rawText.replace(/\r\n/g, "\n");
-  const match = normalized.match(/^([\s\S]*?)\n\s*\n([\s\S]*)$/);
-  if (!match || !/^(from|to|subject|date|cc):/im.test(match[1])) {
-    return { headers: [] as Array<[string, string]>, body: rawText };
-  }
-  const unfolded = match[1].replace(/\n[ \t]+/g, " ");
-  const headers = unfolded
-    .split("\n")
-    .map((line) => {
-      const index = line.indexOf(":");
-      return index > 0 ? [line.slice(0, index), decodeMimeWords(line.slice(index + 1).trim())] as [string, string] : null;
-    })
-    .filter(Boolean) as Array<[string, string]>;
-  return { headers, body: match[2] };
-}
-
-function emailHeaderValue(headers: Array<[string, string]>, name: string) {
-  return headers.find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || "";
-}
-
-function decodeMimeBody(body: string, headers: Array<[string, string]>) {
-  const transferEncoding = emailHeaderValue(headers, "Content-Transfer-Encoding").toLowerCase();
-  const contentType = parseHeaderParams(emailHeaderValue(headers, "Content-Type"));
-  const charset = contentType.params.charset || "utf-8";
-  if (transferEncoding === "quoted-printable") {
-    return decodeBytes(decodeQuotedPrintableToBytes(body), charset);
-  }
-  if (transferEncoding === "base64") {
-    return decodeBytes(base64ToBytes(body), charset);
-  }
-  return body;
-}
-
-function splitMimeParts(body: string, boundary: string) {
-  if (!boundary) {
-    return [];
-  }
-  const normalized = body.replace(/\r\n/g, "\n");
-  const marker = `--${boundary}`;
-  return normalized
-    .split(marker)
-    .slice(1)
-    .map((part) => part.replace(/^\n/, "").replace(/\n--\s*$/, "").trimEnd())
-    .filter((part) => part && part !== "--");
-}
-
-function extractEmailRenderablePart(rawText: string): { headers: Array<[string, string]>; body: string; contentType: string } {
-  const parsed = parseEmailHeaders(rawText);
-  const contentType = parseHeaderParams(emailHeaderValue(parsed.headers, "Content-Type"));
-  if (contentType.type.startsWith("multipart/") && contentType.params.boundary) {
-    const parts = splitMimeParts(parsed.body, contentType.params.boundary)
-      .map((part) => extractEmailRenderablePart(part));
-    return (
-      parts.find((part) => part.contentType === "text/html") ||
-      parts.find((part) => part.contentType === "text/plain") ||
-      parts[0] ||
-      { headers: parsed.headers, body: "", contentType: "text/plain" }
-    );
-  }
-  return {
-    headers: parsed.headers,
-    body: decodeMimeBody(parsed.body, parsed.headers),
-    contentType: contentType.type || "text/plain",
-  };
-}
-
-function emailToSafeHtml(rawText: string) {
-  const renderable = extractEmailRenderablePart(rawText);
-  return (
-    renderable.contentType === "text/html" || /<\/?[a-z][\s\S]*>/i.test(renderable.body)
-      ? renderEmailFrame(renderable.body)
-      : renderEmailFrame(`<pre>${escapeHtmlText(renderable.body)}</pre>`)
-  );
-}
-
-function evidenceSourceHint() {
-  const locator =
-    asRecord(selectedEvidence.value?.sourceLocator) ||
-    asRecord(selectedEvidence.value?.locator) ||
-    null;
-  const documentRecord = selectedEvidenceDocument.value || {};
-  return [
-    documentRecord.documentType,
-    documentRecord.mediaType,
-    documentRecord.sourcePath,
-    documentRecord.title,
-    locator?.sourcePath,
-    selectedEvidence.value?.title,
-  ].map((item) => String(item || "").toLowerCase()).join(" ");
-}
-
-function evidenceReadableKindLabel() {
-  const text = evidencePrimaryText();
-  const hint = evidenceSourceHint();
-  if (/\.(eml|msg)\b|message\/rfc822|^from:|^subject:/i.test(`${hint}\n${text.slice(0, 500)}`)) {
-    return "EML";
-  }
-  if (/\.html?\b|text\/html|^\s*(<!doctype\s+html|<html|<body)\b/i.test(`${hint}\n${text.slice(0, 500)}`)) {
-    return "HTML";
-  }
-  if (/\.md\b|\.markdown\b|text\/markdown/i.test(hint)) {
-    return "Markdown";
-  }
-  if (!text && imageEvidenceAssets().length > 0) {
-    return "图片";
-  }
-  return "文本";
-}
-
-function decodeURIComponentSafe(value: string) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function assetIdsEmbeddedInHtml(html: string) {
-  const ids = new Set<string>();
-  for (const match of String(html || "").matchAll(/\/api\/knowledge\/assets\/([^"')\s<]+)/g)) {
-    ids.add(decodeURIComponentSafe(match[1] || ""));
-  }
-  return ids;
-}
-
-function renderEvidenceImageGallery(excludedAssetIds = new Set<string>()) {
-  const images = imageEvidenceAssets().filter((asset) => !excludedAssetIds.has(String(asset.assetId || "")));
-  if (images.length === 0) {
-    return "";
-  }
-  return `<div class="rendered-image-grid">${images
-    .map((asset) => {
-      const src = asset.assetId ? bridge.knowledgeAssetUrl(String(asset.assetId)) : "";
-      return src
-        ? `<figure><img src="${escapeHtmlText(src)}" alt="${escapeHtmlText(asset.title || asset.assetId || "image")}" loading="lazy" /><figcaption>${escapeHtmlText(asset.title || asset.caption || asset.assetId || "")}</figcaption></figure>`
-        : "";
-    })
-    .join("")}</div>`;
-}
-
-function embedEvidenceAssets(html: string) {
-  const gallery = renderEvidenceImageGallery(assetIdsEmbeddedInHtml(html));
-  if (!gallery) {
-    return html;
-  }
-  return `${html}<section class="rendered-inline-assets">${gallery}</section>`;
-}
-
-function renderEvidenceReadableHtml() {
-  const text = evidencePrimaryText();
-  const kind = evidenceReadableKindLabel();
-  if (!text && kind === "图片") {
-    return renderEvidenceImageGallery() || plainTextToHtml("当前证据没有可展示的正文。");
-  }
-  if (kind === "EML") {
-    return emailToSafeHtml(text);
-  }
-  if (kind === "HTML") {
-    return renderEmailFrame(text);
-  }
-  if (kind === "Markdown") {
-    return embedEvidenceAssets(markdownToSafeHtml(text));
-  }
-  return embedEvidenceAssets(plainTextToHtml(text || "当前证据没有可展示的正文。"));
-}
-
-function evidenceSourceDetails() {
-  const locator =
-    asRecord(selectedEvidence.value?.sourceLocator) ||
-    asRecord(selectedEvidence.value?.locator) ||
-    null;
-  const document = selectedEvidenceDocument.value || {};
-  const section = selectedEvidenceSection.value || {};
-  return [
-    { label: "文档", value: String(document.title || document.documentId || "未记录") },
-    { label: "章节", value: String(section.title || section.sectionId || "未记录") },
-    { label: "来源", value: String(locator?.sourcePath || "未记录") },
-    { label: "批次", value: String(locator?.batchId || selectedEvidence.value?.batchId || "未记录") },
-  ].filter((item: any) => item.value && item.value !== "未记录");
-}
-
-function evidenceReasonText() {
-  const reasons = selectedEvidence.value?.reasons || [];
-  if (!Array.isArray(reasons) || reasons.length === 0) {
-    return "暂无命中说明。";
-  }
-  return reasons
-    .map((reason) => (typeof reason === "string" ? reason : JSON.stringify(reason)))
-    .join("；");
-}
-
-async function refreshAuthState() {
-  try {
-    const session = await bridge.getAuthSession();
-    authState.value = session;
-    if (!session.session.authenticated) {
-      consoleState.value = null;
-      stopServerEventSubscription();
-    }
-    return session;
-  } catch (nextError) {
-    authState.value = null;
-    consoleState.value = null;
-    stopServerEventSubscription();
-    error.value = nextError instanceof Error ? nextError.message : "加载认证状态失败。";
-    return null;
-  } finally {
-    authBootstrapping.value = false;
-  }
-}
-
-async function submitLoginAuth() {
-  setBusy("auth:login");
-  error.value = "";
-  try {
-    await bridge.loginAuth(loginForm.value);
-    const session = await refreshAuthState();
-    if (!session?.session.authenticated) {
-      error.value = "登录已返回，但会话状态尚未生效，请重试。";
-      return;
-    }
-    await refreshState({ silent: true });
-    startServerEventSubscription();
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "登录失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function logoutConsole() {
-  setBusy("auth:logout");
-  error.value = "";
-  stopServerEventSubscription();
-  serverEventCursor = 0;
-  try {
-    await bridge.logoutAuth();
-    consoleState.value = null;
-    await refreshAuthState();
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "退出失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function refreshAuthAdmin() {
-  if (!canAdminAuth.value) {
-    return;
-  }
-  try {
-    const [users, audit, sessions, oidc] = await Promise.all([
-      bridge.listAuthUsers(),
-      bridge.listAuthAudit(80),
-      bridge.listAuthSessions(),
-      bridge.getAuthOidc(),
-    ]);
-    authUsers.value = users.users;
-    authAudit.value = audit.items;
-    authSessions.value = sessions.sessions;
-    oidcDraft.value = {
-      ...oidc.oidc,
-      clientSecret: "",
-    };
-    oidcAllowedDomainsText.value = (oidc.oidc.allowedDomains || []).join("\n");
-    oidcRoleMappingText.value = JSON.stringify(oidc.oidc.roleMapping || {}, null, 2);
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "加载认证管理数据失败。";
-  }
-}
-
 async function refreshMcpAuthorizationRequests() {
   const busy = "mcp-authorization-requests:refresh";
   setBusy(busy);
@@ -9269,64 +3333,6 @@ async function resolveMcpAuthorizationRequest(
   }
 }
 
-async function updateConsoleUser(user: ConsoleUser, patch: Partial<ConsoleUser> & { password?: string }) {
-  setBusy(`auth:user:${user.userId}`);
-  error.value = "";
-  try {
-    const result = await bridge.updateAuthUser(user.userId, patch);
-    authUsers.value = result.users;
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "更新用户失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-function updateConsoleUserRoleFromEvent(user: ConsoleUser, event: Event) {
-  const roleId = (event.target as HTMLSelectElement).value;
-  void updateConsoleUser(user, { roleId });
-}
-
-function updateConsoleUserRole(user: ConsoleUser, roleId: string) {
-  void updateConsoleUser(user, { roleId });
-}
-
-async function saveOidcConfig() {
-  setBusy("auth:oidc");
-  error.value = "";
-  try {
-    const result = await bridge.saveAuthOidc({
-      ...oidcDraft.value,
-      allowedDomains: oidcAllowedDomainsText.value
-        .split(/[\n,，]/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-      roleMapping: JSON.parse(oidcRoleMappingText.value || "{}") as Record<string, string>,
-    });
-    oidcDraft.value = {
-      ...result.oidc,
-      clientSecret: "",
-    };
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "保存 OIDC 失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function revokeConsoleSession(sessionId: string) {
-  setBusy(`auth:session:${sessionId}`);
-  error.value = "";
-  try {
-    await bridge.revokeAuthSession(sessionId);
-    await refreshAuthAdmin();
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "撤销会话失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
 async function refreshKnowledgeConsole() {
   if (!hasScope("knowledge:read")) {
     return;
@@ -9359,162 +3365,6 @@ async function refreshKnowledgeConsole() {
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "加载知识库管控数据失败。";
-  }
-}
-
-async function refreshWordCloud(options: { silent?: boolean } = {}) {
-  if (!canReadKnowledge.value) {
-    return;
-  }
-  if (!options.silent) {
-    setBusy("knowledge:word-clouds");
-  }
-  error.value = "";
-  const targetCorpusPaths = resolveWordCloudCorpusPathsForQuery();
-  try {
-    const state = await bridge.getKnowledgeWordClouds({
-      limit: 100000,
-      minFrequency: 1,
-      corpusPaths: targetCorpusPaths,
-    });
-    wordCloudState.value = state;
-    setWordCloudDraftFromState(state);
-    if (wordCloudMessages.value.length === 0) {
-      wordCloudMessages.value = [{
-        id: `word-cloud-system-${Date.now()}`,
-        role: "system" as const,
-        text: `已读取 ${state.terms?.length || 0} 个语料词。`,
-        at: new Date().toISOString(),
-      }];
-    }
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "加载词云失败。";
-  } finally {
-    if (!options.silent && busyKey.value === "knowledge:word-clouds") {
-      clearAllBusy();
-    }
-  }
-}
-
-async function saveWordCloud() {
-  if (!canWriteKnowledge.value) {
-    error.value = "需要 knowledge:write 权限才能保存词云。";
-    return;
-  }
-  const draft = wordCloudDraft.value || createDefaultWordCloudSet(wordCloudTerms.value);
-  autoAbsorbWordCloudTerms(draft);
-  setBusy("knowledge:word-clouds:save");
-  error.value = "";
-  try {
-    const result = await bridge.saveKnowledgeWordClouds({
-      wordBagSet: {
-        ...draft,
-        wordBagCount: draft.wordBags.length,
-        termsSnapshot: wordCloudTerms.value,
-        corpusPaths: wordCloudCorpusPaths.value,
-        modelAlias: wordCloudModelAlias.value,
-      },
-      limit: 100000,
-      minFrequency: 1,
-    });
-    applySavedWordCloudSet(result.wordBagSet);
-    wordCloudMessages.value = [{
-      id: `word-cloud-save-${Date.now()}`,
-      role: "system" as const,
-      text: "词云已保存到本地。",
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "保存词云失败。";
-  } finally {
-    if (busyKey.value === "knowledge:word-clouds:save") {
-      clearAllBusy();
-    }
-  }
-}
-
-async function proposeWordCloud() {
-  if (!canWriteKnowledge.value) {
-    error.value = "需要 knowledge:write 权限才能调用智能体生成词云。";
-    return;
-  }
-  if (!selectedWordCloudModel.value.enabled) {
-    error.value = selectedWordCloudModel.value.disabledReason || "请选择一个可用智能体。";
-    return;
-  }
-  setBusy("knowledge:word-clouds:propose");
-  error.value = "";
-  const prompt = wordCloudPrompt.value.trim();
-  if (!prompt) {
-    error.value = "请输入词云分组意图。";
-    clearAllBusy();
-    return;
-  }
-  const corpusPaths = resolveWordCloudCorpusPathsForQuery();
-  if (corpusPaths.length === 0) {
-    error.value = "请先添加语料范围后再启动分类任务。";
-    wordCloudMessages.value = [{
-      id: `word-cloud-error-${Date.now()}`,
-      role: "system" as const,
-      text: error.value,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-    return;
-  }
-  if (prompt) {
-    wordCloudMessages.value = [{
-      id: `word-cloud-user-${Date.now()}`,
-      role: "user" as const,
-      text: prompt,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  }
-  try {
-    const preparedTerms = await refreshWordCloudCorpusTerms({
-      silent: true,
-      forceRebuild: true,
-      corpusPaths,
-    });
-    if ((preparedTerms || []).length === 0) {
-      if (corpusPaths.length > 0) {
-        error.value = "已扫描语料范围但未发现可用词频，建议确认目录下有已入库文档并重新启动该任务。";
-      } else {
-        error.value = "请先添加语料范围后再启动分类任务。";
-      }
-      wordCloudMessages.value = [{
-        id: `word-cloud-error-${Date.now()}`,
-        role: "system" as const,
-        text: error.value,
-        at: new Date().toISOString(),
-      }, ...wordCloudMessages.value].slice(0, 20);
-      return;
-    }
-    const result = await bridge.proposeKnowledgeWordClouds({
-      modelAlias: selectedWordCloudModel.value.value,
-      prompt,
-      minFrequency: 1,
-      corpusPaths,
-    });
-    wordCloudPrompt.value = "";
-    applySavedWordCloudSet(result.wordBagSet);
-    wordCloudMessages.value = [{
-      id: `word-cloud-agent-${Date.now()}`,
-      role: "agent" as const,
-      text: result.run?.runId ? "词云分类后台任务已启动。" : `已生成 ${result.wordBagSet?.wordBags?.length || 0} 朵词云。`,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "智能体生成词云失败。";
-    wordCloudMessages.value = [{
-      id: `word-cloud-error-${Date.now()}`,
-      role: "system" as const,
-      text: error.value,
-      at: new Date().toISOString(),
-    }, ...wordCloudMessages.value].slice(0, 20);
-  } finally {
-    if (busyKey.value === "knowledge:word-clouds:propose") {
-      clearAllBusy();
-    }
   }
 }
 
@@ -9620,750 +3470,6 @@ async function fuseKnowledgeReview(item: KnowledgeReviewItem) {
   } finally {
     clearAllBusy();
   }
-}
-
-async function searchKnowledge() {
-  const query = knowledgeSearchForm.value.query.trim();
-  if (!query) {
-    error.value = "请输入知识召回调试问题。";
-    return;
-  }
-  if (!canReadKnowledge.value) {
-    error.value = "当前账号没有知识库读取权限。";
-    return;
-  }
-  setBusy("knowledge:search");
-  error.value = "";
-  openDebugTab("knowledgeRecall");
-  selectedEvidence.value = null;
-  selectedEvidenceId.value = "";
-  try {
-    const retrievalProfile = currentKnowledgeRetrievalSettings();
-    const result = await bridge.searchKnowledge({
-      query,
-      limit: currentKnowledgeSearchLimit(),
-      retrievalMode: "hybrid",
-      keywordOnly: false,
-      retrievalProfile,
-      profile: { retrieval: retrievalProfile },
-      retrievalProfileId: String((retrievalProfile as any).retrievalProfileId || ""),
-      clientId: "server-console-knowledge-recall",
-      explain: true,
-      learningEnabled: currentKnowledgeLearningEnabled(),
-    });
-    knowledgeSearchResponse.value = result;
-    knowledgeSearchResults.value = normalizeSearchResults(result);
-    lastKnowledgeSearchQuery.value = query;
-    const firstEvidenceId = knowledgeSearchResults.value
-      .map((item) => knowledgeResultEvidenceId(item))
-      .find(Boolean);
-    if (firstEvidenceId) {
-      await loadEvidence(firstEvidenceId);
-    }
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "知识召回失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-function currentKnowledgeRecallTopK() {
-  const settings = currentKnowledgeRetrievalSettings();
-  const topK = Number(settings.topK || 20);
-  return Math.max(1, Math.min(Number.isFinite(topK) ? Math.floor(topK) : 20, 100));
-}
-
-function buildKnowledgeRecallSearchPayload(query: string) {
-  const topK = currentKnowledgeRecallTopK();
-  const target = selectedKnowledgeRecallDebugTarget.value;
-  const retrievalMode = String(
-    knowledgeRecallDebugModeOptionBarOptions.value.some((option) => option.value === knowledgeRecallDebugForm.value.retrievalMode)
-      ? knowledgeRecallDebugForm.value.retrievalMode
-      : knowledgeRecallDebugModeOptionBarOptions.value[0]?.value || "hybrid",
-  );
-  const retrievalProfile = {
-    ...currentKnowledgeRetrievalSettings(),
-    topK,
-  };
-  const payload: Record<string, unknown> = {
-    query,
-    limit: topK,
-    retrievalMode,
-    keywordOnly: knowledgeRecallDebugForm.value.keywordOnly,
-    retrievalProfile,
-    profile: { retrieval: retrievalProfile },
-    retrievalProfileId: String((retrievalProfile as any).retrievalProfileId || ""),
-    clientId: "server-console-debug-knowledge-recall",
-    explain: knowledgeRecallDebugForm.value.explain,
-    learningEnabled: knowledgeRecallDebugForm.value.learningEnabled,
-  };
-  if (target?.kind === "external") {
-    payload.knowledgeBackend = true;
-    payload.externalKnowledgeBase = true;
-    payload.provider = target.provider || "";
-    payload.spaceId = target.spaceId || "";
-    payload.backendRef = target.spaceId || "";
-  } else if (target?.kind === "source" && target.sourceId) {
-    payload.sourceIds = [target.sourceId];
-    payload.scopeSourceIds = [target.sourceId];
-  }
-  return payload;
-}
-
-const knowledgeRecallDebugGridStyle = computed<Record<string, string>>(() => ({
-  "--debug-compare-columns": String(Math.max(1, knowledgeRecallDebugRuns.value.length || 1)),
-}));
-
-async function runKnowledgeRecallDebugBatch() {
-  const query = knowledgeRecallDebugForm.value.query.trim();
-  if (!query) {
-    error.value = "请输入知识召回调试问题。";
-    return;
-  }
-  if (!canReadKnowledge.value) {
-    error.value = "当前账号没有知识库读取权限。";
-    return;
-  }
-  const topK = currentKnowledgeRecallTopK();
-  setBusy("debug:knowledge-recall");
-  error.value = "";
-  knowledgeRecallDebugRuns.value = [{
-    runId: `knowledge-recall-${Date.now()}`,
-    label: "召回结果",
-    topK,
-    status: "queued",
-    elapsedMs: 0,
-    startedAt: "",
-    response: null,
-    items: [],
-    error: "",
-  }];
-  await Promise.all(
-    knowledgeRecallDebugRuns.value.map(async (run) => {
-      const started = performance.now();
-      run.status = "running";
-      run.startedAt = new Date().toISOString();
-      try {
-        const response = await bridge.searchKnowledge(buildKnowledgeRecallSearchPayload(query));
-        run.response = response;
-        run.items = normalizeSearchResults(response);
-        run.status = "completed";
-      } catch (nextError) {
-        run.error = nextError instanceof Error ? nextError.message : "知识召回失败。";
-        run.status = "failed";
-      } finally {
-        run.elapsedMs = Math.max(0, Math.round(performance.now() - started));
-      }
-    }),
-  );
-  lastKnowledgeSearchQuery.value = query;
-  clearAllBusy();
-}
-
-function agentExploreRunStatus(result: AgentExploreRunResponse | null) {
-  return String(asRecord(result?.run)?.status || "");
-}
-
-function normalizeAgentExploreRun(result: AgentExploreRunResponse): AgentExploreRunResponse {
-  const run = asRecord(result.run);
-  const coverage = asRecord(run?.coverage) || {};
-  return {
-    ...result,
-    steps: result.steps || (Array.isArray(run?.steps) ? run.steps as AgentExploreRunResponse["steps"] : []),
-    answer: result.answer || String(coverage.answer || ""),
-    evidenceRefs: result.evidenceRefs || (Array.isArray(coverage.evidenceRefs) ? coverage.evidenceRefs as string[] : []),
-    toolResults:
-      result.toolResults ||
-      (Array.isArray(coverage.toolResults)
-        ? coverage.toolResults as AgentExploreRunResponse["toolResults"]
-        : []),
-    contextPack:
-      result.contextPack ||
-      (asRecord(coverage.contextPack) as AgentExploreRunResponse["contextPack"] | null) ||
-      undefined,
-    degraded: result.degraded ?? Boolean(run?.degraded),
-    error: result.error || String(run?.error || ""),
-  };
-}
-
-function agentExploreSessionFromResult(
-  result: AgentExploreRunResponse | null,
-  fallback: Partial<AgentExploreSession> = {},
-): AgentExploreSession | null {
-  const run = asRecord(result?.run) || {};
-  const input = asRecord(run.input) || {};
-  const workspace = asRecord(result?.workspace) || {};
-  const runId = String(run.runId || fallback.runId || "").trim();
-  const workspaceId = String(
-    workspace.workspaceId ||
-      run.workspaceId ||
-      fallback.workspaceId ||
-      agentExploreForm.value.workspaceId ||
-      "",
-  ).trim();
-  if (!runId || !workspaceId) {
-    return null;
-  }
-  const query = String(input.query || fallback.query || agentExploreForm.value.query || "").trim();
-  return {
-    runId,
-    workspaceId,
-    query,
-    modelAlias: String(input.modelAlias || fallback.modelAlias || agentExploreForm.value.modelAlias || ""),
-    contextProfileId: String(
-      input.contextProfileId ||
-        fallback.contextProfileId ||
-        agentExploreForm.value.contextProfileId ||
-        "context-128k",
-    ),
-    thinkingMode: normalizedAgentExploreThinkingMode(
-      String(input.thinkingMode || fallback.thinkingMode || agentExploreForm.value.thinkingMode || "default"),
-    ),
-    temperature: Number(input.temperature ?? fallback.temperature ?? agentExploreForm.value.temperature ?? 0.2),
-    maxTokens: Number(input.maxTokens || fallback.maxTokens || agentExploreForm.value.maxTokens || 1800),
-    maxIterations: Number(input.maxIterations || fallback.maxIterations || agentExploreForm.value.maxIterations || 4),
-    limit: Number(input.limit || fallback.limit || agentExploreForm.value.limit || 8),
-    toolChoice: String(input.toolChoice || fallback.toolChoice || agentExploreForm.value.toolChoice || "auto"),
-    status: agentExploreRunStatus(result),
-    answerPreview: String(result?.answer || fallback.answerPreview || "").slice(0, 180),
-    updatedAt: String(run.updatedAt || run.completedAt || fallback.updatedAt || new Date().toISOString()),
-  };
-}
-
-function readAgentExplorePersistence() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(AGENT_EXPLORE_STORAGE_KEY) || "{}");
-    return asRecord(parsed) || {};
-  } catch {
-    return {};
-  }
-}
-
-function writeAgentExplorePersistence(payload: Record<string, unknown>) {
-  try {
-    window.localStorage.setItem(AGENT_EXPLORE_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Local persistence is a UI convenience; storage errors should not block exploration.
-  }
-}
-
-function agentExploreHistorySortValue(session: AgentExploreSession) {
-  const value = Date.parse(String(session.updatedAt || ""));
-  return Number.isFinite(value) ? value : 0;
-}
-
-function sanitizeAgentExploreSessionModelReference(session: AgentExploreSession): AgentExploreSession {
-  return {
-    ...session,
-    modelAlias: validAgentModelAlias(session.modelAlias),
-  };
-}
-
-function clearInvalidAgentExploreModelReferences() {
-  let changed = false;
-  const sanitizeList = (sessions: AgentExploreSession[]) =>
-    sessions.map((session) => {
-      const sanitized = sanitizeAgentExploreSessionModelReference(session);
-      if (sanitized.modelAlias !== session.modelAlias) {
-        changed = true;
-      }
-      return sanitized;
-    });
-  agentExploreDraftTabs.value = sanitizeList(agentExploreDraftTabs.value);
-  agentExploreHistory.value = sanitizeList(agentExploreHistory.value);
-  const activeSession = asRecord(agentExploreResult.value?.run);
-  const activeInput = asRecord(activeSession?.input);
-  if (activeInput?.modelAlias && !hasAgentModelOption(String(activeInput.modelAlias))) {
-    activeInput.modelAlias = "";
-  }
-  if (changed) {
-    persistAgentExploreState();
-  }
-}
-
-function normalizeAgentExploreHistoryList(sessions: AgentExploreSession[]) {
-  const seen = new Set<string>();
-  return sessions
-    .filter((session) => {
-      const runId = String(session.runId || "").trim();
-      if (!runId || seen.has(runId) || agentExploreHiddenRunIds.value.has(runId)) {
-        return false;
-      }
-      seen.add(runId);
-      return true;
-    })
-    .map(sanitizeAgentExploreSessionModelReference)
-    .sort((left, right) => agentExploreHistorySortValue(right) - agentExploreHistorySortValue(left))
-    .slice(0, 20);
-}
-
-function createAgentExploreDraftTab(seed: Partial<AgentExploreSession> = {}): AgentExploreSession {
-  const timestamp = new Date().toISOString();
-  return {
-    runId: `draft:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-    workspaceId: "",
-    query: "",
-    modelAlias: agentExploreForm.value.modelAlias || "",
-    contextProfileId: selectedAgentExploreContextProfile.value.value,
-    thinkingMode: selectedAgentExploreThinkingMode.value,
-    temperature: Number(agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
-    maxTokens: Number(agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
-    maxIterations: agentExploreConfiguredMaxIterations.value,
-    limit: agentExploreConfiguredLimit.value,
-    toolChoice: agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value,
-    status: "draft",
-    answerPreview: "",
-    updatedAt: timestamp,
-    ...seed,
-  };
-}
-
-function syncActiveAgentExploreDraftFromForm() {
-  const tabId = agentExploreActiveTabId.value;
-  if (!tabId.startsWith("draft:")) {
-    return;
-  }
-  const existing = agentExploreDraftTabs.value.find((item) => item.runId === tabId);
-  if (!existing) {
-    return;
-  }
-  agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-    agentExploreDraftTabs.value.map((item) =>
-      item.runId === tabId
-        ? {
-            ...item,
-            query: agentExploreForm.value.query,
-            modelAlias: agentExploreForm.value.modelAlias,
-            contextProfileId: selectedAgentExploreContextProfile.value.value,
-            thinkingMode: selectedAgentExploreThinkingMode.value,
-            temperature: agentExploreForm.value.temperature,
-            maxTokens: agentExploreForm.value.maxTokens,
-            maxIterations: agentExploreForm.value.maxIterations,
-            limit: agentExploreForm.value.limit,
-            toolChoice: agentExploreForm.value.toolChoice,
-            updatedAt: item.updatedAt,
-          }
-        : item,
-    ),
-  );
-}
-
-function upsertAgentExploreHistory(session: AgentExploreSession | null) {
-  if (!session || agentExploreHiddenRunIds.value.has(session.runId)) {
-    return;
-  }
-  if (isAgentExploreDraftSession(session)) {
-    agentExploreDraftTabs.value = normalizeAgentExploreHistoryList([
-      session,
-      ...agentExploreDraftTabs.value.filter((item: any) => item.runId !== session.runId),
-    ]);
-    return;
-  }
-  const existingIndex = agentExploreHistory.value.findIndex((item) => item.runId === session.runId);
-  const nextHistory =
-    existingIndex >= 0
-      ? agentExploreHistory.value.map((item, index) => (index === existingIndex ? session : item))
-      : [session, ...agentExploreHistory.value];
-  agentExploreHistory.value = normalizeAgentExploreHistoryList(nextHistory);
-}
-
-function deleteAgentExploreHistorySession(session: AgentExploreSession) {
-  const runId = String(session.runId || "").trim();
-  if (!runId) {
-    return;
-  }
-  agentExploreHiddenRunIds.value = new Set([...agentExploreHiddenRunIds.value, runId]);
-  agentExploreClosedTabIds.value = new Set(
-    [...agentExploreClosedTabIds.value].filter((item: any) => item !== runId),
-  );
-  agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-    agentExploreDraftTabs.value.filter((item: any) => item.runId !== runId),
-  );
-  agentExploreHistory.value = normalizeAgentExploreHistoryList(
-    agentExploreHistory.value.filter((item: any) => item.runId !== runId),
-  );
-  const activeRunId = String(asRecord(agentExploreResult.value?.run)?.runId || "");
-  if (activeRunId === runId || agentExploreActiveTabId.value === runId) {
-    stopAgentExplorePolling();
-    agentExploreResult.value = null;
-    agentExploreForm.value.workspaceId = "";
-    agentExploreActiveTabId.value = "";
-    if (busyKey.value === "knowledge:agent-explore" || busyKey.value === `knowledge:agent-explore:load:${runId}`) {
-      clearAllBusy();
-    }
-    const nextTab = agentExploreTabs.value[0];
-    if (nextTab) {
-      void switchAgentExploreTab(nextTab);
-    }
-  }
-  persistAgentExploreState();
-}
-
-function agentExploreTabBusy(session: AgentExploreSession) {
-  return busyKey.value === `knowledge:agent-explore:load:${session.runId}`;
-}
-
-const agentExploreHistoryPanelItems = computed<HistorySessionPanelItem[]>(() =>
-  agentExploreHistory.value.map((session) => ({
-    id: session.runId,
-    title: agentExploreSessionLabel(session),
-    meta: `${session.status || "unknown"} · ${shortId(session.runId)}`,
-    preview: session.answerPreview || "",
-    active: session.runId === agentExploreActiveTabId.value,
-    disabled: agentExploreTabBusy(session),
-    deleteLabel: `删除历史会话 ${agentExploreSessionLabel(session)}`,
-  })),
-);
-
-function selectAgentExploreHistoryItem(runId: string) {
-  const session = agentExploreHistory.value.find((item) => item.runId === runId);
-  if (session) {
-    void switchAgentExploreTab(session);
-  }
-}
-
-function deleteAgentExploreHistoryItem(runId: string) {
-  const session = agentExploreHistory.value.find((item) => item.runId === runId);
-  if (session) {
-    deleteAgentExploreHistorySession(session);
-  }
-}
-
-function closeAgentExploreTab(session: AgentExploreSession) {
-  const runId = String(session.runId || "").trim();
-  if (!runId) {
-    return;
-  }
-  const wasActive =
-    agentExploreActiveTabId.value === runId ||
-    String(asRecord(agentExploreResult.value?.run)?.runId || "") === runId;
-  if (isAgentExploreDraftSession(session)) {
-    agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(
-      agentExploreDraftTabs.value.filter((item: any) => item.runId !== runId),
-    );
-  } else {
-    agentExploreClosedTabIds.value = new Set([...agentExploreClosedTabIds.value, runId]);
-  }
-
-  if (wasActive) {
-    stopAgentExplorePolling();
-    agentExploreResult.value = null;
-    agentExploreForm.value.workspaceId = "";
-    agentExploreActiveTabId.value = "";
-    if (busyKey.value === "knowledge:agent-explore" || busyKey.value === `knowledge:agent-explore:load:${runId}`) {
-      clearAllBusy();
-    }
-    const nextTab = agentExploreTabs.value[0];
-    if (nextTab) {
-      void switchAgentExploreTab(nextTab);
-    } else {
-      const draft = createAgentExploreDraftTab({
-        modelAlias: agentExploreForm.value.modelAlias,
-        contextProfileId: agentExploreForm.value.contextProfileId,
-      });
-      agentExploreDraftTabs.value = [draft];
-      applyAgentExploreDraftTab(draft);
-    }
-  }
-  persistAgentExploreState();
-}
-
-async function loadAgentExploreHistoryFromServer() {
-  try {
-    const list = await bridge.listAgentWorkspaces({
-      limit: 30,
-      includeSummary: false,
-    });
-    const workspaceIds = (list.workspaces || [])
-      .filter((workspace) => {
-        const metadata = asRecord(workspace.metadata) || {};
-        return String(metadata.createdBy || "") === "knowledge.agent-explore";
-      })
-      .map((workspace) => String(workspace.workspaceId || ""))
-      .filter(Boolean)
-      .slice(0, 12);
-    const details = await Promise.all(
-      workspaceIds.map((workspaceId) =>
-        bridge.getAgentWorkspace(workspaceId).catch(() => null),
-      ),
-    );
-    const sessions = details
-      .flatMap((detail) => {
-        if (!detail) {
-          return [];
-        }
-        const workspace = asRecord(detail.workspace) || {};
-        const runs = Array.isArray(detail.runs) ? detail.runs : [];
-        return runs
-          .filter((run) => String(asRecord(run)?.runType || "") === "knowledge_agent_exploration")
-          .map((run) =>
-            agentExploreSessionFromResult({
-              protocolVersion: "",
-              ok: String(asRecord(run)?.status || "") !== "failed",
-              workspace,
-              run: asRecord(run) || {},
-              answer: String(asRecord(asRecord(run)?.coverage)?.answer || ""),
-            }),
-          )
-          .filter(Boolean) as AgentExploreSession[];
-      })
-      .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
-      .slice(0, 20);
-    const visibleSessions = normalizeAgentExploreHistoryList(sessions);
-    if (visibleSessions.length) {
-      agentExploreHistory.value = visibleSessions;
-    }
-    return visibleSessions;
-  } catch {
-    return [];
-  }
-}
-
-function persistAgentExploreState() {
-  if (!agentExploreHydrated.value) {
-    return;
-  }
-  syncActiveAgentExploreDraftFromForm();
-  const activeSession = agentExploreSessionFromResult(agentExploreResult.value);
-  upsertAgentExploreHistory(activeSession);
-  const activeTabId =
-    agentExploreActiveTabId.value ||
-    activeSession?.runId ||
-    (agentExploreForm.value.workspaceId ? "" : agentExploreDraftTabs.value[0]?.runId || "");
-  writeAgentExplorePersistence({
-    activeRunId: activeSession?.runId || "",
-    activeTabId,
-    activeWorkspaceId: activeSession?.workspaceId || agentExploreForm.value.workspaceId || "",
-    form: { ...agentExploreForm.value },
-    draftTabs: agentExploreDraftTabs.value,
-    history: agentExploreHistory.value,
-    hiddenRunIds: Array.from(agentExploreHiddenRunIds.value),
-    closedTabIds: Array.from(agentExploreClosedTabIds.value),
-  });
-}
-
-function applyAgentExploreDraftTab(session: AgentExploreSession) {
-  stopAgentExplorePolling();
-  agentExploreTraceOpen.value = true;
-  agentExploreActiveTabId.value = session.runId;
-  agentExploreResult.value = null;
-  agentExploreForm.value = {
-    query: session.query,
-    modelAlias: hasAgentModelOption(session.modelAlias) ? session.modelAlias : "",
-    contextProfileId: session.contextProfileId || agentExploreForm.value.contextProfileId,
-    thinkingMode: normalizedAgentExploreThinkingMode(session.thinkingMode || agentExploreForm.value.thinkingMode),
-    temperature: Number(session.temperature || agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
-    maxTokens: Number(session.maxTokens || agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
-    maxIterations: session.maxIterations || agentExploreConfiguredMaxIterations.value,
-    limit: session.limit || agentExploreConfiguredLimit.value,
-    toolChoice: session.toolChoice || agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value,
-    workspaceId: "",
-  };
-  if (busyKey.value === "knowledge:agent-explore") {
-    clearAllBusy();
-  }
-  persistAgentExploreState();
-}
-
-async function switchAgentExploreTab(session: AgentExploreSession) {
-  if (agentExploreClosedTabIds.value.has(session.runId)) {
-    agentExploreClosedTabIds.value = new Set(
-      [...agentExploreClosedTabIds.value].filter((item: any) => item !== session.runId),
-    );
-  }
-  if (isAgentExploreDraftSession(session)) {
-    applyAgentExploreDraftTab(session);
-    return;
-  }
-  agentExploreActiveTabId.value = session.runId;
-  await loadAgentExploreSession(session);
-}
-
-async function loadAgentExploreSession(session: AgentExploreSession) {
-  stopAgentExplorePolling();
-  agentExploreTraceOpen.value = true;
-  setBusy(`knowledge:agent-explore:load:${session.runId}`);
-  error.value = "";
-  agentExploreActiveTabId.value = session.runId;
-  try {
-    agentExploreForm.value = {
-      query: session.query,
-      modelAlias: hasAgentModelOption(session.modelAlias) ? session.modelAlias : "",
-      contextProfileId: session.contextProfileId || agentExploreForm.value.contextProfileId,
-      thinkingMode: normalizedAgentExploreThinkingMode(session.thinkingMode || agentExploreForm.value.thinkingMode),
-      temperature: Number(session.temperature || agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
-      maxTokens: Number(session.maxTokens || agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
-      maxIterations: session.maxIterations || agentExploreForm.value.maxIterations,
-      limit: session.limit || agentExploreForm.value.limit,
-      toolChoice: session.toolChoice || agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value,
-      workspaceId: session.workspaceId,
-    };
-    const result = normalizeAgentExploreRun(
-      await bridge.getKnowledgeAgentExploreRun(session.runId, {
-        workspaceId: session.workspaceId,
-      }),
-    );
-    agentExploreResult.value = result;
-    upsertAgentExploreHistory(agentExploreSessionFromResult(result, session));
-    if (["queued", "running"].includes(agentExploreRunStatus(result))) {
-      startAgentExplorePolling(session.runId, session.workspaceId);
-    }
-    persistAgentExploreState();
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "恢复智能检索会话失败。";
-  } finally {
-    if (busyKey.value === `knowledge:agent-explore:load:${session.runId}`) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function restoreAgentExploreState() {
-  const persisted = readAgentExplorePersistence();
-  const history = Array.isArray(persisted.history)
-    ? (persisted.history as AgentExploreSession[]).filter((item: any) => item?.runId && item?.workspaceId)
-    : [];
-  const draftTabs = Array.isArray(persisted.draftTabs)
-    ? (persisted.draftTabs as AgentExploreSession[]).filter((item: any) => isAgentExploreDraftSession(item))
-    : [];
-  agentExploreHiddenRunIds.value = new Set(
-    Array.isArray(persisted.hiddenRunIds)
-      ? persisted.hiddenRunIds.map((item) => String(item || "").trim()).filter(Boolean)
-      : [],
-  );
-  agentExploreClosedTabIds.value = new Set(
-    Array.isArray(persisted.closedTabIds)
-      ? persisted.closedTabIds.map((item) => String(item || "").trim()).filter(Boolean)
-      : [],
-  );
-  agentExploreDraftTabs.value = normalizeAgentExploreHistoryList(draftTabs);
-  agentExploreHistory.value = normalizeAgentExploreHistoryList(history);
-  if (!agentExploreHistory.value.length) {
-    await loadAgentExploreHistoryFromServer();
-  }
-  const persistedForm = asRecord(persisted.form) || {};
-  const persistedModelAlias = String(persistedForm.modelAlias || agentExploreForm.value.modelAlias || "");
-  agentExploreForm.value = {
-    query: String(persistedForm.query || agentExploreForm.value.query || ""),
-    modelAlias: hasAgentModelOption(persistedModelAlias) ? persistedModelAlias : "",
-    contextProfileId: String(persistedForm.contextProfileId || agentExploreForm.value.contextProfileId || "context-128k"),
-    thinkingMode: normalizedAgentExploreThinkingMode(String(persistedForm.thinkingMode || agentExploreForm.value.thinkingMode || "default")),
-    temperature: Number(persistedForm.temperature || agentExploreForm.value.temperature || agentExploreConfiguredTemperature.value),
-    maxTokens: Number(persistedForm.maxTokens || agentExploreForm.value.maxTokens || agentExploreConfiguredMaxTokens.value),
-    maxIterations: Number(persistedForm.maxIterations || agentExploreForm.value.maxIterations || 4),
-    limit: Number(persistedForm.limit || agentExploreForm.value.limit || 8),
-    toolChoice: String(persistedForm.toolChoice || agentExploreForm.value.toolChoice || agentExploreConfiguredToolChoice.value),
-    workspaceId: String(persistedForm.workspaceId || persisted.activeWorkspaceId || agentExploreForm.value.workspaceId || ""),
-  };
-  agentExploreHydrated.value = true;
-  if (!agentExploreTabs.value.length) {
-    const draft = createAgentExploreDraftTab({
-      query: agentExploreForm.value.query,
-      modelAlias: agentExploreForm.value.modelAlias,
-      contextProfileId: agentExploreForm.value.contextProfileId,
-      thinkingMode: agentExploreForm.value.thinkingMode,
-      temperature: agentExploreForm.value.temperature,
-      maxTokens: agentExploreForm.value.maxTokens,
-      maxIterations: agentExploreForm.value.maxIterations,
-      limit: agentExploreForm.value.limit,
-      toolChoice: agentExploreForm.value.toolChoice,
-    });
-    agentExploreDraftTabs.value = [draft];
-    agentExploreActiveTabId.value = draft.runId;
-    persistAgentExploreState();
-    return;
-  }
-  const latestServerSession = agentExploreHistory.value[0];
-  const persistedActiveTabId = String(persisted.activeTabId || persisted.activeRunId || latestServerSession?.runId || "").trim();
-  const activeTabId = agentExploreClosedTabIds.value.has(persistedActiveTabId)
-    ? ""
-    : persistedActiveTabId;
-  const activeDraft = activeTabId
-    ? agentExploreDraftTabs.value.find((item) => item.runId === activeTabId)
-    : null;
-  if (activeDraft && !agentExploreHiddenRunIds.value.has(activeDraft.runId)) {
-    applyAgentExploreDraftTab(activeDraft);
-    return;
-  }
-  const activeRunId = activeTabId;
-  const activeHistorySession = activeRunId
-    ? agentExploreHistory.value.find((item) => item.runId === activeRunId)
-    : null;
-  const activeWorkspaceId = String(
-    persisted.activeWorkspaceId ||
-      activeHistorySession?.workspaceId ||
-      agentExploreForm.value.workspaceId ||
-      latestServerSession?.workspaceId ||
-      "",
-  ).trim();
-  if (activeRunId && activeWorkspaceId && !agentExploreHiddenRunIds.value.has(activeRunId)) {
-    const session =
-      activeHistorySession || {
-        runId: activeRunId,
-        workspaceId: activeWorkspaceId,
-        query: agentExploreForm.value.query,
-        modelAlias: agentExploreForm.value.modelAlias,
-        contextProfileId: agentExploreForm.value.contextProfileId,
-        thinkingMode: agentExploreForm.value.thinkingMode,
-        temperature: agentExploreForm.value.temperature,
-        maxTokens: agentExploreForm.value.maxTokens,
-        maxIterations: agentExploreForm.value.maxIterations,
-        limit: agentExploreForm.value.limit,
-        toolChoice: agentExploreForm.value.toolChoice,
-        status: "",
-        answerPreview: "",
-        updatedAt: new Date().toISOString(),
-      };
-    await loadAgentExploreSession(session);
-    return;
-  }
-  if (agentExploreTabs.value[0]) {
-    await switchAgentExploreTab(agentExploreTabs.value[0]);
-    return;
-  }
-  persistAgentExploreState();
-}
-
-function stopAgentExplorePolling() {
-  if (agentExplorePollTimer) {
-    window.clearInterval(agentExplorePollTimer);
-    agentExplorePollTimer = null;
-  }
-}
-
-function startAgentExplorePolling(runId: string, workspaceId: string) {
-  stopAgentExplorePolling();
-  const poll = async () => {
-    try {
-      const result = normalizeAgentExploreRun(
-        await bridge.getKnowledgeAgentExploreRun(runId, {
-          workspaceId,
-        }),
-      );
-      agentExploreResult.value = result;
-      persistAgentExploreState();
-      const status = agentExploreRunStatus(result);
-      if (!["queued", "running"].includes(status)) {
-        stopAgentExplorePolling();
-        if (busyKey.value === "knowledge:agent-explore") {
-          clearAllBusy();
-        }
-        if (result.ok === false && result.error) {
-          error.value = result.error;
-        }
-      }
-    } catch (nextError) {
-      stopAgentExplorePolling();
-      if (busyKey.value === "knowledge:agent-explore") {
-        clearAllBusy();
-      }
-      error.value = nextError instanceof Error ? nextError.message : "智能检索状态刷新失败。";
-    }
-  };
-  void poll();
-  agentExplorePollTimer = window.setInterval(() => {
-    void poll();
-  }, 750);
 }
 
 function ruleAuthoringStatusLabel(status: unknown) {
@@ -10583,94 +3689,6 @@ function resetKnowledgeAgentExplore() {
   }
 }
 
-async function openKnowledgeSearchResult(item: KnowledgeSearchResult) {
-  const evidenceId = knowledgeResultEvidenceId(item);
-  if (!evidenceId) {
-    error.value = "这个检索结果没有可打开的 evidenceId。";
-    return;
-  }
-  await loadEvidence(evidenceId);
-}
-
-type LoadEvidenceOptions = {
-  revealKnowledgeSearch?: boolean;
-};
-
-async function loadEvidence(evidenceId: string, options: LoadEvidenceOptions = {}) {
-  const normalized = String(evidenceId || "").trim();
-  if (!normalized) {
-    return;
-  }
-  const sequence = evidenceLoadSequence + 1;
-  evidenceLoadSequence = sequence;
-  const requestBusyKey = `knowledge:evidence:${normalized}`;
-  setBusy(requestBusyKey);
-  selectedEvidenceId.value = normalized;
-  selectedEvidence.value = null;
-  evidenceLoadError.value = "";
-  error.value = "";
-  try {
-    const evidence = await bridge.getKnowledgeEvidence(normalized);
-    if (sequence !== evidenceLoadSequence) {
-      return;
-    }
-    if (!evidence || typeof evidence !== "object") {
-      throw new Error("服务端没有返回可展示的证据内容。");
-    }
-    selectedEvidence.value = evidence;
-    selectedEvidenceId.value = String(evidence.evidenceId || normalized);
-    hydrateSearchResultPreview(evidence);
-    if (options.revealKnowledgeSearch !== false) {
-      openDebugTab("knowledgeRecall");
-    }
-  } catch (nextError) {
-    if (sequence !== evidenceLoadSequence) {
-      return;
-    }
-    const message = nextError instanceof Error ? nextError.message : "加载证据包失败。";
-    evidenceLoadError.value = message;
-    error.value = message;
-  } finally {
-    if (sequence === evidenceLoadSequence && busyKey.value === requestBusyKey) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function openAgentEvidencePreview(evidenceId: string) {
-  const normalized = String(evidenceId || "").trim();
-  if (!normalized) {
-    return;
-  }
-  agentEvidencePreviewOpen.value = true;
-  selectedEvidenceId.value = normalized;
-  selectedEvidence.value = null;
-  evidenceLoadError.value = "";
-  await loadEvidence(normalized, { revealKnowledgeSearch: false });
-  recordConsoleKnowledgeFeedback("open", {
-    surface: "evidence_preview",
-    evidenceId: normalized,
-    query: currentAgentExploreQuery() || infoFeedCurrentRun.value?.query || "",
-    contextBuildRecordId: String(asRecord(agentExploreResult.value?.contextPack)?.contextBuildRecordId || ""),
-  });
-}
-
-function closeAgentEvidencePreview() {
-  agentEvidencePreviewOpen.value = false;
-}
-
-function handleAgentAnswerClick(event: MouseEvent) {
-  const target = event.target as HTMLElement | null;
-  const anchor = target?.closest?.("a") as HTMLAnchorElement | null;
-  const href = anchor?.getAttribute("href") || "";
-  const evidenceId = evidenceIdFromHref(href);
-  if (!evidenceId) {
-    return;
-  }
-  event.preventDefault();
-  void openAgentEvidencePreview(evidenceId);
-}
-
 async function saveKnowledgeMaintenance() {
   setBusy("knowledge:maintenance");
   error.value = "";
@@ -10873,111 +3891,6 @@ async function refreshIngestJob(options: { silent?: boolean } = {}) {
   }
 }
 
-function applyKnowledgeSourceState(state: KnowledgeSourceState | null | undefined) {
-  if (!state) {
-    return;
-  }
-  knowledgeSourceState.value = state;
-  if (knowledgeConsole.value) {
-    knowledgeConsole.value = {
-      ...knowledgeConsole.value,
-      sources: state,
-    };
-  }
-}
-
-async function refreshKnowledgeSources() {
-  setBusy("knowledge:sources");
-  error.value = "";
-  try {
-    applyKnowledgeSourceState(await bridge.getKnowledgeSources());
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "刷新目录失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function addKnowledgeSource() {
-  const directoryPath = localSourceForm.value.directoryPath.trim();
-  if (!directoryPath) {
-    error.value = "请填写服务端本地路径。";
-    return false;
-  }
-  setBusy("knowledge:sources:add");
-  error.value = "";
-  try {
-    const result = await bridge.createKnowledgeSource({
-      label: localSourceForm.value.label.trim() || directoryNameFromPath(directoryPath),
-      directoryPath,
-      autoSync: localSourceForm.value.autoSync,
-      recursive: localSourceForm.value.recursive,
-      hydrationEnabled: localSourceForm.value.hydrationEnabled,
-      enabled: true,
-      runNow: true,
-    });
-    applyKnowledgeSourceState(result.state);
-    if (result.job) {
-      ingestJob.value = result.job;
-    }
-    localSourceForm.value = {
-      label: "",
-      directoryPath: "",
-      autoSync: true,
-      recursive: true,
-      hydrationEnabled: true,
-    };
-    return true;
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "添加目录失败。";
-    return false;
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function updateKnowledgeSource(source: KnowledgeSource, patch: Record<string, unknown>) {
-  setBusy(`knowledge:source:${source.sourceId}`);
-  error.value = "";
-  try {
-    const result = await bridge.updateKnowledgeSource(source.sourceId, patch);
-    applyKnowledgeSourceState(result.state);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "更新目录失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function refreshKnowledgeSource(source: KnowledgeSource, force = false) {
-  setBusy(`knowledge:source:refresh:${source.sourceId}`);
-  error.value = "";
-  try {
-    const result = await bridge.refreshKnowledgeSource(source.sourceId, { force });
-    applyKnowledgeSourceState(result.state);
-    if (result.job) {
-      ingestJob.value = result.job;
-    }
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "刷新目录失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function deleteKnowledgeSource(source: KnowledgeSource) {
-  setBusy(`knowledge:source:delete:${source.sourceId}`);
-  error.value = "";
-  try {
-    const result = await bridge.deleteKnowledgeSource(source.sourceId);
-    applyKnowledgeSourceState(result.state);
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "删除目录失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
 function ensureKnowledgeTabState() {
   if (!knowledgeTab.value) {
     knowledgeTab.value = "management";
@@ -10994,10 +3907,6 @@ function ensureKnowledgeTabState() {
     knowledgeTab.value = "management";
     knowledgeManagementPanel.value = "knowledge";
   }
-}
-
-function isKnownKnowledgeRouteTab(value: string): value is KnowledgeTab {
-  return knowledgeTabs.some((tab) => tab.id === value);
 }
 
 function isKnownDebugRouteTab(value: string): value is DebugTab {
@@ -11025,8 +3934,9 @@ function syncNavigationStateFromRoute(route: {
 
   if (viewId === "knowledge") {
     const tab = String(route.params?.tab ?? "");
-    if (isKnownKnowledgeRouteTab(tab)) {
-      knowledgeTab.value = tab;
+    const viewTab = knowledgeRouteTabToViewTab(tab);
+    if (viewTab) {
+      knowledgeTab.value = viewTab;
     }
   }
 
@@ -11287,37 +4197,6 @@ async function acknowledgeMonitorAlert(alertId: string) {
   }
 }
 
-async function openDashboardAlert(alertItem: DashboardAlert) {
-  if (alertItem.source === "configuration" && alertItem.configAlert) {
-    await openAgentConfigurationAlert(alertItem.configAlert);
-    return;
-  }
-  openAdmin("opsMonitor");
-  await refreshMonitorAlerts({ silent: true });
-}
-
-async function dismissDashboardAlert(alertItem: DashboardAlert) {
-  const inboxId = dashboardAlertInboxId(alertItem);
-  const monitorAlert = alertItem.monitorAlert;
-  if (
-    alertItem.source === "monitor" &&
-    monitorAlert &&
-    (monitorAlert.ackRequired || monitorAlert.active === false || monitorAlert.status === "recovered")
-  ) {
-    await acknowledgeMonitorAlert(alertItem.alertId);
-    if (error.value) {
-      return;
-    }
-  }
-  dismissedDashboardAlertIds.value = new Set([
-    ...dismissedDashboardAlertIds.value,
-    inboxId,
-  ]);
-  const nextInbox = { ...dashboardAlertInbox.value };
-  delete nextInbox[inboxId];
-  dashboardAlertInbox.value = nextInbox;
-}
-
 function scopeLabel(scopeId: string) {
   return (
     toolScopes.value.find((scope) => scope.id === scopeId)?.label || scopeId
@@ -11512,306 +4391,6 @@ function exportClients() {
   alert("导出客户端列表成功。");
 }
 
-function parseTime(value?: string) {
-  if (!value) {
-    return 0;
-  }
-
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
-function formatDate(value: string) {
-  if (!value) {
-    return "未记录";
-  }
-
-  try {
-    return new Date(value).toLocaleString("zh-CN", {
-      hour12: false,
-    });
-  } catch {
-    return value;
-  }
-}
-
-function formatCompactDate(value: string) {
-  if (!value) {
-    return "未记录";
-  }
-
-  try {
-    return new Date(value).toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return value;
-  }
-}
-
-function formatDuration(start?: string, end?: string) {
-  const startedAt = parseTime(start);
-  const endedAt = parseTime(end) || Date.now();
-
-  if (!startedAt || endedAt <= startedAt) {
-    return "--";
-  }
-
-  let totalSeconds = Math.floor((endedAt - startedAt) / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  totalSeconds -= days * 86400;
-  const hours = Math.floor(totalSeconds / 3600);
-  totalSeconds -= hours * 3600;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds - minutes * 60;
-
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  }
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-
-  return `${seconds}s`;
-}
-
-function jobStatusTone(status: SplitJobStatus) {
-  return status;
-}
-
-function queueLifecycleTone(status: string) {
-  const normalized = String(status || "").toLowerCase();
-  if (["interrupted", "failed", "missing"].includes(normalized)) {
-    return "danger";
-  }
-  if (["recovered", "closed", "completed", "completed_with_errors"].includes(normalized)) {
-    return "success";
-  }
-  if (["running", "open"].includes(normalized)) {
-    return "running";
-  }
-  if (["queued", "awaiting_approval", "standby"].includes(normalized)) {
-    return "queued";
-  }
-  return "neutral";
-}
-
-function queueLifecycleLabel(status: string) {
-  const labels: Record<string, string> = {
-    open: "运行中",
-    queued: "排队中",
-    running: "运行中",
-    awaiting_approval: "待审批",
-    interrupted: "已中断",
-    recovered: "已恢复",
-    closed: "已关闭",
-    completed: "已完成",
-    completed_with_errors: "有错误",
-    failed: "失败",
-    cancelled: "已取消",
-    rejected: "已拒绝",
-  };
-  return labels[String(status || "").toLowerCase()] || status || "未知";
-}
-
-function queueSourceLabel(source: string) {
-  const labels: Record<string, string> = {
-    "function-self-check": "功能自检",
-    watchdog: "守护进程巡检",
-    "watchdog-reconcile": "守护进程补录",
-    "queue-monitor": "队列监控",
-  };
-  return labels[String(source || "")] || source || "队列监控";
-}
-
-function queueMonitorDetail(item: QueueMonitorItem) {
-  return [
-    item.interruptedReason ? `中断原因 ${item.interruptedReason}` : "",
-    item.recoveryStatus ? `恢复状态 ${item.recoveryStatus}` : "",
-    item.metadata?.stage ? `阶段 ${String(item.metadata.stage)}` : "",
-    item.checkpointTreeId ? `checkpoint ${item.checkpointTreeId}` : "",
-  ].filter(Boolean).join(" · ") || item.kind || "队列";
-}
-
-function maintenanceAgentStatusTone(status: string) {
-  if (status === "awaiting_approval" || status === "queued") {
-    return "queued";
-  }
-  if (status === "running") {
-    return "running";
-  }
-  if (status === "completed") {
-    return "completed";
-  }
-  if (status === "completed_with_errors") {
-    return "queued";
-  }
-  return "failed";
-}
-
-function maintenanceAgentStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    awaiting_approval: "待审批",
-    queued: "排队",
-    running: "运行中",
-    completed: "已完成",
-    completed_with_errors: "有错误",
-    failed: "失败",
-    cancelled: "已取消",
-    rejected: "已拒绝",
-  };
-  return labels[status] || status || "未知";
-}
-
-function backgroundProcessTone(status: string) {
-  if (status === "running") {
-    return "running";
-  }
-  if (status === "standby") {
-    return "queued";
-  }
-  if (status === "starting") {
-    return "queued";
-  }
-  if (status === "degraded" || status === "stale") {
-    return "warning";
-  }
-  return "failed";
-}
-
-function backgroundProcessLabel(status: string) {
-  const labels: Record<string, string> = {
-    running: "运行中",
-    standby: "待接管",
-    starting: "启动中",
-    degraded: "降级",
-    stale: "心跳超时",
-    stopped: "已停止",
-    exited: "已退出",
-    failed: "失败",
-    missing: "缺失",
-  };
-  return labels[status] || status || "未知";
-}
-
-function processTypeLabel(processType?: string) {
-  return processType === "daemon" ? "守护进程" : "服务进程";
-}
-
-function processRelationText(processItem: BackgroundProcessStatus["processes"][number]) {
-  const services = processItem.services?.length
-    ? `服务：${processItem.services.join(" / ")}`
-    : "";
-  const monitors = processItem.monitors?.length
-    ? `监控：${processItem.monitors.join(" / ")}`
-    : "";
-  const alerts = processItem.alerts?.length
-    ? `报警：${processItem.alerts.join(" / ")}`
-    : "";
-  return [services, monitors, alerts].filter(Boolean).join("；") || processItem.description || "无关联说明";
-}
-
-function clientRuntimeCoolingTone(state: string) {
-  if (state === "hot") {
-    return "running";
-  }
-  if (state === "cooled") {
-    return "warning";
-  }
-  return "info";
-}
-
-function clientRuntimeCoolingLabel(state: string) {
-  const labels: Record<string, string> = {
-    hot: "热连接",
-    warm: "正常",
-    cooled: "已冷却",
-  };
-  return labels[state] || state || "未知";
-}
-
-function clientRuntimeReasonLabel(reason: string) {
-  const labels: Record<string, string> = {
-    "new-client": "新客户端",
-    normal: "正常分配",
-    "frequent-client": "高频使用",
-    "outside-warm-client-limit": "超出保温上限",
-    "least-recently-used-and-low-frequency": "最旧且低频",
-  };
-  return labels[reason] || reason || "无冷却原因";
-}
-
-function clientRuntimeTaskText(row: ClientRuntimeHeatRow) {
-  return row.taskTypes?.length
-    ? row.taskTypes.map((item) => `${item.taskType}×${item.count}`).join(" / ")
-    : "无任务记录";
-}
-
-function clientRuntimeSurfaceText(row: ClientRuntimeHeatRow) {
-  return row.surfaces?.length
-    ? row.surfaces.map((item) => `${item.surface}×${item.count}`).join(" / ")
-    : "无调用面记录";
-}
-
-function clientRuntimeHeatStyle(row: ClientRuntimeHeatRow) {
-  const heat = Math.max(4, Math.min(100, Number(row.heatPercent || 0)));
-  return { "--heat": `${heat}%` };
-}
-
-function monitorAlertSeverityTone(severity: string) {
-  if (severity === "critical") {
-    return "failed";
-  }
-  if (severity === "warning") {
-    return "warning";
-  }
-  return "running";
-}
-
-function monitorAlertSeverityLabel(severity: string) {
-  const labels: Record<string, string> = {
-    critical: "严重",
-    warning: "警告",
-    info: "提示",
-  };
-  return labels[severity] || severity || "未知";
-}
-
-function maintenanceAgentRiskLabel(risk: string) {
-  const labels: Record<string, string> = {
-    read_only: "只读",
-    safe_write: "安全写入",
-    repair_write: "修复写入",
-    destructive: "破坏性",
-  };
-  return labels[risk] || risk || "未知";
-}
-
-function migrationTone(state: ClientMigrationState) {
-  if (state === "aligned") {
-    return "aligned";
-  }
-
-  if (state === "draining") {
-    return "draining";
-  }
-
-  if (state === "offline") {
-    return "offline";
-  }
-
-  return "attention";
-}
-
 type ClientConnectionRow = NonNullable<ServerConsoleState["clients"]["items"][number]>;
 
 function clientConnectionMethodLabel(client: ClientConnectionRow) {
@@ -11850,23 +4429,6 @@ function clientStatusTone(client: ClientConnectionRow) {
     return "attention";
   }
   return "aligned";
-}
-
-function migrationProgress(state: ClientMigrationState) {
-  switch (state) {
-    case "aligned":
-      return 100;
-    case "draining":
-      return 68;
-    case "outdated":
-      return 28;
-    case "bootstrap-only":
-      return 12;
-    case "offline":
-      return 0;
-    default:
-      return 8;
-  }
 }
 
 function openDrawer(tab: DrawerTab) {
@@ -12964,11 +5526,6 @@ async function refreshMonitorAlerts(options: { silent?: boolean } = {}) {
   }
 }
 
-async function refreshDashboardAlertsSnapshot(options: { silent?: boolean } = {}) {
-  await refreshMonitorAlerts({ silent: options.silent !== false });
-  syncDashboardAlertInbox(liveDashboardAlerts.value);
-}
-
 async function saveMonitorAlertConfig() {
   if (!canAdminMaintenanceAgent.value) {
     error.value = "当前账号没有维护配置权限。";
@@ -13452,6 +6009,40 @@ const monitorAlertSummary = computed(() => monitorAlertState.value?.summary || {
   historyCount: 0,
 });
 const activeMonitorAlerts = computed(() => monitorAlertState.value?.activeAlerts || []);
+const {
+  agentConfigurationAlertSummary,
+  agentConfigurationAlerts,
+  dashboardAlertInbox,
+  dashboardAlertInboxId,
+  dashboardAlertSummary,
+  dashboardAlerts,
+  dismissDashboardAlert,
+  dismissedDashboardAlertIds,
+  liveDashboardAlerts,
+  openDashboardAlert,
+  refreshDashboardAlertsSnapshot,
+  syncDashboardAlertInbox,
+} = createConsoleDashboardAlertController({
+  acknowledgeMonitorAlert,
+  activeMonitorAlerts,
+  agentExploreAgentOptions,
+  agentExploreForm,
+  agentModelAssignmentOptions,
+  agentSelectorOptions,
+  backgroundProcesses,
+  error,
+  infoFeedForm,
+  infoFeedModelOptions,
+  moduleModelRef,
+  moduleNeedsIntelligence,
+  openAdmin,
+  openAgentConfigurationAlert,
+  refreshMonitorAlerts,
+  ruleAuthoringForm,
+  ruleAuthoringModelOptions,
+  settingsDraft,
+  visibleModelEntries,
+});
 const recentMonitorAlertHistory = computed(() => (monitorAlertState.value?.history || []).slice(0, 8));
 const queueMonitorState = computed(() => monitorAlertState.value?.queueMonitor || null);
 const queueMonitorItems = computed<QueueMonitorItem[]>(() => {
@@ -13816,178 +6407,6 @@ const serverIdentity = computed(
     "Pact Server",
 );
 
-const enabledMountCount = computed(
-  () => (consoleState.value?.runtime?.mounts || []).filter((mount) => mount.enabled).length || 0,
-);
-
-const totalMountCount = computed(
-  () => (consoleState.value?.runtime?.mounts || []).length || 0,
-);
-
-const moduleRows = computed(() => {
-  const configured = consoleState.value?.runtime?.mountModules || {};
-  const runtimeMounts = consoleState.value?.runtime?.mounts || [];
-  const names = Array.from(
-    new Set([
-      ...Object.keys(moduleNameLabels),
-      ...Object.keys(configured),
-      ...runtimeMounts.map((mount) => mount.name),
-    ]),
-  );
-
-  return names.map((name) => {
-    const runtimeMount = runtimeMounts.find((mount) => mount.name === name);
-    const modulePath = mountDraft.value[name] ?? configured[name] ?? "";
-    const configuredPath = String(modulePath || "").trim();
-    const runtimeAvailable = Boolean(runtimeMount) && runtimeMount?.enabled !== false;
-
-    return {
-      name,
-      label: moduleNameLabels[name] || name,
-      description:
-        moduleNameDescriptions[name] || "自定义外置能力模块，可通过路径接入。",
-      modulePath,
-      configuredPath,
-      runtimeMount,
-      externalEnabled: runtimeAvailable || configuredPath.length > 0,
-      pathHint: configuredPath || (runtimeAvailable
-        ? `当前使用内置模块：${runtimeMount?.id || name}`
-        : "填写外置模块 .mjs 路径"),
-    };
-  });
-});
-
-const moduleGroups = computed(() => {
-  const rows = moduleRows.value;
-  const groupedNames = new Set(
-    moduleGroupDefinitions.flatMap((group) => group.names),
-  );
-  const configuredGroups = moduleGroupDefinitions
-    .map((group) => ({
-      ...group,
-      rows: group.names
-        .map((name) => rows.find((row) => row.name === name))
-        .filter((row): row is (typeof rows)[number] => Boolean(row)),
-    }))
-    .filter((group) => group.rows.length > 0);
-  const customRows = rows.filter((row) => !groupedNames.has(row.name));
-
-  if (customRows.length === 0) {
-    return configuredGroups;
-  }
-
-  return [
-    ...configuredGroups,
-    {
-      id: "custom",
-      label: "自定义模块",
-      description: "运行时发现的自定义外置能力模块。",
-      names: customRows.map((row) => row.name),
-      rows: customRows,
-    },
-  ];
-});
-
-const currentAnalysisModule = computed(() => {
-  const moduleId =
-    settingsDraft.value.analysisModuleId ||
-    consoleState.value?.runtime?.currentAnalysisModuleId;
-  return (
-    (consoleState.value?.runtime?.analysisModules || []).find((item) => item.id === moduleId) || null
-  );
-});
-
-function moduleCapabilityText(item: (typeof moduleRows.value)[number]) {
-  const mount = item.runtimeMount;
-
-  if (!mount) {
-    return "未加载运行实例";
-  }
-
-  const capabilities = [
-    mount.supportsStructuredDocument ? "结构化文档" : "",
-    mount.supportsTextExtraction ? "文本提取" : "",
-    mount.supportsBatchHook ? "批次回调" : "",
-  ].filter(Boolean);
-
-  return capabilities.length > 0 ? capabilities.join(" / ") : "基础运行";
-}
-
-function analysisExecutionModeLabel(value?: string) {
-  const normalized = String(value || "").toLowerCase();
-
-  if (normalized === "hybrid") {
-    return "混合分析";
-  }
-
-  if (normalized === "external") {
-    return "外置模块";
-  }
-
-  if (normalized === "builtin") {
-    return "内置模块";
-  }
-
-  return value || "内置模块";
-}
-
-function analysisModuleDescription() {
-  if (!currentAnalysisModule.value) {
-    return "未发现可用分析模块，将使用内置启发式分析。";
-  }
-
-  if (currentAnalysisModule.value.id === "builtin:heuristic-hybrid-v1") {
-    return "内置启发式分析管线，用于事务、人物、时间线和关联网络生成。";
-  }
-
-  return currentAnalysisModule.value.description || "外置分析模块。";
-}
-
-function moduleStatusText(item: (typeof moduleRows.value)[number]) {
-  if (!item.runtimeMount) {
-    return item.configuredPath ? "等待重载" : "未加载运行实例";
-  }
-
-  if (item.runtimeMount?.enabled === false) {
-    const reason = String(item.runtimeMount.reason || "").trim();
-    return !reason || reason === "disabled" ? "已禁用" : reason;
-  }
-
-  return "可用";
-}
-
-function moduleEnabledLabel(enabled: boolean) {
-  return enabled ? "已开启" : "已关闭";
-}
-
-function moduleAvailabilityLabel(item: (typeof moduleRows.value)[number]) {
-  return item.runtimeMount?.enabled === false || !item.externalEnabled ? "不可用" : "可用";
-}
-
-function isMountPathEditing(name: string) {
-  return editingMountPaths.value[name] === true;
-}
-
-function currentModulePathPlaceholder(item: (typeof moduleRows.value)[number]) {
-  return item.pathHint || "填写外置模块 .mjs 路径";
-}
-
-async function toggleMountPathEdit(item: (typeof moduleRows.value)[number]) {
-  if (!isMountPathEditing(item.name)) {
-    editingMountPaths.value = {
-      ...editingMountPaths.value,
-      [item.name]: true,
-    };
-    return;
-  }
-
-  await saveMountModules(`mount:${item.name}`);
-  editingMountPaths.value = {
-    ...editingMountPaths.value,
-    [item.name]: false,
-  };
-}
-
 const attentionClientCount = computed(() => {
   const summary = consoleState.value?.clients.summary;
 
@@ -14204,7 +6623,6 @@ onUnmounted(() => {
     agentOptionsForModule, 
     agentPermissionGroupOptionBarOptions, 
     agentPermissionGroups, 
-    agentSelectionAlert, 
     agentSelectionReferenceLogs, 
     agentSelectionReferenceStates, 
     agentSelectorOptions, 
@@ -14357,7 +6775,6 @@ onUnmounted(() => {
     dashboardAlertInboxId, 
     dashboardAlertSummary, 
     dashboardAlerts, 
-    dashboardMonitorAlerts, 
     debugTab, 
     debugTabs, 
     decodeBytes, 
@@ -14794,7 +7211,6 @@ onUnmounted(() => {
     openWordCloudCorpusDirectoryPicker, 
     openWordCloudCorpusFilePicker, 
     optionLabel, 
-    padDatePart, 
     parseEmailHeaders, 
     parseEmailRulesDraft, 
     parseFilterDate, 

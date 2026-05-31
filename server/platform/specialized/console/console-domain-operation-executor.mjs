@@ -35,6 +35,10 @@ import {
   searchSourceFiles
 } from "../knowledge/retrieval/source-file-search-service.mjs";
 import { createKnowledgeTransformationProvider } from "../knowledge/transformation/knowledge-transformation-provider.mjs";
+import {
+  createExternalKnowledgeDistillationClient,
+  resolveExternalKnowledgeDistillationConfig
+} from "../knowledge/invocation/external-distillation-service/index.mjs";
 import { executeKnowledgeWordCloudOperation } from "./knowledge-word-cloud-operation-executor.mjs";
 import { getCodexOAuthStatus, startCodexDeviceLogin } from "../../common/security/auth/codex-oauth-service.mjs";
 import { buildProductionHealthReport } from "../../common/production-readiness/report-reader.mjs";
@@ -406,6 +410,8 @@ function normalizeKnowledgeSearchInput(input = {}) {
     clientId: firstInputValue(source, ["clientId", "client-id"], ""),
     clientUid: firstInputValue(source, ["clientUid", "client-uid"], ""),
     workspaceId: firstInputValue(source, ["workspaceId", "workspace-id", "workspace_id"], ""),
+    requestSurface: firstInputValue(source, ["requestSurface", "request-surface", "surface"], ""),
+    responseProfile: firstInputValue(source, ["responseProfile", "response-profile", "outputProfile", "output-profile"], ""),
     modalityPolicy: "multimodal"
   };
 
@@ -425,6 +431,15 @@ function normalizeKnowledgeSearchInput(input = {}) {
   if (explain !== undefined) {
     normalized.explain = explain;
   }
+  const machineReadable = parseOptionalBooleanFlag(
+    source,
+    ["machineReadable", "machine-readable", "agentMessage", "agent-message"],
+    undefined
+  );
+  if (machineReadable !== undefined) {
+    normalized.machineReadable = machineReadable;
+    normalized.agentMessage = machineReadable;
+  }
 
   if (Object.keys(filters).length > 0) {
     normalized.filters = filters;
@@ -436,6 +451,38 @@ function normalizeKnowledgeSearchInput(input = {}) {
   delete normalized.mediaType;
   delete normalized.mediaTypes;
   return normalized;
+}
+
+function normalizeKnowledgeSearchResponseProfile(value = "") {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
+  if (["agent", "mcp", "tool", "tool-grant", "machine", "machine-readable"].includes(normalized)) {
+    return "agent";
+  }
+  if (["api", "http", "rpc", "cli", "integration", "service"].includes(normalized)) {
+    return "api";
+  }
+  if (["console", "ui", "human", "control-plane", "management-console"].includes(normalized)) {
+    return "console";
+  }
+  return "";
+}
+
+function knowledgeSearchFromToolGrant(context = {}) {
+  const user = context.authSession?.user || {};
+  return user.roleId === "tool-grant" || user.type === "tool-grant";
+}
+
+function resolveKnowledgeSearchResponseProfile(payload = {}, context = {}) {
+  const explicit = normalizeKnowledgeSearchResponseProfile(
+    payload.responseProfile || payload.requestSurface || payload.surface || payload.outputProfile || ""
+  );
+  if (explicit) {
+    return explicit;
+  }
+  if (payload.machineReadable === true || payload.agentMessage === true || knowledgeSearchFromToolGrant(context)) {
+    return "agent";
+  }
+  return "api";
 }
 
 function subjectFromAuthSession(authSession = null) {
@@ -5226,6 +5273,112 @@ async function executeKnowledgeSummarizationOperation({ operationId, input, cont
   return null;
 }
 
+async function externalKnowledgeDistillationClient({ input = {}, context = {} } = {}) {
+  const settings = await loadSettings(context.userDataPath);
+  const config = resolveExternalKnowledgeDistillationConfig({
+    input,
+    settings
+  });
+  return createExternalKnowledgeDistillationClient(config);
+}
+
+async function executeExternalKnowledgeDistillationOperation({ operationId, input, context }) {
+  const id = String(operationId || "");
+  const handledOperations = new Set([
+    "external.knowledge.distillation.service.health",
+    "external.knowledge.distillation.service.capabilities",
+    "external.knowledge.distillation.service.runtime_health",
+    "external.knowledge.distillation.runs.list",
+    "external.knowledge.distillation.runs.create",
+    "external.knowledge.distillation.runs.get",
+    "external.knowledge.distillation.runs.cancel",
+    "external.knowledge.distillation.evidence.query",
+    "external.knowledge.distillation.projects.evidence.query",
+    "external.knowledge.distillation.artifacts.export"
+  ]);
+  if (!handledOperations.has(id)) {
+    return null;
+  }
+
+  try {
+    const client = await externalKnowledgeDistillationClient({ input, context });
+    if (id === "external.knowledge.distillation.service.health") {
+      const operationResult = await client.health();
+      return result(200, {
+        ...operationResult,
+        pactRegistration: {
+          namespace: "external.knowledge.distillation",
+          baseUrl: client.baseUrl
+        }
+      });
+    }
+    if (id === "external.knowledge.distillation.service.capabilities") {
+      const operationResult = await client.capabilities();
+      return result(200, {
+        ...operationResult,
+        pactRegistration: {
+          namespace: "external.knowledge.distillation",
+          baseUrl: client.baseUrl
+        }
+      });
+    }
+    if (id === "external.knowledge.distillation.service.runtime_health") {
+      const operationResult = await client.runtimeHealth();
+      return result(200, {
+        ...operationResult,
+        pactRegistration: {
+          namespace: "external.knowledge.distillation",
+          baseUrl: client.baseUrl
+        }
+      });
+    }
+    if (id === "external.knowledge.distillation.runs.list") {
+      return result(200, await client.listRuns(input));
+    }
+    if (id === "external.knowledge.distillation.runs.create") {
+      const operationResult = await client.createRun(input);
+      await publishProtocolEvent(context.protocolEventBus, "external.knowledge.distillation", operationResult, {
+        type: "external.knowledge.distillation.created"
+      });
+      return result(201, operationResult);
+    }
+    if (id === "external.knowledge.distillation.runs.get") {
+      return result(200, await client.getRun(input));
+    }
+    if (id === "external.knowledge.distillation.runs.cancel") {
+      const operationResult = await client.cancelRun(input);
+      await publishProtocolEvent(context.protocolEventBus, "external.knowledge.distillation", operationResult, {
+        type: "external.knowledge.distillation.canceled"
+      });
+      return result(202, operationResult);
+    }
+    if (id === "external.knowledge.distillation.evidence.query") {
+      return result(200, await client.queryEvidence(input));
+    }
+    if (id === "external.knowledge.distillation.projects.evidence.query") {
+      return result(200, await client.queryProjectEvidence(input));
+    }
+    if (id === "external.knowledge.distillation.artifacts.export") {
+      const operationResult = await client.exportArtifact(input);
+      return result(200, {
+        __binaryResponse: true,
+        contentType: operationResult.contentType,
+        disposition: "attachment",
+        fileName: operationResult.fileName,
+        buffer: operationResult.buffer,
+        headers: { "X-Pact-External-Service": "external.knowledge.distillation" }
+      });
+    }
+  } catch (error) {
+    const status = Number(error?.statusCode || 502);
+    return result(status >= 400 && status < 600 ? status : 502, errorPayload(error, "外部知识蒸馏服务调用失败。", {
+      service: "external.knowledge.distillation"
+    }));
+  }
+
+  return null;
+}
+
 async function executeKnowledgeDistillationWorkflowOperation({ operationId, input, context }) {
   const id = String(operationId || "");
   const handledOperations = new Set([
@@ -5381,6 +5534,14 @@ async function executeKnowledgeDistillationWorkflowOperation({ operationId, inpu
     });
   }
 
+  if (id === "knowledge.distillation.workbench.runs.artifacts") {
+    const operationResult = await workbench.listRunArtifacts({ runId });
+    if (!operationResult) {
+      return result(404, { error: "知识蒸馏工作台产物信息不存在。" });
+    }
+    return result(200, operationResult);
+  }
+
   if (id === "knowledge.distillation.workbench.runs.package") {
     const operationResult = await workbench.exportRunPackage({ runId });
     if (!operationResult) {
@@ -5495,6 +5656,11 @@ async function executeKnowledgeRetrievalOperation({ operationId, input, context 
         });
       }
       payload = workspaceApplied.input;
+      const responseProfile = resolveKnowledgeSearchResponseProfile(payload, context);
+      const agentMessageEnabled =
+        responseProfile === "agent" &&
+        payload.machineReadable !== false &&
+        payload.agentMessage !== false;
       const query = payload.query || payload.q || "";
       const hierarchyReasoning =
         payload.hierarchyReasoning === true ||
@@ -5519,6 +5685,10 @@ async function executeKnowledgeRetrievalOperation({ operationId, input, context 
         batchId: payload.batchId || "",
         retrievalMode: payload.retrievalMode || payload.mode || "",
         keywordOnly: payload.keywordOnly === true,
+        requestSurface: responseProfile,
+        responseProfile,
+        machineReadable: agentMessageEnabled,
+        agentMessage: agentMessageEnabled,
         retrievalProfileId: payload.retrievalProfileId || payload.profileId || "",
         profileKey: payload.profileKey || payload.retrievalProfileKey || "",
         retrievalProfile:
@@ -5535,7 +5705,7 @@ async function executeKnowledgeRetrievalOperation({ operationId, input, context 
         clientId: payload.clientId || payload.client_id || "",
         scopeSourceIds: payload.scopeSourceIds || payload.sourceIds || [],
         learningEnabled: payload.learningEnabled !== false,
-        explain: Boolean(payload.explain),
+        explain: agentMessageEnabled || Boolean(payload.explain),
         modalityPolicy: "multimodal"
       });
       if (allocationResult?.allocation) {
@@ -6909,6 +7079,7 @@ export async function executeConsoleDomainOperation({ operationId, input = {}, c
     executeKnowledgeEvaluationOperation,
     executeKnowledgeEvolutionOperation,
     executeKnowledgeSummarizationOperation,
+    executeExternalKnowledgeDistillationOperation,
     executeKnowledgeDistillationWorkflowOperation,
     executeAgentExplorationOperation,
     executeKnowledgeBackendOperation,

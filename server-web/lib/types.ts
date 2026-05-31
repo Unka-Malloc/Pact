@@ -1,6 +1,7 @@
 export type AgentSettings = {
   tikaJarPath: string;
   javaBinPath: string;
+  tikaTimeoutMs: number;
   modelIntelligenceEnabled: boolean;
   googleApiKey: string;
   googleApiKeyConfigured?: boolean;
@@ -2045,6 +2046,8 @@ export type KnowledgeSearchResponse = {
   results?: KnowledgeSearchResult[];
   evidencePacks?: EvidencePack[];
   markdown?: string;
+  responseProfile?: "agent" | "api" | "console" | string;
+  agentMessage?: Record<string, unknown>;
   hierarchy?: KnowledgeHierarchyPlan;
   retrievalProfileId?: string;
   retrievalProfileVersion?: number;

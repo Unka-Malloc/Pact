@@ -385,6 +385,7 @@ type Bridge = {
   archiveKnowledgeDistillationWorkbenchRun: (runId: string) => Promise<Record<string, unknown>>;
   deleteKnowledgeDistillationWorkbenchRun: (runId: string) => Promise<Record<string, unknown>>;
   rerunKnowledgeDistillationWorkbenchStage: (runId: string, stageId: string) => Promise<Record<string, unknown>>;
+  getKnowledgeDistillationWorkbenchRunArtifacts: (runId: string) => Promise<Record<string, unknown>>;
   compareKnowledgeDistillationWorkbenchRuns: (leftRunId: string, rightRunId: string) => Promise<Record<string, unknown>>;
   knowledgeDistillationWorkbenchExportUrl: (runId: string, stageId: string, format?: string) => string;
   knowledgeDistillationWorkbenchPackageUrl: (runId: string) => string;
@@ -1181,6 +1182,10 @@ const browserBridge: Bridge = {
       `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(stageId)}/rerun`,
       {},
       { safetyConfirm: true },
+    ),
+  getKnowledgeDistillationWorkbenchRunArtifacts: (runId) =>
+    getJson<Record<string, unknown>>(
+      `/api/knowledge/distillation/workbench/runs/${encodeURIComponent(runId)}/artifacts`,
     ),
   compareKnowledgeDistillationWorkbenchRuns: (leftRunId, rightRunId) => {
     const query = new URLSearchParams();

@@ -209,6 +209,10 @@ function defaultModuleIntelligence() {
 export const DEFAULT_SETTINGS = {
   tikaJarPath: process.env.PACT_TIKA_JAR_PATH || "",
   javaBinPath: process.env.PACT_JAVA_BIN_PATH || "",
+  tikaTimeoutMs: (() => {
+    const value = Number(process.env.PACT_TIKA_TIMEOUT_MS || 0);
+    return Number.isFinite(value) && value > 0 ? value : 30 * 60 * 1000;
+  })(),
   modelIntelligenceEnabled:
     process.env.PACT_MODEL_INTELLIGENCE_ENABLED === "1" ||
     process.env.PACT_GOOGLE_API_KEY
@@ -1130,6 +1134,10 @@ export function normalizeSettings(settings) {
     defaultModelProvider,
     defaultModel,
     modelLibraryEntries: normalizeModelLibraryEntries(settings?.modelLibraryEntries, settings),
+    tikaTimeoutMs: sanitizeNumericSetting(
+      settings?.tikaTimeoutMs,
+      DEFAULT_SETTINGS.tikaTimeoutMs
+    ),
     modelLibraryAgentIds: modelLibraryAgents.map((model) => modelAgentId(model)).filter(Boolean),
     modelLibraryAgents,
     agentPermissionGroups: normalizeAgentPermissionGroups(settings?.agentPermissionGroups),

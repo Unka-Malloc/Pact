@@ -68,8 +68,13 @@ const expectedToolIds = [
   "pact.knowledge.ruleAuthoring.run",
   "pact.knowledge.goldCases.list",
   "pact.knowledge.goldCases.set",
-  "pact.knowledge.distillation.runs.create",
-  "pact.knowledge.distillation.runs.get",
+  "pact.external.knowledge.distillation.health",
+  "pact.external.knowledge.distillation.capabilities",
+  "pact.external.knowledge.distillation.runs.list",
+  "pact.external.knowledge.distillation.runs.create",
+  "pact.external.knowledge.distillation.runs.get",
+  "pact.external.knowledge.distillation.runs.cancel",
+  "pact.external.knowledge.distillation.artifacts.export",
   "pact.knowledge.skills.evaluation.runs.create",
   "pact.knowledge.skills.deployments.create",
   "pact.knowledge.skills.deployments.rollback",
@@ -202,6 +207,12 @@ try {
   assert.equal(search.status, 200);
   assert.equal(search.payload.result.protocolVersion, "pact.knowledge.v1");
   assert.equal(Array.isArray(search.payload.result.items), true);
+  assert.equal(search.payload.result.responseProfile, "agent");
+  assert.equal(
+    search.payload.result.agentMessage?.protocolVersion,
+    "pact.knowledge-search.agent-message.v1"
+  );
+  assert.equal(search.payload.result.agentMessage?.machineReadable, true);
 
   const adminGrant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",

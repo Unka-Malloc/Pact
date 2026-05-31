@@ -235,6 +235,7 @@ function stagePublic(stage = {}) {
       ? {
           title: stage.output.title || stage.title || "",
           markdownLength: text(stage.output.markdown).length,
+          markdownByteSize: Buffer.byteLength(stage.output.markdown || "", "utf8"),
           htmlLength: text(stage.output.html).length,
           jsonAvailable: Boolean(stage.output.json)
         }
@@ -421,6 +422,54 @@ function markdownToHtml(markdown = "") {
     html.push("</ul>");
   }
   return `<!doctype html><html><head><meta charset="utf-8"><title>Pact Knowledge Distillation</title></head><body>${html.join("\n")}</body></html>`;
+}
+
+function decodeHtmlEntities(value = "") {
+  const named = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " "
+  };
+  return String(value || "").replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+    const normalized = String(entity || "").toLowerCase();
+    if (normalized.startsWith("#x")) {
+      const codePoint = Number.parseInt(normalized.slice(2), 16);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
+    if (normalized.startsWith("#")) {
+      const codePoint = Number.parseInt(normalized.slice(1), 10);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
+    return Object.prototype.hasOwnProperty.call(named, normalized) ? named[normalized] : match;
+  });
+}
+
+function tikaXhtmlBodyToText(value = "") {
+  const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(value)?.[1] || value;
+  return decodeHtmlEntities(
+    body
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<li\b[^>]*>/gi, "- ")
+      .replace(/<\/(p|div|section|article|li|tr|h[1-6])>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function sanitizeTikaXhtmlMarkdown(markdown = "") {
+  return String(markdown || "")
+    .replace(/<html\b[\s\S]*?<\/html>/gi, (block) =>
+      /X-TIKA:/i.test(block) ? tikaXhtmlBodyToText(block) : block
+    )
+    .split("\n")
+    .filter((line) => !/X-TIKA:|org\.apache\.tika|TextAndCSVParser/i.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 function sourceDirectoryTree(sources = []) {
@@ -1508,9 +1557,9 @@ export function createKnowledgeDistillationWorkbench({
       modelAlias: text(input.modelAlias || input.model || "deepseek-v4-flash"),
       modelEnabled: true,
       prompt: text(input.prompt || input.systemPrompt || ""),
-      tokenBudget: clampNumber(input.tokenBudget || input.contextBudget, 24000, 1024, 1000000),
-      payloadBudget: clampNumber(input.payloadBudget, 120000, 4096, 2000000),
-      rawCorpusBatchMaxCharacters: clampNumber(input.rawCorpusBatchMaxCharacters, 64000, 4096, 1000000),
+      tokenBudget: clampNumber(input.tokenBudget || input.contextBudget, 64000, 1024, 1000000),
+      payloadBudget: clampNumber(input.payloadBudget, 500000, 4096, 2000000),
+      rawCorpusBatchMaxCharacters: clampNumber(input.rawCorpusBatchMaxCharacters, 160000, 4096, 1000000),
       mergeStrategy: text(input.mergeStrategy || "timeline_then_topic"),
       maxRounds: clampNumber(input.maxRounds, 3, 1, 20),
       strategyVersion: text(input.strategyVersion || "timeline_then_topic_v2"),
@@ -1704,6 +1753,7 @@ export function createKnowledgeDistillationWorkbench({
     const normalizedFormat = normalizeFormat(format);
     const title = stage.output.title || stage.title || "knowledge-distillation";
     const baseName = `${safeSlug(run.title || run.runId)}-${safeSlug(stageId)}`;
+    const outputMarkdown = sanitizeTikaXhtmlMarkdown(stage.output.markdown || "");
     if (normalizedFormat === "package") {
       const files = {
         "manifest.json": jsonBuffer({
@@ -1716,8 +1766,8 @@ export function createKnowledgeDistillationWorkbench({
           metrics: stage.metrics || {},
           warnings: stage.warnings || []
         }),
-        "stage.md": stage.output.markdown || "",
-        "stage.html": stage.output.html || markdownToHtml(stage.output.markdown || ""),
+        "stage.md": outputMarkdown,
+        "stage.html": markdownToHtml(outputMarkdown),
         "stage.json": jsonBuffer(stage.output.json || {})
       };
       if (stageId === "raw-format-conversion" || stageId === "normalized-corpus") {
@@ -1743,20 +1793,20 @@ export function createKnowledgeDistillationWorkbench({
       return {
         contentType: EXPORT_CONTENT_TYPES.html,
         fileName: `${baseName}.html`,
-        buffer: Buffer.from(stage.output.html || markdownToHtml(stage.output.markdown || ""), "utf8")
+        buffer: Buffer.from(markdownToHtml(outputMarkdown), "utf8")
       };
     }
     if (normalizedFormat === "docx") {
       return {
         contentType: EXPORT_CONTENT_TYPES.docx,
         fileName: `${baseName}.docx`,
-        buffer: await buildDocxBuffer(title, stage.output.markdown || "")
+        buffer: await buildDocxBuffer(title, outputMarkdown)
       };
     }
     return {
       contentType: EXPORT_CONTENT_TYPES.markdown,
       fileName: `${baseName}.md`,
-      buffer: Buffer.from(stage.output.markdown || "", "utf8")
+      buffer: Buffer.from(outputMarkdown, "utf8")
     };
   }
 
@@ -1794,6 +1844,69 @@ export function createKnowledgeDistillationWorkbench({
       contentType: EXPORT_CONTENT_TYPES.package,
       fileName: `${safeSlug(run.title || run.runId)}-workspace-package.zip`,
       buffer: zipBuffer(files)
+    };
+  }
+
+  async function listRunArtifacts({ runId }) {
+    const run = await loadRun(runId);
+    if (!run) return null;
+    const artifactSpecs = [
+      {
+        artifactId: "knowledge-distillation:markdown",
+        kind: "stage-export",
+        stageId: "knowledge-distillation",
+        format: "markdown",
+        detail: "核心提炼文档"
+      },
+      {
+        artifactId: "knowledge-distillation:docx",
+        kind: "stage-export",
+        stageId: "knowledge-distillation",
+        format: "docx",
+        detail: "Word 文档"
+      },
+      {
+        artifactId: "knowledge-distillation:json",
+        kind: "stage-export",
+        stageId: "knowledge-distillation",
+        format: "json",
+        detail: "结构化结果"
+      }
+    ];
+    const artifacts = [];
+    for (const spec of artifactSpecs) {
+      const exported = await exportStage({
+        runId,
+        stageId: spec.stageId,
+        format: spec.format
+      });
+      if (!exported?.buffer) continue;
+      artifacts.push({
+        ...spec,
+        fileName: exported.fileName,
+        contentType: exported.contentType,
+        byteSize: exported.buffer.length
+      });
+    }
+    const packageExport = await exportRunPackage({ runId });
+    if (packageExport?.buffer) {
+      artifacts.push({
+        artifactId: "run:package",
+        kind: "run-package",
+        stageId: "",
+        format: "package",
+        detail: "蒸馏整包",
+        fileName: packageExport.fileName,
+        contentType: packageExport.contentType,
+        byteSize: packageExport.buffer.length
+      });
+    }
+    return {
+      protocolVersion: KNOWLEDGE_DISTILLATION_WORKBENCH_PROTOCOL_VERSION,
+      runId: run.runId,
+      generatedAt: nowIso(),
+      items: artifacts,
+      count: artifacts.length
     };
   }
 
@@ -1867,6 +1980,7 @@ export function createKnowledgeDistillationWorkbench({
     rerunStage,
     getRun,
     listRuns,
+    listRunArtifacts,
     exportStage,
     exportRunPackage,
     compareRuns

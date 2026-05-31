@@ -179,6 +179,13 @@ const suites = [
     "connectors",
     "regression"
   ]),
+  suite("server.external-service-api-registration", "External service API registration and internal algorithm rejection", npm("run", "server:verify:external-service-api-registration"), [
+    "server",
+    "external-service",
+    "operation",
+    "security",
+    "regression"
+  ]),
   suite("server.maintenance-agent", "Maintenance agent harness", npm("run", "server:verify:maintenance-agent"), [
     "server",
     "integration",
@@ -345,6 +352,7 @@ const profileSuites = {
   fast: [
     "repo.hygiene.pre",
     "security.secret-hygiene",
+    "server.external-service-api-registration",
     "server.frontend-feature-registry",
     "client.architecture",
     "client.plan",
@@ -384,6 +392,7 @@ const profileSuites = {
     "server.singleton-boundaries",
     "server.source-evidence",
     "server.multi-source-connectors",
+    "server.external-service-api-registration",
     "server.maintenance-agent",
     "server.monitor-alerts",
     "server.feature-profiles",
@@ -437,6 +446,7 @@ const profileSuites = {
     "server.singleton-boundaries",
     "server.source-evidence",
     "server.multi-source-connectors",
+    "server.external-service-api-registration",
     "server.maintenance-agent",
     "server.feature-profiles",
     "server.frontend-feature-registry",
@@ -467,6 +477,7 @@ const profileSuites = {
     "server.singleton-boundaries",
     "server.source-evidence",
     "server.multi-source-connectors",
+    "server.external-service-api-registration",
     "server.maintenance-agent",
     "server.monitor-alerts",
     "server.feature-profiles",
@@ -482,6 +493,7 @@ const profileSuites = {
     "security.secret-hygiene",
     "server.source-evidence",
     "server.multi-source-connectors",
+    "server.external-service-api-registration",
     "server.console-auth",
     "server.dispatcher-unified",
     "server.trace-context",
@@ -523,6 +535,7 @@ const profileSuites = {
     "server.singleton-boundaries",
     "server.source-evidence",
     "server.multi-source-connectors",
+    "server.external-service-api-registration",
     "server.maintenance-agent",
     "server.feature-profiles",
     "server.frontend-feature-registry",
@@ -587,6 +600,7 @@ const profileSuites = {
     "server.singleton-boundaries",
     "server.source-evidence",
     "server.multi-source-connectors",
+    "server.external-service-api-registration",
     "server.maintenance-agent",
     "server.feature-profiles",
     "server.frontend-feature-registry",
@@ -836,6 +850,7 @@ function changedSuiteIds(baseRef) {
       selected.add("server.knowledge");
       selected.add("server.source-evidence");
       selected.add("server.multi-source-connectors");
+      selected.add("server.external-service-api-registration");
       selected.add("server.maintenance-agent");
       selected.add("server.feature-profiles");
       selected.add("server.frontend-feature-registry");
@@ -860,6 +875,9 @@ function changedSuiteIds(baseRef) {
     }
     if (file.startsWith("docs/") || file === "README.md") {
       selected.add("repo.hygiene.post");
+    }
+    if (file.startsWith("external-services/")) {
+      selected.add("server.external-service-api-registration");
     }
   }
 

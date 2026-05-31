@@ -573,8 +573,16 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "knowledge.rule_authoring.runs.get": "pact.knowledge.ruleAuthoring.run",
   "knowledge.gold_cases.list": "pact.knowledge.goldCases.list",
   "knowledge.gold_cases.save": "pact.knowledge.goldCases.set",
-  "knowledge.distillation.runs.create": "pact.knowledge.distillation.runs.create",
-  "knowledge.distillation.runs.get": "pact.knowledge.distillation.runs.get",
+  "external.knowledge.distillation.service.health": "pact.external.knowledge.distillation.health",
+  "external.knowledge.distillation.service.capabilities": "pact.external.knowledge.distillation.capabilities",
+  "external.knowledge.distillation.service.runtime_health": "pact.external.knowledge.distillation.runtimeHealth",
+  "external.knowledge.distillation.runs.list": "pact.external.knowledge.distillation.runs.list",
+  "external.knowledge.distillation.runs.create": "pact.external.knowledge.distillation.runs.create",
+  "external.knowledge.distillation.runs.get": "pact.external.knowledge.distillation.runs.get",
+  "external.knowledge.distillation.runs.cancel": "pact.external.knowledge.distillation.runs.cancel",
+  "external.knowledge.distillation.evidence.query": "pact.external.knowledge.distillation.evidence.query",
+  "external.knowledge.distillation.projects.evidence.query": "pact.external.knowledge.distillation.projects.evidence.query",
+  "external.knowledge.distillation.artifacts.export": "pact.external.knowledge.distillation.artifacts.export",
   "knowledge.skills.evaluation.runs.create": "pact.knowledge.skills.evaluation.runs.create",
   "knowledge.skills.deployments.create": "pact.knowledge.skills.deployments.create",
   "knowledge.skills.deployments.rollback": "pact.knowledge.skills.deployments.rollback",
@@ -796,8 +804,7 @@ const TOOL_ID_BY_OPERATION_ID = Object.freeze({
   "codespace.review.approve": "pact.codespace.review.approve",
   "codespace.review.status.sync": "pact.codespace.review.status.sync",
   "raw-corpus.format.convert": "pact.rawCorpus.format.convert",
-  "knowledge.dossier.export": "pact.knowledge.dossier.export",
-  "knowledge.distillation.export": "pact.knowledge.distillation.export"
+  "knowledge.dossier.export": "pact.knowledge.dossier.export"
 });
 
 const TOOL_ALIAS_IDS_BY_OPERATION_ID = Object.freeze({
@@ -852,7 +859,8 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "knowledge.golden_rules.rollback": "knowledge:maintain",
   "knowledge.rule_authoring.chat": "knowledge:maintain",
   "knowledge.gold_cases.save": "knowledge:maintain",
-  "knowledge.distillation.runs.create": "knowledge:maintain",
+  "external.knowledge.distillation.runs.create": "knowledge:maintain",
+  "external.knowledge.distillation.runs.cancel": "knowledge:maintain",
   "knowledge.skills.evaluation.runs.create": "knowledge:maintain",
   "knowledge.skills.deployments.create": "knowledge:maintain",
   "knowledge.skills.deployments.rollback": "knowledge:maintain",
@@ -1043,8 +1051,7 @@ const SCOPE_BY_OPERATION_ID = Object.freeze({
   "codespace.review.approve": "repo:approve",
   "codespace.review.status.sync": "repo:read",
   "raw-corpus.format.convert": "knowledge:write",
-  "knowledge.dossier.export": "knowledge:read",
-  "knowledge.distillation.export": "knowledge:read"
+  "knowledge.dossier.export": "knowledge:read"
 });
 
 const TOOLSET_BY_SCOPE = Object.freeze({
@@ -1122,6 +1129,7 @@ function operationScope(operation) {
   const operationId = String(operation.id || "");
   if (
     operationId.startsWith("knowledge.") ||
+    operationId.startsWith("external.knowledge.") ||
     operationId.startsWith("context.") ||
     operationId.startsWith("client_runtime.") ||
     operationId.startsWith("agent_workspaces.") ||

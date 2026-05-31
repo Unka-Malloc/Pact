@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
           <div class="upload-file-name-block">
             <span class="upload-file-name" :title="entry.relativePath">{{ entry.relativePath }}</span>
             <small>
-              {{ entry.extension }}<template v-if="entry.size > 0"> · {{ formatBytes(entry.size) }}</template>
+              {{ entry.extension }}<template v-if="!isDownloadMode && entry.size > 0"> · {{ formatBytes(entry.size) }}</template>
             </small>
           </div>
         </div>

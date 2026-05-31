@@ -971,6 +971,7 @@ async function writeRunbook(stagingPath, targetKey, packagingPlan) {
       packagingPlan.includeTika
         ? "- `PACT_TIKA_JAR_PATH`: defaults to bundled Tika"
         : "- `PACT_TIKA_JAR_PATH`: not set unless supplied by operator",
+      "- `PACT_TIKA_TIMEOUT_MS`: defaults to 1800000",
       "",
       packagingPlan.includeTika
         ? "The package still requires a compatible Linux kernel and glibc from the host OS, but it does not require host Node.js, npm, Java, Tika, Python, or any apt-installed application dependency."

@@ -1,7 +1,27 @@
-export type KnowledgeTab =
-  | "management"
-  | "wordCloud"
-  | "maintenance";
+export const knowledgeRouteTabs = [
+  "management",
+  "wordCloud",
+  "maintenance",
+  "chunking",
+  "distillation",
+] as const;
+
+export type KnowledgeTab = typeof knowledgeRouteTabs[number];
+export type KnowledgeViewTab = "management" | "wordCloud" | "maintenance";
+
+export function isKnowledgeRouteTab(value: string): value is KnowledgeTab {
+  return (knowledgeRouteTabs as readonly string[]).includes(value);
+}
+
+export function knowledgeRouteTabToViewTab(value: string): KnowledgeViewTab | null {
+  if (value === "chunking" || value === "distillation") {
+    return "management";
+  }
+  if (value === "management" || value === "wordCloud" || value === "maintenance") {
+    return value;
+  }
+  return null;
+}
 
 export type DebugTab = "knowledgeRecall" | "agentRetrieval" | "knowledgeDistillation";
 

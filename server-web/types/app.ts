@@ -43,7 +43,7 @@ export type AdminView =
   | "clients"
   | "storage"
   | "modules";
-export type KnowledgeTab = "wordCloud" | "chunking" | "parsing" | "retrieval" | "distillation" | "review" | "rules" | "maintenance" | "management";
+export type KnowledgeTab = "management" | "wordCloud" | "maintenance" | "chunking" | "distillation";
 export type KnowledgeManagementPanel = "knowledge" | "rules" | "expert";
 export type OptionBarValue = string | number | boolean;
 export type OptionBarOption = {

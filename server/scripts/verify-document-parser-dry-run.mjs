@@ -43,6 +43,9 @@ function assertMarkdownUploadRouting(result, label) {
     false,
     `${label} should not let weak text sniffing convert markdown into email`
   );
+  assert.equal(routedSource.documentParserId, "builtin/text-direct", `${label} should bypass Tika for markdown text`);
+  assert.match(routedSource.text || "", /^# Dry-run parsing/, `${label} should preserve markdown source text`);
+  assert.doesNotMatch(routedSource.text || "", /<html|X-TIKA/i, `${label} should not wrap markdown in Tika XHTML`);
 }
 
 function documentParsingConfig({

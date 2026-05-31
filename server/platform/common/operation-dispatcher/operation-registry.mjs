@@ -3072,6 +3072,306 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     requiredScopes: ["knowledge:read"]
   },
   {
+    id: "external.knowledge.distillation.service.health",
+    feature: "external",
+    label: "外部知识蒸馏服务健康检查",
+    description: "Health probe for the registered external knowledge distillation service. Internal knowledge.distillation.* APIs are not affected.",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationHealth" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/health",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }
+      ]
+    },
+    rpc: {
+      method: "external.knowledge.distillation.service.health",
+      query: [{ name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "health"],
+      usage: "external knowledge distillation health [--base-url URL]"
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation"]
+  },
+  {
+    id: "external.knowledge.distillation.service.capabilities",
+    feature: "external",
+    label: "外部知识蒸馏服务能力",
+    description: "Capability document for the registered external knowledge distillation service.",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationCapabilities" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/capabilities",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }
+      ]
+    },
+    rpc: {
+      method: "external.knowledge.distillation.service.capabilities",
+      query: [{ name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "capabilities"],
+      usage: "external knowledge distillation capabilities [--base-url URL]"
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation"]
+  },
+  {
+    id: "external.knowledge.distillation.service.runtime_health",
+    feature: "external",
+    label: "外部知识蒸馏服务运行时状态",
+    description: "Runtime dependency doctor for the registered external knowledge distillation service, including OCR and PDF visual parser availability.",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationRuntimeHealth" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/runtime/health",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }
+      ]
+    },
+    rpc: {
+      method: "external.knowledge.distillation.service.runtime_health",
+      query: [{ name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "runtime", "health"],
+      usage: "external knowledge distillation runtime health [--base-url URL]"
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation", "runtime-doctor"]
+  },
+  {
+    id: "external.knowledge.distillation.runs.list",
+    feature: "external",
+    label: "列出外部知识蒸馏任务",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationRunsList" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/runs",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] },
+        { name: "limit", aliases: ["limit"] }
+      ],
+      coerce: { limit: "number" }
+    },
+    rpc: {
+      method: "external.knowledge.distillation.runs.list",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] },
+        { name: "limit", aliases: ["limit"] }
+      ]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "list"],
+      usage: "external knowledge distillation list [--base-url URL] [--limit 50]"
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation"]
+  },
+  {
+    id: "external.knowledge.distillation.runs.create",
+    feature: "external",
+    label: "创建外部知识蒸馏任务",
+    description: "Create a run on the registered external knowledge distillation service.",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationRunsCreate" },
+    http: { method: "POST", path: "/api/external/knowledge/distillation/runs" },
+    rpc: { method: "external.knowledge.distillation.runs.create", body: "params" },
+    cli: {
+      command: ["external", "knowledge", "distillation", "run"],
+      usage: "external knowledge distillation run --body request.json"
+    },
+    requiredScopes: ["knowledge:maintain"],
+    safety: { risk: "safe_write" },
+    aspects: ["external-service", "knowledge-distillation"]
+  },
+  {
+    id: "external.knowledge.distillation.runs.get",
+    feature: "external",
+    label: "读取外部知识蒸馏任务",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationRunGet" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/runs/:runId",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }
+      ]
+    },
+    rpc: {
+      method: "external.knowledge.distillation.runs.get",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }],
+      query: [{ name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "get"],
+      usage: "external knowledge distillation get --id RUN_ID [--base-url URL]",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation"]
+  },
+  {
+    id: "external.knowledge.distillation.runs.cancel",
+    feature: "external",
+    label: "取消外部知识蒸馏任务",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationRunCancel" },
+    http: { method: "POST", path: "/api/external/knowledge/distillation/runs/:runId/cancel" },
+    rpc: { method: "external.knowledge.distillation.runs.cancel", body: "params" },
+    cli: {
+      command: ["external", "knowledge", "distillation", "cancel"],
+      usage: "external knowledge distillation cancel --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:maintain"],
+    safety: { risk: "safe_write" },
+    aspects: ["external-service", "knowledge-distillation"]
+  },
+  {
+    id: "external.knowledge.distillation.evidence.query",
+    feature: "external",
+    label: "查询外部知识蒸馏证据",
+    description: "Machine-readable filtered graph evidence query for agents. Returns bounded text units, entities, relationships, claims, and community reports without downloading the full evidence artifact.",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationEvidenceQuery" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/runs/:runId/evidence",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] },
+        { name: "entity", aliases: ["entity", "entityQuery", "entity-query"] },
+        { name: "relationship", aliases: ["relationship", "relationshipQuery", "relationship-query"] },
+        { name: "claimStatus", aliases: ["claim-status", "status"] },
+        { name: "claim", aliases: ["claim", "claimQuery", "claim-query"] },
+        { name: "sourceId", aliases: ["source-id", "documentId", "document-id"] },
+        { name: "groupId", aliases: ["group-id", "communityId", "community-id"] },
+        { name: "timeFrom", aliases: ["time-from", "from"] },
+        { name: "timeTo", aliases: ["time-to", "to"] },
+        { name: "limit", aliases: ["limit", "pageSize", "page-size"] }
+      ],
+      coerce: { limit: "number" }
+    },
+    rpc: {
+      method: "external.knowledge.distillation.evidence.query",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }],
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] },
+        { name: "entity", aliases: ["entity", "entityQuery", "entity-query"] },
+        { name: "relationship", aliases: ["relationship", "relationshipQuery", "relationship-query"] },
+        { name: "claimStatus", aliases: ["claim-status", "status"] },
+        { name: "claim", aliases: ["claim", "claimQuery", "claim-query"] },
+        { name: "sourceId", aliases: ["source-id", "documentId", "document-id"] },
+        { name: "groupId", aliases: ["group-id", "communityId", "community-id"] },
+        { name: "timeFrom", aliases: ["time-from", "from"] },
+        { name: "timeTo", aliases: ["time-to", "to"] },
+        { name: "limit", aliases: ["limit", "pageSize", "page-size"] }
+      ]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "evidence"],
+      usage: "external knowledge distillation evidence --id RUN_ID [--entity invoice] [--claim-status TRUE] [--time-from 2026-05-01]",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation", "evidence-query"]
+  },
+  {
+    id: "external.knowledge.distillation.projects.evidence.query",
+    feature: "external",
+    label: "查询外部知识蒸馏项目证据",
+    description: "Machine-readable project-level graph evidence query for agents. Merges evidence across runs for the same projectId so large engineering projects can converge without scanning every run artifact.",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationProjectEvidenceQuery" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/projects/:projectId/evidence",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] },
+        { name: "mode", aliases: ["mode"] },
+        { name: "runLimit", aliases: ["run-limit"] },
+        { name: "entity", aliases: ["entity", "entityQuery", "entity-query"] },
+        { name: "relationship", aliases: ["relationship", "relationshipQuery", "relationship-query"] },
+        { name: "claimStatus", aliases: ["claim-status", "status"] },
+        { name: "claim", aliases: ["claim", "claimQuery", "claim-query"] },
+        { name: "sourceId", aliases: ["source-id", "documentId", "document-id"] },
+        { name: "groupId", aliases: ["group-id", "communityId", "community-id"] },
+        { name: "timeFrom", aliases: ["time-from", "from"] },
+        { name: "timeTo", aliases: ["time-to", "to"] },
+        { name: "limit", aliases: ["limit", "pageSize", "page-size"] }
+      ],
+      coerce: { limit: "number", runLimit: "number" }
+    },
+    rpc: {
+      method: "external.knowledge.distillation.projects.evidence.query",
+      params: [{ name: "projectId", aliases: ["project-id", "id"], required: true }],
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] },
+        { name: "mode", aliases: ["mode"] },
+        { name: "runLimit", aliases: ["run-limit"] },
+        { name: "entity", aliases: ["entity", "entityQuery", "entity-query"] },
+        { name: "relationship", aliases: ["relationship", "relationshipQuery", "relationship-query"] },
+        { name: "claimStatus", aliases: ["claim-status", "status"] },
+        { name: "claim", aliases: ["claim", "claimQuery", "claim-query"] },
+        { name: "sourceId", aliases: ["source-id", "documentId", "document-id"] },
+        { name: "groupId", aliases: ["group-id", "communityId", "community-id"] },
+        { name: "timeFrom", aliases: ["time-from", "from"] },
+        { name: "timeTo", aliases: ["time-to", "to"] },
+        { name: "limit", aliases: ["limit", "pageSize", "page-size"] }
+      ]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "project-evidence"],
+      usage: "external knowledge distillation project-evidence --project-id PROJECT_ID [--mode all] [--entity parser] [--time-from 2026-05-01]",
+      pathParams: { projectId: ["project-id", "id"] }
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    aspects: ["external-service", "knowledge-distillation", "evidence-query", "project-convergence"]
+  },
+  {
+    id: "external.knowledge.distillation.artifacts.export",
+    feature: "external",
+    label: "导出外部知识蒸馏产物",
+    target: { controller: "system", method: "handleExternalKnowledgeDistillationArtifactExport" },
+    http: {
+      method: "GET",
+      path: "/api/external/knowledge/distillation/runs/:runId/artifacts/:artifactId",
+      query: [
+        { name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }
+      ]
+    },
+    rpc: {
+      method: "external.knowledge.distillation.artifacts.export",
+      params: [
+        { name: "runId", aliases: ["run-id", "id"], required: true },
+        { name: "artifactId", aliases: ["artifact-id", "artifact"], required: true }
+      ],
+      query: [{ name: "baseUrl", aliases: ["base-url", "serviceUrl", "service-url", "endpoint"] }]
+    },
+    cli: {
+      command: ["external", "knowledge", "distillation", "export"],
+      usage: "external knowledge distillation export --id RUN_ID --artifact-id portable-markdown",
+      pathParams: { runId: ["run-id", "id"], artifactId: ["artifact-id", "artifact"] }
+    },
+    requiredScopes: ["knowledge:read"],
+    readOnly: true,
+    concurrencySafe: true,
+    binary: true,
+    aspects: ["external-service", "knowledge-distillation", "result-export"]
+  },
+  {
     id: "knowledge.distillation.workbench.runs.list",
     feature: "knowledge",
     label: "列出知识蒸馏工作台任务",
@@ -3245,6 +3545,23 @@ const SERVER_API_OPERATION_DEFINITIONS = [
     cli: {
       command: ["knowledge", "distillation", "workbench", "package"],
       usage: "knowledge distillation workbench package --id RUN_ID",
+      pathParams: { runId: ["run-id", "id"] }
+    },
+    requiredScopes: ["knowledge:read"]
+  },
+  {
+    id: "knowledge.distillation.workbench.runs.artifacts",
+    feature: "knowledge",
+    label: "读取知识蒸馏工作台产物信息",
+    target: { controller: "system", method: "handleKnowledgeDistillationWorkbenchRunArtifacts" },
+    http: { method: "GET", path: "/api/knowledge/distillation/workbench/runs/:runId/artifacts" },
+    rpc: {
+      method: "knowledge.distillation.workbench.runs.artifacts",
+      params: [{ name: "runId", aliases: ["run-id", "id"], required: true }]
+    },
+    cli: {
+      command: ["knowledge", "distillation", "workbench", "artifacts"],
+      usage: "knowledge distillation workbench artifacts --id RUN_ID",
       pathParams: { runId: ["run-id", "id"] }
     },
     requiredScopes: ["knowledge:read"]
@@ -4966,6 +5283,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
         { name: "batchId", aliases: ["batch-id", "batchId"] },
         { name: "clientUid", aliases: ["client-uid", "clientUid"] },
         { name: "clientId", aliases: ["client-id", "clientId"] },
+        { name: "responseProfile", aliases: ["response-profile", "responseProfile"] },
         { name: "retrievalProfileId", aliases: ["profile", "profile-id", "retrievalProfileId"] },
         { name: "workspaceId", aliases: ["workspace-id", "workspaceId"] },
         { name: "learningEnabled", aliases: ["learning", "learning-enabled"], type: "boolean" },
@@ -4991,6 +5309,7 @@ const SERVER_API_OPERATION_DEFINITIONS = [
         { name: "batchId", aliases: ["batch-id", "batchId"] },
         { name: "clientUid", aliases: ["client-uid", "clientUid"] },
         { name: "clientId", aliases: ["client-id", "clientId"] },
+        { name: "responseProfile", aliases: ["response-profile", "responseProfile"] },
         { name: "retrievalProfileId", aliases: ["profile", "profile-id", "retrievalProfileId"] },
         { name: "workspaceId", aliases: ["workspace-id", "workspaceId"] },
         { name: "learningEnabled", aliases: ["learning", "learning-enabled"] },

@@ -1,0 +1,7831 @@
+import crypto from "node:crypto";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
+import fsSync from "node:fs";
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { gunzipSync, inflateRawSync, inflateSync } from "node:zlib";
+
+const execFileAsync = promisify(execFile);
+const PROTOCOL_VERSION = "pact.external-knowledge-distillation.v1";
+const SERVICE_NAME = "external-knowledge-distillation";
+const SERVICE_KIND = "externalKnowledgeDistillation";
+const PORT = Number(process.env.PORT || process.env.SERVICE_PORT || 8799);
+const HOST = String(process.env.HOST || process.env.SERVICE_HOST || "0.0.0.0");
+const DATA_DIR = path.resolve(process.env.SERVICE_DATA_DIR || "/data");
+const RUNS_PATH = path.join(DATA_DIR, "runs.json");
+const SERVICE_ROOT = path.dirname(fileURLToPath(import.meta.url));
+const REFERENCE_FRAMEWORKS_PATH = path.join(SERVICE_ROOT, "reference-frameworks.json");
+const INPUT_ROOTS = Array.from(new Set([
+  DATA_DIR,
+  ...String(process.env.PACT_EXTERNAL_KD_INPUT_ROOTS || "")
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean)
+].map((item) => path.resolve(item))));
+const DEFAULT_WINDOW_CHARACTERS = 12_000;
+const DEFAULT_WINDOW_OVERLAP_CHARACTERS = 600;
+const LARGE_FILE_BYTES = 50 * 1024 * 1024;
+const LARGE_TEXT_CHARACTERS = 1_000_000;
+const FILE_REF_DIRECT_READ_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_FILE_REF_DIRECT_READ_MAX_BYTES || 8 * 1024 * 1024));
+const STREAM_TEXT_CHUNK_BYTES = Math.max(4096, Number(process.env.PACT_EXTERNAL_KD_STREAM_TEXT_CHUNK_BYTES || 512 * 1024));
+const STREAM_TEXT_SAMPLE_CHARACTERS = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_STREAM_TEXT_SAMPLE_CHARACTERS || 200_000));
+const EMBEDDING_DIMENSIONS = 128;
+const LEADER_CLUSTER_THRESHOLD = 0.34;
+const WINDOW_COMMUNITY_CLUSTER_THRESHOLD = 0.31;
+const CROSS_TOPIC_LINK_THRESHOLD = 0.58;
+const CLASSIFICATION_SEPARATION_THRESHOLD = 0.42;
+const GARBAGE_SIGNAL_THRESHOLD = 0.18;
+const GROUNDING_SUPPORT_THRESHOLD = 0.42;
+const GROUNDING_CONFLICT_THRESHOLD = 0.48;
+const CLASSIFICATION_STRATEGY = "hashing_embedding_window_community_classification_v2";
+const GROUNDING_STRATEGY = "claim-evidence-topk-conflict-gating.v2";
+const INCREMENTAL_CONVERGENCE_STRATEGY = "project-snapshot-incremental-convergence.v1";
+const GRAPH_EVIDENCE_STRATEGY = "graph-lite-entity-relationship-evidence-pack.v1";
+const EVIDENCE_QUERY_STRATEGY = "graph-lite-evidence-query.v1";
+const PROJECT_EVIDENCE_QUERY_STRATEGY = "project-graph-evidence-convergence-query.v1";
+const REFERENCE_GAP_REPORT_STRATEGY = "reference-framework-gap-report.v1";
+const RUNTIME_DOCTOR_TIMEOUT_MS = 2500;
+const RUNTIME_DOCTOR_CACHE_MS = 30_000;
+const OCR_TIMEOUT_MS = Number(process.env.PACT_EXTERNAL_KD_OCR_TIMEOUT_MS || 30_000);
+const PDF_OCR_MAX_PAGES = Number(process.env.PACT_EXTERNAL_KD_PDF_OCR_MAX_PAGES || 5);
+const TIKA_APP_JAR = process.env.TIKA_APP_JAR || "/opt/tika/tika-app.jar";
+const TIKA_TIMEOUT_MS = Number(process.env.PACT_EXTERNAL_KD_TIKA_TIMEOUT_MS || 60_000);
+const ARCHIVE_EXPANSION_MAX_DEPTH = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_EXPANSION_MAX_DEPTH || 3));
+const ARCHIVE_EXPANSION_MAX_ENTRIES = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_EXPANSION_MAX_ENTRIES || 500));
+const ARCHIVE_ENTRY_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_ENTRY_MAX_BYTES || 25 * 1024 * 1024));
+const ARCHIVE_EXTERNAL_TIMEOUT_MS = Number(process.env.PACT_EXTERNAL_KD_ARCHIVE_EXTERNAL_TIMEOUT_MS || 45_000);
+const EMAIL_ATTACHMENT_MAX_COUNT = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_ATTACHMENT_MAX_COUNT || 200));
+const EMAIL_ATTACHMENT_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_EMAIL_ATTACHMENT_MAX_BYTES || 25 * 1024 * 1024));
+const EMAIL_MIME_MAX_DEPTH = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MIME_MAX_DEPTH || 8));
+const EMAIL_MBOX_MAX_MESSAGES = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MBOX_MAX_MESSAGES || 500));
+const EMAIL_MBOX_MESSAGE_MAX_CHARACTERS = Math.max(4096, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MBOX_MESSAGE_MAX_CHARACTERS || 25 * 1024 * 1024));
+let runtimeDoctorCache = null;
+const STOP_WORDS = new Set([
+  "about",
+  "after",
+  "and",
+  "are",
+  "from",
+  "have",
+  "into",
+  "that",
+  "the",
+  "this",
+  "with",
+  "为",
+  "和",
+  "与",
+  "及",
+  "是",
+  "的",
+  "了",
+  "在",
+  "对",
+  "中"
+]);
+
+const SEMANTIC_ALIAS_GROUPS = Object.freeze({
+  architecture: [
+    "api",
+    "apis",
+    "namespace",
+    "platform",
+    "service",
+    "services",
+    "contract",
+    "contracts",
+    "capability",
+    "capabilities",
+    "registration",
+    "registry"
+  ],
+  finance: [
+    "finance",
+    "financial",
+    "invoice",
+    "invoices",
+    "vendor",
+    "vendors",
+    "supplier",
+    "suppliers",
+    "payment",
+    "payments",
+    "remittance",
+    "tax",
+    "vat",
+    "total",
+    "totals",
+    "amount",
+    "amounts"
+  ],
+  parsing: [
+    "parser",
+    "parsers",
+    "parse",
+    "parsing",
+    "route",
+    "routing",
+    "fallback",
+    "fallbacks",
+    "tika",
+    "docx",
+    "pdf",
+    "ocr",
+    "payload",
+    "base64",
+    "markdown",
+    "json",
+    "csv",
+    "zip",
+    "ooxml"
+  ],
+  visual: [
+    "image",
+    "images",
+    "screenshot",
+    "screenshots",
+    "capture",
+    "ocr",
+    "visual",
+    "page",
+    "pages",
+    "layout"
+  ],
+  project: [
+    "project",
+    "projects",
+    "engineering",
+    "deployment",
+    "manual",
+    "evidence",
+    "window",
+    "windows",
+    "convergence",
+    "distillation"
+  ]
+});
+const SEMANTIC_CONCEPT_INDEX = Object.freeze(
+  Object.fromEntries(Object.keys(SEMANTIC_ALIAS_GROUPS).map((concept, index) => [`concept:${concept}`, index]))
+);
+
+const FORMAT_ROUTES = Object.freeze([
+  {
+    id: "pdf",
+    label: "PDF document",
+    extensions: [".pdf"],
+    mediaTypes: ["application/pdf"],
+    contentShape: "pdf",
+    preferredParser: "pdf.text.tika-safe",
+    fallbackParsers: ["pdf.visual.layout", "ocr.page"],
+    parserChain: ["pdf.route", "pdf.text.tika-safe", "pdf.visual.layout", "ocr.page"],
+    streamingUnit: "page",
+    referenceFrameworks: ["docling", "mineru", "marker", "unstructured"]
+  },
+  {
+    id: "word",
+    label: "Word document",
+    extensions: [".docx", ".doc", ".rtf"],
+    mediaTypes: [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/msword",
+      "application/rtf",
+      "text/rtf"
+    ],
+    contentShape: "office-document",
+    preferredParser: "office.word.structured",
+    fallbackParsers: ["tika.text", "ocr.embedded-images"],
+    parserChain: ["office.route", "office.word.structured", "tika.text"],
+    streamingUnit: "section",
+    referenceFrameworks: ["docling", "mineru", "unstructured"]
+  },
+  {
+    id: "presentation",
+    label: "Presentation",
+    extensions: [".pptx", ".ppt"],
+    mediaTypes: [
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.ms-powerpoint"
+    ],
+    contentShape: "presentation",
+    preferredParser: "office.presentation.slides",
+    fallbackParsers: ["tika.text", "ocr.slide-images"],
+    parserChain: ["office.route", "office.presentation.slides", "tika.text", "ocr.slide-images"],
+    streamingUnit: "slide",
+    referenceFrameworks: ["docling", "mineru", "unstructured"]
+  },
+  {
+    id: "spreadsheet",
+    label: "Spreadsheet",
+    extensions: [".xlsx", ".xls", ".csv", ".tsv"],
+    mediaTypes: [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+      "text/csv",
+      "text/tab-separated-values"
+    ],
+    contentShape: "spreadsheet",
+    preferredParser: "table.sheet.structured",
+    fallbackParsers: ["tika.text", "text.direct"],
+    parserChain: ["table.route", "table.sheet.structured", "table.rows.windowed"],
+    streamingUnit: "sheet",
+    referenceFrameworks: ["docling", "mineru", "unstructured", "haystack"]
+  },
+  {
+    id: "open-document",
+    label: "OpenDocument",
+    extensions: [".odt", ".ott", ".ods", ".ots", ".odp", ".otp"],
+    mediaTypes: [
+      "application/vnd.oasis.opendocument.text",
+      "application/vnd.oasis.opendocument.text-template",
+      "application/vnd.oasis.opendocument.spreadsheet",
+      "application/vnd.oasis.opendocument.spreadsheet-template",
+      "application/vnd.oasis.opendocument.presentation",
+      "application/vnd.oasis.opendocument.presentation-template"
+    ],
+    contentShape: "open-document",
+    preferredParser: "open-document.structured",
+    fallbackParsers: ["tika.text"],
+    parserChain: ["open-document.route", "open-document.structured", "tika.text"],
+    streamingUnit: "section",
+    referenceFrameworks: ["docling", "unstructured", "haystack"]
+  },
+  {
+    id: "ebook",
+    label: "Ebook",
+    extensions: [".epub"],
+    mediaTypes: ["application/epub+zip"],
+    contentShape: "ebook",
+    preferredParser: "ebook.epub",
+    fallbackParsers: ["tika.text"],
+    parserChain: ["ebook.route", "ebook.epub", "tika.text"],
+    streamingUnit: "chapter",
+    referenceFrameworks: ["unstructured", "llama-index", "haystack"]
+  },
+  {
+    id: "email",
+    label: "Email",
+    extensions: [".eml", ".msg", ".mbox"],
+    mediaTypes: ["message/rfc822", "application/vnd.ms-outlook", "application/mbox", "application/x-mbox"],
+    contentShape: "email",
+    preferredParser: "email.headers-body-attachments",
+    fallbackParsers: ["tika.text", "text.direct"],
+    parserChain: ["email.route", "email.msg.tika", "email.headers-body-attachments", "attachment.route"],
+    streamingUnit: "message",
+    referenceFrameworks: ["unstructured", "llama-index", "haystack"]
+  },
+  {
+    id: "image",
+    label: "Image",
+    extensions: [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".pbm", ".pgm", ".pnm"],
+    mediaTypes: [
+      "image/png",
+      "image/jpeg",
+      "image/tiff",
+      "image/webp",
+      "image/bmp",
+      "image/heic",
+      "image/x-portable-bitmap",
+      "image/x-portable-graymap",
+      "image/x-portable-anymap"
+    ],
+    contentShape: "image",
+    preferredParser: "ocr.image",
+    fallbackParsers: ["multimodal.image"],
+    parserChain: ["image.route", "ocr.image", "multimodal.image"],
+    streamingUnit: "image",
+    referenceFrameworks: ["docling", "mineru", "unstructured"]
+  },
+  {
+    id: "markdown",
+    label: "Markdown",
+    extensions: [".md", ".markdown", ".mdown"],
+    mediaTypes: ["text/markdown", "text/x-markdown"],
+    contentShape: "text",
+    preferredParser: "text.direct.markdown",
+    fallbackParsers: ["text.direct"],
+    parserChain: ["text.route", "text.direct.markdown"],
+    streamingUnit: "heading",
+    referenceFrameworks: ["llama-index", "haystack"]
+  },
+  {
+    id: "plain-text",
+    label: "Plain text",
+    extensions: [".txt", ".text", ".log", ".xml", ".html", ".htm"],
+    mediaTypes: ["text/plain", "text/html", "application/xml", "text/xml", "application/xhtml+xml"],
+    contentShape: "text",
+    preferredParser: "text.direct",
+    fallbackParsers: ["tika.text"],
+    parserChain: ["text.route", "text.direct"],
+    streamingUnit: "section",
+    referenceFrameworks: ["unstructured", "llama-index", "haystack"]
+  },
+  {
+    id: "config",
+    label: "Configuration",
+    extensions: [".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env"],
+    mediaTypes: [
+      "application/yaml",
+      "application/x-yaml",
+      "text/yaml",
+      "application/toml",
+      "text/toml",
+      "text/x-toml",
+      "text/x-ini",
+      "application/x-ini",
+      "text/x-java-properties",
+      "text/x-properties"
+    ],
+    contentShape: "structured-config",
+    preferredParser: "config.key-value",
+    fallbackParsers: ["text.direct"],
+    parserChain: ["config.route", "config.key-value", "text.direct"],
+    streamingUnit: "section",
+    referenceFrameworks: ["llama-index", "haystack", "unstructured"]
+  },
+  {
+    id: "json",
+    label: "Structured JSON",
+    extensions: [".json", ".jsonl", ".ndjson"],
+    mediaTypes: ["application/json", "application/x-ndjson"],
+    contentShape: "structured",
+    preferredParser: "structured.json",
+    fallbackParsers: ["text.direct"],
+    parserChain: ["structured.route", "structured.json", "text.direct"],
+    streamingUnit: "record",
+    referenceFrameworks: ["llama-index", "haystack"]
+  },
+  {
+    id: "source-code",
+    label: "Source code",
+    extensions: [
+      ".js",
+      ".mjs",
+      ".ts",
+      ".tsx",
+      ".py",
+      ".java",
+      ".go",
+      ".rs",
+      ".swift",
+      ".kt",
+      ".c",
+      ".cc",
+      ".cpp",
+      ".h",
+      ".hpp"
+    ],
+    mediaTypes: ["text/x-source-code", "application/javascript", "text/javascript", "text/x-python"],
+    contentShape: "source-code",
+    preferredParser: "code.structure",
+    fallbackParsers: ["text.direct"],
+    parserChain: ["code.route", "code.structure", "text.direct"],
+    streamingUnit: "symbol",
+    referenceFrameworks: ["llama-index", "haystack", "graphrag"]
+  },
+  {
+    id: "diagram",
+    label: "Diagram",
+    extensions: [".svg", ".drawio", ".dio", ".mmd", ".mermaid", ".puml", ".plantuml"],
+    mediaTypes: [
+      "image/svg+xml",
+      "application/vnd.jgraph.mxfile",
+      "text/vnd.graphviz",
+      "text/x-mermaid",
+      "text/x-plantuml"
+    ],
+    contentShape: "diagram",
+    preferredParser: "diagram.structure",
+    fallbackParsers: ["text.direct", "ocr.image"],
+    parserChain: ["diagram.route", "diagram.structure", "text.direct"],
+    streamingUnit: "node-edge",
+    referenceFrameworks: ["haystack", "llama-index", "unstructured", "graphrag"]
+  },
+  {
+    id: "archive",
+    label: "Archive",
+    extensions: [".zip", ".tar", ".gz", ".tgz", ".tar.gz", ".7z"],
+    mediaTypes: ["application/zip", "application/x-tar", "application/gzip", "application/x-gzip", "application/x-gtar", "application/x-7z-compressed"],
+    contentShape: "archive",
+    preferredParser: "archive.expand-route",
+    fallbackParsers: ["manifest.only"],
+    parserChain: ["archive.route", "archive.container-detect", "archive.expand-route", "child-file.route"],
+    streamingUnit: "entry",
+    referenceFrameworks: ["ragflow", "unstructured", "haystack"]
+  }
+]);
+
+const ROUTES_BY_EXTENSION = new Map();
+const ROUTES_BY_MEDIA_TYPE = new Map();
+for (const route of FORMAT_ROUTES) {
+  for (const extension of route.extensions) {
+    ROUTES_BY_EXTENSION.set(extension, route);
+  }
+  for (const mediaType of route.mediaTypes) {
+    ROUTES_BY_MEDIA_TYPE.set(mediaType, route);
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function sha(value = "") {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
+function shaBuffer(buffer = Buffer.alloc(0)) {
+  return crypto.createHash("sha256").update(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || [])).digest("hex");
+}
+
+function stableId(prefix, ...parts) {
+  return `${prefix}_${sha(parts.join("\n")).slice(0, 18)}`;
+}
+
+function jsonResponse(response, statusCode, payload, headers = {}) {
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    ...headers
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function textResponse(response, statusCode, body, headers = {}) {
+  response.writeHead(statusCode, {
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-store",
+    ...headers
+  });
+  response.end(body);
+}
+
+function binaryResponse(response, statusCode, body, headers = {}) {
+  response.writeHead(statusCode, {
+    "content-type": "application/octet-stream",
+    "cache-control": "no-store",
+    ...headers
+  });
+  response.end(Buffer.isBuffer(body) ? body : Buffer.from(body || []));
+}
+
+async function readJson(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const text = Buffer.concat(chunks).toString("utf8").trim();
+  if (!text) {
+    return {};
+  }
+  return JSON.parse(text);
+}
+
+async function loadRuns() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(RUNS_PATH, "utf8"));
+    return Array.isArray(parsed.runs) ? parsed.runs : [];
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    return [];
+  }
+}
+
+async function saveRuns(runs) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.writeFile(RUNS_PATH, `${JSON.stringify({ protocolVersion: PROTOCOL_VERSION, runs }, null, 2)}\n`);
+}
+
+async function loadReferenceFrameworks() {
+  const parsed = JSON.parse(await fs.readFile(REFERENCE_FRAMEWORKS_PATH, "utf8"));
+  return {
+    protocolVersion: parsed.protocolVersion || "pact.external-knowledge-distillation.references.v1",
+    generatedAt: parsed.generatedAt || "",
+    localRoot: parsed.localRoot || "",
+    selectionPolicy: parsed.selectionPolicy || {},
+    frameworks: Array.isArray(parsed.frameworks) ? parsed.frameworks : []
+  };
+}
+
+const REFERENCE_ABSORPTION_MAP = Object.freeze({
+  ragflow: {
+    absorbed: ["route-first document understanding", "agent-readable knowledge-base flow", "large project artifact package"],
+    baseline: ["RAG-style source routing and evidence attachment"],
+    gaps: ["ranking/evaluation loop over external vector stores", "full document-layout enrichment for every parser"]
+  },
+  mineru: {
+    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs"],
+    baseline: ["file-ref parsers for large binary payloads"],
+    gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
+  },
+  docling: {
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets"],
+    baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
+    gaps: ["full layout block graph", "native table geometry and formula objects"]
+  },
+  "llama-index": {
+    absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API"],
+    baseline: ["node/window metadata and project snapshot hashes"],
+    gaps: ["pluggable ingestion pipeline contracts", "agent evaluation feedback loop"]
+  },
+  marker: {
+    absorbed: ["portable Markdown output", "JSON evidence pack", "DOCX and workspace ZIP packaging"],
+    baseline: ["PDF text extraction and OCR fallback"],
+    gaps: ["layout-aware PDF to Markdown ordering", "equation/table image reconstruction"]
+  },
+  graphrag: {
+    absorbed: ["text_units/entities/relationships/covariates/communities/community_reports", "community reports for large project convergence", "incremental project snapshot"],
+    baseline: ["local graph-lite evidence pack"],
+    gaps: ["persistent graph store adapter", "multi-run graph merge and global/local query modes"]
+  },
+  haystack: {
+    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document"],
+    baseline: ["pipeline-like deterministic execution record"],
+    gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
+  },
+  unstructured: {
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing"],
+    baseline: ["strategy-based parser fallback"],
+    gaps: ["element-type enrichment", "domain-specific chunk enrichment plugins"]
+  }
+});
+
+function buildReferenceGapReport(referenceFrameworks = null, { run = null, runtimeStatus = null } = {}) {
+  const frameworks = Array.isArray(referenceFrameworks?.frameworks) ? referenceFrameworks.frameworks : [];
+  const frameworkReports = frameworks.map((framework) => {
+    const mapped = REFERENCE_ABSORPTION_MAP[framework.id] || {
+      absorbed: [],
+      baseline: [],
+      gaps: ["manual review required for this framework"]
+    };
+    return {
+      id: framework.id,
+      name: framework.name,
+      repo: framework.repo,
+      localPath: framework.localPath,
+      commit: framework.commit,
+      license: framework.license,
+      starsAtSelection: framework.starsAtSelection,
+      learnFrom: framework.learnFrom || [],
+      absorbedPatterns: mapped.absorbed,
+      baselinePatterns: mapped.baseline,
+      openGaps: mapped.gaps,
+      status: mapped.gaps.length ? "absorbed-with-open-gaps" : "absorbed"
+    };
+  });
+  const openGaps = uniqueOrdered(frameworkReports.flatMap((framework) => framework.openGaps));
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.reference-gap-report`,
+    strategy: REFERENCE_GAP_REPORT_STRATEGY,
+    generatedAt: nowIso(),
+    runId: run?.runId || "",
+    referenceFrameworks: {
+      protocolVersion: referenceFrameworks?.protocolVersion || "",
+      localRoot: referenceFrameworks?.localRoot || "",
+      count: frameworks.length
+    },
+    absorbedCapabilityMap: {
+      fileCompatibility: {
+        status: "baseline-absorbed",
+        evidence: ["routePlan", "parserTrace", "fileCompatibility.formats", "runtimeDoctor"],
+        references: ["docling", "mineru", "marker", "unstructured", "haystack"]
+      },
+      allSizeProcessing: {
+        status: "baseline-absorbed",
+        evidence: ["filePath/contentRef", "payload.stream-text", "archive.entry-file-ref", "streaming-windowed"],
+        references: ["ragflow", "haystack", "unstructured"]
+      },
+      classificationDistillation: {
+        status: "absorbed",
+        evidence: [CLASSIFICATION_STRATEGY, "lowCouplingHighCohesion", "garbage group", "distillationUnit"],
+        references: ["graphrag", "llama-index", "haystack"]
+      },
+      projectConvergence: {
+        status: "absorbed",
+        evidence: ["window-community-topic-project-convergence.v2", INCREMENTAL_CONVERGENCE_STRATEGY],
+        references: ["graphrag", "ragflow"]
+      },
+      graphEvidence: {
+        status: "absorbed",
+        evidence: [GRAPH_EVIDENCE_STRATEGY, EVIDENCE_QUERY_STRATEGY],
+        references: ["graphrag", "llama-index", "haystack"]
+      },
+      exportModes: {
+        status: "absorbed",
+        evidence: ["portable-markdown", "portable-docx", "agent-message-json", "workspace-package-zip"],
+        references: ["marker", "llama-index", "ragflow"]
+      }
+    },
+    runtimeEvidence: runtimeStatus?.summary || null,
+    runEvidence: run
+      ? {
+          status: run.status,
+          algorithmVersion: run.result?.algorithmVersion || "",
+          sourceCount: run.inputSummary?.sourceCount || 0,
+          distillableSourceCount: run.inputSummary?.distillableSourceCount || 0,
+          windowCount: run.inputSummary?.windowCount || 0,
+          groupCount: run.result?.classification?.groupCount || 0,
+          graphEvidence: run.result?.graphEvidence?.summary || null,
+          artifacts: (run.artifactRefs || []).map((artifact) => artifact.artifactId)
+        }
+      : null,
+    frameworks: frameworkReports,
+    openGaps,
+    nextActions: openGaps.slice(0, 8).map((gap) => ({
+      gap,
+      action: "convert this gap into a parser, pipeline, graph, or evaluation verifier before marking it absorbed"
+    }))
+  };
+}
+
+async function probeCommand(command, args = []) {
+  try {
+    const result = await execFileAsync(command, args, {
+      timeout: RUNTIME_DOCTOR_TIMEOUT_MS,
+      windowsHide: true
+    });
+    const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
+    return {
+      available: true,
+      command,
+      version: output.split(/\r?\n/).find(Boolean) || ""
+    };
+  } catch (error) {
+    return {
+      available: false,
+      command,
+      error: error?.code === "ENOENT"
+        ? "not-found"
+        : error instanceof Error
+          ? error.message
+          : String(error)
+    };
+  }
+}
+
+async function probePythonModule(moduleName) {
+  const python = process.env.PACT_EXTERNAL_KD_PYTHON || process.env.PYTHON || "python3";
+  try {
+    const result = await execFileAsync(python, ["-c", `import ${moduleName}; print(getattr(${moduleName}, "__version__", "available"))`], {
+      timeout: RUNTIME_DOCTOR_TIMEOUT_MS,
+      windowsHide: true
+    });
+    return {
+      available: true,
+      command: python,
+      module: moduleName,
+      version: String(result.stdout || "").trim()
+    };
+  } catch (error) {
+    return {
+      available: false,
+      command: python,
+      module: moduleName,
+      error: error?.code === "ENOENT"
+        ? "python-not-found"
+        : error instanceof Error
+          ? error.message
+          : String(error)
+    };
+  }
+}
+
+async function probeTikaApp(javaCommand = "java") {
+  const jarPath = path.resolve(TIKA_APP_JAR);
+  if (!fsSync.existsSync(jarPath)) {
+    return {
+      available: false,
+      command: javaCommand,
+      jarPath,
+      error: "tika-app-jar-not-found"
+    };
+  }
+  try {
+    const result = await execFileAsync(javaCommand, ["-jar", jarPath, "--version"], {
+      timeout: RUNTIME_DOCTOR_TIMEOUT_MS,
+      windowsHide: true
+    });
+    const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
+    return {
+      available: true,
+      command: javaCommand,
+      jarPath,
+      version: output.split(/\r?\n/).find(Boolean) || "available"
+    };
+  } catch (versionError) {
+    try {
+      await execFileAsync(javaCommand, ["-jar", jarPath, "--help"], {
+        timeout: RUNTIME_DOCTOR_TIMEOUT_MS,
+        windowsHide: true
+      });
+      return {
+        available: true,
+        command: javaCommand,
+        jarPath,
+        version: "available"
+      };
+    } catch (helpError) {
+      return {
+        available: false,
+        command: javaCommand,
+        jarPath,
+        error: helpError instanceof Error ? helpError.message : String(helpError || versionError)
+      };
+    }
+  }
+}
+
+async function probeFirstCommand(candidates = [], args = []) {
+  let last = null;
+  for (const command of candidates) {
+    const probe = await probeCommand(command, args);
+    if (probe.available) {
+      return probe;
+    }
+    last = probe;
+  }
+  return last || {
+    available: false,
+    command: candidates[0] || "",
+    error: "not-found"
+  };
+}
+
+async function runtimeDoctor({ force = false } = {}) {
+  if (!force && runtimeDoctorCache && Date.now() - runtimeDoctorCache.cachedAt < RUNTIME_DOCTOR_CACHE_MS) {
+    return runtimeDoctorCache.payload;
+  }
+  const [
+    java,
+    tesseract,
+    pdftoppm,
+    pdftotext,
+    pythonFitz,
+    pythonPaddle,
+    tarRuntime,
+    gzipRuntime,
+    sevenZipRuntime,
+    unzipRuntime
+  ] = await Promise.all([
+    probeCommand(process.env.JAVA || "java", ["-version"]),
+    probeCommand(process.env.TESSERACT || "tesseract", ["--version"]),
+    probeCommand(process.env.PDFTOPPM || "pdftoppm", ["-v"]),
+    probeCommand(process.env.PDFTOTEXT || "pdftotext", ["-v"]),
+    probePythonModule("fitz"),
+    probePythonModule("paddleocr"),
+    probeCommand(process.env.TAR || "tar", ["--version"]),
+    probeCommand(process.env.GZIP || "gzip", ["--version"]),
+    probeFirstCommand([process.env.SEVEN_ZIP, "7zz", "7z", "7za"].filter(Boolean), ["--help"]),
+    probeCommand(process.env.UNZIP || "unzip", ["-v"])
+  ]);
+  const tikaApp = java.available ? await probeTikaApp(java.command || process.env.JAVA || "java") : {
+    available: false,
+    command: process.env.JAVA || "java",
+    jarPath: path.resolve(TIKA_APP_JAR),
+    error: java.error || "java-runtime-unavailable"
+  };
+  const runtimes = {
+    "tika.java": {
+      capability: "tika.text",
+      requiredFor: ["legacy-office", "fallback-text"],
+      ...java
+    },
+    "tika.app": {
+      capability: "tika.text",
+      requiredFor: ["legacy-office", "rtf", "fallback-text"],
+      ...tikaApp
+    },
+    "ocr.tesseract": {
+      capability: "ocr.image",
+      requiredFor: ["images", "scanned-pdf"],
+      ...tesseract
+    },
+    "pdf.poppler": {
+      capability: "pdf.page-render",
+      requiredFor: ["scanned-pdf", "pdf-page-rasterization"],
+      ...pdftoppm
+    },
+    "pdf.pdftotext": {
+      capability: "pdf.text",
+      requiredFor: ["large-pdf-file-ref", "pdf-text-file-ref"],
+      ...pdftotext
+    },
+    "pdf.pymupdf": {
+      capability: "pdf.visual.layout",
+      requiredFor: ["layout-pdf", "font-mapping-broken-pdf"],
+      ...pythonFitz
+    },
+    "ocr.paddleocr": {
+      capability: "ocr.page",
+      requiredFor: ["multilingual-ocr", "scanned-pdf"],
+      ...pythonPaddle
+    },
+    "archive.tar": {
+      capability: "archive.tar",
+      requiredFor: ["tar-manifest", "tar-child-route"],
+      builtInParserAvailable: true,
+      ...tarRuntime
+    },
+    "archive.gzip": {
+      capability: "archive.gzip",
+      requiredFor: ["gzip", "tgz"],
+      builtInParserAvailable: true,
+      ...gzipRuntime
+    },
+    "archive.7zip": {
+      capability: "archive.7z",
+      requiredFor: ["7z-child-route"],
+      ...sevenZipRuntime
+    },
+    "archive.unzip": {
+      capability: "archive.zip",
+      requiredFor: ["zip-file-ref-child-route"],
+      ...unzipRuntime
+    }
+  };
+  const summary = {
+    builtInParserCount: 15,
+    optionalRuntimeCount: Object.keys(runtimes).length,
+    availableOptionalRuntimeCount: Object.values(runtimes).filter((runtime) => runtime.available).length,
+    ocrAvailable: Boolean(runtimes["ocr.tesseract"].available || runtimes["ocr.paddleocr"].available),
+    pdfVisualAvailable: Boolean(runtimes["pdf.pymupdf"].available),
+    pdfRasterizerAvailable: Boolean(runtimes["pdf.poppler"].available),
+    pdfTextExtractorAvailable: Boolean(runtimes["pdf.pdftotext"].available),
+    archiveExternalAvailable: Boolean(runtimes["archive.7zip"].available)
+  };
+  const payload = {
+    protocolVersion: `${PROTOCOL_VERSION}.runtime-doctor`,
+    generatedAt: nowIso(),
+    status: summary.ocrAvailable && summary.pdfVisualAvailable ? "ready" : "degraded",
+    summary,
+    runtimes
+  };
+  runtimeDoctorCache = {
+    cachedAt: Date.now(),
+    payload
+  };
+  return payload;
+}
+
+function compactRun(run = {}) {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    serviceName: SERVICE_NAME,
+    serviceKind: SERVICE_KIND,
+    runId: run.runId,
+    status: run.status,
+    title: run.title,
+    query: run.query,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    projectId: run.result?.incrementalPlan?.projectId || run.inputSummary?.projectId || "",
+    projectFingerprint: run.result?.incrementalPlan?.projectFingerprint || "",
+    sourceCount: run.inputSummary?.sourceCount || 0,
+    artifactRefs: run.artifactRefs || []
+  };
+}
+
+function normalizeExtension(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) {
+    return "";
+  }
+  return text.startsWith(".") ? text : `.${text}`;
+}
+
+function extensionFromFileName(fileName = "") {
+  const normalized = String(fileName || "").trim().toLowerCase();
+  if (normalized.endsWith(".tar.gz")) {
+    return ".tar.gz";
+  }
+  const baseName = path.basename(normalized);
+  if (baseName === ".env" || baseName.startsWith(".env.")) {
+    return ".env";
+  }
+  return normalizeExtension(path.extname(normalized));
+}
+
+function inferMediaTypeFromExtension(extension = "") {
+  const route = ROUTES_BY_EXTENSION.get(normalizeExtension(extension));
+  return route?.mediaTypes?.[0] || "";
+}
+
+function normalizeByteSize(value, fallbackText = "") {
+  const number = Number(value);
+  if (Number.isFinite(number) && number >= 0) {
+    return Math.floor(number);
+  }
+  return Buffer.byteLength(String(fallbackText || ""), "utf8");
+}
+
+function isPathInside(candidate, root) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function contentPathFromDocument(document = {}, metadata = {}) {
+  return String(
+    document.filePath ||
+      document.contentPath ||
+      document.inputPath ||
+      document.contentRef ||
+      metadata.filePath ||
+      metadata.contentPath ||
+      metadata.inputPath ||
+      metadata.contentRef ||
+      ""
+  ).trim();
+}
+
+function isStreamableTextRoute(route = null, metadata = {}) {
+  if (!route) {
+    return false;
+  }
+  if (["markdown", "plain-text", "source-code", "config", "diagram"].includes(route.id)) {
+    return true;
+  }
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  if (route.id === "spreadsheet" && [".csv", ".tsv"].includes(extension)) {
+    return true;
+  }
+  if (route.id === "json" && [".jsonl", ".ndjson"].includes(extension)) {
+    return true;
+  }
+  return false;
+}
+
+function isArchiveRoute(route = null) {
+  return route?.id === "archive";
+}
+
+function isPdfRoute(route = null) {
+  return route?.id === "pdf";
+}
+
+function isStructuredZipFileRoute(route = null, metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  if (route?.id === "word") {
+    return extension === ".docx";
+  }
+  if (route?.id === "presentation") {
+    return extension === ".pptx";
+  }
+  if (route?.id === "spreadsheet") {
+    return extension === ".xlsx";
+  }
+  if (route?.id === "open-document") {
+    return [".odt", ".ott", ".ods", ".ots", ".odp", ".otp"].includes(extension);
+  }
+  if (route?.id === "ebook") {
+    return extension === ".epub";
+  }
+  return false;
+}
+
+function isTikaFileRoute(route = null, metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  if (route?.id === "word") {
+    return [".doc", ".rtf"].includes(extension);
+  }
+  if (route?.id === "presentation") {
+    return extension === ".ppt";
+  }
+  if (route?.id === "spreadsheet") {
+    return extension === ".xls";
+  }
+  if (route?.id === "email") {
+    return isMsgRoute(route, metadata);
+  }
+  return false;
+}
+
+function isMsgRoute(route = null, metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const mediaType = String(metadata.mediaType || "").toLowerCase();
+  return route?.id === "email" && (
+    extension === ".msg" ||
+    mediaType === "application/vnd.ms-outlook"
+  );
+}
+
+function isMboxRoute(route = null, metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const mediaType = String(metadata.mediaType || "").toLowerCase();
+  return route?.id === "email" && (
+    extension === ".mbox" ||
+    mediaType === "application/mbox" ||
+    mediaType === "application/x-mbox"
+  );
+}
+
+function resolveAllowedInputPath(value = "") {
+  const text = String(value || "").trim();
+  if (!text) {
+    return { path: "", error: "" };
+  }
+  const resolved = path.isAbsolute(text) ? path.resolve(text) : path.resolve(DATA_DIR, text);
+  const allowed = INPUT_ROOTS.some((root) => isPathInside(resolved, root));
+  if (!allowed) {
+    return {
+      path: "",
+      error: `content-ref-outside-allowed-roots:${resolved}`
+    };
+  }
+  return { path: resolved, error: "" };
+}
+
+function bufferFromDocument(document = {}, metadata = {}) {
+  const encoded =
+    document.contentBase64 ||
+    document.base64 ||
+    document.dataBase64 ||
+    document.bytesBase64 ||
+    metadata.contentBase64 ||
+    metadata.base64 ||
+    "";
+  if (!encoded) {
+    return null;
+  }
+  try {
+    return Buffer.from(String(encoded), "base64");
+  } catch (_error) {
+    return null;
+  }
+}
+
+function loadDocumentPayload(document = {}, metadata = {}, route = null) {
+  const buffer = bufferFromDocument(document, metadata);
+  if (buffer) {
+    return {
+      buffer,
+      suppliedPayloadKind: "base64",
+      parserTrace: [],
+      warnings: []
+    };
+  }
+  const contentPath = contentPathFromDocument(document, metadata);
+  if (!contentPath) {
+    return {
+      buffer: null,
+      suppliedPayloadKind: "metadata-only",
+      parserTrace: [],
+      warnings: []
+    };
+  }
+  const resolved = resolveAllowedInputPath(contentPath);
+  if (resolved.error) {
+    return {
+      buffer: null,
+      suppliedPayloadKind: "file-ref",
+      parserTrace: [{
+        stage: "payload.file-ref",
+        status: "rejected",
+        reason: resolved.error,
+        allowedRoots: INPUT_ROOTS
+      }],
+      warnings: ["content-ref-rejected"]
+    };
+  }
+  try {
+    const stat = fsSync.statSync(resolved.path);
+    if (!stat.isFile()) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref",
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "failed",
+          path: resolved.path,
+          reason: "not-a-file"
+        }],
+        warnings: ["content-ref-not-file"]
+      };
+    }
+    if (isStreamableTextRoute(route, metadata)) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-stream",
+        filePath: resolved.path,
+        streamText: true,
+        byteSize: stat.size,
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "completed",
+          path: resolved.path,
+          bytes: stat.size,
+          mode: "streaming-windowed"
+        }],
+        warnings: []
+      };
+    }
+    if (isArchiveRoute(route)) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-archive",
+        filePath: resolved.path,
+        archiveFilePath: resolved.path,
+        byteSize: stat.size,
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "completed",
+          path: resolved.path,
+          bytes: stat.size,
+          mode: "archive-file-ref"
+        }],
+        warnings: []
+      };
+    }
+    if (isPdfRoute(route)) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-pdf",
+        filePath: resolved.path,
+        pdfFilePath: resolved.path,
+        byteSize: stat.size,
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "completed",
+          path: resolved.path,
+          bytes: stat.size,
+          mode: "pdf-file-ref"
+        }],
+        warnings: []
+      };
+    }
+    if (isStructuredZipFileRoute(route, metadata)) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-structured-zip",
+        filePath: resolved.path,
+        structuredZipFilePath: resolved.path,
+        byteSize: stat.size,
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "completed",
+          path: resolved.path,
+          bytes: stat.size,
+          mode: "structured-zip-file-ref"
+        }],
+        warnings: []
+      };
+    }
+    if (isMboxRoute(route, metadata)) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-mbox",
+        filePath: resolved.path,
+        mboxFilePath: resolved.path,
+        byteSize: stat.size,
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "completed",
+          path: resolved.path,
+          bytes: stat.size,
+          mode: "mbox-file-ref"
+        }],
+        warnings: []
+      };
+    }
+    if (isTikaFileRoute(route, metadata)) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-tika",
+        filePath: resolved.path,
+        tikaFilePath: resolved.path,
+        byteSize: stat.size,
+        parserTrace: [{
+          stage: "payload.file-ref",
+          status: "completed",
+          path: resolved.path,
+          bytes: stat.size,
+          mode: "tika-file-ref"
+        }],
+        warnings: []
+      };
+    }
+    if (stat.size > FILE_REF_DIRECT_READ_MAX_BYTES) {
+      return {
+        buffer: null,
+        suppliedPayloadKind: "file-ref-deferred",
+        filePath: resolved.path,
+        byteSize: stat.size,
+        parserTrace: [
+          {
+            stage: "payload.file-ref",
+            status: "completed",
+            path: resolved.path,
+            bytes: stat.size
+          },
+          {
+            stage: "payload.file-ref-deferred",
+            status: "requires-streaming-parser",
+            maxDirectReadBytes: FILE_REF_DIRECT_READ_MAX_BYTES,
+            routeId: route?.id || "unknown"
+          }
+        ],
+        warnings: ["file-ref-streaming-parser-required"]
+      };
+    }
+    return {
+      buffer: fsSync.readFileSync(resolved.path),
+      suppliedPayloadKind: "file-ref",
+      filePath: resolved.path,
+      byteSize: stat.size,
+      parserTrace: [{
+        stage: "payload.file-ref",
+        status: "completed",
+        path: resolved.path,
+        bytes: stat.size
+      }],
+      warnings: []
+    };
+  } catch (error) {
+    return {
+      buffer: null,
+      suppliedPayloadKind: "file-ref",
+      parserTrace: [{
+        stage: "payload.file-ref",
+        status: "failed",
+        path: resolved.path,
+        error: error instanceof Error ? error.message : String(error)
+      }],
+      warnings: ["content-ref-read-failed"]
+    };
+  }
+}
+
+function utf8(buffer) {
+  return Buffer.from(buffer || []).toString("utf8").replace(/^\uFEFF/, "");
+}
+
+function decodeXmlEntities(value = "") {
+  return String(value || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(parseInt(code, 16)));
+}
+
+function stripMarkup(value = "") {
+  return decodeXmlEntities(
+    String(value || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|section|article|h[1-6]|li|tr)>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function textFromXmlTextNodes(xml = "") {
+  const values = [];
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?t(?:\s[^>]*)?>([\s\S]*?)<\/[^:>]*:?t>/g)) {
+    values.push(decodeXmlEntities(match[1]));
+  }
+  if (values.length) {
+    return values.join(" ").replace(/\s+/g, " ").trim();
+  }
+  return stripMarkup(xml);
+}
+
+function parseJsonLike(text = "") {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.includes("\n") && !trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+    const records = trimmed
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 500)
+      .map((line, index) => {
+        try {
+          return `Record ${index + 1}: ${JSON.stringify(JSON.parse(line))}`;
+        } catch (_error) {
+          return `Record ${index + 1}: ${line}`;
+        }
+      });
+    return records.join("\n");
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch (_error) {
+    return trimmed;
+  }
+}
+
+function parseDelimitedText(text = "", delimiter = ",") {
+  const rows = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 1000)
+    .map((line) => line.split(delimiter).map((cell) => cell.trim().replace(/^"|"$/g, "")));
+  if (!rows.length) {
+    return "";
+  }
+  const headers = rows[0];
+  return rows
+    .slice(1)
+    .map((row, index) => {
+      const cells = row.map((cell, cellIndex) => `${headers[cellIndex] || `Column ${cellIndex + 1}`}: ${cell}`);
+      return `Row ${index + 1}: ${cells.join("; ")}`;
+    })
+    .join("\n") || rows.map((row) => row.join(" ")).join("\n");
+}
+
+function configPathForLine(line = "", sectionStack = []) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+    return null;
+  }
+  const yamlMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*:\s*(.*)$/);
+  if (yamlMatch) {
+    return {
+      key: [...sectionStack, yamlMatch[1]].filter(Boolean).join("."),
+      value: yamlMatch[2] || ""
+    };
+  }
+  const keyValueMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.*)$/);
+  if (keyValueMatch) {
+    return {
+      key: [...sectionStack, keyValueMatch[1]].filter(Boolean).join("."),
+      value: keyValueMatch[2] || ""
+    };
+  }
+  return null;
+}
+
+function parseConfigText(text = "", metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const sectionStack = [];
+  const records = [];
+  let section = "";
+  let commentCount = 0;
+  for (const rawLine of lines.slice(0, 5000)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      commentCount += 1;
+      continue;
+    }
+    const tomlOrIniSection = trimmed.match(/^\[([^\]]+)\]$/);
+    if (tomlOrIniSection) {
+      section = tomlOrIniSection[1].trim();
+      sectionStack.splice(0, sectionStack.length, ...section.split(".").map((item) => item.trim()).filter(Boolean));
+      records.push(`Section: ${section}`);
+      continue;
+    }
+    const yamlSection = extension.match(/^\.ya?ml$/) && rawLine.match(/^(\s*)([A-Za-z0-9_.-]+)\s*:\s*$/);
+    if (yamlSection) {
+      const indentLevel = Math.floor((yamlSection[1] || "").length / 2);
+      sectionStack.splice(indentLevel);
+      sectionStack[indentLevel] = yamlSection[2];
+      records.push(`Section: ${sectionStack.filter(Boolean).join(".")}`);
+      continue;
+    }
+    const parsed = configPathForLine(rawLine, sectionStack);
+    if (parsed) {
+      const value = parsed.value.replace(/^["']|["']$/g, "");
+      records.push(`Config ${parsed.key}: ${value}`);
+    } else {
+      records.push(`Config line: ${trimmed}`);
+    }
+  }
+  return {
+    text: records.join("\n"),
+    keyValueCount: records.filter((line) => line.startsWith("Config ") && line.includes(":")).length,
+    sectionCount: records.filter((line) => line.startsWith("Section:")).length,
+    commentCount,
+    format: extension || "config"
+  };
+}
+
+function extractXmlAttributes(attributesText = "") {
+  const attributes = {};
+  for (const match of String(attributesText || "").matchAll(/([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+    attributes[match[1].toLowerCase()] = decodeXmlEntities(match[3] ?? match[4] ?? "");
+  }
+  return attributes;
+}
+
+function cleanDiagramLabel(value = "") {
+  return stripMarkup(decodeXmlEntities(String(value || "")))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseDiagramText(text = "", metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const raw = String(text || "").replace(/\r\n/g, "\n");
+  const records = [];
+  const seen = new Set();
+  let nodeCount = 0;
+  let edgeCount = 0;
+  let labelCount = 0;
+
+  const pushRecord = (line) => {
+    const normalized = String(line || "").replace(/\s+/g, " ").trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    records.push(normalized);
+  };
+
+  const isXmlDiagram = extension === ".svg" || extension === ".drawio" || raw.includes("<svg") || raw.includes("<mxfile") || raw.includes("<mxGraphModel");
+  if (isXmlDiagram) {
+    for (const match of raw.matchAll(/<(title|desc|text|tspan)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
+      const label = cleanDiagramLabel(match[2]);
+      if (label) {
+        labelCount += 1;
+        pushRecord(`Diagram label: ${label}`);
+      }
+    }
+    for (const match of raw.matchAll(/<(?:g|path|rect|circle|ellipse|line|polyline|polygon)\b([^>]*)>/gi)) {
+      const attributes = extractXmlAttributes(match[1]);
+      const label = cleanDiagramLabel(attributes["aria-label"] || attributes["inkscape:label"] || attributes["data-name"] || attributes.name || "");
+      if (label) {
+        labelCount += 1;
+        pushRecord(`Diagram label: ${label}`);
+      }
+    }
+    for (const match of raw.matchAll(/<diagram\b([^>]*)>/gi)) {
+      const attributes = extractXmlAttributes(match[1]);
+      if (attributes.name) {
+        pushRecord(`Diagram page: ${attributes.name}`);
+      }
+    }
+    for (const match of raw.matchAll(/<mxCell\b([^>]*)\/?>/gi)) {
+      const attributes = extractXmlAttributes(match[1]);
+      const id = attributes.id || `cell-${nodeCount + edgeCount + 1}`;
+      const label = cleanDiagramLabel(attributes.value || attributes.label || "");
+      if (attributes.source || attributes.target || attributes.edge === "1") {
+        edgeCount += 1;
+        pushRecord(`Diagram edge ${id}: ${attributes.source || "unknown"} -> ${attributes.target || "unknown"}${label ? ` label ${label}` : ""}`);
+      } else if (label) {
+        nodeCount += 1;
+        pushRecord(`Diagram node ${id}: ${label}`);
+      }
+    }
+  }
+
+  const lineLimit = 1000;
+  for (const rawLine of raw.split("\n").slice(0, lineLimit)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("%%") || line.startsWith("//") || line.startsWith("'")) {
+      continue;
+    }
+    if (/^(@startuml|@enduml|graph\s|flowchart\s|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|mindmap)/i.test(line)) {
+      pushRecord(`Diagram directive: ${line}`);
+      continue;
+    }
+    const edgeMatch = line.match(/^(.+?)\s*(-->|---|->|=>|==>|-\.-?>|\.\.>|--)\s*(.+)$/);
+    if (edgeMatch) {
+      edgeCount += 1;
+      pushRecord(`Diagram edge: ${cleanDiagramLabel(edgeMatch[1])} -> ${cleanDiagramLabel(edgeMatch[3])}`);
+      continue;
+    }
+    if (extension === ".mmd" || extension === ".mermaid" || extension === ".puml" || extension === ".plantuml") {
+      labelCount += 1;
+      pushRecord(`Diagram line: ${line}`);
+    }
+  }
+
+  if (!records.length) {
+    const fallback = stripMarkup(raw);
+    if (fallback) {
+      pushRecord(`Diagram text: ${fallback.slice(0, 4000)}`);
+    }
+  }
+
+  return {
+    text: records.join("\n"),
+    nodeCount,
+    edgeCount,
+    labelCount,
+    format: extension || "diagram"
+  };
+}
+
+function unfoldHeaderLines(headersText = "") {
+  const lines = String(headersText || "").replace(/\r\n/g, "\n").split("\n");
+  const unfolded = [];
+  for (const line of lines) {
+    if (/^[ \t]/.test(line) && unfolded.length) {
+      unfolded[unfolded.length - 1] += ` ${line.trim()}`;
+    } else {
+      unfolded.push(line);
+    }
+  }
+  return unfolded;
+}
+
+function parseEmailHeaders(headersText = "") {
+  const headers = {};
+  for (const line of unfoldHeaderLines(headersText)) {
+    const match = line.match(/^([^:]+):\s*(.*)$/);
+    if (match) {
+      headers[match[1].toLowerCase()] = match[2];
+    }
+  }
+  return headers;
+}
+
+function parseHeaderParams(value = "") {
+  const [type = "", ...paramParts] = String(value || "").split(";");
+  const params = {};
+  for (const part of paramParts) {
+    const match = part.trim().match(/^([^=]+)=("?)(.*?)\2$/);
+    if (match) {
+      params[match[1].trim().toLowerCase()] = match[3].trim();
+    }
+  }
+  return {
+    value: type.trim().toLowerCase(),
+    params
+  };
+}
+
+function decodeQuotedPrintable(value = "") {
+  return String(value || "")
+    .replace(/=\r?\n/g, "")
+    .replace(/=([0-9a-f]{2})/gi, (_match, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function decodeMimeBody(body = "", encoding = "") {
+  const normalizedEncoding = String(encoding || "").trim().toLowerCase();
+  if (normalizedEncoding === "base64") {
+    return Buffer.from(String(body || "").replace(/\s+/g, ""), "base64");
+  }
+  if (normalizedEncoding === "quoted-printable") {
+    return Buffer.from(decodeQuotedPrintable(body), "utf8");
+  }
+  return Buffer.from(String(body || ""), "utf8");
+}
+
+function splitMimeParts(body = "", boundary = "") {
+  if (!boundary) {
+    return [];
+  }
+  const marker = `--${boundary}`;
+  const parts = [];
+  const segments = String(body || "").replace(/\r\n/g, "\n").split(marker);
+  for (const segment of segments) {
+    const trimmed = segment.replace(/^\n/, "");
+    if (!trimmed || trimmed.startsWith("--")) {
+      continue;
+    }
+    parts.push(trimmed.replace(/\n--$/, "").trimEnd());
+  }
+  return parts;
+}
+
+function parseMimeMessage(text = "", depth = 0) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n");
+  const separatorIndex = normalized.indexOf("\n\n");
+  const headersText = separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : "";
+  const bodyText = separatorIndex >= 0 ? normalized.slice(separatorIndex + 2) : normalized;
+  const headers = parseEmailHeaders(headersText);
+  const contentType = parseHeaderParams(headers["content-type"] || "text/plain");
+  const disposition = parseHeaderParams(headers["content-disposition"] || "");
+  const transferEncoding = headers["content-transfer-encoding"] || "";
+  const fileName = disposition.params.filename || contentType.params.name || "";
+  const isMultipart = contentType.value.startsWith("multipart/");
+  const textParts = [];
+  const attachments = [];
+
+  if (isMultipart && depth < EMAIL_MIME_MAX_DEPTH) {
+    for (const part of splitMimeParts(bodyText, contentType.params.boundary || "")) {
+      const parsed = parseMimeMessage(part, depth + 1);
+      textParts.push(...parsed.textParts);
+      attachments.push(...parsed.attachments);
+    }
+  } else {
+    const bodyBuffer = decodeMimeBody(bodyText, transferEncoding);
+    const bodyString = bodyBuffer.toString("utf8").trim();
+    const isAttachment = Boolean(fileName || disposition.value === "attachment");
+    if (isAttachment) {
+      attachments.push({
+        fileName: fileName || "attachment.bin",
+        mediaType: contentType.value || inferMediaTypeFromExtension(path.extname(fileName || "")) || "application/octet-stream",
+        data: bodyBuffer,
+        headers
+      });
+    } else if (contentType.value === "text/html") {
+      textParts.push(stripMarkup(bodyString));
+    } else if (!contentType.value || contentType.value.startsWith("text/")) {
+      textParts.push(bodyString);
+    }
+  }
+  return { headers, textParts, attachments };
+}
+
+function parseEmailText(text = "") {
+  const parsed = parseMimeMessage(text);
+  const headers = parsed.headers || {};
+  const body = parsed.textParts.filter(Boolean).join("\n\n").trim();
+  return [
+    headers.from ? `From: ${headers.from}` : "",
+    headers.to ? `To: ${headers.to}` : "",
+    headers.date ? `Date: ${headers.date}` : "",
+    headers.subject ? `Subject: ${headers.subject}` : "",
+    body
+  ].filter(Boolean).join("\n");
+}
+
+function splitMboxMessages(text = "", maxMessages = EMAIL_MBOX_MAX_MESSAGES, maxMessageCharacters = EMAIL_MBOX_MESSAGE_MAX_CHARACTERS) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const messages = [];
+  let currentEnvelope = "";
+  let currentLines = [];
+  let currentCharacters = 0;
+  let currentTruncated = false;
+  const flush = () => {
+    const raw = currentLines.join("\n").trim();
+    if (raw) {
+      messages.push({
+        index: messages.length + 1,
+        envelope: currentEnvelope,
+        text: raw,
+        truncated: currentTruncated
+      });
+    }
+    currentEnvelope = "";
+    currentLines = [];
+    currentCharacters = 0;
+    currentTruncated = false;
+  };
+  const appendLine = (line = "") => {
+    const lineWithBreak = `${line}\n`;
+    if (currentCharacters < maxMessageCharacters) {
+      const remaining = maxMessageCharacters - currentCharacters;
+      currentLines.push(lineWithBreak.slice(0, remaining).replace(/\n$/, ""));
+      if (lineWithBreak.length > remaining) {
+        currentTruncated = true;
+      }
+    } else {
+      currentTruncated = true;
+    }
+    currentCharacters += lineWithBreak.length;
+  };
+  for (const line of lines) {
+    if (line.startsWith("From ") && (currentEnvelope || currentLines.length)) {
+      flush();
+      if (messages.length >= maxMessages) {
+        break;
+      }
+      currentEnvelope = line;
+      continue;
+    }
+    if (line.startsWith("From ") && !currentEnvelope && currentLines.length === 0) {
+      currentEnvelope = line;
+      continue;
+    }
+    appendLine(line);
+  }
+  if (messages.length < maxMessages) {
+    flush();
+  }
+  if (!messages.length && String(text || "").trim()) {
+    messages.push({
+      index: 1,
+      envelope: "",
+      text: String(text || "").trim()
+    });
+  }
+  return messages;
+}
+
+function readMboxMessagesFromFile(filePath = "", maxMessages = EMAIL_MBOX_MAX_MESSAGES) {
+  const messages = [];
+  const hash = crypto.createHash("sha256");
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  let file = null;
+  let pending = "";
+  let currentEnvelope = "";
+  let currentLines = [];
+  let currentCharacters = 0;
+  let currentTruncated = false;
+  let totalCharacters = 0;
+  const flush = () => {
+    const raw = currentLines.join("\n").trim();
+    if (raw && messages.length < maxMessages) {
+      messages.push({
+        index: messages.length + 1,
+        envelope: currentEnvelope,
+        text: raw,
+        truncated: currentTruncated
+      });
+    }
+    currentEnvelope = "";
+    currentLines = [];
+    currentCharacters = 0;
+    currentTruncated = false;
+  };
+  const appendLine = (line = "") => {
+    const lineWithBreak = `${line}\n`;
+    totalCharacters += lineWithBreak.length;
+    if (currentCharacters < EMAIL_MBOX_MESSAGE_MAX_CHARACTERS) {
+      const remaining = EMAIL_MBOX_MESSAGE_MAX_CHARACTERS - currentCharacters;
+      currentLines.push(lineWithBreak.slice(0, remaining).replace(/\n$/, ""));
+      if (lineWithBreak.length > remaining) {
+        currentTruncated = true;
+      }
+    } else {
+      currentTruncated = true;
+    }
+    currentCharacters += lineWithBreak.length;
+  };
+  const processLine = (line = "") => {
+    const cleanLine = line.replace(/\r$/, "");
+    if (cleanLine.startsWith("From ") && (currentEnvelope || currentLines.length)) {
+      flush();
+      currentEnvelope = cleanLine;
+      return;
+    }
+    if (cleanLine.startsWith("From ") && !currentEnvelope && currentLines.length === 0) {
+      currentEnvelope = cleanLine;
+      return;
+    }
+    appendLine(cleanLine);
+  };
+  try {
+    file = fsSync.openSync(filePath, "r");
+    while (messages.length < maxMessages) {
+      const bytesRead = fsSync.readSync(file, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      const bytes = buffer.subarray(0, bytesRead);
+      hash.update(bytes);
+      pending += decoder.decode(bytes, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() || "";
+      for (const line of lines) {
+        processLine(line);
+        if (messages.length >= maxMessages) {
+          break;
+        }
+      }
+    }
+    const tail = decoder.decode();
+    if (tail) {
+      pending += tail;
+    }
+    if (messages.length < maxMessages && pending) {
+      processLine(pending);
+    }
+    if (messages.length < maxMessages) {
+      flush();
+    }
+  } finally {
+    if (file !== null) {
+      fsSync.closeSync(file);
+    }
+  }
+  return {
+    messages,
+    totalCharacters,
+    contentHash: `sha256:${hash.digest("hex")}`,
+    truncated: messages.length >= maxMessages
+  };
+}
+
+function mboxMessageSummary(message = {}) {
+  const parsed = parseMimeMessage(message.text || "");
+  const headers = parsed.headers || {};
+  const subject = headers.subject || `Message ${message.index}`;
+  const body = parsed.textParts.filter(Boolean).join(" ").trim();
+  return {
+    index: message.index,
+    envelope: message.envelope || "",
+    subject,
+    from: headers.from || "",
+    to: headers.to || "",
+    date: headers.date || "",
+    attachmentCount: parsed.attachments?.length || 0,
+    excerpt: firstSentence(body || subject)
+  };
+}
+
+function parseMboxText(text = "") {
+  const messages = splitMboxMessages(text);
+  const summaries = messages.map(mboxMessageSummary);
+  const lines = [
+    `MBOX messages: ${summaries.length}`,
+    ...summaries.map((summary) => [
+      `Message ${summary.index}: ${summary.subject}`,
+      summary.from ? `From: ${summary.from}` : "",
+      summary.to ? `To: ${summary.to}` : "",
+      summary.date ? `Date: ${summary.date}` : "",
+      `Attachments: ${summary.attachmentCount}`,
+      summary.excerpt
+    ].filter(Boolean).join("\n"))
+  ];
+  return {
+    text: lines.filter(Boolean).join("\n\n"),
+    messages,
+    summaries
+  };
+}
+
+function readZipEntries(buffer) {
+  const data = Buffer.from(buffer || []);
+  const entries = [];
+  let offset = 0;
+  while (offset + 30 <= data.length) {
+    const signature = data.readUInt32LE(offset);
+    if (signature !== 0x04034b50) {
+      offset += 1;
+      continue;
+    }
+    const flags = data.readUInt16LE(offset + 6);
+    const method = data.readUInt16LE(offset + 8);
+    const compressedSize = data.readUInt32LE(offset + 18);
+    const uncompressedSize = data.readUInt32LE(offset + 22);
+    const fileNameLength = data.readUInt16LE(offset + 26);
+    const extraLength = data.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + fileNameLength;
+    const contentStart = nameEnd + extraLength;
+    if (nameEnd > data.length || contentStart > data.length) {
+      break;
+    }
+    const name = data.slice(nameStart, nameEnd).toString("utf8");
+    const hasDataDescriptor = Boolean(flags & 0x08);
+    if (hasDataDescriptor || compressedSize > data.length - contentStart) {
+      entries.push({ name, method, compressedSize, uncompressedSize, data: Buffer.alloc(0), warning: "zip-data-descriptor-not-supported" });
+      offset = contentStart + Math.max(0, compressedSize);
+      continue;
+    }
+    const compressed = data.slice(contentStart, contentStart + compressedSize);
+    let entryData = Buffer.alloc(0);
+    let warning = "";
+    try {
+      if (method === 0) {
+        entryData = compressed;
+      } else if (method === 8) {
+        entryData = Buffer.from(inflateRawSync(compressed));
+      } else {
+        warning = `zip-method-${method}-not-supported`;
+      }
+    } catch (error) {
+      warning = `zip-inflate-failed:${error instanceof Error ? error.message : String(error)}`;
+    }
+    entries.push({ name, method, compressedSize, uncompressedSize, data: entryData, warning });
+    offset = contentStart + compressedSize;
+  }
+  return entries;
+}
+
+function parseTarSize(buffer, offset, length) {
+  const raw = buffer.slice(offset, offset + length).toString("ascii").replace(/\0.*$/, "").trim();
+  if (!raw) {
+    return 0;
+  }
+  const parsed = parseInt(raw, 8);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function tarEntryName(header) {
+  const name = header.slice(0, 100).toString("utf8").replace(/\0.*$/, "").trim();
+  const prefix = header.slice(345, 500).toString("utf8").replace(/\0.*$/, "").trim();
+  return [prefix, name].filter(Boolean).join("/");
+}
+
+function readTarEntries(buffer) {
+  const data = Buffer.from(buffer || []);
+  const entries = [];
+  let offset = 0;
+  while (offset + 512 <= data.length) {
+    const header = data.slice(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
+    const name = tarEntryName(header);
+    const size = parseTarSize(header, 124, 12);
+    const typeFlag = header.slice(156, 157).toString("ascii") || "0";
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + size;
+    if (!name || dataEnd > data.length) {
+      break;
+    }
+    if (typeFlag === "0" || typeFlag === "\0" || typeFlag === "") {
+      entries.push({
+        name,
+        method: "tar",
+        compressedSize: size,
+        uncompressedSize: size,
+        data: data.slice(dataStart, dataEnd),
+        warning: ""
+      });
+    }
+    offset = dataStart + Math.ceil(size / 512) * 512;
+  }
+  return entries;
+}
+
+function looksLikeTar(buffer) {
+  const data = Buffer.from(buffer || []);
+  return data.length >= 512 && data.slice(257, 262).toString("ascii") === "ustar";
+}
+
+function stripGzipExtension(fileName = "") {
+  const text = String(fileName || "").trim();
+  if (/\.tar\.gz$/i.test(text)) {
+    return text.replace(/\.tar\.gz$/i, ".tar");
+  }
+  if (/\.tgz$/i.test(text)) {
+    return text.replace(/\.tgz$/i, ".tar");
+  }
+  if (/\.gz$/i.test(text)) {
+    return text.replace(/\.gz$/i, "");
+  }
+  return text ? `${text}.inflated` : "payload.inflated";
+}
+
+function archiveKind(metadata = {}, buffer = null) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const fileName = String(metadata.fileName || "").toLowerCase();
+  const mediaType = String(metadata.mediaType || "").toLowerCase();
+  const data = Buffer.from(buffer || []);
+  if (extension === ".7z" || mediaType.includes("7z")) {
+    return "7z";
+  }
+  if (
+    extension === ".zip" ||
+    mediaType === "application/zip" ||
+    mediaType === "application/x-zip-compressed" ||
+    data.slice(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
+  ) {
+    return "zip";
+  }
+  if (extension === ".tar" || mediaType.includes("x-tar") || mediaType.includes("x-gtar") || looksLikeTar(data)) {
+    return "tar";
+  }
+  if (
+    extension === ".gz" ||
+    extension === ".tgz" ||
+    extension === ".tar.gz" ||
+    fileName.endsWith(".tar.gz") ||
+    mediaType.includes("gzip") ||
+    (data[0] === 0x1f && data[1] === 0x8b)
+  ) {
+    return "gzip";
+  }
+  return "unknown";
+}
+
+function safeRelativeArchivePath(value = "") {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/");
+}
+
+function readDirectoryEntries(rootDir, limit = ARCHIVE_EXPANSION_MAX_ENTRIES) {
+  const entries = [];
+  const walk = (dir, relativeBase = "") => {
+    if (entries.length >= limit) {
+      return;
+    }
+    for (const item of fsSync.readdirSync(dir, { withFileTypes: true })) {
+      if (entries.length >= limit) {
+        return;
+      }
+      const absolutePath = path.join(dir, item.name);
+      const relativePath = safeRelativeArchivePath(path.join(relativeBase, item.name));
+      if (!relativePath) {
+        continue;
+      }
+      if (item.isDirectory()) {
+        walk(absolutePath, relativePath);
+        continue;
+      }
+      if (!item.isFile()) {
+        continue;
+      }
+      const stat = fsSync.statSync(absolutePath);
+      if (stat.size > ARCHIVE_ENTRY_MAX_BYTES) {
+        entries.push({
+          name: relativePath,
+          method: "7z-external",
+          compressedSize: stat.size,
+          uncompressedSize: stat.size,
+          data: Buffer.alloc(0),
+          warning: "archive-entry-too-large"
+        });
+        continue;
+      }
+      entries.push({
+        name: relativePath,
+        method: "7z-external",
+        compressedSize: stat.size,
+        uncompressedSize: stat.size,
+        data: fsSync.readFileSync(absolutePath),
+        warning: ""
+      });
+    }
+  };
+  walk(rootDir);
+  return entries;
+}
+
+function readDirectoryFileRefs(rootDir, limit = ARCHIVE_EXPANSION_MAX_ENTRIES) {
+  const entries = [];
+  const walk = (dir, relativeBase = "") => {
+    if (entries.length >= limit) {
+      return;
+    }
+    for (const item of fsSync.readdirSync(dir, { withFileTypes: true })) {
+      if (entries.length >= limit) {
+        return;
+      }
+      const absolutePath = path.join(dir, item.name);
+      const relativePath = safeRelativeArchivePath(path.join(relativeBase, item.name));
+      if (!relativePath) {
+        continue;
+      }
+      if (item.isDirectory()) {
+        walk(absolutePath, relativePath);
+        continue;
+      }
+      if (!item.isFile()) {
+        continue;
+      }
+      const stat = fsSync.statSync(absolutePath);
+      entries.push({
+        name: relativePath,
+        method: "archive-file-ref",
+        compressedSize: stat.size,
+        uncompressedSize: stat.size,
+        data: Buffer.alloc(0),
+        filePath: absolutePath,
+        warning: ""
+      });
+    }
+  };
+  walk(rootDir);
+  return entries;
+}
+
+function readSevenZipEntries(buffer, metadata = {}, runtimeStatus = null) {
+  const runtime = runtimeStatus?.runtimes?.["archive.7zip"];
+  if (!runtime?.available) {
+    return {
+      entries: [],
+      parserTrace: [runtimeStageTrace("archive.7z.extract", runtimeStatus, "archive.7zip")],
+      warnings: ["missing-runtime:archive.7zip"]
+    };
+  }
+  const workDir = tempWorkDir("external-kd-7z-");
+  const archivePath = path.join(workDir, `source${safeExtension(metadata.extension || ".7z")}`);
+  const outputDir = path.join(workDir, "out");
+  try {
+    fsSync.mkdirSync(outputDir, { recursive: true });
+    fsSync.writeFileSync(archivePath, Buffer.from(buffer || []));
+    execFileSync(runtime.command || "7zz", ["x", "-y", `-o${outputDir}`, archivePath], {
+      encoding: "utf8",
+      timeout: ARCHIVE_EXTERNAL_TIMEOUT_MS,
+      maxBuffer: 8 * 1024 * 1024
+    });
+    const entries = readDirectoryEntries(outputDir);
+    return {
+      entries,
+      parserTrace: [{
+        stage: "archive.7z.extract",
+        status: entries.length ? "completed" : "empty",
+        runtime: "archive.7zip",
+        command: runtime.command || "7zz",
+        entries: entries.length
+      }],
+      warnings: entries.some((entry) => entry.warning) ? ["archive-entry-warning"] : []
+    };
+  } catch (error) {
+    return {
+      entries: [],
+      parserTrace: [{
+        stage: "archive.7z.extract",
+        status: "failed",
+        runtime: "archive.7zip",
+        command: runtime.command || "7zz",
+        error: error instanceof Error ? error.message : String(error)
+      }],
+      warnings: ["archive-7z-extract-failed"]
+    };
+  } finally {
+    fsSync.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function requireRuntime(runtimeStatus = null, key = "") {
+  const runtime = runtimeStatus?.runtimes?.[key];
+  return runtime?.available ? runtime : null;
+}
+
+function runArchiveCommand(command, args = [], stage = "archive.file-ref.extract") {
+  const output = execFileSync(command, args, {
+    encoding: "utf8",
+    timeout: ARCHIVE_EXTERNAL_TIMEOUT_MS,
+    maxBuffer: 8 * 1024 * 1024
+  });
+  return String(output || "");
+}
+
+function gunzipFileToPath({ gzipCommand = "gzip", inputPath = "", outputPath = "" } = {}) {
+  const outputFd = fsSync.openSync(outputPath, "w");
+  try {
+    const result = spawnSync(gzipCommand, ["-dc", inputPath], {
+      stdio: ["ignore", outputFd, "pipe"],
+      timeout: ARCHIVE_EXTERNAL_TIMEOUT_MS,
+      encoding: "utf8"
+    });
+    if (result.status !== 0) {
+      throw new Error(String(result.stderr || `gzip exited with ${result.status}`));
+    }
+  } finally {
+    fsSync.closeSync(outputFd);
+  }
+}
+
+function extractArchiveFileEntries(filePath = "", metadata = {}, runtimeStatus = null, remainingEntries = ARCHIVE_EXPANSION_MAX_ENTRIES) {
+  const kind = archiveKind(metadata, null);
+  const workDir = tempWorkDir("external-kd-archive-file-");
+  const outputDir = path.join(workDir, "out");
+  fsSync.mkdirSync(outputDir, { recursive: true });
+  const parserTrace = [{ stage: "archive.container-detect", status: "completed", kind, mode: "file-ref" }];
+  const warnings = [];
+  try {
+    if (kind === "zip") {
+      const sevenZip = requireRuntime(runtimeStatus, "archive.7zip");
+      const unzip = requireRuntime(runtimeStatus, "archive.unzip");
+      if (sevenZip) {
+        runArchiveCommand(sevenZip.command || "7zz", ["x", "-y", `-o${outputDir}`, filePath], "archive.zip.extract");
+        parserTrace.push({ stage: "archive.zip.extract", status: "completed", runtime: "archive.7zip", command: sevenZip.command || "7zz" });
+      } else if (unzip) {
+        runArchiveCommand(unzip.command || "unzip", ["-qq", filePath, "-d", outputDir], "archive.zip.extract");
+        parserTrace.push({ stage: "archive.zip.extract", status: "completed", runtime: "archive.unzip", command: unzip.command || "unzip" });
+      } else {
+        parserTrace.push(runtimeStageTrace("archive.zip.extract", runtimeStatus, "archive.unzip"));
+        warnings.push("missing-runtime:archive.unzip");
+      }
+    } else if (kind === "tar") {
+      const tar = requireRuntime(runtimeStatus, "archive.tar");
+      if (!tar) {
+        parserTrace.push(runtimeStageTrace("archive.tar.extract", runtimeStatus, "archive.tar"));
+        warnings.push("missing-runtime:archive.tar");
+      } else {
+        runArchiveCommand(tar.command || "tar", ["-xf", filePath, "-C", outputDir], "archive.tar.extract");
+        parserTrace.push({ stage: "archive.tar.extract", status: "completed", runtime: "archive.tar", command: tar.command || "tar" });
+      }
+    } else if (kind === "gzip") {
+      const tar = requireRuntime(runtimeStatus, "archive.tar");
+      const gzip = requireRuntime(runtimeStatus, "archive.gzip");
+      const isTarGzip = metadata.extension === ".tgz" || metadata.extension === ".tar.gz" || /\.t(ar\.)?gz$/i.test(metadata.fileName || "");
+      if (isTarGzip) {
+        if (!tar) {
+          parserTrace.push(runtimeStageTrace("archive.tar.extract", runtimeStatus, "archive.tar"));
+          warnings.push("missing-runtime:archive.tar");
+        } else {
+          runArchiveCommand(tar.command || "tar", ["-xzf", filePath, "-C", outputDir], "archive.gzip-tar.extract");
+          parserTrace.push({ stage: "archive.gzip.decompress", status: "completed", runtime: "archive.tar", command: tar.command || "tar" });
+          parserTrace.push({ stage: "archive.tar.extract", status: "completed", runtime: "archive.tar", command: tar.command || "tar" });
+        }
+      } else if (!gzip) {
+        parserTrace.push(runtimeStageTrace("archive.gzip.decompress", runtimeStatus, "archive.gzip"));
+        warnings.push("missing-runtime:archive.gzip");
+      } else {
+        const outputName = safeRelativeArchivePath(stripGzipExtension(metadata.fileName || "payload.gz")) || "payload.inflated";
+        const outputPath = path.join(outputDir, outputName);
+        fsSync.mkdirSync(path.dirname(outputPath), { recursive: true });
+        gunzipFileToPath({ gzipCommand: gzip.command || "gzip", inputPath: filePath, outputPath });
+        parserTrace.push({ stage: "archive.gzip.decompress", status: "completed", runtime: "archive.gzip", command: gzip.command || "gzip" });
+      }
+    } else if (kind === "7z") {
+      const sevenZip = requireRuntime(runtimeStatus, "archive.7zip");
+      if (!sevenZip) {
+        parserTrace.push(runtimeStageTrace("archive.7z.extract", runtimeStatus, "archive.7zip"));
+        warnings.push("missing-runtime:archive.7zip");
+      } else {
+        runArchiveCommand(sevenZip.command || "7zz", ["x", "-y", `-o${outputDir}`, filePath], "archive.7z.extract");
+        parserTrace.push({ stage: "archive.7z.extract", status: "completed", runtime: "archive.7zip", command: sevenZip.command || "7zz" });
+      }
+    } else {
+      parserTrace.push({ stage: "archive.file-ref.extract", status: "unsupported", kind });
+      warnings.push("archive-container-unsupported");
+    }
+    const entries = readDirectoryFileRefs(outputDir, remainingEntries);
+    parserTrace.push({
+      stage: "archive.file-ref.entries",
+      status: entries.length ? "completed" : "empty",
+      entries: entries.length,
+      maxEntries: remainingEntries
+    });
+    return {
+      entries,
+      parserTrace,
+      warnings,
+      cleanup: () => fsSync.rmSync(workDir, { recursive: true, force: true })
+    };
+  } catch (error) {
+    parserTrace.push({
+      stage: "archive.file-ref.extract",
+      status: "failed",
+      kind,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return {
+      entries: [],
+      parserTrace,
+      warnings: [...warnings, "archive-file-ref-extract-failed"],
+      cleanup: () => fsSync.rmSync(workDir, { recursive: true, force: true })
+    };
+  }
+}
+
+function extractZipFileToDirectory(filePath = "", runtimeStatus = null, stage = "zip.file-ref.extract") {
+  const workDir = tempWorkDir("external-kd-zip-file-");
+  const outputDir = path.join(workDir, "out");
+  fsSync.mkdirSync(outputDir, { recursive: true });
+  const parserTrace = [];
+  const warnings = [];
+  try {
+    const sevenZip = requireRuntime(runtimeStatus, "archive.7zip");
+    const unzip = requireRuntime(runtimeStatus, "archive.unzip");
+    if (sevenZip) {
+      runArchiveCommand(sevenZip.command || "7zz", ["x", "-y", `-o${outputDir}`, filePath], stage);
+      parserTrace.push({ stage, status: "completed", runtime: "archive.7zip", command: sevenZip.command || "7zz" });
+    } else if (unzip) {
+      runArchiveCommand(unzip.command || "unzip", ["-qq", filePath, "-d", outputDir], stage);
+      parserTrace.push({ stage, status: "completed", runtime: "archive.unzip", command: unzip.command || "unzip" });
+    } else {
+      parserTrace.push(runtimeStageTrace(stage, runtimeStatus, "archive.unzip"));
+      warnings.push("missing-runtime:archive.unzip");
+    }
+    return {
+      outputDir,
+      parserTrace,
+      warnings,
+      cleanup: () => fsSync.rmSync(workDir, { recursive: true, force: true })
+    };
+  } catch (error) {
+    parserTrace.push({
+      stage,
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return {
+      outputDir,
+      parserTrace,
+      warnings: [...warnings, "zip-file-ref-extract-failed"],
+      cleanup: () => fsSync.rmSync(workDir, { recursive: true, force: true })
+    };
+  }
+}
+
+function extractArchiveEntries(buffer, metadata = {}, runtimeStatus = null) {
+  const kind = archiveKind(metadata, buffer);
+  const parserTrace = [{ stage: "archive.container-detect", status: "completed", kind }];
+  const warnings = [];
+  try {
+    if (kind === "zip") {
+      const entries = readZipEntries(buffer);
+      parserTrace.push({ stage: "archive.zip.container", status: entries.length ? "completed" : "empty", entries: entries.length });
+      return { entries, parserTrace, warnings };
+    }
+    if (kind === "tar") {
+      const entries = readTarEntries(buffer);
+      parserTrace.push({ stage: "archive.tar.container", status: entries.length ? "completed" : "empty", entries: entries.length });
+      return { entries, parserTrace, warnings };
+    }
+    if (kind === "gzip") {
+      const inflated = Buffer.from(gunzipSync(Buffer.from(buffer || [])));
+      parserTrace.push({ stage: "archive.gzip.decompress", status: "completed", bytes: inflated.length });
+      if (looksLikeTar(inflated) || metadata.extension === ".tgz" || metadata.extension === ".tar.gz" || /\.t(ar\.)?gz$/i.test(metadata.fileName || "")) {
+        const entries = readTarEntries(inflated);
+        parserTrace.push({ stage: "archive.tar.container", status: entries.length ? "completed" : "empty", entries: entries.length });
+        return { entries, parserTrace, warnings };
+      }
+      const name = stripGzipExtension(metadata.fileName || "payload.gz");
+      return {
+        entries: [{
+          name,
+          method: "gzip",
+          compressedSize: Buffer.byteLength(buffer || []),
+          uncompressedSize: inflated.length,
+          data: inflated,
+          warning: ""
+        }],
+        parserTrace: [...parserTrace, { stage: "archive.gzip.single-file", status: "completed", entries: 1 }],
+        warnings
+      };
+    }
+    if (kind === "7z") {
+      const extracted = readSevenZipEntries(buffer, metadata, runtimeStatus);
+      return {
+        entries: extracted.entries,
+        parserTrace: [...parserTrace, ...extracted.parserTrace],
+        warnings: [...warnings, ...extracted.warnings]
+      };
+    }
+    parserTrace.push({ stage: "archive.container", status: "unsupported" });
+    return { entries: [], parserTrace, warnings: ["archive-container-unsupported"] };
+  } catch (error) {
+    parserTrace.push({
+      stage: `archive.${kind}.container`,
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return { entries: [], parserTrace, warnings: [`archive-${kind}-failed`] };
+  }
+}
+
+function zipEntryText(entries = [], entryName = "") {
+  const entry = entries.find((item) => item.name === entryName);
+  return entry?.data?.length ? utf8(entry.data) : "";
+}
+
+function parseDocx(entries = []) {
+  const xmlNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(name));
+  return xmlNames.map((name) => textFromXmlTextNodes(zipEntryText(entries, name))).filter(Boolean).join("\n\n");
+}
+
+function parsePptx(entries = []) {
+  const slideNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((left, right) => Number(left.match(/slide(\d+)/)?.[1] || 0) - Number(right.match(/slide(\d+)/)?.[1] || 0));
+  return slideNames
+    .map((name, index) => `Slide ${index + 1}: ${textFromXmlTextNodes(zipEntryText(entries, name))}`)
+    .filter((line) => !line.endsWith(": "))
+    .join("\n");
+}
+
+function xmlAttribute(tag = "", name = "") {
+  const pattern = new RegExp(`\\s${name}=(["'])(.*?)\\1`, "i");
+  return decodeXmlEntities(String(tag || "").match(pattern)?.[2] || "");
+}
+
+function xlsxColumnLabel(cellRef = "", fallbackIndex = 0) {
+  const label = String(cellRef || "").match(/^[A-Z]+/i)?.[0]?.toUpperCase();
+  if (label) {
+    return label;
+  }
+  let index = Math.max(0, Number(fallbackIndex) || 0);
+  let output = "";
+  do {
+    output = String.fromCharCode(65 + (index % 26)) + output;
+    index = Math.floor(index / 26) - 1;
+  } while (index >= 0);
+  return output;
+}
+
+function parseSharedStringsXml(xml = "") {
+  const strings = [];
+  for (const match of String(xml || "").matchAll(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/g)) {
+    strings.push(textFromXmlTextNodes(match[0]));
+  }
+  return strings;
+}
+
+function parseWorkbookSheetNames(xml = "") {
+  const names = [];
+  for (const match of String(xml || "").matchAll(/<sheet\b[^>]*>/g)) {
+    const name = xmlAttribute(match[0], "name");
+    if (name) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+function xlsxCellValue(cellXml = "", sharedStrings = []) {
+  const openTag = String(cellXml || "").match(/^<c\b[^>]*>/)?.[0] || "";
+  const type = xmlAttribute(openTag, "t");
+  if (type === "inlineStr") {
+    return textFromXmlTextNodes(cellXml);
+  }
+  const raw = decodeXmlEntities(String(cellXml || "").match(/<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/)?.[1] || "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (type === "s") {
+    return sharedStrings[Number(raw)] || raw;
+  }
+  if (type === "b") {
+    return raw === "1" ? "TRUE" : "FALSE";
+  }
+  return raw;
+}
+
+function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0) {
+  const rowOpenTag = String(rowXml || "").match(/^<row\b[^>]*>/)?.[0] || "";
+  const rowNumber = Number(xmlAttribute(rowOpenTag, "r") || fallbackRowNumber || 0);
+  const cells = [];
+  let fallbackCellIndex = 0;
+  for (const match of String(rowXml || "").matchAll(/<c\b[\s\S]*?<\/c>/g)) {
+    const cellXml = match[0];
+    const openTag = cellXml.match(/^<c\b[^>]*>/)?.[0] || "";
+    const ref = xmlAttribute(openTag, "r") || `${xlsxColumnLabel("", fallbackCellIndex)}${rowNumber || ""}`;
+    const column = xlsxColumnLabel(ref, fallbackCellIndex);
+    const value = xlsxCellValue(cellXml, sharedStrings);
+    fallbackCellIndex += 1;
+    if (value) {
+      cells.push({ ref, column, value });
+    }
+  }
+  return { rowNumber, cells };
+}
+
+function formatXlsxHeaderRow(sheetLabel = "", row = { cells: [] }) {
+  const cells = row.cells.map((cell) => `${cell.column}=${cell.value}`);
+  return `${sheetLabel} Header row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
+}
+
+function formatXlsxDataRow(sheetLabel = "", row = { cells: [] }, headersByColumn = new Map()) {
+  const cells = row.cells.map((cell) => {
+    const header = headersByColumn.get(cell.column);
+    return header ? `${cell.ref} ${header}=${cell.value}` : `${cell.ref}=${cell.value}`;
+  });
+  return `${sheetLabel} Row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
+}
+
+function xlsxRowsToStructuredText(rows = [], sheetLabel = "") {
+  const lines = [];
+  const headersByColumn = new Map();
+  let headerCaptured = false;
+  for (const row of rows) {
+    if (!row.cells.length) {
+      continue;
+    }
+    if (!headerCaptured && row.cells.length >= 2) {
+      for (const cell of row.cells) {
+        headersByColumn.set(cell.column, cell.value);
+      }
+      lines.push(formatXlsxHeaderRow(sheetLabel, row));
+      headerCaptured = true;
+      continue;
+    }
+    lines.push(formatXlsxDataRow(sheetLabel, row, headersByColumn));
+  }
+  return lines.join("\n");
+}
+
+function parseXlsxDetailed(entries = []) {
+  const sharedStrings = parseSharedStringsXml(zipEntryText(entries, "xl/sharedStrings.xml"));
+  const sheetDisplayNames = parseWorkbookSheetNames(zipEntryText(entries, "xl/workbook.xml"));
+  const sheetNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
+    .sort((left, right) => Number(left.match(/sheet(\d+)/)?.[1] || 0) - Number(right.match(/sheet(\d+)/)?.[1] || 0));
+  const lines = [];
+  let rowCount = 0;
+  let cellCount = 0;
+  let headerRows = 0;
+  for (const [index, name] of sheetNames.entries()) {
+    const rows = [];
+    for (const match of zipEntryText(entries, name).matchAll(/<row\b[\s\S]*?<\/row>/g)) {
+      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1);
+      if (row.cells.length) {
+        rows.push(row);
+        rowCount += 1;
+        cellCount += row.cells.length;
+      }
+    }
+    const sheetLabel = `Sheet ${index + 1}${sheetDisplayNames[index] ? ` (${sheetDisplayNames[index]})` : ""}`;
+    const text = xlsxRowsToStructuredText(rows, sheetLabel);
+    if (text) {
+      headerRows += 1;
+      lines.push(text);
+    }
+  }
+  return {
+    text: lines.join("\n"),
+    sharedStringCount: sharedStrings.length,
+    sheetCount: sheetNames.length,
+    rowCount,
+    cellCount,
+    headerRows
+  };
+}
+
+function parseXlsx(entries = []) {
+  return parseXlsxDetailed(entries).text;
+}
+
+function parseOpenDocument(entries = []) {
+  const contentNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /^(content|styles|meta)\.xml$/.test(name));
+  return contentNames
+    .map((name) => textFromXmlTextNodes(zipEntryText(entries, name)))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function parseEpub(entries = []) {
+  const chapterNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /\.(xhtml|html|htm|xml)$/i.test(name))
+    .filter((name) => !/(^|\/)(container|package|toc|nav)\.(xml|xhtml|html)$/i.test(name))
+    .sort((left, right) => left.localeCompare(right));
+  return chapterNames
+    .slice(0, 500)
+    .map((name, index) => {
+      const text = stripMarkup(zipEntryText(entries, name));
+      return text ? `Chapter ${index + 1} (${name}): ${text}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function collectFiles(rootDir = "", predicate = () => false, limit = 1000) {
+  const files = [];
+  const walk = (dir) => {
+    if (files.length >= limit) {
+      return;
+    }
+    for (const item of fsSync.readdirSync(dir, { withFileTypes: true })) {
+      if (files.length >= limit) {
+        return;
+      }
+      const absolutePath = path.join(dir, item.name);
+      const relativePath = safeRelativeArchivePath(path.relative(rootDir, absolutePath));
+      if (item.isDirectory()) {
+        walk(absolutePath);
+      } else if (item.isFile() && predicate(relativePath, absolutePath)) {
+        files.push({ absolutePath, relativePath });
+      }
+    }
+  };
+  if (rootDir && fsSync.existsSync(rootDir)) {
+    walk(rootDir);
+  }
+  return files;
+}
+
+function streamingMarkupToText(chunk = "", final = false) {
+  const text = String(chunk || "");
+  if (!text) {
+    return { output: "", carry: "" };
+  }
+  if (!final && text.length <= 8192) {
+    return { output: "", carry: text };
+  }
+  const splitAt = final ? text.length : Math.max(0, text.length - 8192);
+  const head = text.slice(0, splitAt);
+  const carry = final ? "" : text.slice(splitAt);
+  const output = textFromXmlTextNodes(head)
+    .replace(/\s+/g, " ")
+    .trim();
+  return { output, carry };
+}
+
+function appendMarkupFileAsText(inputPath = "", outputPath = "") {
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  let input = null;
+  let totalCharacters = 0;
+  let carry = "";
+  try {
+    input = fsSync.openSync(inputPath, "r");
+    while (true) {
+      const bytesRead = fsSync.readSync(input, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      const decoded = decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      const transformed = streamingMarkupToText(carry + decoded, false);
+      carry = transformed.carry;
+      if (transformed.output) {
+        const block = `${transformed.output}\n`;
+        fsSync.appendFileSync(outputPath, block, "utf8");
+        totalCharacters += block.length;
+      }
+    }
+    const tail = decoder.decode();
+    const transformed = streamingMarkupToText(carry + tail, true);
+    if (transformed.output) {
+      const block = `${transformed.output}\n`;
+      fsSync.appendFileSync(outputPath, block, "utf8");
+      totalCharacters += block.length;
+    }
+  } finally {
+    if (input !== null) {
+      fsSync.closeSync(input);
+    }
+  }
+  return totalCharacters;
+}
+
+function scanXmlElementsFromFile(filePath = "", tagName = "", onElement = () => {}) {
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  const expression = new RegExp(`<${tagName}\\b[\\s\\S]*?<\\/${tagName}>`, "g");
+  let input = null;
+  let carry = "";
+  try {
+    input = fsSync.openSync(filePath, "r");
+    while (true) {
+      const bytesRead = fsSync.readSync(input, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      carry += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      expression.lastIndex = 0;
+      let processed = 0;
+      let match;
+      while ((match = expression.exec(carry)) !== null) {
+        onElement(match[0]);
+        processed = expression.lastIndex;
+      }
+      if (processed > 0) {
+        carry = carry.slice(processed);
+      }
+      if (carry.length > STREAM_TEXT_CHUNK_BYTES * 4) {
+        carry = carry.slice(-STREAM_TEXT_CHUNK_BYTES);
+      }
+    }
+    carry += decoder.decode();
+    expression.lastIndex = 0;
+    let match;
+    while ((match = expression.exec(carry)) !== null) {
+      onElement(match[0]);
+    }
+  } finally {
+    if (input !== null) {
+      fsSync.closeSync(input);
+    }
+  }
+}
+
+function parseSharedStringsFile(filePath = "") {
+  const strings = [];
+  if (!filePath || !fsSync.existsSync(filePath)) {
+    return strings;
+  }
+  scanXmlElementsFromFile(filePath, "si", (xml) => {
+    strings.push(textFromXmlTextNodes(xml));
+  });
+  return strings;
+}
+
+function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], outputPath = "" } = {}) {
+  const headersByColumn = new Map();
+  let headerCaptured = false;
+  let rowCount = 0;
+  let cellCount = 0;
+  let headerRows = 0;
+  let totalCharacters = 0;
+  const appendLine = (line = "") => {
+    const text = `${line}\n`;
+    fsSync.appendFileSync(outputPath, text, "utf8");
+    totalCharacters += text.length;
+  };
+  scanXmlElementsFromFile(sheetPath, "row", (xml) => {
+    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1);
+    if (!row.cells.length) {
+      return;
+    }
+    rowCount += 1;
+    cellCount += row.cells.length;
+    if (!headerCaptured && row.cells.length >= 2) {
+      for (const cell of row.cells) {
+        headersByColumn.set(cell.column, cell.value);
+      }
+      appendLine(formatXlsxHeaderRow(sheetLabel, row));
+      headerRows += 1;
+      headerCaptured = true;
+      return;
+    }
+    appendLine(formatXlsxDataRow(sheetLabel, row, headersByColumn));
+  });
+  return { rowCount, cellCount, headerRows, totalCharacters };
+}
+
+function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
+  const sharedStrings = parseSharedStringsFile(path.join(rootDir, "xl/sharedStrings.xml"));
+  const sheetNames = parseWorkbookSheetNames(
+    fsSync.existsSync(path.join(rootDir, "xl/workbook.xml"))
+      ? fsSync.readFileSync(path.join(rootDir, "xl/workbook.xml"), "utf8")
+      : ""
+  );
+  const sheetFiles = collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
+    .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0));
+  let totalCharacters = 0;
+  let rowCount = 0;
+  let cellCount = 0;
+  let headerRows = 0;
+  for (const [index, sheet] of sheetFiles.entries()) {
+    const sheetLabel = `Sheet ${index + 1}${sheetNames[index] ? ` (${sheetNames[index]})` : ""}`;
+    const stats = appendXlsxWorksheetText({
+      sheetPath: sheet.absolutePath,
+      sheetLabel,
+      sharedStrings,
+      outputPath
+    });
+    totalCharacters += stats.totalCharacters;
+    rowCount += stats.rowCount;
+    cellCount += stats.cellCount;
+    headerRows += stats.headerRows;
+  }
+  return {
+    totalCharacters,
+    sharedStringCount: sharedStrings.length,
+    sheetCount: sheetFiles.length,
+    rowCount,
+    cellCount,
+    headerRows,
+    parserTrace: [
+      {
+        stage: "table.sheet.headers",
+        status: headerRows ? "completed" : "empty",
+        headerRows
+      },
+      {
+        stage: "table.sheet.cells",
+        status: cellCount ? "completed" : "empty",
+        cells: cellCount,
+        rows: rowCount,
+        sharedStrings: sharedStrings.length
+      }
+    ]
+  };
+}
+
+function structuredZipXmlFiles(route = null, rootDir = "") {
+  if (route?.id === "word") {
+    return collectFiles(rootDir, (name) => /^word\/(document|header\d*|footer\d*)\.xml$/.test(name), 200);
+  }
+  if (route?.id === "presentation") {
+    return collectFiles(rootDir, (name) => /^ppt\/slides\/slide\d+\.xml$/.test(name), 1000)
+      .sort((left, right) => Number(left.relativePath.match(/slide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/slide(\d+)/)?.[1] || 0));
+  }
+  if (route?.id === "spreadsheet") {
+    return [
+      ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
+      ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
+    ];
+  }
+  if (route?.id === "open-document") {
+    return collectFiles(rootDir, (name) => /^(content|styles|meta)\.xml$/.test(name), 20);
+  }
+  if (route?.id === "ebook") {
+    return collectFiles(rootDir, (name) => (
+      /\.(xhtml|html|htm|xml)$/i.test(name) &&
+      !/(^|\/)(container|package|toc|nav)\.(xml|xhtml|html)$/i.test(name)
+    ), 1000).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  }
+  return [];
+}
+
+function structuredZipStage(route = null) {
+  if (route?.id === "word") return "office.word.structured";
+  if (route?.id === "presentation") return "office.presentation.slides";
+  if (route?.id === "spreadsheet") return "table.sheet.structured";
+  if (route?.id === "open-document") return "open-document.structured";
+  if (route?.id === "ebook") return "ebook.epub";
+  return "structured-zip.text";
+}
+
+function parseArchiveManifest(entries = []) {
+  return entries
+    .slice(0, 1000)
+    .map((entry) => `${entry.name} (${entry.uncompressedSize || entry.data.length || 0} bytes${entry.warning ? `; ${entry.warning}` : ""})`)
+    .join("\n");
+}
+
+function decodePdfLiteral(value = "") {
+  const text = String(value || "");
+  const inner = text.startsWith("(") && text.endsWith(")") ? text.slice(1, -1) : text;
+  let output = "";
+  for (let index = 0; index < inner.length; index += 1) {
+    const char = inner[index];
+    if (char !== "\\") {
+      output += char;
+      continue;
+    }
+    const next = inner[index + 1] || "";
+    if (!next) {
+      continue;
+    }
+    if (next === "n") output += "\n";
+    else if (next === "r") output += "\r";
+    else if (next === "t") output += "\t";
+    else if (next === "b") output += "\b";
+    else if (next === "f") output += "\f";
+    else if (next === "(" || next === ")" || next === "\\") output += next;
+    else if (/[0-7]/.test(next)) {
+      const octal = inner.slice(index + 1).match(/^[0-7]{1,3}/)?.[0] || "";
+      output += String.fromCharCode(parseInt(octal, 8));
+      index += octal.length;
+      continue;
+    } else {
+      output += next;
+    }
+    index += 1;
+  }
+  return output;
+}
+
+function decodePdfHex(value = "") {
+  const hex = String(value || "").replace(/[^0-9a-f]/gi, "");
+  if (!hex) {
+    return "";
+  }
+  const padded = hex.length % 2 === 0 ? hex : `${hex}0`;
+  return Buffer.from(padded, "hex").toString("utf8").replace(/\u0000/g, "");
+}
+
+function extractPdfTextFromContent(content = "") {
+  const chunks = [];
+  const blocks = Array.from(String(content || "").matchAll(/BT([\s\S]*?)ET/g)).map((match) => match[1]);
+  for (const block of blocks) {
+    for (const match of block.matchAll(/\[([\s\S]*?)\]\s*TJ/g)) {
+      const arrayContent = match[1];
+      const parts = [];
+      for (const literal of arrayContent.matchAll(/\((?:\\.|[^\\)])*\)/g)) {
+        parts.push(decodePdfLiteral(literal[0]));
+      }
+      for (const hex of arrayContent.matchAll(/<([0-9a-fA-F\s]+)>/g)) {
+        parts.push(decodePdfHex(hex[1]));
+      }
+      if (parts.length) {
+        chunks.push(parts.join(""));
+      }
+    }
+    for (const match of block.matchAll(/(\((?:\\.|[^\\)])*\))\s*(?:Tj|'|")/g)) {
+      chunks.push(decodePdfLiteral(match[1]));
+    }
+    for (const match of block.matchAll(/<([0-9a-fA-F\s]+)>\s*Tj/g)) {
+      chunks.push(decodePdfHex(match[1]));
+    }
+  }
+  return chunks
+    .map((chunk) => chunk.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parsePdfBasicText(buffer) {
+  const data = Buffer.from(buffer || []);
+  const latin = data.toString("latin1");
+  const parserTrace = [];
+  const warnings = [];
+  const textChunks = [];
+  let streamCount = 0;
+  let decodedStreamCount = 0;
+  for (const match of latin.matchAll(/<<(.*?)>>\s*stream\r?\n?([\s\S]*?)\r?\n?endstream/g)) {
+    streamCount += 1;
+    const dictionary = match[1] || "";
+    const rawStream = Buffer.from(match[2] || "", "latin1");
+    let decoded = rawStream;
+    if (/\/Filter\s*\/FlateDecode/.test(dictionary) || /\/FlateDecode/.test(dictionary)) {
+      try {
+        decoded = Buffer.from(inflateSync(rawStream));
+      } catch (_error) {
+        try {
+          decoded = Buffer.from(inflateRawSync(rawStream));
+        } catch (error) {
+          warnings.push(`pdf-flate-decode-failed:${error instanceof Error ? error.message : String(error)}`);
+          continue;
+        }
+      }
+    }
+    decodedStreamCount += 1;
+    const content = decoded.toString("latin1");
+    const extracted = extractPdfTextFromContent(content);
+    if (extracted) {
+      textChunks.push(extracted);
+    }
+  }
+  const title = latin.match(/\/Title\s*(\((?:\\.|[^\\)])*\))/)?.[1];
+  if (title) {
+    textChunks.unshift(`Title: ${decodePdfLiteral(title)}`);
+  }
+  const text = textChunks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  parserTrace.push({
+    stage: "pdf.text.basic",
+    status: text ? "completed" : "empty",
+    streamCount,
+    decodedStreamCount,
+    characters: text.length
+  });
+  if (!text) {
+    warnings.push("pdf-basic-text-empty");
+  }
+  return { text, parserTrace, warnings };
+}
+
+function runtimeStageTrace(stage, runtimeStatus = null, runtimeKey = "") {
+  const runtime = runtimeKey ? runtimeStatus?.runtimes?.[runtimeKey] : null;
+  if (!runtime) {
+    return { stage, status: "requires-external-runtime" };
+  }
+  return {
+    stage,
+    status: runtime.available ? "available-not-executed" : "unavailable",
+    runtime: runtimeKey,
+    command: runtime.command || "",
+    error: runtime.available ? "" : runtime.error || "runtime-unavailable"
+  };
+}
+
+function tempWorkDir(prefix = "external-kd-") {
+  const root = path.join(os.tmpdir(), prefix);
+  return fsSync.mkdtempSync(root);
+}
+
+function safeExtension(extension = "") {
+  const normalized = normalizeExtension(extension || ".bin");
+  return /^[.][a-z0-9]+$/i.test(normalized) ? normalized : ".bin";
+}
+
+function runTesseractOnImageFile(filePath, runtimeStatus, stage = "ocr.image") {
+  const runtime = runtimeStatus?.runtimes?.["ocr.tesseract"];
+  if (!runtime?.available) {
+    return {
+      text: "",
+      trace: runtimeStageTrace(stage, runtimeStatus, "ocr.tesseract"),
+      warning: "missing-runtime:ocr.tesseract"
+    };
+  }
+  try {
+    const text = execFileSync(runtime.command || "tesseract", [filePath, "stdout"], {
+      encoding: "utf8",
+      timeout: OCR_TIMEOUT_MS,
+      maxBuffer: 8 * 1024 * 1024
+    }).trim();
+    return {
+      text,
+      trace: {
+        stage,
+        status: text ? "completed" : "empty",
+        runtime: "ocr.tesseract",
+        command: runtime.command || "tesseract",
+        characters: text.length
+      },
+      warning: text ? "" : "ocr-empty"
+    };
+  } catch (error) {
+    return {
+      text: "",
+      trace: {
+        stage,
+        status: "failed",
+        runtime: "ocr.tesseract",
+        command: runtime.command || "tesseract",
+        error: error instanceof Error ? error.message : String(error)
+      },
+      warning: "ocr-failed"
+    };
+  }
+}
+
+function runImageOcr(buffer, metadata = {}, runtimeStatus = null) {
+  const workDir = tempWorkDir("external-kd-image-");
+  try {
+    const imagePath = path.join(workDir, `source${safeExtension(metadata.extension || ".png")}`);
+    fsSync.writeFileSync(imagePath, Buffer.from(buffer || []));
+    const result = runTesseractOnImageFile(imagePath, runtimeStatus, "ocr.image");
+    return {
+      text: result.text,
+      parserTrace: [result.trace],
+      warnings: result.warning ? [result.warning] : []
+    };
+  } finally {
+    fsSync.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function runPdfOcr(buffer, runtimeStatus = null) {
+  const poppler = runtimeStatus?.runtimes?.["pdf.poppler"];
+  const tesseract = runtimeStatus?.runtimes?.["ocr.tesseract"];
+  const parserTrace = [];
+  const warnings = [];
+  if (!poppler?.available || !tesseract?.available) {
+    parserTrace.push(runtimeStageTrace("pdf.page-rasterize", runtimeStatus, "pdf.poppler"));
+    parserTrace.push(runtimeStageTrace("ocr.image", runtimeStatus, "ocr.tesseract"));
+    warnings.push(requiredRuntimeWarning(runtimeStatus, ["pdf.poppler", "ocr.tesseract"]) || "pdf-ocr-runtime-required");
+    return { text: "", parserTrace, warnings };
+  }
+  const workDir = tempWorkDir("external-kd-pdf-");
+  try {
+    const pdfPath = path.join(workDir, "source.pdf");
+    const outputPrefix = path.join(workDir, "page");
+    fsSync.writeFileSync(pdfPath, Buffer.from(buffer || []));
+    execFileSync(poppler.command || "pdftoppm", [
+      "-png",
+      "-r",
+      "200",
+      "-f",
+      "1",
+      "-l",
+      String(Math.max(1, PDF_OCR_MAX_PAGES)),
+      pdfPath,
+      outputPrefix
+    ], {
+      encoding: "utf8",
+      timeout: OCR_TIMEOUT_MS,
+      maxBuffer: 8 * 1024 * 1024
+    });
+    const pageFiles = fsSync.readdirSync(workDir)
+      .filter((fileName) => /^page-\d+\.png$/.test(fileName))
+      .sort((left, right) => Number(left.match(/page-(\d+)/)?.[1] || 0) - Number(right.match(/page-(\d+)/)?.[1] || 0));
+    parserTrace.push({
+      stage: "pdf.page-rasterize",
+      status: pageFiles.length ? "completed" : "empty",
+      runtime: "pdf.poppler",
+      command: poppler.command || "pdftoppm",
+      pages: pageFiles.length
+    });
+    const texts = [];
+    for (const [index, fileName] of pageFiles.entries()) {
+      const result = runTesseractOnImageFile(path.join(workDir, fileName), runtimeStatus, "ocr.page");
+      parserTrace.push({ ...result.trace, page: index + 1 });
+      if (result.warning) {
+        warnings.push(result.warning);
+      }
+      if (result.text) {
+        texts.push(`Page ${index + 1}: ${result.text}`);
+      }
+    }
+    return {
+      text: texts.join("\n\n").trim(),
+      parserTrace,
+      warnings
+    };
+  } catch (error) {
+    parserTrace.push({
+      stage: "pdf.page-rasterize",
+      status: "failed",
+      runtime: "pdf.poppler",
+      command: poppler.command || "pdftoppm",
+      error: error instanceof Error ? error.message : String(error)
+    });
+    warnings.push("pdf-ocr-failed");
+    return { text: "", parserTrace, warnings };
+  } finally {
+    fsSync.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function runTikaText(buffer, metadata = {}, runtimeStatus = null, stage = "tika.text") {
+  const runtime = runtimeStatus?.runtimes?.["tika.app"];
+  if (!runtime?.available) {
+    return {
+      text: "",
+      parserTrace: [runtimeStageTrace(stage, runtimeStatus, "tika.app")],
+      warnings: ["missing-runtime:tika.app"]
+    };
+  }
+  const workDir = tempWorkDir("external-kd-tika-");
+  try {
+    const inputPath = path.join(workDir, `source${safeExtension(metadata.extension || ".bin")}`);
+    fsSync.writeFileSync(inputPath, Buffer.from(buffer || []));
+    const text = execFileSync(runtime.command || "java", ["-jar", runtime.jarPath || TIKA_APP_JAR, "-t", inputPath], {
+      encoding: "utf8",
+      timeout: TIKA_TIMEOUT_MS,
+      maxBuffer: 32 * 1024 * 1024
+    }).trim();
+    return {
+      text,
+      parserTrace: [{
+        stage,
+        status: text ? "completed" : "empty",
+        runtime: "tika.app",
+        command: runtime.command || "java",
+        jarPath: runtime.jarPath || TIKA_APP_JAR,
+        characters: text.length
+      }],
+      warnings: text ? [] : ["tika-empty"]
+    };
+  } catch (error) {
+    return {
+      text: "",
+      parserTrace: [{
+        stage,
+        status: "failed",
+        runtime: "tika.app",
+        command: runtime.command || "java",
+        jarPath: runtime.jarPath || TIKA_APP_JAR,
+        error: error instanceof Error ? error.message : String(error)
+      }],
+      warnings: ["tika-failed"]
+    };
+  } finally {
+    fsSync.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function runTikaFileToTextFile(inputPath = "", outputPath = "", metadata = {}, runtimeStatus = null, stage = "tika.text.file-ref") {
+  const runtime = runtimeStatus?.runtimes?.["tika.app"];
+  if (!runtime?.available) {
+    return {
+      parserTrace: [runtimeStageTrace(stage, runtimeStatus, "tika.app")],
+      warnings: ["missing-runtime:tika.app"]
+    };
+  }
+  let output = null;
+  try {
+    output = fsSync.openSync(outputPath, "w");
+    const result = spawnSync(runtime.command || "java", ["-jar", runtime.jarPath || TIKA_APP_JAR, "-t", inputPath], {
+      stdio: ["ignore", output, "pipe"],
+      timeout: TIKA_TIMEOUT_MS,
+      encoding: "utf8"
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(String(result.stderr || `Tika exited with ${result.status}`));
+    }
+    const stat = fsSync.existsSync(outputPath) ? fsSync.statSync(outputPath) : { size: 0 };
+    return {
+      parserTrace: [{
+        stage,
+        status: stat.size ? "completed" : "empty",
+        runtime: "tika.app",
+        command: runtime.command || "java",
+        jarPath: runtime.jarPath || TIKA_APP_JAR,
+        bytes: Number(metadata.byteSize || 0),
+        outputBytes: stat.size
+      }],
+      warnings: stat.size ? [] : ["tika-empty"]
+    };
+  } catch (error) {
+    return {
+      parserTrace: [{
+        stage,
+        status: "failed",
+        runtime: "tika.app",
+        command: runtime.command || "java",
+        jarPath: runtime.jarPath || TIKA_APP_JAR,
+        error: error instanceof Error ? error.message : String(error)
+      }],
+      warnings: ["tika-failed"]
+    };
+  } finally {
+    if (output !== null) {
+      fsSync.closeSync(output);
+    }
+  }
+}
+
+function requiredRuntimeWarning(runtimeStatus = null, runtimeKeys = []) {
+  const missing = runtimeKeys.filter((key) => !runtimeStatus?.runtimes?.[key]?.available);
+  return missing.length ? `missing-runtime:${missing.join(",")}` : "";
+}
+
+function parseSuppliedContent({ route, metadata, text = "", buffer = null, runtimeStatus = null }) {
+  const parserTrace = [];
+  if (text) {
+    parserTrace.push({ stage: "payload.text", status: "completed", characters: text.length });
+    if (route?.id === "config") {
+      const parsed = parseConfigText(text, metadata);
+      parserTrace.push({
+        stage: "config.key-value",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        entries: parsed.keyValueCount,
+        sections: parsed.sectionCount,
+        comments: parsed.commentCount,
+        format: parsed.format
+      });
+      return { text: parsed.text || text, parserTrace, warnings: [] };
+    }
+    if (route?.id === "diagram") {
+      const parsed = parseDiagramText(text, metadata);
+      parserTrace.push({
+        stage: "diagram.structure",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        nodes: parsed.nodeCount,
+        edges: parsed.edgeCount,
+        labels: parsed.labelCount,
+        format: parsed.format
+      });
+      return { text: parsed.text || text, parserTrace, warnings: [] };
+    }
+    return { text, parserTrace, warnings: [] };
+  }
+  if (!buffer?.length) {
+    parserTrace.push({ stage: "payload.decode", status: "skipped", reason: "no text or base64 payload supplied" });
+    return { text: "", parserTrace, warnings: ["no-supplied-payload"] };
+  }
+
+  const plain = utf8(buffer);
+  const warnings = [];
+  parserTrace.push({ stage: "payload.decode", status: "completed", bytes: buffer.length });
+  try {
+    if (route?.id === "pdf") {
+      const parsed = parsePdfBasicText(buffer);
+      parserTrace.push(...parsed.parserTrace);
+      warnings.push(...parsed.warnings);
+      if (parsed.text) {
+        return { text: parsed.text, parserTrace, warnings };
+      }
+      parserTrace.push(runtimeStageTrace("pdf.visual.layout", runtimeStatus, "pdf.pymupdf"));
+      parserTrace.push(runtimeStageTrace("ocr.page", runtimeStatus, "ocr.paddleocr"));
+      const ocrResult = runPdfOcr(buffer, runtimeStatus);
+      parserTrace.push(...ocrResult.parserTrace);
+      warnings.push(...ocrResult.warnings);
+      if (ocrResult.text) {
+        return { text: ocrResult.text, parserTrace, warnings };
+      }
+      const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "pdf.text.tika");
+      parserTrace.push(...tikaResult.parserTrace);
+      warnings.push(...tikaResult.warnings);
+      if (tikaResult.text) {
+        return { text: tikaResult.text, parserTrace, warnings };
+      }
+      warnings.push(requiredRuntimeWarning(runtimeStatus, ["pdf.pymupdf", "pdf.poppler", "ocr.paddleocr", "ocr.tesseract"]) || "pdf-visual-or-ocr-runtime-required");
+      return { text: "", parserTrace, warnings };
+    }
+    if (route?.id === "image") {
+      const ocrResult = runImageOcr(buffer, metadata, runtimeStatus);
+      parserTrace.push(...ocrResult.parserTrace);
+      warnings.push(...ocrResult.warnings);
+      if (ocrResult.text) {
+        return { text: ocrResult.text, parserTrace, warnings };
+      }
+      parserTrace.push(runtimeStageTrace("multimodal.image", runtimeStatus, ""));
+      warnings.push(requiredRuntimeWarning(runtimeStatus, ["ocr.tesseract"]) || "image-ocr-runtime-required");
+      return { text: "", parserTrace, warnings };
+    }
+    if (route?.id === "json") {
+      const parsed = parseJsonLike(plain);
+      parserTrace.push({ stage: "structured.json", status: "completed", characters: parsed.length });
+      return { text: parsed, parserTrace, warnings };
+    }
+    if (route?.id === "config") {
+      const parsed = parseConfigText(plain, metadata);
+      parserTrace.push({
+        stage: "config.key-value",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        entries: parsed.keyValueCount,
+        sections: parsed.sectionCount,
+        comments: parsed.commentCount,
+        format: parsed.format
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+    }
+    if (route?.id === "diagram") {
+      const parsed = parseDiagramText(plain, metadata);
+      parserTrace.push({
+        stage: "diagram.structure",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        nodes: parsed.nodeCount,
+        edges: parsed.edgeCount,
+        labels: parsed.labelCount,
+        format: parsed.format
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+    }
+    if (route?.id === "spreadsheet" && (metadata.extension === ".csv" || metadata.mediaType === "text/csv")) {
+      const parsed = parseDelimitedText(plain, ",");
+      parserTrace.push({ stage: "table.csv", status: "completed", characters: parsed.length });
+      return { text: parsed, parserTrace, warnings };
+    }
+    if (route?.id === "spreadsheet" && (metadata.extension === ".tsv" || metadata.mediaType === "text/tab-separated-values")) {
+      const parsed = parseDelimitedText(plain, "\t");
+      parserTrace.push({ stage: "table.tsv", status: "completed", characters: parsed.length });
+      return { text: parsed, parserTrace, warnings };
+    }
+    if (route?.id === "email") {
+      if (isMsgRoute(route, metadata)) {
+        const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "email.msg.tika");
+        parserTrace.push(...tikaResult.parserTrace);
+        warnings.push(...tikaResult.warnings);
+        if (tikaResult.text) {
+          return { text: tikaResult.text, parserTrace, warnings };
+        }
+        warnings.push(requiredRuntimeWarning(runtimeStatus, ["tika.app"]) || "msg-tika-empty");
+        return { text: "", parserTrace, warnings };
+      }
+      if (isMboxRoute(route, metadata)) {
+        const parsed = parseMboxText(plain);
+        parserTrace.push({
+          stage: "email.mbox",
+          status: parsed.messages.length ? "completed" : "empty",
+          messages: parsed.messages.length,
+          maxMessages: EMAIL_MBOX_MAX_MESSAGES,
+          truncated: parsed.messages.length >= EMAIL_MBOX_MAX_MESSAGES
+        });
+        return { text: parsed.text, parserTrace, warnings };
+      }
+      const parsed = parseEmailText(plain);
+      parserTrace.push({ stage: "email.headers-body", status: "completed", characters: parsed.length });
+      return { text: parsed, parserTrace, warnings };
+    }
+    if (["markdown", "plain-text", "source-code"].includes(route?.id)) {
+      const parsed = metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml"
+        ? stripMarkup(plain)
+        : plain.trim();
+      parserTrace.push({ stage: route.id === "markdown" ? "text.markdown" : "text.direct", status: "completed", characters: parsed.length });
+      return { text: parsed, parserTrace, warnings };
+    }
+    if (["word", "presentation", "spreadsheet", "open-document", "ebook"].includes(route?.id)) {
+      const entries = readZipEntries(buffer);
+      parserTrace.push({ stage: "zip.container", status: entries.length ? "completed" : "failed", entries: entries.length });
+      if (route.id === "word") {
+        const parsed = parseDocx(entries);
+        parserTrace.push({ stage: "office.word.structured", status: parsed ? "completed" : "empty", characters: parsed.length });
+        if (parsed) {
+          return { text: parsed, parserTrace, warnings };
+        }
+        const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
+        parserTrace.push(...tikaResult.parserTrace);
+        warnings.push(...tikaResult.warnings);
+        return { text: tikaResult.text, parserTrace, warnings };
+      }
+      if (route.id === "presentation") {
+        const parsed = parsePptx(entries);
+        parserTrace.push({ stage: "office.presentation.slides", status: parsed ? "completed" : "empty", characters: parsed.length });
+        if (parsed) {
+          return { text: parsed, parserTrace, warnings };
+        }
+        const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
+        parserTrace.push(...tikaResult.parserTrace);
+        warnings.push(...tikaResult.warnings);
+        return { text: tikaResult.text, parserTrace, warnings };
+      }
+      if (route.id === "spreadsheet") {
+        const parsed = parseXlsxDetailed(entries);
+        parserTrace.push({
+          stage: "table.sheet.structured",
+          status: parsed.text ? "completed" : "empty",
+          characters: parsed.text.length,
+          sheets: parsed.sheetCount,
+          rows: parsed.rowCount,
+          cells: parsed.cellCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.headers",
+          status: parsed.headerRows ? "completed" : "empty",
+          headerRows: parsed.headerRows
+        });
+        parserTrace.push({
+          stage: "table.sheet.cells",
+          status: parsed.cellCount ? "completed" : "empty",
+          cells: parsed.cellCount,
+          sharedStrings: parsed.sharedStringCount
+        });
+        if (parsed.text) {
+          return { text: parsed.text, parserTrace, warnings };
+        }
+        const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
+        parserTrace.push(...tikaResult.parserTrace);
+        warnings.push(...tikaResult.warnings);
+        return { text: tikaResult.text, parserTrace, warnings };
+      }
+      if (route.id === "open-document") {
+        const parsed = parseOpenDocument(entries);
+        parserTrace.push({ stage: "open-document.structured", status: parsed ? "completed" : "empty", characters: parsed.length });
+        if (parsed) {
+          return { text: parsed, parserTrace, warnings };
+        }
+        const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
+        parserTrace.push(...tikaResult.parserTrace);
+        warnings.push(...tikaResult.warnings);
+        return { text: tikaResult.text, parserTrace, warnings };
+      }
+      if (route.id === "ebook") {
+        const parsed = parseEpub(entries);
+        parserTrace.push({ stage: "ebook.epub", status: parsed ? "completed" : "empty", characters: parsed.length });
+        if (parsed) {
+          return { text: parsed, parserTrace, warnings };
+        }
+        const tikaResult = runTikaText(buffer, metadata, runtimeStatus, "tika.text");
+        parserTrace.push(...tikaResult.parserTrace);
+        warnings.push(...tikaResult.warnings);
+        return { text: tikaResult.text, parserTrace, warnings };
+      }
+    }
+    if (route?.id === "archive") {
+      const extracted = extractArchiveEntries(buffer, metadata, runtimeStatus);
+      parserTrace.push(...extracted.parserTrace);
+      warnings.push(...extracted.warnings);
+      const parsed = parseArchiveManifest(extracted.entries);
+      parserTrace.push({ stage: "archive.manifest", status: parsed ? "completed" : "empty", characters: parsed.length });
+      return { text: parsed, parserTrace, warnings };
+    }
+    parserTrace.push({ stage: route?.preferredParser || "unsupported.format", status: "requires-external-runtime" });
+    warnings.push("parser-runtime-required");
+    return { text: "", parserTrace, warnings };
+  } catch (error) {
+    parserTrace.push({ stage: route?.preferredParser || "payload.parse", status: "failed", error: error instanceof Error ? error.message : String(error) });
+    return { text: "", parserTrace, warnings: [...warnings, "payload-parse-failed"] };
+  }
+}
+
+function normalizeDocumentMetadata(document = {}, metadata = {}, title = "", text = "") {
+  const fileName = String(
+    document.fileName ||
+      document.filename ||
+      document.name ||
+      document.path ||
+      document.relativePath ||
+      metadata.fileName ||
+      metadata.filename ||
+      metadata.path ||
+      title ||
+      ""
+  ).trim();
+  const extension = normalizeExtension(
+      document.extension ||
+      document.ext ||
+      metadata.extension ||
+      extensionFromFileName(fileName)
+  );
+  const mediaType = String(
+    document.mediaType ||
+      document.mimeType ||
+      document.contentType ||
+      metadata.mediaType ||
+      metadata.mimeType ||
+      metadata.contentType ||
+      inferMediaTypeFromExtension(extension) ||
+      ""
+  ).trim().toLowerCase();
+  const byteSize = normalizeByteSize(
+    document.byteSize ?? document.size ?? metadata.byteSize ?? metadata.size,
+    text
+  );
+  return {
+    fileName: fileName || title,
+    relativePath: String(document.relativePath || metadata.relativePath || fileName || title).trim(),
+    extension,
+    mediaType,
+    byteSize,
+    sourceKind: String(document.sourceKind || metadata.sourceKind || "document").trim() || "document",
+    language: String(document.language || metadata.language || "").trim(),
+    eventTime: String(document.eventTime || metadata.eventTime || "").trim(),
+    documentTime: String(document.documentTime || metadata.documentTime || document.capturedAt || metadata.capturedAt || "").trim()
+  };
+}
+
+function metadataForArchiveEntry(entry = {}, parentDocument = {}) {
+  const fileName = path.basename(entry.name || "") || "archive-entry";
+  const extension = normalizeExtension(path.extname(fileName));
+  const mediaType = inferMediaTypeFromExtension(extension);
+  return {
+    fileName,
+    relativePath: `${parentDocument.relativePath || parentDocument.fileName || parentDocument.sourceId}!/${entry.name}`,
+    extension,
+    mediaType,
+    byteSize: entry.uncompressedSize || entry.data?.length || 0,
+    sourceKind: "archive-entry",
+    language: "",
+    eventTime: parentDocument.eventTime || "",
+    documentTime: parentDocument.documentTime || parentDocument.capturedAt || ""
+  };
+}
+
+function metadataForEmailAttachment(attachment = {}, parentDocument = {}) {
+  const fileName = path.basename(attachment.fileName || "") || "attachment.bin";
+  const extension = normalizeExtension(path.extname(fileName));
+  const mediaType = String(attachment.mediaType || inferMediaTypeFromExtension(extension) || "application/octet-stream").toLowerCase();
+  return {
+    fileName,
+    relativePath: `${parentDocument.relativePath || parentDocument.fileName || parentDocument.sourceId}!/${fileName}`,
+    extension,
+    mediaType,
+    byteSize: attachment.data?.length || 0,
+    sourceKind: "email-attachment",
+    language: "",
+    eventTime: parentDocument.eventTime || "",
+    documentTime: parentDocument.documentTime || parentDocument.capturedAt || ""
+  };
+}
+
+function lookupFormatRoute({ extension = "", mediaType = "", text = "" } = {}) {
+  const normalizedExtension = normalizeExtension(extension);
+  if (ROUTES_BY_EXTENSION.has(normalizedExtension)) {
+    return ROUTES_BY_EXTENSION.get(normalizedExtension);
+  }
+  const normalizedMediaType = String(mediaType || "").toLowerCase();
+  if (ROUTES_BY_MEDIA_TYPE.has(normalizedMediaType)) {
+    return ROUTES_BY_MEDIA_TYPE.get(normalizedMediaType);
+  }
+  if (normalizedMediaType.startsWith("text/")) {
+    return ROUTES_BY_MEDIA_TYPE.get("text/plain");
+  }
+  if (normalizedMediaType.startsWith("image/")) {
+    return ROUTES_BY_EXTENSION.get(".png");
+  }
+  if (text) {
+    return ROUTES_BY_MEDIA_TYPE.get("text/plain");
+  }
+  return null;
+}
+
+function buildDocumentRoute(document = {}) {
+  const route = lookupFormatRoute(document);
+  const riskFlags = [];
+  if (!route) {
+    riskFlags.push("unknown-format");
+  }
+  const textCharacters = Number(document.totalTextCharacters || (document.text || "").length || 0);
+  if ((document.byteSize || 0) >= LARGE_FILE_BYTES || textCharacters >= LARGE_TEXT_CHARACTERS) {
+    riskFlags.push("large-file-risk");
+  }
+  if (route?.id === "pdf" && !document.text) {
+    riskFlags.push("pdf-needs-text-extraction");
+  }
+  if (route?.id === "pdf" && document.text && document.text.length < 800) {
+    riskFlags.push("pdf-low-text-density");
+  }
+  if (route?.id === "image") {
+    riskFlags.push("ocr-required");
+  }
+  if (route?.id === "archive") {
+    riskFlags.push("archive-expansion-required");
+  }
+  if (!document.text && textCharacters <= 0) {
+    riskFlags.push("no-supplied-text");
+  }
+  return {
+    sourceId: document.sourceId,
+    parentSourceId: document.parentSourceId || "",
+    archivePath: document.archivePath || "",
+    archiveDepth: Number(document.archiveDepth || 0),
+    title: document.title,
+    fileName: document.fileName,
+    relativePath: document.relativePath,
+    extension: document.extension,
+    mediaType: document.mediaType,
+    byteSize: document.byteSize,
+    declaredType: document.mediaType || document.extension || "unknown",
+    sniffedType: route?.mediaTypes?.[0] || document.mediaType || "unknown",
+    formatId: route?.id || "unknown",
+    contentShape: route?.contentShape || "unknown",
+    preferredParser: route?.preferredParser || "unsupported.format",
+    fallbackParsers: route?.fallbackParsers || [],
+    parserChain: route?.parserChain || ["unsupported.route"],
+    streamingUnit: route?.streamingUnit || "document",
+    riskFlags,
+    referenceFrameworks: route?.referenceFrameworks || ["unstructured", "haystack"]
+  };
+}
+
+function normalizedWindowOptions(options = {}) {
+  const maxCharacters = Math.max(
+    1000,
+    Math.min(200_000, Number(options.maxWindowCharacters || DEFAULT_WINDOW_CHARACTERS) || DEFAULT_WINDOW_CHARACTERS)
+  );
+  const overlapCharacters = Math.max(
+    0,
+    Math.min(maxCharacters - 1, Number(options.windowOverlapCharacters || DEFAULT_WINDOW_OVERLAP_CHARACTERS) || 0)
+  );
+  return { maxCharacters, overlapCharacters };
+}
+
+function selectWindowEnd(text = "", maxCharacters = DEFAULT_WINDOW_CHARACTERS) {
+  const hardEnd = Math.min(text.length, maxCharacters);
+  if (hardEnd >= text.length) {
+    return hardEnd;
+  }
+  const searchStart = Math.max(Math.floor(maxCharacters * 0.65), 0);
+  const boundary = Math.max(
+    text.lastIndexOf("\n\n", hardEnd),
+    text.lastIndexOf("\n# ", hardEnd),
+    text.lastIndexOf("。", hardEnd),
+    text.lastIndexOf(". ", hardEnd)
+  );
+  return boundary > searchStart ? boundary + 1 : hardEnd;
+}
+
+function buildWindowRecord(document = {}, index = 0, startOffset = 0, endOffset = 0, chunk = "") {
+  const inferredTime = inferTimeMetadataFromText(chunk);
+  return {
+    windowId: stableId("window", document.sourceId, String(index + 1), chunk),
+    sourceId: document.sourceId,
+    index,
+    startOffset,
+    endOffset,
+    charCount: chunk.length,
+    contentHash: `sha256:${sha(chunk)}`,
+    excerpt: firstSentence(chunk),
+    ...(inferredTime.timeRange ? {
+      timeRange: inferredTime.timeRange,
+      timeConfidence: inferredTime.timeConfidence,
+      timeSignals: inferredTime.timeSignals
+    } : {})
+  };
+}
+
+function streamParserStage(route = null, metadata = {}) {
+  if (route?.id === "markdown") return "text.markdown";
+  if (route?.id === "source-code") return "text.direct";
+  if (route?.id === "config") return "config.key-value";
+  if (route?.id === "diagram") return "diagram.structure";
+  if (route?.id === "spreadsheet" && metadata.extension === ".csv") return "table.csv";
+  if (route?.id === "spreadsheet" && metadata.extension === ".tsv") return "table.tsv";
+  if (route?.id === "json") return "structured.jsonl";
+  return "text.direct";
+}
+
+function transformStreamingTextChunk(chunk = "", route = null, metadata = {}) {
+  if (route?.id === "config") {
+    return parseConfigText(chunk, metadata).text || String(chunk || "");
+  }
+  if (route?.id === "diagram") {
+    return parseDiagramText(chunk, metadata).text || String(chunk || "");
+  }
+  if (metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml") {
+    return stripMarkup(chunk);
+  }
+  return String(chunk || "");
+}
+
+function plainTextRoute() {
+  return ROUTES_BY_MEDIA_TYPE.get("text/plain") || ROUTES_BY_EXTENSION.get(".txt");
+}
+
+function streamTextFileAnalysis({ document = {}, route = null, metadata = {}, filePath = "", options = {} } = {}) {
+  const { maxCharacters, overlapCharacters } = normalizedWindowOptions(options);
+  const windows = [];
+  const hash = crypto.createHash("sha256");
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  let file = null;
+  let carry = "";
+  let carryStartOffset = 0;
+  let totalCharacters = 0;
+  let sample = "";
+  const pushWindows = (flush = false) => {
+    while (carry.length >= maxCharacters || (flush && carry.trim())) {
+      const end = flush && carry.length < maxCharacters
+        ? carry.length
+        : selectWindowEnd(carry, maxCharacters);
+      const chunk = carry.slice(0, end).trim();
+      if (chunk) {
+        windows.push(buildWindowRecord(document, windows.length, carryStartOffset, carryStartOffset + end, chunk));
+      }
+      if (end >= carry.length) {
+        carryStartOffset += end;
+        carry = "";
+        break;
+      }
+      const advance = Math.max(1, end - overlapCharacters);
+      carry = carry.slice(advance);
+      carryStartOffset += advance;
+    }
+  };
+  try {
+    file = fsSync.openSync(filePath, "r");
+    while (true) {
+      const bytesRead = fsSync.readSync(file, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      const bytes = buffer.subarray(0, bytesRead);
+      hash.update(bytes);
+      const decoded = decoder.decode(bytes, { stream: true });
+      const transformed = transformStreamingTextChunk(decoded, route, metadata);
+      totalCharacters += transformed.length;
+      if (sample.length < STREAM_TEXT_SAMPLE_CHARACTERS) {
+        sample += transformed.slice(0, STREAM_TEXT_SAMPLE_CHARACTERS - sample.length);
+      }
+      carry += transformed;
+      pushWindows(false);
+    }
+    const tail = transformStreamingTextChunk(decoder.decode(), route, metadata);
+    if (tail) {
+      totalCharacters += tail.length;
+      if (sample.length < STREAM_TEXT_SAMPLE_CHARACTERS) {
+        sample += tail.slice(0, STREAM_TEXT_SAMPLE_CHARACTERS - sample.length);
+      }
+      carry += tail;
+    }
+    pushWindows(true);
+  } finally {
+    if (file !== null) {
+      fsSync.closeSync(file);
+    }
+  }
+  const parserStage = streamParserStage(route, metadata);
+  return {
+    textSample: sample.trim(),
+    totalCharacters,
+    contentHash: `sha256:${hash.digest("hex")}`,
+    windowPlan: {
+      strategy: "file-ref-stream-windowing.v1",
+      maxCharacters,
+      overlapCharacters,
+      windowCount: windows.length,
+      truncated: false,
+      source: {
+        kind: "file-ref",
+        byteSize: document.byteSize || 0,
+        chunkBytes: STREAM_TEXT_CHUNK_BYTES,
+        sampleCharacters: Math.min(sample.length, STREAM_TEXT_SAMPLE_CHARACTERS),
+        totalCharacters
+      },
+      windows
+    },
+    parserTrace: [
+      {
+        stage: "payload.stream-text",
+        status: totalCharacters ? "completed" : "empty",
+        path: filePath,
+        bytes: document.byteSize || 0,
+        characters: totalCharacters,
+        windows: windows.length,
+        chunkBytes: STREAM_TEXT_CHUNK_BYTES
+      },
+      {
+        stage: parserStage,
+        status: sample.trim() ? "completed" : "empty",
+        mode: "streaming-sample",
+        characters: sample.trim().length
+      }
+    ],
+    warnings: sample.length >= STREAM_TEXT_SAMPLE_CHARACTERS ? ["streaming-text-sample-truncated"] : []
+  };
+}
+
+function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeStatus = null, options = {} } = {}) {
+  const runtime = runtimeStatus?.runtimes?.["pdf.pdftotext"];
+  if (!runtime?.available) {
+    return {
+      text: "",
+      totalCharacters: 0,
+      contentHash: "",
+      windowPlan: null,
+      parserTrace: [runtimeStageTrace("pdf.text.pdftotext", runtimeStatus, "pdf.pdftotext")],
+      warnings: ["missing-runtime:pdf.pdftotext"]
+    };
+  }
+  const workDir = tempWorkDir("external-kd-pdf-text-");
+  const outputPath = path.join(workDir, "pdf-text.txt");
+  try {
+    execFileSync(runtime.command || "pdftotext", ["-layout", "-enc", "UTF-8", filePath, outputPath], {
+      encoding: "utf8",
+      timeout: TIKA_TIMEOUT_MS,
+      maxBuffer: 8 * 1024 * 1024
+    });
+    const stat = fsSync.existsSync(outputPath) ? fsSync.statSync(outputPath) : { size: 0 };
+    const stream = stat.size > 0
+      ? streamTextFileAnalysis({
+          document,
+          route: plainTextRoute(),
+          metadata: { ...metadata, extension: ".txt", mediaType: "text/plain", fileName: "pdf-text.txt" },
+          filePath: outputPath,
+          options
+        })
+      : {
+          textSample: "",
+          totalCharacters: 0,
+          contentHash: "",
+          windowPlan: null,
+          parserTrace: [],
+          warnings: ["pdf-pdftotext-empty"]
+        };
+    return {
+      text: stream.textSample || "",
+      totalCharacters: stream.totalCharacters || 0,
+      contentHash: stream.contentHash || "",
+      windowPlan: stream.windowPlan || null,
+      parserTrace: [
+        {
+          stage: "pdf.text.pdftotext",
+          status: stream.totalCharacters ? "completed" : "empty",
+          runtime: "pdf.pdftotext",
+          command: runtime.command || "pdftotext",
+          bytes: document.byteSize || 0,
+          characters: stream.totalCharacters || 0,
+          windows: stream.windowPlan?.windowCount || 0
+        },
+        ...stream.parserTrace
+      ],
+      warnings: stream.warnings || []
+    };
+  } catch (error) {
+    return {
+      text: "",
+      totalCharacters: 0,
+      contentHash: "",
+      windowPlan: null,
+      parserTrace: [{
+        stage: "pdf.text.pdftotext",
+        status: "failed",
+        runtime: "pdf.pdftotext",
+        command: runtime.command || "pdftotext",
+        error: error instanceof Error ? error.message : String(error)
+      }],
+      warnings: ["pdf-pdftotext-failed"]
+    };
+  } finally {
+    fsSync.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function parseTikaFileRef({ document = {}, metadata = {}, filePath = "", runtimeStatus = null, options = {} } = {}) {
+  const workDir = tempWorkDir("external-kd-tika-file-");
+  const outputPath = path.join(workDir, "tika-text.txt");
+  const tikaStage = isMsgRoute(ROUTES_BY_EXTENSION.get(normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""))) || null, metadata)
+    ? "email.msg.tika.file-ref"
+    : "tika.text.file-ref";
+  try {
+    const tika = runTikaFileToTextFile(filePath, outputPath, metadata, runtimeStatus, tikaStage);
+    const hasText = fsSync.existsSync(outputPath) && fsSync.statSync(outputPath).size > 0;
+    const stream = hasText
+      ? streamTextFileAnalysis({
+          document,
+          route: plainTextRoute(),
+          metadata: { ...metadata, extension: ".txt", mediaType: "text/plain", fileName: "tika-text.txt" },
+          filePath: outputPath,
+          options
+        })
+      : {
+          textSample: "",
+          totalCharacters: 0,
+          contentHash: "",
+          windowPlan: null,
+          parserTrace: [],
+          warnings: []
+        };
+    return {
+      text: stream.textSample || "",
+      totalCharacters: stream.totalCharacters || 0,
+      contentHash: stream.contentHash || "",
+      windowPlan: stream.windowPlan || null,
+      parserTrace: [...tika.parserTrace, ...stream.parserTrace],
+      warnings: [...tika.warnings, ...(stream.warnings || [])]
+    };
+  } finally {
+    fsSync.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+function parseMboxFileRef({ filePath = "" } = {}) {
+  try {
+    const parsed = readMboxMessagesFromFile(filePath);
+    const summaries = parsed.messages.map(mboxMessageSummary);
+    const text = [
+      `MBOX messages: ${summaries.length}`,
+      ...summaries.map((summary) => [
+        `Message ${summary.index}: ${summary.subject}`,
+        summary.from ? `From: ${summary.from}` : "",
+        summary.to ? `To: ${summary.to}` : "",
+        summary.date ? `Date: ${summary.date}` : "",
+        `Attachments: ${summary.attachmentCount}`,
+        summary.excerpt
+      ].filter(Boolean).join("\n"))
+    ].filter(Boolean).join("\n\n");
+    return {
+      text,
+      totalCharacters: text.length,
+      contentHash: parsed.contentHash,
+      windowPlan: null,
+      messages: parsed.messages,
+      parserTrace: [{
+        stage: "email.mbox",
+        status: parsed.messages.length ? "completed" : "empty",
+        mode: "file-ref",
+        path: filePath,
+        messages: parsed.messages.length,
+        maxMessages: EMAIL_MBOX_MAX_MESSAGES,
+        truncated: parsed.truncated
+      }],
+      warnings: parsed.truncated ? ["mbox-message-limit-reached"] : []
+    };
+  } catch (error) {
+    return {
+      text: "",
+      totalCharacters: 0,
+      contentHash: "",
+      windowPlan: null,
+      messages: [],
+      parserTrace: [{
+        stage: "email.mbox",
+        status: "failed",
+        mode: "file-ref",
+        path: filePath,
+        error: error instanceof Error ? error.message : String(error)
+      }],
+      warnings: ["mbox-file-ref-failed"]
+    };
+  }
+}
+
+function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null, filePath = "", runtimeStatus = null, options = {} } = {}) {
+  const stage = structuredZipStage(route);
+  const extracted = extractZipFileToDirectory(filePath, runtimeStatus, "structured-zip.file-ref.extract");
+  const parserTrace = [...extracted.parserTrace];
+  const warnings = [...extracted.warnings];
+  if (warnings.some((warning) => warning.includes("extract-failed") || warning.includes("missing-runtime"))) {
+    extracted.cleanup?.();
+    return {
+      text: "",
+      totalCharacters: 0,
+      contentHash: "",
+      windowPlan: null,
+      parserTrace,
+      warnings
+    };
+  }
+  const outputDir = tempWorkDir("external-kd-structured-text-");
+  const outputPath = path.join(outputDir, "structured-text.txt");
+  let totalCharacters = 0;
+  let structuredFileCount = 0;
+  try {
+    const spreadsheet = route?.id === "spreadsheet"
+      ? appendXlsxDirectoryAsText(extracted.outputDir, outputPath)
+      : null;
+    if (spreadsheet) {
+      totalCharacters = spreadsheet.totalCharacters;
+      structuredFileCount = spreadsheet.sheetCount;
+      parserTrace.push(...spreadsheet.parserTrace);
+    } else {
+      const files = structuredZipXmlFiles(route, extracted.outputDir);
+      structuredFileCount = files.length;
+      for (const [index, file] of files.entries()) {
+        const prefix = route?.id === "presentation"
+          ? `Slide ${index + 1} (${file.relativePath})`
+          : route?.id === "ebook"
+            ? `Chapter ${index + 1} (${file.relativePath})`
+            : file.relativePath;
+        const heading = `${prefix}:\n`;
+        fsSync.appendFileSync(outputPath, heading, "utf8");
+        const extractedCharacters = appendMarkupFileAsText(file.absolutePath, outputPath);
+        if (!extractedCharacters) {
+          continue;
+        }
+        fsSync.appendFileSync(outputPath, "\n", "utf8");
+        totalCharacters += heading.length + extractedCharacters + 1;
+      }
+    }
+    parserTrace.push({
+      stage,
+      status: totalCharacters ? "completed" : "empty",
+      mode: "structured-zip-file-ref",
+      files: structuredFileCount,
+      characters: totalCharacters
+    });
+    const stream = totalCharacters > 0
+      ? streamTextFileAnalysis({
+          document,
+          route: plainTextRoute(),
+          metadata: { ...metadata, extension: ".txt", mediaType: "text/plain", fileName: "structured-text.txt" },
+          filePath: outputPath,
+          options
+        })
+      : {
+          textSample: "",
+          totalCharacters: 0,
+          contentHash: "",
+          windowPlan: null,
+          parserTrace: [],
+          warnings: []
+        };
+    return {
+      text: stream.textSample || "",
+      totalCharacters: stream.totalCharacters || 0,
+      contentHash: stream.contentHash || "",
+      windowPlan: stream.windowPlan || null,
+      parserTrace: [...parserTrace, ...stream.parserTrace],
+      warnings: [...warnings, ...(stream.warnings || [])]
+    };
+  } catch (error) {
+    parserTrace.push({
+      stage,
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return {
+      text: "",
+      totalCharacters: 0,
+      contentHash: "",
+      windowPlan: null,
+      parserTrace,
+      warnings: [...warnings, "structured-zip-file-ref-failed"]
+    };
+  } finally {
+    extracted.cleanup?.();
+    fsSync.rmSync(outputDir, { recursive: true, force: true });
+  }
+}
+
+function buildWindowPlan(document = {}, options = {}) {
+  if (document.streamingWindowPlan) {
+    return document.streamingWindowPlan;
+  }
+  const text = String(document.text || "");
+  const { maxCharacters, overlapCharacters } = normalizedWindowOptions(options);
+  if (!text) {
+    return {
+      strategy: "structure-aware-windowing.v1",
+      maxCharacters,
+      overlapCharacters,
+      windowCount: 0,
+      truncated: false,
+      windows: []
+    };
+  }
+  const windows = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = start + selectWindowEnd(text.slice(start), maxCharacters);
+    const chunk = text.slice(start, end).trim();
+    windows.push(buildWindowRecord(document, windows.length, start, end, chunk));
+    if (end >= text.length) {
+      break;
+    }
+    start = Math.max(end - overlapCharacters, start + 1);
+  }
+  return {
+    strategy: "structure-aware-windowing.v1",
+    maxCharacters,
+    overlapCharacters,
+    windowCount: windows.length,
+    truncated: false,
+    windows
+  };
+}
+
+function buildCorpusPlan(documents = [], input = {}) {
+  const plannedDocuments = documents.map((document) => {
+    const route = buildDocumentRoute(document);
+    const windowPlan = buildWindowPlan(document, input);
+    const textCharacters = Number(document.totalTextCharacters || document.text.length || 0);
+    const distillable = Boolean(document.text || textCharacters > 0 || windowPlan.windowCount > 0);
+    return {
+      sourceId: document.sourceId,
+      parentSourceId: document.parentSourceId || "",
+      archivePath: document.archivePath || "",
+      archiveDepth: Number(document.archiveDepth || 0),
+      title: document.title,
+      fileName: document.fileName,
+      extension: document.extension,
+      mediaType: document.mediaType,
+      byteSize: document.byteSize,
+      contentHash: document.contentHash,
+      capturedAt: document.capturedAt,
+      eventTime: document.eventTime || "",
+      documentTime: document.documentTime || "",
+      timeRange: document.timeRange || null,
+      timeConfidence: Number(document.timeConfidence || 0),
+      timeSignals: document.timeSignals || [],
+      route,
+      windowPlan,
+      parserTrace: document.parserTrace || [],
+      parseWarnings: document.parseWarnings || [],
+      parseStatus: document.parseStatus || (distillable ? "completed" : "empty"),
+      quality: {
+        suppliedPayloadKind: document.suppliedPayloadKind || "metadata-only",
+        hasDistillableText: distillable,
+        textCharacters,
+        sampledTextCharacters: document.text.length,
+        distillable,
+        evidenceStrength: distillable
+          ? document.suppliedPayloadKind === "text"
+            ? "supplied-text"
+            : "parsed-payload"
+          : "metadata-only"
+      }
+    };
+  });
+  return {
+    strategy: "route-then-window-corpus.v1",
+    allSizePolicy: "streaming-windowed",
+    sourceCount: documents.length,
+    distillableSourceCount: plannedDocuments.filter((document) => document.quality.distillable).length,
+    totalBytes: plannedDocuments.reduce((sum, document) => sum + (document.byteSize || 0), 0),
+    totalCharacters: documents.reduce((sum, document) => sum + Number(document.totalTextCharacters || document.text.length || 0), 0),
+    windowCount: plannedDocuments.reduce((sum, document) => sum + document.windowPlan.windowCount, 0),
+    documents: plannedDocuments
+  };
+}
+
+function buildRoutePlan(corpusPlan) {
+  return {
+    strategy: "extension-media-shape-routing.v1",
+    routeOrder: ["extension", "mediaType", "sourceKind", "textFallback"],
+    supportedExtensions: Array.from(ROUTES_BY_EXTENSION.keys()).sort(),
+    documents: corpusPlan.documents.map((document) => document.route)
+  };
+}
+
+function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null, options = {}) {
+  const metadata = document?.metadata && typeof document.metadata === "object"
+    ? document.metadata
+    : {};
+  const title =
+    String(document?.title || document?.name || metadata.title || options.title || `Source ${index + 1}`).trim() ||
+    `Source ${index + 1}`;
+  const suppliedText = String(
+    document?.text ||
+      document?.content ||
+      document?.markdown ||
+      document?.body ||
+      metadata.text ||
+      ""
+  ).trim();
+  const sourceId = String(
+    options.sourceId ||
+      document?.sourceId ||
+      document?.documentId ||
+      document?.id ||
+      `source-${index + 1}`
+  );
+  const documentMetadata = options.metadataOverride
+    ? { ...options.metadataOverride }
+    : normalizeDocumentMetadata(document, metadata, title, suppliedText);
+  const route = lookupFormatRoute(documentMetadata);
+  let payload;
+  if (options.bufferOverride) {
+    payload = {
+      buffer: options.bufferOverride,
+      suppliedPayloadKind: options.suppliedPayloadKind || "buffer-override",
+      parserTrace: [],
+      warnings: [],
+      byteSize: options.bufferOverride.length
+    };
+  } else if (options.filePathOverride) {
+    const stat = fsSync.statSync(options.filePathOverride);
+    const streamText = isStreamableTextRoute(route, documentMetadata);
+    const archiveFilePath = isArchiveRoute(route) ? options.filePathOverride : "";
+    const pdfFilePath = isPdfRoute(route) ? options.filePathOverride : "";
+    const structuredZipFilePath = isStructuredZipFileRoute(route, documentMetadata) ? options.filePathOverride : "";
+    const mboxFilePath = isMboxRoute(route, documentMetadata) ? options.filePathOverride : "";
+    const tikaFilePath = isTikaFileRoute(route, documentMetadata) ? options.filePathOverride : "";
+    const hasFileParserPath = streamText || archiveFilePath || pdfFilePath || structuredZipFilePath || mboxFilePath || tikaFilePath;
+    payload = {
+      buffer: hasFileParserPath || stat.size > FILE_REF_DIRECT_READ_MAX_BYTES
+        ? null
+        : fsSync.readFileSync(options.filePathOverride),
+      suppliedPayloadKind: options.suppliedPayloadKind || (streamText ? "archive-entry-file-ref-stream" : "archive-entry-file-ref"),
+      filePath: options.filePathOverride,
+      archiveFilePath,
+      pdfFilePath,
+      structuredZipFilePath,
+      mboxFilePath,
+      tikaFilePath,
+      streamText,
+      byteSize: stat.size,
+      parserTrace: [{
+        stage: "payload.file-ref",
+        status: "completed",
+        path: options.filePathOverride,
+        bytes: stat.size,
+        mode: streamText ? "streaming-windowed" : archiveFilePath ? "archive-file-ref" : pdfFilePath ? "pdf-file-ref" : structuredZipFilePath ? "structured-zip-file-ref" : mboxFilePath ? "mbox-file-ref" : tikaFilePath ? "tika-file-ref" : "archive-entry-file-ref"
+      }],
+      warnings: stat.size > FILE_REF_DIRECT_READ_MAX_BYTES && !hasFileParserPath
+        ? ["file-ref-streaming-parser-required"]
+        : []
+    };
+    if (stat.size > FILE_REF_DIRECT_READ_MAX_BYTES && !hasFileParserPath) {
+      payload.parserTrace.push({
+        stage: "payload.file-ref-deferred",
+        status: "requires-streaming-parser",
+        maxDirectReadBytes: FILE_REF_DIRECT_READ_MAX_BYTES,
+        routeId: route?.id || "unknown"
+      });
+    }
+  } else {
+    payload = loadDocumentPayload(document, { ...metadata, ...documentMetadata }, route);
+  }
+  const buffer = payload.buffer;
+  if (payload.byteSize && !(document?.byteSize ?? document?.size ?? metadata.byteSize ?? metadata.size ?? documentMetadata.byteSize)) {
+    documentMetadata.byteSize = payload.byteSize;
+  }
+  if (buffer?.length && !(document?.byteSize ?? document?.size ?? metadata.byteSize ?? metadata.size ?? documentMetadata.byteSize)) {
+    documentMetadata.byteSize = buffer.length;
+  }
+  const streamAnalysis = payload.streamText
+    ? streamTextFileAnalysis({
+        document: { sourceId, title, byteSize: documentMetadata.byteSize },
+        route,
+        metadata: documentMetadata,
+        filePath: payload.filePath,
+        options: options.windowOptions || {}
+      })
+    : null;
+  const pdfFileAnalysis = payload.pdfFilePath
+    ? parsePdfFileRef({
+        document: { sourceId, title, byteSize: documentMetadata.byteSize },
+        metadata: documentMetadata,
+        filePath: payload.pdfFilePath,
+        runtimeStatus,
+        options: options.windowOptions || {}
+      })
+    : null;
+  const structuredZipAnalysis = payload.structuredZipFilePath
+    ? parseStructuredZipFileRef({
+        document: { sourceId, title, byteSize: documentMetadata.byteSize },
+        metadata: documentMetadata,
+        route,
+        filePath: payload.structuredZipFilePath,
+        runtimeStatus,
+        options: options.windowOptions || {}
+      })
+    : null;
+  const mboxFileAnalysis = payload.mboxFilePath
+    ? parseMboxFileRef({
+        filePath: payload.mboxFilePath
+      })
+    : null;
+  const tikaFileAnalysis = payload.tikaFilePath
+    ? parseTikaFileRef({
+        document: { sourceId, title, byteSize: documentMetadata.byteSize },
+        metadata: documentMetadata,
+        filePath: payload.tikaFilePath,
+        runtimeStatus,
+        options: options.windowOptions || {}
+      })
+    : null;
+  const parsed = streamAnalysis
+    ? {
+        text: streamAnalysis.textSample,
+        parserTrace: streamAnalysis.parserTrace,
+        warnings: streamAnalysis.warnings
+      }
+    : pdfFileAnalysis
+      ? {
+          text: pdfFileAnalysis.text,
+          parserTrace: pdfFileAnalysis.parserTrace,
+          warnings: pdfFileAnalysis.warnings
+        }
+    : structuredZipAnalysis
+      ? {
+          text: structuredZipAnalysis.text,
+          parserTrace: structuredZipAnalysis.parserTrace,
+          warnings: structuredZipAnalysis.warnings
+        }
+    : mboxFileAnalysis
+      ? {
+          text: mboxFileAnalysis.text,
+          parserTrace: mboxFileAnalysis.parserTrace,
+          warnings: mboxFileAnalysis.warnings
+        }
+    : tikaFileAnalysis
+      ? {
+          text: tikaFileAnalysis.text,
+          parserTrace: tikaFileAnalysis.parserTrace,
+          warnings: tikaFileAnalysis.warnings
+        }
+    : payload.archiveFilePath && isArchiveRoute(route)
+      ? {
+          text: "",
+          parserTrace: [{
+            stage: "archive.file-ref",
+            status: "ready",
+            path: payload.archiveFilePath,
+            bytes: documentMetadata.byteSize
+          }],
+          warnings: []
+        }
+    : parseSuppliedContent({ route, metadata: documentMetadata, text: suppliedText, buffer, runtimeStatus });
+  const parserTrace = [...(payload.parserTrace || []), ...parsed.parserTrace];
+  const parseWarnings = [...(payload.warnings || []), ...parsed.warnings];
+  const text = parsed.text.trim();
+  const totalTextCharacters = streamAnalysis?.totalCharacters || pdfFileAnalysis?.totalCharacters || structuredZipAnalysis?.totalCharacters || mboxFileAnalysis?.totalCharacters || tikaFileAnalysis?.totalCharacters || text.length;
+  const inferredTime = inferTimeMetadataFromText(text);
+  if (inferredTime.timeRange) {
+    parserTrace.push({
+      stage: "table.time-index",
+      status: "completed",
+      fields: Array.from(new Set(inferredTime.timeSignals.map((signal) => signal.field))).slice(0, 8),
+      from: inferredTime.timeRange.from,
+      to: inferredTime.timeRange.to,
+      confidence: inferredTime.timeConfidence
+    });
+  }
+  return {
+    buffer,
+    route,
+    document: {
+      sourceId,
+      parentSourceId: String(options.parentSourceId || document?.parentSourceId || metadata.parentSourceId || ""),
+      archivePath: String(options.archivePath || document?.archivePath || metadata.archivePath || ""),
+      archiveDepth: Number(options.archiveDepth || document?.archiveDepth || metadata.archiveDepth || 0),
+      title,
+      fileName: documentMetadata.fileName,
+      relativePath: documentMetadata.relativePath,
+      extension: documentMetadata.extension,
+      mediaType: documentMetadata.mediaType,
+      byteSize: documentMetadata.byteSize,
+      sourceKind: documentMetadata.sourceKind,
+      language: documentMetadata.language,
+      eventTime: documentMetadata.eventTime || inferredTime.timeRange?.from || "",
+      documentTime: documentMetadata.documentTime,
+      timeRange: inferredTime.timeRange,
+      timeConfidence: documentMetadata.eventTime ? 1 : inferredTime.timeConfidence,
+      timeSignals: inferredTime.timeSignals,
+      text,
+      totalTextCharacters,
+      streamingWindowPlan: streamAnalysis?.windowPlan || pdfFileAnalysis?.windowPlan || structuredZipAnalysis?.windowPlan || tikaFileAnalysis?.windowPlan || null,
+      archiveFilePath: payload.archiveFilePath || "",
+      pdfFilePath: payload.pdfFilePath || "",
+      mboxFilePath: payload.mboxFilePath || "",
+      parserTrace,
+      parseWarnings,
+      parseStatus: totalTextCharacters > 0 ? "completed" : "empty",
+      suppliedPayloadKind: suppliedText ? "text" : options.suppliedPayloadKind || payload.suppliedPayloadKind || (buffer?.length ? "base64" : "metadata-only"),
+      capturedAt: String(document?.capturedAt || metadata.capturedAt || options.capturedAt || ""),
+      contentHash: document?.contentHash || streamAnalysis?.contentHash || pdfFileAnalysis?.contentHash || structuredZipAnalysis?.contentHash || mboxFileAnalysis?.contentHash || tikaFileAnalysis?.contentHash || `sha256:${sha(`${title}\n${text}`)}`
+    }
+  };
+}
+
+function expandArchiveDocuments({ parentDocument, buffer, runtimeStatus, depth = 0, remainingEntries = ARCHIVE_EXPANSION_MAX_ENTRIES } = {}) {
+  if (!buffer?.length || depth >= ARCHIVE_EXPANSION_MAX_DEPTH || remainingEntries <= 0) {
+    return [];
+  }
+  const extracted = extractArchiveEntries(buffer, parentDocument, runtimeStatus);
+  const entries = extracted.entries
+    .filter((entry) => entry.name && !entry.name.endsWith("/") && entry.data?.length)
+    .slice(0, remainingEntries);
+  const expanded = [];
+  for (const [entryIndex, entry] of entries.entries()) {
+    if (expanded.length >= remainingEntries) {
+      break;
+    }
+    if ((entry.uncompressedSize || entry.data.length || 0) > ARCHIVE_ENTRY_MAX_BYTES) {
+      continue;
+    }
+    const entryMetadata = metadataForArchiveEntry(entry, parentDocument);
+    const sourceId = `${parentDocument.sourceId}!${entry.name}`;
+    const normalized = normalizeDocumentRecord({
+      sourceId,
+      title: entry.name,
+      fileName: entryMetadata.fileName,
+      relativePath: entryMetadata.relativePath,
+      mediaType: entryMetadata.mediaType,
+      byteSize: entryMetadata.byteSize,
+      sourceKind: "archive-entry"
+    }, entryIndex, runtimeStatus, {
+      sourceId,
+      parentSourceId: parentDocument.sourceId,
+      archivePath: entry.name,
+      archiveDepth: depth + 1,
+      metadataOverride: entryMetadata,
+      bufferOverride: entry.data,
+      suppliedPayloadKind: "archive-entry",
+      capturedAt: parentDocument.capturedAt
+    });
+    normalized.document.parserTrace.unshift({
+      stage: "archive.entry",
+      status: "expanded",
+      parentSourceId: parentDocument.sourceId,
+      entryName: entry.name,
+      depth: depth + 1,
+      bytes: entry.data.length
+    });
+    expanded.push(normalized.document);
+    if (normalized.route?.id === "archive") {
+      const nested = expandArchiveDocuments({
+        parentDocument: normalized.document,
+        buffer: normalized.buffer,
+        runtimeStatus,
+        depth: depth + 1,
+        remainingEntries: remainingEntries - expanded.length
+      });
+      expanded.push(...nested.slice(0, remainingEntries - expanded.length));
+    }
+  }
+  return expanded;
+}
+
+function expandArchiveFileDocuments({
+  parentDocument,
+  filePath,
+  runtimeStatus,
+  depth = 0,
+  remainingEntries = ARCHIVE_EXPANSION_MAX_ENTRIES,
+  windowOptions = {}
+} = {}) {
+  if (!filePath || depth >= ARCHIVE_EXPANSION_MAX_DEPTH || remainingEntries <= 0) {
+    return { documents: [], parserTrace: [], warnings: [] };
+  }
+  const extracted = extractArchiveFileEntries(filePath, parentDocument, runtimeStatus, remainingEntries);
+  const entries = extracted.entries
+    .filter((entry) => entry.name && !entry.name.endsWith("/") && entry.filePath)
+    .slice(0, remainingEntries);
+  const expanded = [];
+  try {
+    for (const [entryIndex, entry] of entries.entries()) {
+      if (expanded.length >= remainingEntries) {
+        break;
+      }
+      const entryMetadata = metadataForArchiveEntry(entry, parentDocument);
+      const sourceId = `${parentDocument.sourceId}!${entry.name}`;
+      const normalized = normalizeDocumentRecord({
+        sourceId,
+        title: entry.name,
+        fileName: entryMetadata.fileName,
+        relativePath: entryMetadata.relativePath,
+        mediaType: entryMetadata.mediaType,
+        byteSize: entryMetadata.byteSize,
+        sourceKind: "archive-entry"
+      }, entryIndex, runtimeStatus, {
+        sourceId,
+        parentSourceId: parentDocument.sourceId,
+        archivePath: entry.name,
+        archiveDepth: depth + 1,
+        metadataOverride: entryMetadata,
+        filePathOverride: entry.filePath,
+        suppliedPayloadKind: "archive-entry-file-ref",
+        capturedAt: parentDocument.capturedAt,
+        windowOptions
+      });
+      normalized.document.parserTrace.unshift({
+        stage: "archive.entry-file-ref",
+        status: "expanded",
+        parentSourceId: parentDocument.sourceId,
+        entryName: entry.name,
+        depth: depth + 1,
+        bytes: entry.uncompressedSize || entry.compressedSize || 0
+      });
+      expanded.push(normalized.document);
+      if (normalized.route?.id === "archive" && normalized.document.archiveFilePath) {
+        const nested = expandArchiveFileDocuments({
+          parentDocument: normalized.document,
+          filePath: normalized.document.archiveFilePath,
+          runtimeStatus,
+          depth: depth + 1,
+          remainingEntries: remainingEntries - expanded.length,
+          windowOptions
+        });
+        normalized.document.parserTrace.push(...nested.parserTrace);
+        normalized.document.parseWarnings.push(...nested.warnings);
+        normalized.document.parserTrace.push({
+          stage: "archive.file-ref.expand",
+          status: nested.documents.length ? "completed" : "empty",
+          childDocumentCount: nested.documents.length
+        });
+        normalized.document.parserTrace.push({
+          stage: "archive.expand-route",
+          status: nested.documents.length ? "completed" : "empty",
+          childDocumentCount: nested.documents.length,
+          maxDepth: ARCHIVE_EXPANSION_MAX_DEPTH,
+          maxEntries: ARCHIVE_EXPANSION_MAX_ENTRIES
+        });
+        expanded.push(...nested.documents.slice(0, remainingEntries - expanded.length));
+      }
+    }
+    return { documents: expanded, parserTrace: extracted.parserTrace, warnings: extracted.warnings };
+  } finally {
+    extracted.cleanup?.();
+  }
+}
+
+function expandEmailAttachmentDocuments({ parentDocument, buffer, runtimeStatus, remainingAttachments = EMAIL_ATTACHMENT_MAX_COUNT } = {}) {
+  if (!buffer?.length || remainingAttachments <= 0) {
+    return [];
+  }
+  const parsed = parseMimeMessage(utf8(buffer));
+  const attachments = parsed.attachments
+    .filter((attachment) => attachment.data?.length)
+    .slice(0, remainingAttachments);
+  const expanded = [];
+  for (const [attachmentIndex, attachment] of attachments.entries()) {
+    if (expanded.length >= remainingAttachments || attachment.data.length > EMAIL_ATTACHMENT_MAX_BYTES) {
+      continue;
+    }
+    const attachmentMetadata = metadataForEmailAttachment(attachment, parentDocument);
+    const sourceId = `${parentDocument.sourceId}!attachment:${attachmentMetadata.fileName}`;
+    const normalized = normalizeDocumentRecord({
+      sourceId,
+      title: attachmentMetadata.fileName,
+      fileName: attachmentMetadata.fileName,
+      relativePath: attachmentMetadata.relativePath,
+      mediaType: attachmentMetadata.mediaType,
+      byteSize: attachmentMetadata.byteSize,
+      sourceKind: "email-attachment"
+    }, attachmentIndex, runtimeStatus, {
+      sourceId,
+      parentSourceId: parentDocument.sourceId,
+      archivePath: attachmentMetadata.fileName,
+      archiveDepth: 1,
+      metadataOverride: attachmentMetadata,
+      bufferOverride: attachment.data,
+      suppliedPayloadKind: "email-attachment",
+      capturedAt: parentDocument.capturedAt
+    });
+    normalized.document.parserTrace.unshift({
+      stage: "email.attachment",
+      status: "expanded",
+      parentSourceId: parentDocument.sourceId,
+      attachmentName: attachmentMetadata.fileName,
+      bytes: attachment.data.length
+    });
+    expanded.push(normalized.document);
+    if (normalized.route?.id === "archive") {
+      const nested = expandArchiveDocuments({
+        parentDocument: normalized.document,
+        buffer: normalized.buffer,
+        runtimeStatus,
+        depth: 0,
+        remainingEntries: ARCHIVE_EXPANSION_MAX_ENTRIES
+      });
+      expanded.push(...nested);
+    }
+  }
+  return expanded;
+}
+
+function expandMboxMessageDocuments({ parentDocument, buffer = null, runtimeStatus, remainingMessages = EMAIL_MBOX_MAX_MESSAGES } = {}) {
+  if (remainingMessages <= 0) {
+    return [];
+  }
+  const sourceMessages = parentDocument.mboxFilePath
+    ? readMboxMessagesFromFile(parentDocument.mboxFilePath, remainingMessages).messages
+    : splitMboxMessages(utf8(buffer), remainingMessages);
+  const expanded = [];
+  for (const message of sourceMessages.slice(0, remainingMessages)) {
+    const summary = mboxMessageSummary(message);
+    const messageBuffer = Buffer.from(message.text || "", "utf8");
+    const sourceId = `${parentDocument.sourceId}!message:${message.index}`;
+    const normalized = normalizeDocumentRecord({
+      sourceId,
+      title: summary.subject || `MBOX Message ${message.index}`,
+      fileName: `message-${message.index}.eml`,
+      mediaType: "message/rfc822",
+      byteSize: messageBuffer.length,
+      sourceKind: "mbox-message",
+      metadata: {
+        documentTime: summary.date || "",
+        from: summary.from || "",
+        to: summary.to || ""
+      }
+    }, message.index - 1, runtimeStatus, {
+      sourceId,
+      parentSourceId: parentDocument.sourceId,
+      archivePath: `message-${message.index}.eml`,
+      archiveDepth: 1,
+      bufferOverride: messageBuffer,
+      suppliedPayloadKind: "mbox-message",
+      capturedAt: parentDocument.capturedAt
+    });
+    normalized.document.parserTrace.unshift({
+      stage: "email.mbox-message",
+      status: "expanded",
+      parentSourceId: parentDocument.sourceId,
+      messageIndex: message.index,
+      envelope: message.envelope || "",
+      truncated: Boolean(message.truncated),
+      bytes: messageBuffer.length
+    });
+    expanded.push(normalized.document);
+    const attachments = expandEmailAttachmentDocuments({
+      parentDocument: normalized.document,
+      buffer: normalized.buffer,
+      runtimeStatus,
+      remainingAttachments: EMAIL_ATTACHMENT_MAX_COUNT
+    });
+    if (attachments.length) {
+      normalized.document.parserTrace.push({
+        stage: "email.attachment-route",
+        status: "completed",
+        childDocumentCount: attachments.length,
+        maxAttachments: EMAIL_ATTACHMENT_MAX_COUNT
+      });
+      expanded.push(...attachments);
+    }
+  }
+  return expanded;
+}
+
+function normalizeDocuments(input = {}, runtimeStatus = null) {
+  const documents = Array.isArray(input.rawDocuments)
+    ? input.rawDocuments
+    : Array.isArray(input.documents)
+      ? input.documents
+      : [];
+  const normalizedDocuments = [];
+  const windowOptions = {
+    maxWindowCharacters: input.maxWindowCharacters,
+    windowOverlapCharacters: input.windowOverlapCharacters
+  };
+  for (const [index, document] of documents.entries()) {
+    const normalized = normalizeDocumentRecord(document, index, runtimeStatus, { windowOptions });
+    normalizedDocuments.push(normalized.document);
+    if (normalized.route?.id === "archive" && normalized.document.archiveFilePath) {
+      const archive = expandArchiveFileDocuments({
+        parentDocument: normalized.document,
+        filePath: normalized.document.archiveFilePath,
+        runtimeStatus,
+        depth: 0,
+        remainingEntries: ARCHIVE_EXPANSION_MAX_ENTRIES,
+        windowOptions
+      });
+      normalized.document.parserTrace.push(...archive.parserTrace);
+      normalized.document.parseWarnings.push(...archive.warnings);
+      normalized.document.parserTrace.push({
+        stage: "archive.file-ref.expand",
+        status: archive.documents.length ? "completed" : "empty",
+        childDocumentCount: archive.documents.length
+      });
+      normalized.document.parserTrace.push({
+        stage: "archive.expand-route",
+        status: archive.documents.length ? "completed" : "empty",
+        childDocumentCount: archive.documents.length,
+        maxDepth: ARCHIVE_EXPANSION_MAX_DEPTH,
+        maxEntries: ARCHIVE_EXPANSION_MAX_ENTRIES
+      });
+      normalizedDocuments.push(...archive.documents);
+    } else if (normalized.route?.id === "archive" && normalized.buffer?.length) {
+      const children = expandArchiveDocuments({
+        parentDocument: normalized.document,
+        buffer: normalized.buffer,
+        runtimeStatus,
+        depth: 0,
+        remainingEntries: ARCHIVE_EXPANSION_MAX_ENTRIES
+      });
+      normalized.document.parserTrace.push({
+        stage: "archive.expand-route",
+        status: children.length ? "completed" : "empty",
+        childDocumentCount: children.length,
+        maxDepth: ARCHIVE_EXPANSION_MAX_DEPTH,
+        maxEntries: ARCHIVE_EXPANSION_MAX_ENTRIES
+      });
+      normalizedDocuments.push(...children);
+    }
+    if (normalized.route?.id === "email" && isMboxRoute(normalized.route, normalized.document) && (normalized.buffer?.length || normalized.document.mboxFilePath)) {
+      const children = expandMboxMessageDocuments({
+        parentDocument: normalized.document,
+        buffer: normalized.buffer,
+        runtimeStatus,
+        remainingMessages: EMAIL_MBOX_MAX_MESSAGES
+      });
+      normalized.document.parserTrace.push({
+        stage: "email.mbox-route",
+        status: children.length ? "completed" : "empty",
+        childDocumentCount: children.filter((child) => child.parentSourceId === normalized.document.sourceId).length,
+        maxMessages: EMAIL_MBOX_MAX_MESSAGES
+      });
+      normalizedDocuments.push(...children);
+    } else if (normalized.route?.id === "email" && normalized.buffer?.length) {
+      const children = expandEmailAttachmentDocuments({
+        parentDocument: normalized.document,
+        buffer: normalized.buffer,
+        runtimeStatus,
+        remainingAttachments: EMAIL_ATTACHMENT_MAX_COUNT
+      });
+      normalized.document.parserTrace.push({
+        stage: "email.attachment-route",
+        status: children.length ? "completed" : "empty",
+        childDocumentCount: children.length,
+        maxAttachments: EMAIL_ATTACHMENT_MAX_COUNT
+      });
+      normalizedDocuments.push(...children);
+    }
+  }
+  return normalizedDocuments;
+}
+
+function textTokens(value = "") {
+  const normalized = String(value || "").toLowerCase();
+  const tokens = new Set();
+  for (const match of normalized.matchAll(/[a-z0-9][a-z0-9_-]{1,}/g)) {
+    const token = match[0].replace(/^_+|_+$/g, "");
+    if (token.length > 1 && !STOP_WORDS.has(token)) {
+      tokens.add(token);
+    }
+  }
+  for (const match of normalized.matchAll(/[\u4e00-\u9fff]{2,}/g)) {
+    const text = match[0];
+    if (text.length <= 4) {
+      tokens.add(text);
+      continue;
+    }
+    for (let index = 0; index < text.length - 1; index += 1) {
+      const token = text.slice(index, index + 2);
+      if (!STOP_WORDS.has(token)) {
+        tokens.add(token);
+      }
+    }
+  }
+  return tokens;
+}
+
+function expandedSemanticTokens(tokens = new Set()) {
+  const expanded = new Set(tokens);
+  for (const token of tokens) {
+    for (const [concept, aliases] of Object.entries(SEMANTIC_ALIAS_GROUPS)) {
+      if (aliases.includes(token)) {
+        expanded.add(`concept:${concept}`);
+      }
+    }
+  }
+  return expanded;
+}
+
+function tokenHashParts(token = "") {
+  const digest = crypto.createHash("sha256").update(String(token)).digest();
+  return {
+    index: digest.readUInt32LE(0) % EMBEDDING_DIMENSIONS,
+    sign: digest[4] % 2 === 0 ? 1 : -1
+  };
+}
+
+function normalizeVector(vector = []) {
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (!magnitude) {
+    return Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0);
+  }
+  return vector.map((value) => value / magnitude);
+}
+
+function vectorForTokens(tokens = new Set()) {
+  const vector = Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0);
+  for (const token of tokens) {
+    if (Object.hasOwn(SEMANTIC_CONCEPT_INDEX, token)) {
+      vector[SEMANTIC_CONCEPT_INDEX[token]] += 3;
+      continue;
+    }
+    const { index, sign } = tokenHashParts(token);
+    const weight = String(token).startsWith("concept:") ? 1.75 : 1;
+    vector[index] += sign * weight;
+  }
+  return normalizeVector(vector);
+}
+
+function vectorForText(value = "") {
+  return vectorForTokens(expandedSemanticTokens(textTokens(value)));
+}
+
+function cosineSimilarity(left = [], right = []) {
+  if (!left.length || !right.length) {
+    return 0;
+  }
+  let dot = 0;
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    dot += left[index] * right[index];
+  }
+  return dot;
+}
+
+function mergeCentroid(current = [], next = [], count = 1) {
+  if (!current.length) {
+    return next;
+  }
+  const merged = current.map((value, index) => ((value * count) + next[index]) / (count + 1));
+  return normalizeVector(merged);
+}
+
+function signalStrength({ text = "", tokens = new Set() } = {}) {
+  if (!String(text || "").trim()) {
+    return 0;
+  }
+  const tokenScore = Math.min(1, tokens.size / 12);
+  const lengthScore = Math.min(1, String(text).trim().length / 180);
+  return Number(((tokenScore * 0.65) + (lengthScore * 0.35)).toFixed(4));
+}
+
+function topTokens(tokens = new Set(), limit = 4) {
+  return Array.from(tokens)
+    .filter((token) => !String(token).startsWith("concept:"))
+    .filter((token) => token.length > 1)
+    .sort((left, right) => right.length - left.length || left.localeCompare(right))
+    .slice(0, limit);
+}
+
+function centroidHash(vector = []) {
+  if (!vector.length) {
+    return "";
+  }
+  return `sha256:${sha(vector.map((value) => value.toFixed(6)).join(","))}`;
+}
+
+function uniqueOrdered(values = []) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer = Buffer.alloc(0)) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    time: ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | ((Math.floor(date.getSeconds() / 2) & 0x1f)),
+    date: (((year - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0x0f) << 5) | (date.getDate() & 0x1f)
+  };
+}
+
+function safeZipEntryName(name = "") {
+  const normalized = String(name || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/");
+  return normalized || "entry.bin";
+}
+
+function zipBufferFromEntries(entries = []) {
+  const localParts = [];
+  const centralParts = [];
+  const timestamp = dosDateTime();
+  let offset = 0;
+  for (const entry of entries) {
+    const fileName = safeZipEntryName(entry.name);
+    const nameBytes = Buffer.from(fileName, "utf8");
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(String(entry.data || ""), "utf8");
+    const checksum = crc32(data);
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0x0800, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(timestamp.time, 10);
+    localHeader.writeUInt16LE(timestamp.date, 12);
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(data.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(nameBytes.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    localParts.push(localHeader, nameBytes, data);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0x0800, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(timestamp.time, 12);
+    centralHeader.writeUInt16LE(timestamp.date, 14);
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(nameBytes.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    centralParts.push(centralHeader, nameBytes);
+    offset += localHeader.length + nameBytes.length + data.length;
+  }
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+  return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
+function xmlEscape(value = "") {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function wordParagraph(text = "", style = "") {
+  const styleXml = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : "";
+  const lines = String(text || "").split(/\n/);
+  const runs = lines.map((line, index) => (
+    `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`
+  )).join("");
+  return `<w:p>${styleXml}<w:r>${runs}</w:r></w:p>`;
+}
+
+function markdownToDocxParagraphs(markdown = "") {
+  const paragraphs = [];
+  for (const rawLine of String(markdown || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      paragraphs.push(wordParagraph(heading[2], heading[1].length === 1 ? "Heading1" : "Heading2"));
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      paragraphs.push(wordParagraph(line.replace(/^[-*]\s+/, "- ")));
+      continue;
+    }
+    paragraphs.push(wordParagraph(line));
+  }
+  return paragraphs.join("");
+}
+
+function buildPortableDocx(run = {}) {
+  const markdown = run.result?.portableDocuments?.[0]?.document?.markdown || "";
+  const body = markdownToDocxParagraphs(markdown) || wordParagraph(run.title || "External Knowledge Distillation");
+  const documentXml = [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+    "<w:body>",
+    body,
+    '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>',
+    "</w:body>",
+    "</w:document>"
+  ].join("");
+  const coreXml = [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+    `<dc:title>${xmlEscape(run.title || run.runId)}</dc:title>`,
+    "<dc:creator>Pact External Knowledge Distillation</dc:creator>",
+    `<dcterms:created xsi:type="dcterms:W3CDTF">${xmlEscape(run.createdAt || nowIso())}</dcterms:created>`,
+    `<dcterms:modified xsi:type="dcterms:W3CDTF">${xmlEscape(run.updatedAt || run.createdAt || nowIso())}</dcterms:modified>`,
+    "</cp:coreProperties>"
+  ].join("");
+  return zipBufferFromEntries([
+    {
+      name: "[Content_Types].xml",
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'
+    },
+    {
+      name: "_rels/.rels",
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'
+    },
+    {
+      name: "docProps/core.xml",
+      data: coreXml
+    },
+    {
+      name: "docProps/app.xml",
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Pact</Application></Properties>'
+    },
+    {
+      name: "word/document.xml",
+      data: documentXml
+    },
+    {
+      name: "word/_rels/document.xml.rels",
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'
+    },
+    {
+      name: "word/styles.xml",
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/></w:rPr></w:style></w:styles>'
+    }
+  ]);
+}
+
+function jsonArtifactBuffer(value = {}) {
+  return Buffer.from(JSON.stringify(value, null, 2), "utf8");
+}
+
+function buildWorkspacePackageZip(run = {}) {
+  const markdown = Buffer.from(run.result?.portableDocuments?.[0]?.document?.markdown || "", "utf8");
+  const docx = buildPortableDocx(run);
+  const artifactEntries = [
+    { artifactId: "portable-markdown", path: "distillation.md", contentType: "text/markdown; charset=utf-8", data: markdown },
+    { artifactId: "portable-docx", path: "distillation.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: docx },
+    { artifactId: "agent-message-json", path: "agent-message.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.agentMessage || {}) },
+    { artifactId: "result-json", path: "result.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run) },
+    { artifactId: "project-snapshot-json", path: "project-snapshot.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.incrementalPlan || {}) },
+    { artifactId: "evidence-pack-json", path: "evidence-pack.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.graphEvidence || {}) },
+    { artifactId: "reference-gap-report-json", path: "reference-gap-report.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.referenceGapReport || {}) }
+  ];
+  const manifest = {
+    protocolVersion: `${PROTOCOL_VERSION}.workspace-package`,
+    runId: run.runId,
+    title: run.title,
+    generatedAt: nowIso(),
+    responseProfiles: ["human-readable", "agent", "api"],
+    artifacts: artifactEntries.map((entry) => ({
+      artifactId: entry.artifactId,
+      path: entry.path,
+      contentType: entry.contentType,
+      byteSize: entry.data.length,
+      sha256: shaBuffer(entry.data)
+    }))
+  };
+  return zipBufferFromEntries([
+    { name: "manifest.json", data: jsonArtifactBuffer(manifest) },
+    ...artifactEntries.map((entry) => ({ name: entry.path, data: entry.data }))
+  ]);
+}
+
+function windowRecordsForDocument(document = {}) {
+  const windows = document.windowPlan?.windows?.length
+    ? document.windowPlan.windows
+    : [
+        {
+          windowId: stableId("window", document.sourceId, "synthetic", document.contentHash || document.text || ""),
+          index: 0,
+          startOffset: 0,
+          endOffset: Math.min(String(document.text || "").length, DEFAULT_WINDOW_CHARACTERS),
+          excerpt: firstSentence(document.text) || String(document.text || "").slice(0, 220),
+          contentHash: document.contentHash || sha(document.text || "")
+        }
+      ];
+  return windows
+    .map((window, index) => {
+      const excerpt = String(window.excerpt || "").trim();
+      const semanticText = `${document.title}\n${excerpt || String(document.text || "").slice(0, 500)}`;
+      const tokens = textTokens(semanticText);
+      const expandedTokens = expandedSemanticTokens(tokens);
+      return {
+        sourceId: document.sourceId,
+        title: document.title,
+        windowId: window.windowId || stableId("window", document.sourceId, String(index), excerpt),
+        index: Number(window.index ?? index),
+        startOffset: Number(window.startOffset || 0),
+        endOffset: Number(window.endOffset || 0),
+        contentHash: window.contentHash || sha(excerpt),
+        excerpt,
+        tokens,
+        expandedTokens,
+        vector: vectorForTokens(expandedTokens),
+        signal: signalStrength({ text: semanticText, tokens })
+      };
+    })
+    .filter((record) => record.excerpt || record.signal > 0);
+}
+
+function clusterWindowRecords(records = [], groupId = "") {
+  const communities = [];
+  for (const record of records) {
+    let bestCommunity = null;
+    let bestScore = 0;
+    for (const community of communities) {
+      const score = cosineSimilarity(record.vector, community.centroid);
+      if (score > bestScore) {
+        bestScore = score;
+        bestCommunity = community;
+      }
+    }
+    if (!bestCommunity || bestScore < WINDOW_COMMUNITY_CLUSTER_THRESHOLD) {
+      bestCommunity = {
+        communityId: stableId("window_community", groupId, String(communities.length), record.windowId),
+        centroid: record.vector,
+        tokens: new Set(),
+        records: [],
+        cohesionScores: [],
+        signalScores: []
+      };
+      communities.push(bestCommunity);
+    } else {
+      bestCommunity.centroid = mergeCentroid(bestCommunity.centroid, record.vector, bestCommunity.records.length);
+    }
+    bestCommunity.records.push(record);
+    bestCommunity.cohesionScores.push(bestCommunity.records.length === 1 ? 1 : bestScore);
+    bestCommunity.signalScores.push(record.signal);
+    for (const token of record.tokens) {
+      bestCommunity.tokens.add(token);
+    }
+  }
+  return communities.map((community, index) => {
+    const keywords = topTokens(community.tokens, 5);
+    const sourceIds = uniqueOrdered(community.records.map((record) => record.sourceId));
+    const windowRefs = community.records.slice(0, 16).map((record) => ({
+      sourceId: record.sourceId,
+      title: record.title,
+      windowId: record.windowId,
+      index: record.index,
+      startOffset: record.startOffset,
+      endOffset: record.endOffset,
+      contentHash: record.contentHash,
+      excerpt: record.excerpt.slice(0, 220)
+    }));
+    return {
+      communityId: community.communityId,
+      level: "window-community",
+      title: keywords.slice(0, 3).join(" / ") || `Window Community ${index + 1}`,
+      keywords,
+      sourceIds,
+      sourceCount: sourceIds.length,
+      windowCount: community.records.length,
+      representedWindowCount: community.records.length,
+      windowRefs,
+      summary: community.records
+        .map((record) => record.excerpt)
+        .filter(Boolean)
+        .slice(0, 4),
+      cohesionScore: Number(
+        (
+          community.cohesionScores.reduce((sum, score) => sum + score, 0) /
+          Math.max(1, community.cohesionScores.length)
+        ).toFixed(4)
+      ),
+      signalScore: Number(
+        (
+          community.signalScores.reduce((sum, score) => sum + score, 0) /
+          Math.max(1, community.signalScores.length)
+        ).toFixed(4)
+      )
+    };
+  });
+}
+
+function buildDistillationUnit(group = {}, windowCommunities = []) {
+  const sourceIds = group.documents.map((document) => document.sourceId);
+  const windowRefs = windowCommunities.flatMap((community) => (
+    community.windowRefs.map((ref) => ({
+      ...ref,
+      communityId: community.communityId
+    }))
+  )).slice(0, 24);
+  return {
+    unitId: stableId("distillation_unit", group.groupId, sourceIds.join(",")),
+    mode: "topic-isolated",
+    sourceIds,
+    sourceCount: sourceIds.length,
+    windowCommunityIds: windowCommunities.map((community) => community.communityId),
+    windowCount: windowCommunities.reduce((sum, community) => sum + community.windowCount, 0),
+    windowRefs,
+    summary: group.documents.map((document) => firstSentence(document.text)).filter(Boolean).slice(0, 5),
+    quality: {
+      cohesionScore: group.cohesionScore,
+      separationScore: group.separationScore ?? 1,
+      lowCoupling: (group.separationScore ?? 1) >= CLASSIFICATION_SEPARATION_THRESHOLD,
+      highCohesion: group.cohesionScore >= LEADER_CLUSTER_THRESHOLD
+    }
+  };
+}
+
+function addGroupSeparation(topicGroups = []) {
+  const coreGroups = topicGroups.filter((group) => !group.excludedFromCore);
+  for (const group of coreGroups) {
+    const links = [];
+    let maxSimilarity = 0;
+    for (const other of coreGroups) {
+      if (other.groupId === group.groupId) {
+        continue;
+      }
+      const similarity = Number(cosineSimilarity(group._centroid || [], other._centroid || []).toFixed(4));
+      maxSimilarity = Math.max(maxSimilarity, similarity);
+      if (similarity >= CROSS_TOPIC_LINK_THRESHOLD) {
+        links.push({
+          groupId: other.groupId,
+          label: other.label,
+          similarity
+        });
+      }
+    }
+    group.interGroupMaxSimilarity = Number(maxSimilarity.toFixed(4));
+    group.separationScore = Number((1 - maxSimilarity).toFixed(4));
+    group.boundary = group.separationScore >= CLASSIFICATION_SEPARATION_THRESHOLD ? "isolated" : "overlap-review";
+    group.crossTopicLinks = links.sort((left, right) => right.similarity - left.similarity).slice(0, 6);
+    group.distillationUnit.quality.separationScore = group.separationScore;
+    group.distillationUnit.quality.lowCoupling = group.separationScore >= CLASSIFICATION_SEPARATION_THRESHOLD;
+  }
+  return topicGroups;
+}
+
+function publicClassificationGroup(group = {}) {
+  const {
+    documents: _documents,
+    tokens: _tokens,
+    expandedTokens: _expandedTokens,
+    centroid: _centroid,
+    _centroid: __centroid,
+    ...publicGroup
+  } = group;
+  return publicGroup;
+}
+
+function classifyDocuments(documents = []) {
+  const groups = [];
+  const garbageDocuments = [];
+  const supportDocuments = [];
+  const containerParentIds = new Set(
+    documents
+      .filter((document) => documents.some((child) => child.parentSourceId === document.sourceId))
+      .map((document) => document.sourceId)
+  );
+  for (const [index, document] of documents.entries()) {
+    if (containerParentIds.has(document.sourceId) && document.route?.formatId === "archive") {
+      supportDocuments.push(document);
+      continue;
+    }
+    const windowPreview = (document.windowPlan?.windows || [])
+      .slice(0, 8)
+      .map((window) => window.excerpt)
+      .join("\n");
+    const tokens = textTokens(`${document.title}\n${document.text.slice(0, 12_000)}\n${windowPreview}`);
+    const expandedTokens = expandedSemanticTokens(tokens);
+    const vector = vectorForTokens(expandedTokens);
+    const signal = signalStrength({ text: document.text, tokens });
+    if (signal < GARBAGE_SIGNAL_THRESHOLD) {
+      garbageDocuments.push({ document, tokens, expandedTokens, vector, signal });
+      continue;
+    }
+    let bestGroup = null;
+    let bestScore = 0;
+    for (const group of groups) {
+      const score = cosineSimilarity(vector, group.centroid);
+      if (score > bestScore) {
+        bestScore = score;
+        bestGroup = group;
+      }
+    }
+    if (!bestGroup || bestScore < LEADER_CLUSTER_THRESHOLD) {
+      bestGroup = {
+        groupId: stableId("topic_group", document.title, index),
+        label: "",
+        tokens: new Set(),
+        expandedTokens: new Set(),
+        centroid: vector,
+        documents: [],
+        cohesionScores: [],
+        signalScores: []
+      };
+      groups.push(bestGroup);
+    } else {
+      bestGroup.centroid = mergeCentroid(bestGroup.centroid, vector, bestGroup.documents.length);
+    }
+    bestGroup.documents.push(document);
+    bestGroup.cohesionScores.push(bestGroup.documents.length === 1 ? 1 : bestScore);
+    bestGroup.signalScores.push(signal);
+    for (const token of tokens) {
+      bestGroup.tokens.add(token);
+    }
+    for (const token of expandedTokens) {
+      bestGroup.expandedTokens.add(token);
+    }
+  }
+  const topicGroups = groups.map((group, index) => {
+    const keywords = topTokens(group.tokens, 5);
+    const topicGroup = {
+      groupId: group.groupId,
+      kind: "topic",
+      excludedFromCore: false,
+      label: keywords.slice(0, 3).join(" / ") || `Topic ${index + 1}`,
+      keywords,
+      sourceCount: group.documents.length,
+      sourceIds: group.documents.map((document) => document.sourceId),
+      embedding: {
+        dimensions: EMBEDDING_DIMENSIONS,
+        centroidHash: centroidHash(group.centroid),
+        signalScore: Number(
+          (
+            group.signalScores.reduce((sum, score) => sum + score, 0) /
+            Math.max(1, group.signalScores.length)
+          ).toFixed(4)
+        )
+      },
+      cohesionScore: Number(
+        (
+          group.cohesionScores.reduce((sum, score) => sum + score, 0) /
+          Math.max(1, group.cohesionScores.length)
+        ).toFixed(4)
+      ),
+      _centroid: group.centroid,
+      documents: group.documents
+    };
+    const windowCommunities = clusterWindowRecords(
+      group.documents.flatMap((document) => windowRecordsForDocument(document)),
+      topicGroup.groupId
+    );
+    topicGroup.windowCommunities = windowCommunities;
+    topicGroup.communityCount = windowCommunities.length;
+    topicGroup.distillationUnit = buildDistillationUnit(topicGroup, windowCommunities);
+    return topicGroup;
+  });
+  addGroupSeparation(topicGroups);
+  const supportGroups = supportDocuments.length
+    ? [
+        {
+          groupId: stableId("support_group", supportDocuments.map((document) => document.sourceId).join(",")),
+          kind: "container-manifest",
+          excludedFromCore: true,
+          label: "Container manifests",
+          keywords: ["container", "manifest"],
+          sourceCount: supportDocuments.length,
+          sourceIds: supportDocuments.map((document) => document.sourceId),
+          embedding: {
+            dimensions: EMBEDDING_DIMENSIONS,
+            centroidHash: "",
+            signalScore: 0
+          },
+          cohesionScore: 0,
+          separationScore: null,
+          boundary: "support-only",
+          crossTopicLinks: [],
+          communityCount: 0,
+          windowCommunities: [],
+          distillationUnit: null,
+          documents: supportDocuments
+        }
+      ]
+    : [];
+  if (!garbageDocuments.length) {
+    return [...topicGroups, ...supportGroups];
+  }
+  const garbageTokens = new Set();
+  for (const item of garbageDocuments) {
+    for (const token of item.tokens) {
+      garbageTokens.add(token);
+    }
+  }
+  return [
+    ...topicGroups,
+    ...supportGroups,
+    {
+      groupId: stableId("garbage_group", garbageDocuments.map((item) => item.document.sourceId).join(",")),
+      kind: "garbage",
+      excludedFromCore: true,
+      label: "Weak evidence / noise",
+      keywords: topTokens(garbageTokens, 5),
+      sourceCount: garbageDocuments.length,
+      sourceIds: garbageDocuments.map((item) => item.document.sourceId),
+      embedding: {
+        dimensions: EMBEDDING_DIMENSIONS,
+        centroidHash: "",
+        signalScore: Number(
+          (
+            garbageDocuments.reduce((sum, item) => sum + item.signal, 0) /
+            Math.max(1, garbageDocuments.length)
+          ).toFixed(4)
+        )
+      },
+      cohesionScore: 0,
+      documents: garbageDocuments.map((item) => item.document)
+    }
+  ];
+}
+
+function firstSentence(text = "") {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  const match = normalized.match(/^.{1,220}?(?:[!?。！？]|\.(?=\s|$)|$)/u);
+  return (match?.[0] || normalized.slice(0, 220)).trim();
+}
+
+function dateFieldConfidence(field = "") {
+  const normalized = String(field || "").toLowerCase().replace(/[_-]+/g, " ");
+  if (/(payment|settlement|invoice|due|report|event|document|created|modified|issued|period|date|time|timestamp)/i.test(normalized)) {
+    return 0.92;
+  }
+  if (/(日期|时间|付款|结算|报告|创建|修改|发票|期间)/u.test(normalized)) {
+    return 0.92;
+  }
+  return 0;
+}
+
+function isoDateFromParts(year, month, day) {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) {
+    return "";
+  }
+  if (y < 1970 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+    return "";
+  }
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    return "";
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function isoDateFromExcelSerial(value = "") {
+  const serial = Number(String(value || "").trim());
+  if (!Number.isFinite(serial) || serial < 25_000 || serial > 80_000) {
+    return "";
+  }
+  const epoch = Date.UTC(1899, 11, 30);
+  const date = new Date(epoch + Math.round(serial) * 86_400_000);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeDateValue(value = "", allowSerial = false) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  let match = text.match(/\b(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})(?:日)?\b/u);
+  if (match) {
+    return isoDateFromParts(match[1], match[2], match[3]);
+  }
+  match = text.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/u);
+  if (match) {
+    return isoDateFromParts(match[3], match[1], match[2]);
+  }
+  return allowSerial ? isoDateFromExcelSerial(text) : "";
+}
+
+function extractTimeSignals(text = "") {
+  const signals = [];
+  const seen = new Set();
+  const push = (date = "", field = "", confidence = 0.55, evidence = "") => {
+    if (!date) {
+      return;
+    }
+    const key = `${date}|${field}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    signals.push({
+      date,
+      field: String(field || "").trim(),
+      confidence: Number(confidence.toFixed(2)),
+      evidence: firstSentence(evidence || date).slice(0, 160)
+    });
+  };
+  const value = String(text || "");
+  for (const match of value.matchAll(/([A-Za-z0-9_ /\-.\u4e00-\u9fff]{2,56})\s*[:=]\s*([^;\n]+)/gu)) {
+    const field = match[1].replace(/\s+/g, " ").trim();
+    const confidence = dateFieldConfidence(field);
+    if (!confidence) {
+      continue;
+    }
+    const date = normalizeDateValue(match[2], true);
+    push(date, field, confidence, match[0]);
+  }
+  for (const match of value.matchAll(/\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})\b/gu)) {
+    push(normalizeDateValue(match[1], false), "text", 0.55, match[0]);
+  }
+  return signals.sort((left, right) => {
+    if (right.confidence !== left.confidence) {
+      return right.confidence - left.confidence;
+    }
+    return left.date.localeCompare(right.date);
+  });
+}
+
+function inferTimeMetadataFromText(text = "") {
+  const signals = extractTimeSignals(text);
+  if (!signals.length) {
+    return {
+      timeRange: null,
+      timeConfidence: 0,
+      timeSignals: []
+    };
+  }
+  const dates = signals.map((signal) => signal.date).sort();
+  return {
+    timeRange: {
+      from: dates[0],
+      to: dates[dates.length - 1],
+      source: "content-derived",
+      field: signals[0].field,
+      confidence: signals[0].confidence
+    },
+    timeConfidence: signals[0].confidence,
+    timeSignals: signals.slice(0, 8)
+  };
+}
+
+function normalizeTimeFilter(input = {}) {
+  const source = input.timeFilter && typeof input.timeFilter === "object" ? input.timeFilter : {};
+  const from = normalizeDateValue(source.from || source.start || input.timeFrom || input.from || "", false);
+  const to = normalizeDateValue(source.to || source.end || input.timeTo || input.to || "", false);
+  const rawField = String(source.timeField || input.timeField || "eventTime").trim();
+  const timeField = ["eventTime", "documentTime", "any"].includes(rawField) ? rawField : "eventTime";
+  const rawConfidence = Number(source.confidenceMin ?? input.confidenceMin ?? 0);
+  const excludeWeakEvidence = Boolean(source.excludeWeakEvidence ?? input.excludeWeakEvidence ?? false);
+  const confidenceMin = Number(Math.max(0, Math.min(1, Number.isFinite(rawConfidence) ? rawConfidence : 0)).toFixed(2));
+  const includeUnknownTime = Boolean(source.includeUnknownTime ?? input.includeUnknownTime ?? false);
+  const active = Boolean(from || to || confidenceMin > 0 || excludeWeakEvidence || source.timeField || input.timeField);
+  return {
+    active,
+    from,
+    to,
+    timeField,
+    confidenceMin,
+    excludeWeakEvidence,
+    includeUnknownTime,
+    mode: "document-window-time-filter.v1"
+  };
+}
+
+function dateRangeMatches(range = null, filter = {}) {
+  if (!range) {
+    return false;
+  }
+  const from = normalizeDateValue(range.from || range.date || "", false);
+  const to = normalizeDateValue(range.to || range.from || range.date || "", false);
+  if (!from && !to) {
+    return false;
+  }
+  const start = from || to;
+  const end = to || from;
+  if (filter.from && end < filter.from) {
+    return false;
+  }
+  if (filter.to && start > filter.to) {
+    return false;
+  }
+  return true;
+}
+
+function signalPassesConfidence(signal = {}, filter = {}) {
+  const minimum = filter.confidenceMin || (filter.excludeWeakEvidence ? 0.75 : 0);
+  return Number(signal.confidence || 0) >= minimum;
+}
+
+function documentTimeRangeForFilter(document = {}, filter = {}) {
+  if (filter.timeField === "documentTime") {
+    const date = normalizeDateValue(document.documentTime || document.capturedAt || "", false);
+    return date ? { from: date, to: date, source: "documentTime", confidence: 1 } : null;
+  }
+  if (filter.timeField === "any") {
+    const eventRange = document.timeRange || (document.eventTime ? { from: document.eventTime, to: document.eventTime, source: "eventTime", confidence: 1 } : null);
+    if (eventRange) {
+      return eventRange;
+    }
+    const date = normalizeDateValue(document.documentTime || document.capturedAt || "", false);
+    return date ? { from: date, to: date, source: "documentTime", confidence: 1 } : null;
+  }
+  return document.timeRange || (document.eventTime ? { from: document.eventTime, to: document.eventTime, source: "eventTime", confidence: 1 } : null);
+}
+
+function documentMatchesTimeFilter(document = {}, filter = {}) {
+  if (!filter.active) {
+    return true;
+  }
+  const range = documentTimeRangeForFilter(document, filter);
+  if (!range) {
+    return filter.includeUnknownTime && !filter.excludeWeakEvidence;
+  }
+  if (!dateRangeMatches(range, filter)) {
+    return false;
+  }
+  return signalPassesConfidence({ confidence: range.confidence ?? document.timeConfidence ?? 0 }, filter);
+}
+
+function windowMatchesTimeFilter(window = {}, filter = {}) {
+  if (!filter.active) {
+    return true;
+  }
+  if (!window.timeRange) {
+    return false;
+  }
+  if (!dateRangeMatches(window.timeRange, filter)) {
+    return false;
+  }
+  return signalPassesConfidence({ confidence: window.timeConfidence ?? window.timeRange?.confidence ?? 0 }, filter);
+}
+
+function applyTimeFilterToDocuments(documents = [], filter = {}, windowOptions = {}) {
+  if (!filter.active) {
+    return {
+      documents,
+      summary: {
+        ...filter,
+        matchedSourceIds: documents.map((document) => document.sourceId),
+        filteredOutSourceIds: [],
+        matchedSourceCount: documents.length,
+        filteredOutSourceCount: 0
+      }
+    };
+  }
+  const matched = [];
+  const filteredOut = [];
+  for (const document of documents) {
+    const baseWindowPlan = document.streamingWindowPlan || buildWindowPlan(document, windowOptions);
+    const hasTimedWindows = (baseWindowPlan.windows || []).some((window) => window.timeRange);
+    const matchingWindows = hasTimedWindows
+      ? (baseWindowPlan.windows || []).filter((window) => windowMatchesTimeFilter(window, filter))
+      : [];
+    const documentMatches = documentMatchesTimeFilter(document, filter);
+    if (!documentMatches && !matchingWindows.length) {
+      filteredOut.push(document.sourceId);
+      continue;
+    }
+    const windowPlan = matchingWindows.length
+      ? {
+          ...baseWindowPlan,
+          windows: matchingWindows.map((window, index) => ({ ...window, index })),
+          windowCount: matchingWindows.length,
+          filteredFromWindowCount: baseWindowPlan.windowCount || baseWindowPlan.windows?.length || matchingWindows.length
+        }
+      : baseWindowPlan;
+    matched.push({
+      ...document,
+      streamingWindowPlan: windowPlan,
+      timeFilterMatched: true
+    });
+  }
+  return {
+    documents: matched,
+    summary: {
+      ...filter,
+      matchedSourceIds: matched.map((document) => document.sourceId),
+      filteredOutSourceIds: filteredOut,
+      matchedSourceCount: matched.length,
+      filteredOutSourceCount: filteredOut.length
+    }
+  };
+}
+
+function evidenceKey(index) {
+  return `E${index + 1}`;
+}
+
+function evidenceRefsForDocuments(allDocuments = [], sourceDocuments = []) {
+  return sourceDocuments.map((document) => {
+    const index = allDocuments.findIndex((item) => item.sourceId === document.sourceId);
+    return evidenceKey(Math.max(0, index));
+  });
+}
+
+function claimPolarity(text = "") {
+  const normalized = String(text || "").toLowerCase();
+  if (/(?:\bnot\b|\bnever\b|\bno\b|\bwithout\b|\bcannot\b|\bcan't\b|\bunsupported\b|\bfalse\b|\bdenied\b|\bprohibit|禁止|不支持|不能|无法|未|没有|非)/u.test(normalized)) {
+    return -1;
+  }
+  if (/(?:\bmust\b|\bshould\b|\bcan\b|\bsupports?\b|\bguaranteed\b|\brequired\b|\bconfirmed\b|\ballowed\b|\bpermitted\b|\benabled\b|必须|应该|支持|确认|允许|保证)/u.test(normalized)) {
+    return 1;
+  }
+  return 0;
+}
+
+function evidenceCandidatesForClaim(claimText = "", documents = [], allDocuments = documents, options = {}) {
+  const claimTokens = expandedSemanticTokens(textTokens(claimText));
+  const claimVector = vectorForText(claimText);
+  const polarity = claimPolarity(claimText);
+  const candidates = [];
+  for (const document of documents) {
+    const index = Math.max(0, allDocuments.findIndex((item) => item.sourceId === document.sourceId));
+    const evidenceVector = vectorForText(`${document.title}\n${document.text.slice(0, 12_000)}`);
+    const semanticScore = cosineSimilarity(claimVector, evidenceVector);
+    const evidenceTokens = expandedSemanticTokens(textTokens(`${document.title}\n${document.text.slice(0, 12_000)}`));
+    let overlap = 0;
+    for (const token of claimTokens) {
+      if (evidenceTokens.has(token)) {
+        overlap += 1;
+      }
+    }
+    const lexicalScore = overlap / Math.max(1, claimTokens.size);
+    const evidencePolarity = claimPolarity(document.text);
+    const polarityMismatch = polarity !== 0 && evidencePolarity !== 0 && polarity !== evidencePolarity && lexicalScore >= 0.2;
+    const rawScore = Math.max(semanticScore, lexicalScore);
+    const relation = polarityMismatch ? "conflict" : "support";
+    const supportScore = Number((relation === "support" ? rawScore : Math.min(semanticScore, lexicalScore) * 0.5).toFixed(4));
+    const conflictScore = Number((relation === "conflict" ? rawScore : 0).toFixed(4));
+    candidates.push({
+      evidenceRef: evidenceKey(index),
+      sourceId: document.sourceId,
+      title: document.title,
+      groupId: document.groupId || options.groupId || "",
+      groupLabel: document.groupLabel || options.groupLabel || "",
+      excerpt: firstSentence(document.text),
+      semanticScore: Number(semanticScore.toFixed(4)),
+      lexicalScore: Number(lexicalScore.toFixed(4)),
+      supportScore,
+      conflictScore,
+      relation
+    });
+  }
+  return candidates.sort((left, right) => {
+    const leftScore = Math.max(left.supportScore, left.conflictScore);
+    const rightScore = Math.max(right.supportScore, right.conflictScore);
+    return rightScore - leftScore || left.sourceId.localeCompare(right.sourceId);
+  });
+}
+
+function annotatedGroupDocuments(group = {}) {
+  return (group.documents || []).map((document) => ({
+    ...document,
+    groupId: group.groupId,
+    groupLabel: group.label
+  }));
+}
+
+function statusForEvidence(topSupport = null, topConflict = null) {
+  if (topConflict && topConflict.conflictScore >= GROUNDING_CONFLICT_THRESHOLD && (!topSupport || topConflict.conflictScore > topSupport.supportScore)) {
+    return "contradicted";
+  }
+  if (topSupport && topSupport.supportScore >= GROUNDING_SUPPORT_THRESHOLD) {
+    return "entailed";
+  }
+  return "neutral";
+}
+
+function buildClaimRecord({ claimId, groupId = "", source = "", text = "", supportCandidates = [], conflictCandidates = [] } = {}) {
+  const topEvidence = supportCandidates
+    .filter((candidate) => candidate.relation === "support")
+    .filter((candidate) => candidate.supportScore >= GROUNDING_SUPPORT_THRESHOLD)
+    .slice(0, 3);
+  const conflictEvidence = conflictCandidates
+    .filter((candidate) => candidate.relation === "conflict")
+    .filter((candidate) => candidate.conflictScore >= GROUNDING_CONFLICT_THRESHOLD)
+    .slice(0, 3);
+  const topSupport = topEvidence[0] || supportCandidates.find((candidate) => candidate.relation === "support") || null;
+  const topConflict = conflictEvidence[0] || null;
+  const status = statusForEvidence(topSupport, topConflict);
+  return {
+    claimId,
+    groupId,
+    source,
+    text,
+    status,
+    supportScore: topSupport?.supportScore || 0,
+    conflictScore: topConflict?.conflictScore || 0,
+    evidenceRefs: status === "entailed" ? topEvidence.map((candidate) => candidate.evidenceRef) : [],
+    conflictRefs: conflictEvidence.map((candidate) => candidate.evidenceRef),
+    topEvidence,
+    conflictEvidence
+  };
+}
+
+function candidatePromotionGateForGroup(group = {}, grounding = {}) {
+  const groupClaims = (grounding.claims || []).filter((claim) => claim.groupId === group.groupId);
+  const entailed = groupClaims.filter((claim) => claim.status === "entailed").length;
+  const neutral = groupClaims.filter((claim) => claim.status === "neutral").length;
+  const contradicted = groupClaims.filter((claim) => claim.status === "contradicted").length;
+  const promoted = entailed > 0 && contradicted === 0;
+  return {
+    promoted,
+    mode: "claim-grounded-promotion",
+    requiredEntailedClaims: 1,
+    entailed,
+    neutral,
+    contradicted,
+    rejectedReason: promoted ? "" : contradicted > 0 ? "contradicted-claim" : "no-entailed-claim"
+  };
+}
+
+function buildGroundingReport({ documents = [], classification = {}, requestedClaims = [] } = {}) {
+  const claims = [];
+  const coreGroups = (classification.groups || []).filter((group) => !group.excludedFromCore);
+  const annotatedAllDocuments = coreGroups.flatMap((group) => annotatedGroupDocuments(group));
+  for (const group of classification.groups || []) {
+    if (group.excludedFromCore) {
+      continue;
+    }
+    const groupDocuments = annotatedGroupDocuments(group);
+    const outsideDocuments = annotatedAllDocuments.filter((document) => document.groupId !== group.groupId);
+    for (const document of group.documents.slice(0, 3)) {
+      const claimText = firstSentence(document.text);
+      if (!claimText) {
+        continue;
+      }
+      claims.push(buildClaimRecord({
+        claimId: stableId("claim", group.groupId, document.sourceId, claimText),
+        groupId: group.groupId,
+        source: "generated-summary",
+        text: claimText,
+        supportCandidates: evidenceCandidatesForClaim(claimText, groupDocuments, documents, { groupId: group.groupId, groupLabel: group.label }),
+        conflictCandidates: evidenceCandidatesForClaim(claimText, outsideDocuments, documents)
+      }));
+    }
+  }
+  for (const [index, claim] of requestedClaims.entries()) {
+    const claimText = typeof claim === "string" ? claim : String(claim?.text || claim?.claim || "");
+    if (!claimText.trim()) {
+      continue;
+    }
+    const supportCandidates = evidenceCandidatesForClaim(claimText, annotatedAllDocuments.length ? annotatedAllDocuments : documents, documents);
+    claims.push(buildClaimRecord({
+      claimId: stableId("requested_claim", String(index), claimText),
+      groupId: supportCandidates.find((candidate) => candidate.relation === "support" && candidate.supportScore >= GROUNDING_SUPPORT_THRESHOLD)?.groupId || "",
+      source: "requested-claim",
+      text: claimText,
+      supportCandidates,
+      conflictCandidates: supportCandidates
+    }));
+  }
+  const supported = claims.filter((claim) => claim.status === "entailed").length;
+  const contradicted = claims.filter((claim) => claim.status === "contradicted").length;
+  const neutral = claims.filter((claim) => claim.status === "neutral").length;
+  const groundingScore = claims.length ? supported / claims.length : 0;
+  const promotionGates = Object.fromEntries(coreGroups.map((group) => [
+    group.groupId,
+    candidatePromotionGateForGroup(group, { claims })
+  ]));
+  return {
+    strategy: GROUNDING_STRATEGY,
+    supportThreshold: GROUNDING_SUPPORT_THRESHOLD,
+    conflictThreshold: GROUNDING_CONFLICT_THRESHOLD,
+    claimCount: claims.length,
+    supported,
+    neutral,
+    contradicted,
+    groundingScore: Number(groundingScore.toFixed(4)),
+    passed: claims.length > 0 && contradicted === 0 && neutral === 0,
+    promotionGates,
+    claims
+  };
+}
+
+function buildProjectConvergence({ corpusPlan, classification }) {
+  const distillableGroups = classification.groups.filter((group) => group.sourceCount > 0 && !group.excludedFromCore);
+  const dominantGroups = distillableGroups
+    .slice()
+    .sort((left, right) => right.sourceCount - left.sourceCount || right.cohesionScore - left.cohesionScore)
+    .slice(0, 5)
+    .map((group) => ({
+      groupId: group.groupId,
+      label: group.label,
+      sourceCount: group.sourceCount,
+      cohesionScore: group.cohesionScore,
+      separationScore: group.separationScore,
+      communityCount: group.communityCount || 0,
+      sourceIds: group.sourceIds
+    }));
+  const communityReports = distillableGroups.flatMap((group) => (
+    (group.windowCommunities || []).slice(0, 6).map((community) => ({
+      communityId: community.communityId,
+      groupId: group.groupId,
+      title: community.title,
+      sourceIds: community.sourceIds,
+      windowCount: community.windowCount,
+      cohesionScore: community.cohesionScore,
+      findings: community.summary.slice(0, 5)
+    }))
+  ));
+  const averageSeparation = distillableGroups.length
+    ? Number((
+        distillableGroups.reduce((sum, group) => sum + Number(group.separationScore ?? 1), 0) /
+        Math.max(1, distillableGroups.length)
+      ).toFixed(4))
+    : 0;
+  return {
+    strategy: "window-community-topic-project-convergence.v2",
+    layers: ["window", "window-community", "document", "topic-group", "project"],
+    totalSources: corpusPlan.sourceCount,
+    distillableSources: corpusPlan.distillableSourceCount,
+    totalWindows: corpusPlan.windowCount,
+    communityCount: communityReports.length,
+    groupCount: classification.groupCount,
+    dominantGroups,
+    communityReports,
+    projectSynthesis: {
+      mode: dominantGroups.length > 1 ? "multi-topic-separated" : "single-topic",
+      averageSeparation,
+      lowCouplingHighCohesion: distillableGroups.every((group) => (
+        (group.separationScore ?? 1) >= CLASSIFICATION_SEPARATION_THRESHOLD &&
+        group.cohesionScore >= LEADER_CLUSTER_THRESHOLD
+      ))
+    },
+    convergenceSummary:
+      dominantGroups.length > 1
+        ? "Sources are separated into multiple topic groups before project-level convergence."
+        : dominantGroups.length === 1
+          ? "Sources currently converge into one dominant topic group."
+          : "No distillable source text was supplied."
+  };
+}
+
+function normalizeProjectId(input = {}, corpusPlan = {}) {
+  const explicit = String(
+    input.projectId ||
+    input.workspaceId ||
+    input.repositoryId ||
+    input.project?.id ||
+    input.project?.name ||
+    input.metadata?.projectId ||
+    ""
+  ).trim();
+  if (explicit) {
+    return explicit;
+  }
+  const sourceSignature = (corpusPlan.documents || [])
+    .map((document) => document.sourceId || document.fileName || document.title)
+    .sort()
+    .join("|");
+  return stableId("project", input.title || input.query || "external-knowledge-distillation", sourceSignature);
+}
+
+function snapshotDocument(document = {}) {
+  const windows = (document.windowPlan?.windows || []).map((window) => ({
+    windowId: window.windowId,
+    index: window.index,
+    startOffset: window.startOffset,
+    endOffset: window.endOffset,
+    contentHash: window.contentHash,
+    timeRange: window.timeRange || null
+  }));
+  return {
+    sourceId: document.sourceId,
+    parentSourceId: document.parentSourceId || "",
+    archivePath: document.archivePath || "",
+    title: document.title,
+    fileName: document.fileName,
+    mediaType: document.mediaType,
+    routeId: document.route?.formatId || "unknown",
+    byteSize: document.byteSize || 0,
+    contentHash: document.contentHash || "",
+    textCharacters: document.quality?.textCharacters || 0,
+    windowCount: windows.length,
+    windows
+  };
+}
+
+function buildProjectSnapshot({ projectId = "", corpusPlan = {}, classification = {}, convergence = {}, grounding = {}, createdAt = "" } = {}) {
+  const documents = (corpusPlan.documents || []).map(snapshotDocument);
+  const fingerprintParts = documents
+    .map((document) => [
+      document.sourceId,
+      document.contentHash,
+      document.routeId,
+      document.windowCount,
+      document.windows.map((window) => window.contentHash).join(",")
+    ].join(":"))
+    .sort();
+  const projectFingerprint = `sha256:${sha(fingerprintParts.join("\n"))}`;
+  const snapshotId = stableId("project_snapshot", projectId, projectFingerprint);
+  const groups = (classification.groups || []).map((group) => ({
+    groupId: group.groupId,
+    kind: group.kind || "topic",
+    label: group.label,
+    excludedFromCore: Boolean(group.excludedFromCore),
+    sourceIds: group.sourceIds || [],
+    communityIds: (group.windowCommunities || []).map((community) => community.communityId),
+    distillationUnitId: group.distillationUnit?.unitId || "",
+    cohesionScore: group.cohesionScore || 0,
+    separationScore: group.separationScore ?? null
+  }));
+  return {
+    snapshotId,
+    projectId,
+    projectFingerprint,
+    createdAt,
+    documentCount: documents.length,
+    distillableDocumentCount: documents.filter((document) => document.textCharacters > 0 || document.windowCount > 0).length,
+    windowCount: documents.reduce((sum, document) => sum + document.windowCount, 0),
+    groupCount: classification.groupCount || groups.length,
+    communityCount: convergence.communityCount || 0,
+    claimCount: grounding.claimCount || 0,
+    documents,
+    groups
+  };
+}
+
+function latestPriorProjectSnapshot(priorRuns = [], projectId = "") {
+  for (const run of priorRuns.slice().reverse()) {
+    const plan = run.result?.incrementalPlan;
+    if (plan?.projectId === projectId && plan.snapshot) {
+      return {
+        runId: run.runId,
+        createdAt: run.createdAt,
+        snapshot: plan.snapshot
+      };
+    }
+  }
+  return null;
+}
+
+function windowHashSet(snapshot = {}) {
+  const hashes = new Set();
+  for (const document of snapshot.documents || []) {
+    for (const window of document.windows || []) {
+      if (window.contentHash) {
+        hashes.add(`${document.sourceId}:${window.contentHash}`);
+      }
+    }
+  }
+  return hashes;
+}
+
+function buildIncrementalPlan({ input = {}, corpusPlan = {}, classification = {}, convergence = {}, grounding = {}, priorRuns = [], createdAt = "" } = {}) {
+  const projectId = normalizeProjectId(input, corpusPlan);
+  const snapshot = buildProjectSnapshot({ projectId, corpusPlan, classification, convergence, grounding, createdAt });
+  const prior = latestPriorProjectSnapshot(priorRuns, projectId);
+  const currentDocuments = new Map(snapshot.documents.map((document) => [document.sourceId, document]));
+  const previousDocuments = new Map((prior?.snapshot?.documents || []).map((document) => [document.sourceId, document]));
+  const addedSourceIds = [];
+  const changedSourceIds = [];
+  const reusedSourceIds = [];
+  for (const document of snapshot.documents) {
+    const previous = previousDocuments.get(document.sourceId);
+    if (!previous) {
+      addedSourceIds.push(document.sourceId);
+    } else if (previous.contentHash === document.contentHash && previous.windowCount === document.windowCount) {
+      reusedSourceIds.push(document.sourceId);
+    } else {
+      changedSourceIds.push(document.sourceId);
+    }
+  }
+  const removedSourceIds = Array.from(previousDocuments.keys()).filter((sourceId) => !currentDocuments.has(sourceId));
+  const previousWindowHashes = windowHashSet(prior?.snapshot || {});
+  let reusedWindowCount = 0;
+  let addedWindowCount = 0;
+  let changedWindowCount = 0;
+  for (const document of snapshot.documents) {
+    const previous = previousDocuments.get(document.sourceId);
+    for (const window of document.windows || []) {
+      const key = `${document.sourceId}:${window.contentHash}`;
+      if (previousWindowHashes.has(key)) {
+        reusedWindowCount += 1;
+      } else if (previous) {
+        changedWindowCount += 1;
+      } else {
+        addedWindowCount += 1;
+      }
+    }
+  }
+  const removedWindowCount = (prior?.snapshot?.documents || [])
+    .filter((document) => !currentDocuments.has(document.sourceId))
+    .reduce((sum, document) => sum + Number(document.windowCount || 0), 0);
+  const totalComparedWindows = snapshot.windowCount + removedWindowCount;
+  const reuseRatio = totalComparedWindows
+    ? Number((reusedWindowCount / totalComparedWindows).toFixed(4))
+    : prior ? 1 : 0;
+  return {
+    strategy: INCREMENTAL_CONVERGENCE_STRATEGY,
+    projectId,
+    snapshotId: snapshot.snapshotId,
+    projectFingerprint: snapshot.projectFingerprint,
+    mode: prior ? "incremental" : "full-snapshot",
+    previousRunId: prior?.runId || "",
+    previousSnapshotId: prior?.snapshot?.snapshotId || "",
+    previousProjectFingerprint: prior?.snapshot?.projectFingerprint || "",
+    changed: Boolean(!prior || addedSourceIds.length || changedSourceIds.length || removedSourceIds.length),
+    addedSourceIds,
+    changedSourceIds,
+    removedSourceIds,
+    reusedSourceIds,
+    addedWindowCount,
+    changedWindowCount,
+    removedWindowCount,
+    reusedWindowCount,
+    reuseRatio,
+    mergePolicy: [
+      "reuse unchanged text units and window communities by content hash",
+      "recompute changed or added source windows before topic convergence",
+      "refresh claim grounding and promotion gates for affected topic groups",
+      "preserve removed source ids in the incremental diff for auditability"
+    ],
+    referencePatterns: [
+      "graphrag.period-size-incremental-merge",
+      "graphrag.text-units-community-reports",
+      "haystack.pipeline-snapshot",
+      "llama-index.ref-doc-hash"
+    ],
+    snapshot
+  };
+}
+
+function entityTypeForToken(token = "") {
+  for (const [concept, aliases] of Object.entries(SEMANTIC_ALIAS_GROUPS)) {
+    if (aliases.includes(token)) {
+      return concept;
+    }
+  }
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(token)) {
+    return "date";
+  }
+  if (/api|service|parser|runtime|storage|gateway|namespace|route|distillation|evidence|claim/i.test(token)) {
+    return "technical";
+  }
+  if (/invoice|vendor|payment|tax|total|finance|supplier/i.test(token)) {
+    return "finance";
+  }
+  return "concept";
+}
+
+function entityTitle(token = "") {
+  return String(token || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function claimStatusToCovariateStatus(status = "") {
+  if (status === "entailed") {
+    return "TRUE";
+  }
+  if (status === "contradicted") {
+    return "FALSE";
+  }
+  return "SUSPECTED";
+}
+
+function buildGraphEvidencePack({ runId = "", createdAt = "", documents = [], classification = {}, convergence = {}, grounding = {}, incrementalPlan = {} } = {}) {
+  const groupBySourceId = new Map();
+  const groupById = new Map();
+  const communityByWindowId = new Map();
+  for (const group of classification.groups || []) {
+    groupById.set(group.groupId, group);
+    for (const sourceId of group.sourceIds || []) {
+      groupBySourceId.set(sourceId, group);
+    }
+    for (const community of group.windowCommunities || []) {
+      for (const ref of community.windowRefs || []) {
+        communityByWindowId.set(ref.windowId, { group, community });
+      }
+    }
+  }
+
+  const textUnits = [];
+  const entityMap = new Map();
+  const relationshipMap = new Map();
+  const entityForToken = (token = "") => {
+    const normalized = String(token || "").toLowerCase().trim();
+    if (!normalized) {
+      return null;
+    }
+    const id = stableId("graph_entity", normalized);
+    if (!entityMap.has(id)) {
+      entityMap.set(id, {
+        id,
+        human_readable_id: entityMap.size + 1,
+        title: entityTitle(normalized),
+        type: entityTypeForToken(normalized),
+        description: "",
+        text_unit_ids: [],
+        source_ids: [],
+        frequency: 0,
+        degree: 0
+      });
+    }
+    return entityMap.get(id);
+  };
+
+  for (const document of documents) {
+    const group = groupBySourceId.get(document.sourceId) || null;
+    const windows = document.windowPlan?.windows?.length
+      ? document.windowPlan.windows
+      : [{
+          windowId: stableId("text_unit", document.sourceId, document.contentHash || document.text || ""),
+          excerpt: firstSentence(document.text),
+          contentHash: document.contentHash || sha(document.text || ""),
+          index: 0,
+          timeRange: document.timeRange || null
+        }];
+    for (const [index, window] of windows.entries()) {
+      const text = String(window.excerpt || firstSentence(document.text) || "").trim();
+      const textUnitId = window.windowId || stableId("text_unit", document.sourceId, String(index), window.contentHash || text);
+      const communityContext = communityByWindowId.get(textUnitId);
+      const tokens = topTokens(textTokens(`${document.title}\n${text}`), 8);
+      const entityIds = [];
+      for (const token of tokens) {
+        const entity = entityForToken(token);
+        if (!entity) {
+          continue;
+        }
+        if (!entity.text_unit_ids.includes(textUnitId)) {
+          entity.text_unit_ids.push(textUnitId);
+          entity.frequency += 1;
+        }
+        if (!entity.source_ids.includes(document.sourceId)) {
+          entity.source_ids.push(document.sourceId);
+        }
+        entityIds.push(entity.id);
+      }
+      textUnits.push({
+        id: textUnitId,
+        human_readable_id: textUnits.length + 1,
+        text,
+        n_tokens: textTokens(text).size,
+        document_id: document.sourceId,
+        sourceId: document.sourceId,
+        title: document.title,
+        group_ids: group?.groupId ? [group.groupId] : [],
+        community_ids: communityContext?.community?.communityId ? [communityContext.community.communityId] : [],
+        entity_ids: uniqueOrdered(entityIds),
+        relationships_ids: [],
+        covariate_ids: [],
+        metadata: {
+          routeId: document.route?.formatId || "unknown",
+          contentHash: window.contentHash || document.contentHash || "",
+          timeRange: window.timeRange || document.timeRange || null
+        }
+      });
+    }
+  }
+
+  const textUnitById = new Map(textUnits.map((textUnit) => [textUnit.id, textUnit]));
+  for (const textUnit of textUnits) {
+    const entityIds = textUnit.entity_ids.slice(0, 6);
+    for (let leftIndex = 0; leftIndex < entityIds.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < entityIds.length; rightIndex += 1) {
+        const [sourceEntityId, targetEntityId] = [entityIds[leftIndex], entityIds[rightIndex]].sort();
+        const relationshipId = stableId("graph_relationship", sourceEntityId, targetEntityId);
+        if (!relationshipMap.has(relationshipId)) {
+          relationshipMap.set(relationshipId, {
+            id: relationshipId,
+            human_readable_id: relationshipMap.size + 1,
+            source: sourceEntityId,
+            target: targetEntityId,
+            type: "co_occurs_in_text_unit",
+            description: "Entities co-occur in a source text unit.",
+            weight: 0,
+            combined_degree: 0,
+            text_unit_ids: []
+          });
+        }
+        const relationship = relationshipMap.get(relationshipId);
+        relationship.weight += 1;
+        if (!relationship.text_unit_ids.includes(textUnit.id)) {
+          relationship.text_unit_ids.push(textUnit.id);
+        }
+        textUnit.relationships_ids.push(relationshipId);
+      }
+    }
+  }
+
+  for (const relationship of relationshipMap.values()) {
+    const source = entityMap.get(relationship.source);
+    const target = entityMap.get(relationship.target);
+    if (source) {
+      source.degree += 1;
+    }
+    if (target) {
+      target.degree += 1;
+    }
+  }
+  for (const relationship of relationshipMap.values()) {
+    relationship.combined_degree = (entityMap.get(relationship.source)?.degree || 0) + (entityMap.get(relationship.target)?.degree || 0);
+  }
+  for (const entity of entityMap.values()) {
+    entity.description = `${entity.title} appears in ${entity.frequency} text unit(s).`;
+  }
+
+  const covariates = (grounding.claims || []).map((claim, index) => {
+    const evidence = claim.topEvidence?.[0] || claim.conflictEvidence?.[0] || null;
+    const evidenceTextUnit = textUnits.find((textUnit) => textUnit.sourceId === evidence?.sourceId);
+    const claimTokens = topTokens(textTokens(claim.text), 4);
+    const subject = entityForToken(claimTokens[0] || "claim") || {};
+    const object = entityForToken(claimTokens[1] || claimTokens[0] || "evidence") || {};
+    const covariateId = stableId("graph_covariate", claim.claimId);
+    if (evidenceTextUnit) {
+      evidenceTextUnit.covariate_ids.push(covariateId);
+    }
+    return {
+      id: covariateId,
+      human_readable_id: index + 1,
+      covariate_type: "claim",
+      type: claim.source || "generated-summary",
+      description: claim.text,
+      subject_id: subject.id || "",
+      object_id: object.id || "",
+      status: claimStatusToCovariateStatus(claim.status),
+      source_text: evidence?.excerpt || claim.text,
+      text_unit_id: evidenceTextUnit?.id || "",
+      claim_id: claim.claimId,
+      group_id: claim.groupId || "",
+      support_score: claim.supportScore || 0,
+      conflict_score: claim.conflictScore || 0
+    };
+  });
+
+  const entities = Array.from(entityMap.values()).sort((left, right) => right.frequency - left.frequency || left.title.localeCompare(right.title));
+  const relationships = Array.from(relationshipMap.values()).sort((left, right) => right.weight - left.weight || left.id.localeCompare(right.id));
+  const communities = (classification.groups || []).map((group, index) => {
+    const groupTextUnits = textUnits.filter((textUnit) => textUnit.group_ids.includes(group.groupId));
+    const entityIds = uniqueOrdered(groupTextUnits.flatMap((textUnit) => textUnit.entity_ids));
+    const relationshipIds = uniqueOrdered(groupTextUnits.flatMap((textUnit) => textUnit.relationships_ids));
+    return {
+      id: group.groupId,
+      human_readable_id: index + 1,
+      community: index + 1,
+      parent: 0,
+      children: (group.windowCommunities || []).map((community) => community.communityId),
+      level: 0,
+      title: group.label,
+      kind: group.kind || "topic",
+      entity_ids: entityIds,
+      relationship_ids: relationshipIds,
+      text_unit_ids: groupTextUnits.map((textUnit) => textUnit.id),
+      period: createdAt,
+      size: entityIds.length
+    };
+  });
+  const communityReports = (convergence.communityReports || []).map((report, index) => {
+    const group = groupById.get(report.groupId) || {};
+    return {
+      id: stableId("graph_community_report", report.communityId || report.groupId || String(index)),
+      human_readable_id: index + 1,
+      community: index + 1,
+      parent: 0,
+      children: [],
+      level: 1,
+      title: report.title || group.label || `Community ${index + 1}`,
+      summary: (report.findings || []).slice(0, 2).join(" "),
+      full_content: (report.findings || []).join("\n"),
+      rank: Number((report.cohesionScore || 0).toFixed(4)),
+      rating_explanation: "Rank is derived from deterministic window-community cohesion.",
+      findings: (report.findings || []).map((finding, findingIndex) => ({
+        summary: finding,
+        explanation: `Finding ${findingIndex + 1} is backed by window community ${report.communityId || ""}.`
+      })),
+      period: createdAt,
+      size: report.windowCount || 0
+    };
+  });
+
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.graph-evidence`,
+    strategy: GRAPH_EVIDENCE_STRATEGY,
+    runId,
+    projectId: incrementalPlan.projectId || "",
+    projectFingerprint: incrementalPlan.projectFingerprint || "",
+    generatedAt: createdAt,
+    referencePatterns: [
+      "graphrag.text-units-entities-relationships",
+      "graphrag.covariates-claims",
+      "graphrag.community-reports",
+      "llama-index.nodes-with-score",
+      "haystack.document-metadata"
+    ],
+    summary: {
+      textUnitCount: textUnits.length,
+      entityCount: entities.length,
+      relationshipCount: relationships.length,
+      covariateCount: covariates.length,
+      communityCount: communities.length,
+      communityReportCount: communityReports.length
+    },
+    text_units: textUnits,
+    entities,
+    relationships,
+    covariates,
+    communities,
+    community_reports: communityReports
+  };
+}
+
+function graphEvidenceSummary(graphEvidence = {}) {
+  return {
+    strategy: graphEvidence.strategy || GRAPH_EVIDENCE_STRATEGY,
+    summary: graphEvidence.summary || {},
+    referencePatterns: graphEvidence.referencePatterns || []
+  };
+}
+
+function normalizeEvidenceQuery(searchParams = new URLSearchParams()) {
+  const read = (...names) => {
+    for (const name of names) {
+      const value = searchParams.get(name);
+      if (value !== null && String(value).trim()) {
+        return String(value).trim();
+      }
+    }
+    return "";
+  };
+  const rawLimit = Number(read("limit", "pageSize", "page-size") || 50);
+  const rawStatus = read("claimStatus", "claim-status", "status").toUpperCase();
+  const statusAliases = {
+    ENTAILED: "TRUE",
+    SUPPORTED: "TRUE",
+    TRUE: "TRUE",
+    CONTRADICTED: "FALSE",
+    FALSE: "FALSE",
+    NEUTRAL: "SUSPECTED",
+    SUSPECTED: "SUSPECTED"
+  };
+  const timeFrom = normalizeDateValue(read("timeFrom", "time-from", "from"), false);
+  const timeTo = normalizeDateValue(read("timeTo", "time-to", "to"), false);
+  return {
+    entity: read("entity", "entityQuery", "entity-query"),
+    relationship: read("relationship", "relationshipQuery", "relationship-query"),
+    claimStatus: statusAliases[rawStatus] || "",
+    claim: read("claim", "claimQuery", "claim-query"),
+    sourceId: read("sourceId", "source-id", "documentId", "document-id"),
+    groupId: read("groupId", "group-id", "communityId", "community-id"),
+    timeFrom,
+    timeTo,
+    limit: Number.isFinite(rawLimit) ? Math.max(1, Math.min(500, Math.floor(rawLimit))) : 50
+  };
+}
+
+function includesNormalized(value = "", query = "") {
+  if (!query) {
+    return true;
+  }
+  return String(value || "").toLowerCase().includes(String(query || "").toLowerCase());
+}
+
+function evidenceTextUnitTimeMatches(textUnit = {}, filters = {}) {
+  if (!filters.timeFrom && !filters.timeTo) {
+    return true;
+  }
+  return dateRangeMatches(textUnit.metadata?.timeRange || null, {
+    from: filters.timeFrom,
+    to: filters.timeTo
+  });
+}
+
+function buildEvidenceQueryResult({ runId = "", graphEvidence = {}, filters = {} } = {}) {
+  const textUnits = graphEvidence.text_units || [];
+  const entities = graphEvidence.entities || [];
+  const relationships = graphEvidence.relationships || [];
+  const covariates = graphEvidence.covariates || [];
+  const communities = graphEvidence.communities || [];
+  const communityReports = graphEvidence.community_reports || [];
+  const entityById = new Map(entities.map((entity) => [entity.id, entity]));
+
+  const matchingEntityIds = new Set(
+    entities
+      .filter((entity) => (
+        !filters.entity ||
+        includesNormalized(entity.id, filters.entity) ||
+        includesNormalized(entity.title, filters.entity) ||
+        includesNormalized(entity.type, filters.entity) ||
+        includesNormalized(entity.description, filters.entity)
+      ))
+      .map((entity) => entity.id)
+  );
+  const matchingRelationshipIds = new Set(
+    relationships
+      .filter((relationship) => {
+        if (!filters.relationship) {
+          return true;
+        }
+        const source = entityById.get(relationship.source);
+        const target = entityById.get(relationship.target);
+        return (
+          includesNormalized(relationship.id, filters.relationship) ||
+          includesNormalized(relationship.type, filters.relationship) ||
+          includesNormalized(relationship.description, filters.relationship) ||
+          includesNormalized(source?.title, filters.relationship) ||
+          includesNormalized(target?.title, filters.relationship)
+        );
+      })
+      .map((relationship) => relationship.id)
+  );
+  const hasClaimFilter = Boolean(filters.claimStatus || filters.claim);
+  const matchingCovariateIds = new Set(
+    covariates
+      .filter((covariate) => (
+        (!filters.claimStatus || covariate.status === filters.claimStatus) &&
+        (!filters.claim ||
+          includesNormalized(covariate.description, filters.claim) ||
+          includesNormalized(covariate.source_text, filters.claim) ||
+          includesNormalized(covariate.claim_id, filters.claim) ||
+          includesNormalized(covariate.type, filters.claim))
+      ))
+      .map((covariate) => covariate.id)
+  );
+  const covariateTextUnitIds = new Set(
+    covariates
+      .filter((covariate) => matchingCovariateIds.has(covariate.id))
+      .map((covariate) => covariate.text_unit_id)
+      .filter(Boolean)
+  );
+  const hasTextUnitScopedFilters = Boolean(
+    filters.sourceId ||
+    filters.groupId ||
+    filters.entity ||
+    filters.relationship ||
+    filters.timeFrom ||
+    filters.timeTo
+  );
+
+  const scopedTextUnits = textUnits.filter((textUnit) => {
+    if (filters.sourceId && textUnit.sourceId !== filters.sourceId && textUnit.document_id !== filters.sourceId) {
+      return false;
+    }
+    if (filters.groupId && !(textUnit.group_ids || []).includes(filters.groupId) && !(textUnit.community_ids || []).includes(filters.groupId)) {
+      return false;
+    }
+    if (!evidenceTextUnitTimeMatches(textUnit, filters)) {
+      return false;
+    }
+    if (filters.entity) {
+      const hasEntity = (textUnit.entity_ids || []).some((entityId) => matchingEntityIds.has(entityId));
+      if (!hasEntity && !includesNormalized(textUnit.text, filters.entity) && !includesNormalized(textUnit.title, filters.entity)) {
+        return false;
+      }
+    }
+    if (filters.relationship && !(textUnit.relationships_ids || []).some((relationshipId) => matchingRelationshipIds.has(relationshipId))) {
+      return false;
+    }
+    if (hasClaimFilter) {
+      const hasCovariate = (textUnit.covariate_ids || []).some((covariateId) => matchingCovariateIds.has(covariateId));
+      if (!hasCovariate && !covariateTextUnitIds.has(textUnit.id)) {
+        return false;
+      }
+    }
+    return true;
+  }).slice(0, filters.limit);
+
+  const selectedTextUnitIds = new Set(scopedTextUnits.map((textUnit) => textUnit.id));
+  const selectedEntityIds = new Set(scopedTextUnits.flatMap((textUnit) => textUnit.entity_ids || []));
+  const selectedRelationshipIds = new Set(scopedTextUnits.flatMap((textUnit) => textUnit.relationships_ids || []));
+  const selectedCovariateIds = new Set(scopedTextUnits.flatMap((textUnit) => textUnit.covariate_ids || []));
+  for (const covariate of covariates) {
+    if (selectedTextUnitIds.has(covariate.text_unit_id)) {
+      selectedCovariateIds.add(covariate.id);
+    }
+  }
+  if (hasClaimFilter && !hasTextUnitScopedFilters && scopedTextUnits.length === 0) {
+    for (const covariateId of matchingCovariateIds) {
+      selectedCovariateIds.add(covariateId);
+    }
+  }
+
+  const returnedEntities = entities.filter((entity) => selectedEntityIds.has(entity.id));
+  const returnedRelationships = relationships.filter((relationship) => (
+    selectedRelationshipIds.has(relationship.id) ||
+    (selectedEntityIds.has(relationship.source) && selectedEntityIds.has(relationship.target))
+  ));
+  const returnedCovariates = covariates.filter((covariate) => (
+    selectedCovariateIds.has(covariate.id) &&
+    (!filters.claimStatus || covariate.status === filters.claimStatus) &&
+    (!filters.claim ||
+      includesNormalized(covariate.description, filters.claim) ||
+      includesNormalized(covariate.source_text, filters.claim) ||
+      includesNormalized(covariate.claim_id, filters.claim) ||
+      includesNormalized(covariate.type, filters.claim))
+  ));
+  const returnedCommunityIds = new Set(scopedTextUnits.flatMap((textUnit) => textUnit.group_ids || []));
+  const returnedCommunities = communities.filter((community) => returnedCommunityIds.has(community.id));
+  const returnedCommunityHumanIds = new Set(returnedCommunities.map((community) => community.human_readable_id));
+  const returnedCommunityTitles = new Set(returnedCommunities.map((community) => community.title));
+  const returnedCommunityReports = communityReports.filter((report) => (
+    returnedCommunityHumanIds.has(report.community) ||
+    returnedCommunityHumanIds.has(report.human_readable_id) ||
+    returnedCommunityTitles.has(report.title)
+  ));
+
+  const counts = {
+    original: {
+      text_units: textUnits.length,
+      entities: entities.length,
+      relationships: relationships.length,
+      covariates: covariates.length,
+      communities: communities.length,
+      community_reports: communityReports.length
+    },
+    returned: {
+      text_units: scopedTextUnits.length,
+      entities: returnedEntities.length,
+      relationships: returnedRelationships.length,
+      covariates: returnedCovariates.length,
+      communities: returnedCommunities.length,
+      community_reports: returnedCommunityReports.length
+    },
+    filteredOut: {
+      text_units: Math.max(0, textUnits.length - scopedTextUnits.length),
+      entities: Math.max(0, entities.length - returnedEntities.length),
+      relationships: Math.max(0, relationships.length - returnedRelationships.length),
+      covariates: Math.max(0, covariates.length - returnedCovariates.length)
+    }
+  };
+
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.evidence-query`,
+    strategy: EVIDENCE_QUERY_STRATEGY,
+    runId,
+    generatedAt: nowIso(),
+    sourceEvidenceStrategy: graphEvidence.strategy || GRAPH_EVIDENCE_STRATEGY,
+    filters,
+    counts,
+    text_units: scopedTextUnits,
+    entities: returnedEntities,
+    relationships: returnedRelationships,
+    covariates: returnedCovariates,
+    communities: returnedCommunities,
+    community_reports: returnedCommunityReports,
+    nextActions: scopedTextUnits.length
+      ? [
+          "Use returned text_units as bounded source evidence.",
+          "Use returned covariates for claim status checks.",
+          "Escalate to evidence-pack-json only when a wider graph traversal is required."
+        ]
+      : [
+          "Relax entity, claim, relationship, source, group, or time filters.",
+          "Inspect counts.original to confirm the run contains graph evidence."
+        ]
+  };
+}
+
+function normalizeProjectEvidenceQuery(searchParams = new URLSearchParams()) {
+  const filters = normalizeEvidenceQuery(searchParams);
+  const mode = String(searchParams.get("mode") || "all").trim().toLowerCase() === "latest" ? "latest" : "all";
+  const rawRunLimit = Number(searchParams.get("runLimit") || searchParams.get("run-limit") || 20);
+  return {
+    filters,
+    mode,
+    runLimit: Number.isFinite(rawRunLimit) ? Math.max(1, Math.min(100, Math.floor(rawRunLimit))) : 20
+  };
+}
+
+function projectIdForRun(run = {}) {
+  return String(
+    run.result?.incrementalPlan?.projectId ||
+    run.sourcePlan?.incrementalPlan?.projectId ||
+    run.inputSummary?.projectId ||
+    run.result?.graphEvidence?.projectId ||
+    ""
+  ).trim();
+}
+
+function graphHasEvidence(graphEvidence = {}) {
+  return Boolean(
+    (graphEvidence.text_units || []).length ||
+    (graphEvidence.entities || []).length ||
+    (graphEvidence.relationships || []).length ||
+    (graphEvidence.covariates || []).length ||
+    (graphEvidence.communities || []).length ||
+    (graphEvidence.community_reports || []).length
+  );
+}
+
+function projectRunsForEvidence({ runs = [], projectId = "", mode = "all", runLimit = 20 } = {}) {
+  const normalizedProjectId = String(projectId || "").trim();
+  const matchingRuns = runs
+    .filter((run) => (
+      projectIdForRun(run) === normalizedProjectId &&
+      graphHasEvidence(run.result?.graphEvidence || {})
+    ))
+    .sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+  const limitedRuns = matchingRuns.slice(-runLimit);
+  const selectedRuns = mode === "latest" ? limitedRuns.slice(-1) : limitedRuns;
+  return {
+    totalMatchedRunCount: matchingRuns.length,
+    selectedRuns
+  };
+}
+
+function prefixGraphId(runId = "", id = "", fallback = "") {
+  const safeId = String(id || fallback || "unknown");
+  return `${runId}:${safeId}`;
+}
+
+function prefixGraphIds(runId = "", values = []) {
+  return uniqueOrdered((values || []).filter(Boolean).map((value) => prefixGraphId(runId, value)));
+}
+
+function withRunMetadata(item = {}, run = {}) {
+  return {
+    ...item,
+    sourceRunId: run.runId,
+    sourceRunCreatedAt: run.createdAt || "",
+    metadata: {
+      ...(item.metadata || {}),
+      sourceRunId: run.runId,
+      sourceRunCreatedAt: run.createdAt || "",
+      sourceProjectFingerprint: run.result?.incrementalPlan?.projectFingerprint || run.inputSummary?.projectFingerprint || ""
+    }
+  };
+}
+
+function mergeProjectGraphEvidence({ projectId = "", selectedRuns = [] } = {}) {
+  const textUnits = [];
+  const entities = [];
+  const relationships = [];
+  const covariates = [];
+  const communities = [];
+  const communityReports = [];
+  let entityHumanId = 1;
+  let relationshipHumanId = 1;
+  let covariateHumanId = 1;
+  let communityHumanId = 1;
+  let communityReportHumanId = 1;
+
+  for (const run of selectedRuns) {
+    const runId = run.runId;
+    const graphEvidence = run.result?.graphEvidence || {};
+    const communityHumanIds = new Map();
+
+    for (const entity of graphEvidence.entities || []) {
+      entities.push(withRunMetadata({
+        ...entity,
+        id: prefixGraphId(runId, entity.id, `entity-${entityHumanId}`),
+        human_readable_id: entityHumanId
+      }, run));
+      entityHumanId += 1;
+    }
+
+    for (const relationship of graphEvidence.relationships || []) {
+      relationships.push(withRunMetadata({
+        ...relationship,
+        id: prefixGraphId(runId, relationship.id, `relationship-${relationshipHumanId}`),
+        human_readable_id: relationshipHumanId,
+        source: relationship.source ? prefixGraphId(runId, relationship.source) : "",
+        target: relationship.target ? prefixGraphId(runId, relationship.target) : "",
+        text_unit_ids: prefixGraphIds(runId, relationship.text_unit_ids || [])
+      }, run));
+      relationshipHumanId += 1;
+    }
+
+    for (const covariate of graphEvidence.covariates || []) {
+      covariates.push(withRunMetadata({
+        ...covariate,
+        id: prefixGraphId(runId, covariate.id, `covariate-${covariateHumanId}`),
+        human_readable_id: covariateHumanId,
+        subject_id: covariate.subject_id ? prefixGraphId(runId, covariate.subject_id) : "",
+        object_id: covariate.object_id ? prefixGraphId(runId, covariate.object_id) : "",
+        text_unit_id: covariate.text_unit_id ? prefixGraphId(runId, covariate.text_unit_id) : "",
+        group_id: covariate.group_id ? prefixGraphId(runId, covariate.group_id) : ""
+      }, run));
+      covariateHumanId += 1;
+    }
+
+    for (const community of graphEvidence.communities || []) {
+      const prefixedCommunityId = prefixGraphId(runId, community.id, `community-${communityHumanId}`);
+      const originalHumanId = community.human_readable_id || community.community || communityHumanId;
+      communityHumanIds.set(String(originalHumanId), communityHumanId);
+      communities.push(withRunMetadata({
+        ...community,
+        id: prefixedCommunityId,
+        human_readable_id: communityHumanId,
+        community: communityHumanId,
+        children: prefixGraphIds(runId, community.children || []),
+        entity_ids: prefixGraphIds(runId, community.entity_ids || []),
+        relationship_ids: prefixGraphIds(runId, community.relationship_ids || []),
+        text_unit_ids: prefixGraphIds(runId, community.text_unit_ids || [])
+      }, run));
+      communityHumanId += 1;
+    }
+
+    for (const textUnit of graphEvidence.text_units || []) {
+      const originalGroupIds = uniqueOrdered([
+        ...(textUnit.group_ids || []),
+        ...(textUnit.community_ids || [])
+      ]);
+      textUnits.push(withRunMetadata({
+        ...textUnit,
+        id: prefixGraphId(runId, textUnit.id, `text-unit-${textUnits.length + 1}`),
+        entity_ids: prefixGraphIds(runId, textUnit.entity_ids || []),
+        relationships_ids: prefixGraphIds(runId, textUnit.relationships_ids || []),
+        covariate_ids: prefixGraphIds(runId, textUnit.covariate_ids || []),
+        group_ids: uniqueOrdered([
+          ...prefixGraphIds(runId, textUnit.group_ids || []),
+          ...originalGroupIds
+        ]),
+        community_ids: uniqueOrdered([
+          ...prefixGraphIds(runId, textUnit.community_ids || []),
+          ...originalGroupIds
+        ])
+      }, run));
+    }
+
+    for (const report of graphEvidence.community_reports || []) {
+      const originalCommunityId = String(report.community || report.human_readable_id || "");
+      const mergedCommunityId = communityHumanIds.get(originalCommunityId) || communityReportHumanId;
+      communityReports.push(withRunMetadata({
+        ...report,
+        id: prefixGraphId(runId, report.id, `community-report-${communityReportHumanId}`),
+        human_readable_id: mergedCommunityId,
+        community: mergedCommunityId
+      }, run));
+      communityReportHumanId += 1;
+    }
+  }
+
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.project-graph-evidence`,
+    strategy: GRAPH_EVIDENCE_STRATEGY,
+    projectId,
+    generatedAt: nowIso(),
+    runIds: selectedRuns.map((run) => run.runId),
+    projectFingerprints: uniqueOrdered(selectedRuns.map((run) => run.result?.incrementalPlan?.projectFingerprint || run.inputSummary?.projectFingerprint || "").filter(Boolean)),
+    referencePatterns: [
+      "graphrag.global-community-search",
+      "graphrag.period-size-incremental-merge",
+      "llama-index.ref-doc-hash",
+      "haystack.pipeline-snapshot"
+    ],
+    text_units: textUnits,
+    entities,
+    relationships,
+    covariates,
+    communities,
+    community_reports: communityReports,
+    summary: {
+      textUnitCount: textUnits.length,
+      entityCount: entities.length,
+      relationshipCount: relationships.length,
+      covariateCount: covariates.length,
+      communityCount: communities.length,
+      communityReportCount: communityReports.length
+    }
+  };
+}
+
+function buildProjectEvidenceQueryResult({ projectId = "", runs = [], query = {} } = {}) {
+  const { mode, runLimit, filters } = query;
+  const { totalMatchedRunCount, selectedRuns } = projectRunsForEvidence({ runs, projectId, mode, runLimit });
+  const mergedGraphEvidence = mergeProjectGraphEvidence({ projectId, selectedRuns });
+  const evidence = buildEvidenceQueryResult({
+    runId: projectId,
+    graphEvidence: mergedGraphEvidence,
+    filters
+  });
+  const latestRun = selectedRuns[selectedRuns.length - 1] || null;
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.project-evidence-query`,
+    strategy: PROJECT_EVIDENCE_QUERY_STRATEGY,
+    evidenceQueryStrategy: evidence.strategy,
+    projectId,
+    generatedAt: evidence.generatedAt,
+    mode,
+    runLimit,
+    totalMatchedRunCount,
+    matchedRunCount: selectedRuns.length,
+    runIds: selectedRuns.map((run) => run.runId),
+    latestRunId: latestRun?.runId || "",
+    projectFingerprints: mergedGraphEvidence.projectFingerprints,
+    incrementalModes: selectedRuns.map((run) => ({
+      runId: run.runId,
+      mode: run.result?.incrementalPlan?.mode || "",
+      projectFingerprint: run.result?.incrementalPlan?.projectFingerprint || ""
+    })),
+    mergedGraphSummary: mergedGraphEvidence.summary,
+    sourceEvidenceStrategy: mergedGraphEvidence.strategy,
+    filters: evidence.filters,
+    counts: evidence.counts,
+    text_units: evidence.text_units,
+    entities: evidence.entities,
+    relationships: evidence.relationships,
+    covariates: evidence.covariates,
+    communities: evidence.communities,
+    community_reports: evidence.community_reports,
+    nextActions: evidence.text_units.length
+      ? [
+          "Use sourceRunId fields to distinguish evidence from each project run.",
+          "Use latestRunId for the current project state and runIds for historical convergence.",
+          "Narrow with sourceId, entity, claimStatus, or time filters when the project graph is large."
+        ]
+      : [
+          "Relax project evidence filters or increase runLimit.",
+          "Check totalMatchedRunCount to confirm whether the project has graph evidence.",
+          "Create at least one completed distillation run with the requested projectId."
+        ]
+  };
+}
+
+function buildMarkdown({ title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, failure = null }) {
+  const evidenceIndexes = new Map(documents.map((document, index) => [document.sourceId, index]));
+  const routingRows = corpusPlan.documents
+    .slice(0, 12)
+    .map((document) => {
+      const route = document.route;
+      return `- ${document.title}: ${route.formatId}; parser=${route.preferredParser}; windows=${document.windowPlan.windowCount}; risks=${route.riskFlags.join(", ") || "none"}`;
+    })
+    .join("\n");
+  const categorySections = classification.groups
+    .map((group) => {
+      const findings = group.documents
+        .slice(0, 8)
+        .map((document) => {
+          const index = evidenceIndexes.get(document.sourceId) ?? 0;
+          return `- ${firstSentence(document.text) || document.title} [${evidenceKey(index)}]`;
+        })
+        .join("\n");
+      return [
+        `### ${group.label}`,
+        "",
+        `Sources: ${group.sourceCount}; cohesion: ${group.cohesionScore}; separation: ${group.separationScore ?? "n/a"}; communities: ${group.communityCount || 0}; kind: ${group.kind || "topic"}`,
+        "",
+        findings || "- No source text was supplied."
+      ].join("\n");
+    })
+    .join("\n\n");
+  const evidence = documents
+    .slice(0, 12)
+    .map((document, index) => `- [${evidenceKey(index)}] ${document.title}: ${firstSentence(document.text)}`)
+    .join("\n");
+  return [
+    `# ${title}`,
+    "",
+    "## Status",
+    "",
+    failure ? `Failed: ${failure.code} - ${failure.message}` : "Completed.",
+    "",
+    "## Scope",
+    "",
+    query || "External knowledge distillation request.",
+    "",
+    "## Source Routing",
+    "",
+    `Strategy: ${routePlan.strategy}`,
+    "",
+    routingRows || "- No source files were supplied.",
+    "",
+    "## Category Distillations",
+    "",
+    categorySections || "- No source text was supplied.",
+    "",
+    "## Project Convergence",
+    "",
+    `Strategy: ${convergence.strategy}`,
+    "",
+    `Sources: ${convergence.totalSources}; distillable: ${convergence.distillableSources}; windows: ${convergence.totalWindows}; groups: ${convergence.groupCount}`,
+    "",
+    convergence.convergenceSummary,
+    "",
+    "## Incremental Plan",
+    "",
+    incrementalPlan
+      ? `Strategy: ${incrementalPlan.strategy}; mode: ${incrementalPlan.mode}; reused windows: ${incrementalPlan.reusedWindowCount}; changed windows: ${incrementalPlan.changedWindowCount}; added windows: ${incrementalPlan.addedWindowCount}`
+      : "No incremental project snapshot was generated.",
+    "",
+    "## Graph Evidence",
+    "",
+    graphEvidence
+      ? `Strategy: ${graphEvidence.strategy}; text units: ${graphEvidence.summary.textUnitCount}; entities: ${graphEvidence.summary.entityCount}; relationships: ${graphEvidence.summary.relationshipCount}; claims: ${graphEvidence.summary.covariateCount}`
+      : "No graph evidence pack was generated.",
+    "",
+    "## Grounding",
+    "",
+    `Strategy: ${grounding.strategy}`,
+    "",
+    `Claims: ${grounding.claimCount}; supported: ${grounding.supported}; neutral: ${grounding.neutral}; score: ${grounding.groundingScore}`,
+    "",
+    "## Evidence",
+    "",
+    evidence || "- No evidence available."
+  ].join("\n");
+}
+
+function buildAgentMessage({ runId, title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, runtimeStatus, failure = null }) {
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.agent-message`,
+    responseProfile: "agent",
+    runId,
+    status: failure ? "failed" : "completed",
+    errors: failure ? [failure] : [],
+    title,
+    query,
+    runtimeStatus,
+    routePlan,
+    corpusPlan: {
+      strategy: corpusPlan.strategy,
+      allSizePolicy: corpusPlan.allSizePolicy,
+      sourceCount: corpusPlan.sourceCount,
+      distillableSourceCount: corpusPlan.distillableSourceCount,
+      totalBytes: corpusPlan.totalBytes,
+      totalCharacters: corpusPlan.totalCharacters,
+      windowCount: corpusPlan.windowCount,
+      timeFilter: corpusPlan.timeFilter || null,
+      documents: corpusPlan.documents.map((document) => ({
+        sourceId: document.sourceId,
+        title: document.title,
+        fileName: document.fileName,
+        extension: document.extension,
+        mediaType: document.mediaType,
+        byteSize: document.byteSize,
+        eventTime: document.eventTime,
+        documentTime: document.documentTime,
+        timeRange: document.timeRange,
+        timeConfidence: document.timeConfidence,
+        timeSignals: document.timeSignals,
+        route: document.route,
+        parseStatus: document.parseStatus,
+        parserTrace: document.parserTrace,
+        parseWarnings: document.parseWarnings,
+        windowPlan: {
+          strategy: document.windowPlan.strategy,
+          windowCount: document.windowPlan.windowCount,
+          maxCharacters: document.windowPlan.maxCharacters,
+          overlapCharacters: document.windowPlan.overlapCharacters,
+          windows: document.windowPlan.windows
+        },
+        quality: document.quality
+      }))
+    },
+    convergence,
+    incrementalPlan,
+    graphEvidence,
+    grounding,
+    classification: {
+      strategy: classification.strategy,
+      groupCount: classification.groups.length,
+      coreGroupCount: classification.coreGroupCount,
+      garbageGroupCount: classification.garbageGroupCount,
+      communityCount: classification.communityCount,
+      referencePatterns: classification.referencePatterns,
+      lowCouplingHighCohesion: classification.lowCouplingHighCohesion,
+      groups: classification.groups.map((group) => ({
+        groupId: group.groupId,
+        label: group.label,
+        keywords: group.keywords,
+        kind: group.kind || "topic",
+        excludedFromCore: Boolean(group.excludedFromCore),
+        sourceCount: group.sourceCount,
+        sourceIds: group.sourceIds,
+        cohesionScore: group.cohesionScore,
+        separationScore: group.separationScore ?? null,
+        boundary: group.boundary || null,
+        crossTopicLinks: group.crossTopicLinks || [],
+        communityCount: group.communityCount || 0,
+        windowCommunities: group.windowCommunities || [],
+        distillationUnit: group.distillationUnit || null,
+        embedding: group.embedding
+      }))
+    },
+    outputs: classification.groups
+      .filter((group) => {
+        const promotionGate = grounding.promotionGates?.[group.groupId] || candidatePromotionGateForGroup(group, grounding);
+        return !group.excludedFromCore && promotionGate.promoted;
+      })
+      .map((group) => ({
+        groupId: group.groupId,
+        label: group.label,
+        promotionGate: grounding.promotionGates?.[group.groupId] || candidatePromotionGateForGroup(group, grounding),
+        evidenceRefs: evidenceRefsForDocuments(documents, group.documents),
+        windowCommunityIds: (group.windowCommunities || []).map((community) => community.communityId),
+        distillationUnitId: group.distillationUnit?.unitId || "",
+        summary: group.documents.map((document) => firstSentence(document.text)).filter(Boolean).slice(0, 4)
+      }))
+  };
+}
+
+function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFrameworks = null) {
+  const createdAt = nowIso();
+  const allDocuments = normalizeDocuments(input, runtimeStatus);
+  const timeFilter = normalizeTimeFilter(input);
+  const filtered = applyTimeFilterToDocuments(allDocuments, timeFilter, {
+    maxWindowCharacters: input.maxWindowCharacters,
+    windowOverlapCharacters: input.windowOverlapCharacters
+  });
+  const activeDocuments = filtered.documents;
+  const corpusPlan = {
+    ...buildCorpusPlan(activeDocuments, input),
+    timeFilter: filtered.summary
+  };
+  const routePlan = buildRoutePlan(corpusPlan);
+  const plannedBySourceId = new Map(corpusPlan.documents.map((document) => [document.sourceId, document]));
+  const documents = activeDocuments
+    .filter((document) => document.text)
+    .map((document) => ({
+      ...document,
+      windowPlan: plannedBySourceId.get(document.sourceId)?.windowPlan || buildWindowPlan(document, input),
+      route: plannedBySourceId.get(document.sourceId)?.route || document.route
+    }));
+  const query = String(input.query || input.prompt || input.title || "External knowledge distillation").trim();
+  const title = String(input.title || query || "External Knowledge Distillation").trim();
+  const runId = String(input.runId || "").trim() || stableId("external_kd_run", query, createdAt);
+  const responseProfile = String(input.responseProfile || input.mode || "console").trim() || "console";
+  const groups = classifyDocuments(documents);
+  const classification = {
+    strategy: CLASSIFICATION_STRATEGY,
+    referencePatterns: [
+      "graphrag.community-reports",
+      "llama-index.nodes-with-metadata",
+      "haystack.explicit-pipeline-components"
+    ],
+    lowCouplingHighCohesion: {
+      enforced: true,
+      separationThreshold: CLASSIFICATION_SEPARATION_THRESHOLD,
+      cohesionThreshold: LEADER_CLUSTER_THRESHOLD,
+      garbageExcludedFromCore: true
+    },
+    embedding: {
+      provider: "builtin:hashing-semantic-v1",
+      dimensions: EMBEDDING_DIMENSIONS,
+      clusterThreshold: LEADER_CLUSTER_THRESHOLD,
+      windowCommunityThreshold: WINDOW_COMMUNITY_CLUSTER_THRESHOLD,
+      crossTopicLinkThreshold: CROSS_TOPIC_LINK_THRESHOLD,
+      garbageSignalThreshold: GARBAGE_SIGNAL_THRESHOLD
+    },
+    groupCount: groups.length,
+    coreGroupCount: groups.filter((group) => !group.excludedFromCore).length,
+    garbageGroupCount: groups.filter((group) => group.excludedFromCore).length,
+    communityCount: groups.reduce((sum, group) => sum + Number(group.communityCount || 0), 0),
+    groups
+  };
+  const convergence = buildProjectConvergence({ corpusPlan, classification });
+  const requestedClaims = Array.isArray(input.claims)
+    ? input.claims
+    : Array.isArray(input.requestedClaims)
+      ? input.requestedClaims
+      : [];
+  const grounding = buildGroundingReport({ documents, classification, requestedClaims });
+  const incrementalPlan = buildIncrementalPlan({
+    input,
+    corpusPlan,
+    classification,
+    convergence,
+    grounding,
+    priorRuns,
+    createdAt
+  });
+  const graphEvidence = buildGraphEvidencePack({
+    runId,
+    createdAt,
+    documents,
+    classification,
+    convergence,
+    grounding,
+    incrementalPlan
+  });
+  const rawDistillableCount = allDocuments.filter((document) => document.text).length;
+  const passed = documents.length > 0;
+  const failure = passed
+    ? null
+    : timeFilter.active && rawDistillableCount > 0
+      ? {
+          code: "TIME_FILTERED_CORPUS_EMPTY",
+          message: "No distillable source matched the requested time filter.",
+          recoverable: true,
+          recommendedAction: "Relax from/to/confidenceMin, set includeUnknownTime, or choose a different timeField."
+        }
+      : {
+          code: "EMPTY_RAW_CORPUS",
+          message: "No distillable text was produced from the supplied documents.",
+          recoverable: true,
+          recommendedAction: "Supply text, contentBase64, or an allowed filePath/contentRef for a supported direct parser, or enable the required binary parser runtime."
+        };
+  const referenceGapReport = buildReferenceGapReport(referenceFrameworks, {
+    runtimeStatus,
+    run: {
+      runId,
+      status: passed ? "completed" : "failed",
+      inputSummary: {
+        sourceCount: allDocuments.length,
+        distillableSourceCount: documents.length,
+        windowCount: corpusPlan.windowCount
+      },
+      result: {
+        algorithmVersion: "external-service.route-window-community-claim-gated-graph-incremental-distillation.v5",
+        classification,
+        graphEvidence
+      }
+    }
+  });
+  const markdown = buildMarkdown({ title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, failure });
+  const agentMessage = buildAgentMessage({
+    runId,
+    title,
+    query,
+    documents,
+    classification,
+    routePlan,
+    corpusPlan,
+    convergence,
+    grounding,
+    incrementalPlan,
+    graphEvidence,
+    runtimeStatus,
+    failure
+  });
+  const portableDocument = {
+    protocolVersion: "portable.knowledge-distillation.v1",
+    title,
+    markdown,
+    responseProfile: "human-readable",
+    selfContained: true,
+    runtimeDependencies: [],
+    status: passed ? "completed" : "failed",
+    errors: failure ? [failure] : [],
+    runtimeStatus,
+    routePlan,
+    corpusPlan: {
+      strategy: corpusPlan.strategy,
+      allSizePolicy: corpusPlan.allSizePolicy,
+      sourceCount: corpusPlan.sourceCount,
+      distillableSourceCount: corpusPlan.distillableSourceCount,
+      totalBytes: corpusPlan.totalBytes,
+      totalCharacters: corpusPlan.totalCharacters,
+      windowCount: corpusPlan.windowCount,
+      timeFilter: corpusPlan.timeFilter
+    },
+    convergence,
+    incrementalPlan,
+    graphEvidence: graphEvidenceSummary(graphEvidence),
+    grounding,
+    classification: {
+      strategy: classification.strategy,
+      groupCount: classification.groupCount,
+      coreGroupCount: classification.coreGroupCount,
+      garbageGroupCount: classification.garbageGroupCount,
+      communityCount: classification.communityCount,
+      referencePatterns: classification.referencePatterns,
+      lowCouplingHighCohesion: classification.lowCouplingHighCohesion,
+      embedding: classification.embedding,
+      groups: classification.groups.map(publicClassificationGroup)
+    },
+    citations: documents.slice(0, 12).map((document, index) => ({
+      citationKey: evidenceKey(index),
+      title: document.title,
+      sourceId: document.sourceId,
+      excerpt: firstSentence(document.text)
+    })),
+    evidenceAppendix: documents.slice(0, 12).map((document, index) => ({
+      citationKey: evidenceKey(index),
+      sourceId: document.sourceId,
+      title: document.title,
+      excerpt: firstSentence(document.text),
+      contentHash: document.contentHash
+    }))
+  };
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    serviceName: SERVICE_NAME,
+    serviceKind: SERVICE_KIND,
+    runId,
+    status: passed ? "completed" : "failed",
+    responseProfile,
+    title,
+    query,
+    createdAt,
+    updatedAt: createdAt,
+    inputSummary: {
+      sourceCount: allDocuments.length,
+      projectId: incrementalPlan.projectId,
+      projectFingerprint: incrementalPlan.projectFingerprint,
+      distillableSourceCount: documents.length,
+      totalBytes: corpusPlan.totalBytes,
+      windowCount: corpusPlan.windowCount,
+      totalChars: documents.reduce((sum, document) => sum + Number(document.totalTextCharacters || document.text.length || 0), 0),
+      timeFilter: corpusPlan.timeFilter
+    },
+    sourcePlan: {
+      strategy: "external_service_route_window_community_claim_gated_graph_incremental_distillation_v5",
+      sourceCount: allDocuments.length,
+      distillableSourceCount: documents.length,
+      groupCount: classification.groupCount,
+      routePlan,
+      incrementalPlan,
+      graphEvidence: graphEvidenceSummary(graphEvidence),
+      corpusPlan: {
+        strategy: corpusPlan.strategy,
+        allSizePolicy: corpusPlan.allSizePolicy,
+        totalBytes: corpusPlan.totalBytes,
+        totalCharacters: corpusPlan.totalCharacters,
+        windowCount: corpusPlan.windowCount,
+        timeFilter: corpusPlan.timeFilter
+      },
+      generatedAt: createdAt
+    },
+    result: {
+      status: passed ? "completed" : "failed",
+      algorithmVersion: "external-service.route-window-community-claim-gated-graph-incremental-distillation.v5",
+      errors: failure ? [failure] : [],
+      agentMessage,
+      runtimeStatus,
+      routePlan,
+      corpusPlan,
+      convergence,
+      incrementalPlan,
+      graphEvidence,
+      referenceGapReport,
+      grounding,
+      classification: {
+        strategy: classification.strategy,
+        groupCount: classification.groupCount,
+        coreGroupCount: classification.coreGroupCount,
+        garbageGroupCount: classification.garbageGroupCount,
+        communityCount: classification.communityCount,
+        referencePatterns: classification.referencePatterns,
+        lowCouplingHighCohesion: classification.lowCouplingHighCohesion,
+        embedding: classification.embedding,
+        groups: classification.groups.map(publicClassificationGroup)
+      },
+      portableDocuments: [{ document: portableDocument }],
+      candidates: classification.groups
+        .filter((group) => !group.excludedFromCore)
+        .map((group, index) => {
+          const promotionGate = grounding.promotionGates?.[group.groupId] || candidatePromotionGateForGroup(group, grounding);
+          return {
+            candidateId: stableId("external_candidate", runId, group.groupId, index),
+            title: group.label,
+            sourceIds: group.sourceIds,
+            promoted: promotionGate.promoted,
+            promotionGate,
+            distillationUnitId: group.distillationUnit?.unitId || "",
+            windowCommunityIds: (group.windowCommunities || []).map((community) => community.communityId),
+            cohesionScore: group.cohesionScore,
+            separationScore: group.separationScore,
+            evidenceRefs: evidenceRefsForDocuments(documents, group.documents),
+            groundingRefs: grounding.claims
+              .filter((claim) => claim.groupId === group.groupId)
+              .map((claim) => claim.claimId)
+          };
+        })
+        .filter((candidate) => candidate.promoted),
+      qualityReport: {
+        protocolVersion: PROTOCOL_VERSION,
+        passed,
+        overallScore: passed ? (grounding.passed ? 0.8 : 0.68) : 0,
+        sourceCoverage: documents.length,
+        routing: {
+          supportedSourceCount: corpusPlan.documents.filter((document) => document.route.formatId !== "unknown").length,
+          riskySourceCount: corpusPlan.documents.filter((document) => document.route.riskFlags.length > 0).length
+        },
+        corpus: {
+          allSizePolicy: corpusPlan.allSizePolicy,
+          windowCount: corpusPlan.windowCount,
+          totalBytes: corpusPlan.totalBytes,
+          totalCharacters: corpusPlan.totalCharacters
+        },
+        incremental: {
+          strategy: incrementalPlan.strategy,
+          mode: incrementalPlan.mode,
+          projectId: incrementalPlan.projectId,
+          reuseRatio: incrementalPlan.reuseRatio,
+          reusedWindowCount: incrementalPlan.reusedWindowCount,
+          changedWindowCount: incrementalPlan.changedWindowCount,
+          addedWindowCount: incrementalPlan.addedWindowCount,
+          removedWindowCount: incrementalPlan.removedWindowCount
+        },
+        graphEvidence: graphEvidence.summary,
+        referenceGaps: {
+          strategy: referenceGapReport.strategy,
+          frameworkCount: referenceGapReport.referenceFrameworks.count,
+          openGapCount: referenceGapReport.openGaps.length
+        },
+        runtime: runtimeStatus?.summary || null,
+        classification: {
+          groupCount: classification.groupCount,
+          coreGroupCount: classification.coreGroupCount,
+          garbageGroupCount: classification.garbageGroupCount,
+          communityCount: classification.communityCount,
+          strategy: classification.strategy,
+          averageCohesion: Number(
+            (
+              classification.groups.reduce((sum, group) => sum + group.cohesionScore, 0) /
+              Math.max(1, classification.groupCount)
+            ).toFixed(4)
+          ),
+          averageSeparation: Number(
+            (
+              classification.groups
+                .filter((group) => !group.excludedFromCore)
+                .reduce((sum, group) => sum + Number(group.separationScore ?? 1), 0) /
+              Math.max(1, classification.coreGroupCount)
+            ).toFixed(4)
+          )
+        },
+        grounding: {
+          passed: grounding.passed,
+          claimCount: grounding.claimCount,
+          groundingScore: grounding.groundingScore,
+          neutral: grounding.neutral,
+          contradicted: grounding.contradicted
+        }
+      }
+    },
+    artifactRefs: [
+      {
+        artifactId: "portable-markdown",
+        label: "Portable Markdown",
+        contentType: "text/markdown; charset=utf-8",
+        fileName: `${runId}.md`
+      },
+      {
+        artifactId: "portable-docx",
+        label: "Portable DOCX",
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        fileName: `${runId}.docx`
+      },
+      {
+        artifactId: "result-json",
+        label: "Result JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.json`
+      },
+      {
+        artifactId: "agent-message-json",
+        label: "Agent Message JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.agent.json`
+      },
+      {
+        artifactId: "project-snapshot-json",
+        label: "Project Snapshot JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.project-snapshot.json`
+      },
+      {
+        artifactId: "evidence-pack-json",
+        label: "Graph Evidence Pack JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.evidence-pack.json`
+      },
+      {
+        artifactId: "reference-gap-report-json",
+        label: "Reference Gap Report JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.reference-gap-report.json`
+      },
+      {
+        artifactId: "workspace-package-zip",
+        label: "Workspace Package ZIP",
+        contentType: "application/zip",
+        fileName: `${runId}.workspace-package.zip`
+      }
+    ]
+  };
+}
+
+function capabilities(referenceFrameworks = null, runtimeStatus = null) {
+  const supportedExtensions = Array.from(ROUTES_BY_EXTENSION.keys()).sort();
+  const supportedMediaTypes = Array.from(ROUTES_BY_MEDIA_TYPE.keys()).sort();
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    serviceName: SERVICE_NAME,
+    serviceKind: SERVICE_KIND,
+    api: {
+      health: "GET /health",
+      capabilities: "GET /v1/capabilities",
+      runtimeHealth: "GET /v1/runtime/health",
+      referenceGapReport: "GET /v1/reference-gap-report",
+      listRuns: "GET /v1/distillation/runs",
+      createRun: "POST /v1/distillation/runs",
+      getRun: "GET /v1/distillation/runs/:runId",
+      cancelRun: "POST /v1/distillation/runs/:runId/cancel",
+      evidenceQuery: "GET /v1/distillation/runs/:runId/evidence",
+      projectEvidenceQuery: "GET /v1/projects/:projectId/evidence",
+      exportArtifact: "GET /v1/distillation/runs/:runId/artifacts/:artifactId"
+    },
+    artifacts: ["portable-markdown", "portable-docx", "result-json", "agent-message-json", "project-snapshot-json", "evidence-pack-json", "reference-gap-report-json", "workspace-package-zip"],
+    responseProfiles: ["console", "agent", "api"],
+    algorithms: [
+      "external-service.route-window-embedding-grounded-distillation.v1",
+      "external-service.route-window-community-grounded-distillation.v2",
+      "external-service.route-window-community-claim-gated-distillation.v3",
+      "external-service.route-window-community-claim-gated-incremental-distillation.v4",
+      "external-service.route-window-community-claim-gated-graph-incremental-distillation.v5",
+      EVIDENCE_QUERY_STRATEGY,
+      PROJECT_EVIDENCE_QUERY_STRATEGY,
+      REFERENCE_GAP_REPORT_STRATEGY
+    ],
+    timeFiltering: {
+      supported: true,
+      strategy: "document-window-time-filter.v1",
+      requestFields: ["timeFilter.from", "timeFilter.to", "timeFilter.timeField", "timeFilter.confidenceMin", "timeFilter.excludeWeakEvidence", "timeFilter.includeUnknownTime"],
+      timeFields: ["eventTime", "documentTime", "any"],
+      corpusFields: ["timeRange", "timeConfidence", "timeSignals"]
+    },
+    fileCompatibility: {
+      routingStrategy: "extension-media-shape-routing.v1",
+      routeOrder: ["extension", "mediaType", "sourceKind", "textFallback"],
+      supportedExtensions,
+      supportedMediaTypes,
+      formats: FORMAT_ROUTES.map((route) => ({
+        id: route.id,
+        label: route.label,
+        extensions: route.extensions,
+        mediaTypes: route.mediaTypes,
+        contentShape: route.contentShape,
+        preferredParser: route.preferredParser,
+        fallbackParsers: route.fallbackParsers,
+        parserChain: route.parserChain,
+        streamingUnit: route.streamingUnit,
+        referenceFrameworks: route.referenceFrameworks
+      }))
+    },
+    largeDocumentPolicy: {
+      strategy: "streaming-windowed",
+      defaultWindowCharacters: DEFAULT_WINDOW_CHARACTERS,
+      defaultWindowOverlapCharacters: DEFAULT_WINDOW_OVERLAP_CHARACTERS,
+      largeFileBytes: LARGE_FILE_BYTES,
+      largeTextCharacters: LARGE_TEXT_CHARACTERS,
+      sizeLimitPolicy: "resource-bounded-no-small-hard-cap"
+    },
+    parserExecution: {
+      payloadModes: ["text", "contentBase64", "filePath", "contentRef"],
+      allowedInputRoots: INPUT_ROOTS,
+      builtInParsers: [
+        "payload.file-ref",
+        "payload.file-ref-deferred",
+        "payload.stream-text",
+        "text.direct",
+        "text.markdown",
+        "structured.json",
+        "config.key-value",
+        "diagram.structure",
+        "table.csv",
+        "table.tsv",
+        "email.headers-body",
+        "email.msg.tika",
+        "email.msg.tika.file-ref",
+        "email.mbox",
+        "email.mbox-route",
+        "email.attachment-route",
+        "pdf.text.basic",
+        "pdf.text.pdftotext",
+        "structured-zip.file-ref",
+        "zip.manifest",
+        "archive.expand-route",
+        "archive.child-file.route",
+        "archive.file-ref.expand",
+        "archive.entry-file-ref",
+        "archive.zip.container",
+        "archive.zip.extract",
+        "archive.tar.container",
+        "archive.tar.extract",
+        "archive.gzip.decompress",
+        "archive.7z.extract",
+        "office.word.structured",
+        "office.presentation.slides",
+        "table.sheet.structured",
+        "table.sheet.headers",
+        "table.sheet.cells",
+        "table.time-index",
+        "open-document.structured",
+        "ebook.epub",
+        "tika.text.app",
+        "tika.text.file-ref",
+        "ocr.image.tesseract",
+        "pdf.ocr.poppler-tesseract"
+      ],
+      externalRuntimeRequired: ["tika.text", "pdf.visual.layout", "ocr.page", "ocr.image", "multimodal.image"],
+      emptyCorpusErrorCode: "EMPTY_RAW_CORPUS"
+    },
+    runtimeDoctor: runtimeStatus,
+    classification: {
+      supported: true,
+      strategy: CLASSIFICATION_STRATEGY,
+      embedding: {
+        provider: "builtin:hashing-semantic-v1",
+        dimensions: EMBEDDING_DIMENSIONS,
+        clusterThreshold: LEADER_CLUSTER_THRESHOLD,
+        windowCommunityThreshold: WINDOW_COMMUNITY_CLUSTER_THRESHOLD,
+        crossTopicLinkThreshold: CROSS_TOPIC_LINK_THRESHOLD,
+        separationThreshold: CLASSIFICATION_SEPARATION_THRESHOLD,
+        garbageSignalThreshold: GARBAGE_SIGNAL_THRESHOLD
+      },
+      referencePatterns: [
+        "graphrag.community-reports",
+        "llama-index.nodes-with-metadata",
+        "haystack.explicit-pipeline-components"
+      ],
+      purpose: "Separate unrelated source groups before distillation to keep outputs low-coupling and high-cohesion."
+    },
+    grounding: {
+      supported: true,
+      strategy: GROUNDING_STRATEGY,
+      supportThreshold: GROUNDING_SUPPORT_THRESHOLD,
+      conflictThreshold: GROUNDING_CONFLICT_THRESHOLD,
+      promotionGate: "claim-grounded-promotion",
+      purpose: "Attach generated and requested claims to top-k source evidence, detect cross-topic conflicts, and gate candidate promotion."
+    },
+    incrementalConvergence: {
+      supported: true,
+      strategy: INCREMENTAL_CONVERGENCE_STRATEGY,
+      projectFields: ["projectId", "workspaceId", "repositoryId", "project.id", "project.name"],
+      snapshotFields: ["projectFingerprint", "documents", "windows", "groups"],
+      diffFields: ["addedSourceIds", "changedSourceIds", "removedSourceIds", "reusedSourceIds", "reusedWindowCount", "reuseRatio"],
+      artifact: "project-snapshot-json",
+      referencePatterns: [
+        "graphrag.period-size-incremental-merge",
+        "graphrag.text-units-community-reports",
+        "haystack.pipeline-snapshot",
+        "llama-index.ref-doc-hash"
+      ]
+    },
+    graphEvidence: {
+      supported: true,
+      strategy: GRAPH_EVIDENCE_STRATEGY,
+      artifact: "evidence-pack-json",
+      tables: ["text_units", "entities", "relationships", "covariates", "communities", "community_reports"],
+      query: {
+        supported: true,
+        strategy: EVIDENCE_QUERY_STRATEGY,
+        endpoint: "GET /v1/distillation/runs/:runId/evidence",
+        filters: ["entity", "relationship", "claimStatus", "claim", "sourceId", "groupId", "timeFrom", "timeTo", "limit"],
+        purpose: "Return a bounded, machine-readable evidence slice for agents instead of forcing full artifact scans."
+      },
+      projectQuery: {
+        supported: true,
+        strategy: PROJECT_EVIDENCE_QUERY_STRATEGY,
+        endpoint: "GET /v1/projects/:projectId/evidence",
+        modes: ["all", "latest"],
+        filters: ["mode", "runLimit", "entity", "relationship", "claimStatus", "claim", "sourceId", "groupId", "timeFrom", "timeTo", "limit"],
+        purpose: "Merge graph evidence across runs for the same projectId so agents can query large-project convergence without downloading every run artifact."
+      },
+      referencePatterns: [
+        "graphrag.text-units-entities-relationships",
+        "graphrag.covariates-claims",
+        "graphrag.community-reports",
+        "llama-index.nodes-with-score",
+        "haystack.document-metadata"
+      ]
+    },
+    referenceGapReport: {
+      supported: true,
+      strategy: REFERENCE_GAP_REPORT_STRATEGY,
+      endpoint: "GET /v1/reference-gap-report",
+      artifact: "reference-gap-report-json",
+      purpose: "Continuously compare the service against local open-source reference framework checkouts and expose absorbed patterns plus remaining gaps."
+    },
+    referenceFrameworks: referenceFrameworks
+      ? {
+          protocolVersion: referenceFrameworks.protocolVersion,
+          localRoot: referenceFrameworks.localRoot,
+          count: referenceFrameworks.frameworks.length,
+          frameworks: referenceFrameworks.frameworks.map((item) => ({
+            id: item.id,
+            repo: item.repo,
+            localPath: item.localPath,
+            commit: item.commit,
+            starsAtSelection: item.starsAtSelection,
+            learnFrom: item.learnFrom
+          }))
+        }
+      : null
+  };
+}
+
+async function handleRequest(request, response) {
+  const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  try {
+    if (request.method === "GET" && (pathname === "/" || pathname === "/health")) {
+      jsonResponse(response, 200, {
+        ok: true,
+        protocolVersion: PROTOCOL_VERSION,
+        serviceName: SERVICE_NAME,
+        serviceKind: SERVICE_KIND,
+        dataDir: DATA_DIR,
+        runtimeDoctor: await runtimeDoctor({ force: url.searchParams.get("refresh") === "1" })
+      });
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/capabilities") {
+      jsonResponse(response, 200, capabilities(
+        await loadReferenceFrameworks(),
+        await runtimeDoctor({ force: url.searchParams.get("refresh") === "1" })
+      ));
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/runtime/health") {
+      jsonResponse(response, 200, await runtimeDoctor({ force: url.searchParams.get("refresh") === "1" }));
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/reference-frameworks") {
+      jsonResponse(response, 200, await loadReferenceFrameworks());
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/reference-gap-report") {
+      jsonResponse(response, 200, buildReferenceGapReport(
+        await loadReferenceFrameworks(),
+        { runtimeStatus: await runtimeDoctor({ force: url.searchParams.get("refresh") === "1" }) }
+      ));
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/distillation/runs") {
+      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
+      const runs = await loadRuns();
+      jsonResponse(response, 200, {
+        protocolVersion: PROTOCOL_VERSION,
+        serviceName: SERVICE_NAME,
+        serviceKind: SERVICE_KIND,
+        runs: runs.slice(-limit).reverse().map(compactRun)
+      });
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/v1/distillation/runs") {
+      const body = await readJson(request);
+      const runs = await loadRuns();
+      const run = createRun(body, await runtimeDoctor(), runs, await loadReferenceFrameworks());
+      runs.push(run);
+      await saveRuns(runs);
+      jsonResponse(response, 201, run);
+      return;
+    }
+
+    const projectEvidenceMatch = pathname.match(/^\/v1\/projects\/([^/]+)\/evidence$/);
+    if (request.method === "GET" && projectEvidenceMatch) {
+      const projectId = decodeURIComponent(projectEvidenceMatch[1]);
+      const runs = await loadRuns();
+      const query = normalizeProjectEvidenceQuery(url.searchParams);
+      const projectEvidence = buildProjectEvidenceQueryResult({ projectId, runs, query });
+      if (projectEvidence.totalMatchedRunCount === 0) {
+        jsonResponse(response, 404, {
+          error: "external distillation project evidence not found",
+          projectId,
+          strategy: PROJECT_EVIDENCE_QUERY_STRATEGY
+        });
+        return;
+      }
+      jsonResponse(response, 200, projectEvidence);
+      return;
+    }
+
+    const runMatch = pathname.match(/^\/v1\/distillation\/runs\/([^/]+)(?:\/(.+))?$/);
+    if (runMatch) {
+      const runId = decodeURIComponent(runMatch[1]);
+      const suffix = runMatch[2] || "";
+      const runs = await loadRuns();
+      const run = runs.find((item) => item.runId === runId);
+      if (!run) {
+        jsonResponse(response, 404, { error: "external distillation run not found", runId });
+        return;
+      }
+
+      if (request.method === "GET" && !suffix) {
+        jsonResponse(response, 200, run);
+        return;
+      }
+
+      if (request.method === "POST" && suffix === "cancel") {
+        run.status = run.status === "completed" ? "completed" : "canceled";
+        run.updatedAt = nowIso();
+        await saveRuns(runs);
+        jsonResponse(response, 202, run);
+        return;
+      }
+
+      if (request.method === "GET" && suffix === "evidence") {
+        jsonResponse(response, 200, buildEvidenceQueryResult({
+          runId,
+          graphEvidence: run.result?.graphEvidence || {},
+          filters: normalizeEvidenceQuery(url.searchParams)
+        }));
+        return;
+      }
+
+      const artifactMatch = suffix.match(/^artifacts\/([^/]+)$/);
+      if (request.method === "GET" && artifactMatch) {
+        const artifactId = decodeURIComponent(artifactMatch[1]);
+        if (artifactId === "portable-markdown") {
+          const markdown = run.result?.portableDocuments?.[0]?.document?.markdown || "";
+          textResponse(response, 200, markdown, {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="${run.runId}.md"`
+          });
+          return;
+        }
+        if (artifactId === "portable-docx") {
+          binaryResponse(response, 200, buildPortableDocx(run), {
+            "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "content-disposition": `attachment; filename="${run.runId}.docx"`
+          });
+          return;
+        }
+        if (artifactId === "result-json") {
+          jsonResponse(response, 200, run, {
+            "content-disposition": `attachment; filename="${run.runId}.json"`
+          });
+          return;
+        }
+        if (artifactId === "agent-message-json") {
+          jsonResponse(response, 200, run.result?.agentMessage || {}, {
+            "content-disposition": `attachment; filename="${run.runId}.agent.json"`
+          });
+          return;
+        }
+        if (artifactId === "project-snapshot-json") {
+          jsonResponse(response, 200, run.result?.incrementalPlan || {}, {
+            "content-disposition": `attachment; filename="${run.runId}.project-snapshot.json"`
+          });
+          return;
+        }
+        if (artifactId === "evidence-pack-json") {
+          jsonResponse(response, 200, run.result?.graphEvidence || {}, {
+            "content-disposition": `attachment; filename="${run.runId}.evidence-pack.json"`
+          });
+          return;
+        }
+        if (artifactId === "reference-gap-report-json") {
+          jsonResponse(response, 200, run.result?.referenceGapReport || {}, {
+            "content-disposition": `attachment; filename="${run.runId}.reference-gap-report.json"`
+          });
+          return;
+        }
+        if (artifactId === "workspace-package-zip") {
+          binaryResponse(response, 200, buildWorkspacePackageZip(run), {
+            "content-type": "application/zip",
+            "content-disposition": `attachment; filename="${run.runId}.workspace-package.zip"`
+          });
+          return;
+        }
+        jsonResponse(response, 404, { error: "external distillation artifact not found", runId, artifactId });
+        return;
+      }
+    }
+
+    jsonResponse(response, 404, { error: "not found", path: pathname });
+  } catch (error) {
+    jsonResponse(response, 500, {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+await fs.mkdir(DATA_DIR, { recursive: true });
+
+const server = http.createServer(handleRequest);
+server.listen(PORT, HOST, () => {
+  console.log(`${SERVICE_NAME} listening on http://${HOST}:${PORT}`);
+});

@@ -154,13 +154,17 @@ export function createSystemController({
       }
       if (operationResult.payload?.__binaryResponse) {
         const disposition = operationResult.payload.disposition || "inline";
+        const buffer = Buffer.isBuffer(operationResult.payload.buffer)
+          ? operationResult.payload.buffer
+          : Buffer.alloc(0);
         response.writeHead(operationResult.status || 200, {
           "Content-Type": operationResult.payload.contentType || "application/octet-stream",
           "Content-Disposition": contentDispositionHeader(disposition, operationResult.payload.fileName || "asset.bin"),
+          "Content-Length": String(buffer.length),
           "Cache-Control": "no-store",
           ...(operationResult.payload.headers || {})
         });
-        response.end(operationResult.payload.buffer || Buffer.alloc(0));
+        response.end(buffer);
         return;
       }
       if (operationResult.payload?.__htmlResponse) {

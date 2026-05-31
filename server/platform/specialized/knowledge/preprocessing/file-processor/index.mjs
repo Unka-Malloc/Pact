@@ -534,6 +534,20 @@ function normalizeDocumentParseResult(result, parserId = "") {
   };
 }
 
+function decodePlainTextBuffer(buffer) {
+  return Buffer.isBuffer(buffer)
+    ? buffer.toString("utf8").replace(/^\uFEFF/, "")
+    : Buffer.from(buffer || "").toString("utf8").replace(/^\uFEFF/, "");
+}
+
+function shouldReadStructuredBufferDirectly({ descriptor = null, sourceKind = "", mediaTypeHint = "" } = {}) {
+  return (
+    isImportTextDescriptor(descriptor) ||
+    String(sourceKind || "").trim() === "text" ||
+    String(mediaTypeHint || "").trim().toLowerCase().startsWith("text/")
+  );
+}
+
 function documentParserSupports({ extension, mediaTypeHint, runtime, sourceKind = "document" }) {
   const route = resolveDocumentRoute({
     runtime,
@@ -726,6 +740,17 @@ async function readStructuredBuffer({
     extension: resolvedExtension,
     mediaTypeHint
   });
+
+  if (shouldReadStructuredBufferDirectly({ descriptor, sourceKind, mediaTypeHint })) {
+    return normalizeDocumentParseResult({
+      parserId: "builtin/text-direct",
+      text: decodePlainTextBuffer(buffer),
+      metadata: {
+        "Content-Type": mediaTypeHint || descriptor?.mediaType || mediaTypeForImportExtension(resolvedExtension)
+      },
+      mediaType: mediaTypeHint || descriptor?.mediaType || mediaTypeForImportExtension(resolvedExtension)
+    }, "builtin/text-direct");
+  }
 
   return executeRouteExtraction({
     runtime,
