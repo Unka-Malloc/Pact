@@ -1387,6 +1387,8 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.errorCode, "UNSUPPORTED_TARGET");
     assert.equal(payload.nextCommand, `pact-mcp scan --url '${serverUrl}' --json`);
+    assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${serverUrl}' --json`);
+    assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --json`);
     assert.ok(payload.repairCommands?.includes(`pact-mcp scan --url '${serverUrl}' --json`));
     assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${serverUrl}' --json`));
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
@@ -1419,6 +1421,8 @@ try {
     assert.ok(payload.repairCommands?.every((command) => command.includes(missingInstallTokenEnv)));
     assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "openclaw")?.priority, true);
     assert.equal(result.stdout.includes(token), false, "missing-token guidance must not expose grant tokens");
   });
@@ -1439,6 +1443,8 @@ try {
     assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${unavailableUrl}' --json`));
     assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${unavailableUrl}' --json`);
+    assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${unavailableUrl}' --json`);
     assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "claude-code")?.label, "Claude Code");
   });
 
@@ -1467,6 +1473,8 @@ try {
     assert.ok(payload.repairCommands?.every((command) => command.includes(`--token-env '${missingInstallTokenEnv}'`)));
     assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "codex")?.installMode, "codex-release-plugin-and-mcp-cli");
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "codex"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "claude-code"), true);

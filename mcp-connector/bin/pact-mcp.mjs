@@ -562,11 +562,18 @@ function shellCommandForServerConfig({ baseUrl = "http://127.0.0.1:7228" } = {})
   return `pact-mcp server-config --set --url ${shellQuote(normalizeBaseUrl(baseUrl) || "http://127.0.0.1:7228")}`;
 }
 
-function installGuidanceMetadata() {
+function installGuidanceMetadata({ includeUrl = false, baseUrl = "", tokenEnv = DEFAULT_TOKEN_ENV } = {}) {
   return {
     priorityTargets: [...PRIORITY_INSTALL_TARGETS],
     supportedTargets: [...SUPPORTED_TARGETS],
-    supportedTargetDetails: supportedTargetDetails()
+    supportedTargetDetails: supportedTargetDetails(),
+    autoInstallCommand: shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv }),
+    priorityInstallCommand: shellCommandForInstall({
+      target: PRIORITY_INSTALL_TARGET,
+      includeUrl,
+      baseUrl,
+      tokenEnv
+    })
   };
 }
 
@@ -584,7 +591,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         scanCommand,
         shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
       ],
-      ...installGuidanceMetadata()
+      ...installGuidanceMetadata({ includeUrl, baseUrl, tokenEnv })
     };
   }
   if (lower.includes("no signed pact mcp hub was discovered")) {
@@ -598,7 +605,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         shellCommandForServerConfig({ baseUrl: fallbackBaseUrl }),
         shellCommandForInstall({ target: "auto", includeUrl: true, baseUrl: fallbackBaseUrl, tokenEnv })
       ],
-      ...installGuidanceMetadata()
+      ...installGuidanceMetadata({ includeUrl: true, baseUrl: fallbackBaseUrl, tokenEnv })
     };
   }
   if (lower.includes("missing token")) {
@@ -612,7 +619,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         shellCommandForInstall({ target, includeToken: true, includeUrl: Boolean(baseUrl), baseUrl, tokenEnv }),
         `${tokenEnv}=your-token pact-mcp ${command || "install"} --target ${target}${urlArgs}${tokenEnvArgs} --json`
       ],
-      ...installGuidanceMetadata()
+      ...installGuidanceMetadata({ includeUrl: Boolean(baseUrl), baseUrl, tokenEnv })
     };
   }
   if (lower.includes("interactive mode requires a tty")) {
@@ -624,7 +631,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         shellCommandForScan({ includeUrl, baseUrl, tokenEnv }),
         uninstallCommand
       ],
-      ...installGuidanceMetadata()
+      ...installGuidanceMetadata({ includeUrl, baseUrl, tokenEnv })
     };
   }
   return {
@@ -636,7 +643,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
       shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
       shellCommandForScan({ includeUrl, baseUrl, tokenEnv })
     ],
-    ...installGuidanceMetadata()
+    ...installGuidanceMetadata({ includeUrl, baseUrl, tokenEnv })
   };
 }
 
@@ -5916,7 +5923,7 @@ function noDetectedClientGuidance(candidates = [], options = {}) {
       shellCommandForInstall({ target: suggestedTarget, binOption, includeUrl, baseUrl, tokenEnv }),
       shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
     ],
-    ...installGuidanceMetadata()
+    ...installGuidanceMetadata({ includeUrl, baseUrl, tokenEnv })
   };
 }
 
@@ -6562,6 +6569,8 @@ async function doctorCommand(options) {
   }
 
   const guidance = doctorGuidance(checks, resolvedOptions);
+  const { baseUrl, tokenEnv } = commandGuidanceContext(resolvedOptions);
+  const includeUrl = Boolean(baseUrl);
   return {
     ok: checks.signedDiscovery.ok
       && checks.discovery.ok
@@ -6570,7 +6579,7 @@ async function doctorCommand(options) {
     packageName: packageJson.name,
     packageVersion: packageJson.version,
     sharedHub: checks.initialize.sharedHub,
-    ...installGuidanceMetadata(),
+    ...installGuidanceMetadata({ includeUrl, baseUrl, tokenEnv }),
     ...guidance,
     checks
   };
