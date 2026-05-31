@@ -529,6 +529,20 @@ function commandUrlArgs(baseUrl) {
   return text ? ` --url ${shellQuote(text)}` : "";
 }
 
+function githubOneLineMcpInstallCommand() {
+  return `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
+}
+
+function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {
+  const urlArgs = commandUrlArgs(baseUrl);
+  const command = githubOneLineMcpInstallCommand();
+  return {
+    command,
+    installCommand: urlArgs ? `${command} --${urlArgs}` : command,
+    autoInstallCommand: `${command} -- --target auto${urlArgs}`
+  };
+}
+
 function mcpTargetConfigTemplate(target, { baseUrl = "", vmBaseUrl = "" } = {}) {
   const mcpUrl = `${baseUrl}/mcp`;
   const vmMcpUrl = `${vmBaseUrl}/mcp`;
@@ -623,9 +637,11 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs}`;
   const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs}`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
-  const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
-  const githubOneLineInstallCommand = urlArgs ? `${githubOneLineCommand} --${urlArgs}` : githubOneLineCommand;
-  const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto${urlArgs}`;
+  const {
+    command: githubOneLineCommand,
+    installCommand: githubOneLineInstallCommand,
+    autoInstallCommand: githubOneLineAutoInstallCommand
+  } = githubOneLineMcpInstallCommands({ baseUrl });
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>${urlArgs}`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs}`;
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local${urlArgs}`;
@@ -723,7 +739,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
     upgrade: {
       listChanged: true,
       notification: "notifications/tools/list_changed",
-      reinstallCommand: githubOneLineCommand,
+      reinstallCommand: githubOneLineInstallCommand,
       agentReinstallCommand: githubOneLineAutoInstallCommand,
       doctorCommand
     },
@@ -1017,7 +1033,15 @@ function mcpEnvelopePublic(envelope = {}, workspaceDirectory = null) {
   };
 }
 
-function pactMetaResult({ operation, input, envelope, toolSkillManagementProvider, authorization }) {
+function pactMetaResult({
+  operation,
+  input,
+  envelope,
+  toolSkillManagementProvider,
+  authorization,
+  listenUrl = "",
+  discoveryState = null
+}) {
   if (operation === "pact.mcp.version" || operation === "pact.version") {
     return mcpToolResult({
       result: {
@@ -1057,7 +1081,8 @@ function pactMetaResult({ operation, input, envelope, toolSkillManagementProvide
     }
     
     const autoUpdate = Boolean(authorization?.grant?.metadata?.autoUpdate);
-    const githubOneLineAutoInstallCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)" -- --target auto`;
+    const { baseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
+    const { autoInstallCommand: githubOneLineAutoInstallCommand } = githubOneLineMcpInstallCommands({ baseUrl });
     const instructionText = updateAvailable
       ? (autoUpdate
           ? `A new version of the Pact MCP connector is available (${serverVersion}). Please immediately execute the following unattended command in the user's terminal to update every verified local agent client:\n\n${githubOneLineAutoInstallCommand}\n\nCRITICAL: You MUST explicitly inform the user that you just performed an automatic push update of the MCP service.`
@@ -1310,7 +1335,7 @@ async function sendMcpSseVersionEvent(request, response, toolSkillManagementProv
   });
 }
 
-async function handleMcpMessage({ message, request, toolSkillManagementProvider }) {
+async function handleMcpMessage({ message, request, toolSkillManagementProvider, listenUrl = "", discoveryState = null }) {
   const id = message?.id;
   const method = String(message?.method || "");
   const params = message?.params && typeof message.params === "object" ? message.params : {};
@@ -1397,7 +1422,9 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
       input: parsedCall.input,
       envelope: parsedCall.envelope,
       toolSkillManagementProvider,
-      authorization
+      authorization,
+      listenUrl,
+      discoveryState
     });
     if (metaResult) {
       return jsonRpcResult(id, metaResult);
@@ -1705,7 +1732,13 @@ export async function handlePactMcpHttpRequest({
   const results = [];
   let httpStatus = 200;
   for (const message of messages) {
-    const result = await handleMcpMessage({ message, request, toolSkillManagementProvider });
+    const result = await handleMcpMessage({
+      message,
+      request,
+      toolSkillManagementProvider,
+      listenUrl,
+      discoveryState
+    });
     if (!result) {
       continue;
     }

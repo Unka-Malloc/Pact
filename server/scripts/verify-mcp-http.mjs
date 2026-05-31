@@ -145,6 +145,10 @@ try {
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
+  assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
+  assert.equal(discovery.payload.upgrade.agentReinstallCommand, discovery.payload.installer.githubOneLineAutoInstallCommand);
+  assert.match(discovery.payload.upgrade.reinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(discovery.payload.upgrade.agentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.installer.installCommand, /npx pact-mcp-connector@latest register/);
   assert.match(discovery.payload.installer.interactiveInstallCommand, /pact-mcp-connector@latest install/);
   assert.match(discovery.payload.installer.autoInstallCommand, /pact-mcp-connector@latest install --target auto/);
@@ -381,6 +385,21 @@ try {
   assert.equal(localGrantBearerList.status, 200);
   assert.equal(localGrantBearerList.payload.result.tools.length, 5);
   assert.equal(localGrantBearerList.payload.result._meta.stableToolName, "pact.call");
+
+  const updateProbe = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(localGrant.payload.token),
+    body: JSON.stringify(mcpToolCall("pact.discovery", "pact.update", {
+      clientVersion: "verify-mcp-http-old"
+    }, 315))
+  });
+  assert.equal(updateProbe.status, 200);
+  const updateCommand = updateProbe.payload.result.structuredContent.installCommand;
+  assert.equal(updateProbe.payload.result.structuredContent.updateAvailable, true);
+  assert.equal(updateProbe.payload.result.structuredContent.autoInstallCommand, updateCommand);
+  assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
+  assert.match(updateCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(updateProbe.payload.result.content[0].text, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
 
   const localGrantCapabilities = await fetchJson(`${server.url}/mcp`, {
     method: "POST",
