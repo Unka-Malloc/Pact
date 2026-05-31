@@ -42,6 +42,13 @@ function apiKeyHeaders(token) {
   };
 }
 
+function bearerHeaders(token) {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`
+  };
+}
+
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-mcp-http-"));
 const server = await startHttpServer({
   userDataPath,
@@ -85,6 +92,8 @@ try {
   assert.match(discovery.payload.installer.portable.autoInstallCommand, /\.\/pact-mcp install --target auto/);
   assert.match(discovery.payload.installer.portable.releaseAssetPattern, /\.zip$/);
   assert.equal(discovery.payload.mcpServers.pact.headers["X-Pact-Api-Key"], "${PACT_MCP_TOKEN}");
+  assert.ok(discovery.payload.auth.acceptedHeaders.includes("Authorization: Bearer <token>"));
+  assert.ok(discovery.payload.auth.acceptedHeaders.includes("X-Pact-Api-Key"));
 
   const nonce = randomBytes(32).toString("base64url");
   const handshake = await fetchJson(`${server.url}/api/mcp/handshake`, {
@@ -253,6 +262,15 @@ try {
   for (const name of expectedTools) {
     assert.ok(localGrantList.payload.result.tools.some(t => t.name === name));
   }
+
+  const localGrantBearerList = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: bearerHeaders(localGrant.payload.token),
+    body: JSON.stringify(mcpRequest("tools/list", {}, 31))
+  });
+  assert.equal(localGrantBearerList.status, 200);
+  assert.equal(localGrantBearerList.payload.result.tools.length, 5);
+  assert.equal(localGrantBearerList.payload.result._meta.stableToolName, "pact.call");
 
   const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
