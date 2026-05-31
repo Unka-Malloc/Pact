@@ -13,6 +13,7 @@ import {
   MCP_CLIENT_TARGETS,
   MCP_INTERFACE_VERSION,
   MCP_PRIORITY_INSTALL_TARGETS,
+  MCP_SHAREDSPACE_TOOL_NAME,
   MCP_SERVER_VERSION,
   MCP_STABLE_TOOL_NAME,
   MCP_TOOLSET_VERSION
@@ -32,6 +33,44 @@ function supportedTargetDetails() {
     installMode,
     locations: [...locations]
   }));
+}
+
+function sharedspaceExchangeReceiptContract() {
+  return {
+    schemaVersion: "pact.mcp.sharedspace-exchange.v1",
+    locations: [
+      "structuredContent.exchange",
+      "notifications/pact/operation_reply.params.exchange"
+    ],
+    actions: [
+      "workspace-created",
+      "file-written",
+      "file-read",
+      "items-listed",
+      "item-deleted",
+      "operation"
+    ],
+    fields: ["action", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+  };
+}
+
+function sharedHubContract() {
+  return {
+    clientPolicy: "discover-shared-hub-then-opt-in",
+    defaultClientMutation: "none",
+    directHttp: true,
+    sharedspace: {
+      outlet: MCP_SHAREDSPACE_TOOL_NAME,
+      referencePolicy: "use-public-workspace-ref",
+      exchangeReceipt: sharedspaceExchangeReceiptContract(),
+      coreOperations: [
+        "pact.agentWorkspace.create",
+        "pact.sharedspace.item.list",
+        "pact.sharedspace.file.read",
+        "pact.sharedspace.file.write"
+      ]
+    }
+  };
 }
 
 function parseArgs(argv) {
@@ -686,6 +725,7 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
     toolsetVersion: MCP_TOOLSET_VERSION,
     serverVersion: MCP_SERVER_VERSION,
     stableToolName: MCP_STABLE_TOOL_NAME,
+    sharedHub: sharedHubContract(),
     connector: {
       packageName: packageJson.name,
       packageVersion: packageJson.version,

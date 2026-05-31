@@ -187,6 +187,12 @@ try {
   assert.equal(Object.hasOwn(manifest.portable, "tarballPath"), false);
   assert.equal(Object.hasOwn(manifest.portable, "zipPath"), false);
   assert.equal(Object.hasOwn(manifest.bootstrap, "scriptPath"), false);
+  assert.equal(manifest.sharedHub.clientPolicy, "discover-shared-hub-then-opt-in");
+  assert.equal(manifest.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(manifest.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
+  assert.equal(manifest.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.ok(manifest.sharedHub.sharedspace.exchangeReceipt.locations.includes("structuredContent.exchange"));
+  assert.ok(manifest.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   const portablePlatform = manifest.portable.currentPlatform || verifyTargetPlatform;
   const archiveOrder = archiveInspectOrder(portablePlatform);
   const portableArchives = resolvePortableArchivePaths(result, manifest);
