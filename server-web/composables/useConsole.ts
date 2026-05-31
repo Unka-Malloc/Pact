@@ -9,8 +9,7 @@ import {
 // Note: common components are NOT imported here — that would create a circular
 // dependency (components → useConsole → components). Each view imports the
 // component files it needs directly.
-import { bridge, type McpAuthorizationRequest } from "../lib/bridge";
-import { createKnowledgeUploadSession } from "../lib/knowledge-upload-session";
+import { bridge } from "../lib/bridge";
 import {
   base64ToBytes,
   decodeBytes,
@@ -156,8 +155,13 @@ import { createConsoleRuntimeMountController } from "./console-runtime-mount-con
 import { createConsoleDashboardAlertController } from "./console-dashboard-alert-controller";
 import { createConsoleInfoFeedController } from "./console-info-feed-controller";
 import { createConsoleKnowledgeEvidenceController } from "./console-knowledge-evidence-controller";
+import { createConsoleKnowledgeIngestController } from "./console-knowledge-ingest-controller";
 import { createConsoleKnowledgeRecallController } from "./console-knowledge-recall-controller";
+import { createConsoleKnowledgeReviewController } from "./console-knowledge-review-controller";
+import { createConsoleMaintenanceAgentController } from "./console-maintenance-agent-controller";
+import { createConsoleMcpAuthorizationController } from "./console-mcp-authorization-controller";
 import { createConsoleModelLibraryController } from "./console-model-library-controller";
+import { createConsoleOpsMonitorController } from "./console-ops-monitor-controller";
 import { createConsoleToolManagementController } from "./console-tool-management-controller";
 import { createConsoleWordCloudController } from "./console-word-cloud-controller";
 
@@ -213,7 +217,6 @@ import type {
   AgentModelConfig,
   AgentModuleAccess,
   AgentSelectorOption,
-  BackgroundProcessStatus,
   ClientMigrationState,
   CodexOAuthLogin,
   CodexOAuthStatus,
@@ -229,24 +232,16 @@ import type {
   ExpertVocabularyEntry,
   KnowledgeConfigSchema,
   KnowledgeConsoleState,
-  KnowledgeIngestTarget,
-  KnowledgeIngestTargetKind,
-  KnowledgeReviewItem,
   KnowledgeRuleAuthoringResponse,
   KnowledgeSearchResponse,
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeSourceState,
   KnowledgeWordCloudSet,
-  MaintenanceAgentConfig,
-  MaintenanceAgentRun,
   MaintenanceSettings,
-  MonitorAlertState,
   ModelProbeResponse,
   ModuleAgentProfile,
-  NormalizedDocumentsManifest,
   ProtocolEvent,
-  QueueMonitorItem,
   ServerConsoleState,
   SplitJob,
   SplitJobStatus,
@@ -257,7 +252,7 @@ import type {
   KnowledgeTab, KnowledgeManagementPanel, OptionBarValue, OptionBarOption,
   KnowledgeLogRow, AgentExploreSession, KnowledgeRecallDebugRun,
   HistorySessionPanelItem, ModelEntryBinding, AgentConfigurationAlert,
-  DashboardAlert, WorkQueueRow, PathPickerMode,
+  DashboardAlert, PathPickerMode,
   RefreshStateOptions, CloudProvider,
 } from "../types/app";
 export type {
@@ -399,24 +394,6 @@ const loginForm = ref({ username: "", password: "" });
 const authUsers = ref<ConsoleUser[]>([]);
 const authAudit = ref<ConsoleAuditItem[]>([]);
 const authSessions = ref<Array<Record<string, unknown>>>([]);
-const mcpAuthorizationRequests = ref<McpAuthorizationRequest[]>([]);
-const mcpAuthorizationStatus = ref<"all" | "pending" | "approved" | "rejected">("pending");
-const mcpAuthorizationStatusOptionBarOptions = [
-  { value: "pending", label: "待审批" },
-  { value: "approved", label: "已批准" },
-  { value: "rejected", label: "已拒绝" },
-  { value: "all", label: "所有" }
-];
-const maintenanceAgentConfig = ref<MaintenanceAgentConfig | null>(null);
-const maintenanceAgentRuns = ref<MaintenanceAgentRun[]>([]);
-const selectedMaintenanceAgentRun = ref<MaintenanceAgentRun | null>(null);
-const maintenanceAgentMessage = ref("检查服务端健康状态，自动处理安全维护项。");
-const maintenanceAgentModelAlias = ref("");
-const maintenanceAgentRunbook = ref("health_smoke");
-const maintenanceAgentResultJson = ref("");
-const backgroundProcessStatus = ref<BackgroundProcessStatus | null>(null);
-const monitorAlertState = ref<MonitorAlertState | null>(null);
-const monitorAlertConfigText = ref("");
 const oidcDraft = ref<ConsoleOidcConfig & { clientSecret?: string }>({
   enabled: false,
   issuer: "",
@@ -563,17 +540,6 @@ const knowledgeLogResizing = ref<{
   startX: number;
   startWidth: number;
 } | null>(null);
-const knowledgeReviewStatus = ref("pending");
-const knowledgeReviewItems = ref<KnowledgeReviewItem[]>([]);
-const selectedKnowledgeReviewId = ref("");
-let knowledgeReviewRequestGeneration = 0;
-let knowledgeReviewBusyGeneration = 0;
-const selectedKnowledgeReviewItem = computed(() => {
-  const selected = knowledgeReviewItems.value.find(
-    (item) => item.reviewId === selectedKnowledgeReviewId.value,
-  );
-  return selected || knowledgeReviewItems.value[0] || null;
-});
 const knowledgeSearchResults = ref<KnowledgeSearchResult[]>([]);
 const knowledgeSearchResponse = ref<KnowledgeSearchResponse | null>(null);
 const lastKnowledgeSearchQuery = ref("");
@@ -630,22 +596,33 @@ const {
   recordFeedback: recordConsoleKnowledgeFeedback,
   setBusy,
 });
-const ingestFiles = ref<File[]>([]);
-const ingestProgress = ref("");
-const ingestJob = ref<SplitJob | null>(null);
-const knowledgeIngestTargets = ref<Record<KnowledgeIngestTargetKind, boolean>>({
-  global: true,
-  external: false,
-  team: false,
-  user: false,
-});
-const knowledgeIngestExternalProvider = ref("dify");
-const knowledgeIngestExternalRefs = ref("");
-const knowledgeIngestExternalTargetLabels = ref<Record<string, string>>({});
-const knowledgeIngestTeamRefs = ref("");
-const knowledgeIngestUserRefs = ref("");
 const uploadTraceEvents = ref<ProtocolEvent[]>([]);
-const normalizedManifest = ref<NormalizedDocumentsManifest | null>(null);
+const {
+  applyIngestJobFromEvent,
+  canSubmitKnowledgeIngest,
+  ingestFiles,
+  ingestJob,
+  ingestProgress,
+  knowledgeIngestExternalProvider,
+  knowledgeIngestExternalRefs,
+  knowledgeIngestExternalTargetLabels,
+  knowledgeIngestTargets,
+  knowledgeIngestTargetSummary,
+  knowledgeIngestTargetValidationMessage,
+  knowledgeIngestTeamRefs,
+  knowledgeIngestUserRefs,
+  normalizedManifest,
+  onIngestFilesSelected,
+  refreshIngestJob,
+  uploadFilesToKnowledge,
+} = createConsoleKnowledgeIngestController({
+  clearAllBusy,
+  error,
+  refreshKnowledgeConsole,
+  refreshState,
+  setBusy,
+  settingsDraft,
+});
 const {
   activeKnowledgeSources,
   addKnowledgeSource,
@@ -1188,12 +1165,6 @@ watch(
   { deep: true },
 );
 
-watch(knowledgeReviewStatus, () => {
-  if (currentView.value === "dashboard") {
-    void refreshKnowledgeConflicts();
-  }
-});
-
 watch(knowledgeManagementPanel, (panel) => {
   if (currentView.value !== "knowledge" || knowledgeTab.value !== "management") {
     return;
@@ -1204,20 +1175,6 @@ watch(knowledgeManagementPanel, (panel) => {
     void refreshKnowledgeConsole();
   }
 });
-
-watch(
-  knowledgeReviewItems,
-  (items) => {
-    if (!items.length) {
-      selectedKnowledgeReviewId.value = "";
-      return;
-    }
-    if (!items.some((item) => item.reviewId === selectedKnowledgeReviewId.value)) {
-      selectedKnowledgeReviewId.value = String(items[0]?.reviewId || "");
-    }
-  },
-  { deep: true },
-);
 
 function normalizedSettingsFromServer(settings: AgentSettings) {
   return normalizeHttpAdapterSettings({
@@ -1377,17 +1334,7 @@ function applyConsoleState(
       nextState.expertVocabulary.vocabulary,
     );
   }
-  maintenanceAgentConfig.value = nextState.maintenanceAgent?.config
-    ? JSON.parse(JSON.stringify(nextState.maintenanceAgent.config))
-    : null;
-  maintenanceAgentRuns.value = nextState.maintenanceAgent?.runs || [];
-  selectedMaintenanceAgentRun.value =
-    maintenanceAgentRuns.value.find(
-      (run) => run.runId === selectedMaintenanceAgentRun.value?.runId,
-    ) ||
-    selectedMaintenanceAgentRun.value ||
-    maintenanceAgentRuns.value[0] ||
-    null;
+  applyMaintenanceAgentStateFromConsoleState(nextState);
 }
 
 function recalculateJobSummary(items: SplitJob[]) {
@@ -1418,12 +1365,7 @@ function upsertJobFromEvent(job: SplitJob) {
       items: nextItems,
     },
   };
-  if (ingestJob.value?.id === job.id) {
-    ingestJob.value = job;
-    if (job.status === "completed") {
-      void refreshIngestJob({ silent: true });
-    }
-  }
+  applyIngestJobFromEvent(job);
   applyJobToKnowledgeSources(job);
   return true;
 }
@@ -1616,28 +1558,9 @@ function applyServerEvent(event: ProtocolEvent) {
   }
 
   if (event.topic === "maintenance.agent.config") {
-    const config = asRecord(payload.config) as MaintenanceAgentConfig | null;
-    if (!config) {
+    if (!applyMaintenanceAgentConfigFromEvent(payload.config)) {
       return false;
     }
-    maintenanceAgentConfig.value = JSON.parse(JSON.stringify(config));
-    consoleState.value = {
-      ...consoleState.value,
-      maintenanceAgent: {
-        ...(consoleState.value.maintenanceAgent || {
-          tools: [],
-          latestRun: null,
-          runs: [],
-          activeRunId: "",
-          queuedRunIds: [],
-          pendingApprovalCount: 0,
-          nextRunAt: "",
-          auditPath: "",
-          runsPath: "",
-        }),
-        config,
-      },
-    };
     return true;
   }
 
@@ -1811,6 +1734,17 @@ const {
   settingsDraft,
   visibleModelEntries,
 });
+const {
+  mcpAuthorizationRequests,
+  mcpAuthorizationStatus,
+  mcpAuthorizationStatusOptionBarOptions,
+  refreshMcpAuthorizationRequests,
+  resolveMcpAuthorizationRequest,
+} = createConsoleMcpAuthorizationController({
+  clearBusy,
+  error,
+  setBusy,
+});
 
 const knowledgeManagementPanelOptionBarOptions = computed<OptionBarOption[]>(() => [
   { value: "knowledge", label: "知识" },
@@ -1839,6 +1773,75 @@ const canReadMaintenanceAgent = computed(() => hasScope("maintenance:read"));
 const canRunMaintenanceAgent = computed(() => hasScope("maintenance:run"));
 const canApproveMaintenanceAgent = computed(() => hasScope("maintenance:approve"));
 const canAdminMaintenanceAgent = computed(() => hasScope("maintenance:admin"));
+const {
+  allMaintenanceAgentRuns,
+  applyMaintenanceAgentConfigFromEvent,
+  applyMaintenanceAgentStateFromConsoleState,
+  approveMaintenanceAgentRun,
+  cancelMaintenanceAgentRun,
+  chatMaintenanceAgent,
+  displayedMaintenanceAgentRuns,
+  latestMaintenanceAgentRun,
+  maintenanceAgentConfig,
+  maintenanceAgentMessage,
+  maintenanceAgentModelAlias,
+  maintenanceAgentResultJson,
+  maintenanceAgentRunbook,
+  maintenanceAgentRunbookOptionBarOptions,
+  maintenanceAgentRunbooks,
+  maintenanceAgentRuns,
+  maintenanceAgentSchedules,
+  maintenanceAgentSummary,
+  nextMaintenanceAgentRunAt,
+  patchMaintenanceAgentState,
+  pendingMaintenanceApprovalCount,
+  refreshMaintenanceAgent,
+  runMaintenanceAgentKnowledgeMaintenance,
+  runMaintenanceAgentRunbook,
+  saveMaintenanceAgentConfig,
+  selectedMaintenanceAgentRun,
+} = createConsoleMaintenanceAgentController({
+  canReadMaintenanceAgent,
+  clearAllBusy,
+  consoleState,
+  error,
+  jsonPreview,
+  modelEntryStatusKey,
+  setBusy,
+  visibleModelEntries,
+});
+const {
+  acknowledgeMonitorAlert,
+  activeMonitorAlerts,
+  backgroundProcesses,
+  backgroundProcessStatus,
+  backgroundRunningCount,
+  backgroundSupervisorLabel,
+  clientRuntimeHeatRows,
+  clientRuntimeStatus,
+  clientRuntimeSummary,
+  monitorAlertConfigText,
+  monitorAlertState,
+  monitorAlertSummary,
+  queueMonitorItems,
+  queueMonitorState,
+  recentMonitorAlertHistory,
+  refreshBackgroundProcesses,
+  refreshClientRuntimeStatus,
+  refreshMonitorAlerts,
+  saveMonitorAlertConfig,
+  workQueueRows,
+  workQueueSummary,
+} = createConsoleOpsMonitorController({
+  allMaintenanceAgentRuns,
+  canAdminMaintenanceAgent,
+  canReadMaintenanceAgent,
+  clearAllBusy,
+  consoleState,
+  error,
+  jsonPreview,
+  setBusy,
+});
 const {
   buildKnowledgeRecallSearchPayload,
   currentKnowledgeLearningEnabled,
@@ -1921,11 +1924,6 @@ const knowledgeModules = computed(() => {
     ...((health?.modules || {}) as Record<string, Record<string, unknown>>),
     ...((health?.protocolModules || {}) as Record<string, Record<string, unknown>>),
   };
-});
-const pendingKnowledgeReviewCount = computed(() => {
-  const loadedPending = knowledgeReviewItems.value.filter((item: any) => item.status === "pending").length;
-  const healthCounts = asRecord(knowledgeConsole.value?.health?.counts) || {};
-  return loadedPending || Number(healthCounts.pendingReviewItems || 0);
 });
 
 function knowledgeTabDisplayLabel(tab: { id: KnowledgeTab; label: string }) {
@@ -2615,11 +2613,33 @@ const {
   recordFeedback: recordConsoleKnowledgeFeedback,
   settingsDraft,
 });
-const selectedKnowledgeReviewFusionModel = computed(() => {
-  return selectedAgentFromOptions(
-    agentSelectorOptions.value,
-    settingsDraft.value.agentExploreDefaults?.reviewFusionModelAlias,
-  );
+const {
+  fuseKnowledgeReview,
+  knowledgeReviewBusyGeneration,
+  knowledgeReviewItems,
+  knowledgeReviewRequestGeneration,
+  knowledgeReviewRowClassName,
+  knowledgeReviewStatus,
+  pendingKnowledgeReviewCount,
+  refreshKnowledgeConflicts,
+  resolveKnowledgeReview,
+  selectKnowledgeReviewItem,
+  selectedKnowledgeReviewFusionModel,
+  selectedKnowledgeReviewId,
+  selectedKnowledgeReviewItem,
+} = createConsoleKnowledgeReviewController({
+  agentExploreThinkingParameters,
+  agentSelectorOptions,
+  canAdminKnowledge,
+  canMaintainKnowledge,
+  canReadKnowledge,
+  clearAllBusy,
+  currentView,
+  error,
+  knowledgeConsole,
+  refreshKnowledgeConsole,
+  setBusy,
+  settingsDraft,
 });
 watchAgentSelectionReference(
   "info-feed-summary",
@@ -2661,7 +2681,7 @@ const selectedAgentExploreThinkingMode = computed(() =>
       settingsDraft.value.agentExploreDefaults?.thinkingMode,
   ),
 );
-function agentExploreThinkingParameters() {
+function agentExploreThinkingParameters(): Record<string, unknown> {
   const mode = selectedAgentExploreThinkingMode.value;
   if (mode === "enabled") {
     return {
@@ -3136,14 +3156,6 @@ function exportAgentModelEntryConfig(entry: AgentModelConfig) {
   error.value = "";
 }
 
-function selectKnowledgeReviewItem(row: KnowledgeReviewItem) {
-  selectedKnowledgeReviewId.value = String(row.reviewId || "");
-}
-
-function knowledgeReviewRowClassName({ row }: { row: KnowledgeReviewItem }) {
-  return row.reviewId === selectedKnowledgeReviewId.value ? "is-selected-review-row" : "";
-}
-
 function exportKnowledgeLogRows() {
   const rows = filteredKnowledgeLogRows.value;
   const csv = [
@@ -3286,58 +3298,16 @@ function openSettingsPathPicker(
   });
 }
 
-async function refreshMcpAuthorizationRequests() {
-  const busy = "mcp-authorization-requests:refresh";
-  setBusy(busy);
-  try {
-    const result = await bridge.listMcpAuthorizationRequests(mcpAuthorizationStatus.value);
-    mcpAuthorizationRequests.value = Array.isArray(result.requests) ? result.requests : [];
-  } catch (nextError) {
-    mcpAuthorizationRequests.value = [];
-    error.value =
-      nextError instanceof Error ? nextError.message : "加载 MCP 授权请求失败。";
-  } finally {
-    clearBusy(busy);
-  }
-}
-
-async function resolveMcpAuthorizationRequest(
-  requestId: string,
-  resolution: "approved" | "rejected",
-) {
-  const busy = `mcp-authorization-requests:resolve:${requestId}`;
-  const request = mcpAuthorizationRequests.value.find((item) => item.requestId === requestId);
-  setBusy(busy);
-  try {
-    await bridge.resolveMcpAuthorizationRequest(requestId, {
-      resolution,
-      clientName: request?.clientName,
-      scopes: request?.requestedScopes || [],
-      toolsets: [],
-      toolAllow: request?.requestedTools || [],
-    });
-    await refreshMcpAuthorizationRequests();
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "处理 MCP 授权请求失败。";
-  } finally {
-    clearBusy(busy);
-  }
-}
-
-async function refreshKnowledgeConsole() {
+async function refreshKnowledgeConsole(options: { skipReviewItems?: boolean } = {}) {
   if (!hasScope("knowledge:read")) {
     return;
   }
-  const requestedReviewStatus = knowledgeReviewStatus.value;
-  const reviewRequestGeneration = ++knowledgeReviewRequestGeneration;
   try {
-    const [state, schema, maintenance, sources, reviewItems] = await Promise.all([
+    const [state, schema, maintenance, sources] = await Promise.all([
       bridge.getKnowledgeConsole(),
       bridge.getKnowledgeConfigSchema(),
       bridge.getKnowledgeMaintenance().catch(() => ({} as MaintenanceSettings)),
       bridge.getKnowledgeSources().catch(() => null),
-      bridge.listKnowledgeReviewItems({ status: requestedReviewStatus, limit: 100 }).catch(() => null),
     ]);
     knowledgeConsole.value = state;
     knowledgeSchema.value = schema;
@@ -3345,122 +3315,14 @@ async function refreshKnowledgeConsole() {
     if (debugTab.value === "knowledgeRecall") {
       void refreshKnowledgeRecallBackendSpaces();
     }
-    if (
-      reviewItems &&
-      reviewRequestGeneration === knowledgeReviewRequestGeneration &&
-      requestedReviewStatus === knowledgeReviewStatus.value
-    ) {
-      knowledgeReviewItems.value = reviewItems.items || [];
+    if (!options.skipReviewItems) {
+      await refreshKnowledgeConflicts({ silent: true, suppressError: true });
     }
     knowledgeMaintenanceDraft.value = maintenance || {};
     maintenanceJson.value = jsonPreview(knowledgeMaintenanceDraft.value);
   } catch (nextError) {
     error.value =
       nextError instanceof Error ? nextError.message : "加载知识库管控数据失败。";
-  }
-}
-
-async function refreshKnowledgeConflicts(options: { silent?: boolean } = {}) {
-  if (!hasScope("knowledge:read")) {
-    knowledgeReviewRequestGeneration += 1;
-    return;
-  }
-  const requestedStatus = knowledgeReviewStatus.value;
-  const requestGeneration = ++knowledgeReviewRequestGeneration;
-  const busyGeneration = options.silent ? 0 : ++knowledgeReviewBusyGeneration;
-  if (!options.silent) {
-    setBusy("knowledge:review-items");
-  }
-  error.value = "";
-  try {
-    const result = await bridge.listKnowledgeReviewItems({
-      status: requestedStatus,
-      limit: 100,
-    });
-    if (
-      requestGeneration !== knowledgeReviewRequestGeneration ||
-      requestedStatus !== knowledgeReviewStatus.value
-    ) {
-      return;
-    }
-    knowledgeReviewItems.value = result.items || [];
-  } catch (nextError) {
-    if (
-      requestGeneration !== knowledgeReviewRequestGeneration ||
-      requestedStatus !== knowledgeReviewStatus.value
-    ) {
-      return;
-    }
-    error.value = nextError instanceof Error ? nextError.message : "加载知识冲突列表失败。";
-  } finally {
-    if (!options.silent && busyGeneration === knowledgeReviewBusyGeneration) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function resolveKnowledgeReview(
-  item: KnowledgeReviewItem,
-  resolution: string,
-  patch: Record<string, unknown> = {},
-) {
-  if (!canMaintainKnowledge.value && !canAdminKnowledge.value) {
-    error.value = "需要 knowledge:maintain 权限才能处理冲突。";
-    return;
-  }
-  const reviewId = String(item.reviewId || "");
-  if (!reviewId) {
-    return;
-  }
-  setBusy(`knowledge:review:${reviewId}:${resolution}`);
-  error.value = "";
-  try {
-    await bridge.resolveKnowledgeReviewItem(reviewId, { resolution, patch });
-    await refreshKnowledgeConflicts({ silent: true });
-    await refreshKnowledgeConsole();
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "处理知识冲突失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function fuseKnowledgeReview(item: KnowledgeReviewItem) {
-  const model = selectedKnowledgeReviewFusionModel.value;
-  if (!model?.enabled || !model.value) {
-    error.value = "知识融合智能体未配置可用模型，请先在智能体仓库中选择模型。";
-    return;
-  }
-  const reviewId = String(item.reviewId || "");
-  setBusy(`knowledge:review:${reviewId}:merge`);
-  error.value = "";
-  try {
-    const response = await bridge.callAgentGateway({
-      modelAlias: model.value,
-      alias: model.value,
-      moduleId: "agentTools",
-      taskId: reviewId,
-      sessionId: reviewId,
-      question: knowledgeReviewFusionPrompt(item),
-      systemPrompt: settingsDraft.value.agentExploreDefaults.reviewFusionSystemPrompt,
-      parameters: {
-        ...agentExploreThinkingParameters(),
-        temperature: Number(settingsDraft.value.agentExploreDefaults.reviewFusionTemperature || 0.1),
-        max_tokens: Number(settingsDraft.value.agentExploreDefaults.reviewFusionMaxTokens || 1200),
-      },
-    });
-    const answer = String(response.answer || response.text || "").trim();
-    await resolveKnowledgeReview(item, "merge", {
-      fusionAgent: {
-        modelAlias: model.value,
-        generatedAt: new Date().toISOString(),
-        answer,
-      },
-    });
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "知识融合智能体调用失败。";
-  } finally {
-    clearAllBusy();
   }
 }
 
@@ -3696,190 +3558,6 @@ async function saveKnowledgeMaintenance() {
       nextError instanceof Error ? nextError.message : "保存知识库维护参数失败。";
   } finally {
     clearAllBusy();
-  }
-}
-
-function onIngestFilesSelected(files: File[]) {
-  ingestFiles.value = files;
-  ingestProgress.value = ingestFiles.value.length
-    ? `已选择 ${ingestFiles.value.length} 个文件`
-    : "";
-}
-
-function splitKnowledgeIngestRefs(value: string) {
-  return String(value || "")
-    .split(/[,，\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function knowledgeIngestProviderLabel(provider: string) {
-  const normalized = provider.toLowerCase();
-  if (normalized === "ragflow") {
-    return "RAG Flow";
-  }
-  if (normalized === "dify") {
-    return "Dify";
-  }
-  return provider || "外部知识库";
-}
-
-function parseKnowledgeIngestExternalRef(ref: string) {
-  const separatorIndex = ref.indexOf(":");
-  if (separatorIndex <= 0 || separatorIndex === ref.length - 1) {
-    return {
-      provider: knowledgeIngestExternalProvider.value || "dify",
-      ref,
-    };
-  }
-  return {
-    provider: ref.slice(0, separatorIndex),
-    ref: ref.slice(separatorIndex + 1),
-  };
-}
-
-const selectedKnowledgeIngestTargets = computed<KnowledgeIngestTarget[]>(() => {
-  const targets: KnowledgeIngestTarget[] = [];
-  if (knowledgeIngestTargets.value.global) {
-    targets.push({
-      kind: "global",
-      label: "Pact Native 知识库",
-    });
-  }
-  if (knowledgeIngestTargets.value.external) {
-    const refsByProvider = new Map<string, string[]>();
-    const labelsByProvider = new Map<string, string[]>();
-    for (const item of splitKnowledgeIngestRefs(knowledgeIngestExternalRefs.value)) {
-      const parsed = parseKnowledgeIngestExternalRef(item);
-      if (!parsed.ref) {
-        continue;
-      }
-      const refs = refsByProvider.get(parsed.provider) || [];
-      refs.push(parsed.ref);
-      refsByProvider.set(parsed.provider, refs);
-      const label = knowledgeIngestExternalTargetLabels.value[`${parsed.provider}:${parsed.ref}`];
-      if (label) {
-        const labels = labelsByProvider.get(parsed.provider) || [];
-        labels.push(label);
-        labelsByProvider.set(parsed.provider, labels);
-      }
-    }
-    for (const [provider, refs] of refsByProvider) {
-      const labels = labelsByProvider.get(provider) || [];
-      targets.push({
-        kind: "external",
-        label: `${knowledgeIngestProviderLabel(provider)}：${labels.length ? labels.join("、") : refs.join("、")}`,
-        provider,
-        refs,
-      });
-    }
-  }
-  if (knowledgeIngestTargets.value.team) {
-    targets.push({
-      kind: "team",
-      label: "团队空间",
-      refs: splitKnowledgeIngestRefs(knowledgeIngestTeamRefs.value),
-    });
-  }
-  if (knowledgeIngestTargets.value.user) {
-    targets.push({
-      kind: "user",
-      label: "用户私有空间",
-      refs: splitKnowledgeIngestRefs(knowledgeIngestUserRefs.value),
-    });
-  }
-  return targets;
-});
-
-const knowledgeIngestTargetValidationMessage = computed(() => {
-  if (selectedKnowledgeIngestTargets.value.length === 0) {
-    return "请至少选择一个知识入库目标。";
-  }
-  if (knowledgeIngestTargets.value.external && splitKnowledgeIngestRefs(knowledgeIngestExternalRefs.value).length === 0) {
-    return "请选择外部知识库时，需要填写至少一个库或空间 ID。";
-  }
-  if (knowledgeIngestTargets.value.team && splitKnowledgeIngestRefs(knowledgeIngestTeamRefs.value).length === 0) {
-    return "请选择团队空间时，需要填写至少一个团队。";
-  }
-  if (knowledgeIngestTargets.value.user && splitKnowledgeIngestRefs(knowledgeIngestUserRefs.value).length === 0) {
-    return "请选择用户私有空间时，需要填写至少一个用户。";
-  }
-  return "";
-});
-
-const canSubmitKnowledgeIngest = computed(() => knowledgeIngestTargetValidationMessage.value === "");
-
-const knowledgeIngestTargetSummary = computed(() => {
-  if (!selectedKnowledgeIngestTargets.value.length) {
-    return "请选择入库目标";
-  }
-  return `将入库到：${selectedKnowledgeIngestTargets.value.map((target) => target.label).join("、")}`;
-});
-
-async function uploadFilesToKnowledge() {
-  if (ingestFiles.value.length === 0) {
-    error.value = "请先选择需要入库的文件。";
-    return;
-  }
-  if (!canSubmitKnowledgeIngest.value) {
-    error.value = knowledgeIngestTargetValidationMessage.value;
-    return;
-  }
-  setBusy("knowledge:ingest");
-  error.value = "";
-  ingestProgress.value = "准备上传会话…";
-  ingestJob.value = null;
-  normalizedManifest.value = null;
-  try {
-    const filesToUpload = [...ingestFiles.value];
-    const { session } = await createKnowledgeUploadSession(filesToUpload, {
-      onProgress: (progress) => {
-        ingestProgress.value = progress.message;
-      },
-    });
-    ingestProgress.value = "创建入库任务…";
-    const job = await bridge.createJob({
-      inputText: "",
-      filePaths: [],
-      uploadedFiles: [],
-      uploadSessionId: session.sessionId,
-      settings: {
-        ...settingsDraft.value,
-        knowledgeIngestTargets: selectedKnowledgeIngestTargets.value,
-      },
-    });
-    ingestJob.value = job;
-    ingestProgress.value = `已进入处理队列，${knowledgeIngestTargetSummary.value}。`;
-    await refreshState({ silent: true });
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "上传入库失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function refreshIngestJob(options: { silent?: boolean } = {}) {
-  if (!ingestJob.value?.id) {
-    return;
-  }
-  if (!options.silent) {
-    setBusy(`knowledge:ingest:${ingestJob.value.id}`);
-  }
-  error.value = "";
-  try {
-    const job = await bridge.getJob(ingestJob.value.id);
-    ingestJob.value = job;
-    if (job?.status === "completed") {
-      normalizedManifest.value = (await bridge.getNormalizedDocuments(job.id)) || null;
-      ingestProgress.value = "处理完成，生成的知识文档可以下载查看。";
-      await refreshKnowledgeConsole();
-    }
-  } catch (nextError) {
-    error.value = nextError instanceof Error ? nextError.message : "刷新入库任务失败。";
-  } finally {
-    if (!options.silent) {
-      clearAllBusy();
-    }
   }
 }
 
@@ -4168,25 +3846,6 @@ async function openAgentConfigurationAlert(alertItem: AgentConfigurationAlert) {
     switchView(alertItem.view);
   }
   await scrollToConfigTarget(alertItem.targetId);
-}
-
-async function acknowledgeMonitorAlert(alertId: string) {
-  if (!canAdminMaintenanceAgent.value) {
-    error.value = "当前账号没有维护配置权限。";
-    return;
-  }
-  setBusy(`monitor-alert:ack:${alertId}`);
-  error.value = "";
-  try {
-    const state = await bridge.acknowledgeMonitorAlert(alertId);
-    monitorAlertState.value = state;
-    monitorAlertConfigText.value = jsonPreview(state.config);
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "确认报警失败。";
-  } finally {
-    clearAllBusy();
-  }
 }
 
 function importClients() {
@@ -5131,272 +4790,6 @@ async function saveExpertVocabulary() {
   }
 }
 
-function patchMaintenanceAgentState(patch: Partial<NonNullable<ServerConsoleState["maintenanceAgent"]>>) {
-  if (!consoleState.value) {
-    return;
-  }
-  const previous = consoleState.value.maintenanceAgent || {
-    config: maintenanceAgentConfig.value as MaintenanceAgentConfig,
-    tools: [],
-    latestRun: null,
-    runs: [],
-    activeRunId: "",
-    queuedRunIds: [],
-    pendingApprovalCount: 0,
-    nextRunAt: "",
-    auditPath: "",
-    runsPath: "",
-  };
-  if (!previous.config && !patch.config) {
-    return;
-  }
-  consoleState.value = {
-    ...consoleState.value,
-    maintenanceAgent: {
-      ...previous,
-      ...patch,
-    },
-  };
-}
-
-async function refreshMaintenanceAgent(options: { silent?: boolean } = {}) {
-  if (!canReadMaintenanceAgent.value) {
-    return;
-  }
-  if (!options.silent) {
-    setBusy("maintenance-agent:refresh");
-  }
-  error.value = "";
-  try {
-    const [configResult, runsResult] = await Promise.all([
-      bridge.getMaintenanceAgentConfig(),
-      bridge.listMaintenanceAgentRuns(30),
-    ]);
-    maintenanceAgentConfig.value = JSON.parse(JSON.stringify(configResult.config));
-    maintenanceAgentRuns.value = runsResult.items;
-    selectedMaintenanceAgentRun.value =
-      maintenanceAgentRuns.value.find(
-        (run) => run.runId === selectedMaintenanceAgentRun.value?.runId,
-      ) ||
-      maintenanceAgentRuns.value[0] ||
-      null;
-    patchMaintenanceAgentState({
-      config: configResult.config,
-      runs: runsResult.items,
-      latestRun: runsResult.items[0] || null,
-      activeRunId: runsResult.activeRunId,
-      queuedRunIds: runsResult.queuedRunIds,
-      pendingApprovalCount: runsResult.items.filter((run) => run.status === "awaiting_approval").length,
-      nextRunAt:
-        (configResult.config.schedules || [])
-          .filter((schedule) => schedule.enabled && schedule.nextRunAt)
-          .map((schedule) => schedule.nextRunAt)
-          .sort()[0] || "",
-    });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "刷新智能巡检失败。";
-  } finally {
-    if (!options.silent) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function refreshBackgroundProcesses(options: { silent?: boolean } = {}) {
-  if (!canReadMaintenanceAgent.value) {
-    return;
-  }
-  if (!options.silent) {
-    setBusy("background-processes:refresh");
-  }
-  error.value = "";
-  try {
-    backgroundProcessStatus.value = await bridge.getBackgroundProcesses();
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "刷新后台进程状态失败。";
-  } finally {
-    if (!options.silent) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function refreshClientRuntimeStatus(options: { silent?: boolean } = {}) {
-  if (!options.silent) {
-    setBusy("client-runtime:refresh");
-  }
-  error.value = "";
-  try {
-    const status = await bridge.getClientRuntimeStatus();
-    if (consoleState.value) {
-      consoleState.value = {
-        ...consoleState.value,
-        clientRuntime: status,
-      };
-    }
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "刷新客户端运行时热度失败。";
-  } finally {
-    if (!options.silent) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function refreshMonitorAlerts(options: { silent?: boolean } = {}) {
-  if (!canReadMaintenanceAgent.value) {
-    return;
-  }
-  if (!options.silent) {
-    setBusy("monitor-alerts:refresh");
-  }
-  error.value = "";
-  try {
-    const state = await bridge.getMonitorAlerts();
-    monitorAlertState.value = state;
-    monitorAlertConfigText.value = jsonPreview(state.config);
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "刷新监控报警失败。";
-  } finally {
-    if (!options.silent) {
-      clearAllBusy();
-    }
-  }
-}
-
-async function saveMonitorAlertConfig() {
-  if (!canAdminMaintenanceAgent.value) {
-    error.value = "当前账号没有维护配置权限。";
-    return;
-  }
-  setBusy("monitor-alerts:save");
-  error.value = "";
-  try {
-    const parsed = JSON.parse(monitorAlertConfigText.value || "{}");
-    const state = await bridge.saveMonitorAlertConfig(parsed);
-    monitorAlertState.value = state;
-    monitorAlertConfigText.value = jsonPreview(state.config);
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "保存监控报警配置失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function saveMaintenanceAgentConfig() {
-  if (!maintenanceAgentConfig.value) {
-    return;
-  }
-  setBusy("maintenance-agent:config");
-  error.value = "";
-  try {
-    const result = await bridge.saveMaintenanceAgentConfig(maintenanceAgentConfig.value);
-    maintenanceAgentConfig.value = JSON.parse(JSON.stringify(result.config));
-    patchMaintenanceAgentState({ config: result.config });
-    await refreshMaintenanceAgent({ silent: true });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "保存智能巡检配置失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function chatMaintenanceAgent() {
-  const message = maintenanceAgentMessage.value.trim();
-  if (!message) {
-    error.value = "请输入维护指令。";
-    return;
-  }
-  setBusy("maintenance-agent:chat");
-  error.value = "";
-  try {
-    const selectedAgent = visibleModelEntries.value.find(
-      (entry) => modelEntryStatusKey(entry) === maintenanceAgentModelAlias.value,
-    );
-    const result = await bridge.chatMaintenanceAgent({
-      message,
-      modelAlias: maintenanceAgentModelAlias.value || undefined,
-      agentName: selectedAgent?.agentName || selectedAgent?.label || undefined,
-      wait: true,
-    });
-    maintenanceAgentResultJson.value = jsonPreview(result);
-    selectedMaintenanceAgentRun.value = result.run;
-    await refreshMaintenanceAgent({ silent: true });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "智能巡检对话执行失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function runMaintenanceAgentRunbook() {
-  setBusy("maintenance-agent:run");
-  error.value = "";
-  try {
-    const run = await bridge.startMaintenanceAgentRun({
-      runbook: maintenanceAgentRunbook.value,
-      wait: true,
-    });
-    maintenanceAgentResultJson.value = jsonPreview(run);
-    selectedMaintenanceAgentRun.value = run;
-    await refreshMaintenanceAgent({ silent: true });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "维护 runbook 执行失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function runMaintenanceAgentKnowledgeMaintenance() {
-  maintenanceAgentRunbook.value = "knowledge_maintenance_review";
-  await runMaintenanceAgentRunbook();
-}
-
-async function approveMaintenanceAgentRun(run: MaintenanceAgentRun) {
-  setBusy(`maintenance-agent:approve:${run.runId}`);
-  error.value = "";
-  try {
-    const result = await bridge.approveMaintenanceAgentRun(run.runId, {
-      planHash: run.planHash,
-      wait: true,
-    });
-    maintenanceAgentResultJson.value = jsonPreview(result.run);
-    selectedMaintenanceAgentRun.value = result.run;
-    await refreshMaintenanceAgent({ silent: true });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "维护计划审批失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
-async function cancelMaintenanceAgentRun(run: MaintenanceAgentRun) {
-  setBusy(`maintenance-agent:cancel:${run.runId}`);
-  error.value = "";
-  try {
-    const result = await bridge.cancelMaintenanceAgentRun(run.runId, {
-      reason: "console",
-    });
-    maintenanceAgentResultJson.value = jsonPreview(result.run);
-    selectedMaintenanceAgentRun.value = result.run;
-    await refreshMaintenanceAgent({ silent: true });
-  } catch (nextError) {
-    error.value =
-      nextError instanceof Error ? nextError.message : "维护运行取消失败。";
-  } finally {
-    clearAllBusy();
-  }
-}
-
 async function deleteJob(jobId: string) {
   if (!window.confirm(`删除任务“${jobId}”？`)) {
     return;
@@ -5455,14 +4848,6 @@ const filteredClientList = computed(() => {
 
 const displayedClients = computed(() => filteredClients.value.slice(0, 6));
 const recentJobs = computed(() => filteredJobs.value);
-const maintenanceAgentSummary = computed(() => consoleState.value?.maintenanceAgent || null);
-const maintenanceAgentRunbooks = computed(() =>
-  Object.values(
-    maintenanceAgentConfig.value?.runbooks ||
-      maintenanceAgentSummary.value?.config.runbooks ||
-      {},
-  ),
-);
 const enabledBooleanOptionBarOptions: OptionBarOption[] = [
   { value: true, label: "开启" },
   { value: false, label: "关闭" },
@@ -5544,12 +4929,6 @@ function moduleModelAssignmentSelectOptions(moduleId: string) {
     disabledReason: "未配置",
   }));
 }
-const maintenanceAgentRunbookOptionBarOptions = computed<OptionBarOption[]>(() =>
-  maintenanceAgentRunbooks.value.map((runbook) => ({
-    value: runbook.id,
-    label: `${runbook.label} / ${runbook.id}`,
-  })),
-);
 const clientStateFilterOptionBarOptions = computed<OptionBarOption[]>(() => [
   { value: "all", label: "所有状态" },
   ...Object.entries(migrationStateLabels).map(([value, label]) => ({ value, label })),
@@ -5560,69 +4939,6 @@ const authRoleOptionBarOptions = computed<OptionBarOption[]>(() =>
     label: role.label,
   })),
 );
-const maintenanceAgentSchedules = computed(
-  () =>
-    maintenanceAgentConfig.value?.schedules ||
-    maintenanceAgentSummary.value?.config.schedules ||
-    [],
-);
-const displayedMaintenanceAgentRuns = computed(() =>
-  (maintenanceAgentRuns.value.length > 0
-    ? maintenanceAgentRuns.value
-    : maintenanceAgentSummary.value?.runs || []
-  ).slice(0, 12),
-);
-const latestMaintenanceAgentRun = computed(
-  () => displayedMaintenanceAgentRuns.value[0] || maintenanceAgentSummary.value?.latestRun || null,
-);
-const pendingMaintenanceApprovalCount = computed(
-  () =>
-    displayedMaintenanceAgentRuns.value.filter((run) => run.status === "awaiting_approval").length ||
-    maintenanceAgentSummary.value?.pendingApprovalCount ||
-    0,
-);
-const nextMaintenanceAgentRunAt = computed(() => {
-  const scheduled =
-    maintenanceAgentSchedules.value
-      .filter((schedule) => schedule.enabled && schedule.nextRunAt)
-      .map((schedule) => schedule.nextRunAt)
-      .sort()[0] || "";
-  return scheduled || maintenanceAgentSummary.value?.nextRunAt || "";
-});
-const backgroundProcesses = computed(() => backgroundProcessStatus.value?.processes || []);
-const backgroundSupervisorLabel = computed(() => {
-  const status = backgroundProcessStatus.value;
-  if (!status) {
-    return "未读取";
-  }
-  if (!status.supervisor.alive) {
-    return "守护进程离线";
-  }
-  return status.ok ? "正常" : "降级";
-});
-const backgroundRunningCount = computed(
-  () => backgroundProcesses.value.filter((item: any) => item.alive && !item.stale).length,
-);
-const clientRuntimeStatus = computed(() => consoleState.value?.clientRuntime || null);
-const clientRuntimeHeatRows = computed(() => clientRuntimeStatus.value?.heatmap?.clients || []);
-const clientRuntimeSummary = computed(() => clientRuntimeStatus.value?.summary || {
-  totalClients: 0,
-  hotClients: 0,
-  warmClients: 0,
-  cooledClients: 0,
-  totalCalls: 0,
-  workspaceCount: 0,
-  contextCount: 0,
-});
-const monitorAlertSummary = computed(() => monitorAlertState.value?.summary || {
-  activeCount: 0,
-  visibleCount: 0,
-  recoveredCount: 0,
-  criticalCount: 0,
-  warningCount: 0,
-  historyCount: 0,
-});
-const activeMonitorAlerts = computed(() => monitorAlertState.value?.activeAlerts || []);
 const {
   agentConfigurationAlertSummary,
   agentConfigurationAlerts,
@@ -5657,133 +4973,6 @@ const {
   settingsDraft,
   visibleModelEntries,
 });
-const recentMonitorAlertHistory = computed(() => (monitorAlertState.value?.history || []).slice(0, 8));
-const queueMonitorState = computed(() => monitorAlertState.value?.queueMonitor || null);
-const queueMonitorItems = computed<QueueMonitorItem[]>(() => {
-  const rawItems = queueMonitorState.value?.items;
-  if (Array.isArray(rawItems)) {
-    return rawItems;
-  }
-  if (rawItems && typeof rawItems === "object") {
-    return Object.values(rawItems as Record<string, QueueMonitorItem>);
-  }
-  return [];
-});
-const allMaintenanceAgentRuns = computed(() =>
-  maintenanceAgentRuns.value.length > 0
-    ? maintenanceAgentRuns.value
-    : maintenanceAgentSummary.value?.runs || [],
-);
-const workQueueRows = computed<WorkQueueRow[]>(() => {
-  const rows: WorkQueueRow[] = [];
-  const monitoredJobOwners = new Set<string>();
-  const monitoredQueueIds = new Set<string>();
-
-  for (const item of queueMonitorItems.value) {
-    const registration = item.unifiedRegistration;
-    const attributes = registration?.attributes || {};
-    const relations = registration?.relations || {};
-    monitoredJobOwners.add(item.ownerId);
-    monitoredQueueIds.add(item.queueId);
-    rows.push({
-      rowId: registration?.registrationId || `queue-monitor:${item.queueId}`,
-      queueId: String(attributes.queueId || item.queueId),
-      kind: String(attributes.kind || item.kind || "queue"),
-      label: registration?.label || item.label || item.queueId,
-      ownerId: String(relations.ownerId || item.ownerId || ""),
-      source: "queue-monitor",
-      sourceLabel: queueSourceLabel(registration?.source || item.source || item.sources?.[0] || "queue-monitor"),
-      lifecycleStatus: registration?.status || item.lifecycleStatus || item.status || "unknown",
-      status: String(attributes.status || item.status || item.lifecycleStatus || "unknown"),
-      phase: String(attributes.phase || item.phase || item.status || ""),
-      tone: registration?.tone || queueLifecycleTone(item.lifecycleStatus || item.status),
-      startedAt: item.startedAt || "",
-      updatedAt: item.closedAt || item.recoveredAt || registration?.registeredAt || item.lastHeartbeatAt || item.lastCheckpointAt || "",
-      lastHeartbeatAt: String(attributes.lastHeartbeatAt || item.lastHeartbeatAt || ""),
-      checkpointTreeId: String(relations.checkpointTreeId || item.checkpointTreeId || ""),
-      detail: queueMonitorDetail(item),
-      registration,
-    });
-  }
-
-  for (const job of consoleState.value?.jobs.items || []) {
-    const registration = job.unifiedRegistration;
-    const relations = registration?.relations || {};
-    const attributes = registration?.attributes || {};
-    const queueId = job.queueId || "";
-    if ((queueId && monitoredQueueIds.has(queueId)) || monitoredJobOwners.has(job.id)) {
-      continue;
-    }
-    rows.push({
-      rowId: `split-job:${job.id}`,
-      queueId: queueId || `job:${job.id}`,
-      kind: "import_parse_job",
-      label: registration?.label || `导入解析任务 ${job.id}`,
-      ownerId: job.id,
-      source: "split-job",
-      sourceLabel: registration?.source === "jobs" ? "服务端任务" : registration?.source || "服务端任务",
-      lifecycleStatus: registration?.status || job.status,
-      status: job.status,
-      phase: String(attributes.stage || job.stage || job.status),
-      tone: registration?.tone || queueLifecycleTone(job.status),
-      startedAt: job.startedAt || job.createdAt || "",
-      updatedAt: job.finishedAt || registration?.registeredAt || job.updatedAt || "",
-      lastHeartbeatAt: job.updatedAt || "",
-      checkpointTreeId: String(relations.checkpointTreeId || job.checkpointTreeId || ""),
-      detail: `进度 ${job.progressPercent}% · ${job.stage || "无阶段信息"}`,
-      registration,
-    });
-  }
-
-  for (const run of allMaintenanceAgentRuns.value) {
-    const registration = run.unifiedRegistration;
-    const relations = registration?.relations || {};
-    const attributes = registration?.attributes || {};
-    rows.push({
-      rowId: registration?.registrationId || `maintenance-agent:${run.runId}`,
-      queueId: String(relations.queueId || `maintenance:${run.runId}`),
-      kind: String(attributes.taskType || "maintenance_agent_run"),
-      label: registration?.label || run.summary || run.intent || `智能巡检任务 ${run.runId}`,
-      ownerId: run.runId,
-      source: "maintenance-agent",
-      sourceLabel: registration?.source === "maintenance-agent" ? "智能巡检" : registration?.source || "智能巡检",
-      lifecycleStatus: registration?.status || run.status,
-      status: run.status,
-      phase: String(attributes.stage || run.status),
-      tone: registration?.tone || queueLifecycleTone(run.status),
-      startedAt: run.startedAt || run.createdAt || "",
-      updatedAt: run.completedAt || registration?.registeredAt || run.updatedAt || "",
-      lastHeartbeatAt: run.updatedAt || "",
-      checkpointTreeId: "",
-      detail: `${maintenanceAgentRiskLabel(run.risk)} · ${run.plan?.summary || run.intent || "智能巡检"}`,
-      registration,
-    });
-  }
-
-  const activeRank = (row: WorkQueueRow) =>
-    ["interrupted", "failed"].includes(row.status) || row.lifecycleStatus === "interrupted"
-      ? 0
-      : ["running", "queued", "awaiting_approval", "open"].includes(row.status) || row.lifecycleStatus === "open"
-        ? 1
-        : row.lifecycleStatus === "recovered"
-          ? 2
-          : 3;
-  return rows.sort((left, right) => {
-    const rankDelta = activeRank(left) - activeRank(right);
-    if (rankDelta !== 0) {
-      return rankDelta;
-    }
-    return Date.parse(right.updatedAt || right.startedAt || "") - Date.parse(left.updatedAt || left.startedAt || "");
-  });
-});
-const workQueueSummary = computed(() => ({
-  total: workQueueRows.value.length,
-  active: workQueueRows.value.filter((row) =>
-    ["queued", "running", "awaiting_approval"].includes(row.status) || row.lifecycleStatus === "open",
-  ).length,
-  interrupted: workQueueRows.value.filter((row) => row.lifecycleStatus === "interrupted" || row.status === "interrupted").length,
-  recovered: workQueueRows.value.filter((row) => row.lifecycleStatus === "recovered" || row.status === "recovered").length,
-}));
 
 function compactLogDetail(parts: Array<string | number | boolean | null | undefined>) {
   return parts
