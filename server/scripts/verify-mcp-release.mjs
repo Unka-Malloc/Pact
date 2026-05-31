@@ -192,6 +192,8 @@ try {
   assert.equal(manifest.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
   assert.equal(manifest.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(manifest.sharedHub.sharedspace.exchangeReceipt.locations.includes("structuredContent.exchange"));
+  assert.ok(manifest.sharedHub.sharedspace.exchangeReceipt.fields.includes("outlet"));
+  assert.ok(manifest.sharedHub.sharedspace.exchangeReceipt.fields.includes("referencePolicy"));
   assert.ok(manifest.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   const portablePlatform = manifest.portable.currentPlatform || verifyTargetPlatform;
   const archiveOrder = archiveInspectOrder(portablePlatform);

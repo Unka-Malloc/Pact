@@ -50,7 +50,7 @@ function sharedspaceExchangeReceiptContract() {
       "item-deleted",
       "operation"
     ],
-    fields: ["action", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+    fields: ["action", "outlet", "referencePolicy", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
   };
 }
 

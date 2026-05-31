@@ -143,6 +143,8 @@ try {
   assert.equal(discovery.payload.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
   assert.equal(discovery.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.locations.includes("notifications/pact/operation_reply.params.exchange"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("outlet"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("referencePolicy"));
   assert.ok(discovery.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
@@ -348,6 +350,7 @@ try {
   assert.equal(localGrant.payload.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
   assert.equal(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.locations.includes("structuredContent.exchange"));
+  assert.ok(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("referencePolicy"));
   assert.ok(localGrant.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].agentProfileId, "pact.mcp.codex");
   assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].toolsets.includes("pact.agent.workspace"), true);
@@ -535,6 +538,8 @@ try {
   assert.equal(workspaceRef, "workspace-1");
   assert.equal(createdExchange.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.equal(createdExchange.action, "workspace-created");
+  assert.equal(createdExchange.outlet, "pact.sharedspace");
+  assert.equal(createdExchange.referencePolicy, "use-public-workspace-ref");
   assert.equal(createdExchange.workspaceRef, workspaceRef);
 
   let sharedspaceWrite = null;
@@ -569,6 +574,8 @@ try {
   assert.equal(writePayload.ok, true);
   assert.equal(writePayload.file.relativePath, "notes/hello.txt");
   assert.equal(writeExchange.action, "file-written");
+  assert.equal(writeExchange.outlet, "pact.sharedspace");
+  assert.equal(writeExchange.referencePolicy, "use-public-workspace-ref");
   assert.equal(writeExchange.workspaceRef, workspaceRef);
   assert.equal(writeExchange.path, "notes/hello.txt");
   assert.ok(writeExchange.nextOperations.includes("pact.sharedspace.file.read"));

@@ -191,7 +191,7 @@ function sharedspaceExchangeReceiptContract() {
       "item-deleted",
       "operation"
     ],
-    fields: ["action", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+    fields: ["action", "outlet", "referencePolicy", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
   };
 }
 
@@ -1339,6 +1339,8 @@ function inferSharedspaceExchangeReceipt({ operation = "", input = {}, payload =
   return {
     schemaVersion: "pact.mcp.sharedspace-exchange.v1",
     action,
+    outlet: MCP_SHAREDSPACE_TOOL_NAME,
+    referencePolicy: "use-public-workspace-ref",
     workspaceRef,
     path: pathValue,
     paths,
