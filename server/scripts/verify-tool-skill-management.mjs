@@ -222,6 +222,13 @@ const publicPayload = await provider.publicMcpToolPayload({
     metadata: {
       defaultAdminUserId: "grant_internal_admin",
       adminUserIds: ["grant_internal_admin"]
+    },
+    error: {
+      message: "Failed at /home/private-user/private.txt for workspace_a",
+      details: {
+        sourcePath: "/home/private-user/private.txt",
+        workspaceId: "workspace_a"
+      }
     }
   },
   request,
@@ -232,8 +239,12 @@ assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.selected, "absol
 assert.equal(publicPayload.cacheReceipt.cacheKey, "workspace:workspace-1:notes");
 assert.equal(publicPayload.cacheReceipt.indexRoots["workspace:workspace-1"], "cid:sha256:abc");
 assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.metadata, "defaultAdminUserId"), false);
+assert.equal(publicPayload.error.message, "Failed at [server-internal-path] for workspace-1");
+assert.equal(publicPayload.error.details.workspaceRef, "workspace-1");
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details, "sourcePath"), false);
 assert.equal(JSON.stringify(publicPayload).includes("workspace_a"), false);
 assert.equal(JSON.stringify(publicPayload).includes("grant_internal_admin"), false);
+assert.equal(JSON.stringify(publicPayload).includes("/home/private-user"), false);
 
 const localGrant = await provider.createLocalMcpGrant({
   request,

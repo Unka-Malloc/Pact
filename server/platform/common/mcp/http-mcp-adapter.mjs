@@ -1392,12 +1392,18 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
       dryRun: parsedCall.envelope.dryRun
     });
     if (!result.ok) {
-      const error = result.payload?.error || {};
+      const publicFailurePayload = await toolSkillManagementProvider.publicMcpToolPayload({
+        payload: result.payload || {},
+        workspaceDirectory: resolvedWorkspaceInput.workspaceDirectory,
+        request,
+        context: mcpExecutionContext
+      });
+      const error = publicFailurePayload?.error || {};
       const status = result.status || 500;
       const target = inferMcpTargetReceipt({
         operation: parsedCall.operation,
         input: resolvedWorkspaceInput.input,
-        payload: result.payload || {},
+        payload: publicFailurePayload,
         envelope: parsedCall.envelope
       });
       broadcastMcpOperationReply({
@@ -1405,7 +1411,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
         operation: parsedCall.operation,
         status: "failed",
         target,
-        payload: result.payload || {},
+        payload: publicFailurePayload,
         error: {
           code: error.code || "tool_call_failed",
           message: error.message || "MCP tool call failed.",
