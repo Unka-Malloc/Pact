@@ -439,35 +439,96 @@ function commandGuidanceBaseUrl(options = {}) {
   return normalizeBaseUrl(option(options, "resolved-url", explicitBaseUrl(options)));
 }
 
+function commandGuidanceContext(options = {}) {
+  return {
+    baseUrl: commandGuidanceBaseUrl(options),
+    tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV))
+  };
+}
+
+function appendGuidanceContextArgs(parts, { baseUrl = "", tokenEnv = DEFAULT_TOKEN_ENV, includeUrl = false } = {}) {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (includeUrl && normalizedBaseUrl) {
+    parts.push("--url", shellQuote(normalizedBaseUrl));
+  }
+  if (tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV) {
+    parts.push("--token-env", shellQuote(tokenEnv));
+  }
+  return parts;
+}
+
+function shellCommandForScan({ includeUrl = false, baseUrl = "", tokenEnv = DEFAULT_TOKEN_ENV } = {}) {
+  const parts = ["pact-mcp", "scan"];
+  appendGuidanceContextArgs(parts, { includeUrl, baseUrl, tokenEnv });
+  parts.push("--json");
+  return parts.join(" ");
+}
+
+function shellCommandForDiscoverLocal({ includeUrl = false, baseUrl = "" } = {}) {
+  const parts = ["pact-mcp", "discover-local"];
+  appendGuidanceContextArgs(parts, { includeUrl, baseUrl, tokenEnv: DEFAULT_TOKEN_ENV });
+  parts.push("--json");
+  return parts.join(" ");
+}
+
+function shellCommandForDoctor({
+  includeToken = false,
+  includeUrl = false,
+  baseUrl = "",
+  tokenEnv = DEFAULT_TOKEN_ENV
+} = {}) {
+  const parts = ["pact-mcp", "doctor"];
+  appendGuidanceContextArgs(parts, { includeUrl, baseUrl, tokenEnv });
+  if (includeToken) {
+    parts.push("--token-stdin");
+  }
+  parts.push("--json");
+  return parts.join(" ");
+}
+
+function shellCommandForUninstall({ target = "codex", includeUrl = false, baseUrl = "" } = {}) {
+  const parts = ["pact-mcp", "uninstall", "--target", target];
+  appendGuidanceContextArgs(parts, { includeUrl, baseUrl, tokenEnv: DEFAULT_TOKEN_ENV });
+  parts.push("--json");
+  return parts.join(" ");
+}
+
+function shellCommandForServerConfig({ baseUrl = "http://127.0.0.1:7228" } = {}) {
+  return `pact-mcp server-config --set --url ${shellQuote(normalizeBaseUrl(baseUrl) || "http://127.0.0.1:7228")}`;
+}
+
 function commandFailureGuidance({ command = "", message = "", options = {} } = {}) {
   const normalized = String(message || "");
   const lower = normalized.toLowerCase();
+  const { baseUrl, tokenEnv } = commandGuidanceContext(options);
+  const includeUrl = Boolean(baseUrl);
   if (/unsupported install target/i.test(normalized)) {
+    const scanCommand = shellCommandForScan({ includeUrl, baseUrl, tokenEnv });
     return {
       errorCode: "UNSUPPORTED_TARGET",
-      nextCommand: "pact-mcp scan --json",
+      nextCommand: scanCommand,
       repairCommands: [
-        "pact-mcp scan --json",
-        shellCommandForInstall({ target: "codex" })
+        scanCommand,
+        shellCommandForInstall({ target: "codex", includeUrl, baseUrl, tokenEnv })
       ],
       supportedTargets: SUPPORTED_TARGETS
     };
   }
   if (lower.includes("no signed pact mcp hub was discovered")) {
+    const discoverCommand = shellCommandForDiscoverLocal({ includeUrl, baseUrl });
+    const fallbackBaseUrl = baseUrl || "http://127.0.0.1:7228";
     return {
       errorCode: "PACT_HUB_NOT_DISCOVERED",
-      nextCommand: "pact-mcp discover-local --json",
+      nextCommand: discoverCommand,
       repairCommands: [
-        "pact-mcp discover-local --json",
-        "pact-mcp server-config --set --url http://127.0.0.1:7228",
-        shellCommandForInstall({ target: "codex", includeUrl: true })
+        discoverCommand,
+        shellCommandForServerConfig({ baseUrl: fallbackBaseUrl }),
+        shellCommandForInstall({ target: "codex", includeUrl: true, baseUrl: fallbackBaseUrl, tokenEnv })
       ]
     };
   }
   if (lower.includes("missing token")) {
     const target = String(option(options, "target", "codex")) || "codex";
-    const baseUrl = commandGuidanceBaseUrl(options);
-    const tokenEnv = String(option(options, "token-env", DEFAULT_TOKEN_ENV));
     const urlArgs = baseUrl ? ` --url ${shellQuote(baseUrl)}` : "";
     const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
     return {
@@ -480,21 +541,24 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
     };
   }
   if (lower.includes("interactive mode requires a tty")) {
+    const uninstallCommand = shellCommandForUninstall({ target: "codex", includeUrl, baseUrl });
     return {
       errorCode: "NON_INTERACTIVE_TARGET_REQUIRED",
-      nextCommand: "pact-mcp uninstall --target codex --json",
+      nextCommand: uninstallCommand,
       repairCommands: [
-        "pact-mcp scan --json",
-        "pact-mcp uninstall --target codex --json"
+        shellCommandForScan({ includeUrl, baseUrl, tokenEnv }),
+        uninstallCommand
       ]
     };
   }
   return {
     errorCode: "COMMAND_FAILED",
-    nextCommand: command === "install" ? shellCommandForInstall({ target: "codex" }) : "pact-mcp doctor --json",
+    nextCommand: command === "install"
+      ? shellCommandForInstall({ target: "codex", includeUrl, baseUrl, tokenEnv })
+      : shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
     repairCommands: [
-      "pact-mcp doctor --json",
-      "pact-mcp scan --json"
+      shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
+      shellCommandForScan({ includeUrl, baseUrl, tokenEnv })
     ]
   };
 }
@@ -516,6 +580,9 @@ function candidateInstallCommand(candidate, settings) {
     args.push("--url", shellQuote(settings.baseUrl));
   }
   args.push(...commandOptionArgs(candidate.optionOverrides || {}));
+  if (settings.tokenEnv && settings.tokenEnv !== DEFAULT_TOKEN_ENV) {
+    args.push("--token-env", shellQuote(settings.tokenEnv));
+  }
   args.push("--json");
   return args.join(" ");
 }
@@ -526,7 +593,16 @@ function candidateRepairCommand(candidate, settings) {
     target: candidate.target,
     binOption,
     includeUrl: Boolean(settings.baseUrl),
-    baseUrl: settings.baseUrl || "http://127.0.0.1:7228"
+    baseUrl: settings.baseUrl || "http://127.0.0.1:7228",
+    tokenEnv: settings.tokenEnv || DEFAULT_TOKEN_ENV
+  });
+}
+
+function candidateDoctorCommand(settings) {
+  return shellCommandForDoctor({
+    includeUrl: Boolean(settings.baseUrl),
+    baseUrl: settings.baseUrl,
+    tokenEnv: settings.tokenEnv || DEFAULT_TOKEN_ENV
   });
 }
 
@@ -535,44 +611,50 @@ function withInstallCandidateGuidance(candidate, settings) {
     ...candidate,
     installCommand: candidate.status === "detected" ? candidateInstallCommand(candidate, settings) : "",
     repairCommand: candidate.status === "detected" ? "" : candidateRepairCommand(candidate, settings),
-    doctorCommand: "pact-mcp doctor --json"
+    doctorCommand: candidateDoctorCommand(settings)
   };
 }
 
-function doctorGuidance(checks = {}) {
+function doctorGuidance(checks = {}, options = {}) {
   const installedTargets = checks.deviceManifest?.installedTargets || [];
+  const { baseUrl, tokenEnv } = commandGuidanceContext(options);
+  const includeUrl = Boolean(baseUrl);
+  const discoverCommand = shellCommandForDiscoverLocal({ includeUrl, baseUrl });
+  const scanCommand = shellCommandForScan({ includeUrl, baseUrl, tokenEnv });
+  const installAutoCommand = shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv });
+  const doctorWithTokenCommand = shellCommandForDoctor({ includeToken: true, includeUrl, baseUrl, tokenEnv });
   if (!checks.signedDiscovery?.ok || !checks.discovery?.ok || !checks.initialize?.ok) {
     return {
-      nextCommand: "pact-mcp discover-local --json",
+      nextCommand: discoverCommand,
       repairCommands: [
-        "pact-mcp discover-local --json",
-        "pact-mcp server-config --set --url http://127.0.0.1:7228"
+        discoverCommand,
+        shellCommandForServerConfig({ baseUrl: baseUrl || "http://127.0.0.1:7228" })
       ]
     };
   }
   if (installedTargets.length === 0) {
     return {
-      nextCommand: "pact-mcp scan --json",
+      nextCommand: scanCommand,
       repairCommands: [
-        "pact-mcp scan --json",
-        "pact-mcp install --target auto --json"
+        scanCommand,
+        installAutoCommand
       ]
     };
   }
   if (checks.toolsList?.skipped || checks.systemHealth?.skipped) {
     return {
-      nextCommand: "pact-mcp doctor --token-stdin --json",
+      nextCommand: doctorWithTokenCommand,
       repairCommands: [
-        "pact-mcp doctor --token-stdin --json"
+        doctorWithTokenCommand
       ]
     };
   }
   if (!checks.toolsList?.ok || !checks.systemHealth?.ok) {
     return {
-      nextCommand: "pact-mcp install --target auto --json",
+      nextCommand: installAutoCommand,
       repairCommands: [
-        "pact-mcp install --target auto --json",
-        "pact-mcp doctor --token-stdin --json"
+        installAutoCommand,
+        doctorWithTokenCommand
       ]
     };
   }
@@ -5668,20 +5750,23 @@ function summarizeInstallCandidate(candidate) {
   };
 }
 
-function noDetectedClientGuidance(candidates = []) {
+function noDetectedClientGuidance(candidates = [], options = {}) {
   const explicitTargets = candidates
     .map((candidate) => candidate.target)
     .filter((target, index, values) => target && values.indexOf(target) === index);
   const priorityTargets = ["codex", "claude-code", "openclaw"].filter((target) => explicitTargets.includes(target));
   const suggestedTarget = priorityTargets[0] || explicitTargets[0] || "codex";
   const binOption = targetBinOption(suggestedTarget);
+  const { baseUrl, tokenEnv } = commandGuidanceContext(options);
+  const includeUrl = Boolean(baseUrl);
+  const scanCommand = shellCommandForScan({ includeUrl, baseUrl, tokenEnv });
   return {
     errorCode: "NO_SUPPORTED_MCP_CLIENTS_DETECTED",
-    nextCommand: "pact-mcp scan --json",
+    nextCommand: scanCommand,
     repairCommands: [
-      "pact-mcp scan --json",
-      shellCommandForInstall({ target: suggestedTarget, binOption }),
-      "pact-mcp install --target auto --json"
+      scanCommand,
+      shellCommandForInstall({ target: suggestedTarget, binOption, includeUrl, baseUrl, tokenEnv }),
+      shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
     ]
   };
 }
@@ -5698,7 +5783,7 @@ async function installAutoDetectedCommand(resolvedOptions) {
       packageVersion: packageJson.version,
       baseUrl: installerOptions(resolvedOptions).baseUrl,
       error: "No supported MCP clients were detected. Pass --target <client>, --target auto with an explicit --<client>-bin, or run in a TTY for selection.",
-      ...noDetectedClientGuidance(candidates),
+      ...noDetectedClientGuidance(candidates, resolvedOptions),
       candidates
     };
   }
@@ -6288,7 +6373,7 @@ async function doctorCommand(options) {
     };
   }
 
-  const guidance = doctorGuidance(checks);
+  const guidance = doctorGuidance(checks, resolvedOptions);
   return {
     ok: checks.signedDiscovery.ok
       && checks.discovery.ok

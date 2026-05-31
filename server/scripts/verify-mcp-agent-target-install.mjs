@@ -881,8 +881,9 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.checks?.toolsList?.skipped, true);
-    assert.equal(payload.nextCommand, "pact-mcp doctor --token-stdin --json");
-    assert.ok(payload.repairCommands?.includes("pact-mcp doctor --token-stdin --json"));
+    const expectedDoctorCommand = `pact-mcp doctor --url '${serverUrl}' --token-env '${missingDoctorTokenEnv}' --token-stdin --json`;
+    assert.equal(payload.nextCommand, expectedDoctorCommand);
+    assert.ok(payload.repairCommands?.includes(expectedDoctorCommand));
   });
 
   await testAsync("doctor human output redacts local registry path", async () => {
@@ -934,8 +935,8 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.checks?.toolsList?.ok, false);
     assert.equal(payload.checks?.systemHealth?.ok, false);
-    assert.equal(payload.nextCommand, "pact-mcp install --target auto --json");
-    assert.ok(payload.repairCommands?.includes("pact-mcp doctor --token-stdin --json"));
+    assert.equal(payload.nextCommand, `pact-mcp install --target auto --url '${serverUrl}' --json`);
+    assert.ok(payload.repairCommands?.includes(`pact-mcp doctor --url '${serverUrl}' --token-stdin --json`));
   });
 
   await testAsync("unauthenticated tools/list is rejected", async () => {
@@ -1031,6 +1032,24 @@ try {
     assert.ok(oc, "scan should include opencode");
     assert.equal(oc.label, "OpenCode");
     assert.ok(oc.repairCommand?.includes("pact-mcp install --target opencode"), "scan should include an opencode repair command");
+    assert.ok(oc.repairCommand?.includes(`--url '${serverUrl}'`), "scan repair command should preserve server url");
+  });
+
+  await testAsync("scan guidance preserves custom token environment", async () => {
+    const result = await spawnConnector([
+      "scan",
+      "--json",
+      "--url", serverUrl,
+      "--token-env", missingInstallTokenEnv,
+      "--no-scan"
+    ]);
+    const scan = JSON.parse(result.stdout);
+    for (const target of PRIORITY_AGENT_TARGETS) {
+      const candidate = scan.candidates.find((c) => c.target === target);
+      assert.ok(candidate?.repairCommand?.includes(`--url '${serverUrl}'`), `${target} repair command should preserve server url`);
+      assert.ok(candidate?.repairCommand?.includes(`--token-env '${missingInstallTokenEnv}'`), `${target} repair command should preserve token env`);
+      assert.equal(candidate.doctorCommand, `pact-mcp doctor --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    }
   });
 
   // ── SECTION 9: Connector self-checks ──
@@ -1064,7 +1083,7 @@ try {
     for (const target of PRIORITY_AGENT_TARGETS) {
       const candidate = scan.candidates.find((c) => c.target === target);
       assert.ok(candidate?.repairCommand?.includes(`pact-mcp install --target ${target}`), `${target} should include a repair command`);
-      assert.equal(candidate.doctorCommand, "pact-mcp doctor --json");
+      assert.equal(candidate.doctorCommand, `pact-mcp doctor --url '${serverUrl}' --json`);
     }
   });
 
@@ -1082,8 +1101,8 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, false);
     assert.equal(payload.errorCode, "UNSUPPORTED_TARGET");
-    assert.equal(payload.nextCommand, "pact-mcp scan --json");
-    assert.ok(payload.repairCommands?.includes("pact-mcp scan --json"));
+    assert.equal(payload.nextCommand, `pact-mcp scan --url '${serverUrl}' --json`);
+    assert.ok(payload.repairCommands?.includes(`pact-mcp scan --url '${serverUrl}' --json`));
     for (const target of PRIORITY_AGENT_TARGETS) {
       assert.ok(payload.supportedTargets?.includes(target), `${target} should be listed as supported`);
     }
@@ -1117,6 +1136,7 @@ try {
       "--target", "auto",
       "--url", serverUrl,
       "--token", token,
+      "--token-env", missingInstallTokenEnv,
       "--discovery-file", noDetectRegistryPath,
       "--no-scan",
       "--json"
@@ -1128,8 +1148,10 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, false);
     assert.equal(payload.errorCode, "NO_SUPPORTED_MCP_CLIENTS_DETECTED");
-    assert.equal(payload.nextCommand, "pact-mcp scan --json");
+    assert.equal(payload.nextCommand, `pact-mcp scan --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.ok(payload.repairCommands?.some((command) => command.includes("pact-mcp install --target codex")));
+    assert.ok(payload.repairCommands?.every((command) => command.includes(`--url '${serverUrl}'`)));
+    assert.ok(payload.repairCommands?.every((command) => command.includes(`--token-env '${missingInstallTokenEnv}'`)));
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "codex"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "claude-code"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "openclaw"), true);
