@@ -358,7 +358,20 @@ try {
   assert.deepEqual(localGrant.payload.targets, ["codex"]);
   assert.equal(localGrant.payload.maxRisk, "safe_write");
   assert.equal(localGrant.payload.targetMatch.matched, true);
+  assert.deepEqual(localGrant.payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrant.payload.supportedTargets, expectedInstallTargets);
+  assert.equal(
+    localGrant.payload.connector.autoInstallCommand,
+    `npx pact-mcp-connector@latest install --target auto --url '${server.url}' --json`
+  );
+  assert.equal(
+    localGrant.payload.connector.priorityInstallCommand,
+    `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
+  );
+  assert.equal(
+    localGrant.payload.connector.discoverCommand,
+    `npx pact-mcp-connector@latest discover-local --url '${server.url}' --json`
+  );
   const localGrantTargetDetails = new Map(localGrant.payload.supportedTargetDetails.map((target) => [target.target, target]));
   assert.deepEqual([...localGrantTargetDetails.keys()], expectedInstallTargets);
   assert.equal(localGrantTargetDetails.get("codex").agentProfileId, "pact.mcp.codex");

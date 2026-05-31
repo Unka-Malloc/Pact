@@ -1,6 +1,8 @@
 export const TOOL_SKILL_MANAGEMENT_PROTOCOL_VERSION = "pact.tool-skill-management.v1";
 
 const LOCAL_GRANT_MCP_SHAREDSPACE_TOOL_NAME = "pact.sharedspace";
+const LOCAL_GRANT_MCP_CONNECTOR_PACKAGE = "pact-mcp-connector";
+const LOCAL_GRANT_PRIORITY_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
 
 const LOCAL_GRANT_WRITE_TOOLSETS = Object.freeze([
   "pact.runtime.read",
@@ -228,6 +230,22 @@ function localGrantVmBaseUrl(baseUrl = "") {
   } catch {
     return "";
   }
+}
+
+function localGrantShellQuote(value) {
+  return `'${String(value || "").replace(/'/g, "'\\''")}'`;
+}
+
+function localGrantConnectorMetadata({ request = null, discoveryState = null } = {}) {
+  const baseUrl = localGrantRequestBaseUrl({ request, discoveryState });
+  const urlArgs = baseUrl ? ` --url ${localGrantShellQuote(baseUrl)}` : "";
+  return {
+    packageName: LOCAL_GRANT_MCP_CONNECTOR_PACKAGE,
+    priorityTargets: [...LOCAL_GRANT_PRIORITY_TARGETS],
+    discoverCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest discover-local${urlArgs} --json`,
+    autoInstallCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest install --target auto${urlArgs} --json`,
+    priorityInstallCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest install --target ${LOCAL_GRANT_PRIORITY_TARGETS.join(",")}${urlArgs} --json`
+  };
 }
 
 function localGrantSharedHubContract({ request = null, discoveryState = null } = {}) {
@@ -952,8 +970,10 @@ export function createToolSkillManagementProvider({
         scopes: resolved.requiredScopes,
         maxRisk: resolved.maxRisk,
         targets,
+        priorityTargets: [...LOCAL_GRANT_PRIORITY_TARGETS],
         supportedTargets: localGrantSupportedTargets(),
         supportedTargetDetails: localGrantSupportedTargetDetails(),
+        connector: localGrantConnectorMetadata({ request, discoveryState }),
         sharedHub: localGrantSharedHubContract({ request, discoveryState }),
         targetMatch: {
           matched: targetMatch.matched,
