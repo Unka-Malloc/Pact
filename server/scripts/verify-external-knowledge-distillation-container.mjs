@@ -453,6 +453,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
@@ -524,6 +525,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.attachment-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.structured"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
@@ -725,8 +727,9 @@ try {
               "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
               "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" ",
               "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" ",
-              "xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\">",
-              "<office:body><office:text><text:p>OpenDocument project convergence evidence for external distillation.</text:p>",
+              "xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\" ",
+              "xmlns:xlink=\"http://www.w3.org/1999/xlink\">",
+              "<office:body><office:text><text:p>OpenDocument project convergence evidence for external distillation. <text:a xlink:href=\"https://example.com/container-odf\">container ODF link</text:a></text:p>",
               "<table:table table:name=\"Container ODF Decisions\">",
               "<table:table-row><table:table-cell><text:p>Owner</text:p></table:table-cell><table:table-cell><text:p>Decision</text:p></table:table-cell></table:table-row>",
               "<table:table-row><table:table-cell><text:p>Container</text:p></table:table-cell><table:table-cell><text:p>Preserve ODF cells in graph evidence</text:p></table:table-cell></table:table-row>",
@@ -745,14 +748,20 @@ try {
   assert.equal(openDocument.route.formatId, "open-document");
   assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed"), true);
   assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 4), true);
+  assert.equal(openDocument.parserTrace.some((trace) => trace.stage === "open-document.hyperlinks" && trace.status === "completed" && trace.links === 1), true);
   assert.equal(openDocument.elementPlan.strategy, "document-element-model.v1");
   assert.equal(openDocument.elementPlan.sourceFormat, "open-document");
   assert.equal(openDocument.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(openDocument.elementPlan.elementTypes.link >= 1, true);
   assert.equal(openDocument.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(openDocument.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "table-row" &&
     ref.table?.format === "open-document" &&
     ref.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision")
+  ))), true);
+  assert.equal(openDocument.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.href === "https://example.com/container-odf"
   ))), true);
   assert.equal(openDocument.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.ok(openDocument.quality.textCharacters > 0, "OpenDocument parser must produce distillable text");
@@ -1394,7 +1403,7 @@ try {
       "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\" display=\"completed docs\"/></hyperlinks></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-xlsx\" TargetMode=\"External\"/></Relationships>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/_rels/sheet1.xml.rels",
       "printf '%s' 'application/vnd.oasis.opendocument.text' > /tmp/pact-mounted-structured/odt/mimetype",
-      "printf '%s' '<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"><office:body><office:text><text:p>Mounted ODT filePath extraction keeps OpenDocument evidence distillable.</text:p></office:text></office:body></office:document-content>' > /tmp/pact-mounted-structured/odt/content.xml",
+      "printf '%s' '<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><office:body><office:text><text:p>Mounted ODT filePath extraction keeps OpenDocument evidence distillable. <text:a xlink:href=\"https://example.com/container-mounted-odf\">container mounted ODF link</text:a></text:p></office:text></office:body></office:document-content>' > /tmp/pact-mounted-structured/odt/content.xml",
       "printf '%s' 'application/epub+zip' > /tmp/pact-mounted-structured/epub/mimetype",
       "printf '%s' '<?xml version=\"1.0\"?><container version=\"1.0\"></container>' > /tmp/pact-mounted-structured/epub/META-INF/container.xml",
       "printf '%s' '<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Mounted EPUB Evidence</h1><p>Mounted EPUB filePath chapter routing verifies ebook compatibility.</p></body></html>' > /tmp/pact-mounted-structured/epub/OEBPS/chapter1.xhtml",
@@ -1760,6 +1769,13 @@ NODE`
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
         ref.type === "speaker-note" &&
         ref.layout?.strategy === "presentationml-speaker-notes.v1"
+      ))), true);
+    } else if (formatId === "open-document") {
+      assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "open-document.hyperlinks" && trace.status === "completed" && trace.links === 1), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "link" &&
+        ref.href === "https://example.com/container-mounted-odf"
       ))), true);
     } else if (!["word", "spreadsheet"].includes(formatId)) {
       assert.equal(mountedStructured.windowPlan.strategy, "file-ref-stream-windowing.v1");

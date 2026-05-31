@@ -343,10 +343,11 @@ const sampleOpenDocumentBase64 = base64Zip({
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
     "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" ",
     "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" ",
-    "xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\">",
+    "xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\" ",
+    "xmlns:xlink=\"http://www.w3.org/1999/xlink\">",
     "<office:body><office:text>",
     "<text:h text:outline-level=\"1\">OpenDocument Distillation Plan</text:h>",
-    "<text:p>OpenDocument parser preserves project convergence evidence as structured elements.</text:p>",
+    "<text:p>OpenDocument parser preserves project convergence evidence as structured elements. <text:a xlink:href=\"https://example.com/odf-evidence\">OpenDocument evidence portal</text:a></text:p>",
     "<table:table table:name=\"ODF Decisions\">",
     "<table:table-row><table:table-cell><text:p>Owner</text:p></table:table-cell><table:table-cell><text:p>Decision</text:p></table:table-cell><table:table-cell><text:p>Due Date</text:p></table:table-cell></table:table-row>",
     "<table:table-row><table:table-cell><text:p>Platform</text:p></table:table-cell><table:table-cell><text:p>Keep OpenDocument cells queryable</text:p></table:table-cell><table:table-cell><text:p>2026-07-11</text:p></table:table-cell></table:table-row>",
@@ -617,8 +618,8 @@ try {
           "mimetype": "application/vnd.oasis.opendocument.text",
           "content.xml": [
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-            "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">",
-            "<office:body><office:text><text:p>Mounted OpenDocument filePath parser keeps ODT evidence in the distillation corpus.</text:p></office:text></office:body>",
+            "<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">",
+            "<office:body><office:text><text:p>Mounted OpenDocument filePath parser keeps ODT evidence in the distillation corpus. <text:a xlink:href=\"https://example.com/mounted-odf\">mounted ODF link</text:a></text:p></office:text></office:body>",
             "</office:document-content>"
           ].join("")
         }
@@ -845,6 +846,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("email.attachment-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.structured"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.tables"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
@@ -943,6 +945,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".jsonc", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
@@ -1652,16 +1655,23 @@ try {
   assert.equal(openDocumentPayloadCorpus.route.formatId, "open-document");
   assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.structured" && trace.status === "completed" && trace.elements >= 4 && trace.headings >= 1 && trace.paragraphs >= 1 && trace.tableRows >= 2), true);
   assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.tables" && trace.status === "completed" && trace.tables === 1 && trace.cells === 6), true);
+  assert.equal(openDocumentPayloadCorpus.parserTrace.some((trace) => trace.stage === "open-document.hyperlinks" && trace.status === "completed" && trace.links === 1), true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(openDocumentPayloadCorpus.elementPlan.sourceFormat, "open-document");
   assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(openDocumentPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "table-row" &&
     element.table?.format === "open-document" &&
     element.cells?.some((cell) => cell.ref === "B2" && cell.header === "Decision" && cell.value.includes("OpenDocument cells"))
+  )), true);
+  assert.equal(openDocumentPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "link" &&
+    element.href === "https://example.com/odf-evidence" &&
+    element.text.includes("OpenDocument evidence portal")
   )), true);
   assert.equal(openDocumentPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(openDocumentPayloadCorpus.windowPlan.windows.some((window) => /OpenDocument Distillation Plan|project convergence evidence/.test(window.excerpt || "")), true);
@@ -1670,13 +1680,25 @@ try {
     ref.table?.format === "open-document" &&
     ref.cells?.some((cell) => cell.ref === "B2")
   ))), true);
+  assert.equal(openDocumentPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.href === "https://example.com/odf-evidence"
+  ))), true);
   assert.equal(openDocumentPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
+  assert.equal(openDocumentPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-40" &&
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "table-row" &&
       ref.table?.format === "open-document" &&
       ref.cells?.some((cell) => cell.ref === "B2")
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-40" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "link" &&
+      ref.href === "https://example.com/odf-evidence"
     ))
   )), true);
   const epubPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-41");
@@ -2019,6 +2041,13 @@ try {
           ref.type === "table-row" &&
           ref.table?.format === "xlsx" &&
           ref.cells?.some((cell) => cell.ref === "B2" && cell.hyperlink?.target === "https://example.com/container-xlsx")
+        ))), true);
+      } else if (formatId === "open-document") {
+        assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "open-document.hyperlinks" && trace.status === "completed" && trace.links === 1), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "link" &&
+          ref.href === "https://example.com/mounted-odf"
         ))), true);
       } else {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "file-ref-stream-windowing.v1");
@@ -2853,6 +2882,11 @@ try {
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "open-document" &&
+    document.evidence.linkElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "opendocument-link-refs-preserved" && gate.status === "passed")
+  )), true);
   const professionalManifestArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/professional-format-manifest-json`, {
     headers: authHeaders(auth)
   });
@@ -2888,6 +2922,13 @@ try {
     document.parserStages.includes("table.sheet.hyperlinks") &&
     document.preserves.includes("hyperlinks") &&
     document.evidence.formulaRefCount >= 1
+  )), true);
+  assert.equal(professionalManifest.documents.some((document) => (
+    document.routeId === "open-document" &&
+    document.parserStages.includes("open-document.hyperlinks") &&
+    document.preserves.includes("links") &&
+    document.evidence.linkElementCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "opendocument-link-refs-preserved" && gate.status === "passed")
   )), true);
   const referenceGapArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/reference-gap-report-json`, {
     headers: authHeaders(auth)

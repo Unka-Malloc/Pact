@@ -270,7 +270,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "open-document",
     preferredParser: "open-document.structured",
     fallbackParsers: ["tika.text"],
-    parserChain: ["open-document.route", "open-document.structured", "tika.text"],
+    parserChain: ["open-document.route", "open-document.structured", "open-document.tables", "open-document.hyperlinks", "tika.text"],
     streamingUnit: "section",
     referenceFrameworks: ["docling", "unstructured", "haystack"]
   },
@@ -727,10 +727,10 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "OpenDocument",
     professionalFamily: "opendocument",
     parserProfile: "opendocument-content-xml-route",
-    structureUnits: ["heading", "paragraph", "table-row", "cell"],
-    parserStages: ["open-document.structured", "open-document.tables", "tika.text"],
-    preserves: ["headings", "paragraphs", "tables", "cellRefs"],
-    conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-opendocument-cell-refs", "evidence-pack"],
+    structureUnits: ["heading", "paragraph", "table-row", "cell", "link"],
+    parserStages: ["open-document.structured", "open-document.tables", "open-document.hyperlinks", "tika.text"],
+    preserves: ["headings", "paragraphs", "tables", "cellRefs", "links"],
+    conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-opendocument-cell-and-link-refs", "evidence-pack"],
     conversionAdapters: [
       {
         target: "portable-markdown",
@@ -751,7 +751,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "odf-elements-to-agent-refs.v1",
         mode: "agent",
-        stages: ["element-refs", "table-cell-refs"]
+        stages: ["element-refs", "table-cell-refs", "link-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -761,7 +761,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "entities", "claims"]
       }
     ],
-    qualityGates: ["odf-content-order-preserved", "opendocument-table-cell-refs-preserved", "empty-corpus-blocked"],
+    qualityGates: ["odf-content-order-preserved", "opendocument-table-cell-refs-preserved", "opendocument-link-refs-preserved", "empty-corpus-blocked"],
     riskControls: ["advanced-odf-style-loss-reporting"],
     knownLosses: ["advanced-odf-styling-not-rendered"]
   }
@@ -1041,7 +1041,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML and PresentationML hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula/hyperlink metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula/hyperlink metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1066,7 +1066,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint hyperlinks, code, formulas, spreadsheet hyperlinks, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint and OpenDocument hyperlinks, code, formulas, spreadsheet hyperlinks, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -5737,6 +5737,26 @@ function appendOpenDocumentTableElements(elements = [], tableXml = "", { name = 
   return { rowCount: rows.length, cellCount };
 }
 
+function appendOpenDocumentLinkElements(elements = [], xml = "", { name = "", lineStart = 0 } = {}) {
+  let count = 0;
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?a\b[^>]*>[\s\S]*?<\/[^:>]*:?a>/g)) {
+    const linkXml = match[0];
+    const tag = linkXml.match(/^<[^>]+>/)?.[0] || "";
+    const href = xmlLocalAttribute(tag, "href");
+    const text = compactMarkupText(textFromXmlTextNodes(linkXml), 1200);
+    if (!href || !text) {
+      continue;
+    }
+    count += 1;
+    pushStructureElement(elements, "link", text, {
+      line: lineStart + count,
+      name: `${name}#link-${count}`,
+      href
+    });
+  }
+  return count;
+}
+
 function parseOpenDocument(entries = []) {
   const contentNames = entries
     .map((entry) => entry.name)
@@ -5746,6 +5766,7 @@ function parseOpenDocument(entries = []) {
   let tableCount = 0;
   let tableRowCount = 0;
   let tableCellCount = 0;
+  let linkCount = 0;
   for (const name of contentNames) {
     const xml = zipEntryText(entries, name);
     for (const match of xml.matchAll(/<(?:[\w.-]+:)?table(?:\s|>)[\s\S]*?<\/(?:[\w.-]+:)?table>/g)) {
@@ -5773,6 +5794,10 @@ function parseOpenDocument(entries = []) {
       sequence += 1;
       pushStructureElement(elements, "paragraph", textFromXmlTextNodes(match[0]), { line: sequence, name });
     }
+    linkCount += appendOpenDocumentLinkElements(elements, xml, {
+      name,
+      lineStart: sequence + tableRowCount + linkCount
+    });
   }
   const fallback = contentNames
     .map((name) => textFromXmlTextNodes(zipEntryText(entries, name)))
@@ -5788,7 +5813,8 @@ function parseOpenDocument(entries = []) {
     paragraphCount: counts.paragraph || 0,
     tableCount,
     tableRowCount,
-    tableCellCount
+    tableCellCount,
+    linkCount
   };
 }
 
@@ -6379,7 +6405,8 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           paragraphs: parsed.paragraphCount,
           tables: parsed.tableCount,
           tableRows: parsed.tableRowCount,
-          tableCells: parsed.tableCellCount
+          tableCells: parsed.tableCellCount,
+          links: parsed.linkCount
         },
         {
           stage: "open-document.tables",
@@ -6387,6 +6414,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tables: parsed.tableCount,
           rows: parsed.tableRowCount,
           cells: parsed.tableCellCount
+        },
+        {
+          stage: "open-document.hyperlinks",
+          status: parsed.linkCount ? "completed" : "empty",
+          links: parsed.linkCount
         }
       ]
     };
@@ -7576,7 +7608,8 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           paragraphs: parsed.paragraphCount,
           tables: parsed.tableCount,
           tableRows: parsed.tableRowCount,
-          tableCells: parsed.tableCellCount
+          tableCells: parsed.tableCellCount,
+          links: parsed.linkCount
         });
         parserTrace.push({
           stage: "open-document.tables",
@@ -7584,6 +7617,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tables: parsed.tableCount,
           rows: parsed.tableRowCount,
           cells: parsed.tableCellCount
+        });
+        parserTrace.push({
+          stage: "open-document.hyperlinks",
+          status: parsed.linkCount ? "completed" : "empty",
+          links: parsed.linkCount
         });
         if (parsed.text) {
           return {
@@ -8507,6 +8545,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "OpenDocument table cell references are preserved." : "No OpenDocument table cell references were required or observed."
       });
     }
+    if (gate === "opendocument-link-refs-preserved") {
+      const linkSignals = maxTraceMetric(document, ["links", "hyperlinks", "linkCount"]);
+      const status = routeId !== "open-document"
+        ? "not_applicable"
+        : linkSignals > 0
+          ? evidence.linkElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { linkSignals, linkElementCount: evidence.linkElementCount },
+        required: { linksWhenPresent: true },
+        message: status === "passed" ? "OpenDocument hyperlinks are preserved as element references." : "No OpenDocument hyperlinks were required or observed."
+      });
+    }
     return professionalGateRecord(gate, "not_applicable", {
       validationMode: "unmapped-gate",
       message: "No evaluator is registered for this quality gate."
@@ -9255,6 +9306,43 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "office.presentation.speaker-notes",
           status: parsed.speakerNoteCount ? "completed" : "empty",
           notes: parsed.speakerNoteCount
+        });
+      }
+    } else if (route?.id === "open-document") {
+      const parsed = canUseBoundedEntries
+        ? parseOpenDocument(entryPlan.entries)
+        : { text: "", elements: [], format: "open-document", xmlFileCount: entryPlan.selectedFileCount };
+      if (parsed.text && canUseBoundedEntries) {
+        directText = parsed.text || "";
+        totalCharacters = directText.length;
+        structuredFileCount = parsed.xmlFileCount;
+        structureElements = parsed.elements || [];
+        structureFormat = parsed.format || "open-document";
+        parserTrace.push({
+          stage,
+          status: totalCharacters ? "completed" : "empty",
+          mode: "structured-zip-file-ref",
+          files: structuredFileCount,
+          characters: totalCharacters,
+          elements: structureElements.length,
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
+          links: parsed.linkCount
+        });
+        parserTrace.push({
+          stage: "open-document.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount
+        });
+        parserTrace.push({
+          stage: "open-document.hyperlinks",
+          status: parsed.linkCount ? "completed" : "empty",
+          links: parsed.linkCount
         });
       }
     } else {
@@ -14019,6 +14107,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.time-index",
         "open-document.structured",
         "open-document.tables",
+        "open-document.hyperlinks",
         "ebook.epub",
         "tika.text.app",
         "tika.text.file-ref",
