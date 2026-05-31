@@ -129,6 +129,7 @@ const fakeClaudePath = path.join(fakeBinDir, process.platform === "win32" ? "cla
 const fakeClaudeHangPath = path.join(fakeBinDir, process.platform === "win32" ? "claude-hang.cmd" : "claude-hang");
 const fakeGeminiPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini.cmd" : "gemini");
 const fakeGeminiHangPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini-hang.cmd" : "gemini-hang");
+const fakeGeminiFailPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini-fail.cmd" : "gemini-fail");
 const fakeKiloPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo.cmd" : "kilo");
 const fakeKiloHangPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo-hang.cmd" : "kilo-hang");
 const fakeCopilotPath = path.join(fakeBinDir, process.platform === "win32" ? "copilot.cmd" : "copilot");
@@ -147,6 +148,10 @@ async function installFakeAgentCli(filePath) {
       "if \"%PACT_FAKE_AGENT_HANG_MCP%\"==\"%command_name%\" if \"%1\"==\"mcp\" (",
       "  ping -n 3600 127.0.0.1 >nul",
       "  exit /b 124",
+      ")",
+      "if not \"%PACT_FAKE_AGENT_FAIL_WITH_ARGS%\"==\"\" if \"%1\"==\"mcp\" (",
+      "  echo fake failure args: %* 1>&2",
+      "  exit /b 42",
       ")",
       "if not \"%PACT_FAKE_AGENT_LOG%\"==\"\" (",
       "  if \"%1\"==\"mcp\" if \"%2\"==\"add-json\" echo %~n0^|mcp add-json^|%3^|%4^|%5>>\"%PACT_FAKE_AGENT_LOG%\"",
@@ -187,6 +192,12 @@ async function installFakeAgentCli(filePath) {
     "command_name=$(basename \"$0\")",
     "if [ \"${PACT_FAKE_AGENT_HANG_MCP:-}\" = \"$command_name\" ] && [ \"$1\" = \"mcp\" ]; then",
     "  while :; do sleep 1; done",
+    "fi",
+    "if [ -n \"${PACT_FAKE_AGENT_FAIL_WITH_ARGS:-}\" ] && [ \"$1\" = \"mcp\" ]; then",
+    "  printf 'fake failure args:' >&2",
+    "  for arg in \"$@\"; do printf ' <%s>' \"$arg\" >&2; done",
+    "  printf '\\n' >&2",
+    "  exit 42",
     "fi",
     "if [ -n \"$PACT_FAKE_AGENT_LOG\" ]; then",
     "  if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"add-json\" ]; then",
@@ -885,6 +896,28 @@ try {
     assert.equal(payload.installed?.["kilo-code"]?.status, "installed");
     const config = JSON.parse(await fs.readFile(hangKiloConfigPath, "utf8"));
     assert.equal(config.mcp?.pact?.url, `${serverUrl}/mcp`);
+  });
+
+  await testAsync("cli local gemini failure redacts echoed token arguments", async () => {
+    await installFakeAgentCli(fakeGeminiFailPath);
+    const result = await spawnConnector([
+      "install",
+      "--target", "gemini-cli",
+      "--url", serverUrl,
+      "--token", token,
+      "--gemini-bin", fakeGeminiFailPath,
+      "--discovery-file", tempRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 10000, {
+      PACT_FAKE_AGENT_FAIL_WITH_ARGS: "1"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "local Gemini failure output must not expose echoed token arguments");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.["gemini-cli"]?.status, "failed");
+    assert.match(payload.installed?.["gemini-cli"]?.error, /<redacted-token>/);
   });
 
   // ── SECTION 5: Non-interactive auto install ──

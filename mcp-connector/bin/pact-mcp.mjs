@@ -672,6 +672,27 @@ function redactToken(value) {
   return `${text.slice(0, 8)}...${text.slice(-4)}`;
 }
 
+function redactSensitiveText(value, secrets = []) {
+  let text = String(value || "");
+  for (const secret of uniqueValues(secrets.map((item) => String(item || "")).filter((item) => item.length > 0))) {
+    text = text.split(secret).join("<redacted-token>");
+  }
+  return text;
+}
+
+function sensitiveOptionValues(options = {}) {
+  const values = [];
+  if (options.token) {
+    values.push(String(options.token));
+  }
+  const tokenEnv = String(option(options, "token-env", DEFAULT_TOKEN_ENV));
+  const envToken = String(process.env[tokenEnv] || "").trim();
+  if (envToken) {
+    values.push(envToken);
+  }
+  return values;
+}
+
 function vmBaseUrl(baseUrl) {
   const parsed = new URL(baseUrl);
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
@@ -5653,7 +5674,7 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
         ok: false,
         status: "failed",
         installMode: targetInstallMode(target),
-        error: error?.message || String(error)
+        error: redactSensitiveText(error?.message || String(error), [token])
       };
     }
   }
@@ -6691,7 +6712,7 @@ function emitResult(result, options, command = "") {
 }
 
 function emitCommandError(error, options = {}, command = "") {
-  const message = error?.message || String(error);
+  const message = redactSensitiveText(error?.message || String(error), sensitiveOptionValues(options));
   const guidance = commandFailureGuidance({ command, message, options });
   emitResult({
     ok: false,
