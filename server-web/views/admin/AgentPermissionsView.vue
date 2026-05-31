@@ -1,210 +1,39 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { useConsole } from '../../composables/useConsole';
-import { usePageRefreshHandler } from '../../composables/usePageRefresh';
-import { bridge } from '../../lib/bridge';
 import ConfigFoldCard from '../../components/ConfigFoldCard.vue';
 import FeatureToggle from '../../components/FeatureToggle.vue';
 import OptionBar from '../../components/OptionBar.vue';
 import ScopeSelector from '../../components/ScopeSelector.vue';
-
-type GovernanceItem = Record<string, unknown>;
-
-type GovernanceSummary = {
-  roles: GovernanceItem[];
-  teams: GovernanceItem[];
-  userPolicies: GovernanceItem[];
-  agentBindings: GovernanceItem[];
-  agentGroups: GovernanceItem[];
-  approvals: GovernanceItem[];
-};
-
-type GovernanceEditorKind = 'role' | 'team' | 'userPolicy' | 'agentGroup' | 'agentBinding' | 'approval';
-
-const emptyGovernanceSummary = (): GovernanceSummary => ({
-  roles: [],
-  teams: [],
-  userPolicies: [],
-  agentBindings: [],
-  agentGroups: [],
-  approvals: [],
-});
-
-const authorizationGovernance = ref<GovernanceSummary>(emptyGovernanceSummary());
-const authorizationGovernanceLoading = ref(false);
-const authorizationGovernanceError = ref('');
-const authorizationGovernanceSaving = ref(false);
-const authorizationGovernanceEditorKind = ref<GovernanceEditorKind>('team');
-const authorizationGovernanceEditorBody = ref('');
-const authorizationGovernanceEditorStatus = ref('');
-
-function asList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item || '').trim()).filter(Boolean);
-  }
-  if (typeof value === 'string') {
-    return value.split(',').map((item) => item.trim()).filter(Boolean);
-  }
-  return [];
-}
-
-function shortList(value: unknown, fallback = '未配置'): string {
-  const items = asList(value);
-  if (items.length === 0) return fallback;
-  return items.slice(0, 3).join(', ') + (items.length > 3 ? ` +${items.length - 3}` : '');
-}
-
-function itemText(item: GovernanceItem, keys: string[], fallback = ''): string {
-  for (const key of keys) {
-    const value = item[key];
-    if (value !== undefined && value !== null && String(value).trim()) {
-      return String(value);
-    }
-  }
-  return fallback;
-}
-
-function policyCount(item: GovernanceItem): number {
-  const policies = item.resourcePolicies;
-  return Array.isArray(policies) ? policies.length : 0;
-}
-
-async function refreshAuthorizationGovernance() {
-  authorizationGovernanceLoading.value = true;
-  authorizationGovernanceError.value = '';
-  try {
-    const payload = await bridge.getAuthorizationGovernance();
-    authorizationGovernance.value = {
-      ...emptyGovernanceSummary(),
-      ...(payload?.governance || {}),
-    };
-  } catch (error) {
-    authorizationGovernanceError.value = error instanceof Error ? error.message : '读取统一权限治理失败。';
-  } finally {
-    authorizationGovernanceLoading.value = false;
-  }
-}
-
-const authorizationGovernanceMetrics = computed(() => [
-  { label: '角色', value: authorizationGovernance.value.roles.length },
-  { label: '团队', value: authorizationGovernance.value.teams.length },
-  { label: '用户策略', value: authorizationGovernance.value.userPolicies.length },
-  { label: '智能体绑定', value: authorizationGovernance.value.agentBindings.length },
-  { label: '审批', value: authorizationGovernance.value.approvals.length },
-]);
-
-const authorizationGovernanceEditorKinds = [
-  { value: 'role', label: '角色' },
-  { value: 'team', label: '团队' },
-  { value: 'userPolicy', label: '用户策略' },
-  { value: 'agentGroup', label: '智能体分组' },
-  { value: 'agentBinding', label: '智能体绑定' },
-  { value: 'approval', label: '审批' },
-] as const;
-
-function governanceEditorSample(kind: GovernanceEditorKind = authorizationGovernanceEditorKind.value): string {
-  const samples = {
-    role: {
-      roleId: 'repo-maintainer',
-      label: 'Repo Maintainer',
-      scopes: ['repo:read', 'repo:write', 'repo:maintain'],
-      resourcePolicies: [{ resourceType: 'repo', resourceId: 'owner/repo', actions: ['repo:write'], targetProviders: ['github'] }],
-    },
-    team: {
-      teamId: 'team-code',
-      label: 'Code Team',
-      memberUserIds: ['console_user_id'],
-      resourcePolicies: [{ resourceType: 'repo', resourceId: 'owner/repo', actions: ['repo:write', 'repo:maintain'], targetProviders: ['github', 'gerrit'] }],
-    },
-    userPolicy: {
-      userId: 'console_user_id',
-      teamIds: ['team-code'],
-      resourcePolicies: [{ resourceType: 'repo', resourceId: 'owner/repo', actions: ['repo:write'], targetProviders: ['github'] }],
-    },
-    agentGroup: {
-      groupId: 'code-submitters',
-      label: 'Code Submitters',
-      resourcePolicies: [{ resourceType: 'repo', resourceId: 'owner/repo', actions: ['repo:write'], targetProviders: ['github'] }],
-    },
-    agentBinding: {
-      agentId: 'agent-codex',
-      boundUserId: 'console_user_id',
-      groupIds: ['code-submitters'],
-      resourcePolicies: [],
-    },
-    approval: {
-      approvalId: 'approval-once',
-      userId: 'console_user_id',
-      agentId: 'agent-codex',
-      resourceType: 'repo',
-      resourceId: 'owner/repo',
-      actions: ['repo:write'],
-      targetProviders: ['github'],
-      grantKind: 'once',
-    },
-  } satisfies Record<GovernanceEditorKind, Record<string, unknown>>;
-  return JSON.stringify(samples[kind], null, 2);
-}
-
-function resetAuthorizationGovernanceEditor() {
-  authorizationGovernanceEditorBody.value = governanceEditorSample();
-  authorizationGovernanceEditorStatus.value = '';
-}
-
-async function saveAuthorizationGovernanceEditor() {
-  authorizationGovernanceSaving.value = true;
-  authorizationGovernanceEditorStatus.value = '';
-  authorizationGovernanceError.value = '';
-  try {
-    const payload = JSON.parse(authorizationGovernanceEditorBody.value || '{}') as Record<string, unknown>;
-    await bridge.upsertAuthorizationGovernance(authorizationGovernanceEditorKind.value, payload);
-    authorizationGovernanceEditorStatus.value = '已保存';
-    await refreshAuthorizationGovernance();
-  } catch (error) {
-    authorizationGovernanceEditorStatus.value = error instanceof Error ? error.message : '保存失败';
-  } finally {
-    authorizationGovernanceSaving.value = false;
-  }
-}
-
-watch(authorizationGovernanceEditorKind, () => {
-  resetAuthorizationGovernanceEditor();
-});
-
-onMounted(() => {
-  resetAuthorizationGovernanceEditor();
-  void refreshAuthorizationGovernance();
-});
-
-usePageRefreshHandler(
-  (detail) => detail.viewId === 'admin' && detail.adminView === 'agentPermissions',
-  refreshAuthorizationGovernance,
-);
+import { useAgentPermissionsViewConsole } from '../../composables/console-agent-permissions-view-controller';
 
 const {
   addAgentPermissionGroup,
-  adminView,
-  agentPermissionGroups,
+  authorizationGovernance,
+  authorizationGovernanceEditorBody,
+  authorizationGovernanceEditorKind,
+  authorizationGovernanceEditorKinds,
+  authorizationGovernanceEditorStatus,
+  authorizationGovernanceError,
+  authorizationGovernanceMetrics,
+  authorizationGovernanceSaving,
   busyKey,
   copyIssuedToolToken,
   createGrant,
-  currentView,
   deleteGrant,
   enabledToolGrantCount,
   ensureAgentPermissionGroupsDraft,
-  filter,
   formatCompactDate,
   grantHasToolset,
   grantToolRuleState,
-  hasFeature,
-  isAuthenticated,
+  handleSelectedToolChange,
   issuedToolToken,
+  itemText,
   jsonPreview,
   newGrantLabel,
   newGrantScopes,
   newGrantToolsets,
-  permissionGroupHasScope,
   permissionGroupHasToolset,
+  permissionGroupToolRuleState,
+  policyCount,
   policyPreviewGrantId,
   policyPreviewProfileId,
   policyPreviewProfileOptionBarOptions,
@@ -213,16 +42,17 @@ const {
   policyPreviewToolOptionBarOptions,
   previewToolPolicy,
   removeAgentPermissionGroup,
+  resetAuthorizationGovernanceEditor,
   rotateGrant,
   saveAgentPermissionSettings,
-  scopeLabel,
-  selectToolForManagement,
+  saveAuthorizationGovernanceEditor,
   selectedToolManagementTool,
   setGrantToolRule,
+  setPermissionGroupToolRule,
   settingsDraft,
+  shortList,
   toggleGrantToolset,
   toggleNewGrantToolset,
-  togglePermissionGroupScope,
   togglePermissionGroupToolset,
   toolGrants,
   toolManagementTools,
@@ -231,48 +61,7 @@ const {
   toolScopes,
   toolsetLabel,
   updateGrant,
-} = useConsole();
-
-function permissionGroupToolRuleState(
-  group: { toolAllow?: string[]; toolDeny?: string[] },
-  toolId: string,
-) {
-  if ((group.toolDeny || []).includes(toolId)) {
-    return 'deny';
-  }
-  if ((group.toolAllow || []).includes(toolId)) {
-    return 'allow';
-  }
-  return 'inherit';
-}
-
-function setPermissionGroupToolRule(
-  group: { toolAllow?: string[]; toolDeny?: string[] },
-  toolId: string,
-  rule: 'inherit' | 'allow' | 'deny',
-) {
-  const allow = new Set(group.toolAllow || []);
-  const deny = new Set(group.toolDeny || []);
-  allow.delete(toolId);
-  deny.delete(toolId);
-  if (rule === 'allow') {
-    allow.add(toolId);
-  }
-  if (rule === 'deny') {
-    deny.add(toolId);
-  }
-  group.toolAllow = [...allow];
-  group.toolDeny = [...deny];
-}
-
-function handleSelectedToolChange(event: Event) {
-  const target = event.target as HTMLSelectElement | null;
-  selectToolForManagement(target?.value || '');
-}
-
-onMounted(() => {
-  ensureAgentPermissionGroupsDraft();
-});
+} = useAgentPermissionsViewConsole();
 </script>
 
 <template>
