@@ -14,6 +14,7 @@ void main() {
       'configPath': '/tmp/opencode.jsonc',
       'binaryPath': '/usr/local/bin/opencode',
       'adapterStatus': 'skeleton',
+      'manual': true,
     });
 
     expect(target.target, 'opencode');
@@ -22,5 +23,6 @@ void main() {
     expect(target.configPath, '/tmp/opencode.jsonc');
     expect(target.binaryPath, '/usr/local/bin/opencode');
     expect(target.adapterStatus, 'skeleton');
+    expect(target.manual, isTrue);
   });
 }

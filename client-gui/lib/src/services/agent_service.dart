@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
+part 'agent_service_actions.dart';
+
 class TargetCandidate {
   final String target;
   final String label;
@@ -12,6 +14,7 @@ class TargetCandidate {
   final String? detail;
   final String? configPath;
   final String? binaryPath;
+  final bool manual;
   final String adapterStatus;
 
   TargetCandidate({
@@ -24,6 +27,7 @@ class TargetCandidate {
     this.detail,
     this.configPath,
     this.binaryPath,
+    this.manual = false,
     required this.adapterStatus,
   });
 
@@ -38,12 +42,13 @@ class TargetCandidate {
       detail: json['detail']?.toString(),
       configPath: json['configPath']?.toString(),
       binaryPath: json['binaryPath']?.toString(),
+      manual: json['manual'] == true,
       adapterStatus: (json['adapterStatus'] ?? '').toString(),
     );
   }
 }
 
-class AgentService {
+class AgentService with AgentServiceActions {
   Future<File?> _resolveCliBinary() async {
     final suffix = Platform.isWindows ? '.exe' : '';
     final override = Platform.environment['PACT_CLIENT_PATH'];
@@ -68,7 +73,6 @@ class AgentService {
         'debug',
         'pact-client$suffix',
       ),
-      '/Users/unka/DevSpace/Unka-Malloc/Pact/client-cli/target/debug/pact-client',
     ];
     for (final candidate in candidates) {
       final file = File(p.normalize(candidate));
@@ -86,17 +90,17 @@ class AgentService {
       try {
         final result = await Process.run('pact-client', args);
         if (result.exitCode != 0) {
-          throw Exception('pact-client failed: \${result.stderr}');
+          throw Exception('pact-client failed: ${result.stderr}');
         }
         return jsonDecode(result.stdout as String) as Map<String, dynamic>;
       } catch (e) {
-        throw Exception('pact-client not found. Make sure it is compiled. \$e');
+        throw Exception('pact-client not found. Make sure it is compiled. $e');
       }
     }
 
     final result = await Process.run(cli.path, args);
     if (result.exitCode != 0) {
-      throw Exception('pact-client failed: \${result.stderr}');
+      throw Exception('pact-client failed: ${result.stderr}');
     }
     return jsonDecode(result.stdout as String) as Map<String, dynamic>;
   }
@@ -113,11 +117,30 @@ class AgentService {
     return [];
   }
 
+  Future<Map<String, dynamic>> addTarget({
+    required String target,
+    String configPath = '',
+    String binaryPath = '',
+  }) async {
+    final args = ['targets', 'add', '--target', target];
+    if (configPath.trim().isNotEmpty) {
+      args.addAll(['--config-path', configPath.trim()]);
+    }
+    if (binaryPath.trim().isNotEmpty) {
+      args.addAll(['--binary-path', binaryPath.trim()]);
+    }
+    return _runCli(args);
+  }
+
   Future<Map<String, dynamic>> inspectTarget(String target) async {
     return _runCli(['targets', 'inspect', target]);
   }
 
   Future<Map<String, dynamic>> planTargetConfig(String target) async {
     return _runCli(['mcp', 'config', 'plan', '--target', target]);
+  }
+
+  Future<Map<String, dynamic>> restoreSnapshot(String snapshotId) async {
+    return _runCli(['snapshots', 'restore', snapshotId]);
   }
 }

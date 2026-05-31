@@ -66,6 +66,78 @@ const forbiddenShellLabels = [
   "Export",
   "Logs"
 ];
+const legacyGuiSourcePaths = [
+  "client-gui/lib/src/controllers/app_controller.dart",
+  "client-gui/lib/src/models/app_models.dart",
+  "client-gui/lib/src/models/knowledge_graph_models.dart",
+  "client-gui/lib/src/models/transfer_models.dart",
+  "client-gui/lib/src/services/daemon_services.dart",
+  "client-gui/lib/src/services/knowledge_graph_service.dart",
+  "client-gui/lib/src/services/macos_mail_importer.dart",
+  "client-gui/lib/src/services/runtime_services.dart"
+];
+const legacyGuiReferencePaths = [
+  "client-gui/legacy/dev-only/lib/src/controllers/app_controller.dart",
+  "client-gui/legacy/dev-only/lib/src/models/app_models.dart",
+  "client-gui/legacy/dev-only/lib/src/models/knowledge_graph_models.dart",
+  "client-gui/legacy/dev-only/lib/src/models/transfer_models.dart",
+  "client-gui/legacy/dev-only/lib/src/services/daemon_services.dart",
+  "client-gui/legacy/dev-only/lib/src/services/knowledge_graph_service.dart",
+  "client-gui/legacy/dev-only/lib/src/services/macos_mail_importer.dart",
+  "client-gui/legacy/dev-only/lib/src/services/runtime_services.dart"
+];
+const legacyGuiTestPaths = [
+  "client-gui/test/app_controller_backend_test.dart",
+  "client-gui/test/checkpoint_store_test.dart",
+  "client-gui/test/daemon_services_test.dart",
+  "client-gui/test/knowledge_graph_service_test.dart",
+  "client-gui/test/macos_mail_importer_test.dart",
+  "client-gui/test/runtime_services_test.dart",
+  "client-gui/test/transfer_models_test.dart"
+];
+const forbiddenDefaultGuiTokens = [
+  "app_controller.dart",
+  "app_models.dart",
+  "knowledge_graph_models.dart",
+  "transfer_models.dart",
+  "daemon_services.dart",
+  "knowledge_graph_service.dart",
+  "macos_mail_importer.dart",
+  "runtime_services.dart",
+  "AppController",
+  "ClientBackendApi",
+  "ModuleDaemon",
+  "KnowledgeDaemon",
+  "MacOSMail",
+  "KnowledgeGraph",
+  "UploadSessionInfo"
+];
+const defaultGuiSurfacePaths = [
+  "client-gui/lib/app.dart",
+  "client-gui/lib/src/controllers/future_client_controller.dart",
+  "client-gui/lib/src/controllers/mcp_plugin_actions.dart",
+  "client-gui/lib/src/controllers/model_forwarding_actions.dart",
+  "client-gui/lib/src/controllers/skill_hub_actions.dart",
+  "client-gui/lib/src/models/future_client_models.dart",
+  "client-gui/lib/src/services/activity_snapshot_service.dart",
+  "client-gui/lib/src/services/agent_service.dart",
+  "client-gui/lib/src/services/agent_service_actions.dart",
+  "client-gui/lib/src/services/portable_data_root.dart",
+  "client-gui/lib/src/ui/agents_empty_state.dart",
+  "client-gui/lib/src/ui/agents_toolbar.dart",
+  "client-gui/lib/src/ui/activity_panel.dart",
+  "client-gui/lib/src/ui/agents_canvas.dart",
+  "client-gui/lib/src/ui/client_shell.dart",
+  "client-gui/lib/src/ui/manual_target_dialog.dart",
+  "client-gui/lib/src/ui/mcp_plugins_panel.dart",
+  "client-gui/lib/src/ui/model_forwarding_panel.dart",
+  "client-gui/lib/src/ui/panel_frame.dart",
+  "client-gui/lib/src/ui/settings_panel.dart",
+  "client-gui/lib/src/ui/shell_navigation.dart",
+  "client-gui/lib/src/ui/skill_hub_panel.dart",
+  "client-gui/lib/src/ui/target_card.dart"
+];
+const defaultGuiMaxLines = 260;
 
 const failures = [];
 
@@ -196,10 +268,29 @@ for (const token of ["targets scan", "mcp config plan", "mcp plugin status", "fo
   assert(cliSource.includes(token), `pact-client usage must expose future command: ${token}`);
 }
 
-const appModels = await readText("client-gui/lib/src/models/app_models.dart");
-const appSections = collectEnumValues(appModels, "AppSection");
-assert(sameSet(appSections, ["agents", "mcpPlugins", "skillHub", "modelForwarding", "activity", "settings"]), "AppSection enum must contain only the six future modules");
-const shellSource = await readText("client-gui/lib/src/ui/client_shell.dart");
+for (const relativePath of legacyGuiSourcePaths) {
+  assert(!(await exists(relativePath)), `${relativePath} must not remain in the default GUI source path`);
+}
+for (const relativePath of legacyGuiReferencePaths) {
+  assert(await exists(relativePath), `${relativePath} must retain reference-only legacy material outside the default GUI build`);
+}
+for (const relativePath of legacyGuiTestPaths) {
+  assert(!(await exists(relativePath)), `${relativePath} must not run in default flutter test`);
+}
+const futureClientModels = await readText("client-gui/lib/src/models/future_client_models.dart");
+const appSections = collectEnumValues(futureClientModels, "FutureClientSection");
+assert(sameSet(appSections, ["agents", "mcpPlugins", "skillHub", "modelForwarding", "activity", "settings"]), "FutureClientSection enum must contain only the six future modules");
+for (const relativePath of defaultGuiSurfacePaths) {
+  const source = await readText(relativePath);
+  const lineCount = source.split(/\r?\n/).length;
+  assert(lineCount <= defaultGuiMaxLines, `${relativePath} must stay below ${defaultGuiMaxLines} lines; split cohesive modules instead of growing a super-file`);
+  for (const token of forbiddenDefaultGuiTokens) {
+    assert(!source.includes(token), `${relativePath} must not reference legacy GUI token: ${token}`);
+  }
+}
+const shellSource = (await Promise.all(
+  defaultGuiSurfacePaths.map((relativePath) => readText(relativePath))
+)).join("\n");
 for (const label of forbiddenShellLabels) {
   assert(!shellSource.includes(label), `future client shell must not expose old navigation label: ${label}`);
 }
