@@ -1399,10 +1399,17 @@ async function verifyMcpTools({ baseUrl, token }) {
   ) {
     throw new Error("MCP HTTP verification failed.");
   }
+  const runtimeMeta = toolsList.payload?.result?._meta || {};
+  const runtimeSupportedTargets = Array.isArray(runtimeMeta.supportedTargets)
+    ? runtimeMeta.supportedTargets.map((target) => target.target).filter(Boolean)
+    : [];
   return {
     toolCount: tools.length,
     stableToolName: tools.find(t => t.name === MCP_STABLE_TOOL_NAME || t.name === "pact.discovery")?.name || tools[0]?.name || "",
-    systemHealthOk: health.payload?.result?.structuredContent?.payload?.ok === true
+    systemHealthOk: health.payload?.result?.structuredContent?.payload?.ok === true,
+    sharedHubOk: runtimeMeta.sharedHub?.sharedspace?.outlet === "pact.sharedspace",
+    priorityTargets: Array.isArray(runtimeMeta.priorityTargets) ? runtimeMeta.priorityTargets : [],
+    supportedTargets: runtimeSupportedTargets
   };
 }
 
@@ -6451,6 +6458,10 @@ async function doctorCommand(options) {
   const token = await resolveToken(resolvedOptions, { required: false });
   const discovery = await fetchJson(`${settings.baseUrl}/api/mcp/discovery`);
   const initialize = await ensureService(settings.baseUrl);
+  const initializeMeta = initialize.payload?.result?._meta || {};
+  const initializeSupportedTargets = Array.isArray(initializeMeta.supportedTargets)
+    ? initializeMeta.supportedTargets.map((target) => target.target).filter(Boolean)
+    : [];
   const checks = {
     signedDiscovery: {
       ok: Boolean(discovered?.ok),
@@ -6469,7 +6480,11 @@ async function doctorCommand(options) {
       serverName: initialize.payload?.result?.serverInfo?.name || "",
       serverVersion: initialize.payload?.result?.serverInfo?.version || "",
       stableToolName: initialize.payload?.result?._meta?.stableToolName || "",
-      listChanged: initialize.payload?.result?.capabilities?.tools?.listChanged === true
+      listChanged: initialize.payload?.result?.capabilities?.tools?.listChanged === true,
+      sharedHubOk: initializeMeta.sharedHub?.sharedspace?.outlet === "pact.sharedspace",
+      sharedHub: initializeMeta.sharedHub || discovery.payload?.sharedHub || null,
+      priorityTargets: Array.isArray(initializeMeta.priorityTargets) ? initializeMeta.priorityTargets : [],
+      supportedTargets: initializeSupportedTargets
     },
     toolsList: {
       ok: false,
@@ -6499,7 +6514,10 @@ async function doctorCommand(options) {
         skipped: false,
         toolCount: verification.toolCount,
         stableToolOnly: false,
-        categorizedOutletsOnly: verification.toolCount === 5
+        categorizedOutletsOnly: verification.toolCount === 5,
+        sharedHubOk: verification.sharedHubOk,
+        priorityTargets: verification.priorityTargets,
+        supportedTargets: verification.supportedTargets
       };
       checks.systemHealth = {
         ok: verification.systemHealthOk,
@@ -6551,6 +6569,8 @@ async function doctorCommand(options) {
       && (!token || (checks.toolsList.ok && checks.systemHealth.ok)),
     packageName: packageJson.name,
     packageVersion: packageJson.version,
+    sharedHub: checks.initialize.sharedHub,
+    ...installGuidanceMetadata(),
     ...guidance,
     checks
   };

@@ -1074,6 +1074,9 @@ try {
     assert.equal(t.status, 200);
     assert.equal(t.payload.result.serverInfo.name, "Pact");
     assert.equal(t.payload.result.capabilities.tools.listChanged, true);
+    assert.equal(t.payload.result._meta?.sharedHub?.sharedspace?.outlet, "pact.sharedspace");
+    assert.deepEqual(t.payload.result._meta?.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(t.payload.result._meta?.supportedTargets?.map((target) => target.target), DECLARED_AGENT_TARGETS);
   });
 
   await testAsync("doctor without token returns executable auth repair command", async () => {
@@ -1092,6 +1095,12 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.checks?.toolsList?.skipped, true);
+    assert.equal(payload.checks?.initialize?.sharedHubOk, true);
+    assert.equal(payload.checks?.initialize?.sharedHub?.sharedspace?.outlet, "pact.sharedspace");
+    assert.deepEqual(payload.checks?.initialize?.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(payload.checks?.initialize?.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.sharedHub?.sharedspace?.exchangeReceipt?.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
     const expectedDoctorCommand = `pact-mcp doctor --url '${serverUrl}' --token-env '${missingDoctorTokenEnv}' --token-stdin --json`;
     assert.equal(payload.nextCommand, expectedDoctorCommand);
     assert.ok(payload.repairCommands?.includes(expectedDoctorCommand));
@@ -1128,6 +1137,9 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.checks?.toolsList?.ok, true);
+    assert.equal(payload.checks?.toolsList?.sharedHubOk, true);
+    assert.deepEqual(payload.checks?.toolsList?.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(payload.checks?.toolsList?.supportedTargets, DECLARED_AGENT_TARGETS);
     assert.equal(payload.checks?.systemHealth?.ok, true);
     assert.deepEqual(payload.repairCommands, []);
     assert.equal(result.stdout.includes(installedToken), false, "doctor output must not expose token values");
