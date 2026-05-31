@@ -643,9 +643,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Excel",
     professionalFamily: "office-spreadsheet",
     parserProfile: "spreadsheetml-sheet-row-cell-route",
-    structureUnits: ["sheet", "table-header", "table-row", "cell", "formula", "time-signal"],
-    parserStages: ["table.sheet.structured", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.time-index"],
-    preserves: ["sheet", "row", "column", "cellRefs", "headers", "formulas", "timeSignals"],
+    structureUnits: ["sheet", "table-header", "table-row", "cell", "formula", "hyperlink", "time-signal"],
+    parserStages: ["table.sheet.structured", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
+    preserves: ["sheet", "row", "column", "cellRefs", "headers", "formulas", "hyperlinks", "timeSignals"],
     conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates-and-formulas", "evidence-pack"],
     conversionAdapters: [
       {
@@ -653,7 +653,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "markdown",
         adapter: "sheets-to-markdown-tables.v1",
         mode: "human",
-        stages: ["sheet-sections", "header-row-capture", "formula-notes"]
+        stages: ["sheet-sections", "header-row-capture", "formula-notes", "hyperlink-notes"]
       },
       {
         target: "portable-docx",
@@ -667,7 +667,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "sheets-to-agent-cell-refs.v1",
         mode: "agent",
-        stages: ["cell-coordinate-refs", "formula-refs", "time-signals"]
+        stages: ["cell-coordinate-refs", "formula-refs", "hyperlink-refs", "time-signals"]
       },
       {
         target: "evidence-pack-json",
@@ -677,7 +677,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["row-text-units", "entity-columns", "claim-values"]
       }
     ],
-    qualityGates: ["sheet-row-cell-refs-preserved", "formula-text-preserved", "table-time-index-when-date-columns-exist"],
+    qualityGates: ["sheet-row-cell-refs-preserved", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
     riskControls: ["formula-results-not-recomputed", "merged-cell-normalization-risk"],
     knownLosses: ["formula-results-not-recomputed"]
   },
@@ -1041,7 +1041,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula metadata", "PresentationML shape geometry for slide element bbox metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula/hyperlink metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1061,12 +1061,12 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["persistent graph store adapter", "learned graph ranking over multi-run evidence"]
   },
   haystack: {
-    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup and Markdown documents", "format conversion profiles for human and agent targets"],
+    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup and Markdown documents", "Excel hyperlink preservation on cell refs", "format conversion profiles for human and agent targets"],
     baseline: ["pipeline-like deterministic execution record"],
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations, code, formulas, spreadsheet hyperlinks, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -5075,6 +5075,185 @@ function xlsxColumnLabel(cellRef = "", fallbackIndex = 0) {
   return output;
 }
 
+function xlsxColumnIndex(label = "") {
+  let index = 0;
+  for (const char of String(label || "").toUpperCase()) {
+    const code = char.charCodeAt(0);
+    if (code < 65 || code > 90) {
+      return -1;
+    }
+    index = index * 26 + (code - 64);
+  }
+  return index - 1;
+}
+
+function xlsxCellCoordinate(cellRef = "") {
+  const match = String(cellRef || "").match(/^([A-Z]+)(\d+)$/i);
+  if (!match) {
+    return null;
+  }
+  return {
+    column: match[1].toUpperCase(),
+    columnIndex: xlsxColumnIndex(match[1]),
+    row: Number(match[2])
+  };
+}
+
+function xlsxCellRefsInRange(refRange = "", limit = 500) {
+  const [startRef, endRef = startRef] = String(refRange || "").split(":").map((part) => part.trim().toUpperCase());
+  const start = xlsxCellCoordinate(startRef);
+  const end = xlsxCellCoordinate(endRef);
+  if (!start || !end) {
+    return startRef ? [startRef] : [];
+  }
+  const minColumn = Math.min(start.columnIndex, end.columnIndex);
+  const maxColumn = Math.max(start.columnIndex, end.columnIndex);
+  const minRow = Math.min(start.row, end.row);
+  const maxRow = Math.max(start.row, end.row);
+  const refs = [];
+  for (let row = minRow; row <= maxRow && refs.length < limit; row += 1) {
+    for (let column = minColumn; column <= maxColumn && refs.length < limit; column += 1) {
+      refs.push(`${xlsxColumnLabel("", column)}${row}`);
+    }
+  }
+  return refs;
+}
+
+function worksheetRelationshipEntryName(worksheetName = "") {
+  const normalized = String(worksheetName || "").replace(/\\/g, "/");
+  const directory = normalized.slice(0, normalized.lastIndexOf("/") + 1);
+  const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return `${directory}_rels/${fileName}.rels`;
+}
+
+function worksheetRelationshipFilePath(sheetPath = "") {
+  return path.join(path.dirname(sheetPath), "_rels", `${path.basename(sheetPath)}.rels`);
+}
+
+function parseXlsxRelationshipTargets(xml = "") {
+  const relationships = new Map();
+  for (const match of String(xml || "").matchAll(/<Relationship\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    const id = xmlAttribute(tag, "Id");
+    const target = xmlAttribute(tag, "Target");
+    if (!id || !target) {
+      continue;
+    }
+    relationships.set(id, {
+      id,
+      target,
+      targetMode: xmlAttribute(tag, "TargetMode"),
+      type: xmlAttribute(tag, "Type")
+    });
+  }
+  return relationships;
+}
+
+function parseXlsxHyperlinkTags(sheetXml = "", relationshipXml = "") {
+  const relationships = parseXlsxRelationshipTargets(relationshipXml);
+  const links = new Map();
+  for (const match of String(sheetXml || "").matchAll(/<hyperlink\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    const refRange = xmlAttribute(tag, "ref");
+    if (!refRange) {
+      continue;
+    }
+    const relationship = relationships.get(xmlAttribute(tag, "r:id")) || null;
+    const location = xmlAttribute(tag, "location");
+    const target = relationship?.target || (location ? `#${location}` : "");
+    const hyperlink = {
+      ref: refRange,
+      target,
+      location,
+      display: xmlAttribute(tag, "display"),
+      tooltip: xmlAttribute(tag, "tooltip"),
+      relationshipId: relationship?.id || "",
+      targetMode: relationship?.targetMode || "",
+      type: relationship?.type || ""
+    };
+    for (const ref of xlsxCellRefsInRange(refRange)) {
+      links.set(ref.toUpperCase(), hyperlink);
+    }
+  }
+  return links;
+}
+
+function scanXmlTagsFromFile(filePath = "", tagName = "", onTag = () => {}) {
+  if (!filePath || !fsSync.existsSync(filePath)) {
+    return;
+  }
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  const expression = new RegExp(`<${tagName}\\b[^>]*(?:\\/?>)`, "g");
+  let input = null;
+  let carry = "";
+  try {
+    input = fsSync.openSync(filePath, "r");
+    while (true) {
+      const bytesRead = fsSync.readSync(input, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      carry += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      expression.lastIndex = 0;
+      let processed = 0;
+      let match;
+      while ((match = expression.exec(carry)) !== null) {
+        onTag(match[0]);
+        processed = expression.lastIndex;
+      }
+      if (processed > 0) {
+        carry = carry.slice(processed);
+      }
+      if (carry.length > STREAM_TEXT_CHUNK_BYTES * 4) {
+        carry = carry.slice(-STREAM_TEXT_CHUNK_BYTES);
+      }
+    }
+    carry += decoder.decode();
+    expression.lastIndex = 0;
+    let match;
+    while ((match = expression.exec(carry)) !== null) {
+      onTag(match[0]);
+    }
+  } finally {
+    if (input !== null) {
+      fsSync.closeSync(input);
+    }
+  }
+}
+
+function parseXlsxHyperlinksFile(sheetPath = "", relationshipPath = "") {
+  const relationships = parseXlsxRelationshipTargets(
+    relationshipPath && fsSync.existsSync(relationshipPath)
+      ? fsSync.readFileSync(relationshipPath, "utf8")
+      : ""
+  );
+  const links = new Map();
+  scanXmlTagsFromFile(sheetPath, "hyperlink", (tag) => {
+    const refRange = xmlAttribute(tag, "ref");
+    if (!refRange) {
+      return;
+    }
+    const relationship = relationships.get(xmlAttribute(tag, "r:id")) || null;
+    const location = xmlAttribute(tag, "location");
+    const target = relationship?.target || (location ? `#${location}` : "");
+    const hyperlink = {
+      ref: refRange,
+      target,
+      location,
+      display: xmlAttribute(tag, "display"),
+      tooltip: xmlAttribute(tag, "tooltip"),
+      relationshipId: relationship?.id || "",
+      targetMode: relationship?.targetMode || "",
+      type: relationship?.type || ""
+    };
+    for (const ref of xlsxCellRefsInRange(refRange)) {
+      links.set(ref.toUpperCase(), hyperlink);
+    }
+  });
+  return links;
+}
+
 function parseSharedStringsXml(xml = "") {
   const strings = [];
   for (const match of String(xml || "").matchAll(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/g)) {
@@ -5130,7 +5309,7 @@ function xlsxCellFormula(cellXml = "") {
   };
 }
 
-function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0) {
+function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map()) {
   const rowOpenTag = String(rowXml || "").match(/^<row\b[^>]*>/)?.[0] || "";
   const rowNumber = Number(xmlAttribute(rowOpenTag, "r") || fallbackRowNumber || 0);
   const cells = [];
@@ -5140,30 +5319,38 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0)
     const openTag = cellXml.match(/^<c\b[^>]*>/)?.[0] || "";
     const ref = xmlAttribute(openTag, "r") || `${xlsxColumnLabel("", fallbackCellIndex)}${rowNumber || ""}`;
     const column = xlsxColumnLabel(ref, fallbackCellIndex);
-    const value = xlsxCellValue(cellXml, sharedStrings);
+    const hyperlink = hyperlinks.get(String(ref || "").toUpperCase()) || null;
+    const rawValue = xlsxCellValue(cellXml, sharedStrings);
+    const value = rawValue || hyperlink?.display || "";
     const formula = xlsxCellFormula(cellXml);
     fallbackCellIndex += 1;
-    if (value || formula) {
+    if (value || formula || hyperlink) {
       cells.push({
         ref,
         column,
         value,
-        ...(formula ? formula : {})
+        ...(formula ? formula : {}),
+        ...(hyperlink ? { hyperlink } : {})
       });
     }
   }
   return { rowNumber, cells };
 }
 
+function formatXlsxHyperlink(cell = {}) {
+  const target = cell.hyperlink?.target || cell.hyperlink?.location || "";
+  return target ? ` (link=${target})` : "";
+}
+
 function formatXlsxCellValue(cell = {}, header = "") {
   const label = header ? `${cell.ref} ${header}` : cell.ref || cell.column;
   const value = cell.value ? `=${cell.value}` : "=<formula-only>";
   const formula = cell.formula ? ` (formula=${cell.formula})` : "";
-  return `${label}${value}${formula}`;
+  return `${label}${value}${formula}${formatXlsxHyperlink(cell)}`;
 }
 
 function formatXlsxHeaderRow(sheetLabel = "", row = { cells: [] }) {
-  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}`);
+  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}${formatXlsxHyperlink(cell)}`);
   return `${sheetLabel} Header row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
 }
 
@@ -5196,6 +5383,30 @@ function xlsxRowsToStructuredText(rows = [], sheetLabel = "") {
   return lines.join("\n");
 }
 
+function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
+  return {
+    ref: cell.ref,
+    column: cell.column,
+    row: rowNumber,
+    ...(header ? { header } : {}),
+    value: cell.value,
+    ...(cell.formula ? { formula: cell.formula } : {}),
+    ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
+    ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
+    ...(cell.sharedIndex ? { sharedIndex: cell.sharedIndex } : {}),
+    ...(cell.hyperlink ? {
+      hyperlink: {
+        target: String(cell.hyperlink.target || ""),
+        location: String(cell.hyperlink.location || ""),
+        display: String(cell.hyperlink.display || ""),
+        tooltip: String(cell.hyperlink.tooltip || ""),
+        relationshipId: String(cell.hyperlink.relationshipId || ""),
+        targetMode: String(cell.hyperlink.targetMode || "")
+      }
+    } : {})
+  };
+}
+
 function parseXlsxDetailed(entries = []) {
   const sharedStrings = parseSharedStringsXml(zipEntryText(entries, "xl/sharedStrings.xml"));
   const sheetDisplayNames = parseWorkbookSheetNames(zipEntryText(entries, "xl/workbook.xml"));
@@ -5207,17 +5418,23 @@ function parseXlsxDetailed(entries = []) {
   let rowCount = 0;
   let cellCount = 0;
   let formulaCount = 0;
+  let hyperlinkCount = 0;
   let headerRows = 0;
   const elements = [];
   for (const [index, name] of sheetNames.entries()) {
+    const hyperlinks = parseXlsxHyperlinkTags(
+      zipEntryText(entries, name),
+      zipEntryText(entries, worksheetRelationshipEntryName(name))
+    );
     const rows = [];
     for (const match of zipEntryText(entries, name).matchAll(/<row\b[\s\S]*?<\/row>/g)) {
-      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1);
+      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks);
       if (row.cells.length) {
         rows.push(row);
         rowCount += 1;
         cellCount += row.cells.length;
         formulaCount += row.cells.filter((cell) => cell.formula).length;
+        hyperlinkCount += row.cells.filter((cell) => cell.hyperlink).length;
       }
     }
     const sheetLabel = `Sheet ${index + 1}${sheetDisplayNames[index] ? ` (${sheetDisplayNames[index]})` : ""}`;
@@ -5245,16 +5462,7 @@ function parseXlsxDetailed(entries = []) {
             row: row.rowNumber,
             columns: row.cells.length
           },
-          cells: row.cells.map((cell) => ({
-            ref: cell.ref,
-            column: cell.column,
-            row: row.rowNumber,
-            value: cell.value,
-            ...(cell.formula ? { formula: cell.formula } : {}),
-            ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
-            ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
-            ...(cell.sharedIndex ? { sharedIndex: cell.sharedIndex } : {})
-          })),
+          cells: row.cells.map((cell) => xlsxElementCell(cell, row.rowNumber)),
           limit: 2000
         });
         headerCaptured = true;
@@ -5269,17 +5477,7 @@ function parseXlsxDetailed(entries = []) {
           row: row.rowNumber,
           columns: row.cells.length
         },
-        cells: row.cells.map((cell) => ({
-          ref: cell.ref,
-          column: cell.column,
-          row: row.rowNumber,
-          header: headersByColumn.get(cell.column) || "",
-          value: cell.value,
-          ...(cell.formula ? { formula: cell.formula } : {}),
-          ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
-          ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
-          ...(cell.sharedIndex ? { sharedIndex: cell.sharedIndex } : {})
-        })),
+        cells: row.cells.map((cell) => xlsxElementCell(cell, row.rowNumber, headersByColumn.get(cell.column) || "")),
         limit: 2000
       });
     }
@@ -5293,6 +5491,7 @@ function parseXlsxDetailed(entries = []) {
     rowCount,
     cellCount,
     formulaCount,
+    hyperlinkCount,
     headerRows
   };
 }
@@ -5604,11 +5803,13 @@ function parseSharedStringsFile(filePath = "") {
 }
 
 function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], outputPath = "" } = {}) {
+  const hyperlinks = parseXlsxHyperlinksFile(sheetPath, worksheetRelationshipFilePath(sheetPath));
   const headersByColumn = new Map();
   let headerCaptured = false;
   let rowCount = 0;
   let cellCount = 0;
   let formulaCount = 0;
+  let hyperlinkCount = 0;
   let headerRows = 0;
   let totalCharacters = 0;
   const appendLine = (line = "") => {
@@ -5617,13 +5818,14 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     totalCharacters += text.length;
   };
   scanXmlElementsFromFile(sheetPath, "row", (xml) => {
-    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1);
+    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks);
     if (!row.cells.length) {
       return;
     }
     rowCount += 1;
     cellCount += row.cells.length;
     formulaCount += row.cells.filter((cell) => cell.formula).length;
+    hyperlinkCount += row.cells.filter((cell) => cell.hyperlink).length;
     if (!headerCaptured && row.cells.length >= 2) {
       for (const cell of row.cells) {
         headersByColumn.set(cell.column, cell.value);
@@ -5635,7 +5837,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     }
     appendLine(formatXlsxDataRow(sheetLabel, row, headersByColumn));
   });
-  return { rowCount, cellCount, formulaCount, headerRows, totalCharacters };
+  return { rowCount, cellCount, formulaCount, hyperlinkCount, headerRows, totalCharacters };
 }
 
 function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
@@ -5651,6 +5853,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
   let rowCount = 0;
   let cellCount = 0;
   let formulaCount = 0;
+  let hyperlinkCount = 0;
   let headerRows = 0;
   for (const [index, sheet] of sheetFiles.entries()) {
     const sheetLabel = `Sheet ${index + 1}${sheetNames[index] ? ` (${sheetNames[index]})` : ""}`;
@@ -5664,6 +5867,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     rowCount += stats.rowCount;
     cellCount += stats.cellCount;
     formulaCount += stats.formulaCount;
+    hyperlinkCount += stats.hyperlinkCount;
     headerRows += stats.headerRows;
   }
   return {
@@ -5673,6 +5877,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     rowCount,
     cellCount,
     formulaCount,
+    hyperlinkCount,
     headerRows,
     parserTrace: [
       {
@@ -5691,6 +5896,11 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
         stage: "table.sheet.formulas",
         status: formulaCount ? "completed" : "empty",
         formulas: formulaCount
+      },
+      {
+        stage: "table.sheet.hyperlinks",
+        status: hyperlinkCount ? "completed" : "empty",
+        hyperlinks: hyperlinkCount
       }
     ]
   };
@@ -5714,6 +5924,8 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
     return [
       ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
       ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
+      ...collectFiles(rootDir, (name) => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name), 1000)
         .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
     ];
   }
@@ -5744,6 +5956,8 @@ function structuredZipEntryFiles(route = null, rootDir = "") {
         ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
         ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
         ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
+          .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
+        ...collectFiles(rootDir, (name) => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name), 1000)
           .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
       ]
     : structuredZipXmlFiles(route, rootDir);
@@ -5942,7 +6156,8 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           sheets: parsed.sheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
-          formulas: parsed.formulaCount
+          formulas: parsed.formulaCount,
+          hyperlinks: parsed.hyperlinkCount
         },
         {
           stage: "table.sheet.headers",
@@ -5960,6 +6175,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           stage: "table.sheet.formulas",
           status: parsed.formulaCount ? "completed" : "empty",
           formulas: parsed.formulaCount
+        },
+        {
+          stage: "table.sheet.hyperlinks",
+          status: parsed.hyperlinkCount ? "completed" : "empty",
+          hyperlinks: parsed.hyperlinkCount
         }
       ]
     };
@@ -7115,7 +7335,8 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           sheets: parsed.sheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
-          formulas: parsed.formulaCount
+          formulas: parsed.formulaCount,
+          hyperlinks: parsed.hyperlinkCount
         });
         parserTrace.push({
           stage: "table.sheet.headers",
@@ -7132,6 +7353,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           stage: "table.sheet.formulas",
           status: parsed.formulaCount ? "completed" : "empty",
           formulas: parsed.formulaCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.hyperlinks",
+          status: parsed.hyperlinkCount ? "completed" : "empty",
+          hyperlinks: parsed.hyperlinkCount
         });
         if (parsed.text) {
           return {
@@ -7504,7 +7730,17 @@ function normalizedStructureElements(document = {}) {
             formula: String(cell.formula || ""),
             formulaType: String(cell.formulaType || ""),
             formulaRef: String(cell.formulaRef || ""),
-            sharedIndex: String(cell.sharedIndex || "")
+            sharedIndex: String(cell.sharedIndex || ""),
+            hyperlink: cell.hyperlink
+              ? {
+                  target: String(cell.hyperlink.target || ""),
+                  location: String(cell.hyperlink.location || ""),
+                  display: String(cell.hyperlink.display || ""),
+                  tooltip: String(cell.hyperlink.tooltip || ""),
+                  relationshipId: String(cell.hyperlink.relationshipId || ""),
+                  targetMode: String(cell.hyperlink.targetMode || "")
+                }
+              : null
           }))
         : [];
       return {
@@ -7972,6 +8208,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Spreadsheet formula text is preserved." : "No spreadsheet formulas were required or observed."
       });
     }
+    if (gate === "spreadsheet-hyperlink-refs-preserved") {
+      const hyperlinkSignals = maxTraceMetric(document, ["hyperlinks", "hyperlinkCount"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : hyperlinkSignals > 0
+          ? evidence.hyperlinkRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { hyperlinkSignals, hyperlinkRefCount: evidence.hyperlinkRefCount },
+        required: { hyperlinksWhenPresent: true },
+        message: status === "passed" ? "Spreadsheet hyperlinks are preserved as cell references." : "No spreadsheet hyperlinks were required or observed."
+      });
+    }
     if (gate === "table-time-index-when-date-columns-exist") {
       const timeIndexed = hasTraceStage(document, "table.time-index", "completed") || Boolean(document.timeRange?.from || document.timeRange?.to);
       const hasTimeSignals = Array.isArray(document.timeSignals) && document.timeSignals.length > 0;
@@ -8075,6 +8324,9 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const formulaRefCount = sampleElements.reduce((sum, element) => (
       sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.formula).length : 0)
     ), 0);
+    const hyperlinkRefCount = sampleElements.reduce((sum, element) => (
+      sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.hyperlink?.target || cell.hyperlink?.location).length : 0)
+    ), 0);
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
     const speakerNoteElementCount = sampleElements.filter((element) => element.type === "speaker-note").length;
@@ -8085,6 +8337,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       tableElementCount,
       cellRefCount,
       formulaRefCount,
+      hyperlinkRefCount,
       geometryElementCount,
       annotationElementCount,
       speakerNoteElementCount
@@ -8686,7 +8939,8 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           sheets: parsed.sheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
-          formulas: parsed.formulaCount
+          formulas: parsed.formulaCount,
+          hyperlinks: parsed.hyperlinkCount
         });
         parserTrace.push({
           stage: "table.sheet.headers",
@@ -8704,6 +8958,11 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "table.sheet.formulas",
           status: parsed.formulaCount ? "completed" : "empty",
           formulas: parsed.formulaCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.hyperlinks",
+          status: parsed.hyperlinkCount ? "completed" : "empty",
+          hyperlinks: parsed.hyperlinkCount
         });
       } else {
         const spreadsheet = appendXlsxDirectoryAsText(extracted.outputDir, outputPath);
@@ -13520,6 +13779,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.sheet.headers",
         "table.sheet.cells",
         "table.sheet.formulas",
+        "table.sheet.hyperlinks",
         "table.time-index",
         "open-document.structured",
         "open-document.tables",
@@ -13538,8 +13798,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       windowingStrategy: "element-aware-by-title-windowing.v1",
       elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref", "cells.formula"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.annotation", "elementRefs.cells", "elementRefs.cells.formula"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref", "cells.formula", "cells.hyperlink.target"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.annotation", "elementRefs.cells", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
