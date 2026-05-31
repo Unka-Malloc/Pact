@@ -311,6 +311,10 @@ try {
   assert.equal(initialize.payload.result.serverInfo.name, "Pact");
   assert.equal(initialize.payload.result.capabilities.tools.listChanged, true);
   assert.equal(initialize.payload.result._meta.stableToolName, "pact.call");
+  assert.equal(initialize.payload.result._meta.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.equal(initialize.payload.result._meta.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.deepEqual(initialize.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
+  assert.deepEqual(initialize.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
   const unauthenticatedList = await fetchJson(`${server.url}/mcp`, {
     method: "POST",

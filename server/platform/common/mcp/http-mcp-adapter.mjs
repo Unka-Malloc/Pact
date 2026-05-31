@@ -907,7 +907,8 @@ function mcpHandshake({ requestBody, listenUrl = "", discoveryState = null }) {
   };
 }
 
-function mcpInitializeResult() {
+function mcpInitializeResult({ listenUrl = "", discoveryState = null } = {}) {
+  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   return {
     protocolVersion: MCP_PROTOCOL_VERSION,
     capabilities: {
@@ -919,7 +920,12 @@ function mcpInitializeResult() {
       name: "Pact",
       version: MCP_SERVER_VERSION
     },
-    _meta: mcpVersionInfo()
+    _meta: {
+      ...mcpVersionInfo(),
+      sharedHub: discovery.sharedHub,
+      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+      supportedTargets: mcpSupportedTargetDetails()
+    }
   };
 }
 
@@ -1467,7 +1473,7 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
   }
 
   if (method === "initialize") {
-    return jsonRpcResult(id, mcpInitializeResult());
+    return jsonRpcResult(id, mcpInitializeResult({ listenUrl, discoveryState }));
   }
 
   if (method === "ping") {
