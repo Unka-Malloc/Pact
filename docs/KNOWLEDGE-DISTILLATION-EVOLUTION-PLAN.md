@@ -157,6 +157,12 @@ flowchart LR
 
 `external-services/knowledge-distillation-service/reference-frameworks.json`
 
+本地同步与审计命令：
+
+- `npm run server:external-kd:references`：只审计 manifest 中的 pinned checkout。
+- `npm run server:external-kd:sync-references -- --only graphrag`：按 manifest fetch/checkout 单个参考仓库。
+- `npm run server:verify:external-knowledge-distillation-references`：验证本机参考仓库全部存在且 commit 匹配。
+
 外部服务还通过 `reference-framework-local-checkout-audit.v1` 对上述本地 checkout 做运行时审计：检查路径是否存在、是否为 Git worktree、实际 commit 是否匹配 manifest，并在 `/v1/reference-frameworks`、`/v1/capabilities` 和 `/v1/reference-gap-report` 中暴露 `localAudit`。单机 Docker 镜像默认不打包 1.6G 参考源码时，也必须明确报告 missing，不允许把静态 JSON 当作已完成比对。
 
 | 参考实现 | 对标重点 |
@@ -599,13 +605,13 @@ raw corpus item 标准字段：
 
 改进计划：
 
-- DOCX 必须使用合法 OpenXML，不写伪文档。
+- DOCX 必须使用合法 OpenXML，不写伪文档；Markdown 标题、列表、代码块和路由表格必须转换成 Word heading/list/code style 与 `<w:tbl>`，不能只是逐行塞入普通段落。
 - ZIP manifest 记录文件大小、hash 和 media type。
 - Markdown 不允许包含 Tika XHTML 噪声。
 - PDF、Word、PowerPoint、Excel、Markdown、OpenDocument 必须进入 `office-document-professional-adaptation.v1` 格式矩阵，声明 parser stages、structure units、conversion adapters、preserves、quality gates、risk controls 和 known losses。
 - 每个文档的 `formatConversionPlan.documents[]` 必须能说明转换到 Markdown、DOCX、Agent JSON 和 evidence pack 时保留什么、丢失什么、如何验收可打开性。
 - 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/批注、PPT slide/shape、Excel sheet-row-cell/formula/time-index、Markdown heading/table、OpenDocument content/table 变成可机读的 pass/warning/fail/not_applicable。
-- `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body 和文本节点。
+- `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body、文本节点、heading style、list/code style 和表格 XML 可用性。
 - 下载链路统一走 bridge-mediated fetch/blob。
 - 下载 UI 显示文件大小。
 

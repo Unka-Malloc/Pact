@@ -649,6 +649,8 @@ try {
   assert.equal(directGapReport.payload.strategy, "reference-framework-gap-report.v1");
   assert.equal(directGapReport.payload.referenceFrameworks.count >= 6, true);
   assert.equal(directGapReport.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(directGapReport.payload.referenceFrameworks.localAudit.auditCommand, "npm run server:external-kd:references");
+  assert.equal(directGapReport.payload.referenceFrameworks.localAudit.syncCommand, "npm run server:external-kd:sync-references");
   assert.equal(directGapReport.payload.referenceFrameworks.localAudit.presentCount >= 6, true);
   assert.equal(directGapReport.payload.referenceFrameworks.localAudit.commitMatchCount >= 6, true);
   assert.equal(directGapReport.payload.frameworks.some((framework) => framework.id === "graphrag" && framework.absorbedPatterns.length > 0), true);
@@ -656,6 +658,9 @@ try {
   const directReferenceFrameworks = await fetchJson(`${serviceUrl}/v1/reference-frameworks`);
   assert.equal(directReferenceFrameworks.status, 200);
   assert.equal(directReferenceFrameworks.payload.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(directReferenceFrameworks.payload.localAudit.auditCommand, "npm run server:external-kd:references");
+  assert.equal(directReferenceFrameworks.payload.localAudit.syncCommand, "npm run server:external-kd:sync-references");
+  assert.equal(directReferenceFrameworks.payload.localAudit.frameworks.every((framework) => framework.syncCommand.includes("--only")), true);
   assert.equal(directReferenceFrameworks.payload.localAudit.frameworks.some((framework) => framework.id === "unstructured" && framework.commitMatches === true), true);
 
   process.env.PACT_EXTERNAL_KNOWLEDGE_DISTILLATION_URL = serviceUrl;
@@ -832,6 +837,8 @@ try {
     "external service must expose local reference framework baseline"
   );
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.auditCommand, "npm run server:external-kd:references");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.syncCommand, "npm run server:external-kd:sync-references");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.presentCount >= 6, true);
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.commitMatchCount >= 6, true);
 
@@ -2305,7 +2312,13 @@ try {
   const docxEntries = unzipSync(new Uint8Array(await docxArtifact.arrayBuffer()));
   assert.ok(docxEntries["[Content_Types].xml"], "DOCX must include OpenXML content types");
   assert.ok(docxEntries["word/document.xml"], "DOCX must include word/document.xml");
-  assert.match(Buffer.from(docxEntries["word/document.xml"]).toString("utf8"), /External Knowledge Distillation|Category Distillations/);
+  const docxDocumentXml = Buffer.from(docxEntries["word/document.xml"]).toString("utf8");
+  const docxStylesXml = Buffer.from(docxEntries["word/styles.xml"]).toString("utf8");
+  assert.match(docxDocumentXml, /External Knowledge Distillation|Category Distillations/);
+  assert.match(docxDocumentXml, /w:pStyle w:val="Heading1"/, "DOCX export must render Markdown headings as Word heading styles");
+  assert.match(docxDocumentXml, /w:pStyle w:val="ListParagraph"/, "DOCX export must render Markdown bullets as Word list paragraphs");
+  assert.match(docxDocumentXml, /<w:tbl\b/, "DOCX export must render Markdown source-routing tables as Word tables");
+  assert.match(docxStylesXml, /w:styleId="CodeBlock"/, "DOCX export must declare a code block style for Markdown code conversion");
 
   const agentArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/agent-message-json`, {
     headers: authHeaders(auth)
@@ -2351,6 +2364,12 @@ try {
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.every((artifact) => artifact.status === "passed"), true);
+  assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
+    artifact.artifactId === "portable-docx" &&
+    artifact.gates.some((gate) => gate.gate === "word-heading-styles-present" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-list-and-code-styles-present" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-table-elements-well-formed" && gate.status === "passed")
+  )), true);
   assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "pdf" && item.qualityGates.includes("page-order-preserved")), true);
   assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);
   assert.equal(conversionPlan.documents.some((document) => (
@@ -2385,7 +2404,8 @@ try {
   assert.equal(workspaceManifest.artifacts.some((item) => (
     item.artifactId === "portable-docx" &&
     item.validation?.status === "passed" &&
-    item.validation.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed")
+    item.validation.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed") &&
+    item.validation.gates.some((gate) => gate.gate === "word-heading-styles-present" && gate.status === "passed")
   )), true);
 } finally {
   if (pactServer) {

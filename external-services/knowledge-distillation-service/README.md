@@ -37,7 +37,7 @@ API namespace:
 Artifacts:
 
 - `portable-markdown`: human-readable classified distillation output.
-- `portable-docx`: valid OpenXML Word document for human review.
+- `portable-docx`: valid OpenXML Word document for human review; Markdown headings, lists, code blocks, and routing tables are converted into native Word paragraph styles and table XML instead of plain text lines.
 - `agent-message-json`: machine-readable classification and evidence message for agents.
 - `result-json`: full run record.
 - `project-snapshot-json`: project-level fingerprint, text-unit/window hashes, group snapshot, and incremental diff plan.
@@ -58,7 +58,7 @@ Core response fields:
 - `incrementalPlan`: project snapshot and reuse plan keyed by `projectId`/`workspaceId`/`repositoryId`, with added, changed, removed, and reusable source/window counts.
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
 - `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
-- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
+- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument. DOCX self-checks verify OpenXML package structure plus heading style, list/code style, and Word table readiness.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
 - `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, domain, route id, source id, group id, and time range.
@@ -173,5 +173,8 @@ Reference framework checkout root:
 
 Reference framework audit:
 
-- `/v1/reference-frameworks`, `/v1/capabilities`, and `/v1/reference-gap-report` expose `localAudit` with expected, present, Git checkout, commit-match, dirty, and missing counts.
+- `npm run server:external-kd:references` audits the pinned local checkouts from `reference-frameworks.json`.
+- `npm run server:external-kd:sync-references -- --only graphrag` fetches and checks out one pinned reference; omit `--only` to synchronize every framework.
+- `npm run server:verify:external-knowledge-distillation-references` verifies the local reference tree is present and each checkout matches the manifest commit.
+- `/v1/reference-frameworks`, `/v1/capabilities`, and `/v1/reference-gap-report` expose `localAudit` with expected, present, Git checkout, commit-match, dirty, missing counts, and repair commands.
 - Single-node Docker images do not include the large reference checkout tree by default; in that case `localAudit` reports missing checkouts explicitly instead of implying live comparison.

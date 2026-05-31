@@ -953,7 +953,8 @@ function buildReferenceFrameworkAudit({ localRoot = "", frameworks = [] } = {}) 
       commitMatches: git.commitMatches,
       dirtyFileCount: git.dirtyFileCount,
       status: git.status,
-      error: git.error || ""
+      error: git.error || "",
+      syncCommand: `npm run server:external-kd:sync-references -- --only ${framework.id}`
     };
   });
   return {
@@ -961,6 +962,8 @@ function buildReferenceFrameworkAudit({ localRoot = "", frameworks = [] } = {}) 
     generatedAt: nowIso(),
     localRoot,
     resolvedLocalRoot,
+    auditCommand: "npm run server:external-kd:references",
+    syncCommand: "npm run server:external-kd:sync-references",
     expectedCount: frameworks.length,
     presentCount: audited.filter((framework) => framework.exists).length,
     gitCheckoutCount: audited.filter((framework) => framework.gitPresent).length,
@@ -1081,6 +1084,8 @@ function buildReferenceGapReport(referenceFrameworks = null, { run = null, runti
         ? {
             strategy: referenceFrameworks.localAudit.strategy,
             generatedAt: referenceFrameworks.localAudit.generatedAt,
+            auditCommand: referenceFrameworks.localAudit.auditCommand,
+            syncCommand: referenceFrameworks.localAudit.syncCommand,
             expectedCount: referenceFrameworks.localAudit.expectedCount,
             presentCount: referenceFrameworks.localAudit.presentCount,
             gitCheckoutCount: referenceFrameworks.localAudit.gitCheckoutCount,
@@ -9275,38 +9280,123 @@ function xmlEscape(value = "") {
     .replace(/"/g, "&quot;");
 }
 
-function wordParagraph(text = "", style = "") {
-  const styleXml = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : "";
+function wordParagraph(text = "", style = "", options = {}) {
+  const paragraphProps = [
+    style ? `<w:pStyle w:val="${xmlEscape(style)}"/>` : "",
+    options.indentTwips ? `<w:ind w:left="${Math.max(0, Number(options.indentTwips) || 0)}"/>` : ""
+  ].filter(Boolean).join("");
+  const styleXml = paragraphProps ? `<w:pPr>${paragraphProps}</w:pPr>` : "";
+  const runProps = options.monospace
+    ? '<w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="20"/></w:rPr>'
+    : "";
   const lines = String(text || "").split(/\n/);
   const runs = lines.map((line, index) => (
     `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`
   )).join("");
-  return `<w:p>${styleXml}<w:r>${runs}</w:r></w:p>`;
+  return `<w:p>${styleXml}<w:r>${runProps}${runs}</w:r></w:p>`;
 }
 
-function markdownToDocxParagraphs(markdown = "") {
-  const paragraphs = [];
-  for (const rawLine of String(markdown || "").split(/\r?\n/)) {
+function wordTable(rows = []) {
+  const normalizedRows = rows
+    .map((row) => row.map((cell) => stripMarkdownInline(cell)).filter((cell, index, cells) => cell || index < cells.length))
+    .filter((row) => row.some(Boolean));
+  if (!normalizedRows.length) {
+    return "";
+  }
+  const columnCount = Math.max(1, ...normalizedRows.map((row) => row.length));
+  const grid = Array.from({ length: columnCount }, () => '<w:gridCol w:w="2400"/>').join("");
+  const rowXml = normalizedRows.map((row) => {
+    const cells = Array.from({ length: columnCount }, (_, index) => row[index] || "");
+    return `<w:tr>${cells.map((cell) => [
+      "<w:tc>",
+      '<w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>',
+      wordParagraph(cell),
+      "</w:tc>"
+    ].join("")).join("")}</w:tr>`;
+  }).join("");
+  return [
+    "<w:tbl>",
+    '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr>',
+    `<w:tblGrid>${grid}</w:tblGrid>`,
+    rowXml,
+    "</w:tbl>"
+  ].join("");
+}
+
+function markdownToDocxBody(markdown = "") {
+  const blocks = [];
+  const lines = String(markdown || "").split(/\r?\n/);
+  let inCode = false;
+  let codeLines = [];
+
+  const flushCode = () => {
+    if (!codeLines.length) {
+      return;
+    }
+    for (const codeLine of codeLines) {
+      blocks.push(wordParagraph(codeLine || " ", "CodeBlock", { monospace: true }));
+    }
+    codeLines = [];
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index] || "";
     const line = rawLine.trim();
+    if (/^```/.test(line)) {
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        inCode = true;
+        codeLines = [];
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(rawLine);
+      continue;
+    }
     if (!line) {
       continue;
     }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (line.startsWith("|")) {
+      const tableLines = [];
+      while (index < lines.length && String(lines[index] || "").trim().startsWith("|")) {
+        const tableLine = String(lines[index] || "").trim();
+        if (!isMarkdownTableDelimiter(tableLine)) {
+          tableLines.push(markdownTableCells(tableLine));
+        }
+        index += 1;
+      }
+      index -= 1;
+      const table = wordTable(tableLines);
+      if (table) {
+        blocks.push(table);
+      }
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
     if (heading) {
-      paragraphs.push(wordParagraph(heading[2], heading[1].length === 1 ? "Heading1" : "Heading2"));
+      const level = Math.min(3, heading[1].length);
+      blocks.push(wordParagraph(stripMarkdownInline(heading[2]), `Heading${level}`));
       continue;
     }
     if (/^[-*]\s+/.test(line)) {
-      paragraphs.push(wordParagraph(line.replace(/^[-*]\s+/, "- ")));
+      blocks.push(wordParagraph(line.replace(/^[-*]\s+/, "- "), "ListParagraph", { indentTwips: 360 }));
       continue;
     }
-    paragraphs.push(wordParagraph(line));
+    if (/^\d+[.)]\s+/.test(line)) {
+      blocks.push(wordParagraph(line, "ListParagraph", { indentTwips: 360 }));
+      continue;
+    }
+    blocks.push(wordParagraph(stripMarkdownInline(line)));
   }
-  return paragraphs.join("");
+  flushCode();
+  return blocks.join("");
 }
 
 function buildPortableDocxBuffer({ title = "", runId = "", createdAt = "", updatedAt = "", markdown = "" } = {}) {
-  const body = markdownToDocxParagraphs(markdown) || wordParagraph(title || runId || "External Knowledge Distillation");
+  const body = markdownToDocxBody(markdown) || wordParagraph(title || runId || "External Knowledge Distillation", "Heading1");
   const documentXml = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
@@ -9352,7 +9442,7 @@ function buildPortableDocxBuffer({ title = "", runId = "", createdAt = "", updat
     },
     {
       name: "word/styles.xml",
-      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/></w:rPr></w:style></w:styles>'
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="list paragraph"/><w:pPr><w:ind w:left="360"/></w:pPr></w:style><w:style w:type="paragraph" w:styleId="CodeBlock"><w:name w:val="code block"/><w:pPr><w:spacing w:before="80" w:after="80"/></w:pPr><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="20"/></w:rPr></w:style></w:styles>'
     }
   ]);
 }
@@ -9413,6 +9503,10 @@ function validateOpenXmlDocxBuffer(buffer = Buffer.alloc(0)) {
   const entryNames = new Set(entries.map((entry) => entry.name));
   const contentTypes = zipEntryText(entries, "[Content_Types].xml");
   const documentXml = zipEntryText(entries, "word/document.xml");
+  const stylesXml = zipEntryText(entries, "word/styles.xml");
+  const tableCount = (documentXml.match(/<w:tbl\b/g) || []).length;
+  const tableRowCount = (documentXml.match(/<w:tr\b/g) || []).length;
+  const tableCellCount = (documentXml.match(/<w:tc\b/g) || []).length;
   const gates = [
     artifactValidationGate("zip-readable", entries.length > 0 && !entries.some((entry) => entry.warning), {
       observed: {
@@ -9448,6 +9542,31 @@ function validateOpenXmlDocxBuffer(buffer = Buffer.alloc(0)) {
       observed: { textNodeCount: (documentXml.match(/<w:t\b/g) || []).length },
       required: { textNodes: true },
       message: "DOCX word/document.xml contains text nodes."
+    }),
+    artifactValidationGate("word-heading-styles-present", /w:styleId="Heading1"/.test(stylesXml) && /w:pStyle w:val="Heading1"/.test(documentXml), {
+      observed: {
+        headingStyleDeclared: /w:styleId="Heading1"/.test(stylesXml),
+        headingStyleUsed: /w:pStyle w:val="Heading1"/.test(documentXml)
+      },
+      required: { headingStyles: true },
+      message: "DOCX preserves Markdown headings as Word heading styles."
+    }),
+    artifactValidationGate("word-list-and-code-styles-present", /w:styleId="ListParagraph"/.test(stylesXml) && /w:styleId="CodeBlock"/.test(stylesXml), {
+      observed: {
+        listStyleDeclared: /w:styleId="ListParagraph"/.test(stylesXml),
+        codeStyleDeclared: /w:styleId="CodeBlock"/.test(stylesXml),
+        listStyleUsed: /w:pStyle w:val="ListParagraph"/.test(documentXml),
+        codeStyleUsed: /w:pStyle w:val="CodeBlock"/.test(documentXml)
+      },
+      required: { listStyle: true, codeStyle: true },
+      message: "DOCX declares professional styles for list and code-block conversion."
+    }),
+    artifactValidationGate("word-table-elements-well-formed", tableCount === 0 || (tableRowCount > 0 && tableCellCount > 0), {
+      observed: { tableCount, tableRowCount, tableCellCount },
+      required: { rowsAndCellsWhenTablesExist: true },
+      message: tableCount
+        ? "DOCX table elements include rows and cells."
+        : "No DOCX table was required for this artifact."
     })
   ];
   return {
@@ -11774,15 +11893,35 @@ function buildProjectEvidenceQueryResult({ projectId = "", runs = [], query = {}
   };
 }
 
+function markdownTableCell(value = "") {
+  return String(value || "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "\\|")
+    .trim();
+}
+
 function buildMarkdown({ title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, failure = null }) {
   const evidenceIndexes = new Map(documents.map((document, index) => [document.sourceId, index]));
   const routingRows = corpusPlan.documents
     .slice(0, 12)
     .map((document) => {
       const route = document.route;
-      return `- ${document.title}: ${route.formatId}; parser=${route.preferredParser}; windows=${document.windowPlan.windowCount}; risks=${route.riskFlags.join(", ") || "none"}`;
+      return [
+        `| ${markdownTableCell(document.title)}`,
+        markdownTableCell(route.formatId),
+        markdownTableCell(route.preferredParser),
+        markdownTableCell(document.windowPlan.windowCount),
+        `${markdownTableCell(route.riskFlags.join(", ") || "none")} |`
+      ].join(" | ");
     })
     .join("\n");
+  const routingTable = routingRows
+    ? [
+        "| Source | Format | Parser | Windows | Risks |",
+        "| --- | --- | --- | ---: | --- |",
+        routingRows
+      ].join("\n")
+    : "- No source files were supplied.";
   const categorySections = classification.groups
     .map((group) => {
       const findings = group.documents
@@ -11820,7 +11959,7 @@ function buildMarkdown({ title, query, documents, classification, routePlan, cor
     "",
     `Strategy: ${routePlan.strategy}`,
     "",
-    routingRows || "- No source files were supplied.",
+    routingTable,
     "",
     "## Category Distillations",
     "",
@@ -12647,6 +12786,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
             ? {
                 strategy: referenceFrameworks.localAudit.strategy,
                 generatedAt: referenceFrameworks.localAudit.generatedAt,
+                auditCommand: referenceFrameworks.localAudit.auditCommand,
+                syncCommand: referenceFrameworks.localAudit.syncCommand,
                 expectedCount: referenceFrameworks.localAudit.expectedCount,
                 presentCount: referenceFrameworks.localAudit.presentCount,
                 gitCheckoutCount: referenceFrameworks.localAudit.gitCheckoutCount,

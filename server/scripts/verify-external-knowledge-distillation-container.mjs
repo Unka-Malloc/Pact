@@ -427,6 +427,8 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.auditCommand, "npm run server:external-kd:references");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.syncCommand, "npm run server:external-kd:sync-references");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.expectedCount >= 6, true);
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
@@ -490,11 +492,15 @@ try {
   assert.equal(referenceGapReport.status, 200);
   assert.equal(referenceGapReport.payload.strategy, "reference-framework-gap-report.v1");
   assert.equal(referenceGapReport.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(referenceGapReport.payload.referenceFrameworks.localAudit.auditCommand, "npm run server:external-kd:references");
+  assert.equal(referenceGapReport.payload.referenceFrameworks.localAudit.syncCommand, "npm run server:external-kd:sync-references");
   assert.equal(referenceGapReport.payload.referenceFrameworks.localAudit.expectedCount >= 6, true);
   assert.equal(referenceGapReport.payload.frameworks.some((framework) => framework.id === "mineru" && framework.absorbedPatterns.length > 0), true);
   const referenceFrameworks = await fetchJson(`${serviceUrl}/v1/reference-frameworks`);
   assert.equal(referenceFrameworks.status, 200);
   assert.equal(referenceFrameworks.payload.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(referenceFrameworks.payload.localAudit.auditCommand, "npm run server:external-kd:references");
+  assert.equal(referenceFrameworks.payload.localAudit.syncCommand, "npm run server:external-kd:sync-references");
   assert.equal(referenceFrameworks.payload.localAudit.expectedCount >= 6, true);
 
   const image = drawOcrPgm([
@@ -544,7 +550,13 @@ try {
   const docxEntries = unzipSync(new Uint8Array(await docx.arrayBuffer()));
   assert.ok(docxEntries["[Content_Types].xml"], "container DOCX artifact must include OpenXML content types");
   assert.ok(docxEntries["word/document.xml"], "container DOCX artifact must include word/document.xml");
-  assert.match(Buffer.from(docxEntries["word/document.xml"]).toString("utf8"), /Container OCR|Category Distillations/);
+  const docxDocumentXml = Buffer.from(docxEntries["word/document.xml"]).toString("utf8");
+  const docxStylesXml = Buffer.from(docxEntries["word/styles.xml"]).toString("utf8");
+  assert.match(docxDocumentXml, /Container OCR|Category Distillations/);
+  assert.match(docxDocumentXml, /w:pStyle w:val="Heading1"/, "container DOCX export must preserve headings as Word styles");
+  assert.match(docxDocumentXml, /w:pStyle w:val="ListParagraph"/, "container DOCX export must preserve Markdown bullets as Word list paragraphs");
+  assert.match(docxDocumentXml, /<w:tbl\b/, "container DOCX export must render Markdown tables as Word tables");
+  assert.match(docxStylesXml, /w:styleId="CodeBlock"/, "container DOCX export must declare code-block style");
 
   const scannedPdfRaster = drawOcrRaster([
     "SCANNED PDF ROUTING",
@@ -1022,7 +1034,10 @@ try {
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
     artifact.artifactId === "portable-docx" &&
     artifact.status === "passed" &&
-    artifact.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed")
+    artifact.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-heading-styles-present" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-list-and-code-styles-present" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-table-elements-well-formed" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
@@ -1074,7 +1089,8 @@ try {
   assert.equal(workspaceManifest.artifacts.every((item) => item.byteSize > 0 && /^[a-f0-9]{64}$/.test(item.sha256)), true);
   assert.equal(workspaceManifest.artifacts.some((item) => (
     item.artifactId === "portable-docx" &&
-    item.validation?.status === "passed"
+    item.validation?.status === "passed" &&
+    item.validation.gates.some((gate) => gate.gate === "word-heading-styles-present" && gate.status === "passed")
   )), true);
 
   const contradictionRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
