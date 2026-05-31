@@ -524,7 +524,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
       repairCommands: [
         discoverCommand,
         shellCommandForServerConfig({ baseUrl: fallbackBaseUrl }),
-        shellCommandForInstall({ target: "codex", includeUrl: true, baseUrl: fallbackBaseUrl, tokenEnv })
+        shellCommandForInstall({ target: "auto", includeUrl: true, baseUrl: fallbackBaseUrl, tokenEnv })
       ]
     };
   }

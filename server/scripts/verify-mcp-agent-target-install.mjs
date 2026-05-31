@@ -1359,6 +1359,22 @@ try {
     assert.equal(result.stdout.includes(token), false, "missing-token guidance must not expose grant tokens");
   });
 
+  await testAsync("missing hub guidance prefers auto install repair command", async () => {
+    const unavailableUrl = "http://127.0.0.1:9";
+    const result = await spawnConnector([
+      "install",
+      "--target", "codex",
+      "--url", unavailableUrl,
+      "--json"
+    ]);
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.errorCode, "PACT_HUB_NOT_DISCOVERED");
+    assert.equal(payload.nextCommand, `pact-mcp discover-local --url '${unavailableUrl}' --json`);
+    assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${unavailableUrl}' --json`));
+  });
+
   await testAsync("auto install with no detected clients returns machine-readable repair commands", async () => {
     await fs.mkdir(noDetectHome, { recursive: true });
     const result = await spawnConnector([
