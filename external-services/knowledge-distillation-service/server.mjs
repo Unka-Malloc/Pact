@@ -5832,6 +5832,56 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
   };
 }
 
+function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
+  const documents = Array.isArray(corpusPlan?.documents) ? corpusPlan.documents : [];
+  const plannedDocuments = documents.map((document) => {
+    const profile = document.formatConversionProfile || professionalDocumentProfile(document.route, document, document.elementPlan);
+    const sampleElements = document.elementPlan?.sampleElements || [];
+    const tableElementCount = sampleElements.filter((element) => ["table-header", "table-row"].includes(element.type)).length;
+    const cellRefCount = sampleElements.reduce((sum, element) => sum + (Array.isArray(element.cells) ? element.cells.length : 0), 0);
+    const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
+    return {
+      sourceId: document.sourceId,
+      title: document.title,
+      fileName: document.fileName,
+      routeId: document.route?.formatId || document.route?.id || "unknown",
+      sourceFormat: profile.sourceFormat || document.elementPlan?.sourceFormat || document.extension || "",
+      parserProfile: profile.parserProfile || "",
+      humanReadableTargets: profile.humanReadableModes || [],
+      agentReadableTargets: profile.agentReadableModes || [],
+      conversionTargets: profile.conversionTargets || [],
+      preserves: profile.preserves || [],
+      knownLosses: profile.knownLosses || [],
+      evidence: {
+        elementCount: Number(document.elementPlan?.elementCount || 0),
+        windowCount: Number(document.windowPlan?.windowCount || 0),
+        tableElementCount,
+        cellRefCount,
+        geometryElementCount
+      }
+    };
+  });
+  return {
+    protocolVersion: `${PROTOCOL_VERSION}.format-conversion-plan`,
+    strategy: "office-document-professional-adaptation.v1",
+    runId,
+    generatedAt: nowIso(),
+    humanReadableTargets: uniqueOrdered(plannedDocuments.flatMap((document) => document.humanReadableTargets)),
+    agentReadableTargets: uniqueOrdered(plannedDocuments.flatMap((document) => document.agentReadableTargets)),
+    professionalFormats: uniqueOrdered(plannedDocuments.map((document) => document.routeId).filter((routeId) => (
+      ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"].includes(routeId)
+    ))),
+    summary: {
+      documentCount: plannedDocuments.length,
+      documentWithElementPlanCount: plannedDocuments.filter((document) => document.evidence.elementCount > 0).length,
+      documentWithGeometryCount: plannedDocuments.filter((document) => document.evidence.geometryElementCount > 0).length,
+      documentWithCellRefsCount: plannedDocuments.filter((document) => document.evidence.cellRefCount > 0).length,
+      knownLosses: uniqueOrdered(plannedDocuments.flatMap((document) => document.knownLosses)).slice(0, 80)
+    },
+    documents: plannedDocuments
+  };
+}
+
 function streamParserStage(route = null, metadata = {}) {
   if (route?.id === "markdown") return "text.markdown";
   if (route?.id === "markup") return "markup.structure";
@@ -7338,6 +7388,7 @@ function buildWorkspacePackageZip(run = {}) {
     { artifactId: "result-json", path: "result.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run) },
     { artifactId: "project-snapshot-json", path: "project-snapshot.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.incrementalPlan || {}) },
     { artifactId: "evidence-pack-json", path: "evidence-pack.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.graphEvidence || {}) },
+    { artifactId: "format-conversion-plan-json", path: "format-conversion-plan.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.formatConversionPlan || {}) },
     { artifactId: "reference-gap-report-json", path: "reference-gap-report.json", contentType: "application/json; charset=utf-8", data: jsonArtifactBuffer(run.result?.referenceGapReport || {}) }
   ];
   const manifest = {
@@ -9285,7 +9336,7 @@ function buildMarkdown({ title, query, documents, classification, routePlan, cor
   ].join("\n");
 }
 
-function buildAgentMessage({ runId, title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, runtimeStatus, failure = null }) {
+function buildAgentMessage({ runId, title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, formatConversionPlan, runtimeStatus, failure = null }) {
   return {
     protocolVersion: `${PROTOCOL_VERSION}.agent-message`,
     responseProfile: "agent",
@@ -9335,6 +9386,7 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
     },
     convergence,
     incrementalPlan,
+    formatConversionPlan,
     graphEvidence,
     grounding,
     classification: {
@@ -9412,6 +9464,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
   const query = String(input.query || input.prompt || input.title || "External knowledge distillation").trim();
   const title = String(input.title || query || "External Knowledge Distillation").trim();
   const runId = String(input.runId || "").trim() || stableId("external_kd_run", query, createdAt);
+  const formatConversionPlan = buildFormatConversionPlan({ runId, corpusPlan });
   const responseProfile = String(input.responseProfile || input.mode || "console").trim() || "console";
   const groups = classifyDocuments(documents);
   const classification = {
@@ -9513,6 +9566,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
     grounding,
     incrementalPlan,
     graphEvidence,
+    formatConversionPlan,
     runtimeStatus,
     failure
   });
@@ -9540,6 +9594,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
     },
     convergence,
     incrementalPlan,
+    formatConversionPlan,
     graphEvidence: graphEvidenceSummary(graphEvidence),
     grounding,
     classification: {
@@ -9617,6 +9672,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
       corpusPlan,
       convergence,
       incrementalPlan,
+      formatConversionPlan,
       graphEvidence,
       referenceGapReport,
       grounding,
@@ -9753,6 +9809,12 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
         fileName: `${runId}.evidence-pack.json`
       },
       {
+        artifactId: "format-conversion-plan-json",
+        label: "Format Conversion Plan JSON",
+        contentType: "application/json; charset=utf-8",
+        fileName: `${runId}.format-conversion-plan.json`
+      },
+      {
         artifactId: "reference-gap-report-json",
         label: "Reference Gap Report JSON",
         contentType: "application/json; charset=utf-8",
@@ -9788,7 +9850,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       projectEvidenceQuery: "GET /v1/projects/:projectId/evidence",
       exportArtifact: "GET /v1/distillation/runs/:runId/artifacts/:artifactId"
     },
-    artifacts: ["portable-markdown", "portable-docx", "result-json", "agent-message-json", "project-snapshot-json", "evidence-pack-json", "reference-gap-report-json", "workspace-package-zip"],
+    artifacts: ["portable-markdown", "portable-docx", "result-json", "agent-message-json", "project-snapshot-json", "evidence-pack-json", "format-conversion-plan-json", "reference-gap-report-json", "workspace-package-zip"],
     responseProfiles: ["console", "agent", "api"],
     algorithms: [
       "external-service.route-window-embedding-grounded-distillation.v1",
@@ -9910,6 +9972,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
     formatConversion: {
       supported: true,
       strategy: "office-document-professional-adaptation.v1",
+      artifact: "format-conversion-plan-json",
       professionalFormats: ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"],
       humanReadableTargets: ["portable-markdown", "portable-docx", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "result-json", "evidence-pack-json"],
@@ -10164,6 +10227,12 @@ async function handleRequest(request, response) {
         if (artifactId === "evidence-pack-json") {
           jsonResponse(response, 200, run.result?.graphEvidence || {}, {
             "content-disposition": `attachment; filename="${run.runId}.evidence-pack.json"`
+          });
+          return;
+        }
+        if (artifactId === "format-conversion-plan-json") {
+          jsonResponse(response, 200, run.result?.formatConversionPlan || {}, {
+            "content-disposition": `attachment; filename="${run.runId}.format-conversion-plan.json"`
           });
           return;
         }

@@ -376,6 +376,7 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
+  assert.equal(capabilities.payload.artifacts.includes("format-conversion-plan-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
   assert.equal(capabilities.payload.elementModel.supported, true);
@@ -388,6 +389,7 @@ try {
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   assert.equal(capabilities.payload.timeFiltering.supported, true);
@@ -926,6 +928,16 @@ try {
   assert.equal(evidencePack.entities.length > 0, true);
   assert.equal(evidencePack.relationships.length > 0, true);
   assert.equal(evidencePack.covariates.some((claim) => claim.covariate_type === "claim"), true);
+  const conversionArtifact = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/artifacts/format-conversion-plan-json`);
+  assert.equal(conversionArtifact.status, 200);
+  const conversionPlan = JSON.parse(await conversionArtifact.text());
+  assert.equal(conversionPlan.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(conversionPlan.runId, projectPackageRun.payload.runId);
+  assert.equal(conversionPlan.professionalFormats.includes("spreadsheet"), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.conversionTargets.includes("agent-json-with-cell-coordinates")
+  )), true);
   const architectureEvidence = await fetchJson(
     `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?entity=namespace&sourceId=container-project-package!docs%2Farchitecture.md&limit=20`
   );
@@ -943,7 +955,7 @@ try {
   const workspacePackage = await fetch(`${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/artifacts/workspace-package-zip`);
   assert.equal(workspacePackage.status, 200);
   const workspaceEntries = unzipSync(new Uint8Array(await workspacePackage.arrayBuffer()));
-  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "reference-gap-report.json"]) {
+  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "format-conversion-plan.json", "reference-gap-report.json"]) {
     assert.ok(workspaceEntries[entryName], `container workspace package must include ${entryName}`);
   }
   const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));

@@ -645,6 +645,7 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("portable-docx"), true);
   assert.equal(capabilities.payload.artifacts.includes("workspace-package-zip"), true);
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
+  assert.equal(capabilities.payload.artifacts.includes("format-conversion-plan-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
   assert.equal(capabilities.payload.elementModel.supported, true);
@@ -658,6 +659,7 @@ try {
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("word"), true);
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("presentation"), true);
@@ -1159,6 +1161,12 @@ try {
   assert.equal(markdownPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.parserProfile, "markdown-block-element-route");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
+  assert.equal(createRun.payload.result.formatConversionPlan.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(createRun.payload.result.formatConversionPlan.documents.some((document) => (
+    document.sourceId === "source-5" &&
+    document.parserProfile === "markdown-block-element-route" &&
+    document.conversionTargets.includes("valid-openxml-docx")
+  )), true);
   const jsonPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-6");
   assert.equal(jsonPayloadCorpus.parserTrace.some((trace) => trace.stage === "structured.json"), true);
   const csvPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-7");
@@ -1810,6 +1818,8 @@ try {
   assert.equal(agentMessage.corpusPlan.allSizePolicy, "streaming-windowed");
   assert.equal(agentMessage.incrementalPlan.strategy, "project-snapshot-incremental-convergence.v1");
   assert.equal(agentMessage.graphEvidence.strategy, "graph-lite-entity-relationship-evidence-pack.v1");
+  assert.equal(agentMessage.formatConversionPlan.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(agentMessage.formatConversionPlan.summary.documentWithCellRefsCount >= 1, true);
   assert.equal(agentMessage.graphEvidence.summary.entityCount > 0, true);
   assert.equal(agentMessage.classification.communityCount >= agentMessage.classification.coreGroupCount, true);
   assert.equal(agentMessage.classification.groups.some((group) => group.distillationUnit?.mode === "topic-isolated"), true);
@@ -1827,6 +1837,15 @@ try {
   assert.equal(evidencePack.entities.length > 0, true);
   assert.equal(evidencePack.relationships.length > 0, true);
   assert.equal(evidencePack.communities.length >= createRun.payload.result.classification.groupCount, true);
+  const conversionArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/format-conversion-plan-json`, {
+    headers: authHeaders(auth)
+  });
+  assert.equal(conversionArtifact.status, 200);
+  assert.match(conversionArtifact.headers.get("content-type") || "", /application\/json/);
+  const conversionPlan = JSON.parse(await conversionArtifact.text());
+  assert.equal(conversionPlan.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(conversionPlan.summary.documentWithCellRefsCount >= 1, true);
+  assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);
   const referenceGapArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/reference-gap-report-json`, {
     headers: authHeaders(auth)
   });
@@ -1841,7 +1860,7 @@ try {
   assert.equal(workspacePackageArtifact.status, 200);
   assert.match(workspacePackageArtifact.headers.get("content-type") || "", /application\/zip/);
   const workspaceEntries = unzipSync(new Uint8Array(await workspacePackageArtifact.arrayBuffer()));
-  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "reference-gap-report.json"]) {
+  for (const entryName of ["manifest.json", "distillation.md", "distillation.docx", "agent-message.json", "result.json", "project-snapshot.json", "evidence-pack.json", "format-conversion-plan.json", "reference-gap-report.json"]) {
     assert.ok(workspaceEntries[entryName], `workspace package must include ${entryName}`);
   }
   const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));
