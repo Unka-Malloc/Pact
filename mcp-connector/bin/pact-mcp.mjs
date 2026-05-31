@@ -1616,9 +1616,9 @@ async function createGeminiExtension({ extensionRoot, baseUrl, token }) {
 
 async function installGemini({ baseUrl, token, geminiBin, extensionRoot }) {
   await createGeminiExtension({ extensionRoot, baseUrl, token });
-  await run(geminiBin, ["extensions", "validate", extensionRoot]);
-  await run(geminiBin, ["mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
-  await run(geminiBin, [
+  await runInstallCommand(geminiBin, ["extensions", "validate", extensionRoot]);
+  await runInstallCommand(geminiBin, ["mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(geminiBin, [
     "mcp",
     "add",
     "--scope",
@@ -1635,7 +1635,7 @@ async function installGemini({ baseUrl, token, geminiBin, extensionRoot }) {
     MCP_SERVER_NAME,
     `${baseUrl}/mcp`
   ]);
-  const list = await run(geminiBin, ["mcp", "list"]);
+  const list = await runInstallCommand(geminiBin, ["mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   if (!listOutput.includes(MCP_SERVER_NAME)) {
     throw new Error("Gemini CLI MCP list does not include pact after install.");
@@ -1652,8 +1652,8 @@ async function installGeminiOrb({ baseUrl, token, orbBin, vmName, vmUser, gemini
     throw new Error("Gemini VM install requires a discovered or explicit OrbStack VM, user, and gemini CLI path.");
   }
   const url = `${vmBaseUrl(baseUrl)}/mcp`;
-  await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
-  await run(orbBin, [
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(orbBin, [
     "-m",
     vmName,
     "-u",
@@ -1675,7 +1675,7 @@ async function installGeminiOrb({ baseUrl, token, orbBin, vmName, vmUser, gemini
     MCP_SERVER_NAME,
     url
   ]);
-  const list = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"]);
+  const list = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   if (!listOutput.includes(MCP_SERVER_NAME)) {
     throw new Error("Gemini CLI MCP list inside OrbStack does not include pact after install.");
@@ -1742,7 +1742,7 @@ async function installKilo({ baseUrl, token, kiloBin, kiloConfigPath }) {
     }
   };
   await writeJson(kiloConfigPath, config);
-  const list = await run(kiloBin, ["mcp", "list"], { allowFailure: true });
+  const list = await runInstallCommand(kiloBin, ["mcp", "list"], { allowFailure: true });
   return {
     installMode: "kilo-release-global-kilo-json",
     configPath: kiloConfigPath,
@@ -1852,8 +1852,8 @@ async function installKiloRemote({ baseUrl, token, context, kiloBin }) {
 }
 
 async function installCopilot({ baseUrl, token, copilotBin }) {
-  await run(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  await run(copilotBin, [
+  await runInstallCommand(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(copilotBin, [
     "mcp",
     "add",
     "--transport",
@@ -1865,7 +1865,7 @@ async function installCopilot({ baseUrl, token, copilotBin }) {
     MCP_SERVER_NAME,
     `${baseUrl}/mcp`
   ]);
-  const get = await run(copilotBin, ["mcp", "get", MCP_SERVER_NAME]);
+  const get = await runInstallCommand(copilotBin, ["mcp", "get", MCP_SERVER_NAME]);
   return {
     installMode: "copilot-release-mcp-cli",
     mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
@@ -1877,8 +1877,8 @@ async function installCopilotOrb({ baseUrl, token, orbBin, vmName, vmUser, copil
     throw new Error("Copilot VM install requires a discovered or explicit OrbStack VM, user, and copilot CLI path.");
   }
   const url = `${vmBaseUrl(baseUrl)}/mcp`;
-  await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  await run(orbBin, [
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(orbBin, [
     "-m",
     vmName,
     "-u",
@@ -1895,7 +1895,7 @@ async function installCopilotOrb({ baseUrl, token, orbBin, vmName, vmUser, copil
     MCP_SERVER_NAME,
     url
   ]);
-  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "get", MCP_SERVER_NAME]);
+  const get = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "get", MCP_SERVER_NAME]);
   return {
     installMode: "copilot-orbstack-mcp-cli",
     vm: vmName,
@@ -2177,9 +2177,9 @@ async function installHermes({ baseUrl, token, orbBin, vmName, vmUser, hermesBin
     "PY",
     "fi"
   ].join("\n");
-  await run(orbBin, ["-m", vmName, "-u", vmUser, "bash", "-lc", enableScript]);
-  await run(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "test", MCP_SERVER_NAME]);
-  const list = await run(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "list"]);
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, "bash", "-lc", enableScript]);
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "test", MCP_SERVER_NAME]);
+  const list = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "list"]);
   const listOutput = `${list.stdout}\n${list.stderr}`;
   return {
     installMode: "hermes-orbstack-mcp-cli",
@@ -2439,7 +2439,7 @@ async function uninstallClaudeCodeRemote({ context, claudeBin }) {
 }
 
 async function uninstallGemini({ geminiBin, extensionRoot }) {
-  const remove = await run(geminiBin, ["mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  const remove = await runInstallCommand(geminiBin, ["mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
   await removeDirIfExists(extensionRoot);
   return {
     uninstallMode: "gemini-release-mcp-cli",
@@ -2452,8 +2452,8 @@ async function uninstallGeminiOrb({ orbBin, vmName, vmUser, geminiBin }) {
   if (!vmName || !vmUser || !geminiBin) {
     throw new Error("Gemini VM uninstall requires a discovered or explicit OrbStack VM, user, and gemini CLI path.");
   }
-  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
-  const list = await run(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"], { allowFailure: true });
+  const remove = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "remove", "--scope", "user", MCP_SERVER_NAME], { allowFailure: true });
+  const list = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, geminiBin, "mcp", "list"], { allowFailure: true });
   const listOutput = `${list.stdout}\n${list.stderr}`;
   return {
     uninstallMode: "gemini-orbstack-mcp-cli",
@@ -2498,7 +2498,7 @@ async function removeNamedMcpEntry({ filePath, rootKey }) {
 
 async function uninstallKilo({ kiloConfigPath, kiloBin }) {
   const removed = await removeNamedMcpEntry({ filePath: kiloConfigPath, rootKey: "mcp" });
-  const list = await run(kiloBin, ["mcp", "list"], { allowFailure: true });
+  const list = await runInstallCommand(kiloBin, ["mcp", "list"], { allowFailure: true });
   return {
     uninstallMode: "kilo-release-global-kilo-json",
     configPath: kiloConfigPath,
@@ -2532,7 +2532,7 @@ async function uninstallKiloOrb({ orbBin, vmName, vmUser, kiloBin }) {
   if (!vmName || !vmUser || !kiloBin) {
     throw new Error("Kilo VM uninstall requires a discovered or explicit OrbStack VM, user, and kilo CLI path.");
   }
-  const remove = await run(orbBin, [
+  const remove = await runInstallCommand(orbBin, [
     "-m",
     vmName,
     "-u",
@@ -2568,7 +2568,7 @@ async function uninstallKiloRemote({ context, kiloBin }) {
 }
 
 async function uninstallCopilot({ copilotBin }) {
-  const remove = await run(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const remove = await runInstallCommand(copilotBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
   return {
     uninstallMode: "copilot-release-mcp-cli",
     removedMcp: remove.ok
@@ -2579,8 +2579,8 @@ async function uninstallCopilotOrb({ orbBin, vmName, vmUser, copilotBin }) {
   if (!vmName || !vmUser || !copilotBin) {
     throw new Error("Copilot VM uninstall requires a discovered or explicit OrbStack VM, user, and copilot CLI path.");
   }
-  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
+  const remove = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const get = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, copilotBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
   return {
     uninstallMode: "copilot-orbstack-mcp-cli",
     vm: vmName,
@@ -2706,7 +2706,7 @@ async function uninstallHermes({ orbBin, vmName, vmUser, hermesBin }) {
     "PY",
     "fi"
   ].join("\n");
-  const remove = await run(orbBin, [
+  const remove = await runInstallCommand(orbBin, [
     "-m",
     vmName,
     "-u",
@@ -2717,7 +2717,7 @@ async function uninstallHermes({ orbBin, vmName, vmUser, hermesBin }) {
     "-lc",
     script
   ], { allowFailure: true });
-  const list = await run(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "list"], { allowFailure: true });
+  const list = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, hermesBin, "mcp", "list"], { allowFailure: true });
   const listOutput = `${list.stdout}\n${list.stderr}`;
   return {
     uninstallMode: "hermes-orbstack-mcp-cli",

@@ -110,6 +110,7 @@ const tempRegistryPath = path.join(opencodeConfigDir, "pact-servers.json");
 const autoRegistryPath = path.join(opencodeConfigDir, "pact-auto-servers.json");
 const autoMarketplaceRoot = path.join(opencodeConfigDir, "codex-marketplace");
 const autoKiloConfigPath = path.join(opencodeConfigDir, "kilo", "kilo.json");
+const hangKiloConfigPath = path.join(opencodeConfigDir, "kilo-hang", "kilo.json");
 const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "mcp_config.json");
 const noDetectHome = path.join(opencodeConfigDir, "no-detect-home");
 const noDetectRegistryPath = path.join(opencodeConfigDir, "pact-no-detect-servers.json");
@@ -127,8 +128,11 @@ const fakeCodexPath = path.join(fakeBinDir, process.platform === "win32" ? "code
 const fakeClaudePath = path.join(fakeBinDir, process.platform === "win32" ? "claude.cmd" : "claude");
 const fakeClaudeHangPath = path.join(fakeBinDir, process.platform === "win32" ? "claude-hang.cmd" : "claude-hang");
 const fakeGeminiPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini.cmd" : "gemini");
+const fakeGeminiHangPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini-hang.cmd" : "gemini-hang");
 const fakeKiloPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo.cmd" : "kilo");
+const fakeKiloHangPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo-hang.cmd" : "kilo-hang");
 const fakeCopilotPath = path.join(fakeBinDir, process.platform === "win32" ? "copilot.cmd" : "copilot");
+const fakeCopilotHangPath = path.join(fakeBinDir, process.platform === "win32" ? "copilot-hang.cmd" : "copilot-hang");
 const fakeOpenClawPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
 const fakeOpenClawHangPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw-hang.cmd" : "openclaw-hang");
 const fakeOpencodePath = path.join(fakeBinDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
@@ -810,6 +814,77 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.installed?.openclaw?.status, "failed");
     assert.match(payload.installed?.openclaw?.error, /timed out/);
+  });
+
+  await testAsync("cli local gemini install times out stalled mcp command", async () => {
+    await installFakeAgentCli(fakeGeminiHangPath);
+    const result = await spawnConnector([
+      "install",
+      "--target", "gemini-cli",
+      "--url", serverUrl,
+      "--token", token,
+      "--gemini-bin", fakeGeminiHangPath,
+      "--discovery-file", tempRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 10000, {
+      PACT_FAKE_AGENT_HANG_MCP: path.basename(fakeGeminiHangPath, path.extname(fakeGeminiHangPath)),
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "local Gemini timeout output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.["gemini-cli"]?.status, "failed");
+    assert.match(payload.installed?.["gemini-cli"]?.error, /timed out/);
+  });
+
+  await testAsync("cli local copilot install times out stalled mcp command", async () => {
+    await installFakeAgentCli(fakeCopilotHangPath);
+    const result = await spawnConnector([
+      "install",
+      "--target", "copilot",
+      "--url", serverUrl,
+      "--token", token,
+      "--copilot-bin", fakeCopilotHangPath,
+      "--discovery-file", tempRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 10000, {
+      PACT_FAKE_AGENT_HANG_MCP: path.basename(fakeCopilotHangPath, path.extname(fakeCopilotHangPath)),
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "local Copilot timeout output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.copilot?.status, "failed");
+    assert.match(payload.installed?.copilot?.error, /timed out/);
+  });
+
+  await testAsync("cli local kilo install ignores stalled optional list command", async () => {
+    await installFakeAgentCli(fakeKiloHangPath);
+    const result = await spawnConnector([
+      "install",
+      "--target", "kilo-code",
+      "--url", serverUrl,
+      "--token", token,
+      "--kilo-bin", fakeKiloHangPath,
+      "--kilo-config", hangKiloConfigPath,
+      "--discovery-file", tempRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 10000, {
+      PACT_FAKE_AGENT_HANG_MCP: path.basename(fakeKiloHangPath, path.extname(fakeKiloHangPath)),
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout.includes(token), false, "local Kilo output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.installed?.["kilo-code"]?.status, "installed");
+    const config = JSON.parse(await fs.readFile(hangKiloConfigPath, "utf8"));
+    assert.equal(config.mcp?.pact?.url, `${serverUrl}/mcp`);
   });
 
   // ── SECTION 5: Non-interactive auto install ──
