@@ -577,6 +577,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diff.unified"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("calendar.ics"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markup.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
@@ -621,7 +622,7 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
-  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs"]) {
+  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
       true,
@@ -858,6 +859,44 @@ try {
           ].join("\n"))
         },
         {
+          sourceId: "source-38",
+          title: "Markup Operations Page",
+          fileName: "ops-page.html",
+          mediaType: "text/html",
+          contentBase64: base64Text([
+            "<!doctype html>",
+            "<html><head><title>External Distillation Operations</title></head><body>",
+            "<article>",
+            "<h1>External knowledge distillation operations</h1>",
+            "<p>The HTML document records markup.structure parsing for route-first ingestion.</p>",
+            "<h2>Parser checklist</h2>",
+            "<ul><li>Preserve headings as elements.</li><li>Preserve agent links and table rows.</li></ul>",
+            "<p>See <a href=\"https://example.test/agent\">agent contract</a> for machine-readable output.</p>",
+            "<table><tr><th>Stage</th><th>Status</th></tr><tr><td>markup.structure</td><td>completed</td></tr></table>",
+            "<pre>responseProfile = \"agent\"</pre>",
+            "</article>",
+            "</body></html>"
+          ].join("\n"))
+        },
+        {
+          sourceId: "source-39",
+          title: "Latex Research Note",
+          fileName: "distillation-note.tex",
+          mediaType: "text/x-tex",
+          contentBase64: base64Text([
+            "\\title{Convergent Knowledge Distillation}",
+            "\\author{Pact Runtime}",
+            "\\section{Routing Model}",
+            "The route-first parser keeps unrelated documents separated before synthesis.",
+            "\\subsection{Evaluation}",
+            "The objective score is $S = precision + recall$ and citations use \\cite{graphrag2024}.",
+            "\\begin{itemize}",
+            "\\item Parser traces must remain machine-readable.",
+            "\\item Markup formulas must not be flattened before distillation.",
+            "\\end{itemize}"
+          ].join("\n"))
+        },
+        {
           sourceId: "source-8",
           title: "DOCX Payload",
           fileName: "payload.docx",
@@ -1073,6 +1112,14 @@ try {
   assert.equal(calendarPayloadCorpus.timeRange.from, "2026-06-15");
   assert.equal(calendarPayloadCorpus.timeRange.to, "2026-06-16");
   assert.match(calendarPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Knowledge distillation release review|Ship calendar parser verification/);
+  const htmlMarkupCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-38");
+  assert.equal(htmlMarkupCorpus.route.formatId, "markup");
+  assert.equal(htmlMarkupCorpus.parserTrace.some((trace) => trace.stage === "markup.structure" && trace.status === "completed" && trace.format === "html" && trace.elements >= 8 && trace.headings >= 2 && trace.links >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1), true);
+  assert.match(htmlMarkupCorpus.windowPlan.windows[0]?.excerpt || "", /External knowledge distillation operations|markup\.structure|agent contract/);
+  const latexMarkupCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-39");
+  assert.equal(latexMarkupCorpus.route.formatId, "markup");
+  assert.equal(latexMarkupCorpus.parserTrace.some((trace) => trace.stage === "markup.structure" && trace.status === "completed" && trace.format === "latex" && trace.headings >= 3 && trace.listItems >= 2 && trace.formulas >= 1), true);
+  assert.match(latexMarkupCorpus.windowPlan.windows[0]?.excerpt || "", /Convergent Knowledge Distillation|Routing Model|precision/);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");

@@ -397,6 +397,9 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".diff"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".patch"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ics"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".html"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".adoc"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".tex"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
@@ -408,6 +411,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diff.unified"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("calendar.ics"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markup.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
@@ -774,6 +778,23 @@ try {
               "DESCRIPTION:Verify archive child routing, calendar timeline extraction, and graph evidence convergence.",
               "END:VEVENT",
               "END:VCALENDAR"
+            ].join("\n"),
+            "docs/runbook.adoc": [
+              "= External KD Runbook",
+              ":owner: platform-runtime",
+              "",
+              "== Parser Strategy",
+              "The AsciiDoc runbook validates markup.structure inside archive child routing.",
+              "",
+              "* Route by file format before fallback.",
+              "* Preserve agent-facing links and tables.",
+              "",
+              "link:https://example.test/kd[Knowledge distillation API]",
+              "",
+              "|===",
+              "|Stage |Status",
+              "|markup.structure |completed",
+              "|==="
             ].join("\n")
           })
         }
@@ -827,6 +848,12 @@ try {
   assert.equal(calendarChild.route.formatId, "calendar");
   assert.equal(calendarChild.parserTrace.some((trace) => trace.stage === "calendar.ics" && trace.status === "completed" && trace.events === 1 && trace.from === "2026-06-15"), true);
   assert.equal(calendarChild.timeRange.from, "2026-06-15");
+  const markupChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!docs/runbook.adoc");
+  assert.ok(markupChild, "project package AsciiDoc child must be expanded");
+  assert.equal(markupChild.parentSourceId, "container-project-package");
+  assert.equal(markupChild.route.formatId, "markup");
+  assert.equal(markupChild.parserTrace.some((trace) => trace.stage === "markup.structure" && trace.status === "completed" && trace.format === "asciidoc" && trace.headings >= 2 && trace.listItems >= 2 && trace.links >= 1 && trace.tables >= 2), true);
+  assert.match(markupChild.windowPlan.windows[0]?.excerpt || "", /External KD Runbook|Parser Strategy|markup\.structure/);
   const candidateSourceIds = new Set(projectPackageRun.payload.result.candidates.flatMap((candidate) => candidate.sourceIds || []));
   assert.equal(candidateSourceIds.has("container-project-package!docs/architecture.md"), true);
   assert.equal(candidateSourceIds.has("container-project-package!finance/invoice.csv"), true);
@@ -836,6 +863,7 @@ try {
   assert.equal(candidateSourceIds.has("container-project-package!src/runtime.py"), true);
   assert.equal(candidateSourceIds.has("container-project-package!changes/runtime.diff"), true);
   assert.equal(candidateSourceIds.has("container-project-package!calendar/release.ics"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!docs/runbook.adoc"), true);
   assert.equal(projectPackageRun.payload.result.classification.coreGroupCount >= 2, true);
   assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
     group.sourceIds.includes("container-project-package!docs/architecture.md") &&

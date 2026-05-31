@@ -314,14 +314,38 @@ const FORMAT_ROUTES = Object.freeze([
   {
     id: "plain-text",
     label: "Plain text",
-    extensions: [".txt", ".text", ".log", ".xml", ".html", ".htm"],
-    mediaTypes: ["text/plain", "text/html", "application/xml", "text/xml", "application/xhtml+xml"],
+    extensions: [".txt", ".text", ".log"],
+    mediaTypes: ["text/plain"],
     contentShape: "text",
     preferredParser: "text.direct",
     fallbackParsers: ["tika.text"],
     parserChain: ["text.route", "text.direct"],
     streamingUnit: "section",
     referenceFrameworks: ["unstructured", "llama-index", "haystack"]
+  },
+  {
+    id: "markup",
+    label: "Markup document",
+    extensions: [".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"],
+    mediaTypes: [
+      "text/html",
+      "application/xhtml+xml",
+      "application/xml",
+      "text/xml",
+      "text/x-rst",
+      "text/x-asciidoc",
+      "text/org",
+      "text/x-org",
+      "text/x-tex",
+      "application/x-latex",
+      "text/x-mediawiki"
+    ],
+    contentShape: "structured-markup",
+    preferredParser: "markup.structure",
+    fallbackParsers: ["text.direct", "tika.text"],
+    parserChain: ["markup.route", "markup.structure", "text.direct"],
+    streamingUnit: "element",
+    referenceFrameworks: ["docling", "unstructured", "haystack", "llama-index"]
   },
   {
     id: "config",
@@ -465,6 +489,46 @@ for (const route of FORMAT_ROUTES) {
   }
 }
 
+const MEDIA_TYPE_BY_EXTENSION = new Map(Object.entries({
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".xhtml": "application/xhtml+xml",
+  ".xml": "application/xml",
+  ".rst": "text/x-rst",
+  ".adoc": "text/x-asciidoc",
+  ".asciidoc": "text/x-asciidoc",
+  ".org": "text/org",
+  ".tex": "text/x-tex",
+  ".latex": "application/x-latex",
+  ".wiki": "text/x-mediawiki",
+  ".mediawiki": "text/x-mediawiki",
+  ".csv": "text/csv",
+  ".tsv": "text/tab-separated-values",
+  ".json": "application/json",
+  ".jsonl": "application/x-ndjson",
+  ".ndjson": "application/x-ndjson",
+  ".md": "text/markdown",
+  ".markdown": "text/markdown",
+  ".txt": "text/plain",
+  ".text": "text/plain",
+  ".log": "text/plain",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".odp": "application/vnd.oasis.opendocument.presentation",
+  ".epub": "application/epub+zip",
+  ".eml": "message/rfc822",
+  ".msg": "application/vnd.ms-outlook",
+  ".mbox": "application/mbox",
+  ".ics": "text/calendar",
+  ".vcs": "text/x-vcalendar"
+}));
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -560,9 +624,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, and LaTeX-style markup route separation"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
-    gaps: ["full layout block graph", "native table geometry and formula objects"]
+    gaps: ["full layout block graph", "native table geometry and formula objects beyond markup formulas"]
   },
   "llama-index": {
     absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API"],
@@ -580,14 +644,14 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["persistent graph store adapter", "multi-run graph merge and global/local query modes"]
   },
   haystack: {
-    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document"],
+    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup documents"],
     baseline: ["pipeline-like deterministic execution record"],
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for markup headings, lists, links, tables, code, and formulas"],
     baseline: ["strategy-based parser fallback"],
-    gaps: ["element-type enrichment", "domain-specific chunk enrichment plugins"]
+    gaps: ["element-type enrichment for PDF and Office layout blocks", "domain-specific chunk enrichment plugins"]
   }
 });
 
@@ -947,7 +1011,11 @@ function extensionFromFileName(fileName = "") {
 }
 
 function inferMediaTypeFromExtension(extension = "") {
-  const route = ROUTES_BY_EXTENSION.get(normalizeExtension(extension));
+  const normalizedExtension = normalizeExtension(extension);
+  if (MEDIA_TYPE_BY_EXTENSION.has(normalizedExtension)) {
+    return MEDIA_TYPE_BY_EXTENSION.get(normalizedExtension);
+  }
+  const route = ROUTES_BY_EXTENSION.get(normalizedExtension);
   return route?.mediaTypes?.[0] || "";
 }
 
@@ -982,7 +1050,7 @@ function isStreamableTextRoute(route = null, metadata = {}) {
   if (!route) {
     return false;
   }
-  if (["markdown", "plain-text", "source-code", "config", "diagram", "notebook", "diff", "calendar"].includes(route.id)) {
+  if (["markdown", "plain-text", "markup", "source-code", "config", "diagram", "notebook", "diff", "calendar"].includes(route.id)) {
     return true;
   }
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
@@ -1322,6 +1390,291 @@ function stripMarkup(value = "") {
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function compactMarkupText(value = "", limit = 1200) {
+  return decodeXmlEntities(String(value || ""))
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\\[a-zA-Z]+\*?(?:\[[^\]]*\])?/g, " ")
+    .replace(/[{}]/g, " ")
+    .replace(/[ \t\r\n]+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
+function markupFormatFromMetadata(metadata = {}) {
+  const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
+  const mediaType = String(metadata.mediaType || "").toLowerCase();
+  if ([".html", ".htm", ".xhtml"].includes(extension)) return "html";
+  if (extension === ".xml") return "xml";
+  if (extension === ".rst") return "rst";
+  if (extension === ".adoc" || extension === ".asciidoc") return "asciidoc";
+  if (extension === ".org") return "org";
+  if (extension === ".tex" || extension === ".latex") return "latex";
+  if (extension === ".wiki" || extension === ".mediawiki") return "mediawiki";
+  if (mediaType.includes("asciidoc")) return "asciidoc";
+  if (mediaType.includes("mediawiki")) return "mediawiki";
+  if (mediaType.includes("latex") || mediaType.includes("tex")) return "latex";
+  if (mediaType.includes("html")) return "html";
+  if (mediaType.includes("xml")) return "xml";
+  if (mediaType.includes("rst")) return "rst";
+  if (mediaType.includes("org")) return "org";
+  return "markup";
+}
+
+function pushMarkupElement(elements, type, text, metadata = {}) {
+  const normalized = compactMarkupText(text, metadata.limit || 1200);
+  if (!normalized) {
+    return;
+  }
+  elements.push({
+    type,
+    text: normalized,
+    ...(metadata.level ? { level: metadata.level } : {}),
+    ...(metadata.line ? { line: metadata.line } : {}),
+    ...(metadata.href ? { href: metadata.href } : {}),
+    ...(metadata.name ? { name: metadata.name } : {})
+  });
+}
+
+function parseHtmlMarkupElements(text = "") {
+  const source = String(text || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ");
+  const elements = [];
+  const title = source.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (title) {
+    pushMarkupElement(elements, "title", title[1]);
+  }
+  for (const match of source.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi)) {
+    pushMarkupElement(elements, "heading", match[2], { level: Number(match[1]) });
+  }
+  for (const match of source.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const href = match[1].match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1] || "";
+    pushMarkupElement(elements, "link", match[2], { href: decodeXmlEntities(href), limit: 500 });
+  }
+  for (const match of source.matchAll(/<(?:pre|code)[^>]*>([\s\S]*?)<\/(?:pre|code)>/gi)) {
+    pushMarkupElement(elements, "code", match[1], { limit: 1500 });
+  }
+  for (const match of source.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    pushMarkupElement(elements, "table-row", match[1], { limit: 1500 });
+  }
+  for (const match of source.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
+    pushMarkupElement(elements, "list-item", match[1], { limit: 700 });
+  }
+  for (const match of source.matchAll(/<(?:p|article|section|blockquote)[^>]*>([\s\S]*?)<\/(?:p|article|section|blockquote)>/gi)) {
+    pushMarkupElement(elements, "paragraph", match[1], { limit: 1200 });
+    if (elements.length >= 400) break;
+  }
+  if (!elements.length) {
+    pushMarkupElement(elements, "text", stripMarkup(source), { limit: 4000 });
+  }
+  return elements.slice(0, 600);
+}
+
+function parseXmlMarkupElements(text = "") {
+  const source = String(text || "");
+  const elements = [];
+  const seenTags = new Set();
+  for (const match of source.matchAll(/<([A-Za-z_][\w:.-]*)(?:\s[^>]*)?>([\s\S]{0,4000}?)<\/\1>/g)) {
+    const tag = match[1];
+    const value = stripMarkup(match[2]);
+    if (!value || value.length > 1600) {
+      continue;
+    }
+    seenTags.add(tag);
+    pushMarkupElement(elements, /title|name|heading|subject/i.test(tag) ? "heading" : "xml-field", value, { name: tag });
+    if (elements.length >= 400) {
+      break;
+    }
+  }
+  if (seenTags.size) {
+    pushMarkupElement(elements, "schema", Array.from(seenTags).slice(0, 80).join(", "));
+  }
+  if (!elements.length) {
+    pushMarkupElement(elements, "text", stripMarkup(source), { limit: 4000 });
+  }
+  return elements.slice(0, 600);
+}
+
+function parseLineMarkupElements(text = "", format = "markup") {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const elements = [];
+  let inCode = false;
+  for (let index = 0; index < lines.length && elements.length < 800; index += 1) {
+    const lineNumber = index + 1;
+    const line = lines[index] || "";
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (format === "rst" && index + 1 < lines.length && /^[=\-~`^"']{3,}\s*$/.test(lines[index + 1].trim())) {
+      pushMarkupElement(elements, "heading", trimmed, { level: lines[index + 1].trim()[0] === "=" ? 1 : 2, line: lineNumber });
+      index += 1;
+      continue;
+    }
+    if (format === "asciidoc") {
+      const heading = trimmed.match(/^(={1,6})\s+(.+)$/);
+      if (heading) {
+        pushMarkupElement(elements, "heading", heading[2], { level: heading[1].length, line: lineNumber });
+        continue;
+      }
+      const attribute = trimmed.match(/^:([A-Za-z0-9_.-]+):\s*(.*)$/);
+      if (attribute) {
+        pushMarkupElement(elements, "attribute", `${attribute[1]}: ${attribute[2]}`, { line: lineNumber });
+        continue;
+      }
+      const include = trimmed.match(/^(include|image)::([^\[]+)/);
+      if (include) {
+        pushMarkupElement(elements, include[1], include[2], { line: lineNumber });
+        continue;
+      }
+    }
+    if (format === "org") {
+      const heading = trimmed.match(/^(\*{1,8})\s+(?:(TODO|DONE|WAITING|CANCELLED)\s+)?(.+)$/);
+      if (heading) {
+        pushMarkupElement(elements, heading[2] ? "task-heading" : "heading", `${heading[2] ? `${heading[2]} ` : ""}${heading[3]}`, { level: heading[1].length, line: lineNumber });
+        continue;
+      }
+      const keyword = trimmed.match(/^#\+([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (keyword) {
+        pushMarkupElement(elements, "attribute", `${keyword[1]}: ${keyword[2]}`, { line: lineNumber });
+        continue;
+      }
+    }
+    if (format === "mediawiki") {
+      const heading = trimmed.match(/^(={2,6})\s*(.*?)\s*\1$/);
+      if (heading) {
+        pushMarkupElement(elements, "heading", heading[2], { level: Math.max(1, heading[1].length - 1), line: lineNumber });
+        continue;
+      }
+    }
+    if (format === "rst") {
+      const directive = trimmed.match(/^\.\.\s+([A-Za-z0-9_-]+)::\s*(.*)$/);
+      if (directive) {
+        pushMarkupElement(elements, "directive", `${directive[1]}: ${directive[2]}`, { line: lineNumber });
+        if (/code|sourcecode/i.test(directive[1])) {
+          inCode = true;
+        }
+        continue;
+      }
+      const field = trimmed.match(/^:([A-Za-z0-9_. -]+):\s*(.*)$/);
+      if (field) {
+        pushMarkupElement(elements, "field", `${field[1]}: ${field[2]}`, { line: lineNumber });
+        continue;
+      }
+    }
+    if (/^(```|----|\.\.\s+code-block::)/.test(trimmed)) {
+      inCode = !inCode;
+      pushMarkupElement(elements, "code-boundary", trimmed, { line: lineNumber });
+      continue;
+    }
+    if (/^[-*+]\s+/.test(trimmed) || /^\d+[.)]\s+/.test(trimmed) || (format === "mediawiki" && /^[*#;:]+\s*/.test(trimmed))) {
+      pushMarkupElement(elements, "list-item", trimmed.replace(/^[-*+#;:\d.)\s]+/, ""), { line: lineNumber });
+      continue;
+    }
+    for (const match of trimmed.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\(([^)]+)\)|link:([^\[]+)\[([^\]]*)\]/g)) {
+      const href = match[1] || match[4] || match[5] || "";
+      const label = match[2] || match[3] || match[6] || href;
+      pushMarkupElement(elements, "link", label, { href, line: lineNumber });
+    }
+    if (trimmed.startsWith("|")) {
+      pushMarkupElement(elements, "table-row", trimmed, { line: lineNumber });
+      continue;
+    }
+    if (inCode || /^\s{2,}\S/.test(line)) {
+      pushMarkupElement(elements, "code", trimmed, { line: lineNumber, limit: 1500 });
+      continue;
+    }
+    pushMarkupElement(elements, "paragraph", trimmed, { line: lineNumber });
+  }
+  return elements;
+}
+
+function parseLatexMarkupElements(text = "") {
+  const source = String(text || "");
+  const elements = [];
+  for (const match of source.matchAll(/\\(title|author|chapter|section|subsection|subsubsection|paragraph)\*?(?:\[[^\]]*\])?\{([^{}]+)\}/g)) {
+    const command = match[1];
+    const level = command === "chapter" ? 1 : command === "section" ? 2 : command === "subsection" ? 3 : command === "subsubsection" ? 4 : 0;
+    pushMarkupElement(elements, command === "title" || /section|chapter|paragraph/.test(command) ? "heading" : "metadata", match[2], { level });
+  }
+  for (const match of source.matchAll(/\\(begin|end)\{([^{}]+)\}/g)) {
+    pushMarkupElement(elements, "environment", `${match[1]} ${match[2]}`, { name: match[2], limit: 300 });
+  }
+  for (const match of source.matchAll(/\\(?:cite|parencite|textcite)\{([^{}]+)\}/g)) {
+    pushMarkupElement(elements, "citation", match[1], { limit: 500 });
+  }
+  for (const match of source.matchAll(/\\(?:ref|label)\{([^{}]+)\}/g)) {
+    pushMarkupElement(elements, "reference", match[1], { limit: 500 });
+  }
+  for (const match of source.matchAll(/\$\$?([^$\n]{2,500})\$\$?/g)) {
+    pushMarkupElement(elements, "formula", match[1], { limit: 500 });
+  }
+  for (const match of source.matchAll(/\\item\s+([^\n]+)/g)) {
+    pushMarkupElement(elements, "list-item", match[1], { limit: 800 });
+  }
+  if (elements.length < 30) {
+    const cleaned = source
+      .replace(/%.*$/gm, "")
+      .replace(/\\(title|author|chapter|section|subsection|subsubsection|paragraph)\*?(?:\[[^\]]*\])?\{([^{}]+)\}/g, "$2\n")
+      .replace(/\\[a-zA-Z]+\*?(?:\[[^\]]*\])?(?:\{([^{}]*)\})?/g, "$1 ")
+      .replace(/[{}]/g, " ");
+    for (const paragraph of cleaned.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean).slice(0, 120)) {
+      pushMarkupElement(elements, "paragraph", paragraph, { limit: 1200 });
+    }
+  }
+  return elements.slice(0, 800);
+}
+
+function elementTypeCounts(elements = []) {
+  const counts = {};
+  for (const element of elements) {
+    counts[element.type] = (counts[element.type] || 0) + 1;
+  }
+  return counts;
+}
+
+function markupElementsToText(format = "markup", elements = [], fallback = "") {
+  const records = [`Markup format: ${format}`];
+  for (const element of elements.slice(0, 700)) {
+    const level = element.level ? ` level ${element.level}` : "";
+    const line = element.line ? ` line ${element.line}` : "";
+    const name = element.name ? ` ${element.name}` : "";
+    const href = element.href ? ` -> ${element.href}` : "";
+    records.push(`Markup ${element.type}${level}${name}${line}: ${element.text}${href}`);
+  }
+  if (records.length === 1 && fallback) {
+    records.push(`Markup text: ${compactMarkupText(fallback, 4000)}`);
+  }
+  return records.filter(Boolean).join("\n");
+}
+
+function parseMarkupText(text = "", metadata = {}) {
+  const format = markupFormatFromMetadata(metadata);
+  let elements;
+  if (format === "html") {
+    elements = parseHtmlMarkupElements(text);
+  } else if (format === "xml") {
+    elements = parseXmlMarkupElements(text);
+  } else if (format === "latex") {
+    elements = parseLatexMarkupElements(text);
+  } else {
+    elements = parseLineMarkupElements(text, format);
+  }
+  const counts = elementTypeCounts(elements);
+  const fallback = format === "html" || format === "xml" ? stripMarkup(text) : String(text || "").trim();
+  return {
+    text: markupElementsToText(format, elements, fallback),
+    format,
+    elementCount: elements.length,
+    headingCount: (counts.heading || 0) + (counts["task-heading"] || 0) + (counts.title || 0),
+    listItemCount: counts["list-item"] || 0,
+    linkCount: counts.link || 0,
+    tableCount: counts["table-row"] || 0,
+    codeBlockCount: (counts.code || 0) + (counts["code-boundary"] || 0),
+    formulaCount: counts.formula || 0
+  };
 }
 
 function textFromXmlTextNodes(xml = "") {
@@ -3966,6 +4319,23 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       });
       return { text: parsed.text || plain.trim(), parserTrace, warnings };
     }
+    if (route?.id === "markup") {
+      const parsed = parseMarkupText(plain, metadata);
+      parserTrace.push({
+        stage: "markup.structure",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        format: parsed.format,
+        elements: parsed.elementCount,
+        headings: parsed.headingCount,
+        listItems: parsed.listItemCount,
+        links: parsed.linkCount,
+        tables: parsed.tableCount,
+        codeBlocks: parsed.codeBlockCount,
+        formulas: parsed.formulaCount
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+    }
     if (route?.id === "config") {
       const parsed = parseConfigText(plain, metadata);
       parserTrace.push({
@@ -4029,9 +4399,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       return { text: parsed, parserTrace, warnings };
     }
     if (["markdown", "plain-text", "source-code"].includes(route?.id)) {
-      const parsed = metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml"
-        ? stripMarkup(plain)
-        : plain.trim();
+      const parsed = plain.trim();
       parserTrace.push({ stage: route.id === "markdown" ? "text.markdown" : "text.direct", status: "completed", characters: parsed.length });
       return { text: parsed, parserTrace, warnings };
     }
@@ -4327,6 +4695,7 @@ function buildWindowRecord(document = {}, index = 0, startOffset = 0, endOffset 
 
 function streamParserStage(route = null, metadata = {}) {
   if (route?.id === "markdown") return "text.markdown";
+  if (route?.id === "markup") return "markup.structure";
   if (route?.id === "source-code") return "code.structure";
   if (route?.id === "config") return "config.key-value";
   if (route?.id === "diagram") return "diagram.structure";
@@ -4358,8 +4727,8 @@ function transformStreamingTextChunk(chunk = "", route = null, metadata = {}) {
   if (route?.id === "calendar") {
     return parseCalendarText(chunk).text || String(chunk || "");
   }
-  if (metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml") {
-    return stripMarkup(chunk);
+  if (route?.id === "markup") {
+    return parseMarkupText(chunk, metadata).text || String(chunk || "");
   }
   return String(chunk || "");
 }
@@ -8277,6 +8646,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "payload.stream-text",
         "text.direct",
         "text.markdown",
+        "markup.structure",
         "structured.json",
         "config.key-value",
         "diagram.structure",

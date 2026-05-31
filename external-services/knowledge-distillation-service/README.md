@@ -73,7 +73,8 @@ Routed format families:
 - PDF: text extraction, visual layout fallback, OCR fallback.
 - Office and OpenDocument: DOC/DOCX, RTF, PPT/PPTX, XLS/XLSX, ODT/ODS/ODP.
 - Ebooks: EPUB.
-- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, HTML, XML, logs.
+- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, and logs.
+- Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
 - Diagrams: SVG, draw.io, Mermaid, and PlantUML with node, edge, and label extraction.
 - Notebooks: Jupyter `.ipynb` with markdown, code, and output cell extraction.
 - Change sets: Git/unified `.diff` and `.patch` with file, hunk, addition, and deletion extraction.
@@ -85,7 +86,8 @@ Routed format families:
 
 Built-in payload parsers:
 
-- Direct text, Markdown, HTML/XML stripping, and source code text.
+- Direct text, Markdown, markup structure, and source code text.
+- Markup normalization for HTML/XHTML/XML/RST/AsciiDoc/Org/LaTeX/MediaWiki headings, lists, links, table rows, code blocks, citations, and formulas.
 - JSON and JSONL normalization.
 - Configuration key-value normalization for YAML, TOML, INI, properties, and dotenv files.
 - Diagram structure normalization for SVG, draw.io, Mermaid, and PlantUML files.
@@ -120,7 +122,7 @@ Container runtime:
 - The Docker image installs Poppler and Tesseract English OCR so scanned PDF and image OCR paths are executable in single-node deployment.
 - The Docker image installs Java and Apache Tika app so legacy Office fallback is executable without relying on the embedded Pact server.
 - The Docker image installs 7zip so 7z project packages can be expanded as child documents.
-- `npm run server:verify:external-knowledge-distillation-container` builds the image, starts the service, checks `/v1/runtime/health`, and verifies OCR image, image-only scanned PDF, legacy Office fallback, OpenDocument, EPUB, project ZIP/TAR/TGZ/7z packages, mounted file references, mounted archive packages, mounted PDF payloads, mounted DOCX/PPTX/XLSX/OpenDocument/EPUB payloads, mounted DOC/PPT/XLS/RTF payloads, configuration files, diagram files, notebook files, source code files, diff/patch files, calendar files, MSG Tika extraction, MBOX mailbox splitting, and email attachment payloads become distillable corpus through `ocr.image`, `ocr.page`, `tika.text`, `tika.text.file-ref`, `open-document.structured`, `ebook.epub`, `pdf.text.pdftotext`, `structured-zip.file-ref.extract`, `table.sheet.headers`, `table.sheet.cells`, `table.time-index`, `config.key-value`, `diagram.structure`, `notebook.cells`, `code.structure`, `diff.unified`, `calendar.ics`, `archive.expand-route`, `archive.file-ref.expand`, `archive.entry-file-ref`, `archive.tar.container`, `archive.gzip.decompress`, `archive.7z.extract`, `payload.file-ref`, `payload.stream-text`, `email.msg.tika`, `email.msg.tika.file-ref`, `email.mbox`, `email.mbox-route`, and `email.attachment-route`.
+- `npm run server:verify:external-knowledge-distillation-container` builds the image, starts the service, checks `/v1/runtime/health`, and verifies OCR image, image-only scanned PDF, legacy Office fallback, OpenDocument, EPUB, project ZIP/TAR/TGZ/7z packages, mounted file references, mounted archive packages, mounted PDF payloads, mounted DOCX/PPTX/XLSX/OpenDocument/EPUB payloads, mounted DOC/PPT/XLS/RTF payloads, configuration files, markup files, diagram files, notebook files, source code files, diff/patch files, calendar files, MSG Tika extraction, MBOX mailbox splitting, and email attachment payloads become distillable corpus through `ocr.image`, `ocr.page`, `tika.text`, `tika.text.file-ref`, `open-document.structured`, `ebook.epub`, `pdf.text.pdftotext`, `structured-zip.file-ref.extract`, `table.sheet.headers`, `table.sheet.cells`, `table.time-index`, `config.key-value`, `markup.structure`, `diagram.structure`, `notebook.cells`, `code.structure`, `diff.unified`, `calendar.ics`, `archive.expand-route`, `archive.file-ref.expand`, `archive.entry-file-ref`, `archive.tar.container`, `archive.gzip.decompress`, `archive.7z.extract`, `payload.file-ref`, `payload.stream-text`, `email.msg.tika`, `email.msg.tika.file-ref`, `email.mbox`, `email.mbox-route`, and `email.attachment-route`.
 
 External runtime still required:
 
@@ -150,6 +152,8 @@ Reference patterns currently absorbed into the local baseline:
 - LlamaIndex-style node/window metadata attached to agent-readable outputs.
 - Haystack-style explicit pipeline stages exposed through route plans, parser traces, and capability metadata.
 - Haystack-style pipeline snapshots for replayable agent/debug context.
+- Docling/Haystack-style converter boundaries for HTML, AsciiDoc, XML, and LaTeX-like markup documents.
+- Unstructured-style element families for markup headings, lists, links, table rows, code, citations, and formulas.
 
 Reference framework checkout root:
 
