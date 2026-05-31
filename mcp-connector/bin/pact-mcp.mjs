@@ -774,6 +774,13 @@ async function run(command, args = [], options = {}) {
   }
 }
 
+async function runInstallCommand(command, args = [], options = {}) {
+  return run(command, args, {
+    ...options,
+    timeoutMs: options.timeoutMs || INSTALL_COMMAND_TIMEOUT_MS
+  });
+}
+
 async function runWithInput(command, args = [], input = "", options = {}) {
   return new Promise((resolve, reject) => {
     const timeoutMs = Number(options.timeoutMs || 0);
@@ -1369,14 +1376,14 @@ async function createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv }) {
 }
 
 async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoot }) {
-  await run("launchctl", ["setenv", tokenEnv, token], { allowFailure: true });
+  await runInstallCommand("launchctl", ["setenv", tokenEnv, token], { allowFailure: true });
   process.env[tokenEnv] = token;
   const plugin = await createCodexPlugin({ marketplaceRoot, baseUrl, tokenEnv });
-  await run(codexBin, ["plugin", "marketplace", "add", marketplaceRoot], { allowFailure: true });
-  await run(codexBin, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
-  const pluginAdd = await run(codexBin, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
-  await run(codexBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  await run(codexBin, [
+  await runInstallCommand(codexBin, ["plugin", "marketplace", "add", marketplaceRoot], { allowFailure: true });
+  await runInstallCommand(codexBin, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
+  const pluginAdd = await runInstallCommand(codexBin, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
+  await runInstallCommand(codexBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(codexBin, [
     "mcp",
     "add",
     MCP_SERVER_NAME,
@@ -1385,7 +1392,7 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
     "--bearer-token-env-var",
     tokenEnv
   ]);
-  const mcpGet = await run(codexBin, ["mcp", "get", MCP_SERVER_NAME], {
+  const mcpGet = await runInstallCommand(codexBin, ["mcp", "get", MCP_SERVER_NAME], {
     env: { [tokenEnv]: token }
   });
   return {
@@ -1450,9 +1457,9 @@ async function installCodexOrb({ baseUrl, token, tokenEnv, orbBin, vmName, vmUse
   if (!envWrite.ok) {
     throw new Error(`Codex VM token environment setup failed: ${envWrite.stderr || envWrite.stdout}`);
   }
-  await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, ...codexMcpAddArgs({ baseUrl: urlBase, tokenEnv })]);
-  const mcpGet = await run(orbBin, [
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, codexBin, ...codexMcpAddArgs({ baseUrl: urlBase, tokenEnv })]);
+  const mcpGet = await runInstallCommand(orbBin, [
     "-m",
     vmName,
     "-u",
@@ -1516,8 +1523,8 @@ function claudeCodeServerJson({ baseUrl, token }) {
 }
 
 async function installClaudeCode({ baseUrl, token, claudeBin }) {
-  await run(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  await run(claudeBin, [
+  await runInstallCommand(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(claudeBin, [
     "mcp",
     "add-json",
     "--scope",
@@ -1525,7 +1532,7 @@ async function installClaudeCode({ baseUrl, token, claudeBin }) {
     MCP_SERVER_NAME,
     claudeCodeServerJson({ baseUrl, token })
   ]);
-  const get = await run(claudeBin, ["mcp", "get", MCP_SERVER_NAME]);
+  const get = await runInstallCommand(claudeBin, ["mcp", "get", MCP_SERVER_NAME]);
   return {
     installMode: "claude-code-release-mcp-cli",
     mcpGetHasPact: get.stdout.includes(MCP_SERVER_NAME) || get.stdout.includes(`${baseUrl}/mcp`)
@@ -1537,8 +1544,8 @@ async function installClaudeCodeOrb({ baseUrl, token, orbBin, vmName, vmUser, cl
     throw new Error("Claude Code VM install requires a discovered or explicit OrbStack VM, user, and claude CLI path.");
   }
   const url = `${vmBaseUrl(baseUrl)}/mcp`;
-  await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  await run(orbBin, [
+  await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runInstallCommand(orbBin, [
     "-m",
     vmName,
     "-u",
@@ -1551,7 +1558,7 @@ async function installClaudeCodeOrb({ baseUrl, token, orbBin, vmName, vmUser, cl
     MCP_SERVER_NAME,
     claudeCodeServerJson({ baseUrl: vmBaseUrl(baseUrl), token })
   ]);
-  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "get", MCP_SERVER_NAME]);
+  const get = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "get", MCP_SERVER_NAME]);
   return {
     installMode: "claude-code-orbstack-mcp-cli",
     vm: vmName,
@@ -2083,13 +2090,13 @@ async function installOpenClaw({ baseUrl, token, orbBin, vmName, vmUser, opencla
     enabled: true
   };
   if (isOrb) {
-    await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
+    await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
   } else {
-    await run(openclawBin, ["mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
+    await runInstallCommand(openclawBin, ["mcp", "set", MCP_SERVER_NAME, JSON.stringify(config)]);
   }
   const show = isOrb
-    ? await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME])
-    : await run(openclawBin, ["mcp", "show", MCP_SERVER_NAME]);
+    ? await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME])
+    : await runInstallCommand(openclawBin, ["mcp", "show", MCP_SERVER_NAME]);
   return {
     installMode: isOrb ? "openclaw-orbstack-mcp-cli" : "openclaw-release-mcp-cli",
     vm: vmName,
@@ -2330,9 +2337,9 @@ async function publishDeviceHubManifest({ baseUrl, targets, codex, marketplaceRo
 }
 
 async function uninstallCodex({ tokenEnv, codexBin, marketplaceRoot }) {
-  const removeMcp = await run(codexBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  const removePlugin = await run(codexBin, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
-  await run("launchctl", ["unsetenv", tokenEnv], { allowFailure: true });
+  const removeMcp = await runInstallCommand(codexBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const removePlugin = await runInstallCommand(codexBin, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], { allowFailure: true });
+  await runInstallCommand("launchctl", ["unsetenv", tokenEnv], { allowFailure: true });
   const pluginRoot = path.join(marketplaceRoot, "plugins", PLUGIN_NAME);
   await removeDirIfExists(pluginRoot);
   const marketplaceBackupPath = await removeCodexMarketplacePlugin({ marketplaceRoot });
@@ -2349,10 +2356,10 @@ async function uninstallCodexOrb({ orbBin, vmName, vmUser, codexBin }) {
   if (!vmName || !vmUser || !codexBin) {
     throw new Error("Codex VM uninstall requires a discovered or explicit OrbStack VM, user, and codex CLI path.");
   }
-  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "remove", MCP_SERVER_NAME], {
+  const remove = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "remove", MCP_SERVER_NAME], {
     allowFailure: true
   });
-  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "get", MCP_SERVER_NAME], {
+  const get = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "get", MCP_SERVER_NAME], {
     allowFailure: true
   });
   return {
@@ -2383,7 +2390,7 @@ async function uninstallCodexRemote({ context, codexBin }) {
 }
 
 async function uninstallClaudeCode({ claudeBin }) {
-  const remove = await run(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const remove = await runInstallCommand(claudeBin, ["mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
   return {
     uninstallMode: "claude-code-release-mcp-cli",
     removedMcp: remove.ok
@@ -2394,8 +2401,8 @@ async function uninstallClaudeCodeOrb({ orbBin, vmName, vmUser, claudeBin }) {
   if (!vmName || !vmUser || !claudeBin) {
     throw new Error("Claude Code VM uninstall requires a discovered or explicit OrbStack VM, user, and claude CLI path.");
   }
-  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
-  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
+  const remove = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  const get = await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, claudeBin, "mcp", "get", MCP_SERVER_NAME], { allowFailure: true });
   return {
     uninstallMode: "claude-code-orbstack-mcp-cli",
     vm: vmName,
@@ -2641,11 +2648,11 @@ async function uninstallOpenClaw({ orbBin, vmName, vmUser, openclawBin }) {
     throw new Error("OpenClaw VM uninstall requires both OrbStack VM and user.");
   }
   const remove = isOrb
-    ? await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "unset", MCP_SERVER_NAME], { allowFailure: true })
-    : await run(openclawBin, ["mcp", "unset", MCP_SERVER_NAME], { allowFailure: true });
+    ? await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "unset", MCP_SERVER_NAME], { allowFailure: true })
+    : await runInstallCommand(openclawBin, ["mcp", "unset", MCP_SERVER_NAME], { allowFailure: true });
   const show = isOrb
-    ? await run(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME], { allowFailure: true })
-    : await run(openclawBin, ["mcp", "show", MCP_SERVER_NAME], { allowFailure: true });
+    ? await runInstallCommand(orbBin, ["-m", vmName, "-u", vmUser, openclawBin, "mcp", "show", MCP_SERVER_NAME], { allowFailure: true })
+    : await runInstallCommand(openclawBin, ["mcp", "show", MCP_SERVER_NAME], { allowFailure: true });
   return {
     uninstallMode: isOrb ? "openclaw-orbstack-mcp-cli" : "openclaw-release-mcp-cli",
     vm: vmName,

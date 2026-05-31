@@ -136,6 +136,11 @@ async function installFakeAgentCli(filePath) {
   if (process.platform === "win32") {
     await fs.writeFile(filePath, [
       "@echo off",
+      "set command_name=%~n0",
+      "if \"%PACT_FAKE_AGENT_HANG_MCP%\"==\"%command_name%\" if \"%1\"==\"mcp\" (",
+      "  ping -n 3600 127.0.0.1 >nul",
+      "  exit /b 124",
+      ")",
       "if not \"%PACT_FAKE_AGENT_LOG%\"==\"\" (",
       "  if \"%1\"==\"mcp\" if \"%2\"==\"add-json\" echo %~n0^|mcp add-json^|%3^|%4^|%5>>\"%PACT_FAKE_AGENT_LOG%\"",
       "  if \"%1\"==\"mcp\" if \"%2\"==\"set\" echo %~n0^|mcp set^|%3>>\"%PACT_FAKE_AGENT_LOG%\"",
@@ -172,8 +177,11 @@ async function installFakeAgentCli(filePath) {
   }
   await fs.writeFile(filePath, [
     "#!/bin/sh",
+    "command_name=$(basename \"$0\")",
+    "if [ \"${PACT_FAKE_AGENT_HANG_MCP:-}\" = \"$command_name\" ] && [ \"$1\" = \"mcp\" ]; then",
+    "  while :; do sleep 1; done",
+    "fi",
     "if [ -n \"$PACT_FAKE_AGENT_LOG\" ]; then",
-    "  command_name=$(basename \"$0\")",
     "  if [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"add-json\" ]; then",
     "    printf '%s|mcp add-json|%s|%s|%s\\n' \"$command_name\" \"$3\" \"$4\" \"$5\" >> \"$PACT_FAKE_AGENT_LOG\"",
     "  elif [ \"$1\" = \"mcp\" ] && [ \"$2\" = \"set\" ]; then",
@@ -753,6 +761,52 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.installed?.codex?.status, "failed");
     assert.match(payload.installed?.codex?.error, /timed out/);
+  });
+
+  await testAsync("cli local claude install times out stalled mcp command", async () => {
+    await installFakeAgentCli(fakeClaudePath);
+    const result = await spawnConnector([
+      "install",
+      "--target", "claude-code",
+      "--url", serverUrl,
+      "--token", token,
+      "--claude-bin", fakeClaudePath,
+      "--discovery-file", tempRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 10000, {
+      PACT_FAKE_AGENT_HANG_MCP: "claude",
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "local Claude timeout output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.["claude-code"]?.status, "failed");
+    assert.match(payload.installed?.["claude-code"]?.error, /timed out/);
+  });
+
+  await testAsync("cli local openclaw install times out stalled mcp command", async () => {
+    await installFakeAgentCli(fakeOpenClawPath);
+    const result = await spawnConnector([
+      "install",
+      "--target", "openclaw",
+      "--url", serverUrl,
+      "--token", token,
+      "--openclaw-bin", fakeOpenClawPath,
+      "--discovery-file", tempRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 10000, {
+      PACT_FAKE_AGENT_HANG_MCP: "openclaw",
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "local OpenClaw timeout output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.openclaw?.status, "failed");
+    assert.match(payload.installed?.openclaw?.error, /timed out/);
   });
 
   // ── SECTION 5: Non-interactive auto install ──
