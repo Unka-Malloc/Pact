@@ -1,6 +1,6 @@
 # Pact 商业化提升计划
 
-更新日期：2026-05-31
+更新日期：2026-06-01
 
 本文用于内部产品、工程和交付决策，不用于未经脱敏的对外宣传。
 
@@ -112,7 +112,7 @@ Pact 的目标不是替代下游智能体，也不是替代上游知识库或业
 MCP connector 已经接近目标，但还需要把“安装效率极高”做成硬门槛：
 
 - 覆盖 macOS、Linux、Windows、WSL、OrbStack、常见云主机和无 Node 环境。
-- 覆盖 Codex、Gemini CLI、Kilo Code、Copilot、OpenCode、OpenClaw、Hermes、Antigravity 等真实客户端。
+- 覆盖全部已列智能体框架和客户端：Claude Code、Codex、OpenClaw、OpenCode、Gemini CLI、Kilo Code、Copilot、Hermes、Antigravity 等都按一等目标维护，不以单一框架作为唯一重点。
 - 安装命令必须自动完成下载、校验、发现、handshake、grant、写配置和 doctor。
 - 失败时必须给机器可读错误和下一条可执行命令。
 - 远端智能体应能复制一条命令完成自助安装和回报状态。
@@ -210,6 +210,7 @@ MCP connector 已经接近目标，但还需要把“安装效率极高”做成
 - 把 `mcp-connector` 定为唯一公开安装入口。
 - 提供 GitHub Release 一命令安装、无 Node 便携包和无交互模式。
 - 安装流程覆盖 discovery、signed handshake、grant、配置写入、doctor 和安装报告。
+- 将 Claude Code、Codex、OpenClaw 作为优先真实 smoke 目标，同时保持 OpenCode、Gemini CLI、Kilo Code、Copilot、Hermes、Antigravity 等目标的同级安装、卸载、扫描和 doctor 覆盖。
 - 完成 macOS、Linux、Windows、WSL、OrbStack、云主机 smoke。
 - 对每个支持目标建立真实配置写入测试。
 - 为远端智能体提供“复制这条命令给你的智能体执行”的接入页。
@@ -218,7 +219,7 @@ MCP connector 已经接近目标，但还需要把“安装效率极高”做成
 
 - 新机器上一条命令可完成安装和 doctor。
 - 安装失败时返回明确原因和下一条修复命令。
-- 用户可以在控制台看到每个智能体是否已安装、已配对、可调用。
+- 用户可以在控制台看到每个已列智能体目标是否已安装、已配对、可调用；Claude Code、Codex、OpenClaw 不得只停留在文档声明。
 
 ### 5.3 P1: 共享空间产品化
 
