@@ -67,6 +67,7 @@ const EMAIL_ATTACHMENT_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERN
 const EMAIL_MIME_MAX_DEPTH = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MIME_MAX_DEPTH || 8));
 const EMAIL_MBOX_MAX_MESSAGES = Math.max(1, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MBOX_MAX_MESSAGES || 500));
 const EMAIL_MBOX_MESSAGE_MAX_CHARACTERS = Math.max(4096, Number(process.env.PACT_EXTERNAL_KD_EMAIL_MBOX_MESSAGE_MAX_CHARACTERS || 25 * 1024 * 1024));
+const STRUCTURED_ZIP_ENTRY_MAX_BYTES = Math.max(1024, Number(process.env.PACT_EXTERNAL_KD_STRUCTURED_ZIP_ENTRY_MAX_BYTES || ARCHIVE_ENTRY_MAX_BYTES));
 let runtimeDoctorCache = null;
 const STOP_WORDS = new Set([
   "about",
@@ -5429,8 +5430,8 @@ function structuredZipStage(route = null) {
   return "structured-zip.text";
 }
 
-function structuredZipDirectoryEntries(route = null, rootDir = "") {
-  const files = route?.id === "spreadsheet"
+function structuredZipEntryFiles(route = null, rootDir = "") {
+  return route?.id === "spreadsheet"
     ? [
         ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
         ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
@@ -5438,10 +5439,99 @@ function structuredZipDirectoryEntries(route = null, rootDir = "") {
           .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
       ]
     : structuredZipXmlFiles(route, rootDir);
-  return files.map((file) => ({
-    name: file.relativePath,
-    data: fsSync.readFileSync(file.absolutePath)
+}
+
+function structuredZipDirectoryEntryPlan(route = null, rootDir = "") {
+  const files = structuredZipEntryFiles(route, rootDir);
+  let selectedBytes = 0;
+  let loadedBytes = 0;
+  let skippedLargeFileCount = 0;
+  const entries = files.map((file) => {
+    const stat = fsSync.statSync(file.absolutePath);
+    selectedBytes += stat.size;
+    if (stat.size > STRUCTURED_ZIP_ENTRY_MAX_BYTES) {
+      skippedLargeFileCount += 1;
+      return {
+        name: file.relativePath,
+        data: Buffer.alloc(0),
+        filePath: file.absolutePath,
+        uncompressedSize: stat.size,
+        warning: "structured-entry-too-large"
+      };
+    }
+    const data = fsSync.readFileSync(file.absolutePath);
+    loadedBytes += data.length;
+    return {
+      name: file.relativePath,
+      data,
+      filePath: file.absolutePath,
+      uncompressedSize: stat.size,
+      warning: ""
+    };
+  });
+  return {
+    strategy: "structured-zip-entry-bounded-or-streaming.v1",
+    routeId: route?.id || "",
+    maxEntryBytes: STRUCTURED_ZIP_ENTRY_MAX_BYTES,
+    selectedFileCount: files.length,
+    loadedFileCount: entries.filter((entry) => !entry.warning).length,
+    skippedLargeFileCount,
+    selectedBytes,
+    loadedBytes,
+    entries
+  };
+}
+
+function structuredZipEntryPlanTrace(plan = {}) {
+  return {
+    stage: "structured-zip.structural-entry-plan",
+    status: plan.selectedFileCount ? "completed" : "empty",
+    strategy: plan.strategy || "structured-zip-entry-bounded-or-streaming.v1",
+    routeId: plan.routeId || "",
+    selectedFiles: Number(plan.selectedFileCount || 0),
+    loadedFiles: Number(plan.loadedFileCount || 0),
+    skippedLargeFiles: Number(plan.skippedLargeFileCount || 0),
+    selectedBytes: Number(plan.selectedBytes || 0),
+    loadedBytes: Number(plan.loadedBytes || 0),
+    maxEntryBytes: Number(plan.maxEntryBytes || STRUCTURED_ZIP_ENTRY_MAX_BYTES)
+  };
+}
+
+function structuredZipDirectoryEntries(route = null, rootDir = "") {
+  return structuredZipDirectoryEntryPlan(route, rootDir).entries.map((entry) => ({
+    name: entry.name,
+    data: entry.data,
+    warning: entry.warning || ""
   }));
+}
+
+function structuredZipTextPrefix(route = null, index = 0, file = {}) {
+  if (route?.id === "presentation") {
+    return `Slide ${index + 1} (${file.relativePath})`;
+  }
+  if (route?.id === "ebook") {
+    return `Chapter ${index + 1} (${file.relativePath})`;
+  }
+  return file.relativePath;
+}
+
+function appendStructuredZipFilesAsText({ route = null, rootDir = "", outputPath = "" } = {}) {
+  const files = structuredZipXmlFiles(route, rootDir);
+  let totalCharacters = 0;
+  for (const [index, file] of files.entries()) {
+    const heading = `${structuredZipTextPrefix(route, index, file)}:\n`;
+    fsSync.appendFileSync(outputPath, heading, "utf8");
+    const extractedCharacters = appendMarkupFileAsText(file.absolutePath, outputPath);
+    if (!extractedCharacters) {
+      continue;
+    }
+    fsSync.appendFileSync(outputPath, "\n", "utf8");
+    totalCharacters += heading.length + extractedCharacters + 1;
+  }
+  return {
+    fileCount: files.length,
+    totalCharacters
+  };
 }
 
 function parseStructuredZipDirectory(route = null, rootDir = "") {
@@ -7616,9 +7706,17 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
   let structureElements = [];
   let structureFormat = "";
   try {
+    const entryPlan = structuredZipDirectoryEntryPlan(route, extracted.outputDir);
+    parserTrace.push(structuredZipEntryPlanTrace(entryPlan));
+    if (entryPlan.skippedLargeFileCount > 0) {
+      warnings.push("structured-zip-large-entry-stream-fallback");
+    }
+    const canUseBoundedEntries = entryPlan.skippedLargeFileCount === 0;
     if (route?.id === "word") {
-      const parsed = parseDocx(readDirectoryEntries(extracted.outputDir, 2000));
-      if (parsed.text) {
+      const parsed = canUseBoundedEntries
+        ? parseDocx(entryPlan.entries)
+        : { text: "", elements: [], format: "docx", xmlFileCount: entryPlan.selectedFileCount };
+      if (parsed.text && canUseBoundedEntries) {
         directText = parsed.text;
         totalCharacters = directText.length;
         structuredFileCount = parsed.xmlFileCount;
@@ -7659,8 +7757,10 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
         });
       }
     } else if (route?.id === "spreadsheet") {
-      const parsed = parseXlsxDetailed(readDirectoryEntries(extracted.outputDir, 2000));
-      if (parsed.text) {
+      const parsed = canUseBoundedEntries
+        ? parseXlsxDetailed(entryPlan.entries)
+        : { text: "", elements: [], format: "xlsx", sheetCount: 0 };
+      if (parsed.text && canUseBoundedEntries) {
         directText = parsed.text;
         totalCharacters = directText.length;
         structuredFileCount = parsed.sheetCount;
@@ -7703,68 +7803,73 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage,
           status: totalCharacters ? "completed" : "empty",
           mode: "structured-zip-file-ref",
+          extractionMode: entryPlan.skippedLargeFileCount ? "streaming-large-structure-entry" : "streaming-structured-text",
           files: structuredFileCount,
           characters: totalCharacters
         });
         parserTrace.push(...spreadsheet.parserTrace);
       }
     } else if (route?.id === "presentation") {
-      const parsed = parsePptx(readDirectoryEntries(extracted.outputDir, 2000));
-      directText = parsed.text || "";
-      totalCharacters = directText.length;
-      structuredFileCount = parsed.slideCount;
-      structureElements = parsed.elements || [];
-      structureFormat = parsed.format || "pptx";
-      parserTrace.push({
-        stage,
-        status: totalCharacters ? "completed" : "empty",
-        mode: "structured-zip-file-ref",
-        files: structuredFileCount,
-        characters: totalCharacters,
-        elements: structureElements.length,
-        slides: parsed.slideCount,
-        shapes: parsed.shapeCount,
-        geometries: parsed.geometryCount,
-        shapeGeometries: parsed.shapeGeometryCount,
-        tables: parsed.tableCount,
-        tableRows: parsed.tableRowCount,
-        tableCells: parsed.tableCellCount,
-        tableGeometries: parsed.tableGeometryCount,
-        layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
-        headings: parsed.headingCount,
-        paragraphs: parsed.paragraphCount
-      });
-      parserTrace.push({
-        stage: "office.presentation.tables",
-        status: parsed.tableCount ? "completed" : "empty",
-        tables: parsed.tableCount,
-        rows: parsed.tableRowCount,
-        cells: parsed.tableCellCount,
-        geometries: parsed.tableGeometryCount,
-        layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
-      });
-    } else {
-      const files = structuredZipXmlFiles(route, extracted.outputDir);
-      structuredFileCount = files.length;
-      for (const [index, file] of files.entries()) {
-        const prefix = route?.id === "presentation"
-          ? `Slide ${index + 1} (${file.relativePath})`
-          : route?.id === "ebook"
-            ? `Chapter ${index + 1} (${file.relativePath})`
-            : file.relativePath;
-        const heading = `${prefix}:\n`;
-        fsSync.appendFileSync(outputPath, heading, "utf8");
-        const extractedCharacters = appendMarkupFileAsText(file.absolutePath, outputPath);
-        if (!extractedCharacters) {
-          continue;
-        }
-        fsSync.appendFileSync(outputPath, "\n", "utf8");
-        totalCharacters += heading.length + extractedCharacters + 1;
+      const parsed = canUseBoundedEntries
+        ? parsePptx(entryPlan.entries)
+        : { text: "", elements: [], format: "pptx", slideCount: entryPlan.selectedFileCount };
+      if (parsed.text && canUseBoundedEntries) {
+        directText = parsed.text || "";
+        totalCharacters = directText.length;
+        structuredFileCount = parsed.slideCount;
+        structureElements = parsed.elements || [];
+        structureFormat = parsed.format || "pptx";
+        parserTrace.push({
+          stage,
+          status: totalCharacters ? "completed" : "empty",
+          mode: "structured-zip-file-ref",
+          files: structuredFileCount,
+          characters: totalCharacters,
+          elements: structureElements.length,
+          slides: parsed.slideCount,
+          shapes: parsed.shapeCount,
+          geometries: parsed.geometryCount,
+          shapeGeometries: parsed.shapeGeometryCount,
+          tables: parsed.tableCount,
+          tableRows: parsed.tableRowCount,
+          tableCells: parsed.tableCellCount,
+          tableGeometries: parsed.tableGeometryCount,
+          layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
+          headings: parsed.headingCount,
+          paragraphs: parsed.paragraphCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.tables",
+          status: parsed.tableCount ? "completed" : "empty",
+          tables: parsed.tableCount,
+          rows: parsed.tableRowCount,
+          cells: parsed.tableCellCount,
+          geometries: parsed.tableGeometryCount,
+          layoutStrategy: parsed.tableGeometryCount ? "presentationml-table-geometry.v1" : ""
+        });
       }
+    } else {
+      const streamed = appendStructuredZipFilesAsText({ route, rootDir: extracted.outputDir, outputPath });
+      structuredFileCount = streamed.fileCount;
+      totalCharacters = streamed.totalCharacters;
       parserTrace.push({
         stage,
         status: totalCharacters ? "completed" : "empty",
         mode: "structured-zip-file-ref",
+        extractionMode: "streaming-structured-text",
+        files: structuredFileCount,
+        characters: totalCharacters
+      });
+    }
+    if (!directText && !structureElements.length && totalCharacters === 0 && ["word", "presentation"].includes(route?.id)) {
+      const streamed = appendStructuredZipFilesAsText({ route, rootDir: extracted.outputDir, outputPath });
+      structuredFileCount = streamed.fileCount;
+      totalCharacters = streamed.totalCharacters;
+      parserTrace.push({
+        stage: "structured-zip.large-entry-stream",
+        status: totalCharacters ? "completed" : "empty",
+        reason: entryPlan.skippedLargeFileCount ? "large-structure-entry" : "native-structure-empty",
+        routeId: route?.id || "",
         files: structuredFileCount,
         characters: totalCharacters
       });
@@ -11440,6 +11545,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       largeFileBytes: LARGE_FILE_BYTES,
       largeTextCharacters: LARGE_TEXT_CHARACTERS,
       manifestStrategy: "inline-or-streaming-manifest-document-input.v1",
+      structuredZipFileRefStrategy: "structured-zip-entry-bounded-or-streaming.v1",
+      structuredZipEntryMaxBytes: STRUCTURED_ZIP_ENTRY_MAX_BYTES,
       manifestMaxDocuments: MANIFEST_MAX_DOCUMENTS,
       manifestJsonDirectReadMaxBytes: MANIFEST_JSON_DIRECT_READ_MAX_BYTES,
       sizeLimitPolicy: "resource-bounded-no-small-hard-cap"
@@ -11475,6 +11582,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "pdf.text.basic",
         "pdf.text.pdftotext",
         "structured-zip.file-ref",
+        "structured-zip.structural-entry-plan",
+        "structured-zip.large-entry-stream",
         "zip.manifest",
         "archive.expand-route",
         "archive.child-file.route",

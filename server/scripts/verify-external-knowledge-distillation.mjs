@@ -62,7 +62,8 @@ function startExternalService({ port, dataDir }) {
       ...process.env,
       HOST: "127.0.0.1",
       PORT: String(port),
-      SERVICE_DATA_DIR: dataDir
+      SERVICE_DATA_DIR: dataDir,
+      PACT_EXTERNAL_KD_STRUCTURED_ZIP_ENTRY_MAX_BYTES: "25000"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -482,7 +483,8 @@ try {
             "<w:footnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
             "<w:footnote w:id=\"5\"><w:p><w:r><w:t>Mounted DOCX footnote preserves filePath annotation evidence.</w:t></w:r></w:p></w:footnote>",
             "</w:footnotes>"
-          ].join("")
+          ].join(""),
+          "word/media/noise.bin": "mounted-docx-media-noise-must-not-enter-structural-entry-plan"
         }
       },
       {
@@ -551,6 +553,21 @@ try {
             "<h1>Mounted EPUB Evidence</h1>",
             "<p>Mounted EPUB chapter routing verifies ebook filePath distillation compatibility.</p>",
             "</body></html>"
+          ].join("")
+        }
+      },
+      {
+        sourceId: "source-42",
+        title: "Mounted Large DOCX Structural XML",
+        fileName: "mounted-large-structured.docx",
+        mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        entries: {
+          "word/document.xml": [
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>",
+            Array.from({ length: 700 }, (_, index) => (
+              `<w:p><w:r><w:t>Large mounted DOCX structural paragraph ${index + 1} proves oversized WordprocessingML streams through bounded filePath parsing without whole-entry memory reads.</w:t></w:r></w:p>`
+            )).join(""),
+            "</w:body></w:document>"
           ].join("")
         }
       }
@@ -682,6 +699,7 @@ try {
   assert.equal(capabilities.payload.timeFiltering.timeFields.includes("eventTime"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.strategy, "streaming-windowed");
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestMaxDocuments >= 1000, true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("contentBase64"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
@@ -700,6 +718,8 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("calendar.ics"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markup.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
@@ -1613,8 +1633,20 @@ try {
       assert.ok(mountedStructuredCorpus.elementPlan.elementCount >= 1, `${sourceId} mounted structured ZIP document must expose structured elements`);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
+      assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+        trace.stage === "structured-zip.structural-entry-plan" &&
+        trace.status === "completed" &&
+        trace.strategy === "structured-zip-entry-bounded-or-streaming.v1" &&
+        trace.loadedFiles >= 1
+      )), true);
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
       if (formatId === "word") {
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "structured-zip.structural-entry-plan" &&
+          trace.selectedFiles === 3 &&
+          trace.loadedFiles === 3 &&
+          trace.skippedLargeFiles === 0
+        )), true);
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
           trace.stage === "office.word.annotations" &&
@@ -1661,6 +1693,26 @@ try {
       assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
       assert.ok(mountedStructuredCorpus.quality.textCharacters > 0, `${sourceId} mounted structured ZIP document must produce text`);
     }
+    const largeStructuredWord = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-42");
+    assert.ok(largeStructuredWord, "large mounted DOCX structural XML document must be present");
+    assert.equal(largeStructuredWord.route.formatId, "word");
+    assert.equal(largeStructuredWord.quality.suppliedPayloadKind, "file-ref-structured-zip");
+    assert.equal(largeStructuredWord.parserTrace.some((trace) => (
+      trace.stage === "structured-zip.structural-entry-plan" &&
+      trace.status === "completed" &&
+      trace.selectedFiles === 1 &&
+      trace.loadedFiles === 0 &&
+      trace.skippedLargeFiles === 1 &&
+      trace.maxEntryBytes === 25000
+    )), true);
+    assert.equal(largeStructuredWord.parserTrace.some((trace) => (
+      trace.stage === "structured-zip.large-entry-stream" &&
+      trace.status === "completed" &&
+      trace.reason === "large-structure-entry"
+    )), true);
+    assert.equal(largeStructuredWord.windowPlan.strategy, "file-ref-stream-windowing.v1");
+    assert.equal(largeStructuredWord.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+    assert.ok(largeStructuredWord.quality.textCharacters > 25000, "large DOCX structural fallback must preserve oversized text");
   }
   if (directRuntime.payload.runtimes["tika.app"]?.available && mountedLegacyOfficeDocuments.length) {
     for (const [sourceId, formatId] of [

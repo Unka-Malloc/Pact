@@ -393,10 +393,13 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
@@ -1514,6 +1517,12 @@ NODE`
     assert.equal(mountedStructured.quality.suppliedPayloadKind, "file-ref-structured-zip");
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "structured-zip.file-ref.extract" && trace.status === "completed"), true);
+    assert.equal(mountedStructured.parserTrace.some((trace) => (
+      trace.stage === "structured-zip.structural-entry-plan" &&
+      trace.status === "completed" &&
+      trace.strategy === "structured-zip-entry-bounded-or-streaming.v1" &&
+      trace.loadedFiles >= 1
+    )), true);
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === stage && trace.status === "completed"), true);
     if (formatId === "word") {
       assert.equal(mountedStructured.windowPlan.strategy, "element-aware-by-title-windowing.v1");

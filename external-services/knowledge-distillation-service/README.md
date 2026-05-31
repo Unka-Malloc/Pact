@@ -14,7 +14,7 @@ Request payloads can provide either direct text fields or a base64 file payload:
 - Streaming document manifest: `rawDocumentsManifestPath`, `rawDocumentsManifestRef`, `documentsManifestPath`, or `manifestPath` can point to an allowed JSONL manifest. The service streams the manifest line by line, then routes each referenced document through the same filePath/contentRef parser chain so large project requests do not need large JSON bodies.
 - Mounted archive payloads are expanded from their file path through ZIP/TAR/TGZ/7z extractors; child entries are routed as documents and streamable text entries use chunked windowing.
 - Mounted PDF payloads use Poppler `pdftotext` into a temporary text stream and then the normal windowing path.
-- Mounted DOCX, PPTX, XLSX, OpenDocument, and EPUB payloads are expanded as ZIP containers from their file path, structural XML/XHTML is streamed into temporary text, and the normal windowing path is used for distillation.
+- Mounted DOCX, PPTX, XLSX, OpenDocument, and EPUB payloads are expanded as ZIP containers from their file path. The parser selects only structural XML/XHTML entries, uses bounded in-memory reads for native element extraction, and falls back to streaming structural text when a selected entry is too large.
 - Mounted legacy Office and RTF payloads such as DOC, PPT, XLS, and RTF use Apache Tika from their file path into temporary text, then the normal windowing path is used for distillation.
 - Oversized mounted binary files without a format-specific file parser are rejected from the direct in-memory path with `payload.file-ref-deferred`; they need a streaming parser path instead of risking process memory.
 - File hints: `fileName`, `mediaType`, `byteSize`, `sourceId`, and optional `metadata`.
@@ -111,6 +111,7 @@ Built-in payload parsers:
 - Mounted archive file references with child-entry file refs, so project packages do not need to be base64 encoded or fully loaded into Node memory.
 - Mounted PDF file references with Poppler `pdftotext` extraction into chunked windows.
 - Mounted structured ZIP file references for DOCX, PPTX, XLSX, ODT/ODS/ODP, and EPUB, with structural text extraction into chunked windows or element-aware windows when native OOXML structure is available.
+- Mounted structured ZIP file references expose `structured-zip.structural-entry-plan`; large selected structural entries use `structured-zip.large-entry-stream` instead of forcing a whole XML entry into memory.
 - XLSX extraction preserves sheet, header row, row number, cell reference, formula, and `header=value` pairs so table evidence can be classified and grounded without losing cell context.
 - XLSX, CSV, and TSV table rows feed a table time index when date-like headers are present; extracted dates are attached to document and window records as `timeRange`, `timeConfidence`, and `timeSignals`.
 - Mounted legacy Office file references for DOC, PPT, XLS, and RTF through Apache Tika into chunked windows.
