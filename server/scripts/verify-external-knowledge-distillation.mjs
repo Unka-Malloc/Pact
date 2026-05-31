@@ -650,8 +650,21 @@ try {
   assert.equal(capabilities.payload.elementModel.supported, true);
   assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
   assert.equal(capabilities.payload.elementModel.windowingStrategy, "element-aware-by-title-windowing.v1");
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("bbox"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
+  assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
+  assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
+  assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("pdf"), true);
+  assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("word"), true);
+  assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("presentation"), true);
+  assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
+  assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("markdown"), true);
+  assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
+  assert.equal(capabilities.payload.formatConversion.agentReadableTargets.includes("evidence-pack-json"), true);
   for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
@@ -724,7 +737,23 @@ try {
           title: "Markdown Payload",
           fileName: "payload.md",
           mediaType: "text/markdown",
-          contentBase64: base64Text("# Payload Routing\nMarkdown contentBase64 must be parsed without Tika.")
+          contentBase64: base64Text([
+            "---",
+            "owner: platform",
+            "---",
+            "# Payload Routing",
+            "Markdown contentBase64 must be parsed without Tika and converted with block structure.",
+            "- Preserve list evidence.",
+            "[Agent contract](https://example.test/agent)",
+            "",
+            "| Stage | Status |",
+            "| --- | --- |",
+            "| markdown.structure | completed |",
+            "",
+            "```ts",
+            "const profile = 'agent';",
+            "```"
+          ].join("\n"))
         },
         {
           sourceId: "source-6",
@@ -1122,6 +1151,14 @@ try {
   assert.equal(markdownPayloadCorpus.parseStatus, "completed");
   assert.equal(markdownPayloadCorpus.quality.evidenceStrength, "parsed-payload");
   assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "text.markdown"), true);
+  assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.status === "completed" && trace.headings >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1 && trace.links >= 1 && trace.metadata >= 1), true);
+  assert.equal(markdownPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
+  assert.equal(markdownPayloadCorpus.elementPlan.sourceFormat, "markdown");
+  assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(markdownPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(markdownPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(markdownPayloadCorpus.formatConversionProfile.parserProfile, "markdown-block-element-route");
+  assert.equal(markdownPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
   const jsonPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-6");
   assert.equal(jsonPayloadCorpus.parserTrace.some((trace) => trace.stage === "structured.json"), true);
   const csvPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-7");
@@ -1208,6 +1245,8 @@ try {
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
   assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
+  assert.equal(docxPayloadCorpus.formatConversionProfile.parserProfile, "wordprocessingml-paragraph-style-route");
+  assert.equal(docxPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");
   assert.equal(zipPayloadCorpus.parserTrace.some((trace) => trace.stage === "archive.manifest" && trace.status === "completed"), true);
   assert.equal(zipPayloadCorpus.parserTrace.some((trace) => trace.stage === "archive.expand-route" && trace.status === "completed"), true);
@@ -1362,11 +1401,35 @@ try {
     }
   }
   const pdfPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-12");
-  assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "completed"), true);
+  assert.equal(pdfPayloadCorpus.parserTrace.some((trace) => trace.stage === "pdf.text.basic" && trace.status === "completed" && trace.layoutBlocks >= 1 && trace.layoutStrategy === "pdf-text-operator-geometry.v1"), true);
   assert.equal(pdfPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pdfPayloadCorpus.elementPlan.sourceFormat, "pdf");
-  assert.equal(pdfPayloadCorpus.elementPlan.elementTypes.paragraph >= 1, true);
+  assert.equal(pdfPayloadCorpus.elementPlan.elementTypes["pdf-text-block"] >= 1, true);
+  assert.equal(pdfPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "pdf-text-block" &&
+    element.page === 1 &&
+    element.bbox?.x === 72 &&
+    element.bbox?.y === 720 &&
+    element.layout?.strategy === "pdf-text-operator-geometry.v1"
+  )), true);
+  assert.equal(pdfPayloadCorpus.formatConversionProfile.parserProfile, "pdf.text-layout-ocr-route");
+  assert.equal(pdfPayloadCorpus.formatConversionProfile.preserves.includes("bbox"), true);
   assert.equal(pdfPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(pdfPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "pdf-text-block" &&
+    ref.page === 1 &&
+    ref.bbox?.x === 72 &&
+    ref.bbox?.y === 720 &&
+    ref.layout?.strategy === "pdf-text-operator-geometry.v1"
+  ))), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-12" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "pdf-text-block" &&
+      ref.bbox?.x === 72 &&
+      ref.layout?.strategy === "pdf-text-operator-geometry.v1"
+    ))
+  )), true);
   assert.equal(pdfPayloadCorpus.windowPlan.windowCount >= 1, true);
   const pptxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-13");
   assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.presentation.slides" && trace.status === "completed"), true);
@@ -1374,6 +1437,8 @@ try {
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.parserProfile, "presentationml-slide-route");
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("slide-order"), true);
   const xlsxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-14");
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.structured" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
@@ -1382,8 +1447,20 @@ try {
   assert.equal(xlsxPayloadCorpus.elementPlan.sourceFormat, "xlsx");
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "table-row" &&
+    element.table?.format === "xlsx" &&
+    element.cells?.some((cell) => cell.ref === "C2" && cell.header === "Payment Date" && cell.value === "2026-05-31")
+  )), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.parserProfile, "spreadsheetml-sheet-row-cell-route");
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
+  assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-row" &&
+    ref.table?.format === "xlsx" &&
+    ref.cells?.some((cell) => cell.ref === "C2")
+  ))), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-05-31"), true);
   assert.equal(xlsxPayloadCorpus.eventTime, "2026-05-31");
   assert.equal(xlsxPayloadCorpus.timeRange.from, "2026-05-31");

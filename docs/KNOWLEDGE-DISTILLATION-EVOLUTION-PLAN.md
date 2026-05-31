@@ -118,7 +118,7 @@ flowchart LR
 | 层级 | 当前可用基线 | 后续调整落点 |
 | --- | --- | --- |
 | 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan` | 内建 file processor 与 Tika 调用前也必须统一 route-first |
-| 解析链 | 外部服务已覆盖文本、配置、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 markup、OOXML、OpenDocument、EPUB、基础 PDF 文本纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
+| 解析链 | 外部服务已覆盖文本、配置、Markdown block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry 和 Excel cell coordinates 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
 | 大文件 | 外部服务已支持 mounted file refs、archive refs 和 chunked windowing | 上传、解析、蒸馏三层统一流式窗口协议 |
 | 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v2` | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
@@ -142,7 +142,7 @@ flowchart LR
 | 语义算法层 | 主题分类、聚类、垃圾池、窗口级/文档级/项目级收敛 | 多主题资料被压成一个不可追溯总结 |
 | 证据校验层 | claim 拆解、evidence top-k、冲突证据、grounding score | 无证据结论进入核心提炼文档 |
 | 时间线层 | `eventTime`、`documentTime`、`ingestedAt`、`distilledAt` 和时间段过滤 | 智能体只能拿全量结果自行扫 JSON |
-| 响应导出层 | `console`、`agent`、`api` response profile，Markdown/DOCX/JSON/ZIP/Agent JSON | 用户看到机器 trace，智能体拿不到可重试错误码 |
+| 响应导出层 | `console`、`agent`、`api` response profile，Markdown/DOCX/JSON/ZIP/Agent JSON，以及 PDF/Word/PowerPoint/Excel/Markdown 的 format conversion profile | 用户看到机器 trace，智能体拿不到可重试错误码 |
 | 部署验证层 | 单机包、OrbStack 容器、离线依赖、轻重 verifier | 只在开发机偶然可用，不能复现 |
 
 ---
@@ -377,7 +377,7 @@ raw corpus item 标准字段：
 - 解析层按页、sheet、slide、section 或 block 流式产出。
 - corpus 层按结构边界建立窗口：
   - 默认窗口按字符、页、元素或 block 混合控制。
-  - 标记语言、OOXML、OpenDocument、EPUB、PDF 基础文本块和后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
+  - Markdown、标记语言、OOXML、OpenDocument、EPUB、PDF 基础文本块、PDF 文本定位几何、Excel 单元格坐标和后续 PDF/Office layout block 使用 `document-element-model.v1` 统一表达元素。
   - 标题层级使用 `element-aware-by-title-windowing.v1` 建立窗口，表格、代码、公式保留隔离边界。
   - 普通文本窗口之间保留 overlap；元素窗口保留 `headingPath`、`elementRefs` 和 `boundaryReason`。
   - 每个窗口保留 `contentHash`。

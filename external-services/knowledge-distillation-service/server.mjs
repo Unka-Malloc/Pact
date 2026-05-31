@@ -624,7 +624,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, OOXML, OpenDocument, EPUB, and PDF element models"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "spreadsheet sheet/row/cell coordinate metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full layout block geometry", "native table coordinate objects and formula recognition beyond text-level elements"]
   },
@@ -634,7 +634,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["pluggable ingestion pipeline contracts", "agent evaluation feedback loop"]
   },
   marker: {
-    absorbed: ["portable Markdown output", "JSON evidence pack", "DOCX and workspace ZIP packaging"],
+    absorbed: ["portable Markdown output", "Markdown block parsing", "JSON evidence pack", "DOCX and workspace ZIP packaging"],
     baseline: ["PDF text extraction and OCR fallback"],
     gaps: ["layout-aware PDF to Markdown ordering", "equation/table image reconstruction"]
   },
@@ -644,12 +644,12 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["persistent graph store adapter", "multi-run graph merge and global/local query modes"]
   },
   haystack: {
-    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup documents"],
+    absorbed: ["explicit route stages", "parser traces", "runtime doctor", "capabilities document", "HTML/Markdown-style converter boundaries for markup and Markdown documents", "format conversion profiles for human and agent targets"],
     baseline: ["pipeline-like deterministic execution record"],
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, code, and formulas", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, code, and formulas", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["high-fidelity PDF and Office layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -1448,7 +1448,12 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.level ? { level: metadata.level } : {}),
     ...(metadata.line ? { line: metadata.line } : {}),
     ...(metadata.href ? { href: metadata.href } : {}),
-    ...(metadata.name ? { name: metadata.name } : {})
+    ...(metadata.name ? { name: metadata.name } : {}),
+    ...(metadata.page ? { page: metadata.page } : {}),
+    ...(metadata.bbox ? { bbox: metadata.bbox } : {}),
+    ...(metadata.layout ? { layout: metadata.layout } : {}),
+    ...(metadata.table ? { table: metadata.table } : {}),
+    ...(metadata.cells ? { cells: metadata.cells } : {})
   });
 }
 
@@ -1556,6 +1561,237 @@ function buildFallbackStructureElementsFromText(text = "", route = null, metadat
   }
   flushParagraph();
   return elements;
+}
+
+function stripMarkdownInline(value = "") {
+  return String(value || "")
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[*_~]{1,3}/g, "")
+    .trim();
+}
+
+function markdownTableCells(line = "") {
+  const trimmed = String(line || "").trim();
+  if (!trimmed.startsWith("|")) {
+    return [];
+  }
+  return trimmed
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => stripMarkdownInline(cell.trim()));
+}
+
+function isMarkdownTableDelimiter(line = "") {
+  const cells = markdownTableCells(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function parseMarkdownText(text = "", metadata = {}) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const elements = [];
+  let inCode = false;
+  let codeFence = "";
+  let codeLines = [];
+  let codeStartLine = 0;
+  let paragraph = [];
+  let paragraphLine = 0;
+  let tableHeader = [];
+  let tableRows = 0;
+  let frontmatter = false;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    pushStructureElement(elements, "paragraph", stripMarkdownInline(paragraph.join(" ")), { line: paragraphLine });
+    paragraph = [];
+    paragraphLine = 0;
+  };
+
+  const flushCode = () => {
+    if (!codeLines.length) {
+      return;
+    }
+    pushStructureElement(elements, "code", codeLines.join("\n"), {
+      line: codeStartLine,
+      name: codeFence.replace(/^```+/, "").trim() || "code",
+      limit: 4000
+    });
+    codeLines = [];
+    codeStartLine = 0;
+  };
+
+  for (let index = 0; index < lines.length && elements.length < 2000; index += 1) {
+    const raw = lines[index] || "";
+    const lineNumber = index + 1;
+    const trimmed = raw.trim();
+
+    if (lineNumber === 1 && trimmed === "---") {
+      frontmatter = true;
+      continue;
+    }
+    if (frontmatter) {
+      if (trimmed === "---") {
+        frontmatter = false;
+      } else if (trimmed) {
+        pushStructureElement(elements, "metadata", trimmed, { line: lineNumber });
+      }
+      continue;
+    }
+
+    if (/^```/.test(trimmed)) {
+      if (inCode) {
+        flushCode();
+        inCode = false;
+        codeFence = "";
+      } else {
+        flushParagraph();
+        inCode = true;
+        codeFence = trimmed;
+        codeStartLine = lineNumber;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(raw);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      tableHeader = [];
+      tableRows = 0;
+      continue;
+    }
+
+    const setextCandidate = index + 1 < lines.length ? lines[index + 1].trim() : "";
+    if (trimmed && /^[=-]{3,}$/.test(setextCandidate)) {
+      flushParagraph();
+      pushStructureElement(elements, "heading", stripMarkdownInline(trimmed), {
+        level: setextCandidate.startsWith("=") ? 1 : 2,
+        line: lineNumber
+      });
+      index += 1;
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) {
+      flushParagraph();
+      pushStructureElement(elements, "heading", stripMarkdownInline(heading[2]), {
+        level: heading[1].length,
+        line: lineNumber
+      });
+      continue;
+    }
+
+    if (trimmed.startsWith("|") && isMarkdownTableDelimiter(lines[index + 1] || "")) {
+      flushParagraph();
+      tableHeader = markdownTableCells(trimmed);
+      tableRows = 0;
+      pushStructureElement(elements, "table-header", tableHeader.map((cell, cellIndex) => `${xlsxColumnLabel("", cellIndex)}=${cell}`).join("; "), {
+        line: lineNumber,
+        name: "markdown-table",
+        table: {
+          format: "markdown",
+          row: 1,
+          columns: tableHeader.length
+        },
+        cells: tableHeader.map((cell, cellIndex) => ({
+          ref: `${xlsxColumnLabel("", cellIndex)}1`,
+          column: xlsxColumnLabel("", cellIndex),
+          row: 1,
+          value: cell
+        })),
+        limit: 2000
+      });
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("|") && tableHeader.length) {
+      flushParagraph();
+      tableRows += 1;
+      const cells = markdownTableCells(trimmed);
+      pushStructureElement(elements, "table-row", cells.map((cell, cellIndex) => {
+        const header = tableHeader[cellIndex] || xlsxColumnLabel("", cellIndex);
+        return `${xlsxColumnLabel("", cellIndex)}${tableRows + 1} ${header}=${cell}`;
+      }).join("; "), {
+        line: lineNumber,
+        name: "markdown-table",
+        table: {
+          format: "markdown",
+          row: tableRows + 1,
+          columns: cells.length
+        },
+        cells: cells.map((cell, cellIndex) => ({
+          ref: `${xlsxColumnLabel("", cellIndex)}${tableRows + 1}`,
+          column: xlsxColumnLabel("", cellIndex),
+          row: tableRows + 1,
+          header: tableHeader[cellIndex] || "",
+          value: cell
+        })),
+        limit: 2000
+      });
+      continue;
+    }
+
+    tableHeader = [];
+    tableRows = 0;
+
+    const image = trimmed.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+    if (image) {
+      flushParagraph();
+      pushStructureElement(elements, "image", image[1] || image[2], { line: lineNumber, href: image[2], limit: 500 });
+      continue;
+    }
+
+    for (const match of trimmed.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+      pushStructureElement(elements, "link", match[1], { line: lineNumber, href: match[2], limit: 500 });
+    }
+
+    if (/^(?:[-*+]|\d+[.)])\s+\S/.test(trimmed)) {
+      flushParagraph();
+      pushStructureElement(elements, "list-item", stripMarkdownInline(trimmed.replace(/^(?:[-*+]|\d+[.)])\s+/, "")), { line: lineNumber });
+      continue;
+    }
+
+    if (/^>\s+/.test(trimmed)) {
+      flushParagraph();
+      pushStructureElement(elements, "blockquote", stripMarkdownInline(trimmed.replace(/^>\s+/, "")), { line: lineNumber });
+      continue;
+    }
+
+    if (!paragraphLine) {
+      paragraphLine = lineNumber;
+    }
+    paragraph.push(trimmed);
+  }
+
+  if (inCode) {
+    flushCode();
+  }
+  flushParagraph();
+  if (!elements.length) {
+    pushStructureElement(elements, "paragraph", text, { line: 1, limit: 6000 });
+  }
+  const counts = elementTypeCounts(elements);
+  return {
+    text: structureElementsToText("markdown", elements, String(text || "").trim()),
+    elements,
+    format: "markdown",
+    headingCount: counts.heading || 0,
+    listItemCount: counts["list-item"] || 0,
+    tableCount: (counts["table-header"] || 0) + (counts["table-row"] || 0),
+    codeBlockCount: counts.code || 0,
+    linkCount: counts.link || 0,
+    imageCount: counts.image || 0,
+    metadataCount: counts.metadata || 0
+  };
 }
 
 function parseHtmlMarkupElements(text = "") {
@@ -3690,6 +3926,18 @@ function parseXlsxDetailed(entries = []) {
         pushStructureElement(elements, "table-header", formatXlsxHeaderRow(sheetLabel, row), {
           line: row.rowNumber,
           name: sheetLabel,
+          table: {
+            format: "xlsx",
+            sheet: sheetLabel,
+            row: row.rowNumber,
+            columns: row.cells.length
+          },
+          cells: row.cells.map((cell) => ({
+            ref: cell.ref,
+            column: cell.column,
+            row: row.rowNumber,
+            value: cell.value
+          })),
           limit: 2000
         });
         headerCaptured = true;
@@ -3698,6 +3946,19 @@ function parseXlsxDetailed(entries = []) {
       pushStructureElement(elements, "table-row", formatXlsxDataRow(sheetLabel, row, headersByColumn), {
         line: row.rowNumber,
         name: sheetLabel,
+        table: {
+          format: "xlsx",
+          sheet: sheetLabel,
+          row: row.rowNumber,
+          columns: row.cells.length
+        },
+        cells: row.cells.map((cell) => ({
+          ref: cell.ref,
+          column: cell.column,
+          row: row.rowNumber,
+          header: headersByColumn.get(cell.column) || "",
+          value: cell.value
+        })),
         limit: 2000
       });
     }
@@ -4108,31 +4369,151 @@ function decodePdfHex(value = "") {
   return Buffer.from(padded, "hex").toString("utf8").replace(/\u0000/g, "");
 }
 
-function extractPdfTextFromContent(content = "") {
-  const chunks = [];
-  const blocks = Array.from(String(content || "").matchAll(/BT([\s\S]*?)ET/g)).map((match) => match[1]);
-  for (const block of blocks) {
-    for (const match of block.matchAll(/\[([\s\S]*?)\]\s*TJ/g)) {
-      const arrayContent = match[1];
-      const parts = [];
-      for (const literal of arrayContent.matchAll(/\((?:\\.|[^\\)])*\)/g)) {
-        parts.push(decodePdfLiteral(literal[0]));
-      }
-      for (const hex of arrayContent.matchAll(/<([0-9a-fA-F\s]+)>/g)) {
-        parts.push(decodePdfHex(hex[1]));
-      }
-      if (parts.length) {
-        chunks.push(parts.join(""));
-      }
+function pdfNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function roundLayoutNumber(value = 0) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function pdfTextWidth(text = "", fontSize = 12) {
+  return roundLayoutNumber(Math.max(1, String(text || "").length) * Math.max(1, Number(fontSize) || 12) * 0.52);
+}
+
+function pdfTextTokenValue(token = null) {
+  if (!token) {
+    return "";
+  }
+  if (token.type === "string" || token.type === "hex") {
+    return token.value;
+  }
+  if (token.type === "array") {
+    return token.items.map(pdfTextTokenValue).join("");
+  }
+  return "";
+}
+
+function tokenizePdfTextBlock(block = "") {
+  const tokens = [];
+  const pattern = /\((?:\\.|[^\\)])*\)|<([0-9a-fA-F\s]+)>|\[|\]|\/[^\s<>\[\]()]+|-?(?:\d+\.\d+|\d+|\.\d+)|TJ|Tj|Tf|Td|TD|Tm|T\*|'|"|[A-Za-z*]+/g;
+  let array = null;
+  for (const match of String(block || "").matchAll(pattern)) {
+    const raw = match[0];
+    let token;
+    if (raw === "[") {
+      array = [];
+      continue;
     }
-    for (const match of block.matchAll(/(\((?:\\.|[^\\)])*\))\s*(?:Tj|'|")/g)) {
-      chunks.push(decodePdfLiteral(match[1]));
+    if (raw === "]") {
+      token = { type: "array", items: array || [] };
+      array = null;
+    } else if (raw.startsWith("(")) {
+      token = { type: "string", value: decodePdfLiteral(raw) };
+    } else if (/^<[0-9a-fA-F\s]+>$/.test(raw)) {
+      token = { type: "hex", value: decodePdfHex(raw.slice(1, -1)) };
+    } else if (/^-?(?:\d+\.\d+|\d+|\.\d+)$/.test(raw)) {
+      token = { type: "number", value: pdfNumber(raw) };
+    } else {
+      token = { type: "operator", value: raw };
     }
-    for (const match of block.matchAll(/<([0-9a-fA-F\s]+)>\s*Tj/g)) {
-      chunks.push(decodePdfHex(match[1]));
+    if (array) {
+      array.push(token);
+    } else {
+      tokens.push(token);
     }
   }
-  return chunks
+  return tokens;
+}
+
+function textFromPdfArrayToken(token = null) {
+  if (!token || token.type !== "array") {
+    return "";
+  }
+  return token.items
+    .filter((item) => item.type === "string" || item.type === "hex")
+    .map((item) => item.value)
+    .join("");
+}
+
+function extractPdfLayoutFromContent(content = "", context = {}) {
+  const runs = [];
+  const chunks = [];
+  const blocks = Array.from(String(content || "").matchAll(/BT([\s\S]*?)ET/g)).map((match) => match[1]);
+  let order = Number(context.orderStart || 0);
+  for (const block of blocks) {
+    const tokens = tokenizePdfTextBlock(block);
+    let operands = [];
+    let x = 0;
+    let y = 0;
+    let fontSize = 12;
+    const emit = (text = "") => {
+      const normalized = String(text || "").replace(/\s+/g, " ").trim();
+      if (!normalized) {
+        return;
+      }
+      const bbox = {
+        x: roundLayoutNumber(x),
+        y: roundLayoutNumber(y),
+        width: pdfTextWidth(normalized, fontSize),
+        height: roundLayoutNumber(Math.max(1, fontSize))
+      };
+      order += 1;
+      chunks.push(normalized);
+      runs.push({
+        text: normalized,
+        page: Number(context.page || 1),
+        streamIndex: Number(context.streamIndex || 0),
+        order,
+        x: bbox.x,
+        y: bbox.y,
+        bbox,
+        fontSize: roundLayoutNumber(fontSize)
+      });
+      x += bbox.width;
+    };
+    for (const token of tokens) {
+      if (token.type !== "operator") {
+        operands.push(token);
+        continue;
+      }
+      const op = token.value;
+      const numbers = operands.filter((item) => item.type === "number").map((item) => item.value);
+      if (op === "Tf") {
+        fontSize = numbers.at(-1) || fontSize;
+      } else if (op === "Td" || op === "TD") {
+        x += numbers.at(-2) || 0;
+        y += numbers.at(-1) || 0;
+      } else if (op === "Tm" && numbers.length >= 6) {
+        x = numbers[numbers.length - 2];
+        y = numbers[numbers.length - 1];
+      } else if (op === "T*") {
+        y -= Math.max(1, fontSize) * 1.2;
+      } else if (op === "Tj") {
+        emit(pdfTextTokenValue(operands.at(-1)));
+      } else if (op === "TJ") {
+        emit(textFromPdfArrayToken(operands.at(-1)));
+      } else if (op === "'") {
+        y -= Math.max(1, fontSize) * 1.2;
+        emit(pdfTextTokenValue(operands.at(-1)));
+      } else if (op === "\"") {
+        y -= Math.max(1, fontSize) * 1.2;
+        emit(pdfTextTokenValue(operands.at(-1)));
+      }
+      operands = [];
+    }
+  }
+  return {
+    text: chunks.join("\n"),
+    runs,
+    nextOrder: order
+  };
+}
+
+function extractPdfTextFromContent(content = "") {
+  return extractPdfLayoutFromContent(content).text
+    .split("\n")
     .map((chunk) => chunk.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join("\n");
@@ -4144,6 +4525,8 @@ function parsePdfBasicText(buffer) {
   const parserTrace = [];
   const warnings = [];
   const textChunks = [];
+  const layoutRuns = [];
+  let layoutOrder = 0;
   let streamCount = 0;
   let decodedStreamCount = 0;
   for (const match of latin.matchAll(/<<(.*?)>>\s*stream\r?\n?([\s\S]*?)\r?\n?endstream/g)) {
@@ -4165,9 +4548,15 @@ function parsePdfBasicText(buffer) {
     }
     decodedStreamCount += 1;
     const content = decoded.toString("latin1");
-    const extracted = extractPdfTextFromContent(content);
-    if (extracted) {
-      textChunks.push(extracted);
+    const layout = extractPdfLayoutFromContent(content, {
+      page: streamCount,
+      streamIndex: streamCount,
+      orderStart: layoutOrder
+    });
+    layoutOrder = layout.nextOrder;
+    if (layout.text) {
+      textChunks.push(layout.text);
+      layoutRuns.push(...layout.runs);
     }
   }
   const title = latin.match(/\/Title\s*(\((?:\\.|[^\\)])*\))/)?.[1];
@@ -4177,22 +4566,38 @@ function parsePdfBasicText(buffer) {
   const text = textChunks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
   const elements = [];
   textChunks.forEach((chunk, index) => {
-    if (!chunk) {
-      return;
-    }
-    if (index === 0 && /^Title:\s*/i.test(chunk)) {
+    if (chunk && index === 0 && /^Title:\s*/i.test(chunk)) {
       pushStructureElement(elements, "title", chunk.replace(/^Title:\s*/i, ""), { level: 1, line: index + 1, name: "pdf-info" });
-      return;
     }
-    pushStructureElement(elements, "paragraph", chunk, { line: index + 1, name: `stream-${index + 1}` });
   });
+  for (const run of layoutRuns
+    .slice()
+    .sort((left, right) => left.page - right.page || right.y - left.y || left.x - right.x || left.order - right.order)) {
+    pushStructureElement(elements, "pdf-text-block", run.text, {
+      line: run.order,
+      name: `page-${run.page}`,
+      page: run.page,
+      bbox: run.bbox,
+      layout: {
+        strategy: "pdf-text-operator-geometry.v1",
+        page: run.page,
+        streamIndex: run.streamIndex,
+        order: run.order,
+        x: run.x,
+        y: run.y,
+        fontSize: run.fontSize
+      }
+    });
+  }
   parserTrace.push({
     stage: "pdf.text.basic",
     status: text ? "completed" : "empty",
     streamCount,
     decodedStreamCount,
     characters: text.length,
-    elements: elements.length
+    elements: elements.length,
+    layoutBlocks: layoutRuns.length,
+    layoutStrategy: "pdf-text-operator-geometry.v1"
   });
   if (!text) {
     warnings.push("pdf-basic-text-empty");
@@ -4742,9 +5147,33 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       parserTrace.push({ stage: "email.headers-body", status: "completed", characters: parsed.length });
       return { text: parsed, parserTrace, warnings };
     }
-    if (["markdown", "plain-text", "source-code"].includes(route?.id)) {
+    if (route?.id === "markdown") {
+      const parsed = parseMarkdownText(plain, metadata);
+      parserTrace.push({ stage: "text.markdown", status: "completed", characters: plain.trim().length });
+      parserTrace.push({
+        stage: "markdown.structure",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        elements: parsed.elements.length,
+        headings: parsed.headingCount,
+        listItems: parsed.listItemCount,
+        tables: parsed.tableCount,
+        codeBlocks: parsed.codeBlockCount,
+        links: parsed.linkCount,
+        images: parsed.imageCount,
+        metadata: parsed.metadataCount
+      });
+      return {
+        text: parsed.text || plain.trim(),
+        parserTrace,
+        warnings,
+        structureElements: parsed.elements,
+        structureFormat: parsed.format
+      };
+    }
+    if (["plain-text", "source-code"].includes(route?.id)) {
       const parsed = plain.trim();
-      parserTrace.push({ stage: route.id === "markdown" ? "text.markdown" : "text.direct", status: "completed", characters: parsed.length });
+      parserTrace.push({ stage: "text.direct", status: "completed", characters: parsed.length });
       return { text: parsed, parserTrace, warnings };
     }
     if (["word", "presentation", "spreadsheet", "open-document", "ebook"].includes(route?.id)) {
@@ -5121,16 +5550,60 @@ function structureElementTypeCounts(elements = []) {
 function normalizedStructureElements(document = {}) {
   const elements = Array.isArray(document.structureElements) ? document.structureElements : [];
   return elements
-    .map((element, index) => ({
-      elementId: element.elementId || stableId("element", document.sourceId, String(index), element.type || "text", element.text || ""),
-      index,
-      type: String(element.type || "text"),
-      text: String(element.text || "").trim(),
-      level: Number(element.level || 0),
-      line: Number(element.line || 0),
-      href: String(element.href || ""),
-      name: String(element.name || "")
-    }))
+    .map((element, index) => {
+      const page = Number(element.page || element.layout?.page || 0);
+      const bbox = element.bbox && typeof element.bbox === "object"
+        ? {
+            x: roundLayoutNumber(element.bbox.x),
+            y: roundLayoutNumber(element.bbox.y),
+            width: roundLayoutNumber(element.bbox.width),
+            height: roundLayoutNumber(element.bbox.height)
+          }
+        : null;
+      const layout = element.layout && typeof element.layout === "object"
+        ? {
+            strategy: String(element.layout.strategy || ""),
+            page: Number(element.layout.page || page || 0),
+            streamIndex: Number(element.layout.streamIndex || 0),
+            order: Number(element.layout.order || 0),
+            x: roundLayoutNumber(element.layout.x),
+            y: roundLayoutNumber(element.layout.y),
+            fontSize: roundLayoutNumber(element.layout.fontSize)
+          }
+        : null;
+      const table = element.table && typeof element.table === "object"
+        ? {
+            format: String(element.table.format || ""),
+            sheet: String(element.table.sheet || ""),
+            row: Number(element.table.row || 0),
+            columns: Number(element.table.columns || 0)
+          }
+        : null;
+      const cells = Array.isArray(element.cells)
+        ? element.cells.slice(0, 200).map((cell) => ({
+            ref: String(cell.ref || ""),
+            column: String(cell.column || ""),
+            row: Number(cell.row || 0),
+            header: String(cell.header || ""),
+            value: String(cell.value || "")
+          }))
+        : [];
+      return {
+        elementId: element.elementId || stableId("element", document.sourceId, String(index), element.type || "text", element.text || ""),
+        index,
+        type: String(element.type || "text"),
+        text: String(element.text || "").trim(),
+        level: Number(element.level || 0),
+        line: Number(element.line || 0),
+        href: String(element.href || ""),
+        name: String(element.name || ""),
+        page,
+        bbox,
+        layout,
+        table,
+        cells
+      };
+    })
     .filter((element) => element.text);
 }
 
@@ -5165,6 +5638,11 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       type: element.type,
       index: element.index,
       line: element.line || null,
+      page: element.page || null,
+      bbox: element.bbox || null,
+      layout: element.layout || null,
+      table: element.table || null,
+      cells: element.cells || [],
       headingPath
     })),
     elementTypes: uniqueOrdered(elements.map((element) => element.type))
@@ -5271,8 +5749,86 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       text: element.text.slice(0, 500),
       line: element.line || null,
       level: element.level || null,
-      href: element.href || ""
+      href: element.href || "",
+      page: element.page || null,
+      bbox: element.bbox || null,
+      layout: element.layout || null,
+      table: element.table || null,
+      cells: element.cells || []
     }))
+  };
+}
+
+function professionalDocumentProfile(route = {}, document = {}, elementPlan = null) {
+  const formatId = route?.formatId || route?.id || "unknown";
+  const sourceFormat = elementPlan?.sourceFormat || document.structureFormat || document.extension || formatId;
+  const base = {
+    strategy: "office-document-professional-adaptation.v1",
+    sourceFormat,
+    routeId: formatId,
+    humanReadableModes: ["portable-markdown", "portable-docx"],
+    agentReadableModes: ["agent-message-json", "result-json", "evidence-pack-json"],
+    preserves: ["sourceId", "routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash"],
+    knownLosses: []
+  };
+  if (formatId === "pdf") {
+    return {
+      ...base,
+      parserProfile: "pdf.text-layout-ocr-route",
+      preserves: [...base.preserves, "page", "bbox", "layout.order"],
+      conversionTargets: ["markdown-with-page-blocks", "docx-review-copy", "agent-json-with-layout", "evidence-pack"],
+      knownLosses: ["approximate-text-bbox", "complex-vector-layout-not-fully-reconstructed"]
+    };
+  }
+  if (formatId === "word") {
+    return {
+      ...base,
+      parserProfile: "wordprocessingml-paragraph-style-route",
+      preserves: [...base.preserves, "headings", "paragraphs", "lists"],
+      conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-element-refs", "evidence-pack"],
+      knownLosses: ["advanced-openxml-styling-not-rendered"]
+    };
+  }
+  if (formatId === "presentation") {
+    return {
+      ...base,
+      parserProfile: "presentationml-slide-route",
+      preserves: [...base.preserves, "slide-order", "slide-heading", "body-paragraphs"],
+      conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-refs", "evidence-pack"],
+      knownLosses: ["speaker-notes-and-visual-layer-geometry-partial"]
+    };
+  }
+  if (formatId === "spreadsheet") {
+    return {
+      ...base,
+      parserProfile: "spreadsheetml-sheet-row-cell-route",
+      preserves: [...base.preserves, "sheet", "row", "column", "cellRefs", "headers", "timeSignals"],
+      conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates", "evidence-pack"],
+      knownLosses: ["formulas-preserved-as-values-when-cached-value-only"]
+    };
+  }
+  if (formatId === "markdown") {
+    return {
+      ...base,
+      parserProfile: "markdown-block-element-route",
+      preserves: [...base.preserves, "heading-levels", "tables", "code-blocks", "links", "images", "frontmatter"],
+      conversionTargets: ["clean-markdown", "valid-openxml-docx", "agent-json-with-block-refs", "evidence-pack"],
+      knownLosses: ["custom-markdown-extension-rendering-not-normalized"]
+    };
+  }
+  if (formatId === "open-document") {
+    return {
+      ...base,
+      parserProfile: "opendocument-content-xml-route",
+      preserves: [...base.preserves, "headings", "paragraphs", "tables"],
+      conversionTargets: ["markdown-outline", "docx-review-copy", "agent-json-with-element-refs", "evidence-pack"],
+      knownLosses: ["advanced-odf-styling-not-rendered"]
+    };
+  }
+  return {
+    ...base,
+    parserProfile: `${formatId}-route`,
+    conversionTargets: ["portable-markdown", "agent-json", "evidence-pack"]
   };
 }
 
@@ -5732,6 +6288,7 @@ function buildCorpusPlan(documents = [], input = {}) {
     const route = buildDocumentRoute(document);
     const windowPlan = buildWindowPlan(document, input);
     const elementPlan = buildDocumentElementPlan(document, windowPlan);
+    const formatConversionProfile = professionalDocumentProfile(route, document, elementPlan);
     const textCharacters = Number(document.totalTextCharacters || document.text.length || 0);
     const distillable = Boolean(document.text || textCharacters > 0 || windowPlan.windowCount > 0);
     return {
@@ -5753,6 +6310,7 @@ function buildCorpusPlan(documents = [], input = {}) {
       timeSignals: document.timeSignals || [],
       route,
       elementPlan,
+      formatConversionProfile,
       windowPlan,
       parserTrace: document.parserTrace || [],
       parseWarnings: document.parseWarnings || [],
@@ -9286,6 +9844,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "payload.stream-text",
         "text.direct",
         "text.markdown",
+        "markdown.structure",
         "markup.structure",
         "structured.json",
         "config.key-value",
@@ -9336,9 +9895,10 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "list-item", "link", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
-      structuredFormats: ["html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "list-item", "blockquote", "link", "image", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "table.sheet", "table.row", "cells.ref"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.cells"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -9346,6 +9906,14 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "docling.docitem-labels",
         "llama-index.nodes-with-metadata"
       ]
+    },
+    formatConversion: {
+      supported: true,
+      strategy: "office-document-professional-adaptation.v1",
+      professionalFormats: ["pdf", "word", "presentation", "spreadsheet", "markdown", "open-document"],
+      humanReadableTargets: ["portable-markdown", "portable-docx", "workspace-package-zip"],
+      agentReadableTargets: ["agent-message-json", "result-json", "evidence-pack-json"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs"]
     },
     runtimeDoctor: runtimeStatus,
     classification: {

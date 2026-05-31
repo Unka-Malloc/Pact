@@ -382,6 +382,14 @@ try {
   assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
   assert.equal(capabilities.payload.elementModel.windowingStrategy, "element-aware-by-title-windowing.v1");
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("bbox"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
+  assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
+  assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
+  assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
+  assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".rtf"), true);
