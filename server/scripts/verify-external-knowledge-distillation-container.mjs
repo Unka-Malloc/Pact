@@ -394,6 +394,8 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ipynb"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ts"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".py"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".diff"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".patch"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("payload.file-ref"), true);
@@ -403,6 +405,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("notebook.cells"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diff.unified"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
@@ -742,6 +745,19 @@ try {
               "",
               "if __name__ == '__main__':",
               "    main()"
+            ].join("\n"),
+            "changes/runtime.diff": [
+              "diff --git a/src/runtime.py b/src/runtime.py",
+              "index 1111111..2222222 100644",
+              "--- a/src/runtime.py",
+              "+++ b/src/runtime.py",
+              "@@ -6,7 +6,9 @@ class ProjectConvergenceRuntime:",
+              "     def build_evidence_pack(self, source):",
+              "-        return json.dumps({'source': str(source)})",
+              "+        routed = {'source': str(source), 'mode': 'diff-aware'}",
+              "+        routed['parser'] = 'diff.unified'",
+              "+        return json.dumps(routed)",
+              ""
             ].join("\n")
           })
         }
@@ -784,6 +800,11 @@ try {
   assert.equal(sourceChild.parentSourceId, "container-project-package");
   assert.equal(sourceChild.route.formatId, "source-code");
   assert.equal(sourceChild.parserTrace.some((trace) => trace.stage === "code.structure" && trace.status === "completed" && trace.language === "python" && trace.imports >= 2 && trace.symbols >= 3 && trace.entryPoints >= 1), true);
+  const diffChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!changes/runtime.diff");
+  assert.ok(diffChild, "project package diff child must be expanded");
+  assert.equal(diffChild.parentSourceId, "container-project-package");
+  assert.equal(diffChild.route.formatId, "diff");
+  assert.equal(diffChild.parserTrace.some((trace) => trace.stage === "diff.unified" && trace.status === "completed" && trace.files === 1 && trace.hunks === 1 && trace.additions === 3 && trace.deletions === 1), true);
   const candidateSourceIds = new Set(projectPackageRun.payload.result.candidates.flatMap((candidate) => candidate.sourceIds || []));
   assert.equal(candidateSourceIds.has("container-project-package!docs/architecture.md"), true);
   assert.equal(candidateSourceIds.has("container-project-package!finance/invoice.csv"), true);
@@ -791,6 +812,7 @@ try {
   assert.equal(candidateSourceIds.has("container-project-package!diagrams/system.mmd"), true);
   assert.equal(candidateSourceIds.has("container-project-package!notebooks/experiment.ipynb"), true);
   assert.equal(candidateSourceIds.has("container-project-package!src/runtime.py"), true);
+  assert.equal(candidateSourceIds.has("container-project-package!changes/runtime.diff"), true);
   assert.equal(projectPackageRun.payload.result.classification.coreGroupCount >= 2, true);
   assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
     group.sourceIds.includes("container-project-package!docs/architecture.md") &&

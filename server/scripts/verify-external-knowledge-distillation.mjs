@@ -575,6 +575,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diagram.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("notebook.cells"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("code.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diff.unified"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.basic"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.text.pdftotext"), true);
@@ -619,7 +620,7 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
-  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs"]) {
+  for (const extension of [".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
       true,
@@ -805,6 +806,27 @@ try {
             "export function startServer(port: number) {",
             "  return createServer().listen(port);",
             "}"
+          ].join("\n"))
+        },
+        {
+          sourceId: "source-36",
+          title: "Runtime Change Patch",
+          fileName: "runtime.patch",
+          mediaType: "text/x-patch",
+          contentBase64: base64Text([
+            "diff --git a/src/runtime.ts b/src/runtime.ts",
+            "index 1a2b3c4..5d6e7f8 100644",
+            "--- a/src/runtime.ts",
+            "+++ b/src/runtime.ts",
+            "@@ -8,7 +8,10 @@ export class DistillationRuntime {",
+            "   async routeSource(source: unknown) {",
+            "-    return buildEvidencePack(source);",
+            "+    const routed = await routeByFormat(source);",
+            "+    const evidence = buildEvidencePack(routed);",
+            "+    evidence.parserTrace.push('diff.unified');",
+            "+    return evidence;",
+            "   }",
+            " }"
           ].join("\n"))
         },
         {
@@ -1013,6 +1035,10 @@ try {
   assert.equal(sourcePayloadCorpus.route.formatId, "source-code");
   assert.equal(sourcePayloadCorpus.parserTrace.some((trace) => trace.stage === "code.structure" && trace.status === "completed" && trace.language === "typescript" && trace.imports >= 2 && trace.symbols >= 3 && trace.entryPoints >= 1 && trace.todos >= 1), true);
   assert.match(sourcePayloadCorpus.windowPlan.windows[0]?.excerpt || "", /DistillationRuntime|routeSource|startServer/);
+  const diffPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-36");
+  assert.equal(diffPayloadCorpus.route.formatId, "diff");
+  assert.equal(diffPayloadCorpus.parserTrace.some((trace) => trace.stage === "diff.unified" && trace.status === "completed" && trace.files === 1 && trace.hunks === 1 && trace.additions === 4 && trace.deletions === 1), true);
+  assert.match(diffPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /src\/runtime\.ts|routeByFormat|diff\.unified/);
   const docxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-8");
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.word.structured" && trace.status === "completed"), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");

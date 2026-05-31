@@ -371,6 +371,18 @@ const FORMAT_ROUTES = Object.freeze([
     referenceFrameworks: ["llama-index", "haystack", "unstructured"]
   },
   {
+    id: "diff",
+    label: "Patch / Diff",
+    extensions: [".diff", ".patch"],
+    mediaTypes: ["text/x-diff", "text/x-patch"],
+    contentShape: "change-set",
+    preferredParser: "diff.unified",
+    fallbackParsers: ["text.direct"],
+    parserChain: ["diff.route", "diff.unified", "text.direct"],
+    streamingUnit: "hunk",
+    referenceFrameworks: ["haystack", "llama-index", "graphrag"]
+  },
+  {
     id: "source-code",
     label: "Source code",
     extensions: [
@@ -958,7 +970,7 @@ function isStreamableTextRoute(route = null, metadata = {}) {
   if (!route) {
     return false;
   }
-  if (["markdown", "plain-text", "source-code", "config", "diagram", "notebook"].includes(route.id)) {
+  if (["markdown", "plain-text", "source-code", "config", "diagram", "notebook", "diff"].includes(route.id)) {
     return true;
   }
   const extension = normalizeExtension(metadata.extension || extensionFromFileName(metadata.fileName || ""));
@@ -1615,6 +1627,121 @@ function parseSourceCodeText(text = "", metadata = {}) {
     symbolCount: symbols.length,
     entryPointCount: entryPoints.length,
     todoCount: todos.length
+  };
+}
+
+function parseUnifiedDiffText(text = "") {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const records = [];
+  const files = [];
+  let currentFile = null;
+  let currentHunk = null;
+  let additions = 0;
+  let deletions = 0;
+  let hunkCount = 0;
+
+  const ensureFile = () => {
+    if (!currentFile) {
+      currentFile = {
+        oldPath: "",
+        newPath: "",
+        hunks: 0,
+        additions: 0,
+        deletions: 0
+      };
+      files.push(currentFile);
+    }
+    return currentFile;
+  };
+
+  const completeFileLabel = (file) => file.newPath || file.oldPath || `file-${files.length}`;
+
+  for (const rawLine of lines.slice(0, 50_000)) {
+    const line = rawLine || "";
+    let match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (match) {
+      currentFile = {
+        oldPath: match[1],
+        newPath: match[2],
+        hunks: 0,
+        additions: 0,
+        deletions: 0
+      };
+      files.push(currentFile);
+      currentHunk = null;
+      records.push(`Diff file: ${completeFileLabel(currentFile)} from ${currentFile.oldPath}`);
+      continue;
+    }
+    match = line.match(/^---\s+(?:a\/)?(.+)$/);
+    if (match && !line.startsWith("--- /dev/null")) {
+      ensureFile().oldPath = match[1];
+      continue;
+    }
+    match = line.match(/^\+\+\+\s+(?:b\/)?(.+)$/);
+    if (match && !line.startsWith("+++ /dev/null")) {
+      const file = ensureFile();
+      file.newPath = match[1];
+      records.push(`Diff file: ${completeFileLabel(file)} from ${file.oldPath || "unknown"}`);
+      continue;
+    }
+    match = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s*@@\s*(.*)$/);
+    if (match) {
+      const file = ensureFile();
+      hunkCount += 1;
+      file.hunks += 1;
+      currentHunk = {
+        oldStart: Number(match[1]),
+        oldLines: Number(match[2] || 1),
+        newStart: Number(match[3]),
+        newLines: Number(match[4] || 1),
+        header: match[5] || ""
+      };
+      records.push(`Diff hunk ${completeFileLabel(file)} -${currentHunk.oldStart},${currentHunk.oldLines} +${currentHunk.newStart},${currentHunk.newLines}${currentHunk.header ? ` ${currentHunk.header}` : ""}`);
+      continue;
+    }
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      const file = ensureFile();
+      additions += 1;
+      file.additions += 1;
+      if (file.additions <= 80) {
+        records.push(`Diff added ${completeFileLabel(file)}: ${line.slice(1).trim().slice(0, 500)}`);
+      }
+      continue;
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      const file = ensureFile();
+      deletions += 1;
+      file.deletions += 1;
+      if (file.deletions <= 80) {
+        records.push(`Diff removed ${completeFileLabel(file)}: ${line.slice(1).trim().slice(0, 500)}`);
+      }
+      continue;
+    }
+    if (currentHunk && line.startsWith(" ") && line.trim()) {
+      const file = ensureFile();
+      if (records.length < 1200) {
+        records.push(`Diff context ${completeFileLabel(file)}: ${line.trim().slice(0, 300)}`);
+      }
+    }
+  }
+
+  if (!records.length) {
+    const fallback = String(text || "").trim();
+    if (fallback) {
+      records.push(`Diff text: ${fallback.slice(0, 4000)}`);
+    }
+  }
+
+  for (const file of files.slice(0, 80)) {
+    records.unshift(`Diff summary ${completeFileLabel(file)}: ${file.hunks} hunks, +${file.additions}, -${file.deletions}`);
+  }
+
+  return {
+    text: records.join("\n"),
+    fileCount: files.length,
+    hunkCount,
+    additions,
+    deletions
   };
 }
 
@@ -3536,6 +3663,19 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       });
       return { text: parsed.text || text, parserTrace, warnings: [] };
     }
+    if (route?.id === "diff") {
+      const parsed = parseUnifiedDiffText(text);
+      parserTrace.push({
+        stage: "diff.unified",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        files: parsed.fileCount,
+        hunks: parsed.hunkCount,
+        additions: parsed.additions,
+        deletions: parsed.deletions
+      });
+      return { text: parsed.text || text, parserTrace, warnings: [] };
+    }
     if (route?.id === "diagram") {
       const parsed = parseDiagramText(text, metadata);
       parserTrace.push({
@@ -3626,6 +3766,19 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
         symbols: parsed.symbolCount,
         entryPoints: parsed.entryPointCount,
         todos: parsed.todoCount
+      });
+      return { text: parsed.text || plain.trim(), parserTrace, warnings };
+    }
+    if (route?.id === "diff") {
+      const parsed = parseUnifiedDiffText(plain);
+      parserTrace.push({
+        stage: "diff.unified",
+        status: parsed.text ? "completed" : "empty",
+        characters: parsed.text.length,
+        files: parsed.fileCount,
+        hunks: parsed.hunkCount,
+        additions: parsed.additions,
+        deletions: parsed.deletions
       });
       return { text: parsed.text || plain.trim(), parserTrace, warnings };
     }
@@ -3994,6 +4147,7 @@ function streamParserStage(route = null, metadata = {}) {
   if (route?.id === "config") return "config.key-value";
   if (route?.id === "diagram") return "diagram.structure";
   if (route?.id === "notebook") return "notebook.cells";
+  if (route?.id === "diff") return "diff.unified";
   if (route?.id === "spreadsheet" && metadata.extension === ".csv") return "table.csv";
   if (route?.id === "spreadsheet" && metadata.extension === ".tsv") return "table.tsv";
   if (route?.id === "json") return "structured.jsonl";
@@ -4012,6 +4166,9 @@ function transformStreamingTextChunk(chunk = "", route = null, metadata = {}) {
   }
   if (route?.id === "source-code") {
     return parseSourceCodeText(chunk, metadata).text || String(chunk || "");
+  }
+  if (route?.id === "diff") {
+    return parseUnifiedDiffText(chunk).text || String(chunk || "");
   }
   if (metadata.extension === ".html" || metadata.extension === ".htm" || metadata.extension === ".xml") {
     return stripMarkup(chunk);
@@ -7937,6 +8094,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "diagram.structure",
         "notebook.cells",
         "code.structure",
+        "diff.unified",
         "table.csv",
         "table.tsv",
         "email.headers-body",
