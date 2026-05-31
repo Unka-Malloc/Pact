@@ -49,7 +49,6 @@ The `CLIENT_*` documents describe the destructive desktop client refactor, not a
 
 Direct `useConsole()` callers:
 
-- `server-web/views/DashboardView.vue`
 - `server-web/views/FeedView.vue`
 - `server-web/views/ApprovalFlowView.vue`
 - `server-web/views/SourcesView.vue`
@@ -227,6 +226,7 @@ Required direction:
 - `server-web/views/admin/RuntimeDownloadsView.vue`: runtime dependency types, status helpers, source hints, trigger guards, and bridge calls moved to `server-web/lib/runtime-dependencies.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/admin/ProductionHealthView.vue`: production health/baseline loading, status labels, elapsed time formatting, and date formatting moved to `server-web/lib/production-health.ts`. The view no longer imports `bridge` directly.
 - `server-web/views/KnowledgeView.vue` and `server-web/components/KnowledgeImportCard.vue`: knowledge export URL generation, normalized document links, and document preview parsing moved to `server-web/lib/knowledge-documents.ts`. Both files no longer import `bridge` directly.
+- `server-web/views/DashboardView.vue`: dashboard state now comes from `serverConsoleShellContext`; the view no longer imports `useConsole()` directly.
 
 ## Verification Gates
 

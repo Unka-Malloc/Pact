@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useConsole } from '../composables/useConsole';
+import { useServerConsoleShellContext } from '../composables/serverConsoleShellContext';
 import StatusPill from '../components/StatusPill.vue';
 
 const {
@@ -12,7 +12,7 @@ const {
   dismissDashboardAlert,
   knowledgeConsole,
   openDashboardAlert,
-} = useConsole();
+} = useServerConsoleShellContext();
 
 const clientTotalCount = computed(() => consoleState.value?.clients?.summary?.totalCount || 0);
 const clientOfflineCount = computed(() => consoleState.value?.clients?.summary?.offlineCount || 0);
