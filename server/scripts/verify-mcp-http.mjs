@@ -249,6 +249,11 @@ try {
   assert.equal(handshake.payload.payload.server.serverVersion, "0.0.1");
   assert.equal(handshake.payload.payload.identity.keyId, discovery.payload.identity.keyId);
   assert.equal(handshake.payload.payload.endpoints.mcpUrl, `${server.url}/mcp`);
+  assert.equal(handshake.payload.payload.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.equal(handshake.payload.payload.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(handshake.payload.payload.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
+  assert.equal(handshake.payload.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.ok(handshake.payload.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   assert.equal(handshake.payload.signature.algorithm, "Ed25519");
   assert.equal(
     verifyMcpHandshakeSignature({
