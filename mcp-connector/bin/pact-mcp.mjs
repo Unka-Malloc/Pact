@@ -95,7 +95,7 @@ const AGENT_CLI_TARGETS = [
     commandNames: ["opencode"]
   }
 ];
-const ORB_AGENT_CLI_TARGETS = AGENT_CLI_TARGETS.filter((descriptor) => descriptor.target !== "codex");
+const ORB_AGENT_CLI_TARGETS = AGENT_CLI_TARGETS;
 const APP_DISCOVERY_NAME_HINTS = [
   "pact",
   "antigravity",
@@ -588,6 +588,13 @@ function uniqueValues(values) {
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function assertSafeEnvName(name) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(String(name || ""))) {
+    throw new Error(`Invalid environment variable name: ${name}`);
+  }
+  return String(name);
 }
 
 function expandHomePath(value) {
@@ -1231,6 +1238,112 @@ async function installCodex({ baseUrl, token, tokenEnv, codexBin, marketplaceRoo
     pluginRoot: plugin.pluginRoot,
     marketplacePath: plugin.marketplacePath,
     mcpGet: mcpGet.stdout
+  };
+}
+
+function codexMcpAddArgs({ baseUrl, tokenEnv }) {
+  return [
+    "mcp",
+    "add",
+    MCP_SERVER_NAME,
+    "--url",
+    `${baseUrl}/mcp`,
+    "--bearer-token-env-var",
+    tokenEnv
+  ];
+}
+
+function codexRemoteTokenEnvScript() {
+  return [
+    "set -e",
+    "IFS= read -r token",
+    "env_name=\"$PACT_TOKEN_ENV\"",
+    "case \"$env_name\" in",
+    "  ''|*[!A-Za-z0-9_]*|[0-9]*) echo 'invalid token env' >&2; exit 2 ;;",
+    "esac",
+    "mkdir -p \"$HOME/.pact/mcp\"",
+    "umask 077",
+    "escaped=$(printf '%s' \"$token\" | sed \"s/'/'\\\\''/g\")",
+    "printf \"export %s='%s'\\n\" \"$env_name\" \"$escaped\" > \"$HOME/.pact/mcp/env\"",
+    "profile=\"$HOME/.profile\"",
+    "if ! grep -q 'Pact MCP token env' \"$profile\" 2>/dev/null; then",
+    "  printf '\\n# Pact MCP token env\\n[ -f \"$HOME/.pact/mcp/env\" ] && . \"$HOME/.pact/mcp/env\"\\n' >> \"$profile\"",
+    "fi"
+  ].join("\n");
+}
+
+async function installCodexOrb({ baseUrl, token, tokenEnv, orbBin, vmName, vmUser, codexBin }) {
+  if (!vmName || !vmUser || !codexBin) {
+    throw new Error("Codex VM install requires a discovered or explicit OrbStack VM, user, and codex CLI path.");
+  }
+  assertSafeEnvName(tokenEnv);
+  const urlBase = vmBaseUrl(baseUrl);
+  const envWrite = await runWithInput(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    "env",
+    `PACT_TOKEN_ENV=${tokenEnv}`,
+    "bash",
+    "-lc",
+    codexRemoteTokenEnvScript()
+  ], `${token}\n`, { allowFailure: true });
+  if (!envWrite.ok) {
+    throw new Error(`Codex VM token environment setup failed: ${envWrite.stderr || envWrite.stdout}`);
+  }
+  await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, ...codexMcpAddArgs({ baseUrl: urlBase, tokenEnv })]);
+  const mcpGet = await run(orbBin, [
+    "-m",
+    vmName,
+    "-u",
+    vmUser,
+    "env",
+    `${tokenEnv}=${token}`,
+    codexBin,
+    "mcp",
+    "get",
+    MCP_SERVER_NAME
+  ]);
+  return {
+    installMode: "codex-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    url: `${urlBase}/mcp`,
+    tokenEnv,
+    mcpGetHasPact: mcpOutputHasPact(mcpGet)
+  };
+}
+
+async function installCodexRemote({ baseUrl, token, tokenEnv, context, codexBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !codexBin) {
+    throw new Error("Codex remote install requires a discovered remote context and codex CLI path.");
+  }
+  assertSafeEnvName(tokenEnv);
+  const urlBase = await remoteClientBaseUrl(context, baseUrl);
+  const envWrite = await remoteLinuxShellWithInput(context, codexRemoteTokenEnvScript(), `${token}\n`, {
+    PACT_TOKEN_ENV: tokenEnv
+  });
+  if (!envWrite.ok) {
+    throw new Error(`Codex remote token environment setup failed in ${remoteContextLabel(context)}: ${envWrite.stderr || envWrite.stdout}`);
+  }
+  await runRemoteLinuxCommand(context, [codexBin, "mcp", "remove", MCP_SERVER_NAME], { allowFailure: true });
+  await runRemoteLinuxCommand(context, [codexBin, ...codexMcpAddArgs({ baseUrl: urlBase, tokenEnv })]);
+  const mcpGet = await runRemoteLinuxCommand(context, [
+    "env",
+    `${tokenEnv}=${token}`,
+    codexBin,
+    "mcp",
+    "get",
+    MCP_SERVER_NAME
+  ]);
+  return {
+    installMode: `codex-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    url: `${urlBase}/mcp`,
+    tokenEnv,
+    mcpGetHasPact: mcpOutputHasPact(mcpGet)
   };
 }
 
@@ -2071,6 +2184,43 @@ async function uninstallCodex({ tokenEnv, codexBin, marketplaceRoot }) {
     removedPlugin: removePlugin.ok,
     pluginRoot,
     marketplaceBackupPath
+  };
+}
+
+async function uninstallCodexOrb({ orbBin, vmName, vmUser, codexBin }) {
+  if (!vmName || !vmUser || !codexBin) {
+    throw new Error("Codex VM uninstall requires a discovered or explicit OrbStack VM, user, and codex CLI path.");
+  }
+  const remove = await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "remove", MCP_SERVER_NAME], {
+    allowFailure: true
+  });
+  const get = await run(orbBin, ["-m", vmName, "-u", vmUser, codexBin, "mcp", "get", MCP_SERVER_NAME], {
+    allowFailure: true
+  });
+  return {
+    uninstallMode: "codex-orbstack-mcp-cli",
+    vm: vmName,
+    vmUser,
+    removedMcp: remove.ok,
+    mcpGetHasPact: get.ok && mcpOutputHasPact(get)
+  };
+}
+
+async function uninstallCodexRemote({ context, codexBin }) {
+  if (!context?.kind || !context?.id || !context?.bin || !codexBin) {
+    throw new Error("Codex remote uninstall requires a discovered remote context and codex CLI path.");
+  }
+  const remove = await runRemoteLinuxCommand(context, [codexBin, "mcp", "remove", MCP_SERVER_NAME], {
+    allowFailure: true
+  });
+  const get = await runRemoteLinuxCommand(context, [codexBin, "mcp", "get", MCP_SERVER_NAME], {
+    allowFailure: true
+  });
+  return {
+    uninstallMode: `codex-${context.kind}-mcp-cli`,
+    remote: remoteContextLabel(context),
+    removedMcp: remove.ok,
+    mcpGetHasPact: get.ok && mcpOutputHasPact(get)
   };
 }
 
@@ -3781,12 +3931,12 @@ function candidateIdentity(candidate) {
     const claudeBin = String(overrides["claude-bin"] || "").trim();
     return claudeBin ? `claude-code:local:${claudeBin}` : "";
   }
-  if (location === "orb" && ["gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
+  if (location === "orb" && ["codex", "gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
     const vmName = String(overrides["orb-vm"] || "").trim();
     const vmUser = String(overrides["orb-user"] || "").trim();
     return vmName && vmUser ? `${candidate.target}:orb:${vmName}:${vmUser}` : "";
   }
-  if (isGenericRemoteLocation(location) && ["gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
+  if (isGenericRemoteLocation(location) && ["codex", "gemini-cli", "copilot", "kilo-code", "opencode"].includes(candidate?.target)) {
     const remoteId = String(overrides["remote-id"] || "").trim();
     return remoteId ? `${candidate.target}:${location}:${remoteId}` : "";
   }
@@ -5119,13 +5269,31 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
     try {
       let clientResult = null;
       if (target === "codex") {
-        clientResult = await installCodex({
-          baseUrl: settings.baseUrl,
-          token,
-          tokenEnv: settings.tokenEnv,
-          codexBin: settings.codexBin,
-          marketplaceRoot: settings.marketplaceRoot
-        });
+        clientResult = remoteContext
+          ? await installCodexRemote({
+              baseUrl: settings.baseUrl,
+              token,
+              tokenEnv: settings.tokenEnv,
+              context: remoteContext,
+              codexBin: settings.codexBin
+            })
+          : settings.executionLocation === "orb"
+          ? await installCodexOrb({
+              baseUrl: settings.baseUrl,
+              token,
+              tokenEnv: settings.tokenEnv,
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              codexBin: settings.codexBin
+            })
+          : await installCodex({
+              baseUrl: settings.baseUrl,
+              token,
+              tokenEnv: settings.tokenEnv,
+              codexBin: settings.codexBin,
+              marketplaceRoot: settings.marketplaceRoot
+            });
       } else if (target === "claude-code") {
         clientResult = remoteContext
           ? await installClaudeCodeRemote({
@@ -5519,11 +5687,23 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
   for (const target of targets) {
     try {
       if (target === "codex") {
-        uninstalled[target] = await uninstallCodex({
-          tokenEnv: settings.tokenEnv,
-          codexBin: settings.codexBin,
-          marketplaceRoot: settings.marketplaceRoot
-        });
+        uninstalled[target] = remoteContext
+          ? await uninstallCodexRemote({
+              context: remoteContext,
+              codexBin: settings.codexBin
+            })
+          : settings.executionLocation === "orb"
+          ? await uninstallCodexOrb({
+              orbBin: settings.orbBin,
+              vmName: settings.orbVm,
+              vmUser: settings.orbUser,
+              codexBin: settings.codexBin
+            })
+          : await uninstallCodex({
+              tokenEnv: settings.tokenEnv,
+              codexBin: settings.codexBin,
+              marketplaceRoot: settings.marketplaceRoot
+            });
       } else if (target === "claude-code") {
         uninstalled[target] = remoteContext
           ? await uninstallClaudeCodeRemote({
