@@ -739,9 +739,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["formula recognition", "high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "spreadsheet sheet/row/cell coordinate metadata"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "spreadsheet sheet/row/cell coordinate metadata", "PresentationML shape geometry for slide element bbox metadata"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
-    gaps: ["full layout block geometry", "native table coordinate objects and formula recognition beyond text-level elements"]
+    gaps: ["full PDF and Word layout block geometry", "native table coordinate objects and formula recognition beyond text-level elements"]
   },
   "llama-index": {
     absorbed: ["agent-message-json", "graphEvidence text units with metadata", "evidence query API", "node-style element references on windows and text units"],
@@ -764,9 +764,9 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, code, and formulas", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, code, formulas, and slide shapes", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
-    gaps: ["high-fidelity PDF and Office layout coordinates", "domain-specific chunk enrichment plugins"]
+    gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
 });
 
@@ -4127,6 +4127,43 @@ function parseDocx(entries = []) {
   };
 }
 
+function pptxEmuToPoints(value = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? roundLayoutNumber(parsed / 12700) : 0;
+}
+
+function pptxShapeName(shapeXml = "", fallback = "") {
+  const nameTag = String(shapeXml || "").match(/<[^:>]*:?cNvPr\b[^>]*>/i)?.[0] || "";
+  return xmlLocalAttribute(nameTag, "name") || fallback;
+}
+
+function pptxShapeGeometry(shapeXml = "", slideNumber = 0, order = 0) {
+  const xfrm = String(shapeXml || "").match(/<[^:>]*:?xfrm\b[\s\S]*?<\/[^:>]*:?xfrm>/i)?.[0] || "";
+  const offTag = xfrm.match(/<[^:>]*:?off\b[^>]*>/i)?.[0] || "";
+  const extTag = xfrm.match(/<[^:>]*:?ext\b[^>]*>/i)?.[0] || "";
+  if (!offTag && !extTag) {
+    return { bbox: null, layout: null };
+  }
+  const bbox = {
+    x: pptxEmuToPoints(xmlLocalAttribute(offTag, "x")),
+    y: pptxEmuToPoints(xmlLocalAttribute(offTag, "y")),
+    width: pptxEmuToPoints(xmlLocalAttribute(extTag, "cx")),
+    height: pptxEmuToPoints(xmlLocalAttribute(extTag, "cy"))
+  };
+  return {
+    bbox,
+    layout: {
+      strategy: "presentationml-shape-geometry.v1",
+      page: slideNumber,
+      order,
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height
+    }
+  };
+}
+
 function parsePptx(entries = []) {
   const slideNames = entries
     .map((entry) => entry.name)
@@ -4134,8 +4171,46 @@ function parsePptx(entries = []) {
     .sort((left, right) => Number(left.match(/slide(\d+)/)?.[1] || 0) - Number(right.match(/slide(\d+)/)?.[1] || 0));
   const elements = [];
   let paragraphCount = 0;
+  let shapeCount = 0;
+  let geometryCount = 0;
   for (const [index, name] of slideNames.entries()) {
+    const slideNumber = index + 1;
     const xml = zipEntryText(entries, name);
+    const shapeBlocks = Array.from(xml.matchAll(/<[^:>]*:?sp\b[\s\S]*?<\/[^:>]*:?sp>/g))
+      .map((match) => match[0])
+      .filter((shapeXml) => textFromXmlTextNodes(shapeXml));
+    if (shapeBlocks.length) {
+      for (const [shapeIndex, shapeXml] of shapeBlocks.entries()) {
+        const paragraphs = Array.from(shapeXml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
+          .map((match) => textFromXmlTextNodes(match[0]))
+          .filter(Boolean);
+        const text = (paragraphs.length ? paragraphs : [textFromXmlTextNodes(shapeXml)])
+          .filter(Boolean)
+          .join("\n");
+        if (!text) {
+          continue;
+        }
+        shapeCount += 1;
+        const geometry = pptxShapeGeometry(shapeXml, slideNumber, shapeCount);
+        if (geometry.bbox) {
+          geometryCount += 1;
+        }
+        const shapeName = pptxShapeName(shapeXml, `shape-${shapeIndex + 1}`);
+        const type = shapeIndex === 0 ? "heading" : "slide-shape";
+        pushStructureElement(elements, type, shapeIndex === 0 ? `Slide ${slideNumber}: ${text}` : text, {
+          level: shapeIndex === 0 ? 1 : 0,
+          line: shapeCount,
+          name: `${name}#${shapeName}`,
+          page: slideNumber,
+          bbox: geometry.bbox,
+          layout: geometry.layout
+        });
+        if (shapeIndex > 0) {
+          paragraphCount += Math.max(1, paragraphs.length);
+        }
+      }
+      continue;
+    }
     const paragraphs = Array.from(xml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
       .map((match) => textFromXmlTextNodes(match[0]))
       .filter(Boolean);
@@ -4144,16 +4219,18 @@ function parsePptx(entries = []) {
     if (!slideText.length) {
       continue;
     }
-    pushStructureElement(elements, "heading", `Slide ${index + 1}: ${slideText[0]}`, {
+    pushStructureElement(elements, "heading", `Slide ${slideNumber}: ${slideText[0]}`, {
       level: 1,
-      line: index + 1,
-      name
+      line: slideNumber,
+      name,
+      page: slideNumber
     });
     for (const paragraph of slideText.slice(paragraphs.length ? 1 : 0)) {
       paragraphCount += 1;
       pushStructureElement(elements, "paragraph", paragraph, {
         line: paragraphCount,
-        name
+        name,
+        page: slideNumber
       });
     }
   }
@@ -4167,6 +4244,8 @@ function parsePptx(entries = []) {
     elements,
     format: "pptx",
     slideCount: slideNames.length,
+    shapeCount,
+    geometryCount,
     paragraphCount,
     headingCount: counts.heading || 0
   };
@@ -5609,6 +5688,9 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           characters: parsed.text.length,
           elements: parsed.elements.length,
           slides: parsed.slideCount,
+          shapes: parsed.shapeCount,
+          geometries: parsed.geometryCount,
+          layoutStrategy: parsed.geometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
         });
@@ -5966,6 +6048,8 @@ function normalizedStructureElements(document = {}) {
             order: Number(element.layout.order || 0),
             x: roundLayoutNumber(element.layout.x),
             y: roundLayoutNumber(element.layout.y),
+            width: roundLayoutNumber(element.layout.width),
+            height: roundLayoutNumber(element.layout.height),
             fontSize: roundLayoutNumber(element.layout.fontSize)
           }
         : null;
@@ -6191,8 +6275,8 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
     return {
       ...base,
       parserProfile: "presentationml-slide-route",
-      preserves: [...base.preserves, "slide-order", "slide-heading", "body-paragraphs"],
-      conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-refs", "evidence-pack"],
+      preserves: [...base.preserves, "slide-order", "slide-heading", "body-paragraphs", "shape-bbox", "shape-order"],
+      conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout", "evidence-pack"],
       knownLosses: ["speaker-notes-and-visual-layer-geometry-partial"]
     };
   }
@@ -10381,9 +10465,9 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "list-item", "blockquote", "link", "image", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "list-item", "blockquote", "link", "image", "table-header", "table-row", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "table.sheet", "table.row", "cells.ref"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "table.sheet", "table.row", "cells.ref"],
       graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.cells"],
       referencePatterns: [
         "unstructured.elements",

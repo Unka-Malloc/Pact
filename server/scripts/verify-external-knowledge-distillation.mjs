@@ -264,7 +264,10 @@ const samplePptxBase64 = base64Zip({
   "ppt/slides/slide1.xml": [
     "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" ",
     "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
-    "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
+    "<p:cSld><p:spTree>",
+    "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
+    "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable.</a:t></a:r></a:p></p:txBody></p:sp>",
+    "</p:spTree></p:cSld>",
     "</p:sld>"
   ].join("")
 });
@@ -699,7 +702,9 @@ try {
   assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
   assert.equal(capabilities.payload.elementModel.windowingStrategy, "element-aware-by-title-windowing.v1");
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("bbox"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("layout.width"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
@@ -1510,12 +1515,41 @@ try {
   assert.equal(pdfPayloadCorpus.windowPlan.windowCount >= 1, true);
   const pptxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-13");
   assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => trace.stage === "office.presentation.slides" && trace.status === "completed"), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.slides" &&
+    trace.geometries >= 2 &&
+    trace.layoutStrategy === "presentationml-shape-geometry.v1"
+  )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["slide-shape"] >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "heading" &&
+    element.page === 1 &&
+    element.bbox?.x === 72 &&
+    element.bbox?.y === 36 &&
+    element.layout?.strategy === "presentationml-shape-geometry.v1"
+  )), true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "slide-shape" &&
+    ref.page === 1 &&
+    ref.bbox?.x === 72 &&
+    ref.bbox?.y === 108 &&
+    ref.layout?.strategy === "presentationml-shape-geometry.v1"
+  ))), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.parserProfile, "presentationml-slide-route");
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("slide-order"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-bbox"), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "slide-shape" &&
+      ref.bbox?.x === 72 &&
+      ref.layout?.strategy === "presentationml-shape-geometry.v1"
+    ))
+  )), true);
   const xlsxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-14");
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.structured" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
