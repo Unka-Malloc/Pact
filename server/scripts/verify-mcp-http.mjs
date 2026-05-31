@@ -337,6 +337,13 @@ try {
   assert.deepEqual([...localGrantTargetDetails.keys()], expectedInstallTargets);
   assert.equal(localGrantTargetDetails.get("codex").agentProfileId, "pact.mcp.codex");
   assert.equal(localGrantTargetDetails.get("opencode").maxRisk, "safe_write");
+  assert.equal(localGrant.payload.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.match(localGrant.payload.sharedHub.vmMcpUrl, /host\.orb\.internal:\d+\/mcp$/);
+  assert.equal(localGrant.payload.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(localGrant.payload.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
+  assert.equal(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.ok(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.locations.includes("structuredContent.exchange"));
+  assert.ok(localGrant.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
   assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].agentProfileId, "pact.mcp.codex");
   assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].toolsets.includes("pact.agent.workspace"), true);
   assert.equal(localGrant.payload.toolsets.includes("pact.storage.write"), true);
@@ -356,6 +363,7 @@ try {
   assert.equal(unknownTargetGrant.payload.targetMatch.matched, false);
   assert.deepEqual(unknownTargetGrant.payload.supportedTargets, expectedInstallTargets);
   assert.deepEqual(unknownTargetGrant.payload.targetMatch.matchedTargetDetails, []);
+  assert.equal(unknownTargetGrant.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.equal(unknownTargetGrant.payload.toolsets.includes("pact.storage.write"), false);
 
   const explicitScopeGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {

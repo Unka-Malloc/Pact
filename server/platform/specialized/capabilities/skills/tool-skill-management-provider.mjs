@@ -1,5 +1,7 @@
 export const TOOL_SKILL_MANAGEMENT_PROTOCOL_VERSION = "pact.tool-skill-management.v1";
 
+const LOCAL_GRANT_MCP_SHAREDSPACE_TOOL_NAME = "pact.sharedspace";
+
 const LOCAL_GRANT_WRITE_TOOLSETS = Object.freeze([
   "pact.runtime.read",
   "pact.storage.read",
@@ -184,6 +186,71 @@ function localGrantMatchedTargetDetails(targets = []) {
         : null;
     })
     .filter(Boolean);
+}
+
+function localGrantSharedspaceExchangeReceiptContract() {
+  return {
+    schemaVersion: "pact.mcp.sharedspace-exchange.v1",
+    locations: [
+      "structuredContent.exchange",
+      "notifications/pact/operation_reply.params.exchange"
+    ],
+    actions: [
+      "workspace-created",
+      "file-written",
+      "file-read",
+      "items-listed",
+      "item-deleted",
+      "operation"
+    ],
+    fields: ["action", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+  };
+}
+
+function localGrantRequestBaseUrl({ request = null, discoveryState = null } = {}) {
+  const activeServiceUrl = String(discoveryState?.activeServiceUrl || "").replace(/\/+$/, "");
+  if (activeServiceUrl) {
+    return activeServiceUrl;
+  }
+  const host = String(request?.headers?.host || "").trim();
+  if (!host) {
+    return "";
+  }
+  const forwardedProto = String(request?.headers?.["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || (request?.socket?.encrypted ? "https" : "http");
+  return `${protocol}://${host}`.replace(/\/+$/, "");
+}
+
+function localGrantVmBaseUrl(baseUrl = "") {
+  try {
+    const parsed = new URL(baseUrl);
+    return `${parsed.protocol}//host.orb.internal:${parsed.port || (parsed.protocol === "https:" ? "443" : "80")}`;
+  } catch {
+    return "";
+  }
+}
+
+function localGrantSharedHubContract({ request = null, discoveryState = null } = {}) {
+  const baseUrl = localGrantRequestBaseUrl({ request, discoveryState });
+  const vmBaseUrl = localGrantVmBaseUrl(baseUrl);
+  return {
+    canonicalMcpUrl: baseUrl ? `${baseUrl}/mcp` : "",
+    vmMcpUrl: vmBaseUrl ? `${vmBaseUrl}/mcp` : "",
+    clientPolicy: "discover-shared-hub-then-opt-in",
+    defaultClientMutation: "none",
+    directHttp: true,
+    sharedspace: {
+      outlet: LOCAL_GRANT_MCP_SHAREDSPACE_TOOL_NAME,
+      referencePolicy: "use-public-workspace-ref",
+      exchangeReceipt: localGrantSharedspaceExchangeReceiptContract(),
+      coreOperations: [
+        "pact.agentWorkspace.create",
+        "pact.sharedspace.item.list",
+        "pact.sharedspace.file.read",
+        "pact.sharedspace.file.write"
+      ]
+    }
+  };
 }
 
 function localGrantRiskRank(risk = "read_only") {
@@ -887,6 +954,7 @@ export function createToolSkillManagementProvider({
         targets,
         supportedTargets: localGrantSupportedTargets(),
         supportedTargetDetails: localGrantSupportedTargetDetails(),
+        sharedHub: localGrantSharedHubContract({ request, discoveryState }),
         targetMatch: {
           matched: targetMatch.matched,
           matchedTargets: targetMatch.matchedTargets,
