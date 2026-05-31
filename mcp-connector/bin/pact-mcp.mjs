@@ -2798,6 +2798,7 @@ async function writeDeviceUninstall({ baseUrl, uninstalled, tokenEnv = DEFAULT_T
   const manifestPath = discoveryPath;
   const existingManifest = await readJson(manifestPath, {});
   const existingServer = existingManifest?.servers?.[MCP_SERVER_NAME] || {};
+  const effectiveTokenEnv = tokenEnv || existingManifestTokenEnv(existingServer);
   const existingTargets = existingServer.targets || {};
   const targets = Object.fromEntries(SUPPORTED_TARGETS.map((target) => [
     target,
@@ -2821,7 +2822,7 @@ async function writeDeviceUninstall({ baseUrl, uninstalled, tokenEnv = DEFAULT_T
     baseUrl,
     targets,
     codex: normalizeCodexDiscovery(existingServer.codex),
-    tokenEnv,
+    tokenEnv: effectiveTokenEnv,
     publishEnv,
     discoveryPath: manifestPath
   });
@@ -2864,15 +2865,22 @@ function normalizeCodexDiscovery(codex) {
   };
 }
 
+function existingManifestTokenEnv(server = {}) {
+  return String(server.auth?.tokenEnv || server.codex?.tokenEnv || DEFAULT_TOKEN_ENV);
+}
+
 async function writeServerConfigProfile({ options, name = "default", discovered, publishEnv = true }) {
   const discoveryPath = discoveryRegistryPath(options);
   const existingManifest = await readJson(discoveryPath, {});
   const existingServer = existingManifest?.servers?.[MCP_SERVER_NAME] || {};
+  const tokenEnv = Object.hasOwn(options, "token-env")
+    ? String(option(options, "token-env", DEFAULT_TOKEN_ENV))
+    : existingManifestTokenEnv(existingServer);
   const published = await publishDeviceHubManifest({
     baseUrl: discovered.baseUrl,
     targets: defaultTargetStatuses(existingServer.targets || {}),
     codex: normalizeCodexDiscovery(existingServer.codex),
-    tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV)),
+    tokenEnv,
     publishEnv,
     discoveryPath
   });
@@ -2891,7 +2899,8 @@ async function writeServerConfigProfile({ options, name = "default", discovered,
     ok: true,
     path: published.primaryPath,
     activeName: name,
-    profile: manifest.serverConfig.profiles[name]
+    profile: manifest.serverConfig.profiles[name],
+    tokenEnv
   };
 }
 
@@ -6024,7 +6033,7 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
     ? await writeDeviceUninstall({
         baseUrl: settings.baseUrl,
         uninstalled,
-        tokenEnv: settings.tokenEnv,
+        tokenEnv: Object.hasOwn(mergedOptions, "token-env") ? settings.tokenEnv : "",
         discoveryPath: discoveryRegistryPath(mergedOptions)
       })
     : "";
@@ -6217,6 +6226,7 @@ async function registerCommand(options) {
   const discoveryManifest = profile.path;
   const localFiles = deviceDiscoveryPaths(resolvedOptions);
   const env = deviceDiscoveryEnv({ baseUrl: settings.baseUrl, primaryPath: discoveryManifest });
+  const tokenEnv = profile.tokenEnv || settings.tokenEnv;
   return {
     ok: true,
     packageName: packageJson.name,
@@ -6235,7 +6245,7 @@ async function registerCommand(options) {
       target: "<client>",
       includeUrl: Boolean(settings.baseUrl),
       baseUrl: settings.baseUrl,
-      tokenEnv: settings.tokenEnv
+      tokenEnv
     }),
     verifiedHandshake: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,

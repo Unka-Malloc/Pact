@@ -125,10 +125,12 @@ const fakeAgentCommandLog = path.join(opencodeConfigDir, "fake-agent-commands.lo
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
 const fakeCodexPath = path.join(fakeBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
 const fakeClaudePath = path.join(fakeBinDir, process.platform === "win32" ? "claude.cmd" : "claude");
+const fakeClaudeHangPath = path.join(fakeBinDir, process.platform === "win32" ? "claude-hang.cmd" : "claude-hang");
 const fakeGeminiPath = path.join(fakeBinDir, process.platform === "win32" ? "gemini.cmd" : "gemini");
 const fakeKiloPath = path.join(fakeBinDir, process.platform === "win32" ? "kilo.cmd" : "kilo");
 const fakeCopilotPath = path.join(fakeBinDir, process.platform === "win32" ? "copilot.cmd" : "copilot");
 const fakeOpenClawPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
+const fakeOpenClawHangPath = path.join(fakeBinDir, process.platform === "win32" ? "openclaw-hang.cmd" : "openclaw-hang");
 const fakeOpencodePath = path.join(fakeBinDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
 const fakeDockerPath = path.join(fakeBinDir, process.platform === "win32" ? "docker.cmd" : "docker");
 
@@ -765,18 +767,18 @@ try {
   });
 
   await testAsync("cli local claude install times out stalled mcp command", async () => {
-    await installFakeAgentCli(fakeClaudePath);
+    await installFakeAgentCli(fakeClaudeHangPath);
     const result = await spawnConnector([
       "install",
       "--target", "claude-code",
       "--url", serverUrl,
       "--token", token,
-      "--claude-bin", fakeClaudePath,
+      "--claude-bin", fakeClaudeHangPath,
       "--discovery-file", tempRegistryPath,
       "--no-verify",
       "--json"
     ], 10000, {
-      PACT_FAKE_AGENT_HANG_MCP: "claude",
+      PACT_FAKE_AGENT_HANG_MCP: path.basename(fakeClaudeHangPath, path.extname(fakeClaudeHangPath)),
       PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
     });
     assert.equal(result.code, 1);
@@ -788,18 +790,18 @@ try {
   });
 
   await testAsync("cli local openclaw install times out stalled mcp command", async () => {
-    await installFakeAgentCli(fakeOpenClawPath);
+    await installFakeAgentCli(fakeOpenClawHangPath);
     const result = await spawnConnector([
       "install",
       "--target", "openclaw",
       "--url", serverUrl,
       "--token", token,
-      "--openclaw-bin", fakeOpenClawPath,
+      "--openclaw-bin", fakeOpenClawHangPath,
       "--discovery-file", tempRegistryPath,
       "--no-verify",
       "--json"
     ], 10000, {
-      PACT_FAKE_AGENT_HANG_MCP: "openclaw",
+      PACT_FAKE_AGENT_HANG_MCP: path.basename(fakeOpenClawHangPath, path.extname(fakeOpenClawHangPath)),
       PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
     });
     assert.equal(result.code, 1);
@@ -838,7 +840,8 @@ try {
       "--json"
     ], 60000, {
       PATH: `${fakeBinDir}${path.delimiter}${process.env.PATH || ""}`,
-      PACT_FAKE_AGENT_LOG: fakeAgentCommandLog
+      PACT_FAKE_AGENT_LOG: fakeAgentCommandLog,
+      PACT_FAKE_AGENT_HANG_MCP: ""
     });
     if (result.code !== 0) {
       console.log(`\n      stdout: ${result.stdout.slice(0, 300)}`);
@@ -848,8 +851,9 @@ try {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true, JSON.stringify(payload, null, 2));
     assert.equal(payload.autoDetected, true);
+    const selectedTargets = payload.selected?.map((item) => item.target) || [];
     for (const target of PRIORITY_AGENT_TARGETS) {
-      assert.equal(payload.selected?.some((item) => item.target === target), true, `${target} should be selected by auto install`);
+      assert.equal(selectedTargets.includes(target), true, `${target} should be selected by auto install: ${selectedTargets.join(", ")}`);
     }
     assert.equal(payload.selected?.some((item) => item.target === "gemini-cli"), true);
     assert.equal(payload.selected?.some((item) => item.target === "kilo-code"), true);
@@ -886,6 +890,18 @@ try {
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.codex?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.codex?.installCommand, `${npxPrefix} install --target codex --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
+    const uninstallResult = await spawnConnector([
+      "uninstall",
+      "--target", "openclaw",
+      "--url", serverUrl,
+      "--openclaw-bin", fakeOpenClawPath,
+      "--discovery-file", autoRegistryPath,
+      "--json"
+    ]);
+    assert.equal(uninstallResult.code, 0);
+    const manifestAfterUninstall = JSON.parse(await fs.readFile(autoRegistryPath, "utf8"));
+    assert.equal(manifestAfterUninstall.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
+    assert.equal(manifestAfterUninstall.servers?.pact?.connector?.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     const kiloConfig = JSON.parse(await fs.readFile(autoKiloConfigPath, "utf8"));
     assert.equal(kiloConfig.mcp?.pact?.type, "remote");
     assert.equal(kiloConfig.mcp?.pact?.url, `${serverUrl}/mcp`);
@@ -1172,6 +1188,18 @@ try {
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, missingInstallTokenEnv);
     assert.equal(manifest.servers?.pact?.connector?.installCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}'`);
     assert.equal(manifest.servers?.pact?.connector?.scanCommand, `npx pact-mcp-connector@${payload.packageVersion} scan --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    const refresh = await spawnConnector([
+      "register",
+      "--url", serverUrl,
+      "--discovery-file", registerRegistryPath,
+      "--no-env",
+      "--json"
+    ]);
+    assert.equal(refresh.code, 0);
+    const refreshPayload = JSON.parse(refresh.stdout);
+    assert.equal(refreshPayload.clientInstall, `pact-mcp install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    const refreshedManifest = JSON.parse(await fs.readFile(registerRegistryPath, "utf8"));
+    assert.equal(refreshedManifest.servers?.pact?.auth?.tokenEnv, missingInstallTokenEnv);
   });
 
   // ── SECTION 10: Machine-readable install failures ──
