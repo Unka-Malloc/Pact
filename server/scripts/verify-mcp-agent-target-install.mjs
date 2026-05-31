@@ -877,13 +877,15 @@ try {
     const manifest = JSON.parse(await fs.readFile(autoRegistryPath, "utf8"));
     const npxPrefix = `npx pact-mcp-connector@${payload.packageVersion}`;
     const connector = manifest.servers?.pact?.connector || {};
-    assert.equal(connector.registerCommand, `${npxPrefix} register --url '${serverUrl}'`);
-    assert.equal(connector.interactiveInstallCommand, `${npxPrefix} install --url '${serverUrl}'`);
-    assert.equal(connector.installCommand, `${npxPrefix} install --target <client> --url '${serverUrl}'`);
+    assert.equal(connector.registerCommand, `${npxPrefix} register --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
+    assert.equal(connector.interactiveInstallCommand, `${npxPrefix} install --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
+    assert.equal(connector.installCommand, `${npxPrefix} install --target <client> --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     assert.equal(connector.uninstallCommand, `${npxPrefix} uninstall --target <client> --url '${serverUrl}'`);
     assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}'`);
-    assert.equal(connector.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --json`);
-    assert.equal(manifest.servers?.pact?.codex?.installCommand, `${npxPrefix} install --target codex --url '${serverUrl}'`);
+    assert.equal(connector.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
+    assert.equal(manifest.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
+    assert.equal(manifest.servers?.pact?.codex?.tokenEnv, autoTokenEnv);
+    assert.equal(manifest.servers?.pact?.codex?.installCommand, `${npxPrefix} install --target codex --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     const kiloConfig = JSON.parse(await fs.readFile(autoKiloConfigPath, "utf8"));
     assert.equal(kiloConfig.mcp?.pact?.type, "remote");
     assert.equal(kiloConfig.mcp?.pact?.url, `${serverUrl}/mcp`);
@@ -1167,8 +1169,9 @@ try {
     assert.equal(payload.localEntry?.command, `pact-mcp discover-local --url '${serverUrl}' --json`);
     assert.equal(payload.clientInstall, `pact-mcp install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     const manifest = JSON.parse(await fs.readFile(registerRegistryPath, "utf8"));
-    assert.equal(manifest.servers?.pact?.connector?.installCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target <client> --url '${serverUrl}'`);
-    assert.equal(manifest.servers?.pact?.connector?.scanCommand, `npx pact-mcp-connector@${payload.packageVersion} scan --url '${serverUrl}' --json`);
+    assert.equal(manifest.servers?.pact?.auth?.tokenEnv, missingInstallTokenEnv);
+    assert.equal(manifest.servers?.pact?.connector?.installCommand, `npx pact-mcp-connector@${payload.packageVersion} install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}'`);
+    assert.equal(manifest.servers?.pact?.connector?.scanCommand, `npx pact-mcp-connector@${payload.packageVersion} scan --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
   });
 
   // ── SECTION 10: Machine-readable install failures ──

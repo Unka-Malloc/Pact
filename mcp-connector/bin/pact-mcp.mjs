@@ -2252,6 +2252,7 @@ function buildDeviceHubManifest({
   codex,
   marketplaceRoot,
   codexPluginRoot,
+  tokenEnv = DEFAULT_TOKEN_ENV,
   discoveryPath = discoveryRegistryPath()
 }) {
   const parsed = new URL(baseUrl);
@@ -2259,13 +2260,15 @@ function buildDeviceHubManifest({
   const env = deviceDiscoveryEnv({ baseUrl, primaryPath: discoveryPath });
   const packageExec = `npx ${packageJson.name}@${packageJson.version}`;
   const urlArgs = ` --url ${shellQuote(baseUrl)}`;
+  const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
   const discoverCommand = `${packageExec} discover-local${urlArgs}`;
-  const interactiveInstallCommand = `${packageExec} install${urlArgs}`;
-  const scanCommand = `${packageExec} scan${urlArgs} --json`;
-  const codexInstallCommand = `${packageExec} install --target codex${urlArgs}`;
+  const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
+  const scanCommand = `${packageExec} scan${urlArgs}${tokenEnvArgs} --json`;
+  const codexInstallCommand = `${packageExec} install --target codex${urlArgs}${tokenEnvArgs}`;
   const codexManifest = codex
     ? {
         ...codex,
+        tokenEnv,
         installCommand: codexInstallCommand
       }
     : codexPluginRoot
@@ -2273,7 +2276,7 @@ function buildDeviceHubManifest({
         plugin: `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
         marketplaceRoot,
         pluginRoot: codexPluginRoot,
-        tokenEnv: DEFAULT_TOKEN_ENV,
+        tokenEnv,
         installCommand: codexInstallCommand
       }
     : null;
@@ -2313,9 +2316,9 @@ function buildDeviceHubManifest({
         connector: {
           packageName: packageJson.name,
           packageVersion: packageJson.version,
-          registerCommand: `${packageExec} register${urlArgs}`,
+          registerCommand: `${packageExec} register${urlArgs}${tokenEnvArgs}`,
           interactiveInstallCommand,
-          installCommand: `${packageExec} install --target <client>${urlArgs}`,
+          installCommand: `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs}`,
           uninstallCommand: `${packageExec} uninstall --target <client>${urlArgs}`,
           discoverCommand,
           scanCommand
@@ -2323,7 +2326,7 @@ function buildDeviceHubManifest({
         auth: {
           type: "auto-local-grant-or-provided-token",
           acceptedHeaders: ["Authorization: Bearer <token>", "X-Pact-Api-Key"],
-          tokenEnv: DEFAULT_TOKEN_ENV
+          tokenEnv
         },
         codex: codexManifest,
         targets
@@ -2332,8 +2335,8 @@ function buildDeviceHubManifest({
   };
 }
 
-async function publishDeviceHubManifest({ baseUrl, targets, codex, marketplaceRoot = "", codexPluginRoot = "", publishEnv = true, discoveryPath = discoveryRegistryPath() }) {
-  const manifest = buildDeviceHubManifest({ baseUrl, targets, codex, marketplaceRoot, codexPluginRoot, discoveryPath });
+async function publishDeviceHubManifest({ baseUrl, targets, codex, marketplaceRoot = "", codexPluginRoot = "", tokenEnv = DEFAULT_TOKEN_ENV, publishEnv = true, discoveryPath = discoveryRegistryPath() }) {
+  const manifest = buildDeviceHubManifest({ baseUrl, targets, codex, marketplaceRoot, codexPluginRoot, tokenEnv, discoveryPath });
   await writeJson(discoveryPath, manifest);
   const envPublished = publishEnv ? await publishLaunchctlEnv(manifest.discovery.env) : false;
   return {
@@ -2754,7 +2757,7 @@ async function uninstallHermesRemote({ context, hermesBin }) {
   };
 }
 
-async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot, installed, token, publishEnv = true, discoveryPath = discoveryRegistryPath() }) {
+async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot, installed, token, tokenEnv = DEFAULT_TOKEN_ENV, publishEnv = true, discoveryPath = discoveryRegistryPath() }) {
   const manifestPath = discoveryPath;
   const existingManifest = await readJson(manifestPath, {});
   const existingServer = existingManifest?.servers?.[MCP_SERVER_NAME] || {};
@@ -2784,13 +2787,14 @@ async function writeDeviceDiscovery({ baseUrl, marketplaceRoot, codexPluginRoot,
     codex: normalizeCodexDiscovery(existingServer.codex),
     marketplaceRoot,
     codexPluginRoot,
+    tokenEnv,
     publishEnv,
     discoveryPath: manifestPath
   });
   return published.primaryPath;
 }
 
-async function writeDeviceUninstall({ baseUrl, uninstalled, publishEnv = true, discoveryPath = discoveryRegistryPath() }) {
+async function writeDeviceUninstall({ baseUrl, uninstalled, tokenEnv = DEFAULT_TOKEN_ENV, publishEnv = true, discoveryPath = discoveryRegistryPath() }) {
   const manifestPath = discoveryPath;
   const existingManifest = await readJson(manifestPath, {});
   const existingServer = existingManifest?.servers?.[MCP_SERVER_NAME] || {};
@@ -2817,6 +2821,7 @@ async function writeDeviceUninstall({ baseUrl, uninstalled, publishEnv = true, d
     baseUrl,
     targets,
     codex: normalizeCodexDiscovery(existingServer.codex),
+    tokenEnv,
     publishEnv,
     discoveryPath: manifestPath
   });
@@ -2867,6 +2872,7 @@ async function writeServerConfigProfile({ options, name = "default", discovered,
     baseUrl: discovered.baseUrl,
     targets: defaultTargetStatuses(existingServer.targets || {}),
     codex: normalizeCodexDiscovery(existingServer.codex),
+    tokenEnv: String(option(options, "token-env", DEFAULT_TOKEN_ENV)),
     publishEnv,
     discoveryPath
   });
@@ -5649,6 +5655,7 @@ async function installTargets({ options, targets, token, tokenInfo = null, optio
     codexPluginRoot: installed.codex?.pluginRoot || "",
     installed,
     token,
+    tokenEnv: settings.tokenEnv,
     discoveryPath: discoveryRegistryPath(mergedOptions)
   });
 
@@ -6017,6 +6024,7 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
     ? await writeDeviceUninstall({
         baseUrl: settings.baseUrl,
         uninstalled,
+        tokenEnv: settings.tokenEnv,
         discoveryPath: discoveryRegistryPath(mergedOptions)
       })
     : "";
