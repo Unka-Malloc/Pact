@@ -251,7 +251,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "spreadsheet",
     preferredParser: "table.sheet.structured",
     fallbackParsers: ["tika.text", "text.direct"],
-    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
+    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
     streamingUnit: "sheet",
     referenceFrameworks: ["docling", "mineru", "unstructured", "haystack"]
   },
@@ -643,9 +643,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Excel",
     professionalFamily: "office-spreadsheet",
     parserProfile: "spreadsheetml-sheet-row-cell-route",
-    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "cell", "formula", "hyperlink", "time-signal"],
-    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
-    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "dateStyles", "dateSerials", "formulas", "hyperlinks", "timeSignals"],
+    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "merged-cell", "cell", "formula", "hyperlink", "time-signal"],
+    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
+    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "mergedCells", "dateStyles", "dateSerials", "formulas", "hyperlinks", "timeSignals"],
     conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-workbook-sheet-cell-coordinates-and-formulas", "evidence-pack"],
     conversionAdapters: [
       {
@@ -667,7 +667,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "sheets-to-agent-cell-refs.v1",
         mode: "agent",
-        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "time-signals"]
+        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "merged-cell-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "time-signals"]
       },
       {
         target: "evidence-pack-json",
@@ -677,8 +677,8 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["row-text-units", "entity-columns", "claim-values"]
       }
     ],
-    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
-    riskControls: ["formula-results-not-recomputed", "merged-cell-normalization-risk"],
+    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-merged-cell-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
+    riskControls: ["formula-results-not-recomputed"],
     knownLosses: ["formula-results-not-recomputed"]
   },
   markdown: {
@@ -2377,6 +2377,7 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.style ? { style: metadata.style } : {}),
     ...(metadata.shape ? { shape: metadata.shape } : {}),
     ...(metadata.image ? { image: metadata.image } : {}),
+    ...(metadata.merge ? { merge: metadata.merge } : {}),
     ...(metadata.cells ? { cells: metadata.cells } : {})
   });
 }
@@ -5570,6 +5571,66 @@ function xlsxCellRefsInRange(refRange = "", limit = 500) {
   return refs;
 }
 
+function xlsxMergedCellRange(refRange = "") {
+  const [rawStartRef, rawEndRef = rawStartRef] = String(refRange || "").split(":").map((part) => part.trim().toUpperCase());
+  const start = xlsxCellCoordinate(rawStartRef);
+  const end = xlsxCellCoordinate(rawEndRef);
+  if (!start || !end) {
+    return null;
+  }
+  const minColumn = Math.min(start.columnIndex, end.columnIndex);
+  const maxColumn = Math.max(start.columnIndex, end.columnIndex);
+  const minRow = Math.min(start.row, end.row);
+  const maxRow = Math.max(start.row, end.row);
+  const startRef = `${xlsxColumnLabel("", minColumn)}${minRow}`;
+  const endRef = `${xlsxColumnLabel("", maxColumn)}${maxRow}`;
+  const ref = startRef === endRef ? startRef : `${startRef}:${endRef}`;
+  const cellRefs = xlsxCellRefsInRange(ref, 2000);
+  return {
+    ref,
+    masterRef: startRef,
+    startRef,
+    endRef,
+    startColumn: xlsxColumnLabel("", minColumn),
+    endColumn: xlsxColumnLabel("", maxColumn),
+    startColumnIndex: minColumn,
+    endColumnIndex: maxColumn,
+    startRow: minRow,
+    endRow: maxRow,
+    rowSpan: maxRow - minRow + 1,
+    columnSpan: maxColumn - minColumn + 1,
+    cellRefs
+  };
+}
+
+function parseXlsxMergedCellsXml(xml = "") {
+  const ranges = [];
+  for (const match of String(xml || "").matchAll(/<mergeCell\b[^>]*(?:\/>|>)/g)) {
+    const range = xlsxMergedCellRange(xmlAttribute(match[0], "ref"));
+    if (range) {
+      ranges.push(range);
+    }
+  }
+  return ranges;
+}
+
+function xlsxMergedCellLookup(mergedCells = []) {
+  const lookup = new Map();
+  for (const range of mergedCells) {
+    for (const ref of range.cellRefs || []) {
+      lookup.set(String(ref || "").toUpperCase(), {
+        ref: range.ref,
+        masterRef: range.masterRef,
+        startRef: range.startRef,
+        endRef: range.endRef,
+        rowSpan: range.rowSpan,
+        columnSpan: range.columnSpan
+      });
+    }
+  }
+  return lookup;
+}
+
 function worksheetRelationshipEntryName(worksheetName = "") {
   const normalized = String(worksheetName || "").replace(/\\/g, "/");
   const directory = normalized.slice(0, normalized.lastIndexOf("/") + 1);
@@ -5918,7 +5979,7 @@ function xlsxCellFormula(cellXml = "") {
   };
 }
 
-function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map(), styles = null) {
+function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map(), styles = null, mergedCellsByRef = new Map()) {
   const rowOpenTag = String(rowXml || "").match(/^<row\b[^>]*>/)?.[0] || "";
   const rowNumber = Number(xmlAttribute(rowOpenTag, "r") || fallbackRowNumber || 0);
   const cells = [];
@@ -5929,11 +5990,12 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
     const ref = xmlAttribute(openTag, "r") || `${xlsxColumnLabel("", fallbackCellIndex)}${rowNumber || ""}`;
     const column = xlsxColumnLabel(ref, fallbackCellIndex);
     const hyperlink = hyperlinks.get(String(ref || "").toUpperCase()) || null;
+    const merge = mergedCellsByRef.get(String(ref || "").toUpperCase()) || null;
     const valueRecord = xlsxCellValue(cellXml, sharedStrings, styles);
     const value = valueRecord.value || hyperlink?.display || "";
     const formula = xlsxCellFormula(cellXml);
     fallbackCellIndex += 1;
-    if (value || formula || hyperlink) {
+    if (value || formula || hyperlink || merge) {
       cells.push({
         ref,
         column,
@@ -5943,11 +6005,16 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
         ...(valueRecord.dateSerial ? { dateSerial: valueRecord.dateSerial } : {}),
         ...(valueRecord.style ? { style: valueRecord.style } : {}),
         ...(formula ? formula : {}),
-        ...(hyperlink ? { hyperlink } : {})
+        ...(hyperlink ? { hyperlink } : {}),
+        ...(merge ? { merge } : {})
       });
     }
   }
   return { rowNumber, cells };
+}
+
+function formatXlsxMerge(cell = {}) {
+  return cell.merge?.ref ? ` (merge=${cell.merge.ref}${cell.merge.masterRef ? ` master=${cell.merge.masterRef}` : ""})` : "";
 }
 
 function formatXlsxHyperlink(cell = {}) {
@@ -5959,11 +6026,11 @@ function formatXlsxCellValue(cell = {}, header = "") {
   const label = header ? `${cell.ref} ${header}` : cell.ref || cell.column;
   const value = cell.value ? `=${cell.value}` : "=<formula-only>";
   const formula = cell.formula ? ` (formula=${cell.formula})` : "";
-  return `${label}${value}${formula}${formatXlsxHyperlink(cell)}`;
+  return `${label}${value}${formula}${formatXlsxHyperlink(cell)}${formatXlsxMerge(cell)}`;
 }
 
 function formatXlsxHeaderRow(sheetLabel = "", row = { cells: [] }) {
-  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}${formatXlsxHyperlink(cell)}`);
+  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}${formatXlsxHyperlink(cell)}${formatXlsxMerge(cell)}`);
   return `${sheetLabel} Header row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
 }
 
@@ -6018,6 +6085,16 @@ function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
     ...(cell.formulaType ? { formulaType: cell.formulaType } : {}),
     ...(cell.formulaRef ? { formulaRef: cell.formulaRef } : {}),
     ...(cell.sharedIndex ? { sharedIndex: cell.sharedIndex } : {}),
+    ...(cell.merge ? {
+      merge: {
+        ref: String(cell.merge.ref || ""),
+        masterRef: String(cell.merge.masterRef || ""),
+        startRef: String(cell.merge.startRef || ""),
+        endRef: String(cell.merge.endRef || ""),
+        rowSpan: Number(cell.merge.rowSpan || 0),
+        columnSpan: Number(cell.merge.columnSpan || 0)
+      }
+    } : {}),
     ...(cell.hyperlink ? {
       hyperlink: {
         target: String(cell.hyperlink.target || ""),
@@ -6028,6 +6105,23 @@ function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
         targetMode: String(cell.hyperlink.targetMode || "")
       }
     } : {})
+  };
+}
+
+function xlsxElementMerge(range = {}, anchorValue = "") {
+  return {
+    ref: String(range.ref || ""),
+    masterRef: String(range.masterRef || range.startRef || ""),
+    startRef: String(range.startRef || ""),
+    endRef: String(range.endRef || ""),
+    startColumn: String(range.startColumn || ""),
+    endColumn: String(range.endColumn || ""),
+    startRow: Number(range.startRow || 0),
+    endRow: Number(range.endRow || 0),
+    rowSpan: Number(range.rowSpan || 0),
+    columnSpan: Number(range.columnSpan || 0),
+    cellRefs: Array.isArray(range.cellRefs) ? range.cellRefs.slice(0, 200) : [],
+    anchorValue: String(anchorValue || "")
   };
 }
 
@@ -6049,17 +6143,22 @@ function parseXlsxDetailed(entries = []) {
   let formulaCount = 0;
   let hyperlinkCount = 0;
   let dateCellCount = 0;
+  let mergedCellCount = 0;
   let headerRows = 0;
   const elements = [];
   for (const [index, record] of sheetRecords.entries()) {
     const { name, sheet } = record;
+    const sheetXml = zipEntryText(entries, name);
     const hyperlinks = parseXlsxHyperlinkTags(
-      zipEntryText(entries, name),
+      sheetXml,
       zipEntryText(entries, worksheetRelationshipEntryName(name))
     );
+    const mergedCells = parseXlsxMergedCellsXml(sheetXml);
+    const mergedCellsByRef = xlsxMergedCellLookup(mergedCells);
+    mergedCellCount += mergedCells.length;
     const rows = [];
-    for (const match of zipEntryText(entries, name).matchAll(/<row\b[\s\S]*?<\/row>/g)) {
-      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks, styles);
+    for (const match of sheetXml.matchAll(/<row\b[\s\S]*?<\/row>/g)) {
+      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks, styles, mergedCellsByRef);
       if (row.cells.length) {
         rows.push(row);
         rowCount += 1;
@@ -6077,6 +6176,20 @@ function parseXlsxDetailed(entries = []) {
     }
     const headersByColumn = new Map();
     let headerCaptured = false;
+    const cellsByRef = new Map(rows.flatMap((row) => (
+      row.cells.map((cell) => [String(cell.ref || "").toUpperCase(), cell])
+    )));
+    for (const range of mergedCells) {
+      const anchorCell = cellsByRef.get(String(range.masterRef || range.startRef || "").toUpperCase()) || null;
+      const anchorValue = anchorCell?.value || anchorCell?.formula || "";
+      pushStructureElement(elements, "merged-cell", `${sheetLabel} Merged range ${range.ref}: ${range.masterRef}${anchorValue ? `=${anchorValue}` : ""} spans ${range.rowSpan}x${range.columnSpan}`, {
+        line: range.startRow,
+        name: sheetLabel,
+        table: xlsxTableMetadata(sheet, sheetLabel, range.startRow, range.columnSpan),
+        merge: xlsxElementMerge(range, anchorValue),
+        limit: 1200
+      });
+    }
     for (const row of rows) {
       if (!row.cells.length) {
         continue;
@@ -6111,6 +6224,7 @@ function parseXlsxDetailed(entries = []) {
     sharedStringCount: sharedStrings.length,
     dateStyleCount: styles.dateStyleCount,
     dateCellCount,
+    mergedCellCount,
     sheetCount: sheetNames.length,
     workbookSheetCount: workbookSheets.length,
     sheetRefCount: sheetRecords.filter((record) => (
@@ -6446,6 +6560,47 @@ function scanXmlElementsFromFile(filePath = "", tagName = "", onElement = () => 
   }
 }
 
+function scanXmlOpenTagsFromFile(filePath = "", tagName = "", onTag = () => {}) {
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.alloc(STREAM_TEXT_CHUNK_BYTES);
+  const expression = new RegExp(`<${tagName}\\b[^>]*(?:\\/?>)`, "g");
+  let input = null;
+  let carry = "";
+  try {
+    input = fsSync.openSync(filePath, "r");
+    while (true) {
+      const bytesRead = fsSync.readSync(input, buffer, 0, buffer.length, null);
+      if (!bytesRead) {
+        break;
+      }
+      carry += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      expression.lastIndex = 0;
+      let processed = 0;
+      let match;
+      while ((match = expression.exec(carry)) !== null) {
+        onTag(match[0]);
+        processed = expression.lastIndex;
+      }
+      if (processed > 0) {
+        carry = carry.slice(processed);
+      }
+      if (carry.length > STREAM_TEXT_CHUNK_BYTES * 4) {
+        carry = carry.slice(-STREAM_TEXT_CHUNK_BYTES);
+      }
+    }
+    carry += decoder.decode();
+    expression.lastIndex = 0;
+    let match;
+    while ((match = expression.exec(carry)) !== null) {
+      onTag(match[0]);
+    }
+  } finally {
+    if (input !== null) {
+      fsSync.closeSync(input);
+    }
+  }
+}
+
 function parseSharedStringsFile(filePath = "") {
   const strings = [];
   if (!filePath || !fsSync.existsSync(filePath)) {
@@ -6465,8 +6620,24 @@ function parseXlsxStylesFile(filePath = "") {
   );
 }
 
+function parseXlsxMergedCellsFile(filePath = "") {
+  const ranges = [];
+  if (!filePath || !fsSync.existsSync(filePath)) {
+    return ranges;
+  }
+  scanXmlOpenTagsFromFile(filePath, "mergeCell", (tag) => {
+    const range = xlsxMergedCellRange(xmlAttribute(tag, "ref"));
+    if (range) {
+      ranges.push(range);
+    }
+  });
+  return ranges;
+}
+
 function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], styles = null, outputPath = "" } = {}) {
   const hyperlinks = parseXlsxHyperlinksFile(sheetPath, worksheetRelationshipFilePath(sheetPath));
+  const mergedCells = parseXlsxMergedCellsFile(sheetPath);
+  const mergedCellsByRef = xlsxMergedCellLookup(mergedCells);
   const headersByColumn = new Map();
   let headerCaptured = false;
   let rowCount = 0;
@@ -6474,6 +6645,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
   let formulaCount = 0;
   let hyperlinkCount = 0;
   let dateCellCount = 0;
+  let mergedCellCount = 0;
   let headerRows = 0;
   let totalCharacters = 0;
   const appendLine = (line = "") => {
@@ -6482,7 +6654,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     totalCharacters += text.length;
   };
   scanXmlElementsFromFile(sheetPath, "row", (xml) => {
-    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks, styles);
+    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks, styles, mergedCellsByRef);
     if (!row.cells.length) {
       return;
     }
@@ -6502,7 +6674,10 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     }
     appendLine(formatXlsxDataRow(sheetLabel, row, headersByColumn));
   });
-  return { rowCount, cellCount, formulaCount, hyperlinkCount, dateCellCount, headerRows, totalCharacters };
+  for (const range of mergedCells) {
+    appendLine(`${sheetLabel} Merged range ${range.ref}: ${range.masterRef} spans ${range.rowSpan}x${range.columnSpan}`);
+  }
+  return { rowCount, cellCount, formulaCount, hyperlinkCount, dateCellCount, mergedCellCount: mergedCells.length, headerRows, totalCharacters };
 }
 
 function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
@@ -6544,6 +6719,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     formulaCount += stats.formulaCount;
     hyperlinkCount += stats.hyperlinkCount;
     dateCellCount += stats.dateCellCount;
+    mergedCellCount += stats.mergedCellCount;
     headerRows += stats.headerRows;
   }
   return {
@@ -6551,6 +6727,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     sharedStringCount: sharedStrings.length,
     dateStyleCount: styles.dateStyleCount,
     dateCellCount,
+    mergedCellCount,
     sheetCount: sheetFiles.length,
     workbookSheetCount: workbookSheets.length,
     sheetRefCount: sheetRecords.length,
@@ -6585,6 +6762,11 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
         status: dateCellCount ? "completed" : styles.dateStyleCount ? "empty" : "not_applicable",
         dateStyles: styles.dateStyleCount,
         dateCells: dateCellCount
+      },
+      {
+        stage: "table.sheet.merged-cells",
+        status: mergedCellCount ? "completed" : "empty",
+        mergedCells: mergedCellCount
       },
       {
         stage: "table.sheet.formulas",
@@ -6911,6 +7093,7 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           cells: parsed.cellCount,
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount,
+          mergedCells: parsed.mergedCellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         },
@@ -6938,6 +7121,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           status: parsed.dateCellCount ? "completed" : parsed.dateStyleCount ? "empty" : "not_applicable",
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount
+        },
+        {
+          stage: "table.sheet.merged-cells",
+          status: parsed.mergedCellCount ? "completed" : "empty",
+          mergedCells: parsed.mergedCellCount
         },
         {
           stage: "table.sheet.formulas",
@@ -8266,6 +8454,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           cells: parsed.cellCount,
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount,
+          mergedCells: parsed.mergedCellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         });
@@ -8286,6 +8475,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           status: parsed.cellCount ? "completed" : "empty",
           cells: parsed.cellCount,
           sharedStrings: parsed.sharedStringCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.merged-cells",
+          status: parsed.mergedCellCount ? "completed" : "empty",
+          mergedCells: parsed.mergedCellCount
         });
         parserTrace.push({
           stage: "table.sheet.date-styles",
@@ -8623,12 +8817,15 @@ function structureElementLine(element = {}) {
   const image = element.image?.relationshipId || element.image?.target
     ? ` image ${[element.image.relationshipId, element.image.target].filter(Boolean).join(":")}`
     : "";
+  const merge = element.merge?.ref
+    ? ` merge ${element.merge.ref}${element.merge.masterRef ? ` master ${element.merge.masterRef}` : ""}`
+    : "";
   const placeholder = element.shape?.placeholderType
     ? ` placeholder ${element.shape.placeholderType}${element.shape.placeholderIndex ? `#${element.shape.placeholderIndex}` : ""}`
     : element.shape?.isPlaceholder
       ? " placeholder"
       : "";
-  return `Element ${element.type}${level}${name}${line}${style}${numbering}${shape}${placeholder}${image}: ${element.text}${href}`;
+  return `Element ${element.type}${level}${name}${line}${style}${numbering}${shape}${placeholder}${image}${merge}: ${element.text}${href}`;
 }
 
 function structureElementTypeCounts(elements = []) {
@@ -8721,6 +8918,24 @@ function normalizedStructureElements(document = {}) {
             description: String(element.image.description || "")
           }
         : null;
+      const merge = element.merge && typeof element.merge === "object"
+        ? {
+            ref: String(element.merge.ref || ""),
+            masterRef: String(element.merge.masterRef || element.merge.startRef || ""),
+            startRef: String(element.merge.startRef || ""),
+            endRef: String(element.merge.endRef || ""),
+            startColumn: String(element.merge.startColumn || ""),
+            endColumn: String(element.merge.endColumn || ""),
+            startRow: Number(element.merge.startRow || 0),
+            endRow: Number(element.merge.endRow || 0),
+            rowSpan: Number(element.merge.rowSpan || 0),
+            columnSpan: Number(element.merge.columnSpan || 0),
+            cellRefs: Array.isArray(element.merge.cellRefs)
+              ? element.merge.cellRefs.slice(0, 200).map((ref) => String(ref || "")).filter(Boolean)
+              : [],
+            anchorValue: String(element.merge.anchorValue || "")
+          }
+        : null;
       const cells = Array.isArray(element.cells)
         ? element.cells.slice(0, 200).map((cell) => ({
             ref: String(cell.ref || ""),
@@ -8752,6 +8967,16 @@ function normalizedStructureElements(document = {}) {
                   relationshipId: String(cell.hyperlink.relationshipId || ""),
                   targetMode: String(cell.hyperlink.targetMode || "")
                 }
+              : null,
+            merge: cell.merge
+              ? {
+                  ref: String(cell.merge.ref || ""),
+                  masterRef: String(cell.merge.masterRef || ""),
+                  startRef: String(cell.merge.startRef || ""),
+                  endRef: String(cell.merge.endRef || ""),
+                  rowSpan: Number(cell.merge.rowSpan || 0),
+                  columnSpan: Number(cell.merge.columnSpan || 0)
+                }
               : null
           }))
         : [];
@@ -8772,6 +8997,7 @@ function normalizedStructureElements(document = {}) {
         style,
         shape,
         image,
+        merge,
         cells
       };
     })
@@ -8783,7 +9009,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
+  return ["table-header", "table-row", "merged-cell", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -8818,6 +9044,7 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       style: element.style || null,
       shape: element.shape || null,
       image: element.image || null,
+      merge: element.merge || null,
       cells: element.cells || [],
       headingPath
     })),
@@ -8934,6 +9161,7 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       style: element.style || null,
       shape: element.shape || null,
       image: element.image || null,
+      merge: element.merge || null,
       cells: element.cells || []
     }))
   };
@@ -9334,6 +9562,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Spreadsheet workbook sheet references are preserved." : "No workbook sheet references were required or observed."
       });
     }
+    if (gate === "spreadsheet-merged-cell-refs-preserved") {
+      const mergedCellSignals = maxTraceMetric(document, ["mergedCells", "mergedCellCount"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : mergedCellSignals > 0
+          ? evidence.mergeRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { mergedCellSignals, mergeRefCount: evidence.mergeRefCount },
+        required: { mergeRefsWhenMergedCellsExist: true },
+        message: status === "passed" ? "Spreadsheet merged-cell ranges are preserved as element references." : "No spreadsheet merged-cell ranges were required or observed."
+      });
+    }
     if (gate === "formula-text-preserved") {
       const formulaSignals = maxTraceMetric(document, ["formulas", "formulaCount"]);
       const status = routeId !== "spreadsheet"
@@ -9521,6 +9762,11 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const hyperlinkRefCount = sampleElements.reduce((sum, element) => (
       sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.hyperlink?.target || cell.hyperlink?.location).length : 0)
     ), 0);
+    const mergeRefCount = sampleElements.reduce((sum, element) => (
+      sum +
+      (element.merge?.ref ? 1 : 0) +
+      (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.merge?.ref).length : 0)
+    ), 0);
     const dateCellRefCount = sampleElements.reduce((sum, element) => (
       sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.dateIso).length : 0)
     ), 0);
@@ -9547,6 +9793,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       cellRefCount,
       formulaRefCount,
       hyperlinkRefCount,
+      mergeRefCount,
       dateCellRefCount,
       sheetRefCount,
       geometryElementCount,
@@ -9616,6 +9863,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithCellRefsCount: plannedDocuments.filter((document) => document.evidence.cellRefCount > 0).length,
       documentWithSheetRefsCount: plannedDocuments.filter((document) => document.evidence.sheetRefCount > 0).length,
       documentWithDateCellRefsCount: plannedDocuments.filter((document) => document.evidence.dateCellRefCount > 0).length,
+      documentWithMergedCellRefsCount: plannedDocuments.filter((document) => document.evidence.mergeRefCount > 0).length,
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
       documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
@@ -10194,6 +10442,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           cells: parsed.cellCount,
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount,
+          mergedCells: parsed.mergedCellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         });
@@ -10215,6 +10464,11 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           cells: parsed.cellCount,
           rows: parsed.rowCount,
           sharedStrings: parsed.sharedStringCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.merged-cells",
+          status: parsed.mergedCellCount ? "completed" : "empty",
+          mergedCells: parsed.mergedCellCount
         });
         parserTrace.push({
           stage: "table.sheet.date-styles",
@@ -10247,7 +10501,8 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           sheetRefs: spreadsheet.sheetRefCount,
           hiddenSheets: spreadsheet.hiddenSheetCount,
           dateStyles: spreadsheet.dateStyleCount,
-          dateCells: spreadsheet.dateCellCount
+          dateCells: spreadsheet.dateCellCount,
+          mergedCells: spreadsheet.mergedCellCount
         });
         parserTrace.push(...spreadsheet.parserTrace);
       }
@@ -15218,6 +15473,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.workbook.sheets",
         "table.sheet.headers",
         "table.sheet.cells",
+        "table.sheet.merged-cells",
         "table.sheet.date-styles",
         "table.sheet.formulas",
         "table.sheet.hyperlinks",
@@ -15238,10 +15494,10 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -15262,7 +15518,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

@@ -351,6 +351,7 @@ const sampleXlsxBase64 = base64Zip({
   "xl/worksheets/sheet1.xml": [
     "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
     "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c r=\"C2\" s=\"1\"><v>46173</v></c><c r=\"D2\"><f>B2*2</f><v>84</v></c></row></sheetData>",
+    "<mergeCells count=\"1\"><mergeCell ref=\"A1:B1\"/></mergeCells>",
     "<hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\" display=\"Acme portal\" tooltip=\"Vendor evidence link\"/></hyperlinks>",
     "</worksheet>"
   ].join(""),
@@ -645,6 +646,7 @@ try {
           "xl/worksheets/sheet1.xml": [
             "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
             "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c r=\"C2\" s=\"1\"><v>46188</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData>",
+            "<mergeCells count=\"1\"><mergeCell ref=\"A1:B1\"/></mergeCells>",
             "<hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\" display=\"completed evidence\"/></hyperlinks>",
             "</worksheet>"
           ].join(""),
@@ -903,6 +905,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.workbook.sheets"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.merged-cells"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.date-styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.hyperlinks"), true);
@@ -954,6 +957,8 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.dateSerial"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.hyperlink.target"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("merge.ref"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.merge.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.target"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.relationshipId"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
@@ -964,6 +969,7 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.href"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
@@ -972,6 +978,8 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.target"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.relationshipId"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.merge.ref"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.merge"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateIso"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateSerial"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
@@ -1024,6 +1032,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-merged-cell-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-date-serials-normalized"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".jsonc", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
@@ -2214,11 +2223,17 @@ try {
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.workbook.sheets" && trace.status === "completed" && trace.sheets === 1 && trace.sheetRefs === 1), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.merged-cells" && trace.status === "completed" && trace.mergedCells === 1), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.hyperlinks" && trace.status === "completed" && trace.hyperlinks === 1), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-06-15"), true);
         assert.equal(mountedStructuredCorpus.timeRange.from, "2026-06-15");
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-06-15"), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "merged-cell" &&
+          ref.merge?.ref === "A1:B1" &&
+          ref.table?.sheetName === "Mounted Evidence"
+        ))), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "table-row" &&
           ref.table?.format === "xlsx" &&
@@ -2528,6 +2543,7 @@ try {
   )), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
+  assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.merged-cells" && trace.status === "completed" && trace.mergedCells === 1), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.date-styles" && trace.status === "completed" && trace.dateStyles === 1 && trace.dateCells === 1), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.hyperlinks" && trace.status === "completed" && trace.hyperlinks === 1), true);
@@ -2535,6 +2551,19 @@ try {
   assert.equal(xlsxPayloadCorpus.elementPlan.sourceFormat, "xlsx");
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["merged-cell"] >= 1, true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "merged-cell" &&
+    element.table?.format === "xlsx" &&
+    element.table?.sheetName === "Finance Evidence" &&
+    element.merge?.ref === "A1:B1" &&
+    element.merge?.masterRef === "A1" &&
+    element.merge?.startRef === "A1" &&
+    element.merge?.endRef === "B1" &&
+    element.merge?.rowSpan === 1 &&
+    element.merge?.columnSpan === 2 &&
+    element.merge?.cellRefs?.includes("B1")
+  )), true);
   assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "table-row" &&
     element.table?.format === "xlsx" &&
@@ -2566,11 +2595,21 @@ try {
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("sheetName"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("sheetId"), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("mergedCells"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("dateSerials"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("formulas"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("hyperlinks"), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
+  assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "merged-cell" &&
+    ref.merge?.ref === "A1:B1" &&
+    ref.merge?.masterRef === "A1"
+  ))), true);
+  assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "table-header" &&
+    ref.cells?.some((cell) => cell.ref === "A1" && cell.merge?.ref === "A1:B1")
+  ))), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "table-row" &&
     ref.table?.format === "xlsx" &&
@@ -2591,6 +2630,13 @@ try {
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-14" &&
     unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "merged-cell" &&
+      ref.merge?.ref === "A1:B1"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-14" &&
+    unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "table-row" &&
       ref.table?.format === "xlsx" &&
       ref.table?.worksheetPath === "xl/worksheets/sheet1.xml" &&
@@ -2608,7 +2654,7 @@ try {
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-05-31"), true);
   assert.equal(xlsxPayloadCorpus.eventTime, "2026-05-31");
   assert.equal(xlsxPayloadCorpus.timeRange.from, "2026-05-31");
-  assert.match(xlsxPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Sheet 1 \(Finance Evidence\) Header row|A=Vendor|B=Total|C=Payment Date/);
+  assert.match(xlsxPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Sheet 1 \(Finance Evidence\) (?:Merged range|Header row)|merge A1:B1|A=Vendor|B=Total|C=Payment Date/);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-05-31"), true);
   for (const [sourceId, formatId, signature, sniffedExtension, parserStage] of [
     ["source-44", "pdf", "pdf-header", ".pdf", "pdf.text.basic"],
@@ -3149,6 +3195,7 @@ try {
   assert.equal(conversionPlan.summary.documentWithLinkRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithSheetRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithDateCellRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithMergedCellRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithStyleRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithNumberingRefsCount >= 1, true);
@@ -3174,6 +3221,11 @@ try {
     document.routeId === "spreadsheet" &&
     document.evidence.sheetRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && gate.status === "passed")
+  )), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.evidence.mergeRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-merged-cell-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
@@ -3270,17 +3322,21 @@ try {
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "spreadsheet" &&
     document.parserStages.includes("table.workbook.sheets") &&
+    document.parserStages.includes("table.sheet.merged-cells") &&
     document.parserStages.includes("table.sheet.date-styles") &&
     document.parserStages.includes("table.sheet.formulas") &&
     document.parserStages.includes("table.sheet.hyperlinks") &&
     document.preserves.includes("sheetName") &&
     document.preserves.includes("sheetId") &&
+    document.preserves.includes("mergedCells") &&
     document.preserves.includes("dateSerials") &&
     document.preserves.includes("hyperlinks") &&
     document.evidence.sheetRefCount >= 1 &&
+    document.evidence.mergeRefCount >= 1 &&
     document.evidence.dateCellRefCount >= 1 &&
     document.evidence.formulaRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-merged-cell-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-date-serials-normalized" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
