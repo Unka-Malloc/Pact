@@ -1590,14 +1590,14 @@ function parseSourceCodeText(text = "", metadata = {}) {
     }
   }
 
-  for (const item of imports.slice(0, 60)) {
-    records.push(`Code import ${item}`);
-  }
   for (const item of symbols.slice(0, 120)) {
     records.push(`Code symbol ${item}`);
   }
   for (const item of entryPoints.slice(0, 20)) {
     records.push(`Code entry ${item}`);
+  }
+  for (const item of imports.slice(0, 60)) {
+    records.push(`Code import ${item}`);
   }
   for (const item of todos.slice(0, 40)) {
     records.push(`Code todo ${item}`);
