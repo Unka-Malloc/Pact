@@ -789,6 +789,8 @@ try {
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
+  assert.equal(capabilities.payload.formatConversion.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("word"), true);
@@ -1350,6 +1352,14 @@ try {
   assert.equal(professionalConversionPlan.strategy, "office-document-professional-adaptation.v1");
   assert.equal(professionalConversionPlan.summary.targetFormats.includes("docx"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("docx-openxml-package-valid"), true);
+  assert.equal(professionalConversionPlan.summary.qualityGateStatusCounts.passed > 0, true);
+  assert.equal(professionalConversionPlan.summary.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
+  assert.equal(professionalConversionPlan.summary.outputArtifactFailedCount, 0);
+  assert.equal(professionalConversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
+    artifact.artifactId === "portable-docx" &&
+    artifact.status === "passed" &&
+    artifact.gates.some((gate) => gate.gate === "openxml-required-parts-present" && gate.status === "passed")
+  )), true);
   for (const [sourceId, routeId, family, qualityGate] of [
     ["source-5", "markdown", "markdown", "heading-tree-preserved"],
     ["source-8", "word", "office-word", "word-annotation-refs-preserved"],
@@ -1364,6 +1374,8 @@ try {
     assert.equal(document.conversionAdapters.some((adapter) => adapter.targetFormat === "docx"), true);
     assert.equal(document.conversionAdapters.some((adapter) => adapter.targetFormat === "agent-json"), true);
     assert.equal(document.qualityGates.includes(qualityGate), true);
+    assert.equal(document.qualityGateResults.some((gate) => gate.gate === qualityGate && gate.status === "passed"), true);
+    assert.equal(["low", "medium"].includes(document.conversionRiskLevel), true);
     assert.equal(document.openability.docxOpenXmlPackage, true);
   }
   assert.equal(professionalConversionPlan.documents.some((document) => (
@@ -2310,8 +2322,14 @@ try {
   assert.equal(conversionPlan.summary.documentWithCellRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithFormulaRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
+  assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
+  assert.equal(conversionPlan.outputArtifactValidation.artifacts.every((artifact) => artifact.status === "passed"), true);
   assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "pdf" && item.qualityGates.includes("page-order-preserved")), true);
   assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.qualityGateResults.some((gate) => gate.gate === "formula-text-preserved" && gate.status === "passed")
+  )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "word" &&
     document.evidence.annotationElementCount >= 1 &&
@@ -2337,6 +2355,11 @@ try {
   const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));
   assert.equal(workspaceManifest.protocolVersion, "pact.external-knowledge-distillation.v1.workspace-package");
   assert.equal(workspaceManifest.artifacts.every((item) => item.byteSize > 0 && /^[a-f0-9]{64}$/.test(item.sha256)), true);
+  assert.equal(workspaceManifest.artifacts.some((item) => (
+    item.artifactId === "portable-docx" &&
+    item.validation?.status === "passed" &&
+    item.validation.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed")
+  )), true);
 } finally {
   if (pactServer) {
     await pactServer.close();

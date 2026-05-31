@@ -604,6 +604,8 @@ raw corpus item 标准字段：
 - Markdown 不允许包含 Tika XHTML 噪声。
 - PDF、Word、PowerPoint、Excel、Markdown、OpenDocument 必须进入 `office-document-professional-adaptation.v1` 格式矩阵，声明 parser stages、structure units、conversion adapters、preserves、quality gates、risk controls 和 known losses。
 - 每个文档的 `formatConversionPlan.documents[]` 必须能说明转换到 Markdown、DOCX、Agent JSON 和 evidence pack 时保留什么、丢失什么、如何验收可打开性。
+- 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/批注、PPT slide/shape、Excel sheet-row-cell/formula/time-index、Markdown heading/table、OpenDocument content/table 变成可机读的 pass/warning/fail/not_applicable。
+- `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body 和文本节点。
 - 下载链路统一走 bridge-mediated fetch/blob。
 - 下载 UI 显示文件大小。
 
@@ -617,7 +619,7 @@ raw corpus item 标准字段：
 验收：
 
 - Markdown、DOCX、JSON、ZIP 均可打开。
-- `format-conversion-plan-json` 能按 PDF/Word/PowerPoint/Excel/Markdown 精确列出专业 adapter、质量门禁和 openability 状态。
+- `format-conversion-plan-json` 能按 PDF/Word/PowerPoint/Excel/Markdown 精确列出专业 adapter、质量门禁评估、openability 状态和输出 artifact 自检结果。
 - 浏览器下载记录不再出现失败项。
 - 文件大小与 manifest 一致。
 

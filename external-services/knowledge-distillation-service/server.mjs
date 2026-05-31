@@ -7293,6 +7293,293 @@ function professionalDocumentProfile(route = {}, document = {}, elementPlan = nu
   };
 }
 
+function maxTraceMetric(document = {}, names = []) {
+  const traces = Array.isArray(document.parserTrace) ? document.parserTrace : [];
+  let maxValue = 0;
+  for (const trace of traces) {
+    for (const name of names) {
+      const value = Number(trace?.[name] || 0);
+      if (Number.isFinite(value) && value > maxValue) {
+        maxValue = value;
+      }
+    }
+  }
+  return maxValue;
+}
+
+function hasTraceStage(document = {}, stage = "", status = "") {
+  const traces = Array.isArray(document.parserTrace) ? document.parserTrace : [];
+  return traces.some((trace) => (
+    trace?.stage === stage &&
+    (!status || trace?.status === status)
+  ));
+}
+
+function professionalGateRecord(gate = "", status = "not_applicable", details = {}) {
+  const severity = status === "failed"
+    ? "error"
+    : status === "warning"
+      ? "warning"
+      : "info";
+  return {
+    gate,
+    status,
+    severity,
+    scope: details.scope || "source-document",
+    validationMode: details.validationMode || "evidence-derived",
+    observed: details.observed || {},
+    required: details.required || {},
+    message: details.message || ""
+  };
+}
+
+function buildProfessionalQualityGateResults({ document = {}, profile = {}, evidence = {}, conversionAdapters = [] } = {}) {
+  const routeId = document.route?.formatId || document.route?.id || profile.routeId || "unknown";
+  const gates = Array.isArray(profile.qualityGates) ? profile.qualityGates : [];
+  const hasDistillableCorpus = Boolean(
+    document.quality?.distillable ||
+    Number(document.quality?.textCharacters || 0) > 0 ||
+    Number(evidence.elementCount || 0) > 0 ||
+    Number(evidence.windowCount || 0) > 0
+  );
+  const hasDocxAdapter = conversionAdapters.some((adapter) => adapter.targetFormat === "docx");
+  const resultForGate = (gate) => {
+    if (gate === "empty-corpus-blocked") {
+      return professionalGateRecord(gate, hasDistillableCorpus ? "passed" : "failed", {
+        observed: {
+          textCharacters: Number(document.quality?.textCharacters || 0),
+          elementCount: evidence.elementCount,
+          windowCount: evidence.windowCount
+        },
+        required: { distillableCorpus: true },
+        message: hasDistillableCorpus ? "Distillable corpus is present." : "No distillable corpus was produced for this source."
+      });
+    }
+    if (gate === "docx-openxml-package-valid") {
+      return professionalGateRecord(gate, hasDocxAdapter ? "passed" : "failed", {
+        scope: "output-artifact",
+        validationMode: "adapter-contract-and-artifact-self-check",
+        observed: {
+          hasDocxAdapter,
+          adapter: conversionAdapters.find((adapter) => adapter.targetFormat === "docx")?.adapter || ""
+        },
+        required: { targetFormat: "docx", package: "openxml" },
+        message: hasDocxAdapter
+          ? "DOCX conversion adapter is present; generated portable DOCX is self-checked in outputArtifactValidation."
+          : "No DOCX conversion adapter is registered for this source format."
+      });
+    }
+    if (gate === "page-order-preserved") {
+      const pageSignals = maxTraceMetric(document, ["pages", "pageCount"]) || evidence.geometryElementCount;
+      return professionalGateRecord(gate, routeId === "pdf" && pageSignals > 0 ? "passed" : routeId === "pdf" ? "warning" : "not_applicable", {
+        observed: { pageSignals, geometryElementCount: evidence.geometryElementCount },
+        required: { routeId: "pdf", orderedPages: true },
+        message: pageSignals > 0 ? "PDF page/order signals are preserved." : "PDF page/order signals were not observed."
+      });
+    }
+    if (gate === "bbox-metadata-present-when-available") {
+      const layoutSignals = maxTraceMetric(document, ["layoutBlocks", "geometries", "geometryCount"]);
+      const status = routeId !== "pdf"
+        ? "not_applicable"
+        : evidence.geometryElementCount > 0
+          ? "passed"
+          : layoutSignals > 0
+            ? "failed"
+            : "warning";
+      return professionalGateRecord(gate, status, {
+        observed: { layoutSignals, geometryElementCount: evidence.geometryElementCount },
+        required: { bboxWhenLayoutAvailable: true },
+        message: evidence.geometryElementCount > 0
+          ? "Layout geometry is available on element references."
+          : "No bbox metadata was attached to the PDF element sample."
+      });
+    }
+    if (gate === "word-table-cell-refs-preserved") {
+      const tableCells = maxTraceMetric(document, ["tableCells", "cells"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : tableCells > 0
+          ? evidence.cellRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { tableCells, cellRefCount: evidence.cellRefCount },
+        required: { cellRefsWhenTablesExist: true },
+        message: status === "passed" ? "Word table cell references are present." : "No Word table cell references were required or observed."
+      });
+    }
+    if (gate === "word-annotation-refs-preserved") {
+      const annotations = maxTraceMetric(document, ["annotations", "comments", "footnotes", "endnotes"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : annotations > 0
+          ? evidence.annotationElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { annotations, annotationElementCount: evidence.annotationElementCount },
+        required: { annotationRefsWhenAnnotationsExist: true },
+        message: status === "passed" ? "Word comments/footnotes/endnotes are preserved as element references." : "No Word annotations were required or observed."
+      });
+    }
+    if (gate === "slide-order-preserved") {
+      const slideCount = maxTraceMetric(document, ["slides", "slideCount"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : slideCount > 0 || evidence.elementCount > 0
+          ? "passed"
+          : "warning";
+      return professionalGateRecord(gate, status, {
+        observed: { slideCount, elementCount: evidence.elementCount },
+        required: { orderedSlides: true },
+        message: status === "passed" ? "Slide sequence is represented in element refs." : "Slide sequence was not observed."
+      });
+    }
+    if (gate === "shape-layout-refs-present") {
+      const geometrySignals = maxTraceMetric(document, ["geometries", "shapeGeometries", "tableGeometries"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : geometrySignals > 0
+          ? evidence.geometryElementCount > 0 ? "passed" : "failed"
+          : "warning";
+      return professionalGateRecord(gate, status, {
+        observed: { geometrySignals, geometryElementCount: evidence.geometryElementCount },
+        required: { shapeLayoutRefs: true },
+        message: status === "passed" ? "PowerPoint shape/table geometry is attached to element refs." : "PowerPoint layout geometry was not attached."
+      });
+    }
+    if (gate === "presentation-table-cell-refs-preserved") {
+      const tableCells = maxTraceMetric(document, ["tableCells", "cells"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : tableCells > 0
+          ? evidence.cellRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { tableCells, cellRefCount: evidence.cellRefCount },
+        required: { cellRefsWhenTablesExist: true },
+        message: status === "passed" ? "PowerPoint table cell references are preserved." : "No PowerPoint table cell references were required or observed."
+      });
+    }
+    if (gate === "sheet-row-cell-refs-preserved") {
+      const cellSignals = maxTraceMetric(document, ["cells", "cellCount"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : evidence.cellRefCount > 0
+          ? "passed"
+          : cellSignals > 0
+            ? "failed"
+            : "warning";
+      return professionalGateRecord(gate, status, {
+        observed: { cellSignals, cellRefCount: evidence.cellRefCount },
+        required: { sheetRowCellRefs: true },
+        message: status === "passed" ? "Spreadsheet sheet/row/cell references are preserved." : "Spreadsheet cell references were not observed."
+      });
+    }
+    if (gate === "formula-text-preserved") {
+      const formulaSignals = maxTraceMetric(document, ["formulas", "formulaCount"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : formulaSignals > 0
+          ? evidence.formulaRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { formulaSignals, formulaRefCount: evidence.formulaRefCount },
+        required: { formulasWhenPresent: true },
+        message: status === "passed" ? "Spreadsheet formula text is preserved." : "No spreadsheet formulas were required or observed."
+      });
+    }
+    if (gate === "table-time-index-when-date-columns-exist") {
+      const timeIndexed = hasTraceStage(document, "table.time-index", "completed") || Boolean(document.timeRange?.from || document.timeRange?.to);
+      const hasTimeSignals = Array.isArray(document.timeSignals) && document.timeSignals.length > 0;
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : timeIndexed
+          ? "passed"
+          : hasTimeSignals
+            ? "failed"
+            : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { timeIndexed, timeSignalCount: Array.isArray(document.timeSignals) ? document.timeSignals.length : 0 },
+        required: { timeIndexWhenDateColumnsExist: true },
+        message: status === "passed" ? "Spreadsheet date columns are reflected in the time index." : "No spreadsheet date-column time index was required or observed."
+      });
+    }
+    if (gate === "heading-tree-preserved") {
+      const headings = maxTraceMetric(document, ["headings", "headingCount"]) || Number(document.elementPlan?.elementTypes?.heading || 0);
+      const status = routeId !== "markdown"
+        ? "not_applicable"
+        : headings > 0
+          ? "passed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { headings },
+        required: { headingTreeWhenHeadingsExist: true },
+        message: status === "passed" ? "Markdown heading tree is preserved." : "No Markdown headings were required or observed."
+      });
+    }
+    if (gate === "markdown-table-blocks-preserved") {
+      const tables = maxTraceMetric(document, ["tables", "tableCount"]);
+      const status = routeId !== "markdown"
+        ? "not_applicable"
+        : tables > 0
+          ? evidence.tableElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { tables, tableElementCount: evidence.tableElementCount },
+        required: { markdownTablesWhenPresent: true },
+        message: status === "passed" ? "Markdown table blocks are preserved." : "No Markdown tables were required or observed."
+      });
+    }
+    if (gate === "odf-content-order-preserved") {
+      const status = routeId !== "open-document"
+        ? "not_applicable"
+        : hasTraceStage(document, "open-document.structured", "completed") || evidence.elementCount > 0
+          ? "passed"
+          : "warning";
+      return professionalGateRecord(gate, status, {
+        observed: { elementCount: evidence.elementCount, structuredStage: hasTraceStage(document, "open-document.structured", "completed") },
+        required: { contentXmlOrder: true },
+        message: status === "passed" ? "OpenDocument content order is represented in element refs." : "OpenDocument content order was not observed."
+      });
+    }
+    if (gate === "opendocument-table-cell-refs-preserved") {
+      const tableCells = maxTraceMetric(document, ["tableCells", "cells"]);
+      const status = routeId !== "open-document"
+        ? "not_applicable"
+        : tableCells > 0
+          ? evidence.cellRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { tableCells, cellRefCount: evidence.cellRefCount },
+        required: { cellRefsWhenTablesExist: true },
+        message: status === "passed" ? "OpenDocument table cell references are preserved." : "No OpenDocument table cell references were required or observed."
+      });
+    }
+    return professionalGateRecord(gate, "not_applicable", {
+      validationMode: "unmapped-gate",
+      message: "No evaluator is registered for this quality gate."
+    });
+  };
+  return gates.map(resultForGate);
+}
+
+function qualityGateStatusCounts(results = []) {
+  return results.reduce((counts, result) => {
+    const status = result.status || "unknown";
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function conversionRiskLevel(results = []) {
+  if (results.some((result) => result.status === "failed")) {
+    return "high";
+  }
+  if (results.some((result) => result.status === "warning")) {
+    return "medium";
+  }
+  return "low";
+}
+
 function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
   const documents = Array.isArray(corpusPlan?.documents) ? corpusPlan.documents : [];
   const plannedDocuments = documents.map((document) => {
@@ -7306,6 +7593,21 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
     const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
+    const evidence = {
+      elementCount: Number(document.elementPlan?.elementCount || 0),
+      windowCount: Number(document.windowPlan?.windowCount || 0),
+      tableElementCount,
+      cellRefCount,
+      formulaRefCount,
+      geometryElementCount,
+      annotationElementCount
+    };
+    const qualityGateResults = buildProfessionalQualityGateResults({
+      document,
+      profile,
+      evidence,
+      conversionAdapters
+    });
     return {
       sourceId: document.sourceId,
       title: document.title,
@@ -7323,18 +7625,13 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       targetFormats: uniqueOrdered(conversionAdapters.map((adapter) => adapter.targetFormat)),
       conversionAdapters,
       qualityGates: profile.qualityGates || [],
+      qualityGateResults,
+      qualityGateStatusCounts: qualityGateStatusCounts(qualityGateResults),
+      conversionRiskLevel: conversionRiskLevel(qualityGateResults),
       riskControls: profile.riskControls || [],
       preserves: profile.preserves || [],
       knownLosses: profile.knownLosses || [],
-      evidence: {
-        elementCount: Number(document.elementPlan?.elementCount || 0),
-        windowCount: Number(document.windowPlan?.windowCount || 0),
-        tableElementCount,
-        cellRefCount,
-        formulaRefCount,
-        geometryElementCount,
-        annotationElementCount
-      },
+      evidence,
       openability: {
         markdownUtf8: (profile.humanReadableModes || []).includes("portable-markdown"),
         docxOpenXmlPackage: conversionAdapters.some((adapter) => adapter.targetFormat === "docx"),
@@ -7364,6 +7661,9 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
+      qualityGateStatusCounts: qualityGateStatusCounts(plannedDocuments.flatMap((document) => document.qualityGateResults)),
+      documentWithHighConversionRiskCount: plannedDocuments.filter((document) => document.conversionRiskLevel === "high").length,
+      documentWithMediumConversionRiskCount: plannedDocuments.filter((document) => document.conversionRiskLevel === "medium").length,
       knownLosses: uniqueOrdered(plannedDocuments.flatMap((document) => document.knownLosses)).slice(0, 80)
     },
     documents: plannedDocuments
@@ -9004,9 +9304,8 @@ function markdownToDocxParagraphs(markdown = "") {
   return paragraphs.join("");
 }
 
-function buildPortableDocx(run = {}) {
-  const markdown = run.result?.portableDocuments?.[0]?.document?.markdown || "";
-  const body = markdownToDocxParagraphs(markdown) || wordParagraph(run.title || "External Knowledge Distillation");
+function buildPortableDocxBuffer({ title = "", runId = "", createdAt = "", updatedAt = "", markdown = "" } = {}) {
+  const body = markdownToDocxParagraphs(markdown) || wordParagraph(title || runId || "External Knowledge Distillation");
   const documentXml = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
@@ -9019,10 +9318,10 @@ function buildPortableDocx(run = {}) {
   const coreXml = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
-    `<dc:title>${xmlEscape(run.title || run.runId)}</dc:title>`,
+    `<dc:title>${xmlEscape(title || runId)}</dc:title>`,
     "<dc:creator>Pact External Knowledge Distillation</dc:creator>",
-    `<dcterms:created xsi:type="dcterms:W3CDTF">${xmlEscape(run.createdAt || nowIso())}</dcterms:created>`,
-    `<dcterms:modified xsi:type="dcterms:W3CDTF">${xmlEscape(run.updatedAt || run.createdAt || nowIso())}</dcterms:modified>`,
+    `<dcterms:created xsi:type="dcterms:W3CDTF">${xmlEscape(createdAt || nowIso())}</dcterms:created>`,
+    `<dcterms:modified xsi:type="dcterms:W3CDTF">${xmlEscape(updatedAt || createdAt || nowIso())}</dcterms:modified>`,
     "</cp:coreProperties>"
   ].join("");
   return zipBufferFromEntries([
@@ -9057,6 +9356,135 @@ function buildPortableDocx(run = {}) {
   ]);
 }
 
+function buildPortableDocx(run = {}) {
+  return buildPortableDocxBuffer({
+    title: run.title || "External Knowledge Distillation",
+    runId: run.runId || "",
+    createdAt: run.createdAt || "",
+    updatedAt: run.updatedAt || "",
+    markdown: run.result?.portableDocuments?.[0]?.document?.markdown || ""
+  });
+}
+
+function artifactValidationGate(gate = "", passed = false, details = {}) {
+  return {
+    gate,
+    status: passed ? "passed" : "failed",
+    severity: passed ? "info" : "error",
+    observed: details.observed || {},
+    required: details.required || {},
+    message: details.message || ""
+  };
+}
+
+function validateMarkdownArtifactBuffer(buffer = Buffer.alloc(0)) {
+  const text = Buffer.from(buffer || []).toString("utf8");
+  const gates = [
+    artifactValidationGate("utf8-decodable", true, {
+      observed: { characters: text.length },
+      required: { encoding: "utf8" },
+      message: "Markdown artifact decodes as UTF-8."
+    }),
+    artifactValidationGate("non-empty-document", text.trim().length > 0, {
+      observed: { characters: text.trim().length },
+      required: { minCharacters: 1 },
+      message: text.trim().length > 0 ? "Markdown artifact is non-empty." : "Markdown artifact is empty."
+    }),
+    artifactValidationGate("no-tika-xhtml-wrapper", !/<html[\s>]|<body[\s>]|http:\/\/www\.w3\.org\/1999\/xhtml/i.test(text), {
+      observed: { xhtmlWrapperDetected: /<html[\s>]|<body[\s>]|http:\/\/www\.w3\.org\/1999\/xhtml/i.test(text) },
+      required: { cleanMarkdown: true },
+      message: "Markdown artifact does not expose Tika XHTML wrapper noise."
+    })
+  ];
+  return {
+    artifactId: "portable-markdown",
+    format: "markdown",
+    strategy: "markdown-utf8-cleanliness-self-check.v1",
+    byteSize: buffer.length,
+    sha256: shaBuffer(buffer),
+    status: gates.every((gate) => gate.status === "passed") ? "passed" : "failed",
+    gates
+  };
+}
+
+function validateOpenXmlDocxBuffer(buffer = Buffer.alloc(0)) {
+  const entries = readZipEntries(buffer);
+  const entryNames = new Set(entries.map((entry) => entry.name));
+  const contentTypes = zipEntryText(entries, "[Content_Types].xml");
+  const documentXml = zipEntryText(entries, "word/document.xml");
+  const gates = [
+    artifactValidationGate("zip-readable", entries.length > 0 && !entries.some((entry) => entry.warning), {
+      observed: {
+        entryCount: entries.length,
+        warnings: entries.filter((entry) => entry.warning).map((entry) => entry.warning).slice(0, 8)
+      },
+      required: { zipEntriesReadable: true },
+      message: entries.length > 0 ? "DOCX ZIP entries are readable." : "DOCX ZIP has no readable entries."
+    }),
+    artifactValidationGate("openxml-required-parts-present", [
+      "[Content_Types].xml",
+      "_rels/.rels",
+      "docProps/core.xml",
+      "docProps/app.xml",
+      "word/document.xml",
+      "word/styles.xml"
+    ].every((name) => entryNames.has(name)), {
+      observed: { entries: Array.from(entryNames).sort() },
+      required: { parts: ["[Content_Types].xml", "_rels/.rels", "docProps/core.xml", "docProps/app.xml", "word/document.xml", "word/styles.xml"] },
+      message: "DOCX required OpenXML package parts are present."
+    }),
+    artifactValidationGate("content-types-wordprocessing-main", /wordprocessingml\.document\.main\+xml/.test(contentTypes), {
+      observed: { hasWordprocessingMain: /wordprocessingml\.document\.main\+xml/.test(contentTypes) },
+      required: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" },
+      message: "DOCX content types declare the WordprocessingML main document."
+    }),
+    artifactValidationGate("word-document-body-present", /<w:document\b/.test(documentXml) && /<w:body\b/.test(documentXml), {
+      observed: { documentCharacters: documentXml.length },
+      required: { root: "w:document", body: "w:body" },
+      message: "DOCX word/document.xml has a WordprocessingML body."
+    }),
+    artifactValidationGate("word-document-has-text", /<w:t\b/.test(documentXml), {
+      observed: { textNodeCount: (documentXml.match(/<w:t\b/g) || []).length },
+      required: { textNodes: true },
+      message: "DOCX word/document.xml contains text nodes."
+    })
+  ];
+  return {
+    artifactId: "portable-docx",
+    format: "docx",
+    strategy: "openxml-package-self-check.v1",
+    byteSize: buffer.length,
+    sha256: shaBuffer(buffer),
+    status: gates.every((gate) => gate.status === "passed") ? "passed" : "failed",
+    gates
+  };
+}
+
+function attachFormatConversionOutputValidation(plan = {}, { title = "", runId = "", createdAt = "", updatedAt = "", markdown = "" } = {}) {
+  const markdownBuffer = Buffer.from(String(markdown || ""), "utf8");
+  const docxBuffer = buildPortableDocxBuffer({ title, runId, createdAt, updatedAt, markdown });
+  const artifactValidations = [
+    validateMarkdownArtifactBuffer(markdownBuffer),
+    validateOpenXmlDocxBuffer(docxBuffer)
+  ];
+  const outputArtifactValidation = {
+    strategy: "format-conversion-output-artifact-self-check.v1",
+    generatedAt: nowIso(),
+    artifacts: artifactValidations,
+    statusCounts: qualityGateStatusCounts(artifactValidations.map((artifact) => ({ status: artifact.status })))
+  };
+  return {
+    ...plan,
+    outputArtifactValidation,
+    summary: {
+      ...(plan.summary || {}),
+      outputArtifactValidationStrategy: outputArtifactValidation.strategy,
+      outputArtifactPassedCount: artifactValidations.filter((artifact) => artifact.status === "passed").length,
+      outputArtifactFailedCount: artifactValidations.filter((artifact) => artifact.status === "failed").length
+    }
+  };
+}
+
 function jsonArtifactBuffer(value = {}) {
   return Buffer.from(JSON.stringify(value, null, 2), "utf8");
 }
@@ -9064,6 +9492,8 @@ function jsonArtifactBuffer(value = {}) {
 function buildWorkspacePackageZip(run = {}) {
   const markdown = Buffer.from(run.result?.portableDocuments?.[0]?.document?.markdown || "", "utf8");
   const docx = buildPortableDocx(run);
+  const validationByArtifactId = new Map((run.result?.formatConversionPlan?.outputArtifactValidation?.artifacts || [])
+    .map((artifact) => [artifact.artifactId, artifact]));
   const artifactEntries = [
     { artifactId: "portable-markdown", path: "distillation.md", contentType: "text/markdown; charset=utf-8", data: markdown },
     { artifactId: "portable-docx", path: "distillation.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: docx },
@@ -9085,7 +9515,17 @@ function buildWorkspacePackageZip(run = {}) {
       path: entry.path,
       contentType: entry.contentType,
       byteSize: entry.data.length,
-      sha256: shaBuffer(entry.data)
+      sha256: shaBuffer(entry.data),
+      validation: validationByArtifactId.has(entry.artifactId)
+        ? {
+            strategy: validationByArtifactId.get(entry.artifactId).strategy,
+            status: validationByArtifactId.get(entry.artifactId).status,
+            gates: (validationByArtifactId.get(entry.artifactId).gates || []).map((gate) => ({
+              gate: gate.gate,
+              status: gate.status
+            }))
+          }
+        : null
     }))
   };
   return zipBufferFromEntries([
@@ -11282,7 +11722,7 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
   const query = String(input.query || input.prompt || input.title || "External knowledge distillation").trim();
   const title = String(input.title || query || "External Knowledge Distillation").trim();
   const runId = String(input.runId || "").trim() || stableId("external_kd_run", query, createdAt);
-  const formatConversionPlan = buildFormatConversionPlan({ runId, corpusPlan });
+  let formatConversionPlan = buildFormatConversionPlan({ runId, corpusPlan });
   const responseProfile = String(input.responseProfile || input.mode || "console").trim() || "console";
   const groups = classifyDocuments(documents);
   const classification = {
@@ -11374,6 +11814,13 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
     }
   });
   const markdown = buildMarkdown({ title, query, documents, classification, routePlan, corpusPlan, convergence, grounding, incrementalPlan, graphEvidence, failure });
+  formatConversionPlan = attachFormatConversionOutputValidation(formatConversionPlan, {
+    title,
+    runId,
+    createdAt,
+    updatedAt: createdAt,
+    markdown
+  });
   const agentMessage = buildAgentMessage({
     runId,
     title,
@@ -11821,6 +12268,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
     formatConversion: {
       supported: true,
       strategy: "office-document-professional-adaptation.v1",
+      qualityGateEvaluationStrategy: "professional-format-quality-gates.v1",
+      outputArtifactValidationStrategy: "format-conversion-output-artifact-self-check.v1",
       artifact: "format-conversion-plan-json",
       professionalFormats: PROFESSIONAL_FORMAT_ORDER,
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),

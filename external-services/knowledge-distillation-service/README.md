@@ -42,9 +42,9 @@ Artifacts:
 - `result-json`: full run record.
 - `project-snapshot-json`: project-level fingerprint, text-unit/window hashes, group snapshot, and incremental diff plan.
 - `evidence-pack-json`: GraphRAG-style text units, entities, relationships, claims/covariates, communities, and community reports.
-- `format-conversion-plan-json`: per-document professional parser/conversion plan and adapter matrix for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
+- `format-conversion-plan-json`: per-document professional parser/conversion plan, adapter matrix, quality gate results, and output artifact validation for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
 - `reference-gap-report-json`: machine-readable comparison between the service and local RAGFlow, MinerU, Docling, LlamaIndex, Marker, GraphRAG, Haystack, and Unstructured checkouts.
-- `workspace-package-zip`: complete delivery package with Markdown, DOCX, agent JSON, result JSON, snapshot, evidence pack, and manifest sizes/hashes.
+- `workspace-package-zip`: complete delivery package with Markdown, DOCX, agent JSON, result JSON, snapshot, evidence pack, manifest sizes/hashes, and artifact validation status.
 
 Core response fields:
 
@@ -58,7 +58,7 @@ Core response fields:
 - `incrementalPlan`: project snapshot and reuse plan keyed by `projectId`/`workspaceId`/`repositoryId`, with added, changed, removed, and reusable source/window counts.
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
 - `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
-- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, quality gates, risk controls, openability targets, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
+- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
 - `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, source id, group id, and time range.

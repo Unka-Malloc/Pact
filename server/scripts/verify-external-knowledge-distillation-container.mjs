@@ -403,6 +403,8 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
+  assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
+  assert.equal(capabilities.payload.formatConversion.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
@@ -995,11 +997,21 @@ try {
   assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "markdown" && item.parserProfile === "markdown-block-element-route"), true);
   assert.equal(conversionPlan.summary.targetFormats.includes("docx"), true);
   assert.equal(conversionPlan.summary.qualityGates.includes("heading-tree-preserved"), true);
+  assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
+  assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
+    artifact.artifactId === "portable-docx" &&
+    artifact.status === "passed" &&
+    artifact.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed")
+  )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
     document.conversionTargets.includes("agent-json-with-cell-coordinates-and-formulas") &&
     document.professionalFamily === "office-spreadsheet" &&
     document.qualityGates.includes("formula-text-preserved") &&
+    document.qualityGateResults.some((gate) => (
+      gate.gate === "sheet-row-cell-refs-preserved" &&
+      ["passed", "warning", "not_applicable"].includes(gate.status)
+    )) &&
     document.openability.docxOpenXmlPackage === true
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
@@ -1029,6 +1041,10 @@ try {
   }
   const workspaceManifest = JSON.parse(Buffer.from(workspaceEntries["manifest.json"]).toString("utf8"));
   assert.equal(workspaceManifest.artifacts.every((item) => item.byteSize > 0 && /^[a-f0-9]{64}$/.test(item.sha256)), true);
+  assert.equal(workspaceManifest.artifacts.some((item) => (
+    item.artifactId === "portable-docx" &&
+    item.validation?.status === "passed"
+  )), true);
 
   const contradictionRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
     method: "POST",
