@@ -157,6 +157,35 @@ function localGrantTargetMatch(targets = []) {
   };
 }
 
+function localGrantSupportedTargets() {
+  return Object.keys(LOCAL_GRANT_TARGET_MATCH);
+}
+
+function localGrantSupportedTargetDetails() {
+  return Object.entries(LOCAL_GRANT_TARGET_MATCH).map(([target, profile]) => ({
+    target,
+    agentProfileId: profile.agentProfileId || "",
+    toolsets: [...(profile.toolsets || [])],
+    maxRisk: "safe_write"
+  }));
+}
+
+function localGrantMatchedTargetDetails(targets = []) {
+  return targets
+    .map((target) => {
+      const profile = LOCAL_GRANT_TARGET_MATCH[normalizedTargetKey(target)] || null;
+      return profile
+        ? {
+            target,
+            agentProfileId: profile.agentProfileId || "",
+            toolsets: [...(profile.toolsets || [])],
+            maxRisk: "safe_write"
+          }
+        : null;
+    })
+    .filter(Boolean);
+}
+
 function localGrantRiskRank(risk = "read_only") {
   return LOCAL_GRANT_RISK_RANK[String(risk || "read_only")] ?? 0;
 }
@@ -856,11 +885,14 @@ export function createToolSkillManagementProvider({
         scopes: resolved.requiredScopes,
         maxRisk: resolved.maxRisk,
         targets,
+        supportedTargets: localGrantSupportedTargets(),
+        supportedTargetDetails: localGrantSupportedTargetDetails(),
         targetMatch: {
           matched: targetMatch.matched,
           matchedTargets: targetMatch.matchedTargets,
           unmatchedTargets: targetMatch.unmatchedTargets,
-          agentProfileId: targetMatch.agentProfileId
+          agentProfileId: targetMatch.agentProfileId,
+          matchedTargetDetails: localGrantMatchedTargetDetails(targetMatch.matchedTargets)
         }
       }
     };

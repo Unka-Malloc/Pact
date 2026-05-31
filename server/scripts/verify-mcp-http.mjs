@@ -327,6 +327,13 @@ try {
   assert.deepEqual(localGrant.payload.targets, ["codex"]);
   assert.equal(localGrant.payload.maxRisk, "safe_write");
   assert.equal(localGrant.payload.targetMatch.matched, true);
+  assert.deepEqual(localGrant.payload.supportedTargets, expectedInstallTargets);
+  const localGrantTargetDetails = new Map(localGrant.payload.supportedTargetDetails.map((target) => [target.target, target]));
+  assert.deepEqual([...localGrantTargetDetails.keys()], expectedInstallTargets);
+  assert.equal(localGrantTargetDetails.get("codex").agentProfileId, "pact.mcp.codex");
+  assert.equal(localGrantTargetDetails.get("opencode").maxRisk, "safe_write");
+  assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].agentProfileId, "pact.mcp.codex");
+  assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].toolsets.includes("pact.agent.workspace"), true);
   assert.equal(localGrant.payload.toolsets.includes("pact.storage.write"), true);
   assert.equal(localGrant.payload.toolsets.includes("pact.agent.workspace"), true);
 
@@ -342,6 +349,8 @@ try {
   assert.equal(unknownTargetGrant.payload.ok, true);
   assert.equal(unknownTargetGrant.payload.maxRisk, "read_only");
   assert.equal(unknownTargetGrant.payload.targetMatch.matched, false);
+  assert.deepEqual(unknownTargetGrant.payload.supportedTargets, expectedInstallTargets);
+  assert.deepEqual(unknownTargetGrant.payload.targetMatch.matchedTargetDetails, []);
   assert.equal(unknownTargetGrant.payload.toolsets.includes("pact.storage.write"), false);
 
   const explicitScopeGrant = await fetchJson(`${server.url}/api/mcp/local-grant`, {
