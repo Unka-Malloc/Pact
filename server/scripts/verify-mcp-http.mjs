@@ -464,6 +464,9 @@ try {
   assert.equal(updateTargetDetails.get("claude-code").label, "Claude Code");
   assert.equal(updateTargetDetails.get("openclaw").priority, true);
   assert.deepEqual(updateTargetDetails.get("hermes").locations, ["orbstack", "remote-linux"]);
+  assert.equal(updateProbe.payload.result.structuredContent.sharedHub.canonicalMcpUrl, `${server.url}/mcp`);
+  assert.equal(updateProbe.payload.result.structuredContent.sharedHub.sharedspace.outlet, "pact.sharedspace");
+  assert.equal(updateProbe.payload.result.structuredContent.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(updateProbe.payload.result.content[0].text, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(updateProbe.payload.result.content[0].text, /claude-code,codex,openclaw/);

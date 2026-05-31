@@ -1130,6 +1130,7 @@ function pactMetaResult({
       autoInstallCommand: githubOneLineAutoInstallCommand,
       priorityInstallCommand: githubOneLinePriorityInstallCommand
     } = githubOneLineMcpInstallCommands({ baseUrl });
+    const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
     const updateResult = {
       clientVersion,
       serverVersion,
@@ -1139,7 +1140,8 @@ function pactMetaResult({
       autoInstallCommand: githubOneLineAutoInstallCommand,
       priorityInstallCommand: githubOneLinePriorityInstallCommand,
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
-      supportedTargets: mcpSupportedTargetDetails()
+      supportedTargets: mcpSupportedTargetDetails(),
+      sharedHub: discovery.sharedHub
     };
     if (updateAvailable) {
       const updatePayload = jsonRpcNotification("notifications/pact/update_available", {
