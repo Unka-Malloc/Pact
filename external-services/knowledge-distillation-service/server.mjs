@@ -251,7 +251,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "spreadsheet",
     preferredParser: "table.sheet.structured",
     fallbackParsers: ["tika.text", "text.direct"],
-    parserChain: ["table.route", "table.sheet.structured", "table.rows.windowed"],
+    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
     streamingUnit: "sheet",
     referenceFrameworks: ["docling", "mineru", "unstructured", "haystack"]
   },
@@ -643,10 +643,10 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Excel",
     professionalFamily: "office-spreadsheet",
     parserProfile: "spreadsheetml-sheet-row-cell-route",
-    structureUnits: ["sheet", "table-header", "table-row", "cell", "formula", "hyperlink", "time-signal"],
-    parserStages: ["table.sheet.structured", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
-    preserves: ["sheet", "row", "column", "cellRefs", "headers", "formulas", "hyperlinks", "timeSignals"],
-    conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-cell-coordinates-and-formulas", "evidence-pack"],
+    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "cell", "formula", "hyperlink", "time-signal"],
+    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
+    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "formulas", "hyperlinks", "timeSignals"],
+    conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-workbook-sheet-cell-coordinates-and-formulas", "evidence-pack"],
     conversionAdapters: [
       {
         target: "portable-markdown",
@@ -667,7 +667,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "sheets-to-agent-cell-refs.v1",
         mode: "agent",
-        stages: ["cell-coordinate-refs", "formula-refs", "hyperlink-refs", "time-signals"]
+        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "formula-refs", "hyperlink-refs", "time-signals"]
       },
       {
         target: "evidence-pack-json",
@@ -677,7 +677,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["row-text-units", "entity-columns", "claim-values"]
       }
     ],
-    qualityGates: ["sheet-row-cell-refs-preserved", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
+    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
     riskControls: ["formula-results-not-recomputed", "merged-cell-normalization-risk"],
     knownLosses: ["formula-results-not-recomputed"]
   },
@@ -1036,12 +1036,12 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["ranking/evaluation loop over external vector stores", "full document-layout enrichment for every parser"]
   },
   mineru: {
-    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs", "SpreadsheetML formula metadata"],
+    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs", "SpreadsheetML workbook sheet and formula metadata"],
     baseline: ["file-ref parsers for large binary payloads"],
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet sheet/row/cell coordinate/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, and geometry metadata for slide elements"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, and geometry metadata for slide elements"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1066,7 +1066,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint and OpenDocument hyperlinks, code, formulas, spreadsheet hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint and OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -5545,14 +5545,97 @@ function parseSharedStringsXml(xml = "") {
 }
 
 function parseWorkbookSheetNames(xml = "") {
-  const names = [];
-  for (const match of String(xml || "").matchAll(/<sheet\b[^>]*>/g)) {
-    const name = xmlAttribute(match[0], "name");
-    if (name) {
-      names.push(name);
-    }
+  return parseWorkbookSheets(xml).map((sheet) => sheet.name).filter(Boolean);
+}
+
+function normalizeXlsxPartTarget(basePart = "xl/workbook.xml", target = "") {
+  const raw = String(target || "").replace(/\\/g, "/").trim();
+  if (!raw) {
+    return "";
   }
-  return names;
+  if (raw.startsWith("/")) {
+    return path.posix.normalize(raw.slice(1)).replace(/^\.\//, "");
+  }
+  if (raw.startsWith("xl/")) {
+    return path.posix.normalize(raw).replace(/^\.\//, "");
+  }
+  const baseDirectory = path.posix.dirname(String(basePart || "xl/workbook.xml").replace(/\\/g, "/"));
+  return path.posix.normalize(path.posix.join(baseDirectory, raw)).replace(/^\.\//, "");
+}
+
+function parseWorkbookSheets(workbookXml = "", relationshipXml = "") {
+  const relationships = parseXlsxRelationshipTargets(relationshipXml);
+  const sheets = [];
+  for (const [index, match] of Array.from(String(workbookXml || "").matchAll(/<sheet\b[^>]*>/g)).entries()) {
+    const tag = match[0];
+    const relationshipId = xmlAttribute(tag, "r:id");
+    const relationship = relationships.get(relationshipId) || null;
+    const fallbackTarget = `worksheets/sheet${index + 1}.xml`;
+    sheets.push({
+      position: index + 1,
+      name: xmlAttribute(tag, "name") || `Sheet${index + 1}`,
+      sheetId: xmlAttribute(tag, "sheetId"),
+      relationshipId,
+      state: xmlAttribute(tag, "state") || "visible",
+      worksheetPath: normalizeXlsxPartTarget("xl/workbook.xml", relationship?.target || fallbackTarget),
+      targetMode: relationship?.targetMode || "",
+      relationshipType: relationship?.type || ""
+    });
+  }
+  return sheets;
+}
+
+function workbookSheetRecordsForPaths(sheetPaths = [], workbookSheets = []) {
+  const byPath = new Map(workbookSheets.map((sheet) => [sheet.worksheetPath, sheet]));
+  const remaining = new Set(sheetPaths);
+  const records = [];
+  for (const sheet of workbookSheets) {
+    if (!remaining.has(sheet.worksheetPath)) {
+      continue;
+    }
+    records.push({ name: sheet.worksheetPath, sheet });
+    remaining.delete(sheet.worksheetPath);
+  }
+  for (const name of sheetPaths) {
+    if (!remaining.has(name)) {
+      continue;
+    }
+    const index = records.length + 1;
+    records.push({
+      name,
+      sheet: byPath.get(name) || {
+        position: index,
+        name: `Sheet${index}`,
+        sheetId: "",
+        relationshipId: "",
+        state: "visible",
+        worksheetPath: name,
+        targetMode: "",
+        relationshipType: ""
+      }
+    });
+  }
+  return records;
+}
+
+function xlsxSheetLabel(sheet = {}, fallbackIndex = 0) {
+  const position = Number(sheet.position || fallbackIndex + 1 || 1);
+  return `Sheet ${position}${sheet.name ? ` (${sheet.name})` : ""}`;
+}
+
+function xlsxTableMetadata(sheet = {}, sheetLabel = "", rowNumber = 0, columnCount = 0) {
+  return {
+    format: "xlsx",
+    sheet: sheetLabel,
+    sheetName: String(sheet.name || ""),
+    sheetId: String(sheet.sheetId || ""),
+    sheetState: String(sheet.state || "visible"),
+    relationshipId: String(sheet.relationshipId || ""),
+    worksheetPath: String(sheet.worksheetPath || ""),
+    position: Number(sheet.position || 0),
+    row: Number(rowNumber || 0),
+    columns: Number(columnCount || 0)
+  };
 }
 
 function xlsxCellValue(cellXml = "", sharedStrings = []) {
@@ -5691,11 +5774,15 @@ function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
 
 function parseXlsxDetailed(entries = []) {
   const sharedStrings = parseSharedStringsXml(zipEntryText(entries, "xl/sharedStrings.xml"));
-  const sheetDisplayNames = parseWorkbookSheetNames(zipEntryText(entries, "xl/workbook.xml"));
+  const workbookSheets = parseWorkbookSheets(
+    zipEntryText(entries, "xl/workbook.xml"),
+    zipEntryText(entries, "xl/_rels/workbook.xml.rels")
+  );
   const sheetNames = entries
     .map((entry) => entry.name)
     .filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
     .sort((left, right) => Number(left.match(/sheet(\d+)/)?.[1] || 0) - Number(right.match(/sheet(\d+)/)?.[1] || 0));
+  const sheetRecords = workbookSheetRecordsForPaths(sheetNames, workbookSheets);
   const lines = [];
   let rowCount = 0;
   let cellCount = 0;
@@ -5703,7 +5790,8 @@ function parseXlsxDetailed(entries = []) {
   let hyperlinkCount = 0;
   let headerRows = 0;
   const elements = [];
-  for (const [index, name] of sheetNames.entries()) {
+  for (const [index, record] of sheetRecords.entries()) {
+    const { name, sheet } = record;
     const hyperlinks = parseXlsxHyperlinkTags(
       zipEntryText(entries, name),
       zipEntryText(entries, worksheetRelationshipEntryName(name))
@@ -5719,7 +5807,7 @@ function parseXlsxDetailed(entries = []) {
         hyperlinkCount += row.cells.filter((cell) => cell.hyperlink).length;
       }
     }
-    const sheetLabel = `Sheet ${index + 1}${sheetDisplayNames[index] ? ` (${sheetDisplayNames[index]})` : ""}`;
+    const sheetLabel = xlsxSheetLabel(sheet, index);
     const text = xlsxRowsToStructuredText(rows, sheetLabel);
     if (text) {
       headerRows += 1;
@@ -5738,12 +5826,7 @@ function parseXlsxDetailed(entries = []) {
         pushStructureElement(elements, "table-header", formatXlsxHeaderRow(sheetLabel, row), {
           line: row.rowNumber,
           name: sheetLabel,
-          table: {
-            format: "xlsx",
-            sheet: sheetLabel,
-            row: row.rowNumber,
-            columns: row.cells.length
-          },
+          table: xlsxTableMetadata(sheet, sheetLabel, row.rowNumber, row.cells.length),
           cells: row.cells.map((cell) => xlsxElementCell(cell, row.rowNumber)),
           limit: 2000
         });
@@ -5753,12 +5836,7 @@ function parseXlsxDetailed(entries = []) {
       pushStructureElement(elements, "table-row", formatXlsxDataRow(sheetLabel, row, headersByColumn), {
         line: row.rowNumber,
         name: sheetLabel,
-        table: {
-          format: "xlsx",
-          sheet: sheetLabel,
-          row: row.rowNumber,
-          columns: row.cells.length
-        },
+        table: xlsxTableMetadata(sheet, sheetLabel, row.rowNumber, row.cells.length),
         cells: row.cells.map((cell) => xlsxElementCell(cell, row.rowNumber, headersByColumn.get(cell.column) || "")),
         limit: 2000
       });
@@ -5770,6 +5848,11 @@ function parseXlsxDetailed(entries = []) {
     format: "xlsx",
     sharedStringCount: sharedStrings.length,
     sheetCount: sheetNames.length,
+    workbookSheetCount: workbookSheets.length,
+    sheetRefCount: sheetRecords.filter((record) => (
+      record.sheet?.sheetId || record.sheet?.relationshipId || record.sheet?.worksheetPath || record.sheet?.name
+    )).length,
+    hiddenSheetCount: sheetRecords.filter((record) => record.sheet?.state && record.sheet.state !== "visible").length,
     rowCount,
     cellCount,
     formulaCount,
@@ -6150,23 +6233,30 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
 
 function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
   const sharedStrings = parseSharedStringsFile(path.join(rootDir, "xl/sharedStrings.xml"));
-  const sheetNames = parseWorkbookSheetNames(
+  const workbookSheets = parseWorkbookSheets(
     fsSync.existsSync(path.join(rootDir, "xl/workbook.xml"))
       ? fsSync.readFileSync(path.join(rootDir, "xl/workbook.xml"), "utf8")
+      : "",
+    fsSync.existsSync(path.join(rootDir, "xl/_rels/workbook.xml.rels"))
+      ? fsSync.readFileSync(path.join(rootDir, "xl/_rels/workbook.xml.rels"), "utf8")
       : ""
   );
   const sheetFiles = collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
     .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0));
+  const filesByRelativePath = new Map(sheetFiles.map((file) => [file.relativePath, file]));
+  const sheetRecords = workbookSheetRecordsForPaths(sheetFiles.map((file) => file.relativePath), workbookSheets)
+    .map((record) => ({ ...record, file: filesByRelativePath.get(record.name) }))
+    .filter((record) => record.file);
   let totalCharacters = 0;
   let rowCount = 0;
   let cellCount = 0;
   let formulaCount = 0;
   let hyperlinkCount = 0;
   let headerRows = 0;
-  for (const [index, sheet] of sheetFiles.entries()) {
-    const sheetLabel = `Sheet ${index + 1}${sheetNames[index] ? ` (${sheetNames[index]})` : ""}`;
+  for (const [index, record] of sheetRecords.entries()) {
+    const sheetLabel = xlsxSheetLabel(record.sheet, index);
     const stats = appendXlsxWorksheetText({
-      sheetPath: sheet.absolutePath,
+      sheetPath: record.file.absolutePath,
       sheetLabel,
       sharedStrings,
       outputPath
@@ -6182,12 +6272,22 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     totalCharacters,
     sharedStringCount: sharedStrings.length,
     sheetCount: sheetFiles.length,
+    workbookSheetCount: workbookSheets.length,
+    sheetRefCount: sheetRecords.length,
+    hiddenSheetCount: sheetRecords.filter((record) => record.sheet?.state && record.sheet.state !== "visible").length,
     rowCount,
     cellCount,
     formulaCount,
     hyperlinkCount,
     headerRows,
     parserTrace: [
+      {
+        stage: "table.workbook.sheets",
+        status: workbookSheets.length ? "completed" : "empty",
+        sheets: workbookSheets.length,
+        sheetRefs: sheetRecords.length,
+        hiddenSheets: sheetRecords.filter((record) => record.sheet?.state && record.sheet.state !== "visible").length
+      },
       {
         stage: "table.sheet.headers",
         status: headerRows ? "completed" : "empty",
@@ -6234,6 +6334,8 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
   if (route?.id === "spreadsheet") {
     return [
       ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
+      ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
+      ...collectFiles(rootDir, (name) => name === "xl/_rels/workbook.xml.rels", 1),
       ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
         .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
       ...collectFiles(rootDir, (name) => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name), 1000)
@@ -6266,6 +6368,7 @@ function structuredZipEntryFiles(route = null, rootDir = "") {
     ? [
         ...collectFiles(rootDir, (name) => name === "xl/sharedStrings.xml", 1),
         ...collectFiles(rootDir, (name) => name === "xl/workbook.xml", 1),
+        ...collectFiles(rootDir, (name) => name === "xl/_rels/workbook.xml.rels", 1),
         ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
           .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
         ...collectFiles(rootDir, (name) => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name), 1000)
@@ -6500,10 +6603,20 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           characters: parsed.text.length,
           elements: parsed.elements.length,
           sheets: parsed.sheetCount,
+          workbookSheets: parsed.workbookSheetCount,
+          sheetRefs: parsed.sheetRefCount,
+          hiddenSheets: parsed.hiddenSheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
+        },
+        {
+          stage: "table.workbook.sheets",
+          status: parsed.workbookSheetCount ? "completed" : "empty",
+          sheets: parsed.workbookSheetCount,
+          sheetRefs: parsed.sheetRefCount,
+          hiddenSheets: parsed.hiddenSheetCount
         },
         {
           stage: "table.sheet.headers",
@@ -7824,10 +7937,20 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           characters: parsed.text.length,
           elements: parsed.elements.length,
           sheets: parsed.sheetCount,
+          workbookSheets: parsed.workbookSheetCount,
+          sheetRefs: parsed.sheetRefCount,
+          hiddenSheets: parsed.hiddenSheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "table.workbook.sheets",
+          status: parsed.workbookSheetCount ? "completed" : "empty",
+          sheets: parsed.workbookSheetCount,
+          sheetRefs: parsed.sheetRefCount,
+          hiddenSheets: parsed.hiddenSheetCount
         });
         parserTrace.push({
           stage: "table.sheet.headers",
@@ -8213,6 +8336,12 @@ function normalizedStructureElements(document = {}) {
         ? {
             format: String(element.table.format || ""),
             sheet: String(element.table.sheet || ""),
+            sheetName: String(element.table.sheetName || ""),
+            sheetId: String(element.table.sheetId || ""),
+            sheetState: String(element.table.sheetState || ""),
+            relationshipId: String(element.table.relationshipId || ""),
+            worksheetPath: String(element.table.worksheetPath || ""),
+            position: Number(element.table.position || 0),
             row: Number(element.table.row || 0),
             columns: Number(element.table.columns || 0)
           }
@@ -8807,6 +8936,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Spreadsheet sheet/row/cell references are preserved." : "Spreadsheet cell references were not observed."
       });
     }
+    if (gate === "spreadsheet-workbook-sheet-refs-preserved") {
+      const workbookSheetSignals = maxTraceMetric(document, ["workbookSheets"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : workbookSheetSignals > 0
+          ? evidence.sheetRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { workbookSheetSignals, sheetRefCount: evidence.sheetRefCount },
+        required: { workbookSheetRefsWhenWorkbookMetadataExists: true },
+        message: status === "passed" ? "Spreadsheet workbook sheet references are preserved." : "No workbook sheet references were required or observed."
+      });
+    }
     if (gate === "formula-text-preserved") {
       const formulaSignals = maxTraceMetric(document, ["formulas", "formulaCount"]);
       const status = routeId !== "spreadsheet"
@@ -8978,6 +9120,12 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const hyperlinkRefCount = sampleElements.reduce((sum, element) => (
       sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.hyperlink?.target || cell.hyperlink?.location).length : 0)
     ), 0);
+    const sheetRefCount = sampleElements.filter((element) => (
+      element.table?.sheetName ||
+      element.table?.sheetId ||
+      element.table?.relationshipId ||
+      element.table?.worksheetPath
+    )).length;
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
     const linkElementCount = sampleElements.filter((element) => element.type === "link" && element.href).length;
@@ -8995,6 +9143,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       cellRefCount,
       formulaRefCount,
       hyperlinkRefCount,
+      sheetRefCount,
       geometryElementCount,
       annotationElementCount,
       linkElementCount,
@@ -9060,6 +9209,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithElementPlanCount: plannedDocuments.filter((document) => document.evidence.elementCount > 0).length,
       documentWithGeometryCount: plannedDocuments.filter((document) => document.evidence.geometryElementCount > 0).length,
       documentWithCellRefsCount: plannedDocuments.filter((document) => document.evidence.cellRefCount > 0).length,
+      documentWithSheetRefsCount: plannedDocuments.filter((document) => document.evidence.sheetRefCount > 0).length,
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
       documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
@@ -9625,10 +9775,20 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           characters: totalCharacters,
           elements: structureElements.length,
           sheets: parsed.sheetCount,
+          workbookSheets: parsed.workbookSheetCount,
+          sheetRefs: parsed.sheetRefCount,
+          hiddenSheets: parsed.hiddenSheetCount,
           rows: parsed.rowCount,
           cells: parsed.cellCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "table.workbook.sheets",
+          status: parsed.workbookSheetCount ? "completed" : "empty",
+          sheets: parsed.workbookSheetCount,
+          sheetRefs: parsed.sheetRefCount,
+          hiddenSheets: parsed.hiddenSheetCount
         });
         parserTrace.push({
           stage: "table.sheet.headers",
@@ -9662,7 +9822,10 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           mode: "structured-zip-file-ref",
           extractionMode: entryPlan.skippedLargeFileCount ? "streaming-large-structure-entry" : "streaming-structured-text",
           files: structuredFileCount,
-          characters: totalCharacters
+          characters: totalCharacters,
+          workbookSheets: spreadsheet.workbookSheetCount,
+          sheetRefs: spreadsheet.sheetRefCount,
+          hiddenSheets: spreadsheet.hiddenSheetCount
         });
         parserTrace.push(...spreadsheet.parserTrace);
       }
@@ -14621,6 +14784,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.word.tables",
         "office.word.annotations",
         "table.sheet.structured",
+        "table.workbook.sheets",
         "table.sheet.headers",
         "table.sheet.cells",
         "table.sheet.formulas",
@@ -14644,8 +14808,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       windowingStrategy: "element-aware-by-title-windowing.v1",
       elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "table.sheet", "table.row", "cells.ref", "cells.formula", "cells.hyperlink.target"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.cells", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "cells.ref", "cells.formula", "cells.hyperlink.target"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.cells", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -14666,7 +14830,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "row", "column", "cellRefs", "links", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "links", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

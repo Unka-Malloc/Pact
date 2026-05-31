@@ -327,6 +327,16 @@ const sampleXlsxBase64 = base64Zip({
     "<si><t>Acme</t></si><si><t>42</t></si><si><t>2026-05-31</t></si>",
     "</sst>"
   ].join(""),
+  "xl/workbook.xml": [
+    "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
+    "<sheets><sheet name=\"Finance Evidence\" sheetId=\"7\" r:id=\"rIdSheet1\"/></sheets>",
+    "</workbook>"
+  ].join(""),
+  "xl/_rels/workbook.xml.rels": [
+    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+    "<Relationship Id=\"rIdSheet1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>",
+    "</Relationships>"
+  ].join(""),
   "xl/worksheets/sheet1.xml": [
     "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
     "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>B2*2</f><v>84</v></c></row></sheetData>",
@@ -600,6 +610,16 @@ try {
             "<si><t>structured filePath</t></si><si><t>completed</t></si><si><t>2026-06-15</t></si>",
             "</sst>"
           ].join(""),
+          "xl/workbook.xml": [
+            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
+            "<sheets><sheet name=\"Mounted Evidence\" sheetId=\"9\" r:id=\"rIdSheet1\"/></sheets>",
+            "</workbook>"
+          ].join(""),
+          "xl/_rels/workbook.xml.rels": [
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+            "<Relationship Id=\"rIdSheet1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>",
+            "</Relationships>"
+          ].join(""),
           "xl/worksheets/sheet1.xml": [
             "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
             "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c t=\"s\"><v>6</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData>",
@@ -856,6 +876,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("open-document.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ebook.epub"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.workbook.sheets"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
@@ -906,6 +927,8 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.hyperlink.target"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetId"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("shape.placeholderType"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("speaker-note"), true);
@@ -917,6 +940,7 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.shape.placeholderType"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
@@ -964,6 +988,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".jsonc", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
@@ -2102,6 +2127,7 @@ try {
         ))), true);
       } else if (formatId === "spreadsheet") {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.workbook.sheets" && trace.status === "completed" && trace.sheets === 1 && trace.sheetRefs === 1), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
@@ -2112,6 +2138,8 @@ try {
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "table-row" &&
           ref.table?.format === "xlsx" &&
+          ref.table?.sheetName === "Mounted Evidence" &&
+          ref.table?.sheetId === "9" &&
           ref.cells?.some((cell) => cell.ref === "D2" && cell.header === "Evidence Score" && cell.formula === "LEN(B2)")
         ))), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2374,6 +2402,12 @@ try {
   )), true);
   const xlsxPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-14");
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.structured" && trace.status === "completed"), true);
+  assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "table.workbook.sheets" &&
+    trace.status === "completed" &&
+    trace.sheets === 1 &&
+    trace.sheetRefs === 1
+  )), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
@@ -2385,6 +2419,10 @@ try {
   assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "table-row" &&
     element.table?.format === "xlsx" &&
+    element.table?.sheetName === "Finance Evidence" &&
+    element.table?.sheetId === "7" &&
+    element.table?.relationshipId === "rIdSheet1" &&
+    element.table?.worksheetPath === "xl/worksheets/sheet1.xml" &&
     element.cells?.some((cell) => cell.ref === "C2" && cell.header === "Payment Date" && cell.value === "2026-05-31")
   )), true);
   assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
@@ -2399,6 +2437,8 @@ try {
   )), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.parserProfile, "spreadsheetml-sheet-row-cell-route");
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("sheetName"), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("sheetId"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("formulas"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("hyperlinks"), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -2406,6 +2446,8 @@ try {
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "table-row" &&
     ref.table?.format === "xlsx" &&
+    ref.table?.sheetName === "Finance Evidence" &&
+    ref.table?.sheetId === "7" &&
     ref.cells?.some((cell) => cell.ref === "C2")
   ))), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2423,6 +2465,7 @@ try {
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "table-row" &&
       ref.table?.format === "xlsx" &&
+      ref.table?.worksheetPath === "xl/worksheets/sheet1.xml" &&
       ref.cells?.some((cell) => cell.ref === "D2" && cell.formula === "B2*2")
     ))
   )), true);
@@ -2437,7 +2480,7 @@ try {
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-05-31"), true);
   assert.equal(xlsxPayloadCorpus.eventTime, "2026-05-31");
   assert.equal(xlsxPayloadCorpus.timeRange.from, "2026-05-31");
-  assert.match(xlsxPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Sheet 1 Header row|A1=Vendor|B2 Total=42|C2 Payment Date=2026-05-31/);
+  assert.match(xlsxPayloadCorpus.windowPlan.windows[0]?.excerpt || "", /Sheet 1 \(Finance Evidence\) Header row|A=Vendor|B=Total|C=Payment Date/);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.timeRange?.from === "2026-05-31"), true);
   for (const [sourceId, formatId, signature, sniffedExtension, parserStage] of [
     ["source-44", "pdf", "pdf-header", ".pdf", "pdf.text.basic"],
@@ -2976,6 +3019,7 @@ try {
   assert.equal(conversionPlan.summary.documentWithCellRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithFormulaRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithLinkRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithSheetRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithStyleRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithNumberingRefsCount >= 1, true);
@@ -2997,6 +3041,11 @@ try {
     document.qualityGateResults.some((gate) => gate.gate === "pdf-link-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.evidence.sheetRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && gate.status === "passed")
+  )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
     document.qualityGateResults.some((gate) => gate.gate === "formula-text-preserved" && gate.status === "passed")
@@ -3075,10 +3124,15 @@ try {
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "spreadsheet" &&
+    document.parserStages.includes("table.workbook.sheets") &&
     document.parserStages.includes("table.sheet.formulas") &&
     document.parserStages.includes("table.sheet.hyperlinks") &&
+    document.preserves.includes("sheetName") &&
+    document.preserves.includes("sheetId") &&
     document.preserves.includes("hyperlinks") &&
-    document.evidence.formulaRefCount >= 1
+    document.evidence.sheetRefCount >= 1 &&
+    document.evidence.formulaRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "open-document" &&
