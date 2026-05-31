@@ -59,6 +59,12 @@ npx pact-mcp-connector@latest install --target auto
 machine or in a detected runtime context. A non-interactive `pact-mcp install`
 with no `--target` uses the same auto-detected path.
 
+For a single copyable GitHub Release command in an unattended agent shell:
+
+```bash
+/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+```
+
 Use `--token-stdin` only when installing with a pre-issued custom grant token.
 
 ## Server Config

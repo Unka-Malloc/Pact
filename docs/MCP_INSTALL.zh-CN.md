@@ -84,6 +84,14 @@ PACT_MCP_INSTALL_DIR="$HOME/.local/share/pact-mcp" \
 因为缺少交互菜单而直接失败。需要限制安装范围时仍使用 `--target codex` 这类
 显式目标。
 
+如果智能体需要一条可直接复制执行的 GitHub Release 命令，使用无人值守
+auto target 形态。它会覆盖 Codex、Claude Code、OpenClaw 以及 connector
+能验证到的所有其它受支持客户端：
+
+```bash
+/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target auto
+```
+
 管理本机服务端地址 profile：
 
 ```bash

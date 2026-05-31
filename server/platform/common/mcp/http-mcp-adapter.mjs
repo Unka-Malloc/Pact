@@ -419,8 +419,10 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const { baseUrl, vmBaseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register`;
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>`;
+  const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install`;
   const githubOneLineCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
+  const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto`;
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor`;
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local`;
@@ -472,9 +474,12 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       packageVersion: MCP_CONNECTOR_VERSION,
       releaseChannel: "stable",
       githubOneLineCommand,
+      githubOneLineAutoInstallCommand,
       oneCommandInstall: githubOneLineCommand,
+      oneCommandAutoInstall: githubOneLineAutoInstallCommand,
       installCommand,
       interactiveInstallCommand,
+      autoInstallCommand,
       clientInstallCommand,
       uninstallCommand,
       doctorCommand,
@@ -490,12 +495,14 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         bootstrapScript: "pact-mcp-install.sh",
         githubLatestBootstrapUrl: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh`,
         githubOneLineCommand,
+        githubOneLineAutoInstallCommand,
         supportsMultiSelect: true,
         releaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.zip`,
         tarballReleaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.tar.gz`,
         zipInstallEntry: "install.command",
         installCommand: "./pact-mcp register",
         interactiveInstallCommand: "./pact-mcp install",
+        autoInstallCommand: "./pact-mcp install --target auto",
         clientInstallCommand: "./pact-mcp install --target <client>",
         doubleClickEntry: "install.command"
       }
@@ -504,6 +511,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       listChanged: true,
       notification: "notifications/tools/list_changed",
       reinstallCommand: githubOneLineCommand,
+      agentReinstallCommand: githubOneLineAutoInstallCommand,
       doctorCommand
     },
     mcpServers: {
@@ -791,10 +799,11 @@ function pactMetaResult({ operation, input, envelope, toolSkillManagementProvide
     }
     
     const autoUpdate = Boolean(authorization?.grant?.metadata?.autoUpdate);
+    const githubOneLineAutoInstallCommand = `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)" -- --target auto`;
     const instructionText = updateAvailable
       ? (autoUpdate
-          ? `A new version of the Pact MCP connector is available (${serverVersion}). Please immediately execute the following command in the user's terminal to update the client:\n\n/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"\n\nCRITICAL: You MUST explicitly inform the user that you just performed an automatic push update of the MCP service.`
-          : `A new version of the Pact MCP connector is available (${serverVersion}). You MUST inform the user about the new version and ask for their permission to update. Do NOT execute any command automatically. If they approve, instruct them to execute:\n\n/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`)
+          ? `A new version of the Pact MCP connector is available (${serverVersion}). Please immediately execute the following unattended command in the user's terminal to update every verified local agent client:\n\n${githubOneLineAutoInstallCommand}\n\nCRITICAL: You MUST explicitly inform the user that you just performed an automatic push update of the MCP service.`
+          : `A new version of the Pact MCP connector is available (${serverVersion}). You MUST inform the user about the new version and ask for their permission to update. Do NOT execute any command automatically. If they approve, instruct them to execute this unattended command:\n\n${githubOneLineAutoInstallCommand}`)
       : `The client is already up-to-date (version ${clientVersion}). No update is required.`;
 
     return mcpToolResult({
@@ -808,7 +817,8 @@ function pactMetaResult({ operation, input, envelope, toolSkillManagementProvide
         clientVersion,
         serverVersion,
         updateAvailable,
-        installCommand: `/bin/sh -c "$(curl -fsSL https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`
+        installCommand: githubOneLineAutoInstallCommand,
+        autoInstallCommand: githubOneLineAutoInstallCommand
       }
     });
   }

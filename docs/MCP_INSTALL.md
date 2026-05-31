@@ -117,6 +117,14 @@ non-interactive `pact-mcp install` without `--target` uses the same
 auto-detected path. Use explicit targets such as `--target codex` when a script
 must limit the install scope.
 
+For an agent that needs one copyable GitHub Release command, use the unattended
+auto target form. This covers Codex, Claude Code, OpenClaw, and every other
+supported client that the connector can verify:
+
+```bash
+/bin/sh -c "$(curl -fsSL https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto
+```
+
 Manage local server address profiles:
 
 ```bash

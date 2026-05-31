@@ -65,9 +65,12 @@ try {
   assert.equal(discovery.payload.handshake.url, `${server.url}/api/mcp/handshake`);
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
+  assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineCommand);
+  assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.match(discovery.payload.installer.installCommand, /npx pact-mcp-connector@latest register/);
   assert.match(discovery.payload.installer.interactiveInstallCommand, /pact-mcp-connector@latest install/);
+  assert.match(discovery.payload.installer.autoInstallCommand, /pact-mcp-connector@latest install --target auto/);
   assert.match(discovery.payload.installer.clientInstallCommand, /--target <client>/);
   assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
@@ -79,6 +82,7 @@ try {
   assert.equal(discovery.payload.installer.portable.preferredArchive, "zip");
   assert.equal(discovery.payload.installer.portable.bootstrapScript, "pact-mcp-install.sh");
   assert.equal(discovery.payload.installer.portable.supportsMultiSelect, true);
+  assert.match(discovery.payload.installer.portable.autoInstallCommand, /\.\/pact-mcp install --target auto/);
   assert.match(discovery.payload.installer.portable.releaseAssetPattern, /\.zip$/);
   assert.equal(discovery.payload.mcpServers.pact.headers["X-Pact-Api-Key"], "${PACT_MCP_TOKEN}");
 
