@@ -4,46 +4,17 @@ import BridgeDownloadButton from "./BridgeDownloadButton.vue";
 import BrowseSelectButton from "./BrowseSelectButton.vue";
 import StatusPill from "./StatusPill.vue";
 import type { SplitJob } from "../lib/types";
-
-type FileWithRelativePath = File & {
-  webkitRelativePath?: string;
-};
-
-type UploadFileEntry = {
-  key: string;
-  name: string;
-  relativePath: string;
-  directory: string;
-  extension: string;
-  size: number;
-  detail?: string;
-  href?: string;
-  actionLabel?: string;
-  downloadName?: string;
-  statusLabel?: string;
-  statusTone?: string;
-};
-
-export type FileListResultEntry = {
-  key?: string;
-  name: string;
-  relativePath?: string;
-  extension?: string;
-  size?: number;
-  detail?: string;
-  href?: string;
-  actionLabel?: string;
-  downloadName?: string;
-  statusLabel?: string;
-  statusTone?: string;
-};
-
-type ProgressState = {
-  completedSteps: number;
-  detail: string;
-  label: string;
-  tone: string;
-};
+import {
+  buildUploadFileEntries,
+  resolveUploadProgressState,
+  summarizeUploadSelection,
+  uploadFileListIcons,
+  uploadProgressStepLabels,
+  uploadTotalProgressSteps,
+  type FileListResultEntry,
+  type UploadFileEntry,
+  type UploadProgressState,
+} from "../lib/upload-file-list";
 
 const props = withDefaults(defineProps<{
   files?: File[];
@@ -81,119 +52,46 @@ const emit = defineEmits<{
   upload: [];
 }>();
 
-const fileIconUrl = "/icons/octicon-file-24.svg";
-const folderIconUrl = "/icons/octicon-file-directory-fill-24.svg";
-const uploadIconUrl = "/icons/octicon-upload-24.svg";
-const chevronDownIconUrl = "/icons/octicon-chevron-down-16.svg";
-const progressStepLabels = ["已选择", "上传", "解析", "入库", "完成"];
-const totalProgressSteps = progressStepLabels.length;
+const fileIconUrl = uploadFileListIcons.file;
+const folderIconUrl = uploadFileListIcons.folder;
+const uploadIconUrl = uploadFileListIcons.upload;
+const chevronDownIconUrl = uploadFileListIcons.chevronDown;
+const progressStepLabels = uploadProgressStepLabels;
+const totalProgressSteps = uploadTotalProgressSteps;
 const uploadMenuOpen = ref(false);
 const uploadMenuRoot = ref<HTMLElement | null>(null);
 
 const isBusy = computed(() => props.busyKey === "knowledge:ingest");
 const isDownloadMode = computed(() => props.mode === "download");
 
-const fileEntries = computed<UploadFileEntry[]>(() => {
-  if (isDownloadMode.value) {
-    return props.resultFiles.map((file, index) => {
-      const relativePath = String(file.relativePath || file.name);
-      const name = String(file.name || relativePath || "result");
-      const extension = String(file.extension || (name.includes(".") ? name.split(".").pop() : "FILE") || "FILE").toUpperCase();
-      return {
-        key: String(file.key || `${relativePath}:${file.size || 0}:${index}`),
-        name,
-        relativePath,
-        directory: "",
-        extension,
-        size: Number(file.size || 0),
-        detail: file.detail,
-        href: file.href,
-        actionLabel: file.actionLabel,
-        downloadName: file.downloadName,
-        statusLabel: file.statusLabel,
-        statusTone: file.statusTone,
-      };
-    });
-  }
-  return props.files.map((file, index) => {
-    const relativePath = String((file as FileWithRelativePath).webkitRelativePath || file.name);
-    const segments = relativePath.split(/[\\/]/g).filter(Boolean);
-    const name = segments.at(-1) || file.name;
-    const directory = segments.length > 1 ? segments.slice(0, -1).join("/") : "";
-    const extension = name.includes(".") ? name.split(".").pop()?.toUpperCase() || "FILE" : "FILE";
-    return {
-      key: `${relativePath}:${file.size}:${file.lastModified}:${index}`,
-      name,
-      relativePath,
-      directory,
-      extension,
-      size: file.size,
-    };
-  });
-});
+const fileEntries = computed<UploadFileEntry[]>(() =>
+  buildUploadFileEntries({
+    files: props.files,
+    mode: props.mode,
+    resultFiles: props.resultFiles,
+  }),
+);
 
-const selectedSummary = computed(() => {
-  if (props.summary) {
-    return props.summary;
-  }
-  if (isDownloadMode.value) {
-    if (fileEntries.value.length === 0) {
-      return "0 个文件";
-    }
-    const knownBytes = fileEntries.value.reduce((sum, file) => sum + Math.max(0, Number(file.size || 0)), 0);
-    return knownBytes > 0
-      ? `${fileEntries.value.length} 个文件 · ${props.formatBytes(knownBytes)}`
-      : `${fileEntries.value.length} 个文件`;
-  }
-  if (props.files.length === 0) {
-    return "0 个文件";
-  }
-  const totalBytes = props.files.reduce((sum, file) => sum + file.size, 0);
-  return `${props.files.length} 个文件 · ${props.formatBytes(totalBytes)}`;
-});
+const selectedSummary = computed(() =>
+  summarizeUploadSelection({
+    files: props.files,
+    fileEntries: fileEntries.value,
+    formatBytes: props.formatBytes,
+    mode: props.mode,
+    summary: props.summary,
+  }),
+);
 
-const progressState = computed<ProgressState>(() => {
-  const job = props.ingestJob;
-  if (props.files.length === 0) {
-    return {
-      completedSteps: 0,
-      detail: "等待文件",
-      label: "未选择",
-      tone: "neutral",
-    };
-  }
-  if (!job) {
-    return {
-      completedSteps: isBusy.value ? 2 : 1,
-      detail: props.ingestProgress || (isBusy.value ? "正在准备上传" : "等待入库"),
-      label: isBusy.value ? "上传中" : "待处理",
-      tone: isBusy.value ? "running" : "neutral",
-    };
-  }
-  if (job.status === "completed") {
-    return {
-      completedSteps: totalProgressSteps,
-      detail: job.stage || "处理完成",
-      label: props.jobStatusLabels[job.status] || "已完成",
-      tone: props.jobStatusTone(job.status),
-    };
-  }
-  if (job.status === "failed") {
-    return {
-      completedSteps: Math.max(2, Math.min(totalProgressSteps - 1, Math.ceil(Number(job.progressPercent || 0) / 25))),
-      detail: job.error || job.stage || "处理失败",
-      label: props.jobStatusLabels[job.status] || "失败",
-      tone: props.jobStatusTone(job.status),
-    };
-  }
-  const progressPercent = Math.max(0, Math.min(100, Number(job.progressPercent || 0)));
-  return {
-    completedSteps: Math.max(2, Math.min(totalProgressSteps - 1, Math.ceil(progressPercent / 25) + 1)),
-    detail: job.stage || props.ingestProgress || "队列处理中",
-    label: props.jobStatusLabels[job.status] || job.status,
-    tone: props.jobStatusTone(job.status),
-  };
-});
+const progressState = computed<UploadProgressState>(() =>
+  resolveUploadProgressState({
+    files: props.files,
+    ingestJob: props.ingestJob,
+    ingestProgress: props.ingestProgress,
+    isBusy: isBusy.value,
+    jobStatusLabels: props.jobStatusLabels,
+    jobStatusTone: props.jobStatusTone,
+  }),
+);
 
 const canStartUpload = computed(() =>
   !isDownloadMode.value &&
