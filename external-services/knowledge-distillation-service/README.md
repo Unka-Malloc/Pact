@@ -57,7 +57,7 @@ Core response fields:
 - `convergence`: window-to-window-community-to-document-to-topic-to-project convergence plan with community reports for large project synthesis.
 - `incrementalPlan`: project snapshot and reuse plan keyed by `projectId`/`workspaceId`/`repositoryId`, with added, changed, removed, and reusable source/window counts.
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
-- `referenceGapReport`: absorbed patterns, baseline patterns, and open gaps mapped from the local reference framework manifest.
+- `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
 - `evidence query`: bounded agent API over `graphEvidence` filtered by entity, relationship, claim status, claim text, source id, group id, and time range.
@@ -148,6 +148,7 @@ Built-in algorithm baseline:
 - `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code isolation, element refs, and basic PDF geometry on agent windows and graph text units for markup, OOXML, OpenDocument, EPUB, and basic PDF text payloads.
 - `office-document-professional-adaptation.v1`: exposes per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
+- `reference-framework-local-checkout-audit.v1`: verifies each declared local reference checkout exists, is a Git worktree, and matches the manifest commit before treating it as a current comparison source.
 - Weak or tiny inputs are assigned to a garbage group and are not promoted as core distillation candidates.
 
 Reference patterns currently absorbed into the local baseline:
@@ -166,3 +167,8 @@ Reference patterns currently absorbed into the local baseline:
 Reference framework checkout root:
 
 - `build/reference-frameworks/knowledge-distillation`
+
+Reference framework audit:
+
+- `/v1/reference-frameworks`, `/v1/capabilities`, and `/v1/reference-gap-report` expose `localAudit` with expected, present, Git checkout, commit-match, dirty, and missing counts.
+- Single-node Docker images do not include the large reference checkout tree by default; in that case `localAudit` reports missing checkouts explicitly instead of implying live comparison.

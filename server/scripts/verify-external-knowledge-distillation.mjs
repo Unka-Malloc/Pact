@@ -581,7 +581,15 @@ try {
   assert.equal(directGapReport.status, 200);
   assert.equal(directGapReport.payload.strategy, "reference-framework-gap-report.v1");
   assert.equal(directGapReport.payload.referenceFrameworks.count >= 6, true);
+  assert.equal(directGapReport.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(directGapReport.payload.referenceFrameworks.localAudit.presentCount >= 6, true);
+  assert.equal(directGapReport.payload.referenceFrameworks.localAudit.commitMatchCount >= 6, true);
   assert.equal(directGapReport.payload.frameworks.some((framework) => framework.id === "graphrag" && framework.absorbedPatterns.length > 0), true);
+  assert.equal(directGapReport.payload.frameworks.some((framework) => framework.id === "docling" && framework.localAudit?.commitMatches === true), true);
+  const directReferenceFrameworks = await fetchJson(`${serviceUrl}/v1/reference-frameworks`);
+  assert.equal(directReferenceFrameworks.status, 200);
+  assert.equal(directReferenceFrameworks.payload.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(directReferenceFrameworks.payload.localAudit.frameworks.some((framework) => framework.id === "unstructured" && framework.commitMatches === true), true);
 
   process.env.PACT_EXTERNAL_KNOWLEDGE_DISTILLATION_URL = serviceUrl;
   pactServer = await startHttpServer({
@@ -686,6 +694,7 @@ try {
   assert.equal(capabilities.payload.artifacts.includes("format-conversion-plan-json"), true);
   assert.equal(capabilities.payload.artifacts.includes("reference-gap-report-json"), true);
   assert.equal(capabilities.payload.referenceGapReport.strategy, "reference-framework-gap-report.v1");
+  assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.elementModel.supported, true);
   assert.equal(capabilities.payload.elementModel.strategy, "document-element-model.v1");
   assert.equal(capabilities.payload.elementModel.windowingStrategy, "element-aware-by-title-windowing.v1");
@@ -720,6 +729,9 @@ try {
     capabilities.payload.referenceFrameworks.frameworks.length >= 6,
     "external service must expose local reference framework baseline"
   );
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.presentCount >= 6, true);
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.commitMatchCount >= 6, true);
 
   const runtimeHealth = await fetchJson(`${pactServer.url}/api/external/knowledge/distillation/runtime/health`, {
     headers: authHeaders(auth)

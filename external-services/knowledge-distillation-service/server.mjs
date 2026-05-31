@@ -18,6 +18,7 @@ const HOST = String(process.env.HOST || process.env.SERVICE_HOST || "0.0.0.0");
 const DATA_DIR = path.resolve(process.env.SERVICE_DATA_DIR || "/data");
 const RUNS_PATH = path.join(DATA_DIR, "runs.json");
 const SERVICE_ROOT = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(SERVICE_ROOT, "../..");
 const REFERENCE_FRAMEWORKS_PATH = path.join(SERVICE_ROOT, "reference-frameworks.json");
 const INPUT_ROOTS = Array.from(new Set([
   DATA_DIR,
@@ -48,6 +49,7 @@ const GRAPH_EVIDENCE_STRATEGY = "graph-lite-entity-relationship-evidence-pack.v1
 const EVIDENCE_QUERY_STRATEGY = "graph-lite-evidence-query.v1";
 const PROJECT_EVIDENCE_QUERY_STRATEGY = "project-graph-evidence-convergence-query.v1";
 const REFERENCE_GAP_REPORT_STRATEGY = "reference-framework-gap-report.v1";
+const REFERENCE_FRAMEWORK_AUDIT_STRATEGY = "reference-framework-local-checkout-audit.v1";
 const RUNTIME_DOCTOR_TIMEOUT_MS = 2500;
 const RUNTIME_DOCTOR_CACHE_MS = 30_000;
 const OCR_TIMEOUT_MS = Number(process.env.PACT_EXTERNAL_KD_OCR_TIMEOUT_MS || 30_000);
@@ -603,14 +605,125 @@ async function saveRuns(runs) {
   await fs.writeFile(RUNS_PATH, `${JSON.stringify({ protocolVersion: PROTOCOL_VERSION, runs }, null, 2)}\n`);
 }
 
+function resolveReferenceFrameworkPath(localPath = "") {
+  const value = String(localPath || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (path.isAbsolute(value)) {
+    return path.resolve(value);
+  }
+  const candidates = [
+    path.resolve(process.cwd(), value),
+    path.resolve(REPO_ROOT, value),
+    path.resolve(SERVICE_ROOT, value)
+  ];
+  return candidates.find((candidate) => fsSync.existsSync(candidate)) || candidates[0];
+}
+
+function readGitCheckoutStatus(resolvedPath = "", manifestCommit = "") {
+  if (!resolvedPath || !fsSync.existsSync(resolvedPath)) {
+    return {
+      exists: false,
+      gitPresent: false,
+      actualCommit: "",
+      commitMatches: false,
+      dirtyFileCount: 0,
+      status: "missing"
+    };
+  }
+  const gitDir = path.join(resolvedPath, ".git");
+  if (!fsSync.existsSync(gitDir)) {
+    return {
+      exists: true,
+      gitPresent: false,
+      actualCommit: "",
+      commitMatches: false,
+      dirtyFileCount: 0,
+      status: "not-git-checkout"
+    };
+  }
+  try {
+    const actualCommit = execFileSync("git", ["-C", resolvedPath, "rev-parse", "--short", "HEAD"], {
+      encoding: "utf8",
+      timeout: RUNTIME_DOCTOR_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024
+    }).trim();
+    const dirtyStatus = execFileSync("git", ["-C", resolvedPath, "status", "--short", "--untracked-files=no"], {
+      encoding: "utf8",
+      timeout: RUNTIME_DOCTOR_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024
+    }).trim();
+    const dirtyFileCount = dirtyStatus ? dirtyStatus.split(/\r?\n/).filter(Boolean).length : 0;
+    const expected = String(manifestCommit || "").trim();
+    const commitMatches = Boolean(expected) && actualCommit.startsWith(expected);
+    return {
+      exists: true,
+      gitPresent: true,
+      actualCommit,
+      commitMatches,
+      dirtyFileCount,
+      status: commitMatches ? (dirtyFileCount ? "verified-dirty" : "verified") : "commit-mismatch"
+    };
+  } catch (error) {
+    return {
+      exists: true,
+      gitPresent: true,
+      actualCommit: "",
+      commitMatches: false,
+      dirtyFileCount: 0,
+      status: "git-audit-failed",
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function buildReferenceFrameworkAudit({ localRoot = "", frameworks = [] } = {}) {
+  const resolvedLocalRoot = resolveReferenceFrameworkPath(localRoot);
+  const audited = frameworks.map((framework) => {
+    const resolvedPath = resolveReferenceFrameworkPath(framework.localPath || "");
+    const git = readGitCheckoutStatus(resolvedPath, framework.commit || "");
+    return {
+      id: framework.id,
+      repo: framework.repo,
+      localPath: framework.localPath,
+      resolvedPath,
+      manifestCommit: framework.commit || "",
+      exists: git.exists,
+      gitPresent: git.gitPresent,
+      actualCommit: git.actualCommit,
+      commitMatches: git.commitMatches,
+      dirtyFileCount: git.dirtyFileCount,
+      status: git.status,
+      error: git.error || ""
+    };
+  });
+  return {
+    strategy: REFERENCE_FRAMEWORK_AUDIT_STRATEGY,
+    generatedAt: nowIso(),
+    localRoot,
+    resolvedLocalRoot,
+    expectedCount: frameworks.length,
+    presentCount: audited.filter((framework) => framework.exists).length,
+    gitCheckoutCount: audited.filter((framework) => framework.gitPresent).length,
+    commitMatchCount: audited.filter((framework) => framework.commitMatches).length,
+    dirtyCheckoutCount: audited.filter((framework) => framework.dirtyFileCount > 0).length,
+    missingCount: audited.filter((framework) => !framework.exists).length,
+    frameworks: audited
+  };
+}
+
 async function loadReferenceFrameworks() {
   const parsed = JSON.parse(await fs.readFile(REFERENCE_FRAMEWORKS_PATH, "utf8"));
+  const frameworks = Array.isArray(parsed.frameworks) ? parsed.frameworks : [];
+  const localRoot = parsed.localRoot || "";
   return {
     protocolVersion: parsed.protocolVersion || "pact.external-knowledge-distillation.references.v1",
     generatedAt: parsed.generatedAt || "",
-    localRoot: parsed.localRoot || "",
+    localRoot,
     selectionPolicy: parsed.selectionPolicy || {},
-    frameworks: Array.isArray(parsed.frameworks) ? parsed.frameworks : []
+    frameworks,
+    localAudit: buildReferenceFrameworkAudit({ localRoot, frameworks })
   };
 }
 
@@ -659,12 +772,14 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
 
 function buildReferenceGapReport(referenceFrameworks = null, { run = null, runtimeStatus = null } = {}) {
   const frameworks = Array.isArray(referenceFrameworks?.frameworks) ? referenceFrameworks.frameworks : [];
+  const auditById = new Map((referenceFrameworks?.localAudit?.frameworks || []).map((framework) => [framework.id, framework]));
   const frameworkReports = frameworks.map((framework) => {
     const mapped = REFERENCE_ABSORPTION_MAP[framework.id] || {
       absorbed: [],
       baseline: [],
       gaps: ["manual review required for this framework"]
     };
+    const audit = auditById.get(framework.id) || null;
     return {
       id: framework.id,
       name: framework.name,
@@ -674,10 +789,24 @@ function buildReferenceGapReport(referenceFrameworks = null, { run = null, runti
       license: framework.license,
       starsAtSelection: framework.starsAtSelection,
       learnFrom: framework.learnFrom || [],
+      localAudit: audit
+        ? {
+            status: audit.status,
+            exists: audit.exists,
+            gitPresent: audit.gitPresent,
+            actualCommit: audit.actualCommit,
+            commitMatches: audit.commitMatches,
+            dirtyFileCount: audit.dirtyFileCount
+          }
+        : null,
       absorbedPatterns: mapped.absorbed,
       baselinePatterns: mapped.baseline,
       openGaps: mapped.gaps,
-      status: mapped.gaps.length ? "absorbed-with-open-gaps" : "absorbed"
+      status: audit && !audit.commitMatches
+        ? "reference-checkout-needs-refresh"
+        : mapped.gaps.length
+          ? "absorbed-with-open-gaps"
+          : "absorbed"
     };
   });
   const openGaps = uniqueOrdered(frameworkReports.flatMap((framework) => framework.openGaps));
@@ -689,7 +818,19 @@ function buildReferenceGapReport(referenceFrameworks = null, { run = null, runti
     referenceFrameworks: {
       protocolVersion: referenceFrameworks?.protocolVersion || "",
       localRoot: referenceFrameworks?.localRoot || "",
-      count: frameworks.length
+      count: frameworks.length,
+      localAudit: referenceFrameworks?.localAudit
+        ? {
+            strategy: referenceFrameworks.localAudit.strategy,
+            generatedAt: referenceFrameworks.localAudit.generatedAt,
+            expectedCount: referenceFrameworks.localAudit.expectedCount,
+            presentCount: referenceFrameworks.localAudit.presentCount,
+            gitCheckoutCount: referenceFrameworks.localAudit.gitCheckoutCount,
+            commitMatchCount: referenceFrameworks.localAudit.commitMatchCount,
+            dirtyCheckoutCount: referenceFrameworks.localAudit.dirtyCheckoutCount,
+            missingCount: referenceFrameworks.localAudit.missingCount
+          }
+        : null
     },
     absorbedCapabilityMap: {
       fileCompatibility: {
@@ -10139,7 +10280,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "element-aware-by-title-windowing.v1",
       EVIDENCE_QUERY_STRATEGY,
       PROJECT_EVIDENCE_QUERY_STRATEGY,
-      REFERENCE_GAP_REPORT_STRATEGY
+      REFERENCE_GAP_REPORT_STRATEGY,
+      REFERENCE_FRAMEWORK_AUDIT_STRATEGY
     ],
     timeFiltering: {
       supported: true,
@@ -10333,6 +10475,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
     referenceGapReport: {
       supported: true,
       strategy: REFERENCE_GAP_REPORT_STRATEGY,
+      localAuditStrategy: REFERENCE_FRAMEWORK_AUDIT_STRATEGY,
       endpoint: "GET /v1/reference-gap-report",
       artifact: "reference-gap-report-json",
       purpose: "Continuously compare the service against local open-source reference framework checkouts and expose absorbed patterns plus remaining gaps."
@@ -10341,12 +10484,25 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       ? {
           protocolVersion: referenceFrameworks.protocolVersion,
           localRoot: referenceFrameworks.localRoot,
+          localAudit: referenceFrameworks.localAudit
+            ? {
+                strategy: referenceFrameworks.localAudit.strategy,
+                generatedAt: referenceFrameworks.localAudit.generatedAt,
+                expectedCount: referenceFrameworks.localAudit.expectedCount,
+                presentCount: referenceFrameworks.localAudit.presentCount,
+                gitCheckoutCount: referenceFrameworks.localAudit.gitCheckoutCount,
+                commitMatchCount: referenceFrameworks.localAudit.commitMatchCount,
+                dirtyCheckoutCount: referenceFrameworks.localAudit.dirtyCheckoutCount,
+                missingCount: referenceFrameworks.localAudit.missingCount
+              }
+            : null,
           count: referenceFrameworks.frameworks.length,
           frameworks: referenceFrameworks.frameworks.map((item) => ({
             id: item.id,
             repo: item.repo,
             localPath: item.localPath,
             commit: item.commit,
+            localAudit: referenceFrameworks.localAudit?.frameworks?.find((framework) => framework.id === item.id) || null,
             starsAtSelection: item.starsAtSelection,
             learnFrom: item.learnFrom
           }))

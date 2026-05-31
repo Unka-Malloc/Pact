@@ -396,6 +396,9 @@ try {
   assert.equal(capabilities.payload.formatConversion.artifact, "format-conversion-plan-json");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
+  assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(capabilities.payload.referenceFrameworks.localAudit.expectedCount >= 6, true);
   assert.equal(capabilities.payload.timeFiltering.supported, true);
   assert.equal(capabilities.payload.timeFiltering.strategy, "document-window-time-filter.v1");
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".rtf"), true);
@@ -452,7 +455,13 @@ try {
   const referenceGapReport = await fetchJson(`${serviceUrl}/v1/reference-gap-report`);
   assert.equal(referenceGapReport.status, 200);
   assert.equal(referenceGapReport.payload.strategy, "reference-framework-gap-report.v1");
+  assert.equal(referenceGapReport.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(referenceGapReport.payload.referenceFrameworks.localAudit.expectedCount >= 6, true);
   assert.equal(referenceGapReport.payload.frameworks.some((framework) => framework.id === "mineru" && framework.absorbedPatterns.length > 0), true);
+  const referenceFrameworks = await fetchJson(`${serviceUrl}/v1/reference-frameworks`);
+  assert.equal(referenceFrameworks.status, 200);
+  assert.equal(referenceFrameworks.payload.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
+  assert.equal(referenceFrameworks.payload.localAudit.expectedCount >= 6, true);
 
   const image = drawOcrPgm([
     "PACT OCR ROUTING",

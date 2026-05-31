@@ -157,6 +157,8 @@ flowchart LR
 
 `external-services/knowledge-distillation-service/reference-frameworks.json`
 
+外部服务还通过 `reference-framework-local-checkout-audit.v1` 对上述本地 checkout 做运行时审计：检查路径是否存在、是否为 Git worktree、实际 commit 是否匹配 manifest，并在 `/v1/reference-frameworks`、`/v1/capabilities` 和 `/v1/reference-gap-report` 中暴露 `localAudit`。单机 Docker 镜像默认不打包 1.6G 参考源码时，也必须明确报告 missing，不允许把静态 JSON 当作已完成比对。
+
 | 参考实现 | 对标重点 |
 | --- | --- |
 | RAGFlow | Deep document understanding、RAG 引擎、Agent 知识库流 |
@@ -719,7 +721,7 @@ Verifier：
 3. 大文件与分窗：把页、章节、元素、表格、代码、公式统一纳入窗口模型，消除小文件上限。
 4. 算法与校验：引入主题分类、聚类、垃圾池、claim grounding、冲突证据和时间线过滤。
 5. 响应与导出：分离控制台、Agent、普通 API 报文，并验证 Markdown/DOCX/JSON/ZIP 可打开。
-6. 服务与门禁：外部服务注册为 `external.knowledge.distillation`，OrbStack 单机容器和 verifier 固化为回归门禁。
+6. 服务与门禁：外部服务注册为 `external.knowledge.distillation`，OrbStack 单机容器、reference framework checkout audit 和 verifier 固化为回归门禁。
 
 ---
 
