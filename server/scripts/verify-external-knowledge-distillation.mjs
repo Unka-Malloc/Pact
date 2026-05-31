@@ -255,13 +255,14 @@ function msgTextBase64(text = "Outlook MSG Tika fallback extracts project schedu
 
 const sampleDocxBase64 = base64Zip({
   "word/document.xml": [
-    "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
+    "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">",
     "<w:body>",
     "<w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>DOCX Contract Decision Register</w:t></w:r></w:p>",
     "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>Routing Decisions</w:t></w:r></w:p>",
     "<w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"9\"/></w:numPr></w:pPr><w:r><w:t>Preserve Word list hierarchy for agent filters.</w:t></w:r></w:p>",
     "<w:p><w:r><w:t>Standalone DOCX payload parser extracts contract decisions.</w:t></w:r></w:p>",
     "<w:p><w:r><w:t>Evidence portal: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>DOCX evidence portal</w:t></w:r></w:hyperlink></w:p>",
+    "<w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"10\" name=\"Architecture Diagram\" descr=\"DOCX architecture diagram evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
     "<w:p><w:r><w:t>Annotation reference paragraph.</w:t></w:r><w:r><w:footnoteReference w:id=\"2\"/></w:r></w:p>",
     "<w:tbl>",
     "<w:tr><w:tc><w:p><w:r><w:t>Owner</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Decision</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Due Date</w:t></w:r></w:p></w:tc></w:tr>",
@@ -273,6 +274,7 @@ const sampleDocxBase64 = base64Zip({
   "word/_rels/document.xml.rels": [
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/docx-evidence\" TargetMode=\"External\"/>",
+    "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/architecture.png\"/>",
     "</Relationships>"
   ].join(""),
   "word/comments.xml": [
@@ -289,7 +291,8 @@ const sampleDocxBase64 = base64Zip({
     "<w:endnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
     "<w:endnote w:id=\"3\"><w:p><w:r><w:t>Endnote keeps the audit trail available to agents.</w:t></w:r></w:p></w:endnote>",
     "</w:endnotes>"
-  ].join("")
+  ].join(""),
+  "word/media/architecture.png": "docx-image-bytes"
 });
 
 const samplePptxBase64 = base64Zip({
@@ -300,6 +303,7 @@ const samplePptxBase64 = base64Zip({
     "<p:cSld><p:spTree>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:nvPr><p:ph type=\"title\" idx=\"0\"/></p:nvPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\" tooltip=\"Presentation evidence link\"/></a:rPr><a:t>Presentation evidence portal</a:t></a:r></a:p></p:txBody></p:sp>",
+    "<p:pic><p:nvPicPr><p:cNvPr id=\"5\" name=\"Roadmap Diagram\" descr=\"PPTX roadmap diagram evidence\"/></p:nvPicPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"1828800\" cy=\"685800\"/></a:xfrm></p:spPr><p:blipFill><a:blip r:embed=\"rIdImage1\"/></p:blipFill></p:pic>",
     "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"4\" name=\"Roadmap Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"2590800\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Slides</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Keep PowerPoint table cells queryable</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
@@ -310,6 +314,7 @@ const samplePptxBase64 = base64Zip({
   "ppt/slides/_rels/slide1.xml.rels": [
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/pptx-evidence\" TargetMode=\"External\"/>",
+    "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/roadmap.png\"/>",
     "</Relationships>"
   ].join(""),
   "ppt/notesSlides/notesSlide1.xml": [
@@ -317,7 +322,8 @@ const samplePptxBase64 = base64Zip({
     "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
     "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Speaker note keeps release risk and operator follow-up evidence queryable.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
     "</p:notes>"
-  ].join("")
+  ].join(""),
+  "ppt/media/roadmap.png": "pptx-image-bytes"
 });
 
 const sampleXlsxBase64 = base64Zip({
@@ -549,8 +555,9 @@ try {
         mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         entries: {
           "word/document.xml": [
-            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>",
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body>",
             "<w:p><w:r><w:t>Mounted link: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>mounted DOCX link</w:t></w:r></w:hyperlink></w:p>",
+            "<w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"12\" name=\"Mounted Architecture Image\" descr=\"Mounted DOCX architecture image evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
             Array.from({ length: 120 }, (_, index) => (
               `<w:p><w:r><w:t>Mounted DOCX section ${index + 1} confirms structured filePath extraction, project convergence, and evidence windowing.</w:t></w:r></w:p>`
             )).join(""),
@@ -559,6 +566,7 @@ try {
           "word/_rels/document.xml.rels": [
             "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
             "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/mounted-docx\" TargetMode=\"External\"/>",
+            "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/mounted-architecture.png\"/>",
             "</Relationships>"
           ].join(""),
           "word/comments.xml": [
@@ -571,6 +579,7 @@ try {
             "<w:footnote w:id=\"5\"><w:p><w:r><w:t>Mounted DOCX footnote preserves filePath annotation evidence.</w:t></w:r></w:p></w:footnote>",
             "</w:footnotes>"
           ].join(""),
+          "word/media/mounted-architecture.png": "mounted-docx-image-bytes",
           "word/media/noise.bin": "mounted-docx-media-noise-must-not-enter-structural-entry-plan"
         }
       },
@@ -584,6 +593,7 @@ try {
             "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
             "<p:cSld><p:spTree>",
             "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Mounted Slide Title\"/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Mounted PPTX slide route validates structured filePath parser coverage. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\"/></a:rPr><a:t>mounted PPTX link</a:t></a:r></a:p></p:txBody></p:sp>",
+            "<p:pic><p:nvPicPr><p:cNvPr id=\"5\" name=\"Mounted Roadmap Image\" descr=\"Mounted PPTX roadmap image evidence\"/></p:nvPicPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"2057400\"/><a:ext cx=\"1828800\" cy=\"685800\"/></a:xfrm></p:spPr><p:blipFill><a:blip r:embed=\"rIdImage1\"/></p:blipFill></p:pic>",
             "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"3\" name=\"Mounted Decision Table\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl>",
             "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
             "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Mounted PPTX</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Preserve filePath PowerPoint table cells</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
@@ -594,13 +604,15 @@ try {
           "ppt/slides/_rels/slide1.xml.rels": [
             "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
             "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/mounted-pptx\" TargetMode=\"External\"/>",
+            "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/mounted-roadmap.png\"/>",
             "</Relationships>"
           ].join(""),
           "ppt/notesSlides/notesSlide1.xml": [
             "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
             "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Mounted speaker note keeps filePath slide decisions queryable.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
             "</p:notes>"
-          ].join("")
+          ].join(""),
+          "ppt/media/mounted-roadmap.png": "mounted-pptx-image-bytes"
         }
       },
       {
@@ -866,11 +878,13 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.images"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.numbering"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.placeholders"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.images"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
@@ -940,6 +954,8 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.dateSerial"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.formula"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.hyperlink.target"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.target"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.relationshipId"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetId"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("shape.placeholderType"), true);
@@ -954,6 +970,8 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.shape.placeholderType"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.table.sheetName"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.target"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.relationshipId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateIso"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateSerial"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
@@ -998,10 +1016,12 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-paragraph-style-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-date-serials-normalized"), true);
@@ -1666,6 +1686,7 @@ try {
     document.evidence.styleRefCount >= 1 &&
     document.evidence.numberingRefCount >= 1 &&
     document.evidence.linkElementCount >= 1 &&
+    document.evidence.imageRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed")
@@ -1814,6 +1835,11 @@ try {
     trace.status === "completed" &&
     trace.links === 1
   )), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.word.images" &&
+    trace.status === "completed" &&
+    trace.images === 1
+  )), true);
   assert.equal(docxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(docxPayloadCorpus.elementPlan.sourceFormat, "docx");
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.title >= 1, true);
@@ -1823,6 +1849,7 @@ try {
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.footnote >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.endnote >= 1, true);
@@ -1854,6 +1881,13 @@ try {
     element.href === "https://example.com/docx-evidence" &&
     element.text.includes("DOCX evidence portal")
   )), true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "image" &&
+    element.href === "word/media/architecture.png" &&
+    element.image?.relationshipId === "rIdImage1" &&
+    element.image?.target === "word/media/architecture.png" &&
+    element.image?.description === "DOCX architecture diagram evidence"
+  )), true);
   assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
   assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -1875,11 +1909,17 @@ try {
     ref.type === "link" &&
     ref.href === "https://example.com/docx-evidence"
   ))), true);
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "image" &&
+    ref.href === "word/media/architecture.png" &&
+    ref.image?.relationshipId === "rIdImage1"
+  ))), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.parserProfile, "wordprocessingml-paragraph-style-route");
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("paragraphStyles"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("listLevels"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("images"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("footnotes"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
@@ -1912,6 +1952,14 @@ try {
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "link" &&
       ref.href === "https://example.com/docx-evidence"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-8" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "image" &&
+      ref.image?.target === "word/media/architecture.png" &&
+      ref.image?.relationshipId === "rIdImage1"
     ))
   )), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");
@@ -2101,6 +2149,11 @@ try {
           trace.status === "completed" &&
           trace.links === 1
         )), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.word.images" &&
+          trace.status === "completed" &&
+          trace.images === 1
+        )), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "comment" &&
           ref.annotation?.kind === "comment" &&
@@ -2109,6 +2162,11 @@ try {
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "link" &&
           ref.href === "https://example.com/mounted-docx"
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "image" &&
+          ref.href === "word/media/mounted-architecture.png" &&
+          ref.image?.relationshipId === "rIdImage1"
         ))), true);
       } else if (formatId === "presentation") {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -2128,6 +2186,11 @@ try {
           trace.status === "completed" &&
           trace.links === 1
         )), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.presentation.images" &&
+          trace.status === "completed" &&
+          trace.images === 1
+        )), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "table-row" &&
           ref.table?.format === "presentationml" &&
@@ -2136,6 +2199,11 @@ try {
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "link" &&
           ref.href === "https://example.com/mounted-pptx"
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "image" &&
+          ref.href === "ppt/media/mounted-roadmap.png" &&
+          ref.image?.relationshipId === "rIdImage1"
         ))), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "speaker-note" &&
@@ -2307,6 +2375,12 @@ try {
     trace.status === "completed" &&
     trace.links === 1
   )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.images" &&
+    trace.status === "completed" &&
+    trace.images === 1 &&
+    trace.geometries === 1
+  )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
@@ -2314,6 +2388,7 @@ try {
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["speaker-note"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "heading" &&
@@ -2353,7 +2428,21 @@ try {
     element.href === "https://example.com/pptx-evidence" &&
     element.text.includes("Presentation evidence portal")
   )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "image" &&
+    element.page === 1 &&
+    element.href === "ppt/media/roadmap.png" &&
+    element.image?.relationshipId === "rIdImage1" &&
+    element.image?.target === "ppt/media/roadmap.png" &&
+    element.image?.description === "PPTX roadmap diagram evidence" &&
+    element.shape?.id === "5" &&
+    element.shape?.name === "Roadmap Diagram" &&
+    element.bbox?.x === 72 &&
+    element.bbox?.y === 144 &&
+    element.layout?.strategy === "presentationml-image-ref.v1"
+  )), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("images"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-placeholder"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("speaker-notes"), true);
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2366,6 +2455,12 @@ try {
     ref.page === 1 &&
     ref.href === "https://example.com/pptx-evidence"
   ))), true);
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "image" &&
+    ref.page === 1 &&
+    ref.image?.relationshipId === "rIdImage1" &&
+    ref.layout?.strategy === "presentationml-image-ref.v1"
+  ))), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
     unit.metadata?.elementRefs?.some((ref) => ref.type === "speaker-note")
@@ -2375,6 +2470,13 @@ try {
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "link" &&
       ref.href === "https://example.com/pptx-evidence"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "image" &&
+      ref.image?.target === "ppt/media/roadmap.png"
     ))
   )), true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -3096,6 +3198,7 @@ try {
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-image-refs-preserved" && gate.status === "passed") &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
@@ -3103,9 +3206,11 @@ try {
     document.evidence.placeholderRefCount >= 2 &&
     document.evidence.shapeRefCount >= 2 &&
     document.evidence.linkElementCount >= 1 &&
+    document.evidence.imageRefCount >= 1 &&
     document.evidence.speakerNoteElementCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
@@ -3128,15 +3233,19 @@ try {
     document.parserStages.includes("office.word.styles") &&
     document.parserStages.includes("office.word.numbering") &&
     document.parserStages.includes("office.word.hyperlinks") &&
+    document.parserStages.includes("office.word.images") &&
     document.preserves.includes("paragraphStyles") &&
     document.preserves.includes("listLevels") &&
     document.preserves.includes("links") &&
+    document.preserves.includes("images") &&
     document.preserves.includes("comments") &&
     document.evidence.styleRefCount >= 1 &&
     document.evidence.numberingRefCount >= 1 &&
+    document.evidence.imageRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-image-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-annotation-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
@@ -3144,14 +3253,18 @@ try {
     document.parserStages.includes("office.presentation.slides") &&
     document.parserStages.includes("office.presentation.placeholders") &&
     document.parserStages.includes("office.presentation.hyperlinks") &&
+    document.parserStages.includes("office.presentation.images") &&
     document.parserStages.includes("office.presentation.speaker-notes") &&
     document.preserves.includes("shape-placeholder") &&
     document.preserves.includes("shape-bbox") &&
     document.preserves.includes("links") &&
+    document.preserves.includes("images") &&
     document.preserves.includes("speaker-notes") &&
     document.evidence.placeholderRefCount >= 2 &&
+    document.evidence.imageRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (

@@ -210,7 +210,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "office-document",
     preferredParser: "office.word.structured",
     fallbackParsers: ["tika.text", "ocr.embedded-images"],
-    parserChain: ["office.route", "office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "tika.text"],
+    parserChain: ["office.route", "office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "office.word.images", "tika.text"],
     streamingUnit: "section",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -230,7 +230,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "presentation",
     preferredParser: "office.presentation.slides",
     fallbackParsers: ["tika.text", "ocr.slide-images"],
-    parserChain: ["office.route", "office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
+    parserChain: ["office.route", "office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
     streamingUnit: "slide",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -559,9 +559,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Word",
     professionalFamily: "office-word",
     parserProfile: "wordprocessingml-paragraph-style-route",
-    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "comment", "footnote", "endnote"],
-    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "tika.text"],
-    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "comments", "footnotes", "endnotes"],
+    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "image", "comment", "footnote", "endnote"],
+    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "office.word.images", "tika.text"],
+    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "images", "comments", "footnotes", "endnotes"],
     conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-style-list-table-link-and-annotation-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -583,7 +583,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "word-elements-to-agent-refs.v1",
         mode: "agent",
-        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "annotation-refs"]
+        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "image-refs", "annotation-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -593,7 +593,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "relationships", "claims"]
       }
     ],
-    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-annotation-refs-preserved"],
+    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-image-refs-preserved", "word-annotation-refs-preserved"],
     riskControls: ["legacy-doc-tika-fallback", "advanced-style-loss-reporting"],
     knownLosses: ["advanced-openxml-styling-not-rendered"]
   },
@@ -601,9 +601,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "PowerPoint",
     professionalFamily: "office-presentation",
     parserProfile: "presentationml-slide-route",
-    structureUnits: ["slide", "heading", "placeholder", "slide-shape", "table-row", "link", "speaker-note"],
-    parserStages: ["office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
-    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-id", "shape-name", "shape-placeholder", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "speaker-notes"],
+    structureUnits: ["slide", "heading", "placeholder", "slide-shape", "table-row", "link", "image", "speaker-note"],
+    parserStages: ["office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
+    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-id", "shape-name", "shape-placeholder", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "images", "speaker-notes"],
     conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-placeholder-table-link-and-note-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -625,7 +625,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "slides-to-agent-layout-refs.v1",
         mode: "agent",
-        stages: ["slide-refs", "shape-placeholder-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "speaker-note-refs"]
+        stages: ["slide-refs", "shape-placeholder-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "image-refs", "speaker-note-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -635,7 +635,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "slide-relationships", "claims"]
       }
     ],
-    qualityGates: ["slide-order-preserved", "presentation-placeholder-refs-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-speaker-notes-preserved"],
+    qualityGates: ["slide-order-preserved", "presentation-placeholder-refs-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-image-refs-preserved", "presentation-speaker-notes-preserved"],
     riskControls: ["speaker-notes-preserved-when-notesSlides-present", "raster-only-slide-ocr-fallback"],
     knownLosses: ["visual-layer-geometry-partial"]
   },
@@ -2376,6 +2376,7 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.annotation ? { annotation: metadata.annotation } : {}),
     ...(metadata.style ? { style: metadata.style } : {}),
     ...(metadata.shape ? { shape: metadata.shape } : {}),
+    ...(metadata.image ? { image: metadata.image } : {}),
     ...(metadata.cells ? { cells: metadata.cells } : {})
   });
 }
@@ -4792,6 +4793,81 @@ function docxPartRelationships(entries = [], partName = "") {
   return parseDocxRelationshipTargets(zipEntryText(entries, docxRelationshipEntryName(partName)));
 }
 
+function officeRelationshipResolvedTarget(partName = "", relationship = null) {
+  const target = String(relationship?.target || "");
+  if (!target) {
+    return "";
+  }
+  if (/^(https?:|mailto:|#)/i.test(target) || /^External$/i.test(relationship?.targetMode || "")) {
+    return target;
+  }
+  const normalizedPart = String(partName || "").replace(/\\/g, "/");
+  const directory = normalizedPart.includes("/")
+    ? normalizedPart.slice(0, normalizedPart.lastIndexOf("/") + 1)
+    : "";
+  return path.posix.normalize(`${directory}${target}`).replace(/^\/+/, "").replace(/^\.\//, "");
+}
+
+function officeImageMetadataFromFragment(fragmentXml = "", fallbackName = "") {
+  const docPrTag = String(fragmentXml || "").match(/<[^:>]*:?docPr\b[^>]*(?:\/>|>)/i)?.[0] || "";
+  const cNvPrTag = String(fragmentXml || "").match(/<[^:>]*:?cNvPr\b[^>]*(?:\/>|>)/i)?.[0] || "";
+  const tag = docPrTag || cNvPrTag;
+  return {
+    id: xmlLocalAttribute(tag, "id"),
+    name: xmlLocalAttribute(tag, "name") || fallbackName,
+    title: xmlLocalAttribute(tag, "title"),
+    description: xmlLocalAttribute(tag, "descr")
+  };
+}
+
+function officeImageRefsFromXml(fragmentXml = "", relationships = new Map(), {
+  sourcePart = "",
+  fallbackName = "",
+  page = 0,
+  order = 0
+} = {}) {
+  const refs = [];
+  const seen = new Set();
+  const metadata = officeImageMetadataFromFragment(fragmentXml, fallbackName);
+  const pushRef = (tag = "", attrNames = []) => {
+    const relationshipId = attrNames.map((attr) => xmlLocalAttribute(tag, attr)).find(Boolean) || "";
+    if (!relationshipId) {
+      return;
+    }
+    const relationship = relationships.get(relationshipId) || null;
+    const target = officeRelationshipResolvedTarget(sourcePart, relationship);
+    if (!target && !/\/image$/i.test(relationship?.type || "")) {
+      return;
+    }
+    const key = `${relationshipId}:${target}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    refs.push({
+      relationshipId,
+      target,
+      href: target || relationshipId,
+      targetMode: relationship?.targetMode || "",
+      type: relationship?.type || "",
+      sourcePart,
+      page: Number(page || 0),
+      order: Number(order || 0),
+      name: metadata.name || fallbackName,
+      title: metadata.title,
+      description: metadata.description,
+      text: metadata.description || metadata.title || metadata.name || fallbackName || `Image ${refs.length + 1}`
+    });
+  };
+  for (const match of String(fragmentXml || "").matchAll(/<[^:>]*:?blip\b[^>]*(?:\/>|>)/g)) {
+    pushRef(match[0], ["embed", "link"]);
+  }
+  for (const match of String(fragmentXml || "").matchAll(/<[^:>]*:?imagedata\b[^>]*(?:\/>|>)/g)) {
+    pushRef(match[0], ["id", "href"]);
+  }
+  return refs;
+}
+
 function docxParagraphHyperlinks(paragraphXml = "", relationships = new Map()) {
   const links = [];
   for (const match of String(paragraphXml || "").matchAll(/<[^:>]*:?hyperlink\b[\s\S]*?<\/[^:>]*:?hyperlink>/g)) {
@@ -4818,6 +4894,35 @@ function docxParagraphHyperlinks(paragraphXml = "", relationships = new Map()) {
   return links;
 }
 
+function appendDocxImageElements(elements = [], xml = "", relationships = new Map(), {
+  partName = "",
+  lineStart = 0,
+  imageStart = 0
+} = {}) {
+  let count = 0;
+  const fragments = [
+    ...Array.from(String(xml || "").matchAll(/<[^:>]*:?drawing\b[\s\S]*?<\/[^:>]*:?drawing>/g)).map((match) => match[0]),
+    ...Array.from(String(xml || "").matchAll(/<[^:>]*:?pict\b[\s\S]*?<\/[^:>]*:?pict>/g)).map((match) => match[0])
+  ];
+  for (const fragment of fragments) {
+    const imageRefs = officeImageRefsFromXml(fragment, relationships, {
+      sourcePart: partName,
+      fallbackName: `Word Image ${imageStart + count + 1}`,
+      order: imageStart + count + 1
+    });
+    for (const image of imageRefs) {
+      count += 1;
+      pushStructureElement(elements, "image", image.text, {
+        line: lineStart + count,
+        name: `${partName}#image-${imageStart + count}`,
+        href: image.href,
+        image
+      });
+    }
+  }
+  return count;
+}
+
 function parseDocx(entries = []) {
   const xmlNames = entries
     .map((entry) => entry.name)
@@ -4832,6 +4937,7 @@ function parseDocx(entries = []) {
   let footnoteCount = 0;
   let endnoteCount = 0;
   let hyperlinkCount = 0;
+  let imageCount = 0;
   let styleRefCount = 0;
   let numberingRefCount = 0;
   for (const name of xmlNames) {
@@ -4881,6 +4987,11 @@ function parseDocx(entries = []) {
         });
       }
     }
+    imageCount += appendDocxImageElements(elements, xml, relationships, {
+      partName: name,
+      lineStart: paragraphCount + tableRowCount + annotationCount,
+      imageStart: imageCount
+    });
     if (!foundParagraph) {
       const text = textFromXmlTextNodes(xml);
       if (text) {
@@ -4910,6 +5021,7 @@ function parseDocx(entries = []) {
     footnoteCount,
     endnoteCount,
     hyperlinkCount,
+    imageCount,
     styleRefCount,
     numberingRefCount,
     headingCount: (counts.title || 0) + (counts.heading || 0),
@@ -5139,6 +5251,45 @@ function appendPptxTableElements(elements = [], frameXml = "", { slideNumber = 0
   return { rowCount: rows.length, cellCount, geometryCount: geometry.bbox ? 1 : 0 };
 }
 
+function appendPptxImageElements(elements = [], pictureXml = "", relationships = new Map(), {
+  slideNumber = 0,
+  imageIndex = 0,
+  order = 0,
+  sourcePart = ""
+} = {}) {
+  const geometry = pptxShapeGeometry(pictureXml, slideNumber, order || imageIndex);
+  const shapeName = pptxShapeName(pictureXml, `Slide ${slideNumber} Image ${imageIndex}`);
+  const shape = pptxShapeMetadata(pictureXml, {
+    fallbackName: shapeName,
+    slideNumber,
+    order: order || imageIndex
+  });
+  const imageRefs = officeImageRefsFromXml(pictureXml, relationships, {
+    sourcePart,
+    fallbackName: shapeName,
+    page: slideNumber,
+    order: order || imageIndex
+  });
+  let count = 0;
+  for (const image of imageRefs) {
+    count += 1;
+    const layout = geometry.layout
+      ? { ...geometry.layout, strategy: "presentationml-image-ref.v1" }
+      : { strategy: "presentationml-image-ref.v1", page: slideNumber, order: order || imageIndex };
+    pushStructureElement(elements, "image", image.text, {
+      line: order || imageIndex,
+      name: `${sourcePart}#image-${imageIndex + count - 1}`,
+      page: slideNumber,
+      href: image.href,
+      bbox: geometry.bbox,
+      layout,
+      shape,
+      image
+    });
+  }
+  return { count, geometryCount: count && geometry.bbox ? 1 : 0 };
+}
+
 function parsePptx(entries = []) {
   const slideNames = entries
     .map((entry) => entry.name)
@@ -5158,6 +5309,8 @@ function parsePptx(entries = []) {
   let tableGeometryCount = 0;
   let speakerNoteCount = 0;
   let hyperlinkCount = 0;
+  let imageCount = 0;
+  let imageGeometryCount = 0;
   let placeholderCount = 0;
   let shapeMetadataCount = 0;
   for (const [index, name] of slideNames.entries()) {
@@ -5170,6 +5323,8 @@ function parsePptx(entries = []) {
     const tableFrames = Array.from(xml.matchAll(/<[^:>]*:?graphicFrame\b[\s\S]*?<\/[^:>]*:?graphicFrame>/g))
       .map((match) => match[0])
       .filter((frameXml) => /<[^:>]*:?tbl\b/i.test(frameXml));
+    const pictureBlocks = Array.from(xml.matchAll(/<[^:>]*:?pic\b[\s\S]*?<\/[^:>]*:?pic>/g))
+      .map((match) => match[0]);
     if (shapeBlocks.length) {
       for (const [shapeIndex, shapeXml] of shapeBlocks.entries()) {
         const paragraphs = Array.from(shapeXml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
@@ -5248,7 +5403,19 @@ function parsePptx(entries = []) {
         });
       }
     }
-    if (shapeBlocks.length || tableFrames.length) {
+    if (pictureBlocks.length) {
+      for (const pictureXml of pictureBlocks) {
+        const image = appendPptxImageElements(elements, pictureXml, relationships, {
+          slideNumber,
+          imageIndex: imageCount + 1,
+          order: shapeCount + tableCount + imageCount + 1,
+          sourcePart: name
+        });
+        imageCount += image.count;
+        imageGeometryCount += image.geometryCount;
+      }
+    }
+    if (shapeBlocks.length || tableFrames.length || pictureBlocks.length) {
       continue;
     }
     const paragraphs = Array.from(xml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
@@ -5324,11 +5491,13 @@ function parsePptx(entries = []) {
     presentationPartCount: slideNames.length + noteNames.length,
     speakerNoteCount,
     hyperlinkCount,
+    imageCount,
     placeholderCount,
     shapeMetadataCount,
     shapeCount,
-    geometryCount: shapeGeometryCount + tableGeometryCount,
+    geometryCount: shapeGeometryCount + tableGeometryCount + imageGeometryCount,
     shapeGeometryCount,
+    imageGeometryCount,
     tableCount,
     tableRowCount,
     tableCellCount,
@@ -6614,6 +6783,7 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount,
           links: parsed.hyperlinkCount,
+          images: parsed.imageCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount,
           styles: parsed.styleRefCount,
@@ -6651,6 +6821,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           stage: "office.word.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           links: parsed.hyperlinkCount
+        },
+        {
+          stage: "office.word.images",
+          status: parsed.imageCount ? "completed" : "empty",
+          images: parsed.imageCount
         }
       ]
     };
@@ -6678,6 +6853,7 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
           hyperlinks: parsed.hyperlinkCount,
+          images: parsed.imageCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -6701,6 +6877,12 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           stage: "office.presentation.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           links: parsed.hyperlinkCount
+        },
+        {
+          stage: "office.presentation.images",
+          status: parsed.imageCount ? "completed" : "empty",
+          images: parsed.imageCount,
+          geometries: parsed.imageGeometryCount
         },
         {
           stage: "office.presentation.speaker-notes",
@@ -7942,6 +8124,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount,
           links: parsed.hyperlinkCount,
+          images: parsed.imageCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount,
           styles: parsed.styleRefCount,
@@ -7980,6 +8163,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           status: parsed.hyperlinkCount ? "completed" : "empty",
           links: parsed.hyperlinkCount
         });
+        parserTrace.push({
+          stage: "office.word.images",
+          status: parsed.imageCount ? "completed" : "empty",
+          images: parsed.imageCount
+        });
         if (parsed.text) {
           return {
             text: parsed.text,
@@ -8013,6 +8201,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
           hyperlinks: parsed.hyperlinkCount,
+          images: parsed.imageCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -8036,6 +8225,12 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           stage: "office.presentation.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           links: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.images",
+          status: parsed.imageCount ? "completed" : "empty",
+          images: parsed.imageCount,
+          geometries: parsed.imageGeometryCount
         });
         parserTrace.push({
           stage: "office.presentation.speaker-notes",
@@ -8425,12 +8620,15 @@ function structureElementLine(element = {}) {
   const shape = element.shape?.id || element.shape?.name
     ? ` shape ${[element.shape.id, element.shape.name].filter(Boolean).join(":")}`
     : "";
+  const image = element.image?.relationshipId || element.image?.target
+    ? ` image ${[element.image.relationshipId, element.image.target].filter(Boolean).join(":")}`
+    : "";
   const placeholder = element.shape?.placeholderType
     ? ` placeholder ${element.shape.placeholderType}${element.shape.placeholderIndex ? `#${element.shape.placeholderIndex}` : ""}`
     : element.shape?.isPlaceholder
       ? " placeholder"
       : "";
-  return `Element ${element.type}${level}${name}${line}${style}${numbering}${shape}${placeholder}: ${element.text}${href}`;
+  return `Element ${element.type}${level}${name}${line}${style}${numbering}${shape}${placeholder}${image}: ${element.text}${href}`;
 }
 
 function structureElementTypeCounts(elements = []) {
@@ -8511,6 +8709,18 @@ function normalizedStructureElements(document = {}) {
             placeholderSize: String(element.shape.placeholderSize || "")
           }
         : null;
+      const image = element.image && typeof element.image === "object"
+        ? {
+            relationshipId: String(element.image.relationshipId || ""),
+            target: String(element.image.target || ""),
+            targetMode: String(element.image.targetMode || ""),
+            type: String(element.image.type || ""),
+            sourcePart: String(element.image.sourcePart || ""),
+            name: String(element.image.name || ""),
+            title: String(element.image.title || ""),
+            description: String(element.image.description || "")
+          }
+        : null;
       const cells = Array.isArray(element.cells)
         ? element.cells.slice(0, 200).map((cell) => ({
             ref: String(cell.ref || ""),
@@ -8561,6 +8771,7 @@ function normalizedStructureElements(document = {}) {
         annotation,
         style,
         shape,
+        image,
         cells
       };
     })
@@ -8572,7 +8783,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "code", "code-boundary", "formula", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
+  return ["table-header", "table-row", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -8606,6 +8817,7 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       annotation: element.annotation || null,
       style: element.style || null,
       shape: element.shape || null,
+      image: element.image || null,
       cells: element.cells || [],
       headingPath
     })),
@@ -8721,6 +8933,7 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       annotation: element.annotation || null,
       style: element.style || null,
       shape: element.shape || null,
+      image: element.image || null,
       cells: element.cells || []
     }))
   };
@@ -8989,6 +9202,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Word hyperlinks are preserved as element references." : "No Word hyperlinks were required or observed."
       });
     }
+    if (gate === "word-image-refs-preserved") {
+      const imageSignals = maxTraceMetric(document, ["images", "imageCount"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : imageSignals > 0
+          ? evidence.imageRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { imageSignals, imageRefCount: evidence.imageRefCount },
+        required: { imageRefsWhenPresent: true },
+        message: status === "passed" ? "Word image relationship targets are preserved as element references." : "No Word images were required or observed."
+      });
+    }
     if (gate === "slide-order-preserved") {
       const slideCount = maxTraceMetric(document, ["slides", "slideCount"]);
       const status = routeId !== "presentation"
@@ -9052,6 +9278,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         observed: { linkSignals, linkElementCount: evidence.linkElementCount },
         required: { linksWhenPresent: true },
         message: status === "passed" ? "PowerPoint hyperlinks are preserved as element references." : "No PowerPoint hyperlinks were required or observed."
+      });
+    }
+    if (gate === "presentation-image-refs-preserved") {
+      const imageSignals = maxTraceMetric(document, ["images", "imageCount"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : imageSignals > 0
+          ? evidence.imageRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { imageSignals, imageRefCount: evidence.imageRefCount },
+        required: { imageRefsWhenPresent: true },
+        message: status === "passed" ? "PowerPoint image relationship targets are preserved as element references." : "No PowerPoint images were required or observed."
       });
     }
     if (gate === "presentation-speaker-notes-preserved") {
@@ -9885,6 +10124,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount,
           links: parsed.hyperlinkCount,
+          images: parsed.imageCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount,
           styles: parsed.styleRefCount,
@@ -9922,6 +10162,11 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "office.word.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           links: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "office.word.images",
+          status: parsed.imageCount ? "completed" : "empty",
+          images: parsed.imageCount
         });
       }
     } else if (route?.id === "spreadsheet") {
@@ -10035,6 +10280,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
           hyperlinks: parsed.hyperlinkCount,
+          images: parsed.imageCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -10058,6 +10304,12 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "office.presentation.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           links: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.images",
+          status: parsed.imageCount ? "completed" : "empty",
+          images: parsed.imageCount,
+          geometries: parsed.imageGeometryCount
         });
         parserTrace.push({
           stage: "office.presentation.speaker-notes",
@@ -14953,10 +15205,12 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.word.styles",
         "office.word.numbering",
         "office.word.hyperlinks",
+        "office.word.images",
         "office.presentation.slides",
         "office.presentation.placeholders",
         "office.presentation.tables",
         "office.presentation.hyperlinks",
+        "office.presentation.images",
         "office.presentation.speaker-notes",
         "office.word.tables",
         "office.word.annotations",
@@ -14986,8 +15240,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       windowingStrategy: "element-aware-by-title-windowing.v1",
       elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -15008,7 +15262,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "dateSerials", "links", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),
