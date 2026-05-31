@@ -745,7 +745,9 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.emptyCorpusErrorCode, "EMPTY_RAW_CORPUS");
   assert.ok(capabilities.payload.runtimeDoctor.summary, "capabilities must expose runtime doctor summary");
-  assert.equal(capabilities.payload.classification.strategy, "hashing_embedding_window_community_classification_v2");
+  assert.equal(capabilities.payload.classification.strategy, "hashing_embedding_window_community_classification_v3");
+  assert.equal(capabilities.payload.classification.taxonomyStrategy, "semantic-concept-topic-hierarchy.v1");
+  assert.equal(capabilities.payload.classification.assignmentRationaleStrategy, "leader-clustering-semantic-concept-rationale.v1");
   assert.equal(capabilities.payload.classification.embedding.dimensions, 128);
   assert.equal(capabilities.payload.classification.embedding.windowCommunityThreshold, 0.31);
   assert.equal(capabilities.payload.classification.referencePatterns.includes("graphrag.community-reports"), true);
@@ -1249,7 +1251,9 @@ try {
   assert.equal(createRun.payload.result.referenceGapReport.strategy, "reference-framework-gap-report.v1");
   assert.equal(createRun.payload.result.referenceGapReport.frameworks.some((framework) => framework.id === "graphrag" && framework.status === "absorbed-with-open-gaps"), true);
   assert.equal(createRun.payload.result.referenceGapReport.absorbedCapabilityMap.graphEvidence.evidence.includes("graph-lite-entity-relationship-evidence-pack.v1"), true);
-  assert.equal(createRun.payload.result.classification.strategy, "hashing_embedding_window_community_classification_v2");
+  assert.equal(createRun.payload.result.classification.strategy, "hashing_embedding_window_community_classification_v3");
+  assert.equal(createRun.payload.result.classification.taxonomyStrategy, "semantic-concept-topic-hierarchy.v1");
+  assert.equal(createRun.payload.result.classification.assignmentRationaleStrategy, "leader-clustering-semantic-concept-rationale.v1");
   assert.equal(createRun.payload.result.classification.embedding.dimensions, 128);
   assert.equal(createRun.payload.result.classification.referencePatterns.includes("graphrag.community-reports"), true);
   assert.equal(createRun.payload.result.classification.lowCouplingHighCohesion.enforced, true);
@@ -1260,8 +1264,18 @@ try {
   ));
   assert.ok(financeGroup, "semantic embedding classification should group invoice and supplier remittance documents");
   assert.equal(financeGroup.kind, "topic");
+  assert.equal(financeGroup.topicHierarchy.strategy, "semantic-concept-topic-hierarchy.v1");
+  assert.equal(financeGroup.topicHierarchy.primaryConcept, "finance");
+  assert.equal(financeGroup.assignmentRationale.strategy, "leader-clustering-semantic-concept-rationale.v1");
+  assert.equal(financeGroup.assignmentRationale.documents.some((document) => (
+    document.sourceId === "source-2" &&
+    ["new-topic", "nearest-leader"].includes(document.decision) &&
+    typeof document.reason === "string" &&
+    document.reason.length > 0
+  )), true);
   assert.equal(financeGroup.windowCommunities.length >= 1, true);
   assert.equal(financeGroup.distillationUnit.mode, "topic-isolated");
+  assert.equal(financeGroup.distillationUnit.topicPath.includes("finance"), true);
   assert.equal(financeGroup.distillationUnit.sourceIds.includes("source-2"), true);
   assert.equal(financeGroup.distillationUnit.windowRefs.length >= 1, true);
   assert.equal(typeof financeGroup.separationScore, "number");
@@ -1276,6 +1290,13 @@ try {
   const garbageGroup = createRun.payload.result.classification.groups.find((group) => group.sourceIds.includes("source-11"));
   assert.equal(garbageGroup?.kind, "garbage");
   assert.equal(garbageGroup?.excludedFromCore, true);
+  assert.equal(garbageGroup?.topicHierarchy?.path?.includes("weak-evidence"), true);
+  assert.equal(garbageGroup?.assignmentRationale?.documents?.some((document) => (
+    document.sourceId === "source-11" &&
+    document.decision === "weak-evidence" &&
+    /below garbage threshold/.test(document.reason)
+  )), true);
+  assert.equal(garbageGroup?.exclusionReasons?.some((reason) => reason.code === "WEAK_EVIDENCE_SIGNAL"), true);
   assert.equal(createRun.payload.result.agentMessage.responseProfile, "agent");
   assert.equal(createRun.payload.result.routePlan.strategy, "extension-media-shape-routing.v1");
   assert.equal(createRun.payload.result.corpusPlan.allSizePolicy, "streaming-windowed");

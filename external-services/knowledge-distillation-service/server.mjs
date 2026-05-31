@@ -42,7 +42,7 @@ const CLASSIFICATION_SEPARATION_THRESHOLD = 0.42;
 const GARBAGE_SIGNAL_THRESHOLD = 0.18;
 const GROUNDING_SUPPORT_THRESHOLD = 0.42;
 const GROUNDING_CONFLICT_THRESHOLD = 0.48;
-const CLASSIFICATION_STRATEGY = "hashing_embedding_window_community_classification_v2";
+const CLASSIFICATION_STRATEGY = "hashing_embedding_window_community_classification_v3";
 const GROUNDING_STRATEGY = "claim-evidence-topk-conflict-gating.v2";
 const INCREMENTAL_CONVERGENCE_STRATEGY = "project-snapshot-incremental-convergence.v1";
 const GRAPH_EVIDENCE_STRATEGY = "graph-lite-entity-relationship-evidence-pack.v1";
@@ -1102,7 +1102,7 @@ function buildReferenceGapReport(referenceFrameworks = null, { run = null, runti
       },
       classificationDistillation: {
         status: "absorbed",
-        evidence: [CLASSIFICATION_STRATEGY, "lowCouplingHighCohesion", "garbage group", "distillationUnit"],
+        evidence: [CLASSIFICATION_STRATEGY, "semantic-concept-topic-hierarchy.v1", "leader-clustering-semantic-concept-rationale.v1", "lowCouplingHighCohesion", "garbage group", "distillationUnit"],
         references: ["graphrag", "llama-index", "haystack"]
       },
       projectConvergence: {
@@ -8815,6 +8815,50 @@ function topTokens(tokens = new Set(), limit = 4) {
     .slice(0, limit);
 }
 
+function semanticConceptScores(tokens = new Set(), expandedTokens = new Set()) {
+  return Object.entries(SEMANTIC_ALIAS_GROUPS)
+    .map(([concept, aliases]) => {
+      const directHits = aliases.filter((alias) => tokens.has(alias));
+      const conceptToken = `concept:${concept}`;
+      const score = directHits.length + (expandedTokens.has(conceptToken) ? 1 : 0);
+      return {
+        concept,
+        score,
+        directHits: directHits.slice(0, 8)
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.concept.localeCompare(right.concept));
+}
+
+function topicHierarchyForTokens(tokens = new Set(), expandedTokens = new Set(), keywords = []) {
+  const concepts = semanticConceptScores(tokens, expandedTokens);
+  const primaryConcept = concepts[0]?.concept || "general";
+  return {
+    strategy: "semantic-concept-topic-hierarchy.v1",
+    primaryConcept,
+    concepts: concepts.slice(0, 5),
+    path: [
+      "all-sources",
+      primaryConcept,
+      ...keywords.slice(0, 2)
+    ].filter(Boolean)
+  };
+}
+
+function classificationAssignmentReason({ decision = "", similarity = 0, signal = 0, threshold = LEADER_CLUSTER_THRESHOLD, routeId = "" } = {}) {
+  if (decision === "weak-evidence") {
+    return `Excluded because signal ${signal} is below garbage threshold ${GARBAGE_SIGNAL_THRESHOLD}.`;
+  }
+  if (decision === "support-only") {
+    return "Kept as a container manifest/support source and excluded from core distillation.";
+  }
+  if (decision === "new-topic") {
+    return `Started a new topic because nearest leader similarity ${similarity} is below threshold ${threshold}.`;
+  }
+  return `Joined nearest topic because similarity ${similarity} meets threshold ${threshold}${routeId ? ` for route ${routeId}` : ""}.`;
+}
+
 function centroidHash(vector = []) {
   if (!vector.length) {
     return "";
@@ -9175,6 +9219,7 @@ function buildDistillationUnit(group = {}, windowCommunities = []) {
     mode: "topic-isolated",
     sourceIds,
     sourceCount: sourceIds.length,
+    topicPath: group.topicHierarchy?.path || [],
     windowCommunityIds: windowCommunities.map((community) => community.communityId),
     windowCount: windowCommunities.reduce((sum, community) => sum + community.windowCount, 0),
     windowRefs,
@@ -9233,6 +9278,7 @@ function classifyDocuments(documents = []) {
   const groups = [];
   const garbageDocuments = [];
   const supportDocuments = [];
+  const assignmentBySourceId = new Map();
   const containerParentIds = new Set(
     documents
       .filter((document) => documents.some((child) => child.parentSourceId === document.sourceId))
@@ -9240,6 +9286,14 @@ function classifyDocuments(documents = []) {
   );
   for (const [index, document] of documents.entries()) {
     if (containerParentIds.has(document.sourceId) && document.route?.formatId === "archive") {
+      assignmentBySourceId.set(document.sourceId, {
+        decision: "support-only",
+        similarity: 0,
+        threshold: 0,
+        signalScore: 0,
+        routeId: document.route?.formatId || "archive",
+        reason: classificationAssignmentReason({ decision: "support-only" })
+      });
       supportDocuments.push(document);
       continue;
     }
@@ -9252,6 +9306,15 @@ function classifyDocuments(documents = []) {
     const vector = vectorForTokens(expandedTokens);
     const signal = signalStrength({ text: document.text, tokens });
     if (signal < GARBAGE_SIGNAL_THRESHOLD) {
+      assignmentBySourceId.set(document.sourceId, {
+        decision: "weak-evidence",
+        similarity: 0,
+        threshold: GARBAGE_SIGNAL_THRESHOLD,
+        signalScore: signal,
+        routeId: document.route?.formatId || "unknown",
+        tokenCount: tokens.size,
+        reason: classificationAssignmentReason({ decision: "weak-evidence", signal })
+      });
       garbageDocuments.push({ document, tokens, expandedTokens, vector, signal });
       continue;
     }
@@ -9276,8 +9339,38 @@ function classifyDocuments(documents = []) {
         signalScores: []
       };
       groups.push(bestGroup);
+      assignmentBySourceId.set(document.sourceId, {
+        decision: "new-topic",
+        similarity: Number(bestScore.toFixed(4)),
+        threshold: LEADER_CLUSTER_THRESHOLD,
+        signalScore: signal,
+        routeId: document.route?.formatId || "unknown",
+        tokenCount: tokens.size,
+        reason: classificationAssignmentReason({
+          decision: "new-topic",
+          similarity: Number(bestScore.toFixed(4)),
+          signal,
+          threshold: LEADER_CLUSTER_THRESHOLD,
+          routeId: document.route?.formatId || "unknown"
+        })
+      });
     } else {
       bestGroup.centroid = mergeCentroid(bestGroup.centroid, vector, bestGroup.documents.length);
+      assignmentBySourceId.set(document.sourceId, {
+        decision: "nearest-leader",
+        similarity: Number(bestScore.toFixed(4)),
+        threshold: LEADER_CLUSTER_THRESHOLD,
+        signalScore: signal,
+        routeId: document.route?.formatId || "unknown",
+        tokenCount: tokens.size,
+        reason: classificationAssignmentReason({
+          decision: "nearest-leader",
+          similarity: Number(bestScore.toFixed(4)),
+          signal,
+          threshold: LEADER_CLUSTER_THRESHOLD,
+          routeId: document.route?.formatId || "unknown"
+        })
+      });
     }
     bestGroup.documents.push(document);
     bestGroup.cohesionScores.push(bestGroup.documents.length === 1 ? 1 : bestScore);
@@ -9292,14 +9385,35 @@ function classifyDocuments(documents = []) {
   mergeLeaderGroupsBySemanticConcept(groups);
   const topicGroups = groups.map((group, index) => {
     const keywords = topTokens(group.tokens, 5);
+    const topicHierarchy = topicHierarchyForTokens(group.tokens, group.expandedTokens, keywords);
     const topicGroup = {
       groupId: group.groupId,
       kind: "topic",
       excludedFromCore: false,
       label: keywords.slice(0, 3).join(" / ") || `Topic ${index + 1}`,
       keywords,
+      topicHierarchy,
       sourceCount: group.documents.length,
       sourceIds: group.documents.map((document) => document.sourceId),
+      assignmentRationale: {
+        strategy: "leader-clustering-semantic-concept-rationale.v1",
+        leaderThreshold: LEADER_CLUSTER_THRESHOLD,
+        garbageSignalThreshold: GARBAGE_SIGNAL_THRESHOLD,
+        documents: group.documents.map((document) => {
+          const assignment = assignmentBySourceId.get(document.sourceId) || {};
+          return {
+            sourceId: document.sourceId,
+            title: document.title,
+            routeId: document.route?.formatId || "unknown",
+            decision: assignment.decision || "unknown",
+            similarity: assignment.similarity ?? 0,
+            threshold: assignment.threshold ?? LEADER_CLUSTER_THRESHOLD,
+            signalScore: assignment.signalScore ?? 0,
+            tokenCount: assignment.tokenCount ?? 0,
+            reason: assignment.reason || ""
+          };
+        })
+      },
       embedding: {
         dimensions: EMBEDDING_DIMENSIONS,
         centroidHash: centroidHash(group.centroid),
@@ -9337,8 +9451,33 @@ function classifyDocuments(documents = []) {
           excludedFromCore: true,
           label: "Container manifests",
           keywords: ["container", "manifest"],
+          topicHierarchy: {
+            strategy: "semantic-concept-topic-hierarchy.v1",
+            primaryConcept: "support",
+            concepts: [],
+            path: ["all-sources", "support", "container-manifest"]
+          },
           sourceCount: supportDocuments.length,
           sourceIds: supportDocuments.map((document) => document.sourceId),
+          assignmentRationale: {
+            strategy: "leader-clustering-semantic-concept-rationale.v1",
+            leaderThreshold: LEADER_CLUSTER_THRESHOLD,
+            garbageSignalThreshold: GARBAGE_SIGNAL_THRESHOLD,
+            documents: supportDocuments.map((document) => {
+              const assignment = assignmentBySourceId.get(document.sourceId) || {};
+              return {
+                sourceId: document.sourceId,
+                title: document.title,
+                routeId: document.route?.formatId || "archive",
+                decision: assignment.decision || "support-only",
+                similarity: assignment.similarity ?? 0,
+                threshold: assignment.threshold ?? 0,
+                signalScore: assignment.signalScore ?? 0,
+                tokenCount: assignment.tokenCount ?? 0,
+                reason: assignment.reason || classificationAssignmentReason({ decision: "support-only" })
+              };
+            })
+          },
           embedding: {
             dimensions: EMBEDDING_DIMENSIONS,
             centroidHash: "",
@@ -9373,8 +9512,39 @@ function classifyDocuments(documents = []) {
       excludedFromCore: true,
       label: "Weak evidence / noise",
       keywords: topTokens(garbageTokens, 5),
+      topicHierarchy: {
+        strategy: "semantic-concept-topic-hierarchy.v1",
+        primaryConcept: "garbage",
+        concepts: [],
+        path: ["all-sources", "excluded", "weak-evidence"]
+      },
       sourceCount: garbageDocuments.length,
       sourceIds: garbageDocuments.map((item) => item.document.sourceId),
+      assignmentRationale: {
+        strategy: "leader-clustering-semantic-concept-rationale.v1",
+        leaderThreshold: LEADER_CLUSTER_THRESHOLD,
+        garbageSignalThreshold: GARBAGE_SIGNAL_THRESHOLD,
+        documents: garbageDocuments.map((item) => {
+          const assignment = assignmentBySourceId.get(item.document.sourceId) || {};
+          return {
+            sourceId: item.document.sourceId,
+            title: item.document.title,
+            routeId: item.document.route?.formatId || "unknown",
+            decision: assignment.decision || "weak-evidence",
+            signalScore: assignment.signalScore ?? item.signal,
+            threshold: assignment.threshold ?? GARBAGE_SIGNAL_THRESHOLD,
+            tokenCount: assignment.tokenCount ?? item.tokens.size,
+            reason: assignment.reason || classificationAssignmentReason({ decision: "weak-evidence", signal: item.signal })
+          };
+        })
+      },
+      exclusionReasons: garbageDocuments.map((item) => ({
+        sourceId: item.document.sourceId,
+        code: "WEAK_EVIDENCE_SIGNAL",
+        signalScore: item.signal,
+        threshold: GARBAGE_SIGNAL_THRESHOLD,
+        reason: classificationAssignmentReason({ decision: "weak-evidence", signal: item.signal })
+      })),
       embedding: {
         dimensions: EMBEDDING_DIMENSIONS,
         centroidHash: "",
@@ -11031,6 +11201,8 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
     grounding,
     classification: {
       strategy: classification.strategy,
+      taxonomyStrategy: classification.taxonomyStrategy,
+      assignmentRationaleStrategy: classification.assignmentRationaleStrategy,
       groupCount: classification.groups.length,
       coreGroupCount: classification.coreGroupCount,
       garbageGroupCount: classification.garbageGroupCount,
@@ -11041,10 +11213,13 @@ function buildAgentMessage({ runId, title, query, documents, classification, rou
         groupId: group.groupId,
         label: group.label,
         keywords: group.keywords,
+        topicHierarchy: group.topicHierarchy || null,
         kind: group.kind || "topic",
         excludedFromCore: Boolean(group.excludedFromCore),
         sourceCount: group.sourceCount,
         sourceIds: group.sourceIds,
+        assignmentRationale: group.assignmentRationale || null,
+        exclusionReasons: group.exclusionReasons || [],
         cohesionScore: group.cohesionScore,
         separationScore: group.separationScore ?? null,
         boundary: group.boundary || null,
@@ -11112,6 +11287,8 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
   const groups = classifyDocuments(documents);
   const classification = {
     strategy: CLASSIFICATION_STRATEGY,
+    taxonomyStrategy: "semantic-concept-topic-hierarchy.v1",
+    assignmentRationaleStrategy: "leader-clustering-semantic-concept-rationale.v1",
     referencePatterns: [
       "graphrag.community-reports",
       "llama-index.nodes-with-metadata",
@@ -11243,6 +11420,8 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
     grounding,
     classification: {
       strategy: classification.strategy,
+      taxonomyStrategy: classification.taxonomyStrategy,
+      assignmentRationaleStrategy: classification.assignmentRationaleStrategy,
       groupCount: classification.groupCount,
       coreGroupCount: classification.coreGroupCount,
       garbageGroupCount: classification.garbageGroupCount,
@@ -11324,6 +11503,8 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
       grounding,
       classification: {
         strategy: classification.strategy,
+        taxonomyStrategy: classification.taxonomyStrategy,
+        assignmentRationaleStrategy: classification.assignmentRationaleStrategy,
         groupCount: classification.groupCount,
         coreGroupCount: classification.coreGroupCount,
         garbageGroupCount: classification.garbageGroupCount,
@@ -11394,6 +11575,8 @@ function createRun(input = {}, runtimeStatus = null, priorRuns = [], referenceFr
           garbageGroupCount: classification.garbageGroupCount,
           communityCount: classification.communityCount,
           strategy: classification.strategy,
+          taxonomyStrategy: classification.taxonomyStrategy,
+          assignmentRationaleStrategy: classification.assignmentRationaleStrategy,
           averageCohesion: Number(
             (
               classification.groups.reduce((sum, group) => sum + group.cohesionScore, 0) /
@@ -11505,6 +11688,9 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       "external-service.route-window-community-claim-gated-distillation.v3",
       "external-service.route-window-community-claim-gated-incremental-distillation.v4",
       "external-service.route-window-community-claim-gated-graph-incremental-distillation.v5",
+      CLASSIFICATION_STRATEGY,
+      "semantic-concept-topic-hierarchy.v1",
+      "leader-clustering-semantic-concept-rationale.v1",
       "inline-or-streaming-manifest-document-input.v1",
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
@@ -11652,6 +11838,8 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
     classification: {
       supported: true,
       strategy: CLASSIFICATION_STRATEGY,
+      taxonomyStrategy: "semantic-concept-topic-hierarchy.v1",
+      assignmentRationaleStrategy: "leader-clustering-semantic-concept-rationale.v1",
       embedding: {
         provider: "builtin:hashing-semantic-v1",
         dimensions: EMBEDDING_DIMENSIONS,

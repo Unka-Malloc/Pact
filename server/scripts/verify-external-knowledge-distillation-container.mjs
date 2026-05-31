@@ -359,7 +359,9 @@ try {
 
   const capabilities = await fetchJson(`${serviceUrl}/v1/capabilities`);
   assert.equal(capabilities.status, 200);
-  assert.equal(capabilities.payload.classification.strategy, "hashing_embedding_window_community_classification_v2");
+  assert.equal(capabilities.payload.classification.strategy, "hashing_embedding_window_community_classification_v3");
+  assert.equal(capabilities.payload.classification.taxonomyStrategy, "semantic-concept-topic-hierarchy.v1");
+  assert.equal(capabilities.payload.classification.assignmentRationaleStrategy, "leader-clustering-semantic-concept-rationale.v1");
   assert.equal(capabilities.payload.classification.referencePatterns.includes("graphrag.community-reports"), true);
   assert.equal(capabilities.payload.grounding.strategy, "claim-evidence-topk-conflict-gating.v2");
   assert.equal(capabilities.payload.grounding.promotionGate, "claim-grounded-promotion");
@@ -522,7 +524,7 @@ try {
   assert.equal(document.parserTrace.some((trace) => trace.stage === "ocr.image" && trace.status === "completed"), true);
   assert.ok(document.quality.textCharacters > 0, "container OCR must produce distillable text");
   assert.equal(createRun.payload.result.agentMessage.responseProfile, "agent");
-  assert.equal(createRun.payload.result.classification.strategy, "hashing_embedding_window_community_classification_v2");
+  assert.equal(createRun.payload.result.classification.strategy, "hashing_embedding_window_community_classification_v3");
   assert.equal(createRun.payload.result.classification.communityCount >= 1, true);
   assert.equal(createRun.payload.result.convergence.strategy, "window-community-topic-project-convergence.v2");
   assert.equal(createRun.payload.result.grounding.strategy, "claim-evidence-topk-conflict-gating.v2");
@@ -959,11 +961,15 @@ try {
   assert.equal(projectPackageRun.payload.result.classification.coreGroupCount >= 2, true);
   assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
     group.sourceIds.includes("container-project-package!docs/architecture.md") &&
+    group.topicHierarchy?.strategy === "semantic-concept-topic-hierarchy.v1" &&
+    Array.isArray(group.assignmentRationale?.documents) &&
     group.windowCommunities.length >= 1 &&
     group.distillationUnit.mode === "topic-isolated"
   )), true);
   assert.equal(projectPackageRun.payload.result.classification.groups.some((group) => (
     group.sourceIds.includes("container-project-package!finance/invoice.csv") &&
+    group.topicHierarchy?.primaryConcept === "finance" &&
+    group.assignmentRationale?.documents?.some((document) => /threshold/.test(document.reason || "")) &&
     typeof group.separationScore === "number"
   )), true);
   assert.equal(projectPackageRun.payload.result.candidates.every((candidate) => candidate.distillationUnitId), true);

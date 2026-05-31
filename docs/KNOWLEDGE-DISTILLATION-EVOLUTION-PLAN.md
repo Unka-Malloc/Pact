@@ -121,7 +121,7 @@ flowchart LR
 | 解析链 | 外部服务已覆盖文本、配置、Markdown block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry、Word comments/footnotes/endnotes、Word/PowerPoint/OpenDocument table cells、PowerPoint shape geometry、Excel cell coordinates 和 SpreadsheetML formulas 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
 | 大文件 | 外部服务已支持 mounted file refs、streaming JSONL document manifests、archive refs、chunked windowing，并对 mounted Office/OpenDocument/EPUB 结构包执行结构 entry 选择、bounded native parse 和 large-entry streaming fallback | 上传、manifest、解析、蒸馏三层统一流式窗口协议 |
-| 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v2` | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
+| 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v3`，已输出语义概念主题层级、分组理由、低耦合高内聚指标和垃圾排除原因 | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
 | Grounding | 外部服务已做 claim-evidence top-k、冲突证据和 promotion gate | 内建运行时补 claim 级门禁和无证据结论拦截 |
 | 时间线 | 表格日期已进入 `timeRange`、`timeConfidence`、`timeSignals` | 扩展到邮件、元数据、正文日期，并提供 agent 查询过滤 |
 | 项目收敛 | 外部服务已有 project snapshot、incremental reuse plan 和 project evidence query | 内建知识库接入窗口 hash、增量重算和项目级 convergence |

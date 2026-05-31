@@ -140,7 +140,7 @@ If no distillable text can be produced, the run is marked `failed` with `EMPTY_R
 
 Built-in algorithm baseline:
 
-- `hashing_embedding_window_community_classification_v2`: dependency-free 128-dimensional semantic hashing vectors with fixed concept dimensions, document-level Leader-Clustering, per-topic window communities, low-coupling/high-cohesion separation scores, and isolated distillation units for unrelated input sets.
+- `hashing_embedding_window_community_classification_v3`: dependency-free 128-dimensional semantic hashing vectors with fixed concept dimensions, document-level Leader-Clustering, semantic concept topic hierarchy, assignment rationale, per-topic window communities, low-coupling/high-cohesion separation scores, weak-evidence exclusion reasons, and isolated distillation units for unrelated input sets.
 - `inline-or-streaming-manifest-document-input.v1`: accepts small API bodies that reference JSONL manifests, streams manifest records from disk, and sends each record through the normal route-first file parser path for large project distillation.
 - `claim-evidence-topk-conflict-gating.v2`: every generated summary claim and optional requested claim is matched back to top-k evidence, checked against cross-topic conflicts, and used to gate candidate promotion.
 - `project-snapshot-incremental-convergence.v1`: stores a compact project snapshot and compares later runs for the same project to reuse unchanged text units/window communities and recompute only changed windows before convergence.
