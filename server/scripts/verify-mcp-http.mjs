@@ -108,6 +108,16 @@ function bearerHeaders(token) {
   };
 }
 
+function assertNoMcpInternalLeak(value, label) {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  assert.equal(/\bworkspace_[A-Za-z0-9_]+\b/.test(text), false, `${label} must not expose internal workspace ids`);
+  assert.equal(
+    /(^|[\s"'=:(])\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\//.test(text) || /[A-Za-z]:[\\/]/.test(text),
+    false,
+    `${label} must not expose internal filesystem paths`
+  );
+}
+
 const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "pact-mcp-http-"));
 const server = await startHttpServer({
   userDataPath,
@@ -483,8 +493,32 @@ try {
     listPayload,
     readPayload
   });
-  assert.equal(/\bworkspace_[A-Za-z0-9_]+\b/.test(sharedspaceJson), false, "MCP sharedspace output must not expose internal workspace ids");
-  assert.equal(/\/Users\/|\/var\/folders|\/private\/var/.test(sharedspaceJson), false, "MCP sharedspace output must not expose local filesystem paths");
+  assertNoMcpInternalLeak(sharedspaceJson, "MCP sharedspace output");
+
+  let failedSharedspaceRead = null;
+  const failedSharedspaceReadSse = await captureMcpSseDuring({
+    url: `${server.url}/mcp`,
+    headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+    until: (text) =>
+      text.includes("notifications/pact/operation_reply") &&
+        text.includes("pact.sharedspace.file.read") &&
+        text.includes("\"status\":\"failed\""),
+    action: async () => {
+      failedSharedspaceRead = await fetchJson(`${server.url}/mcp`, {
+        method: "POST",
+        headers: apiKeyHeaders(sharedspaceGrant.payload.token),
+        body: JSON.stringify(mcpToolCall("pact.sharedspace", "pact.sharedspace.file.read", {
+          workspaceId: "workspace_private_http_probe",
+          path: "/home/private-user/private.txt",
+          includeText: true
+        }, 38))
+      });
+    }
+  });
+  assert.equal(failedSharedspaceRead.status, 200);
+  assert.ok(failedSharedspaceRead.payload.error);
+  assertNoMcpInternalLeak(failedSharedspaceRead.payload, "MCP failed sharedspace response");
+  assertNoMcpInternalLeak(failedSharedspaceReadSse.text, "MCP failed sharedspace SSE");
 
   const grant = await fetchJson(`${server.url}/api/tool-management/v1/grants`, {
     method: "POST",
@@ -525,6 +559,26 @@ try {
   assert.equal(health.payload.result.content[0].type, "text");
   assert.equal(health.payload.result.structuredContent.operation, "system.health");
   assert.equal(health.payload.result.structuredContent.payload.ok, true);
+
+  const internalEnvelopeProbe = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: apiKeyHeaders(grant.payload.token),
+    body: JSON.stringify(mcpRequest("tools/call", {
+      name: "pact.call",
+      arguments: {
+        apiVersion: "pact.mcp.v1",
+        operation: "system.health",
+        input: {},
+        workspaceId: "workspace_private_envelope_probe",
+        operatorId: "/home/private-user/agent",
+        intent: "inspect /home/private-user/report.txt"
+      }
+    }, 39))
+  });
+  assert.equal(internalEnvelopeProbe.status, 200);
+  assert.equal(internalEnvelopeProbe.payload.result.structuredContent.envelope.workspaceId, "workspace-hidden");
+  assert.equal(internalEnvelopeProbe.payload.result.structuredContent.envelope.operatorId, "[server-internal-path]");
+  assertNoMcpInternalLeak(internalEnvelopeProbe.payload, "MCP operation envelope");
 
   const capabilities = await fetchJson(`${server.url}/mcp`, {
     method: "POST",

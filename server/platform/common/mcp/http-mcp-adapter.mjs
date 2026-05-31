@@ -945,19 +945,62 @@ function requestTraceIdFromAuthorization(authorization = null) {
   return String(authorization?.traceId || authorization?.authorizationDecision?.traceId || "").trim();
 }
 
-function mcpEnvelopePublic(envelope = {}) {
+function isInternalMcpAbsolutePath(value) {
+  const text = String(value || "");
+  return (
+    /^\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\//.test(text) ||
+    /^[A-Za-z]:[\\/]/.test(text)
+  );
+}
+
+function publicMcpWorkspaceToken(workspaceDirectory = null, workspaceId = "") {
+  const entry = workspaceDirectory?.byId?.get?.(String(workspaceId || ""));
+  return entry?.ref || "workspace-hidden";
+}
+
+function publicMcpEnvelopeString(value, workspaceDirectory = null) {
+  const text = String(value || "");
+  if (!text) {
+    return "";
+  }
+  if (isInternalMcpAbsolutePath(text)) {
+    return "[server-internal-path]";
+  }
+  return text
+    .replace(/\bworkspace_[A-Za-z0-9_]+\b/g, (workspaceId) => publicMcpWorkspaceToken(workspaceDirectory, workspaceId))
+    .replace(/(^|[\s"'=:(])((?:\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/)[^\s"',)\]}]+)/g, "$1[server-internal-path]")
+    .replace(/[A-Za-z]:[\\/][^\s"',)\]}]+/g, "[server-internal-path]");
+}
+
+function publicMcpEnvelopeValue(value, workspaceDirectory = null, depth = 0) {
+  if (Array.isArray(value)) {
+    return value.slice(0, 128).map((item) => publicMcpEnvelopeValue(item, workspaceDirectory, depth + 1));
+  }
+  if (!value || typeof value !== "object") {
+    return typeof value === "string" ? publicMcpEnvelopeString(value, workspaceDirectory) : value;
+  }
+  if (depth > 5) {
+    return { type: "object", keys: Object.keys(value).slice(0, 40).map((key) => publicMcpEnvelopeString(key, workspaceDirectory)) };
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    publicMcpEnvelopeString(key, workspaceDirectory),
+    publicMcpEnvelopeValue(child, workspaceDirectory, depth + 1)
+  ]));
+}
+
+function mcpEnvelopePublic(envelope = {}, workspaceDirectory = null) {
   return {
     apiVersion: envelope.apiVersion || MCP_INTERFACE_VERSION,
     operation: envelope.operation || "",
-    intent: envelope.intent || envelope.operation || "",
-    traceId: envelope.traceId || "",
-    idempotencyKey: envelope.idempotencyKey || "",
-    operatorId: envelope.operatorId || "",
-    agentProfileId: envelope.agentProfileId || "",
-    workspaceId: envelope.workspaceId || "",
-    requestedScopes: envelope.requestedScopes || [],
+    intent: publicMcpEnvelopeString(envelope.intent || envelope.operation || "", workspaceDirectory),
+    traceId: publicMcpEnvelopeString(envelope.traceId || "", workspaceDirectory),
+    idempotencyKey: publicMcpEnvelopeString(envelope.idempotencyKey || "", workspaceDirectory),
+    operatorId: publicMcpEnvelopeString(envelope.operatorId || "", workspaceDirectory),
+    agentProfileId: publicMcpEnvelopeString(envelope.agentProfileId || "", workspaceDirectory),
+    workspaceId: publicMcpEnvelopeString(envelope.workspaceId || "", workspaceDirectory),
+    requestedScopes: publicMcpEnvelopeValue(envelope.requestedScopes || [], workspaceDirectory),
     dryRun: envelope.dryRun === true,
-    subject: envelope.subject || {}
+    subject: publicMcpEnvelopeValue(envelope.subject || {}, workspaceDirectory)
   };
 }
 
@@ -1197,7 +1240,7 @@ function broadcastMcpNotification(payload, { grantId = "" } = {}) {
   }
 }
 
-function broadcastMcpOperationReply({ envelope, operation, status, target, payload = {}, error = null, authorization = null }) {
+function broadcastMcpOperationReply({ envelope, operation, status, target, payload = {}, error = null, authorization = null, workspaceDirectory = null }) {
   const grantId = authorization?.grant?.id || "";
   const message = status === "completed"
     ? `已完成 ${operation} 任务`
@@ -1207,8 +1250,8 @@ function broadcastMcpOperationReply({ envelope, operation, status, target, paylo
     status,
     operation,
     message,
-    envelope: mcpEnvelopePublic(envelope),
-    target,
+    envelope: mcpEnvelopePublic(envelope, workspaceDirectory),
+    target: publicMcpEnvelopeValue(target || {}, workspaceDirectory),
     payload: mcpReplyPayload(payload),
     error,
     completedAt: new Date().toISOString()
@@ -1417,7 +1460,8 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
           message: error.message || "MCP tool call failed.",
           details: error.details || {}
         },
-        authorization
+        authorization,
+        workspaceDirectory: resolvedWorkspaceInput.workspaceDirectory
       });
       return {
         httpStatus: status === 401 || status === 403 || status === 429 ? status : 200,
@@ -1447,14 +1491,15 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider 
       status: "completed",
       target,
       payload: publicPayload,
-      authorization
+      authorization,
+      workspaceDirectory: resolvedWorkspaceInput.workspaceDirectory
     });
     return jsonRpcResult(id, mcpToolResult({
       result: {
         operation: parsedCall.operation,
         ...mcpVersionInfo(),
-        envelope: mcpEnvelopePublic(parsedCall.envelope),
-        target,
+        envelope: mcpEnvelopePublic(parsedCall.envelope, resolvedWorkspaceInput.workspaceDirectory),
+        target: publicMcpEnvelopeValue(target, resolvedWorkspaceInput.workspaceDirectory),
         payload: publicPayload
       }
     }));
