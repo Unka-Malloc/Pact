@@ -10,7 +10,7 @@ Request payloads can provide either direct text fields or a base64 file payload:
 
 - Direct text: `text`, `content`, `markdown`, or `body`.
 - File payload: `contentBase64`, `base64`, `dataBase64`, or `bytesBase64`.
-- Mounted single-node file payload: `filePath`, `contentPath`, `inputPath`, or `contentRef` under the configured input roots. Text, Markdown, source code, CSV/TSV, and JSONL references are scanned in chunks into window plans instead of being loaded as one full in-memory payload.
+- Mounted single-node file payload: `filePath`, `contentPath`, `inputPath`, or `contentRef` under the configured input roots. Text, Markdown, source code, CSV/TSV, JSON/JSONC, and JSONL references are scanned in chunks into window plans instead of being loaded as one full in-memory payload.
 - Streaming document manifest: `rawDocumentsManifestPath`, `rawDocumentsManifestRef`, `documentsManifestPath`, or `manifestPath` can point to an allowed JSONL manifest. The service streams the manifest line by line, then routes each referenced document through the same filePath/contentRef parser chain so large project requests do not need large JSON bodies.
 - Mounted archive payloads are expanded from their file path through ZIP/TAR/TGZ/7z extractors; child entries are routed as documents and streamable text entries use chunked windowing.
 - Mounted PDF payloads use Poppler `pdftotext` into a temporary text stream and then the normal windowing path.
@@ -81,7 +81,7 @@ Routed format families:
 - PDF: subtype routing before distillation, text extraction, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
 - Office and OpenDocument: DOC/DOT/DOCX/DOCM/DOTX/DOTM, RTF, PPT/PPS/POT/PPTX/PPTM/PPSX/PPSM/POTX/POTM, XLS/XLSB/XLSX/XLSM/XLTX/XLTM, ODT/ODS/ODP with paragraph, heading, Word comments/footnotes/endnotes, Word/PowerPoint/OpenDocument table row/cell metadata, slide, PresentationML shape geometry, sheet-row, cell-coordinate, SpreadsheetML formula metadata, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
-- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements rather than treated as plain text.
+- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONC, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements rather than treated as plain text.
 - Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
 - Diagrams: SVG, draw.io, Mermaid, and PlantUML with node, edge, and label extraction.
 - Notebooks: Jupyter `.ipynb` with markdown, code, and output cell extraction.
@@ -96,7 +96,7 @@ Built-in payload parsers:
 
 - Direct text, Markdown block structure, markup structure, and source code text.
 - Markup normalization for HTML/XHTML/XML/RST/AsciiDoc/Org/LaTeX/MediaWiki headings, lists, links, table rows, code blocks, citations, and formulas.
-- JSON and JSONL normalization.
+- JSON, JSONC, and JSONL normalization, with mounted JSON/JSONC file references using `structured-json-file-ref-streaming-window.v1` instead of binary fallback when they exceed the direct-read threshold.
 - Configuration key-value normalization for YAML, TOML, INI, properties, and dotenv files.
 - Diagram structure normalization for SVG, draw.io, Mermaid, and PlantUML files.
 - Jupyter Notebook cell normalization for `.ipynb` files.
@@ -112,7 +112,7 @@ Built-in payload parsers:
 - PDF subtype routing emits `pdf.subtype-route` and `pdfProfile` so agents can distinguish text PDFs, scanned PDFs, font-mapping-risk PDFs, image-heavy PDFs, encrypted PDFs, and empty/unknown PDFs without rescanning parser traces.
 - Image OCR through Tesseract when `tesseract-ocr` is installed.
 - Scanned PDF OCR through Poppler page rasterization plus Tesseract when both runtimes are installed.
-- Mounted file references from configured input roots, with chunked text windowing for streamable text formats.
+- Mounted file references from configured input roots, with chunked text windowing for streamable text formats, including oversized JSON/JSONC payloads.
 - Bounded binary file profiles for oversized or unknown file references without a text parser, emitted as `payload.file-ref-binary-profile`.
 - Mounted archive file references with child-entry file refs, so project packages do not need to be base64 encoded or fully loaded into Node memory.
 - Mounted PDF file references with Poppler `pdftotext` extraction into chunked windows.
@@ -149,6 +149,7 @@ Built-in algorithm baseline:
 
 - `hashing_embedding_window_community_classification_v3`: dependency-free 128-dimensional semantic hashing vectors with fixed concept dimensions, document-level Leader-Clustering, semantic concept topic hierarchy, assignment rationale, per-topic window communities, low-coupling/high-cohesion separation scores, weak-evidence exclusion reasons, and isolated distillation units for unrelated input sets.
 - `inline-or-streaming-manifest-document-input.v1`: accepts small API bodies that reference JSONL manifests, streams manifest records from disk, and sends each record through the normal route-first file parser path for large project distillation.
+- `structured-json-file-ref-streaming-window.v1`: keeps large mounted JSON/JSONC files in the structured-data route, streams them into windows with a bounded sample parser trace, and avoids misclassifying them as unknown binary.
 - `content-signature-routing.v1`: samples bounded head bytes before extension/media routing so mislabeled PDF, OOXML Word/PowerPoint/Excel, OpenDocument, EPUB, images, archives, RTF, and HTML still enter their professional parser chain instead of falling into Tika or unknown binary handling.
 - `claim-evidence-topk-conflict-gating.v2`: every generated summary claim and optional requested claim is matched back to top-k evidence, checked against cross-topic conflicts, and used to gate candidate promotion.
 - `project-snapshot-incremental-convergence.v1`: stores a compact project snapshot and compares later runs for the same project to reuse unchanged text units/window communities and recompute only changed windows before convergence.

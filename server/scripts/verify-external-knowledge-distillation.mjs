@@ -378,6 +378,7 @@ let pactServer = null;
 let fileRefDocument = null;
 let deferredFileRefDocument = null;
 let binaryProfileFileRefDocument = null;
+let largeJsonFileRefDocument = null;
 let mountedArchiveDocument = null;
 let rawDocumentsManifestPath = "";
 const mountedStructuredDocuments = [];
@@ -457,6 +458,27 @@ try {
       mediaType: "application/octet-stream",
       byteSize: binaryProfileStat.size,
       filePath: binaryProfilePath
+    };
+    const largeJsonPath = path.join(serviceDataDir, "mounted-large-records.json");
+    await fs.writeFile(
+      largeJsonPath,
+      JSON.stringify({
+        project: "external knowledge distillation",
+        records: Array.from({ length: 110_000 }, (_, index) => ({
+          id: index + 1,
+          domain: index % 2 === 0 ? "architecture" : "finance",
+          evidence: `Large JSON filePath record ${index + 1} keeps structured data distillable without direct memory reads.`
+        }))
+      })
+    );
+    const largeJsonStat = await fs.stat(largeJsonPath);
+    largeJsonFileRefDocument = {
+      sourceId: "source-51",
+      title: "Mounted Large JSON Records",
+      fileName: "mounted-large-records.json",
+      mediaType: "application/json",
+      byteSize: largeJsonStat.size,
+      filePath: largeJsonPath
     };
     const mountedArchivePath = path.join(serviceDataDir, "mounted-project-package.tar");
     const mountedArchiveText = Array.from({ length: 80_000 }, (_, index) => (
@@ -731,6 +753,7 @@ try {
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.binaryProfileStrategy, "bounded-binary-file-profile.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.structuredJsonFileRefStrategy, "structured-json-file-ref-streaming-window.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestMaxDocuments >= 1000, true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("contentBase64"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
@@ -750,6 +773,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("diff.unified"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("calendar.ics"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markup.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured.json.file-ref-stream"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
@@ -829,6 +853,7 @@ try {
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.referencePatterns.includes("unstructured.chunk_by_title"), true);
   assert.equal(capabilities.payload.algorithms.includes("element-aware-by-title-windowing.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("structured-json-file-ref-streaming-window.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("pdf-subtype-routing.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("content-signature-routing.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("human-agent-response-profile-separation.v1"), true);
@@ -862,7 +887,7 @@ try {
     assert.equal(adapter.qualityGates.includes(qualityGate), true);
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
-  for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
+  for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".jsonc", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
       true,
@@ -1236,6 +1261,7 @@ try {
         ...(fileRefDocument ? [fileRefDocument] : []),
         ...(deferredFileRefDocument ? [deferredFileRefDocument] : []),
         ...(binaryProfileFileRefDocument ? [binaryProfileFileRefDocument] : []),
+        ...(largeJsonFileRefDocument ? [largeJsonFileRefDocument] : []),
         ...(mountedArchiveDocument ? [mountedArchiveDocument] : []),
         ...mountedStructuredDocuments,
         ...(directRuntime.payload.runtimes["tika.app"]?.available ? mountedLegacyOfficeDocuments : []),
@@ -1761,6 +1787,32 @@ try {
       trace.hashedBytes === binaryProfileCorpus.byteSize
     )), true);
     assert.equal(binaryProfileCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
+  }
+  if (largeJsonFileRefDocument) {
+    const largeJsonCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-51");
+    assert.ok(largeJsonCorpus, "oversized JSON filePath source must remain visible in corpus");
+    assert.equal(largeJsonCorpus.route.formatId, "json");
+    assert.equal(largeJsonCorpus.quality.suppliedPayloadKind, "file-ref-stream");
+    assert.equal(largeJsonCorpus.quality.distillable, true);
+    assert.equal(largeJsonCorpus.windowPlan.strategy, "file-ref-stream-windowing.v1");
+    assert.equal(largeJsonCorpus.windowPlan.windowCount > 1, true);
+    assert.equal(/^sha256:[a-f0-9]{64}$/.test(largeJsonCorpus.contentHash), true);
+    assert.equal(largeJsonCorpus.parserTrace.some((trace) => (
+      trace.stage === "payload.file-ref" &&
+      trace.status === "completed" &&
+      trace.mode === "streaming-windowed"
+    )), true);
+    assert.equal(largeJsonCorpus.parserTrace.some((trace) => (
+      trace.stage === "payload.stream-text" &&
+      trace.status === "completed"
+    )), true);
+    assert.equal(largeJsonCorpus.parserTrace.some((trace) => (
+      trace.stage === "structured.json.file-ref-stream" &&
+      trace.status === "completed" &&
+      trace.mode === "streaming-sample"
+    )), true);
+    assert.equal(largeJsonCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-binary-profile"), false);
+    assert.equal(largeJsonCorpus.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
   }
   if (mountedArchiveDocument) {
     const mountedArchiveCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-20");

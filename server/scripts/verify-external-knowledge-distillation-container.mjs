@@ -379,6 +379,7 @@ try {
   assert.equal(capabilities.payload.graphEvidence.projectQuery.filters.includes("routeId"), true);
   assert.equal(capabilities.payload.graphEvidence.projectQuery.readModel, "domain-topic-community-source-time.v1");
   assert.equal(capabilities.payload.algorithms.includes("content-signature-routing.v1"), true);
+  assert.equal(capabilities.payload.algorithms.includes("structured-json-file-ref-streaming-window.v1"), true);
   assert.equal(capabilities.payload.fileCompatibility.routingStrategy, "content-signature-extension-media-shape-routing.v2");
   assert.equal(capabilities.payload.fileCompatibility.routeOrder[0], "contentSignature");
   assert.equal(capabilities.payload.fileCompatibility.contentSignatureRouting.strategy, "content-signature-routing.v1");
@@ -415,11 +416,13 @@ try {
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.structuredZipFileRefStrategy, "structured-zip-entry-bounded-or-streaming.v1");
   assert.equal(capabilities.payload.largeDocumentPolicy.binaryProfileStrategy, "bounded-binary-file-profile.v1");
+  assert.equal(capabilities.payload.largeDocumentPolicy.structuredJsonFileRefStrategy, "structured-json-file-ref-streaming-window.v1");
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("rawDocumentsManifestPath"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("content.signature"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured.json.file-ref-stream"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.large-entry-stream"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
@@ -473,6 +476,7 @@ try {
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ipynb"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ts"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".py"), true);
+  assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".jsonc"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".diff"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".patch"), true);
   assert.equal(capabilities.payload.fileCompatibility.supportedExtensions.includes(".ics"), true);
@@ -1383,8 +1387,16 @@ try {
       "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/worksheets/sheet1.xml >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/worksheets/sheet1.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/odt && (7zz a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null || 7z a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/epub && (7zz a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null || 7z a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null)",
-      `node <<'NODE'
+`node <<'NODE'
 const fs = require("fs");
+fs.writeFileSync("/data/mounted-large-records.json", JSON.stringify({
+  project: "container external knowledge distillation",
+  records: Array.from({ length: 110000 }, (_, index) => ({
+    id: index + 1,
+    domain: index % 2 === 0 ? "architecture" : "finance",
+    evidence: "Container large JSON record " + (index + 1) + " must stream into distillation windows without binary fallback."
+  }))
+}));
 const largeLegacyRtf = [
   "{\\\\rtf1\\\\ansi\\\\deff0{\\\\fonttbl{\\\\f0 Arial;}}\\\\f0\\\\fs24",
   Array.from({ length: 90000 }, (_, index) => "Mounted legacy DOC paragraph " + (index + 1) + " proves Tika filePath extraction avoids direct memory reads for oversized Office payloads.\\\\par").join("\\n"),
@@ -1471,6 +1483,39 @@ NODE`
   assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed"), true);
   assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
   assert.equal(fileRef.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+
+  const largeJsonRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "Container large JSON filePath verification",
+      title: "Container large JSON filePath verification",
+      responseProfile: "agent",
+      rawDocuments: [
+        {
+          sourceId: "container-large-json",
+          title: "Container Large JSON",
+          fileName: "mounted-large-records.json",
+          mediaType: "application/json",
+          filePath: "/data/mounted-large-records.json"
+        }
+      ],
+      maxWindowCharacters: 8000,
+      windowOverlapCharacters: 400
+    })
+  });
+  assert.equal(largeJsonRun.status, 201);
+  assert.equal(largeJsonRun.payload.status, "completed");
+  const largeJson = largeJsonRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-large-json");
+  assert.ok(largeJson, "large JSON filePath source must be present in corpus");
+  assert.equal(largeJson.route.formatId, "json");
+  assert.equal(largeJson.quality.suppliedPayloadKind, "file-ref-stream");
+  assert.equal(largeJson.windowPlan.strategy, "file-ref-stream-windowing.v1");
+  assert.equal(largeJson.windowPlan.windowCount > 1, true);
+  assert.equal(largeJson.parserTrace.some((trace) => trace.stage === "payload.file-ref" && trace.status === "completed" && trace.mode === "streaming-windowed"), true);
+  assert.equal(largeJson.parserTrace.some((trace) => trace.stage === "payload.stream-text" && trace.status === "completed"), true);
+  assert.equal(largeJson.parserTrace.some((trace) => trace.stage === "structured.json.file-ref-stream" && trace.status === "completed"), true);
+  assert.equal(largeJson.parserTrace.some((trace) => trace.stage === "payload.file-ref-binary-profile"), false);
 
   const manifestRun = await fetchJson(`${serviceUrl}/v1/distillation/runs`, {
     method: "POST",

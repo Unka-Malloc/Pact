@@ -395,8 +395,8 @@ const FORMAT_ROUTES = Object.freeze([
   {
     id: "json",
     label: "Structured JSON",
-    extensions: [".json", ".jsonl", ".ndjson"],
-    mediaTypes: ["application/json", "application/x-ndjson"],
+    extensions: [".json", ".jsonc", ".jsonl", ".ndjson"],
+    mediaTypes: ["application/json", "application/jsonc", "application/x-jsonc", "application/x-ndjson"],
     contentShape: "structured",
     preferredParser: "structured.json",
     fallbackParsers: ["text.direct"],
@@ -783,6 +783,7 @@ const MEDIA_TYPE_BY_EXTENSION = new Map(Object.entries({
   ".csv": "text/csv",
   ".tsv": "text/tab-separated-values",
   ".json": "application/json",
+  ".jsonc": "application/jsonc",
   ".jsonl": "application/x-ndjson",
   ".ndjson": "application/x-ndjson",
   ".md": "text/markdown",
@@ -1719,7 +1720,7 @@ function isStreamableTextRoute(route = null, metadata = {}) {
   if (route.id === "spreadsheet" && [".csv", ".tsv"].includes(extension)) {
     return true;
   }
-  if (route.id === "json" && [".jsonl", ".ndjson"].includes(extension)) {
+  if (route.id === "json" && [".json", ".jsonc", ".jsonl", ".ndjson"].includes(extension)) {
     return true;
   }
   return false;
@@ -8098,11 +8099,15 @@ function streamParserStage(route = null, metadata = {}) {
   if (route?.id === "calendar") return "calendar.ics";
   if (route?.id === "spreadsheet" && metadata.extension === ".csv") return "table.csv";
   if (route?.id === "spreadsheet" && metadata.extension === ".tsv") return "table.tsv";
-  if (route?.id === "json") return "structured.jsonl";
+  if (route?.id === "json" && [".jsonl", ".ndjson"].includes(normalizeExtension(metadata.extension || ""))) return "structured.jsonl";
+  if (route?.id === "json") return "structured.json.file-ref-stream";
   return "text.direct";
 }
 
 function transformStreamingTextChunk(chunk = "", route = null, metadata = {}) {
+  if (route?.id === "json") {
+    return parseJsonLike(chunk) || String(chunk || "");
+  }
   if (route?.id === "config") {
     return parseConfigText(chunk, metadata).text || String(chunk || "");
   }
@@ -13290,6 +13295,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       PROJECT_CONVERGENCE_STRATEGY,
       "agent-project-convergence-query-index.v1",
       "inline-or-streaming-manifest-document-input.v1",
+      "structured-json-file-ref-streaming-window.v1",
       "document-element-model.v1",
       "element-aware-by-title-windowing.v1",
       PDF_SUBTYPE_ROUTING_STRATEGY,
@@ -13378,6 +13384,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       structuredZipEntryMaxBytes: STRUCTURED_ZIP_ENTRY_MAX_BYTES,
       manifestMaxDocuments: MANIFEST_MAX_DOCUMENTS,
       manifestJsonDirectReadMaxBytes: MANIFEST_JSON_DIRECT_READ_MAX_BYTES,
+      structuredJsonFileRefStrategy: "structured-json-file-ref-streaming-window.v1",
       sizeLimitPolicy: "resource-bounded-no-small-hard-cap"
     },
     parserExecution: {
@@ -13396,6 +13403,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "markdown.structure",
         "markup.structure",
         "structured.json",
+        "structured.json.file-ref-stream",
         "config.key-value",
         "diagram.structure",
         "notebook.cells",
