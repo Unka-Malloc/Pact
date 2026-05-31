@@ -284,3 +284,273 @@ const {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.ws-card-expanded {
+  padding-top: 0;
+  cursor: default;
+}
+
+.workspace-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ws-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+
+.ws-chain-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-chain-item.is-current {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.ws-chain-arrow {
+  color: var(--text-secondary);
+}
+
+.ws-session-events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.ws-session-event {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--bg-subtle);
+  font-size: var(--text-sm);
+}
+
+.ws-session-event strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-session-event span,
+.ws-session-event small {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.ws-id-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-1) 0;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.checkpoint-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.checkpoint-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.checkpoint-toolbar > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkpoint-toolbar span,
+.checkpoint-node-main span,
+.checkpoint-node-main small,
+.checkpoint-tree-item span {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.checkpoint-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: var(--space-3);
+}
+
+@media (max-width: 720px) {
+  .checkpoint-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.checkpoint-tree-list,
+.checkpoint-node-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.checkpoint-tree-item,
+.checkpoint-node-card,
+.checkpoint-preview,
+.checkpoint-empty {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-m);
+  background: var(--bg-surface);
+}
+
+.checkpoint-tree-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkpoint-tree-item:hover,
+.checkpoint-tree-item.selected,
+.checkpoint-node-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-surface);
+}
+
+.checkpoint-node-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .checkpoint-node-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.checkpoint-node-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checkpoint-node-main strong,
+.checkpoint-node-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-node-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.danger-link {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.checkpoint-preview,
+.checkpoint-empty {
+  padding: var(--space-3);
+}
+
+.checkpoint-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.checkpoint-error {
+  color: #ef4444;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.config-json-preview {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-s);
+  padding: var(--space-3);
+  overflow: auto;
+  max-height: 240px;
+  white-space: pre;
+  margin: 0;
+}
+
+.copyable-wrapper {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  cursor: pointer;
+}
+
+.copyable-wrapper::after {
+  content: attr(data-pact-tooltip);
+  position: absolute;
+  top: -28px;
+  left: 0;
+  background: var(--pact-copy-popover-bg);
+  color: var(--pact-copy-popover-fg);
+  border: 1px solid var(--pact-copy-popover-border);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.1s ease-out, transform 0.1s ease-out;
+  z-index: 100;
+  box-shadow: var(--pact-copy-popover-shadow);
+}
+
+.copyable-wrapper:hover::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.copyable-code {
+  user-select: all;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.copyable-wrapper:active .copyable-code {
+  background: var(--accent);
+  color: var(--bg-surface);
+}
+</style>
