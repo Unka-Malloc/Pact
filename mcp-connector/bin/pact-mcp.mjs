@@ -658,14 +658,17 @@ async function run(command, args = [], options = {}) {
       stderr: result.stderr || ""
     };
   } catch (error) {
+    const timeoutMessage = options.timeoutMs && error?.killed
+      ? `command timed out after ${options.timeoutMs} ms`
+      : "";
     if (options.allowFailure) {
       return {
         ok: false,
         stdout: error.stdout || "",
-        stderr: error.stderr || error.message || ""
+        stderr: error.stderr || timeoutMessage || error.message || ""
       };
     }
-    const message = error.stderr || error.stdout || error.message || "command failed";
+    const message = error.stderr || error.stdout || timeoutMessage || error.message || "command failed";
     throw new Error(`${command} failed: ${message}`);
   }
 }
@@ -3848,26 +3851,31 @@ async function remoteLinuxShellWithInput(context, script, input = "", env = {}, 
 }
 
 async function runRemoteLinuxCommand(context, args = [], options = {}) {
+  const timeoutMs = options.timeoutMs || INSTALL_COMMAND_TIMEOUT_MS;
+  const runOptions = {
+    allowFailure: options.allowFailure,
+    timeoutMs
+  };
   if (["docker", "podman", "nerdctl"].includes(context.kind)) {
-    return run(context.bin, ["exec", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["exec", context.id, ...args], runOptions);
   }
   if (context.kind === "wsl") {
-    return run(context.bin, ["-d", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["-d", context.id, "--", ...args], runOptions);
   }
   if (context.kind === "lima") {
-    return run(context.bin, ["shell", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["shell", context.id, ...args], runOptions);
   }
   if (context.kind === "colima") {
-    return run(context.bin, ["ssh", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["ssh", context.id, "--", ...args], runOptions);
   }
   if (["multipass", "lxc", "incus"].includes(context.kind)) {
-    return run(context.bin, ["exec", context.id, "--", ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["exec", context.id, "--", ...args], runOptions);
   }
   if (context.kind === "vagrant") {
-    return run(context.bin, ["ssh", context.id, "-c", args.map(shellQuote).join(" ")], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["ssh", context.id, "-c", args.map(shellQuote).join(" ")], runOptions);
   }
   if (context.kind === "parallels") {
-    return run(context.bin, ["exec", context.id, ...args], { allowFailure: options.allowFailure, timeoutMs: options.timeoutMs });
+    return run(context.bin, ["exec", context.id, ...args], runOptions);
   }
   const message = `Unsupported remote context: ${context.kind}`;
   if (options.allowFailure) {

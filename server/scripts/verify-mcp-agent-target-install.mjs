@@ -256,7 +256,7 @@ async function installFakeDockerRuntime() {
     "    printf '\\n# Pact MCP token env\\n[ -f \"$HOME/.pact/mcp/env\" ] && . \"$HOME/.pact/mcp/env\"\\n' >> \"$remote_home/.profile\"",
     "  fi",
     "}",
-    "[ \"${PACT_FAKE_DOCKER_HANG:-}\" = \"1\" ] && while :; do sleep 1000; done",
+    "[ \"${PACT_FAKE_DOCKER_HANG:-}\" = \"1\" ] && while :; do :; done",
     "[ \"$1\" = \"ps\" ] && { printf 'box123\\tagentbox\\n'; exit 0; }",
     "[ \"$1\" = \"inspect\" ] && { printf '172.17.0.1\\n'; exit 0; }",
     "[ \"$1\" = \"exec\" ] || exit 1",
@@ -281,6 +281,7 @@ async function installFakeDockerRuntime() {
     "  while printf '%s' \"${1:-}\" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do export \"$1\"; shift; done",
     "fi",
     "if [ \"$1\" = \"/usr/local/bin/codex\" ] && [ \"$2\" = \"mcp\" ]; then",
+    "  [ \"${PACT_FAKE_DOCKER_HANG_MCP:-}\" = \"1\" ] && while :; do :; done",
     "  marker=\"$remote_home/.codex-pact-mcp-installed\"",
     "  case \"$3\" in",
     "    --help) printf 'Usage: codex mcp add get list remove\\n'; exit 0 ;;",
@@ -668,6 +669,39 @@ try {
     });
     assert.equal(result.code, 1);
     assert.equal(result.stdout.includes(token), false, "timeout failure output must not expose the grant token");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.installed?.codex?.status, "failed");
+    assert.match(payload.installed?.codex?.error, /timed out/);
+  });
+
+  await testAsync("cli remote codex install times out stalled mcp command", async () => {
+    const canRun = await installFakeDockerRuntime();
+    if (!canRun) {
+      return;
+    }
+    const result = await spawnConnector([
+      "install",
+      "--target", "codex",
+      "--url", serverUrl,
+      "--token", token,
+      "--token-env", remoteCodexTokenEnv,
+      "--execution-location", "docker",
+      "--remote-kind", "docker",
+      "--remote-id", "box123",
+      "--remote-name", "agentbox",
+      "--remote-bin", fakeDockerPath,
+      "--codex-bin", "/usr/local/bin/codex",
+      "--discovery-file", remoteCodexRegistryPath,
+      "--no-verify",
+      "--json"
+    ], 15000, {
+      PACT_FAKE_REMOTE_HOME: remoteOpenCodeHome,
+      PACT_FAKE_DOCKER_HANG_MCP: "1",
+      PACT_MCP_INSTALL_COMMAND_TIMEOUT_MS: "1000"
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout.includes(token), false, "remote MCP command timeout output must not expose the grant token");
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, false);
     assert.equal(payload.installed?.codex?.status, "failed");
