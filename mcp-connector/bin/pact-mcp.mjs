@@ -6647,6 +6647,41 @@ function formatTargetInstallLine(target, item = {}) {
   return lines;
 }
 
+function resultHasInstallRepair(result) {
+  const commands = [
+    result?.nextCommand,
+    ...(Array.isArray(result?.repairCommands) ? result.repairCommands : [])
+  ].filter(Boolean);
+  return commands.some((command) => /\bpact-mcp\s+install\b/.test(String(command)));
+}
+
+function appendInstallShortcutLines(lines, result) {
+  const shortcuts = [];
+  if (result?.priorityInstallCommand) {
+    shortcuts.push(["Priority install", result.priorityInstallCommand]);
+  }
+  if (result?.autoInstallCommand) {
+    shortcuts.push(["Auto install", result.autoInstallCommand]);
+  }
+  if (shortcuts.length === 0 || (result?.ok !== false && !resultHasInstallRepair(result))) {
+    return;
+  }
+  lines.push("", "Install shortcuts:");
+  for (const [label, command] of shortcuts) {
+    lines.push(`  ${label}: ${command}`);
+  }
+}
+
+function appendRepairCommandLines(lines, result) {
+  if (!Array.isArray(result?.repairCommands) || result.repairCommands.length === 0) {
+    return;
+  }
+  lines.push("", "Repair commands:");
+  for (const command of result.repairCommands) {
+    lines.push(`  ${command}`);
+  }
+}
+
 function formatInstallResult(result) {
   if (result.skipped) {
     return [
@@ -6671,7 +6706,14 @@ function formatInstallResult(result) {
     lines.push(`Reason: ${result.error}`, "");
   }
   if (result.nextCommand) {
-    lines.push(`Next command: ${result.nextCommand}`, "");
+    lines.push(`Next command: ${result.nextCommand}`);
+  }
+  if (!result.ok) {
+    appendInstallShortcutLines(lines, result);
+    appendRepairCommandLines(lines, result);
+  }
+  if (lines.at(-1) !== "") {
+    lines.push("");
   }
   lines.push(
     "Server:",
@@ -6711,12 +6753,8 @@ function formatErrorResult(result) {
   if (result.nextCommand) {
     lines.push("", "Next:", `  ${result.nextCommand}`);
   }
-  if (Array.isArray(result.repairCommands) && result.repairCommands.length > 0) {
-    lines.push("", "Repair commands:");
-    for (const command of result.repairCommands) {
-      lines.push(`  ${command}`);
-    }
-  }
+  appendInstallShortcutLines(lines, result);
+  appendRepairCommandLines(lines, result);
   return lines.join("\n");
 }
 
@@ -6780,12 +6818,8 @@ function formatDoctorResult(result) {
   if (result.nextCommand) {
     lines.push("", "Next:", `  ${result.nextCommand}`);
   }
-  if (Array.isArray(result.repairCommands) && result.repairCommands.length > 0) {
-    lines.push("", "Repair commands:");
-    for (const command of result.repairCommands) {
-      lines.push(`  ${command}`);
-    }
-  }
+  appendInstallShortcutLines(lines, result);
+  appendRepairCommandLines(lines, result);
   return lines.join("\n");
 }
 

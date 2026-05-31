@@ -1401,6 +1401,26 @@ try {
     }
   });
 
+  await testAsync("unsupported target human output prints install shortcuts", async () => {
+    const result = await spawnConnector([
+      "install",
+      "--target", "not-a-real-agent",
+      "--url", serverUrl,
+      "--token", token
+    ]);
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /Install shortcuts:/);
+    assert.equal(
+      result.stdout.includes(`Priority install: pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --json`),
+      true
+    );
+    assert.equal(
+      result.stdout.includes(`Auto install: pact-mcp install --target auto --url '${serverUrl}' --json`),
+      true
+    );
+    assert.match(result.stdout, /Repair commands:/);
+  });
+
   await testAsync("missing token guidance preserves explicit server url", async () => {
     const result = await spawnConnector([
       "install",
@@ -1483,6 +1503,34 @@ try {
       const candidate = payload.candidates?.find((item) => item.target === target);
       assert.ok(candidate?.repairCommand?.includes(`pact-mcp install --target ${target}`), `${target} should provide a repair command`);
     }
+  });
+
+  await testAsync("auto install no detected clients prints human install shortcuts", async () => {
+    await fs.mkdir(noDetectHome, { recursive: true });
+    const result = await spawnConnector([
+      "install",
+      "--target", "auto",
+      "--url", serverUrl,
+      "--token", token,
+      "--token-env", missingInstallTokenEnv,
+      "--discovery-file", noDetectRegistryPath,
+      "--no-scan"
+    ], 30000, {
+      HOME: noDetectHome,
+      PATH: ["/usr/bin", "/bin"].join(path.delimiter)
+    });
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /Install shortcuts:/);
+    assert.equal(
+      result.stdout.includes(`Priority install: pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`),
+      true
+    );
+    assert.equal(
+      result.stdout.includes(`Auto install: pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`),
+      true
+    );
+    assert.match(result.stdout, /Repair commands:/);
+    assert.equal(result.stdout.includes("pact-mcp install --target codex --codex-bin codex"), true);
   });
 
 } catch (error) {
