@@ -4,79 +4,29 @@ import AgentModelOptionBar from "./AgentModelOptionBar.vue";
 import BridgeDownloadButton from "./BridgeDownloadButton.vue";
 import StatusPill from "./StatusPill.vue";
 import { usePageRefreshHandler } from "../composables/usePageRefresh";
-import { bridge } from "../lib/bridge";
-import type { AgentModelConfig, AgentSettings, ModelProbeResponse, NormalizedDocumentsManifest, SplitJob } from "../lib/types";
-
-type WorkbenchStage = {
-  stageId: string;
-  title: string;
-  actionLabel: string;
-  description: string;
-  status: string;
-  tone?: string;
-  progressPercent?: number;
-  preview?: string;
-  exportFormats?: string[];
-  metrics?: Record<string, unknown>;
-  versions?: Array<{
-    versionId?: string;
-    archivedAt?: string;
-    status?: string;
-    markdownLength?: number;
-    jsonAvailable?: boolean;
-  }>;
-  checkpoint?: {
-    durable?: boolean;
-    resumable?: boolean;
-    continuationToken?: string;
-  };
-  error?: string;
-};
-
-type WorkbenchRun = {
-  runId: string;
-  title: string;
-  status: string;
-  progressPercent?: number;
-  jobId?: string;
-  batchId?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  waitingFor?: Record<string, unknown> | null;
-  error?: string;
-  priority?: string;
-  modelAlias?: string;
-  modelEnabled?: boolean;
-  prompt?: string;
-  tokenBudget?: number;
-  payloadBudget?: number;
-  rawCorpusBatchMaxCharacters?: number;
-  mergeStrategy?: string;
-  maxRounds?: number;
-  strategyVersion?: string;
-  timeDecayHalfLifeDays?: number;
-  timeDecayFloor?: number;
-  taskManagement?: Record<string, unknown>;
-  stages: WorkbenchStage[];
-  storage?: {
-    durable?: boolean;
-    rootRelativePath?: string;
-    checkpointFile?: string;
-  };
-};
-
-type AgentModelOption = {
-  agentUid?: string;
-  value?: string | number | boolean;
-  label?: string;
-  selectable?: boolean;
-  enabled?: boolean;
-  disabled?: boolean;
-  reason?: string;
-  disabledReason?: string;
-  provider?: string;
-  model?: string;
-};
+import {
+  archiveKnowledgeDistillationWorkbenchRun,
+  cancelKnowledgeDistillationWorkbenchRun,
+  compareKnowledgeDistillationWorkbenchRuns,
+  createKnowledgeDistillationWorkbenchRun,
+  deleteKnowledgeDistillationWorkbenchRun,
+  getKnowledgeDistillationWorkbenchRun,
+  knowledgeDistillationWorkbenchExportUrl,
+  knowledgeDistillationWorkbenchPackageUrl,
+  listKnowledgeDistillationWorkbenchRuns,
+  optionSelectable,
+  optionValue,
+  probeDistillationModelStatus,
+  rerunKnowledgeDistillationWorkbenchStage,
+  resumeKnowledgeDistillationWorkbenchRun,
+  statusLabel,
+  statusTone,
+  type AgentModelOption,
+  type DistillationModelProbeStatus,
+  type WorkbenchRun,
+  type WorkbenchStage,
+} from "../lib/knowledge-distillation-workbench";
+import type { NormalizedDocumentsManifest, SplitJob } from "../lib/types";
 
 const props = defineProps<{
   canReadKnowledge: boolean;
@@ -158,63 +108,6 @@ const selectedModelOption = computed(() => {
 const selectedModelReady = computed(() => Boolean(selectedModelOption.value && optionSelectable(selectedModelOption.value)));
 const canStart = computed(() => props.canMaintainKnowledge && activeJobCompleted.value && selectedModelReady.value && !busy.value);
 
-function asRun(value: unknown): WorkbenchRun {
-  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  return {
-    runId: String(record.runId || ""),
-    title: String(record.title || "知识蒸馏工作台"),
-    status: String(record.status || "unknown"),
-    progressPercent: Number(record.progressPercent || 0),
-    jobId: String(record.jobId || ""),
-    batchId: String(record.batchId || ""),
-    createdAt: String(record.createdAt || ""),
-    updatedAt: String(record.updatedAt || ""),
-    waitingFor: record.waitingFor && typeof record.waitingFor === "object" ? record.waitingFor as Record<string, unknown> : null,
-    error: String(record.error || ""),
-    priority: String(record.priority || "normal"),
-    modelAlias: String(record.modelAlias || ""),
-    modelEnabled: record.modelEnabled === true,
-    prompt: String(record.prompt || ""),
-    tokenBudget: Number(record.tokenBudget || 0),
-    payloadBudget: Number(record.payloadBudget || 0),
-    rawCorpusBatchMaxCharacters: Number(record.rawCorpusBatchMaxCharacters || 0),
-    mergeStrategy: String(record.mergeStrategy || ""),
-    maxRounds: Number(record.maxRounds || 0),
-    strategyVersion: String(record.strategyVersion || ""),
-    timeDecayHalfLifeDays: Number(record.timeDecayHalfLifeDays || 0),
-    timeDecayFloor: Number(record.timeDecayFloor || 0),
-    taskManagement: record.taskManagement && typeof record.taskManagement === "object" ? record.taskManagement as Record<string, unknown> : undefined,
-    stages: Array.isArray(record.stages) ? record.stages.map((stage) => stage as WorkbenchStage) : [],
-    storage: record.storage && typeof record.storage === "object" ? record.storage as WorkbenchRun["storage"] : undefined,
-  };
-}
-
-function statusLabel(status = "") {
-  const labels: Record<string, string> = {
-    queued: "排队中",
-    running: "运行中",
-    waiting: "等待",
-    completed: "已完成",
-    failed: "失败",
-    canceled: "已取消",
-    archived: "已归档",
-    pending: "未开始",
-  };
-  return labels[status] || status || "未知";
-}
-
-function modelEntryKey(entry: AgentModelConfig) {
-  return String(entry.uid || entry.instanceId || entry.alias || "").trim();
-}
-
-function optionValue(option: AgentModelOption) {
-  return String(option.agentUid ?? option.value ?? "").trim();
-}
-
-function optionSelectable(option: AgentModelOption) {
-  return option.disabled !== true && option.selectable !== false && option.enabled !== false;
-}
-
 function firstSelectableModelAlias() {
   return optionValue(distillationModelOptions.value.find(optionSelectable) || distillationModelOptions.value[0] || {});
 }
@@ -232,63 +125,10 @@ function normalizeDistillationModelAlias() {
   }
 }
 
-function findModelEntry(settings: AgentSettings, alias = "") {
-  const normalizedAlias = String(alias || "").trim();
-  const models = Array.isArray(settings.modelLibraryAgents) ? settings.modelLibraryAgents : [];
-  return models.find((entry) => {
-    const identifiers = [
-      modelEntryKey(entry),
-      entry.alias,
-      entry.instanceId,
-      entry.uid,
-      entry.model,
-      entry.engine,
-    ].map((value) => String(value || "").trim());
-    return identifiers.includes(normalizedAlias);
-  }) || null;
-}
-
-function providerForModel(settings: AgentSettings, alias = "", entry: AgentModelConfig | null = null) {
-  if (entry?.provider) {
-    return String(entry.provider);
-  }
-  const normalizedAlias = String(alias || "").trim().toLowerCase();
-  if (normalizedAlias.startsWith("deepseek")) {
-    return "deepseek";
-  }
-  return String(settings.defaultModelProvider || "deepseek");
-}
-
-function probeSettingsForModel(settings: AgentSettings, alias = "", entry: AgentModelConfig | null = null) {
-  const provider = providerForModel(settings, alias, entry);
-  const nextSettings = {
-    ...settings,
-    modelLibraryAgents: Array.isArray(settings.modelLibraryAgents) ? settings.modelLibraryAgents : [],
-  };
-  if (provider === "deepseek") {
-    nextSettings.deepSeekModel = String(entry?.model || entry?.engine || alias || settings.deepSeekModel || "").trim();
-  }
-  if (provider === "custom-http" && entry) {
-    nextSettings.customHttpAdapter = {
-      ...(settings.customHttpAdapter || {}),
-      ...entry,
-      alias: modelEntryKey(entry) || entry.alias || alias,
-      engine: String(entry.engine || entry.model || "").trim(),
-    };
-  }
-  return nextSettings;
-}
-
-function applyModelProbeResult(result: ModelProbeResponse) {
-  modelProbeCheckedAt.value = result.checkedAt || "";
-  modelProbeMessage.value = result.message || "";
-  if (result.ok) {
-    modelProbeState.value = "online";
-  } else if (result.configured === false) {
-    modelProbeState.value = "unconfigured";
-  } else {
-    modelProbeState.value = "offline";
-  }
+function applyModelProbeStatus(result: DistillationModelProbeStatus) {
+  modelProbeCheckedAt.value = result.checkedAt;
+  modelProbeMessage.value = result.message;
+  modelProbeState.value = result.state;
 }
 
 async function refreshModelProbeStatus() {
@@ -296,25 +136,10 @@ async function refreshModelProbeStatus() {
   modelProbeState.value = "checking";
   modelProbeMessage.value = "";
   try {
-    const settings = await bridge.getSettings();
     const alias = String(createOptions.value.modelAlias || "").trim();
-    if (!alias) {
-      if (sequence === modelProbeSequence) {
-        modelProbeState.value = "unconfigured";
-        modelProbeCheckedAt.value = new Date().toISOString();
-        modelProbeMessage.value = "当前模型库为空，请先配置模型/智能体。";
-      }
-      return;
-    }
-    const entry = findModelEntry(settings, alias);
-    const provider = providerForModel(settings, alias, entry);
-    const result = await bridge.probeModel({
-      provider,
-      modelAlias: entry ? modelEntryKey(entry) : alias,
-      settings: probeSettingsForModel(settings, alias, entry),
-    });
+    const result = await probeDistillationModelStatus(alias);
     if (sequence === modelProbeSequence) {
-      applyModelProbeResult(result);
+      applyModelProbeStatus(result);
     }
   } catch (nextError) {
     if (sequence === modelProbeSequence) {
@@ -334,24 +159,14 @@ function scheduleModelProbeStatus() {
   }, 700);
 }
 
-function statusTone(status = "") {
-  if (status === "completed") return "success";
-  if (status === "running" || status === "queued") return "warning";
-  if (status === "failed" || status === "canceled") return "danger";
-  return "muted";
-}
-
 function exportUrl(stage: WorkbenchStage, format: string) {
   if (!selectedRun.value?.runId || stage.status !== "completed") return "#";
-  return bridge.knowledgeDistillationWorkbenchExportUrl(selectedRun.value.runId, stage.stageId, format);
+  return knowledgeDistillationWorkbenchExportUrl(selectedRun.value.runId, stage.stageId, format);
 }
 
 async function refreshRuns() {
   if (!props.canReadKnowledge) return;
-  const result = await bridge.listKnowledgeDistillationWorkbenchRuns(50);
-  const items = Array.isArray((result as { items?: unknown[] }).items)
-    ? (result as { items: unknown[] }).items.map(asRun)
-    : [];
+  const items = await listKnowledgeDistillationWorkbenchRuns(50);
   runs.value = items;
   if (!selectedRunId.value && items.length > 0) {
     selectedRunId.value = items[0].runId;
@@ -365,7 +180,7 @@ async function refreshRuns() {
 async function refreshSelectedRun() {
   if (!selectedRunId.value || !props.canReadKnowledge) return;
   try {
-    selectedRun.value = asRun(await bridge.getKnowledgeDistillationWorkbenchRun(selectedRunId.value));
+    selectedRun.value = await getKnowledgeDistillationWorkbenchRun(selectedRunId.value);
     const index = runs.value.findIndex((run) => run.runId === selectedRun.value?.runId);
     if (index >= 0 && selectedRun.value) {
       runs.value[index] = selectedRun.value;
@@ -387,14 +202,14 @@ async function startWorkbenchRun() {
   busy.value = "create";
   error.value = "";
   try {
-    const run = asRun(await bridge.createKnowledgeDistillationWorkbenchRun({
+    const run = await createKnowledgeDistillationWorkbenchRun({
       title: `${props.ingestJob.id} 项目知识蒸馏`,
       jobId: props.ingestJob.id,
       batchId: props.normalizedManifest?.batchId || props.ingestJob.id,
       query: "项目全部文档通用知识蒸馏",
       ...createOptions.value,
       modelEnabled: true,
-    }));
+    });
     selectedRunId.value = run.runId;
     selectedRun.value = run;
     await refreshRuns();
@@ -411,7 +226,7 @@ async function cancelRun() {
   busy.value = "cancel";
   error.value = "";
   try {
-    selectedRun.value = asRun(await bridge.cancelKnowledgeDistillationWorkbenchRun(selectedRun.value.runId, "用户在工作台取消任务"));
+    selectedRun.value = await cancelKnowledgeDistillationWorkbenchRun(selectedRun.value.runId, "用户在工作台取消任务");
     await refreshRuns();
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "取消知识蒸馏工作台任务失败。";
@@ -426,7 +241,7 @@ async function archiveRun() {
   busy.value = "archive";
   error.value = "";
   try {
-    selectedRun.value = asRun(await bridge.archiveKnowledgeDistillationWorkbenchRun(selectedRun.value.runId));
+    selectedRun.value = await archiveKnowledgeDistillationWorkbenchRun(selectedRun.value.runId);
     await refreshRuns();
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "归档知识蒸馏工作台任务失败。";
@@ -442,7 +257,7 @@ async function deleteRun() {
   error.value = "";
   const deletedId = selectedRun.value.runId;
   try {
-    await bridge.deleteKnowledgeDistillationWorkbenchRun(deletedId);
+    await deleteKnowledgeDistillationWorkbenchRun(deletedId);
     if (selectedRunId.value === deletedId) {
       selectedRunId.value = "";
       selectedRun.value = null;
@@ -461,7 +276,7 @@ async function rerunStage(stage: WorkbenchStage) {
   busy.value = `rerun:${stage.stageId}`;
   error.value = "";
   try {
-    selectedRun.value = asRun(await bridge.rerunKnowledgeDistillationWorkbenchStage(selectedRun.value.runId, stage.stageId));
+    selectedRun.value = await rerunKnowledgeDistillationWorkbenchStage(selectedRun.value.runId, stage.stageId);
     await refreshRuns();
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "重跑知识蒸馏阶段失败。";
@@ -476,7 +291,7 @@ async function compareRuns() {
   error.value = "";
   compareResult.value = null;
   try {
-    compareResult.value = await bridge.compareKnowledgeDistillationWorkbenchRuns(
+    compareResult.value = await compareKnowledgeDistillationWorkbenchRuns(
       selectedRun.value.runId,
       compareRightRunId.value,
     );
@@ -489,7 +304,7 @@ async function compareRuns() {
 
 function packageUrl() {
   if (!selectedRun.value?.runId) return "#";
-  return bridge.knowledgeDistillationWorkbenchPackageUrl(selectedRun.value.runId);
+  return knowledgeDistillationWorkbenchPackageUrl(selectedRun.value.runId);
 }
 
 async function resumeRun() {
@@ -497,7 +312,7 @@ async function resumeRun() {
   busy.value = "resume";
   error.value = "";
   try {
-    selectedRun.value = asRun(await bridge.resumeKnowledgeDistillationWorkbenchRun(selectedRun.value.runId));
+    selectedRun.value = await resumeKnowledgeDistillationWorkbenchRun(selectedRun.value.runId);
     await refreshRuns();
   } catch (nextError) {
     error.value = nextError instanceof Error ? nextError.message : "恢复知识蒸馏工作台任务失败。";
