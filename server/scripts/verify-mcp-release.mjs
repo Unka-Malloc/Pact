@@ -134,6 +134,10 @@ async function checkPortableArchiveContents(archivePath, type, portableName, ext
   assert.equal(payload.packageVersion, expectedVersion);
   assert.equal(await fs.access(path.join(rootDir, "install.command")).then(() => true), true);
   assert.equal(await fs.access(path.join(rootDir, "uninstall.command")).then(() => true), true);
+  const readmeText = await fs.readFile(path.join(rootDir, "README.txt"), "utf8");
+  assert.match(readmeText, /install --target auto --json/);
+  assert.match(readmeText, /install --target claude-code,codex,openclaw --json/);
+  assert.doesNotMatch(readmeText, /install --target codex(?:\s|$)/);
   const portableReset = await run(portableExecutable, ["server-config", "--reset", "--json"], {
     env: {
       HOME: path.join(tempDir, `${extractDirBase}-home`)
@@ -203,9 +207,15 @@ try {
   assert.ok(manifest.install.githubOneLineAutoInstallCommand.includes("pact-mcp-install.sh"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommand.includes("--target auto"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommand.includes("--json"));
+  assert.ok(manifest.install.githubOneLinePriorityInstallCommand.includes("pact-mcp-install.sh"));
+  assert.ok(manifest.install.githubOneLinePriorityInstallCommand.includes("--target claude-code,codex,openclaw"));
+  assert.ok(manifest.install.githubOneLinePriorityInstallCommand.includes("--json"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("--target auto"));
   assert.ok(manifest.install.githubOneLineAutoInstallCommandZhCN.includes("--json"));
+  assert.ok(manifest.install.githubOneLinePriorityInstallCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
+  assert.ok(manifest.install.githubOneLinePriorityInstallCommandZhCN.includes("--target claude-code,codex,openclaw"));
+  assert.ok(manifest.install.githubOneLinePriorityInstallCommandZhCN.includes("--json"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
   for (const command of [
@@ -213,6 +223,8 @@ try {
     manifest.install.githubOneLineCommandZhCN,
     manifest.install.githubOneLineAutoInstallCommand,
     manifest.install.githubOneLineAutoInstallCommandZhCN,
+    manifest.install.githubOneLinePriorityInstallCommand,
+    manifest.install.githubOneLinePriorityInstallCommandZhCN,
     manifest.install.githubOneLineUninstallCommand,
     manifest.install.githubOneLineUninstallCommandZhCN
   ]) {
@@ -222,10 +234,14 @@ try {
   assert.ok(manifest.install.interactiveInstallCommand.includes("pact-mcp-connector@latest install"));
   assert.ok(manifest.install.autoInstallCommand.includes("pact-mcp-connector@latest install --target auto"));
   assert.ok(manifest.install.autoInstallCommand.includes("--json"));
+  assert.ok(manifest.install.priorityInstallCommand.includes("pact-mcp-connector@latest install --target claude-code,codex,openclaw"));
+  assert.ok(manifest.install.priorityInstallCommand.includes("--json"));
   assert.ok(manifest.install.interactiveUninstallCommand.includes("pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.clientInstallCommand.includes("--target <client>"));
   assert.ok(manifest.portable.autoInstallCommand.includes("./pact-mcp install --target auto"));
   assert.ok(manifest.portable.autoInstallCommand.includes("--json"));
+  assert.ok(manifest.portable.priorityInstallCommand.includes("./pact-mcp install --target claude-code,codex,openclaw"));
+  assert.ok(manifest.portable.priorityInstallCommand.includes("--json"));
   assert.equal(Object.hasOwn(manifest.install, "bulkInstallCommand"), false);
   assert.ok(manifest.install.uninstallCommand.includes("npx pact-mcp-connector@latest uninstall"));
   assert.ok(manifest.install.discoverCommand.includes("pact-mcp-connector@latest discover-local"));
@@ -261,16 +277,22 @@ try {
   assert.ok(result.githubOneLineCommand.includes("pact-mcp-install.sh"));
   assert.ok(result.githubOneLineAutoInstallCommand.includes("--target auto"));
   assert.ok(result.githubOneLineAutoInstallCommand.includes("--json"));
+  assert.ok(result.githubOneLinePriorityInstallCommand.includes("--target claude-code,codex,openclaw"));
+  assert.ok(result.githubOneLinePriorityInstallCommand.includes("--json"));
   assert.ok(result.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
   assert.ok(result.githubOneLineCommandZhCN.includes("pact-mcp-install.zh-CN.sh"));
   assert.ok(result.githubOneLineAutoInstallCommandZhCN.includes("--target auto"));
   assert.ok(result.githubOneLineAutoInstallCommandZhCN.includes("--json"));
+  assert.ok(result.githubOneLinePriorityInstallCommandZhCN.includes("--target claude-code,codex,openclaw"));
+  assert.ok(result.githubOneLinePriorityInstallCommandZhCN.includes("--json"));
   assert.ok(result.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
   for (const command of [
     result.githubOneLineCommand,
     result.githubOneLineCommandZhCN,
     result.githubOneLineAutoInstallCommand,
     result.githubOneLineAutoInstallCommandZhCN,
+    result.githubOneLinePriorityInstallCommand,
+    result.githubOneLinePriorityInstallCommandZhCN,
     result.githubOneLineUninstallCommand,
     result.githubOneLineUninstallCommandZhCN
   ]) {
