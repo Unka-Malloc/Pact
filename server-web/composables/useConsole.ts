@@ -149,6 +149,7 @@ import {
   AGENT_SELECTION_REFERENCE_LOG_LIMIT,
   createConsoleAgentSelectionReferenceController,
 } from "./console-agent-selection-reference-controller";
+import { createConsoleAgentSelectorController } from "./console-agent-selector-controller";
 import { createConsoleAuthController } from "./console-auth-controller";
 import { createConsoleAgentExploreLayoutController } from "./console-agent-explore-layout-controller";
 import { createConsoleAgentExploreResultController } from "./console-agent-explore-result-controller";
@@ -226,7 +227,6 @@ import type {
   AgentSettings,
   AgentModelConfig,
   AgentModuleAccess,
-  AgentSelectorOption,
   ClientMigrationState,
   CodexOAuthLogin,
   CodexOAuthStatus,
@@ -1395,6 +1395,25 @@ const {
 });
 
 const {
+  agentExploreAgentOptions,
+  agentModelOptionValueSet,
+  agentOptionsForModule,
+  agentSelectorOptions,
+  cacheAgentModelOptionLabels,
+  currentAgentModelOptionLabel,
+  hasAgentModelOption,
+  inactiveAgentModelOption,
+  normalizeAgentSelectorOption,
+  selectedAgentExploreModel,
+  selectedAgentFromOptions,
+  validAgentModelAlias,
+} = createConsoleAgentSelectorController({
+  agentExploreForm,
+  agentModelOptionLabelCache,
+  consoleState,
+});
+
+const {
   addModelEntryBinding,
   addModelProvider,
   addModuleAgentProfileFromDraft,
@@ -1821,103 +1840,6 @@ const agentExploreThinkingModeOptions = [
     description: "向 DeepSeek / OpenAI-compatible 请求传入 thinking disabled；Qwen-compatible 同步 enable_thinking=false。",
   },
 ];
-
-type AgentSelectorUiOption = AgentSelectorOption & {
-  enabled: boolean;
-  disabledReason: string;
-};
-
-function normalizeAgentSelectorOption(option: AgentSelectorOption): AgentSelectorUiOption {
-  return {
-    ...option,
-    value: option.agentUid || option.value,
-    enabled: option.selectable,
-    disabledReason: option.reason || "",
-  };
-}
-
-const agentSelectorOptions = computed<AgentSelectorUiOption[]>(() =>
-  (consoleState.value?.agentSelector?.options || []).map(normalizeAgentSelectorOption),
-);
-
-function agentOptionsForModule(moduleId: string) {
-  return agentSelectorOptions.value.filter((option) =>
-    option.moduleIds.includes("*") || option.moduleIds.includes(moduleId),
-  );
-}
-
-const agentExploreAgentOptions = computed(() => agentOptionsForModule("agentTools"));
-
-const agentModelOptionValueSet = computed(
-  () => new Set(agentSelectorOptions.value.map((item) => item.value)),
-);
-function hasAgentModelOption(value?: string) {
-  const normalized = String(value || "").trim();
-  return Boolean(normalized && agentModelOptionValueSet.value.has(normalized));
-}
-function validAgentModelAlias(value?: string) {
-  const normalized = String(value || "").trim();
-  return hasAgentModelOption(normalized) ? normalized : "";
-}
-function currentAgentModelOptionLabel(value?: string) {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return "";
-  }
-  return agentSelectorOptions.value.find((item) => item.value === normalized)?.label || "";
-}
-function inactiveAgentModelOption(value?: string): AgentSelectorUiOption {
-  return {
-    value: String(value || "").trim(),
-    agentUid: String(value || "").trim(),
-    label: "已移除的智能体",
-    provider: "",
-    model: "",
-    moduleIds: [],
-    capabilities: [],
-    status: "unconfigured" as const,
-    enabled: false,
-    selectable: false,
-    disabledReason: "已从智能体列表删除",
-    reason: "已从智能体列表删除",
-  };
-}
-function cacheAgentModelOptionLabels(options: Array<{ value: string; label?: string }>) {
-  const next: Record<string, string> = {};
-  for (const option of options) {
-    const value = String(option.value || "").trim();
-    const label = String(option.label || "").trim();
-    if (value && label) {
-      next[value] = label;
-    }
-  }
-  agentModelOptionLabelCache.value = next;
-}
-
-function selectedAgentFromOptions(options: AgentSelectorUiOption[], value?: string): AgentSelectorUiOption {
-  const selectedValue = String(value || "").trim();
-  if (!selectedValue) {
-    return {
-      value: "",
-      agentUid: "",
-      label: "未选择智能体",
-      provider: "",
-      model: "",
-      moduleIds: [],
-      capabilities: [],
-      status: "unconfigured" as const,
-      enabled: false,
-      selectable: false,
-      disabledReason: "未分配",
-      reason: "未分配",
-    };
-  }
-  return options.find((item) => item.value === selectedValue) || inactiveAgentModelOption(selectedValue);
-}
-
-const selectedAgentExploreModel = computed(() => {
-  return selectedAgentFromOptions(agentExploreAgentOptions.value, agentExploreForm.value.modelAlias);
-});
 const {
   publishRuleAuthoringPackage,
   ruleActionOptionBarOptions,
