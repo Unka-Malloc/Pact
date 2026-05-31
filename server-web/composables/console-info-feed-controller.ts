@@ -1,5 +1,4 @@
 import { computed, ref, type Ref } from "vue";
-import { bridge } from "../lib/bridge";
 import type {
   AgentExploreRunResponse,
   AgentSelectorOption,
@@ -54,10 +53,7 @@ import {
   setInfoFeedRetryState,
   withInfoFeedFetchRetry,
 } from "./console-info-feed-run-utils";
-import {
-  agentExploreRunStatus,
-  normalizeAgentExploreRun,
-} from "./console-agent-explore-utils";
+import { createConsoleInfoFeedExecutionController } from "./console-info-feed-execution-controller";
 import { createConsoleInfoFeedHistoryController } from "./console-info-feed-history-controller";
 import { createConsoleInfoFeedOutputController } from "./console-info-feed-output-controller";
 import { asRecord } from "./console-model-utils";
@@ -65,7 +61,6 @@ import type {
   InfoFeedAttachment,
   InfoFeedClarification,
   InfoFeedClarificationOption,
-  InfoFeedExpertFeedback,
   InfoFeedRunState,
 } from "../types/app";
 
@@ -396,68 +391,47 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
   const infoFeedNeedsRetryContinue = computed(() => Boolean(infoFeedCurrentRun.value?.pausedForRetry));
   const infoFeedRetryMessage = computed(() => infoFeedRetryMessageForRun(infoFeedCurrentRun.value));
 
-  async function runInfoFeedKeywordTrack(sequence: number, runId: string, query: string) {
-    const run = infoFeedCurrentRun.value;
-    if (!run || run.runId !== runId) {
-      return;
-    }
-    run.keyword.status = "running";
-    run.keyword.progress = 0;
-    run.keyword.stage = "提交原文检索请求";
-    const cacheKey = infoFeedSearchCacheKey(query);
-    const cached = infoFeedKeywordCache.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) {
-      run.keyword.response = cached.response;
-      run.keyword.fromCache = true;
-      run.keyword.status = "completed";
-      run.keyword.progress = 100;
-      run.keyword.stage = "已使用缓存结果";
-      return;
-    }
-    try {
-      run.keyword.progress = 0;
-      run.keyword.stage = "服务端正在扫描原始文件，完成后返回真实扫描数";
-      const response = await withInfoFeedFetchRetry(run, "keyword", () =>
-        bridge.searchKnowledge({
-          query,
-          limit: 12,
-          retrievalMode: "raw-source-keyword",
-          keywordOnly: true,
-          rawSourceSearch: true,
-          sourceSearch: true,
-          returnAll: true,
-          learningEnabled: false,
-          explain: true,
-        }),
-      );
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== runId) {
-        return;
-      }
-      run.keyword.response = response;
-      run.keyword.fromCache = false;
-      run.keyword.status = "completed";
-      run.keyword.progress = 100;
-      const explain = asRecord(response.explain) || {};
-      run.keyword.stage = [
-        explain.candidateFileCount ? `候选 ${Number(explain.candidateFileCount)}` : "",
-        explain.scannedFiles ? `扫描 ${Number(explain.scannedFiles)}` : "",
-        explain.matchedUniqueFiles ? `命中 ${Number(explain.matchedUniqueFiles)}` : "",
-        explain.elapsedMs ? `${Number(explain.elapsedMs)}ms` : "",
-      ].filter(Boolean).join(" · ") || "检索完成";
-      infoFeedKeywordCache.set(cacheKey, {
-        response,
-        cachedAt: Date.now(),
-      });
-    } catch (nextError) {
-      run.keyword.status = "failed";
-      run.keyword.progress = 100;
-      if (isInfoFeedRetryExhaustedError(nextError)) {
-        run.pausedForRetry = "keyword";
-      }
-      run.keyword.error = nextError instanceof Error ? nextError.message : "原文检索失败。";
-      run.keyword.stage = run.keyword.error;
-    }
-  }
+  const {
+    chooseInfoFeedClarification,
+    continueInfoFeedAfterModelSelection,
+    continueInfoFeedAfterRetry,
+    continueInfoFeedCurrentRun,
+    executeInfoFeedRunIteration,
+    runInfoFeed,
+    runInfoFeedAgentTrack,
+    runInfoFeedKeywordTrack,
+    runInfoFeedSummaryAgent,
+    syncInfoFeedExpertFeedback,
+  } = createConsoleInfoFeedExecutionController({
+    agentExploreConfiguredLimit: options.agentExploreConfiguredLimit,
+    agentExploreConfiguredMaxIterations: options.agentExploreConfiguredMaxIterations,
+    agentExploreThinkingParameters,
+    applyInfoFeedSummaryAnswer,
+    archiveInfoFeedExpertFeedback,
+    buildInfoFeedAgentQuery,
+    buildInfoFeedSourceSearchQuery,
+    buildInfoFeedSummaryQuestion,
+    canReadKnowledge: options.canReadKnowledge,
+    createInfoFeedRun,
+    error: options.error,
+    fallbackInfoFeedSummary,
+    infoFeedAgentExpertGuidance,
+    infoFeedAgentProgressFromResult,
+    infoFeedAgentRecentTurns,
+    infoFeedCanFollowUp,
+    infoFeedCurrentRun,
+    infoFeedForm,
+    infoFeedKeywordCache,
+    infoFeedParentRunSnapshot,
+    infoFeedReadyForSummary,
+    infoFeedRunEvidenceRefs,
+    infoFeedRunSequence,
+    resetInfoFeedRunForContinuation,
+    selectedInfoFeedContextProfile,
+    selectedInfoFeedModel,
+    selectedThinkingMode,
+    upsertInfoFeedHistory,
+  });
 
   function infoFeedAgentProgressFromResult(result: AgentExploreRunResponse | null, maxIterations: number) {
     return infoFeedAgentProgressFromResultCore(result, maxIterations);
@@ -513,80 +487,6 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
     return infoFeedAgentExpertGuidanceCore(run);
   }
 
-  async function runInfoFeedAgentTrack(sequence: number, runId: string, query: string) {
-    const run = infoFeedCurrentRun.value;
-    if (!run || run.runId !== runId) {
-      return;
-    }
-    run.pausedForModelSelection = "";
-    run.agent.status = "running";
-    run.agent.progress = 8;
-    run.agent.error = "";
-    const maxIterations = options.agentExploreConfiguredMaxIterations.value;
-    try {
-      let result = normalizeAgentExploreRun(await withInfoFeedFetchRetry(run, "agent", () =>
-        bridge.runKnowledgeAgentExplore({
-          query,
-          modelAlias: selectedInfoFeedModel.value.value,
-          contextProfileId: selectedInfoFeedContextProfile.value.value,
-          thinkingMode: selectedThinkingMode.value,
-          maxIterations,
-          limit: options.agentExploreConfiguredLimit.value,
-          recentTurns: infoFeedAgentRecentTurns(run),
-          expertGuidance: infoFeedAgentExpertGuidance(run),
-          async: true,
-          realtime: true,
-        }),
-      ));
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== runId) {
-        return;
-      }
-      run.agent.response = result;
-      run.agent.runId = String(asRecord(result.run)?.runId || "");
-      run.agent.workspaceId = String(result.workspace?.workspaceId || "");
-      run.agent.progress = infoFeedAgentProgressFromResult(result, maxIterations);
-      for (let pollIndex = 0; pollIndex < 240; pollIndex += 1) {
-        const status = agentExploreRunStatus(result);
-        if (!["queued", "running"].includes(status)) {
-          break;
-        }
-        if (!run.agent.runId || !run.agent.workspaceId) {
-          break;
-        }
-        await delayMs(800);
-        result = normalizeAgentExploreRun(await withInfoFeedFetchRetry(run, "agent", () =>
-          bridge.getKnowledgeAgentExploreRun(run.agent.runId, {
-            workspaceId: run.agent.workspaceId,
-          }),
-        ));
-        if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== runId) {
-          return;
-        }
-        run.agent.response = result;
-        run.agent.progress = infoFeedAgentProgressFromResult(result, maxIterations);
-      }
-      const finalStatus = agentExploreRunStatus(run.agent.response);
-      run.agent.status = finalStatus === "failed" || run.agent.response?.ok === false ? "failed" : "completed";
-      run.agent.progress = 100;
-      if (run.agent.status === "failed") {
-        run.agent.error = run.agent.response?.error || "智能检索失败。";
-        if (isModelConfigurationError(run.agent.error)) {
-          run.pausedForModelSelection = "agent";
-        }
-      }
-    } catch (nextError) {
-      run.agent.status = "failed";
-      run.agent.progress = 100;
-      if (isInfoFeedRetryExhaustedError(nextError)) {
-        run.pausedForRetry = "agent";
-      }
-      run.agent.error = nextError instanceof Error ? nextError.message : "智能检索失败。";
-      if (isModelConfigurationError(nextError)) {
-        run.pausedForModelSelection = "agent";
-      }
-    }
-  }
-
   function infoFeedSourceSummary(run: InfoFeedRunState) {
     return buildInfoFeedSourceSummaryCore(run, buildInfoFeedSourceContext(run));
   }
@@ -625,313 +525,6 @@ export function createConsoleInfoFeedController(options: ConsoleInfoFeedControll
     option: InfoFeedClarificationOption,
   ) {
     return archiveInfoFeedExpertFeedbackCore(run, clarification, option);
-  }
-
-  async function syncInfoFeedExpertFeedback(run: InfoFeedRunState, feedbackItem: InfoFeedExpertFeedback) {
-    try {
-      await bridge.recordKnowledgeFeedback({
-        feedbackId: feedbackItem.feedbackId,
-        clientId: "server-console-info-feed",
-        query: feedbackItem.sourceQuery || run.query,
-        action: "human_expert_clarification",
-        itemId: run.runId,
-        evidenceId: infoFeedRunEvidenceRefs(run)[0] || "",
-        resultRank: 0,
-        createdAt: feedbackItem.createdAt,
-        context: {
-          type: "info_feed_expert_feedback",
-          gold: true,
-          humanExpert: true,
-          source: "clarification_option",
-          runId: run.runId,
-          questionId: feedbackItem.questionId,
-          anchor: feedbackItem.anchor,
-          prompt: feedbackItem.prompt,
-          reason: feedbackItem.reason,
-          selectedOption: {
-            optionId: feedbackItem.selectedOptionId,
-            label: feedbackItem.selectedLabel,
-            description: feedbackItem.selectedDescription,
-            followUpQuestion: feedbackItem.followUpQuestion,
-          },
-          evidenceRefs: infoFeedRunEvidenceRefs(run),
-          modelAlias: run.summary.modelAlias,
-          summaryStatus: run.summary.status,
-          keywordCount: ((run.keyword.response?.items || run.keyword.response?.results || []) as KnowledgeSearchResult[]).length,
-          agentRunId: run.agent.runId,
-        },
-      });
-      feedbackItem.syncStatus = "synced";
-      feedbackItem.syncedAt = new Date().toISOString();
-      feedbackItem.syncError = "";
-    } catch (nextError) {
-      feedbackItem.syncStatus = "failed";
-      feedbackItem.syncError = nextError instanceof Error ? nextError.message : "专家意见同步失败。";
-    } finally {
-      upsertInfoFeedHistory(run);
-    }
-  }
-
-  async function runInfoFeedSummaryAgent(sequence = infoFeedRunSequence.value) {
-    const run = infoFeedCurrentRun.value;
-    if (!run || !infoFeedReadyForSummary.value) {
-      return;
-    }
-    run.pausedForModelSelection = "";
-    run.summary.status = "running";
-    run.summary.progress = 15;
-    run.summary.modelAlias = selectedInfoFeedModel.value.value;
-    run.summary.contextProfileId = selectedInfoFeedContextProfile.value.value;
-    const summaryTemperature = Number(infoFeedForm.value.temperature || 0.2);
-    const summaryMaxTokens = Number(infoFeedForm.value.maxTokens || 1800);
-    run.summary.temperature = summaryTemperature;
-    run.summary.maxTokens = summaryMaxTokens;
-    run.summary.answer = "";
-    run.summary.error = "";
-    run.summary.fallback = false;
-    try {
-      const response = await withInfoFeedFetchRetry(run, "summary", () =>
-        bridge.callAgentGateway({
-          modelAlias: selectedInfoFeedModel.value.value,
-          alias: selectedInfoFeedModel.value.value,
-          moduleId: "agentTools",
-          taskId: run.runId,
-          sessionId: run.agent?.workspaceId || run.runId,
-          question: buildInfoFeedSummaryQuestion(run),
-          systemPrompt:
-            "你是 Pact 信息流智能体。你的任务是融合原文检索、智能规划和附件读取结果，输出可复核、带证据编号的最终回答。证据不足时必须说明不足。只有当缺少用户选择就无法继续执行时，才向用户提问；普通不确定性只写在报告里。",
-          parameters: {
-            ...agentExploreThinkingParameters(),
-            temperature: summaryTemperature,
-            max_tokens: summaryMaxTokens,
-          },
-        }),
-      );
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== run.runId) {
-        return;
-      }
-      const answer = String(response.answer || response.text || "").trim();
-      applyInfoFeedSummaryAnswer(
-        run,
-        answer || fallbackInfoFeedSummary(run),
-        !answer,
-        answer ? "" : "总结智能体没有返回可用回答，已展示本地兜底摘要。",
-      );
-      run.summary.status = answer ? "completed" : "failed";
-      run.summary.progress = 100;
-    } catch (nextError) {
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== run.runId) {
-        return;
-      }
-      if (isModelConfigurationError(nextError)) {
-        run.summary.answer = "";
-        run.summary.fallback = false;
-        run.summary.status = "failed";
-        run.summary.progress = 0;
-        run.summary.error = nextError instanceof Error ? nextError.message : "总结智能体未配置。";
-        run.pausedForModelSelection = "summary";
-        return;
-      }
-      if (isInfoFeedRetryExhaustedError(nextError)) {
-        run.summary.answer = "";
-        run.summary.fallback = false;
-        run.summary.status = "failed";
-        run.summary.progress = 100;
-        run.summary.error = nextError.message;
-        run.pausedForRetry = "summary";
-        return;
-      }
-      applyInfoFeedSummaryAnswer(
-        run,
-        fallbackInfoFeedSummary(run),
-        true,
-        nextError instanceof Error ? nextError.message : "总结智能体调用失败。",
-      );
-      run.summary.status = "failed";
-      run.summary.progress = 100;
-    } finally {
-      if (infoFeedCurrentRun.value?.runId === run.runId) {
-        run.completedAt = new Date().toISOString();
-        if (run.summary.answer || run.summary.status === "failed") {
-          upsertInfoFeedHistory(run);
-        }
-      }
-    }
-  }
-
-  async function executeInfoFeedRunIteration(sequence: number, run: InfoFeedRunState) {
-    const sourceSearchQuery = buildInfoFeedSourceSearchQuery(run);
-    const agentQuery = buildInfoFeedAgentQuery(run);
-    await Promise.allSettled([
-      runInfoFeedKeywordTrack(sequence, run.runId, sourceSearchQuery),
-      runInfoFeedAgentTrack(sequence, run.runId, agentQuery),
-    ]);
-    if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== run.runId) {
-      return;
-    }
-    if (run.pausedForModelSelection || run.pausedForRetry) {
-      upsertInfoFeedHistory(run);
-      return;
-    }
-    await runInfoFeedSummaryAgent(sequence);
-  }
-
-  async function continueInfoFeedCurrentRun(question: string) {
-    const run = infoFeedCurrentRun.value;
-    if (!run) {
-      return;
-    }
-    if (!options.canReadKnowledge.value) {
-      options.error.value = "当前账号没有知识库读取权限。";
-      return;
-    }
-    if (!selectedInfoFeedModel.value.enabled) {
-      options.error.value = "请选择模型库中已配置且支持智能体调用的模型。";
-      return;
-    }
-    options.error.value = "";
-    infoFeedParentRunSnapshot.value = null;
-    resetInfoFeedRunForContinuation(run, question);
-    upsertInfoFeedHistory(run);
-    const sequence = infoFeedRunSequence.value + 1;
-    infoFeedRunSequence.value = sequence;
-    await executeInfoFeedRunIteration(sequence, run);
-  }
-
-  async function runInfoFeed() {
-    const query = infoFeedForm.value.query.trim();
-    if (!query) {
-      options.error.value = "请输入信息流问题。";
-      return;
-    }
-    if (!options.canReadKnowledge.value) {
-      options.error.value = "当前账号没有知识库读取权限。";
-      return;
-    }
-    if (!selectedInfoFeedModel.value.enabled) {
-      options.error.value = "请选择模型库中已配置且支持智能体调用的模型。";
-      return;
-    }
-    if (infoFeedCanFollowUp.value && infoFeedCurrentRun.value) {
-      infoFeedForm.value.query = "";
-      await continueInfoFeedCurrentRun(query);
-      return;
-    }
-    options.error.value = "";
-    infoFeedParentRunSnapshot.value = null;
-    const sequence = infoFeedRunSequence.value + 1;
-    infoFeedRunSequence.value = sequence;
-    const run = createInfoFeedRun(query);
-    infoFeedCurrentRun.value = run;
-    infoFeedForm.value.query = "";
-    await executeInfoFeedRunIteration(sequence, run);
-  }
-
-  async function chooseInfoFeedClarification(option: InfoFeedClarificationOption) {
-    const run = infoFeedCurrentRun.value;
-    if (!run?.clarification || run.summary.status === "running") {
-      return;
-    }
-    const clarification = run.clarification;
-    const archived = archiveInfoFeedExpertFeedback(run, clarification, option);
-    run.clarification = {
-      ...clarification,
-      status: "answered",
-      selectedOptionId: option.optionId,
-    };
-    upsertInfoFeedHistory(run);
-    await syncInfoFeedExpertFeedback(run, archived);
-    await continueInfoFeedCurrentRun(option.followUpQuestion);
-  }
-
-  async function continueInfoFeedAfterModelSelection() {
-    const run = infoFeedCurrentRun.value;
-    if (!run?.pausedForModelSelection) {
-      return;
-    }
-    if (!selectedInfoFeedModel.value.enabled) {
-      options.error.value = "请选择一个已配置且可用的模型。";
-      return;
-    }
-    options.error.value = "";
-    const pausedStage = run.pausedForModelSelection;
-    const sequence = infoFeedRunSequence.value + 1;
-    infoFeedRunSequence.value = sequence;
-    run.pausedForModelSelection = "";
-    run.summary.modelAlias = selectedInfoFeedModel.value.value;
-    run.summary.contextProfileId = selectedInfoFeedContextProfile.value.value;
-    if (pausedStage === "agent") {
-      run.agent = {
-        status: "idle",
-        progress: 0,
-        runId: "",
-        workspaceId: "",
-        response: null,
-        error: "",
-      };
-      await runInfoFeedAgentTrack(sequence, run.runId, buildInfoFeedAgentQuery(run));
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== run.runId || run.pausedForModelSelection) {
-        upsertInfoFeedHistory(run);
-        return;
-      }
-    }
-    if (infoFeedReadyForSummary.value) {
-      await runInfoFeedSummaryAgent(sequence);
-    }
-  }
-
-  async function continueInfoFeedAfterRetry() {
-    const run = infoFeedCurrentRun.value;
-    if (!run?.pausedForRetry) {
-      return;
-    }
-    const pausedStage = run.pausedForRetry;
-    const sequence = infoFeedRunSequence.value + 1;
-    infoFeedRunSequence.value = sequence;
-    clearInfoFeedRetryState(run, pausedStage);
-    options.error.value = "";
-
-    if (pausedStage === "keyword") {
-      run.keyword = {
-        status: "idle",
-        progress: 0,
-        stage: "",
-        fromCache: false,
-        response: null,
-        error: "",
-      };
-      await runInfoFeedKeywordTrack(sequence, run.runId, buildInfoFeedSourceSearchQuery(run));
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== run.runId || run.pausedForRetry) {
-        upsertInfoFeedHistory(run);
-        return;
-      }
-    }
-
-    if (pausedStage === "agent") {
-      run.agent = {
-        status: "idle",
-        progress: 0,
-        runId: "",
-        workspaceId: "",
-        response: null,
-        error: "",
-      };
-      await runInfoFeedAgentTrack(sequence, run.runId, buildInfoFeedAgentQuery(run));
-      if (sequence !== infoFeedRunSequence.value || infoFeedCurrentRun.value?.runId !== run.runId || run.pausedForRetry) {
-        upsertInfoFeedHistory(run);
-        return;
-      }
-    }
-
-    if (pausedStage === "summary") {
-      run.summary.answer = "";
-      run.summary.error = "";
-      run.summary.fallback = false;
-    }
-
-    if (infoFeedReadyForSummary.value && !run.pausedForModelSelection && !run.pausedForRetry) {
-      await runInfoFeedSummaryAgent(sequence);
-    }
   }
 
   function clearInfoFeedKeywordCache() {
