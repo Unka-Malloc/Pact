@@ -944,6 +944,8 @@ try {
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
@@ -984,7 +986,7 @@ try {
       ...authHeaders(auth, { method: "POST" })
     },
     body: JSON.stringify({
-      query: "外部知识蒸馏注册验证",
+      query: "外部知识蒸馏注册验证 [Agent contract](https://example.test/agent)",
       title: "外部知识蒸馏注册验证",
       rawDocumentsManifestPath: rawDocumentsManifestPath || undefined,
       rawDocuments: [
@@ -1033,6 +1035,7 @@ try {
             "Markdown contentBase64 must be parsed without Tika and converted with block structure.",
             "- Preserve list evidence.",
             "[Agent contract](https://example.test/agent)",
+            "![Architecture diagram](https://example.test/architecture.png)",
             "",
             "| Stage | Status |",
             "| --- | --- |",
@@ -1540,11 +1543,21 @@ try {
   assert.equal(markdownPayloadCorpus.parseStatus, "completed");
   assert.equal(markdownPayloadCorpus.quality.evidenceStrength, "parsed-payload");
   assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "text.markdown"), true);
-  assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.status === "completed" && trace.headings >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1 && trace.links >= 1 && trace.metadata >= 1), true);
+  assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.status === "completed" && trace.headings >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1 && trace.links >= 1 && trace.images >= 1 && trace.metadata >= 1), true);
   assert.equal(markdownPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(markdownPayloadCorpus.elementPlan.sourceFormat, "markdown");
   assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
   assert.equal(markdownPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
+  assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
+  assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
+  assert.equal(markdownPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.href === "https://example.test/agent"
+  ))), true);
+  assert.equal(markdownPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "image" &&
+    ref.href === "https://example.test/architecture.png"
+  ))), true);
   assert.equal(markdownPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.parserProfile, "markdown-block-element-route");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
@@ -1553,6 +1566,8 @@ try {
   assert.equal(professionalConversionPlan.summary.targetFormats.includes("docx"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("word-link-refs-preserved"), true);
+  assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-link-refs-preserved"), true);
+  assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-image-refs-preserved"), true);
   assert.equal(professionalConversionPlan.summary.qualityGateStatusCounts.passed > 0, true);
   assert.equal(professionalConversionPlan.summary.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
   assert.equal(professionalConversionPlan.summary.outputArtifactFailedCount, 0);
@@ -1582,7 +1597,11 @@ try {
   assert.equal(professionalConversionPlan.documents.some((document) => (
     document.sourceId === "source-5" &&
     document.parserProfile === "markdown-block-element-route" &&
-    document.conversionTargets.includes("valid-openxml-docx")
+    document.conversionTargets.includes("valid-openxml-docx") &&
+    document.evidence.linkElementCount >= 1 &&
+    document.evidence.imageRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-image-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalConversionPlan.documents.some((document) => (
     document.sourceId === "source-8" &&
@@ -2776,11 +2795,15 @@ try {
   assert.ok(docxEntries["[Content_Types].xml"], "DOCX must include OpenXML content types");
   assert.ok(docxEntries["word/document.xml"], "DOCX must include word/document.xml");
   const docxDocumentXml = Buffer.from(docxEntries["word/document.xml"]).toString("utf8");
+  const docxRelationshipsXml = Buffer.from(docxEntries["word/_rels/document.xml.rels"]).toString("utf8");
   const docxStylesXml = Buffer.from(docxEntries["word/styles.xml"]).toString("utf8");
   assert.match(docxDocumentXml, /External Knowledge Distillation|Category Distillations/);
   assert.match(docxDocumentXml, /w:pStyle w:val="Heading1"/, "DOCX export must render Markdown headings as Word heading styles");
   assert.match(docxDocumentXml, /w:pStyle w:val="ListParagraph"/, "DOCX export must render Markdown bullets as Word list paragraphs");
   assert.match(docxDocumentXml, /<w:tbl\b/, "DOCX export must render Markdown source-routing tables as Word tables");
+  assert.match(docxDocumentXml, /<w:hyperlink\b/, "DOCX export must preserve Markdown hyperlinks as OpenXML hyperlinks");
+  assert.match(docxRelationshipsXml, /relationships\/hyperlink/, "DOCX export must register hyperlink relationships");
+  assert.match(docxRelationshipsXml, /https:\/\/example\.test\/agent/, "DOCX hyperlink relationship must preserve the original target");
   assert.match(docxStylesXml, /w:styleId="CodeBlock"/, "DOCX export must declare a code block style for Markdown code conversion");
 
   const consoleSummaryArtifact = await fetch(`${pactServer.url}/api/external/knowledge/distillation/runs/${encodeURIComponent(createRun.payload.runId)}/artifacts/console-summary-json`, {
@@ -2848,6 +2871,7 @@ try {
   assert.equal(conversionPlan.summary.documentWithCellRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithFormulaRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithLinkRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.every((artifact) => artifact.status === "passed"), true);
@@ -2855,7 +2879,8 @@ try {
     artifact.artifactId === "portable-docx" &&
     artifact.gates.some((gate) => gate.gate === "word-heading-styles-present" && gate.status === "passed") &&
     artifact.gates.some((gate) => gate.gate === "word-list-and-code-styles-present" && gate.status === "passed") &&
-    artifact.gates.some((gate) => gate.gate === "word-table-elements-well-formed" && gate.status === "passed")
+    artifact.gates.some((gate) => gate.gate === "word-table-elements-well-formed" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-hyperlinks-well-formed" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "pdf" && item.qualityGates.includes("page-order-preserved")), true);
   assert.equal(conversionPlan.documents.some((document) => document.routeId === "spreadsheet" && document.evidence.cellRefCount >= 1), true);

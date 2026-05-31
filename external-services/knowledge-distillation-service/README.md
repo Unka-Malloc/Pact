@@ -37,7 +37,7 @@ API namespace:
 Artifacts:
 
 - `portable-markdown`: human-readable classified distillation output.
-- `portable-docx`: valid OpenXML Word document for human review; Markdown headings, lists, code blocks, and routing tables are converted into native Word paragraph styles and table XML instead of plain text lines.
+- `portable-docx`: valid OpenXML Word document for human review; Markdown headings, lists, code blocks, routing tables, and hyperlinks are converted into native Word paragraph styles, table XML, and OpenXML hyperlink relationships instead of plain text lines.
 - `console-summary-json`: control-plane summary for humans, with document rows, route IDs, file sizes, parse status, openability, conversion risk, and quality gate counts while omitting parser traces and full window payloads.
 - `agent-message-json`: machine-readable classification and evidence message for agents.
 - `result-json`: full run record.
@@ -61,7 +61,7 @@ Core response fields:
 - `incrementalPlan`: project snapshot and reuse plan keyed by `projectId`/`workspaceId`/`repositoryId`, with added, changed, removed, and reusable source/window counts.
 - `graphEvidence`: graph-lite evidence pack containing `text_units`, `entities`, `relationships`, `covariates`, `communities`, and `community_reports`.
 - `referenceGapReport`: absorbed patterns, baseline patterns, open gaps, and local checkout audit status mapped from the reference framework manifest.
-- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument. DOCX self-checks verify OpenXML package structure plus heading style, list/code style, and Word table readiness.
+- `formatConversionPlan`: source-format adapter matrix, parser stages, structure units, conversion adapters, evaluated quality gates, risk controls, openability targets, output artifact self-checks, and per-document evidence for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument. DOCX self-checks verify OpenXML package structure plus heading style, list/code style, Word table readiness, and hyperlink relationship integrity.
 - `modeSeparation`: `human-agent-response-profile-separation.v1` separates console artifacts from agent artifacts: console output avoids parser trace noise, while agent output carries parser, element, window, quality gate, evidence, and convergence payloads.
 - `grounding`: claim-to-evidence top-k support, cross-topic conflict evidence, and candidate promotion gates for generated summaries and requested claims.
 - `timeRange` and `timeSignals`: document/window-level time hints extracted from table date fields such as `payment_date`, `Report Date`, or localized date headers so agents can filter evidence by time without reparsing table text.
@@ -81,7 +81,7 @@ Routed format families:
 - PDF: subtype routing before distillation, text extraction, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
 - Office and OpenDocument: DOC/DOT/DOCX/DOCM/DOTX/DOTM, RTF, PPT/PPS/POT/PPTX/PPTM/PPSX/PPSM/POTX/POTM, XLS/XLSB/XLSX/XLSM/XLTX/XLTM, ODT/ODS/ODP with paragraph, heading, Word hyperlinks/comments/footnotes/endnotes, Word/PowerPoint/OpenDocument table row/cell metadata, OpenDocument hyperlinks, slide, PresentationML shape geometry, PowerPoint hyperlinks and speaker notes, sheet-row, cell-coordinate, SpreadsheetML formula and hyperlink metadata, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
-- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONC, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements rather than treated as plain text.
+- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONC, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements with heading, table, code, link, and image refs rather than treated as plain text.
 - Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
 - Diagrams: SVG, draw.io, Mermaid, and PlantUML with node, edge, and label extraction.
 - Notebooks: Jupyter `.ipynb` with markdown, code, and output cell extraction.
@@ -157,7 +157,7 @@ Built-in algorithm baseline:
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
 - `hierarchical-domain-topic-project-convergence.v3`: adds a project-domain layer, domain reports, cross-domain links, and `agent-project-convergence-query-index.v1` for global/local project reads.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, domain, route, source, entity, claim, group, and time filters for engineering-project convergence queries.
-- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/annotation isolation, element refs, basic PDF geometry, Word hyperlinks/annotations, Word/PowerPoint/OpenDocument table cells, OpenDocument hyperlinks, PowerPoint hyperlinks and speaker notes, spreadsheet cell coordinates/formulas/hyperlinks, and PresentationML shape geometry on agent windows and graph text units.
+- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/annotation isolation, element refs, Markdown links/images, basic PDF geometry, Word hyperlinks/annotations, Word/PowerPoint/OpenDocument table cells, OpenDocument hyperlinks, PowerPoint hyperlinks and speaker notes, spreadsheet cell coordinates/formulas/hyperlinks, and PresentationML shape geometry on agent windows and graph text units.
 - `pdf-subtype-routing.v1`: turns PDF parser signals into machine-readable subtype, risk flags, image/font/ToUnicode counts, text/OCR/Tika character counts, and route-level `pdfSubtype`.
 - `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates and known loss boundaries.
 - `human-agent-response-profile-separation.v1` and `professional-format-manifest.v1`: split control-plane summaries from agent payloads and make professional parsing/conversion evidence queryable without scanning the full result JSON.

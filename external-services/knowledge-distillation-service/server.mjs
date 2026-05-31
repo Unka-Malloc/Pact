@@ -719,7 +719,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "entities", "claims"]
       }
     ],
-    qualityGates: ["heading-tree-preserved", "markdown-table-blocks-preserved", "docx-openxml-package-valid"],
+    qualityGates: ["heading-tree-preserved", "markdown-table-blocks-preserved", "markdown-link-refs-preserved", "markdown-image-refs-preserved", "docx-openxml-package-valid"],
     riskControls: ["custom-extension-loss-reporting", "image-reference-preservation"],
     knownLosses: ["custom-markdown-extension-rendering-not-normalized"]
   },
@@ -2493,7 +2493,7 @@ function stripMarkdownInline(value = "") {
     .trim();
 }
 
-function markdownTableCells(line = "") {
+function markdownTableCells(line = "", options = {}) {
   const trimmed = String(line || "").trim();
   if (!trimmed.startsWith("|")) {
     return [];
@@ -2502,7 +2502,7 @@ function markdownTableCells(line = "") {
     .replace(/^\|/, "")
     .replace(/\|$/, "")
     .split("|")
-    .map((cell) => stripMarkdownInline(cell.trim()));
+    .map((cell) => (options.raw ? cell.trim() : stripMarkdownInline(cell.trim())));
 }
 
 function isMarkdownTableDelimiter(line = "") {
@@ -8520,6 +8520,32 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Markdown table blocks are preserved." : "No Markdown tables were required or observed."
       });
     }
+    if (gate === "markdown-link-refs-preserved") {
+      const linkSignals = maxTraceMetric(document, ["links", "linkCount"]);
+      const status = routeId !== "markdown"
+        ? "not_applicable"
+        : linkSignals > 0
+          ? evidence.linkElementCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { linkSignals, linkElementCount: evidence.linkElementCount },
+        required: { linksWhenPresent: true },
+        message: status === "passed" ? "Markdown inline links are preserved as element references." : "No Markdown links were required or observed."
+      });
+    }
+    if (gate === "markdown-image-refs-preserved") {
+      const imageSignals = maxTraceMetric(document, ["images", "imageCount"]);
+      const status = routeId !== "markdown"
+        ? "not_applicable"
+        : imageSignals > 0
+          ? evidence.imageRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { imageSignals, imageRefCount: evidence.imageRefCount },
+        required: { imagesWhenPresent: true },
+        message: status === "passed" ? "Markdown image references are preserved as element references." : "No Markdown image references were required or observed."
+      });
+    }
     if (gate === "odf-content-order-preserved") {
       const status = routeId !== "open-document"
         ? "not_applicable"
@@ -8600,6 +8626,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
     const linkElementCount = sampleElements.filter((element) => element.type === "link" && element.href).length;
+    const imageRefCount = sampleElements.filter((element) => element.type === "image" && element.href).length;
     const speakerNoteElementCount = sampleElements.filter((element) => element.type === "speaker-note").length;
     const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
     const evidence = {
@@ -8612,6 +8639,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       geometryElementCount,
       annotationElementCount,
       linkElementCount,
+      imageRefCount,
       speakerNoteElementCount
     };
     const qualityGateResults = buildProfessionalQualityGateResults({
@@ -8671,6 +8699,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithCellRefsCount: plannedDocuments.filter((document) => document.evidence.cellRefCount > 0).length,
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
+      documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
@@ -10516,25 +10545,114 @@ function xmlEscape(value = "") {
     .replace(/"/g, "&quot;");
 }
 
+function stripMarkdownInlineMarkers(value = "") {
+  return String(value || "")
+    .replace(/[*_~]{1,3}/g, "");
+}
+
+function createDocxBuildContext() {
+  return { hyperlinks: [] };
+}
+
+function markdownLinkTarget(value = "") {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  const angle = trimmed.match(/^<([^>]+)>/);
+  if (angle) {
+    return angle[1].trim();
+  }
+  return trimmed.split(/\s+/)[0].replace(/^<|>$/g, "").trim();
+}
+
+function addDocxHyperlinkRelationship(context = null, target = "") {
+  const href = markdownLinkTarget(target);
+  if (!context || !href) {
+    return "";
+  }
+  const id = `rLink${context.hyperlinks.length + 1}`;
+  context.hyperlinks.push({ id, target: href });
+  return id;
+}
+
+function wordRun(text = "", options = {}) {
+  const runProps = [
+    options.monospace ? '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="20"/>' : "",
+    options.hyperlink ? '<w:color w:val="0563C1"/><w:u w:val="single"/>' : ""
+  ].filter(Boolean).join("");
+  const runPropsXml = runProps ? `<w:rPr>${runProps}</w:rPr>` : "";
+  const runs = String(text || "").split(/\n/).map((line, index) => (
+    `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`
+  )).join("");
+  return `<w:r>${runPropsXml}${runs}</w:r>`;
+}
+
+function wordHyperlinkRun(label = "", target = "", context = null) {
+  const id = addDocxHyperlinkRelationship(context, target);
+  if (!id) {
+    return wordRun(label || target);
+  }
+  return `<w:hyperlink r:id="${xmlEscape(id)}" w:history="1">${wordRun(label || target, { hyperlink: true })}</w:hyperlink>`;
+}
+
+function markdownInlineToWordRuns(value = "", context = null, options = {}) {
+  const source = String(value || "");
+  const chunks = [];
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`/g;
+  let cursor = 0;
+  const pushPlain = (text) => {
+    if (text) {
+      chunks.push(wordRun(stripMarkdownInlineMarkers(text), options));
+    }
+  };
+  for (const match of source.matchAll(pattern)) {
+    pushPlain(source.slice(cursor, match.index));
+    if (match[2]) {
+      const href = markdownLinkTarget(match[2]);
+      const label = `Image: ${match[1] || href}`;
+      chunks.push(wordHyperlinkRun(label, href, context));
+    } else if (match[4]) {
+      chunks.push(wordHyperlinkRun(match[3], match[4], context));
+    } else {
+      chunks.push(wordRun(match[5], { ...options, monospace: true }));
+    }
+    cursor = (match.index || 0) + match[0].length;
+  }
+  pushPlain(source.slice(cursor));
+  return chunks.join("") || wordRun(stripMarkdownInlineMarkers(source), options);
+}
+
+function buildWordDocumentRelationships(context = null) {
+  const hyperlinkRelationships = (context?.hyperlinks || []).map((relationship) => (
+    `<Relationship Id="${xmlEscape(relationship.id)}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${xmlEscape(relationship.target)}" TargetMode="External"/>`
+  )).join("");
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    '<Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>',
+    hyperlinkRelationships,
+    "</Relationships>"
+  ].join("");
+}
+
 function wordParagraph(text = "", style = "", options = {}) {
   const paragraphProps = [
     style ? `<w:pStyle w:val="${xmlEscape(style)}"/>` : "",
     options.indentTwips ? `<w:ind w:left="${Math.max(0, Number(options.indentTwips) || 0)}"/>` : ""
   ].filter(Boolean).join("");
   const styleXml = paragraphProps ? `<w:pPr>${paragraphProps}</w:pPr>` : "";
-  const runProps = options.monospace
-    ? '<w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="20"/></w:rPr>'
-    : "";
-  const lines = String(text || "").split(/\n/);
-  const runs = lines.map((line, index) => (
-    `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`
-  )).join("");
-  return `<w:p>${styleXml}<w:r>${runProps}${runs}</w:r></w:p>`;
+  const runs = options.markdownInline
+    ? markdownInlineToWordRuns(text, options.context, options)
+    : wordRun(text, options);
+  return `<w:p>${styleXml}${runs}</w:p>`;
 }
 
-function wordTable(rows = []) {
+function wordTable(rows = [], options = {}) {
   const normalizedRows = rows
-    .map((row) => row.map((cell) => stripMarkdownInline(cell)).filter((cell, index, cells) => cell || index < cells.length))
+    .map((row) => row.map((cell) => (
+      options.markdownInline ? String(cell || "").trim() : stripMarkdownInline(cell)
+    )).filter((cell, index, cells) => cell || index < cells.length))
     .filter((row) => row.some(Boolean));
   if (!normalizedRows.length) {
     return "";
@@ -10546,7 +10664,7 @@ function wordTable(rows = []) {
     return `<w:tr>${cells.map((cell) => [
       "<w:tc>",
       '<w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>',
-      wordParagraph(cell),
+      wordParagraph(cell, "", { context: options.context, markdownInline: Boolean(options.markdownInline) }),
       "</w:tc>"
     ].join("")).join("")}</w:tr>`;
   }).join("");
@@ -10559,7 +10677,7 @@ function wordTable(rows = []) {
   ].join("");
 }
 
-function markdownToDocxBody(markdown = "") {
+function markdownToDocxBody(markdown = "", context = null) {
   const blocks = [];
   const lines = String(markdown || "").split(/\r?\n/);
   let inCode = false;
@@ -10600,12 +10718,12 @@ function markdownToDocxBody(markdown = "") {
       while (index < lines.length && String(lines[index] || "").trim().startsWith("|")) {
         const tableLine = String(lines[index] || "").trim();
         if (!isMarkdownTableDelimiter(tableLine)) {
-          tableLines.push(markdownTableCells(tableLine));
+          tableLines.push(markdownTableCells(tableLine, { raw: true }));
         }
         index += 1;
       }
       index -= 1;
-      const table = wordTable(tableLines);
+      const table = wordTable(tableLines, { context, markdownInline: true });
       if (table) {
         blocks.push(table);
       }
@@ -10614,28 +10732,29 @@ function markdownToDocxBody(markdown = "") {
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
     if (heading) {
       const level = Math.min(3, heading[1].length);
-      blocks.push(wordParagraph(stripMarkdownInline(heading[2]), `Heading${level}`));
+      blocks.push(wordParagraph(heading[2], `Heading${level}`, { context, markdownInline: true }));
       continue;
     }
     if (/^[-*]\s+/.test(line)) {
-      blocks.push(wordParagraph(line.replace(/^[-*]\s+/, "- "), "ListParagraph", { indentTwips: 360 }));
+      blocks.push(wordParagraph(line.replace(/^[-*]\s+/, "- "), "ListParagraph", { indentTwips: 360, context, markdownInline: true }));
       continue;
     }
     if (/^\d+[.)]\s+/.test(line)) {
-      blocks.push(wordParagraph(line, "ListParagraph", { indentTwips: 360 }));
+      blocks.push(wordParagraph(line, "ListParagraph", { indentTwips: 360, context, markdownInline: true }));
       continue;
     }
-    blocks.push(wordParagraph(stripMarkdownInline(line)));
+    blocks.push(wordParagraph(line, "", { context, markdownInline: true }));
   }
   flushCode();
   return blocks.join("");
 }
 
 function buildPortableDocxBuffer({ title = "", runId = "", createdAt = "", updatedAt = "", markdown = "" } = {}) {
-  const body = markdownToDocxBody(markdown) || wordParagraph(title || runId || "External Knowledge Distillation", "Heading1");
+  const docxContext = createDocxBuildContext();
+  const body = markdownToDocxBody(markdown, docxContext) || wordParagraph(title || runId || "External Knowledge Distillation", "Heading1", { context: docxContext, markdownInline: true });
   const documentXml = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
     "<w:body>",
     body,
     '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>',
@@ -10674,7 +10793,7 @@ function buildPortableDocxBuffer({ title = "", runId = "", createdAt = "", updat
     },
     {
       name: "word/_rels/document.xml.rels",
-      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'
+      data: buildWordDocumentRelationships(docxContext)
     },
     {
       name: "word/styles.xml",
@@ -10883,10 +11002,13 @@ function validateOpenXmlDocxBuffer(buffer = Buffer.alloc(0)) {
   const entryNames = new Set(entries.map((entry) => entry.name));
   const contentTypes = zipEntryText(entries, "[Content_Types].xml");
   const documentXml = zipEntryText(entries, "word/document.xml");
+  const relationshipsXml = zipEntryText(entries, "word/_rels/document.xml.rels");
   const stylesXml = zipEntryText(entries, "word/styles.xml");
   const tableCount = (documentXml.match(/<w:tbl\b/g) || []).length;
   const tableRowCount = (documentXml.match(/<w:tr\b/g) || []).length;
   const tableCellCount = (documentXml.match(/<w:tc\b/g) || []).length;
+  const hyperlinkCount = (documentXml.match(/<w:hyperlink\b/g) || []).length;
+  const hyperlinkRelationshipCount = (relationshipsXml.match(/relationships\/hyperlink/g) || []).length;
   const gates = [
     artifactValidationGate("zip-readable", entries.length > 0 && !entries.some((entry) => entry.warning), {
       observed: {
@@ -10947,6 +11069,13 @@ function validateOpenXmlDocxBuffer(buffer = Buffer.alloc(0)) {
       message: tableCount
         ? "DOCX table elements include rows and cells."
         : "No DOCX table was required for this artifact."
+    }),
+    artifactValidationGate("word-hyperlinks-well-formed", hyperlinkCount === 0 || hyperlinkRelationshipCount >= hyperlinkCount, {
+      observed: { hyperlinkCount, hyperlinkRelationshipCount },
+      required: { hyperlinkRelationshipForEachHyperlink: true },
+      message: hyperlinkCount
+        ? "DOCX hyperlinks have matching OpenXML relationships."
+        : "No DOCX hyperlinks were required for this artifact."
     })
   ];
   return {

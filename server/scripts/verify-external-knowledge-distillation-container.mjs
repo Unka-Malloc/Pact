@@ -452,6 +452,8 @@ try {
   }
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
@@ -845,7 +847,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      query: "Container project package recursive parser verification",
+      query: "Container project package recursive parser verification [Container runbook](https://example.test/container-runbook)",
       title: "Container project package recursive parser verification",
       responseProfile: "agent",
       rawDocuments: [
@@ -857,7 +859,9 @@ try {
           contentBase64: zipBase64({
             "docs/architecture.md": [
               "# Architecture",
-              "External API namespace registration, route fallback, parser runtime health, deployment topology, and service capability contracts."
+              "External API namespace registration, route fallback, parser runtime health, deployment topology, and service capability contracts.",
+              "[Container agent contract](https://example.test/container-agent)",
+              "![Container topology](https://example.test/container-topology.png)"
             ].join("\n"),
             "finance/invoice.csv": "vendor,total,tax,payment_date\nAcme,42000,2100,2026-05-31\nGlobex,91000,4550,2026-06-30",
             "data/config.json": JSON.stringify({ parser: "archive child route", project: "distillation", ocr: true, grounding: true }),
@@ -971,6 +975,17 @@ try {
   assert.equal(markdownChild.parentSourceId, "container-project-package");
   assert.equal(markdownChild.route.formatId, "markdown");
   assert.equal(markdownChild.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+  assert.equal(markdownChild.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.links >= 1 && trace.images >= 1), true);
+  assert.equal(markdownChild.elementPlan.elementTypes.link >= 1, true);
+  assert.equal(markdownChild.elementPlan.elementTypes.image >= 1, true);
+  assert.equal(markdownChild.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "link" &&
+    ref.href === "https://example.test/container-agent"
+  ))), true);
+  assert.equal(markdownChild.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "image" &&
+    ref.href === "https://example.test/container-topology.png"
+  ))), true);
   const csvChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!finance/invoice.csv");
   assert.ok(csvChild, "project package CSV child must be expanded");
   assert.equal(csvChild.parentSourceId, "container-project-package");
@@ -1089,6 +1104,9 @@ try {
   assert.equal(conversionPlan.formatMatrix.some((item) => item.routeId === "markdown" && item.parserProfile === "markdown-block-element-route"), true);
   assert.equal(conversionPlan.summary.targetFormats.includes("docx"), true);
   assert.equal(conversionPlan.summary.qualityGates.includes("heading-tree-preserved"), true);
+  assert.equal(conversionPlan.summary.qualityGates.includes("markdown-link-refs-preserved"), true);
+  assert.equal(conversionPlan.summary.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
     artifact.artifactId === "portable-docx" &&
@@ -1096,7 +1114,8 @@ try {
     artifact.gates.some((gate) => gate.gate === "word-document-body-present" && gate.status === "passed") &&
     artifact.gates.some((gate) => gate.gate === "word-heading-styles-present" && gate.status === "passed") &&
     artifact.gates.some((gate) => gate.gate === "word-list-and-code-styles-present" && gate.status === "passed") &&
-    artifact.gates.some((gate) => gate.gate === "word-table-elements-well-formed" && gate.status === "passed")
+    artifact.gates.some((gate) => gate.gate === "word-table-elements-well-formed" && gate.status === "passed") &&
+    artifact.gates.some((gate) => gate.gate === "word-hyperlinks-well-formed" && gate.status === "passed" && gate.observed.hyperlinkCount >= 1)
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "spreadsheet" &&
@@ -1113,7 +1132,11 @@ try {
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "markdown" &&
     document.professionalFamily === "markdown" &&
-    document.conversionAdapters.some((adapter) => adapter.adapter === "markdown-blocks-to-valid-openxml.v1")
+    document.conversionAdapters.some((adapter) => adapter.adapter === "markdown-blocks-to-valid-openxml.v1") &&
+    document.evidence.linkElementCount >= 1 &&
+    document.evidence.imageRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-image-refs-preserved" && gate.status === "passed")
   )), true);
   const architectureEvidence = await fetchJson(
     `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?entity=namespace&sourceId=container-project-package!docs%2Farchitecture.md&limit=20`

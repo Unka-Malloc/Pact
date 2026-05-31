@@ -612,15 +612,15 @@ raw corpus item 标准字段：
 
 改进计划：
 
-- DOCX 必须使用合法 OpenXML，不写伪文档；Markdown 标题、列表、代码块和路由表格必须转换成 Word heading/list/code style 与 `<w:tbl>`，不能只是逐行塞入普通段落。
+- DOCX 必须使用合法 OpenXML，不写伪文档；Markdown 标题、列表、代码块、路由表格和超链接必须转换成 Word heading/list/code style、`<w:tbl>` 与 hyperlink relationship，不能只是逐行塞入普通段落。
 - ZIP manifest 记录文件大小、hash 和 media type。
 - Markdown 不允许包含 Tika XHTML 噪声。
 - PDF、Word、PowerPoint、Excel、Markdown、OpenDocument 必须进入 `office-document-professional-adaptation.v1` 格式矩阵，声明 parser stages、structure units、conversion adapters、preserves、quality gates、risk controls 和 known losses。
-- PDF、Word、PowerPoint、Excel、Markdown 的专业适配必须区分解析和转换：解析阶段保留 page/bbox、heading/list/table/link、comment/footnote/endnote、slide/shape/table/link/speaker-note、sheet/cell/formula/hyperlink/time-index、Markdown block refs；转换阶段分别输出人类可读 Markdown/DOCX 和智能体可读 Agent JSON/evidence pack。
+- PDF、Word、PowerPoint、Excel、Markdown 的专业适配必须区分解析和转换：解析阶段保留 page/bbox、heading/list/table/link/image、comment/footnote/endnote、slide/shape/table/link/speaker-note、sheet/cell/formula/hyperlink/time-index、Markdown block refs；转换阶段分别输出人类可读 Markdown/DOCX 和智能体可读 Agent JSON/evidence pack。
 - 每个文档的 `formatConversionPlan.documents[]` 必须能说明转换到 Markdown、DOCX、Agent JSON 和 evidence pack 时保留什么、丢失什么、如何验收可打开性。
 - `human-agent-response-profile-separation.v1` 必须把管控台摘要和智能体报文分开；管控台不展示 parser trace/full windows，智能体必须能下载 `professional-format-manifest-json` 精确筛选格式适配状态。
-- 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/链接/批注、PPT slide/shape/table/link/speaker-note、Excel sheet-row-cell/formula/hyperlink/time-index、Markdown heading/table、OpenDocument content/table/link 变成可机读的 pass/warning/fail/not_applicable。
-- `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body、文本节点、heading style、list/code style 和表格 XML 可用性。
+- 每个文档必须输出 `qualityGateResults`，把页面顺序、bbox、Word 表格/链接/批注、PPT slide/shape/table/link/speaker-note、Excel sheet-row-cell/formula/hyperlink/time-index、Markdown heading/table/link/image、OpenDocument content/table/link 变成可机读的 pass/warning/fail/not_applicable。
+- `formatConversionPlan.outputArtifactValidation` 必须对实际导出的 Markdown/DOCX 做自检，DOCX 至少验证 ZIP 可读、OpenXML 必需部件、WordprocessingML content type、`word/document.xml` body、文本节点、heading style、list/code style、表格 XML 可用性和 hyperlink relationship 完整性。
 - 下载链路统一走 bridge-mediated fetch/blob。
 - 下载 UI 显示文件大小。
 
