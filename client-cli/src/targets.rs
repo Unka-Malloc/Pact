@@ -818,10 +818,15 @@ fn normalize_base_url(params: &Value) -> String {
         .get("baseUrl")
         .or_else(|| params.get("url"))
         .and_then(Value::as_str)
-        .unwrap_or("http://127.0.0.1:7228")
-        .trim()
-        .trim_end_matches('/')
-        .to_string()
+        .and_then(normalize_url_value)
+        .or_else(|| discovered_base_url_from_params(params))
+        .or_else(|| {
+            env::var("PACT_MCP_URL")
+                .ok()
+                .and_then(|value| normalize_url_value(&value))
+        })
+        .or_else(discovered_base_url_from_environment)
+        .unwrap_or_else(|| "http://127.0.0.1:7228".to_string())
 }
 
 fn token_ref(params: &Value) -> String {
@@ -831,8 +836,14 @@ fn token_ref(params: &Value) -> String {
         .or_else(|| params.get("pactApiKey"))
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or("${PACT_MCP_TOKEN}")
-        .to_string()
+        .map(str::to_string)
+        .or_else(|| {
+            env::var("PACT_MCP_TOKEN")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| "${PACT_MCP_TOKEN}".to_string())
 }
 
 fn mcp_url(base_url: &str) -> String {
@@ -840,6 +851,122 @@ fn mcp_url(base_url: &str) -> String {
         base_url.to_string()
     } else {
         format!("{}/mcp", base_url.trim_end_matches('/'))
+    }
+}
+
+fn discovered_base_url_from_params(params: &Value) -> Option<String> {
+    param_path(params, "discoveryFile")
+        .or_else(|| param_path(params, "mcpDiscoveryFile"))
+        .and_then(|path| base_url_from_json_file(&path))
+        .or_else(|| {
+            param_path(params, "registryFile")
+                .or_else(|| param_path(params, "mcpRegistryFile"))
+                .filter(|path| path.exists())
+                .and_then(|path| base_url_from_json_file(&path))
+        })
+}
+
+fn discovered_base_url_from_environment() -> Option<String> {
+    env_path("PACT_MCP_DISCOVERY_FILE")
+        .and_then(|path| base_url_from_json_file(&path))
+        .or_else(|| {
+            env_path("PACT_MCP_REGISTRY_FILE")
+                .or_else(default_registry_file)
+                .filter(|path| path.exists())
+                .and_then(|path| base_url_from_json_file(&path))
+        })
+}
+
+fn param_path(params: &Value, key: &str) -> Option<PathBuf> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn env_path(key: &str) -> Option<PathBuf> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn default_registry_file() -> Option<PathBuf> {
+    Some(
+        UserDirs::new()?
+            .home_dir()
+            .join(".pact")
+            .join("mcp")
+            .join("servers.json"),
+    )
+}
+
+fn base_url_from_json_file(path: &Path) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .and_then(|document| extract_discovery_base_url(&document))
+}
+
+fn extract_discovery_base_url(value: &Value) -> Option<String> {
+    let object = value.as_object()?;
+    for key in ["httpUrl", "mcpUrl", "url", "baseUrl", "endpoint"] {
+        if let Some(url) = object
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(normalize_url_value)
+        {
+            return Some(url);
+        }
+    }
+    if let Some(servers) = object.get("servers") {
+        if let Some(active) = object
+            .get("activeServer")
+            .or_else(|| object.get("active"))
+            .or_else(|| object.get("defaultServer"))
+            .and_then(Value::as_str)
+        {
+            if let Some(server) = servers.get(active) {
+                if let Some(url) = extract_discovery_base_url(server) {
+                    return Some(url);
+                }
+            }
+        }
+        if let Some(url) = extract_first_collection_base_url(servers) {
+            return Some(url);
+        }
+    }
+    for key in ["server", "service", "discovery", "mcp"] {
+        if let Some(url) = object.get(key).and_then(extract_discovery_base_url) {
+            return Some(url);
+        }
+    }
+    for key in ["candidates", "items"] {
+        if let Some(url) = object.get(key).and_then(extract_first_collection_base_url) {
+            return Some(url);
+        }
+    }
+    None
+}
+
+fn extract_first_collection_base_url(value: &Value) -> Option<String> {
+    if let Some(items) = value.as_array() {
+        return items.iter().find_map(extract_discovery_base_url);
+    }
+    value
+        .as_object()
+        .and_then(|items| items.values().find_map(extract_discovery_base_url))
+}
+
+fn normalize_url_value(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -1091,6 +1218,60 @@ mod tests {
         assert!(paths.contains(&"mcp.pact.url"));
         assert!(paths.contains(&"mcp.pact.headers.X-Pact-Api-Key"));
         assert!(paths.contains(&"mcp.pact.enabled"));
+    }
+
+    #[test]
+    fn mcp_config_plan_uses_discovery_file_endpoint_before_default() {
+        let dir = temp_test_dir("discovery-file");
+        let discovery_file = dir.join("mcp-discovery.json");
+        fs::write(
+            &discovery_file,
+            r#"{"httpUrl":"http://pact-device.local:7228/mcp"}"#,
+        )
+        .unwrap();
+
+        let plan = mcp_config_plan(&json!({
+            "target": "opencode",
+            "discoveryFile": display_path(discovery_file)
+        }))
+        .unwrap();
+        let fields = plan["plan"]["fields"].as_array().unwrap();
+        let url = fields
+            .iter()
+            .find(|item| item["path"] == "mcp.pact.url")
+            .and_then(|item| item["value"].as_str())
+            .unwrap();
+        assert_eq!(url, "http://pact-device.local:7228/mcp");
+    }
+
+    #[test]
+    fn mcp_config_plan_uses_active_registry_server_endpoint() {
+        let dir = temp_test_dir("registry-file");
+        let registry_file = dir.join("servers.json");
+        fs::write(
+            &registry_file,
+            r#"{
+  "activeServer": "vm",
+  "servers": {
+    "local": { "httpUrl": "http://127.0.0.1:7228/mcp" },
+    "vm": { "httpUrl": "http://orbstack-host.local:7228/mcp" }
+  }
+}"#,
+        )
+        .unwrap();
+
+        let plan = mcp_config_plan(&json!({
+            "target": "gemini-cli",
+            "registryFile": display_path(registry_file)
+        }))
+        .unwrap();
+        let fields = plan["plan"]["fields"].as_array().unwrap();
+        let url = fields
+            .iter()
+            .find(|item| item["path"] == "mcpServers.pact.url")
+            .and_then(|item| item["value"].as_str())
+            .unwrap();
+        assert_eq!(url, "http://orbstack-host.local:7228/mcp");
     }
 
     #[test]

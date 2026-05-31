@@ -240,9 +240,9 @@ fn print_usage() {
   pact-client targets scan [--state-root PATH]
   pact-client targets add --target <target> [--config-path PATH] [--binary-path PATH] [--state-root PATH]
   pact-client targets inspect <target> [--state-root PATH]
-  pact-client mcp plugin status|update|rollback --target <target> [--config-path PATH] [--state-root PATH]
-  pact-client mcp config plan --target <target> [--config-path PATH] [--state-root PATH]
-  pact-client mcp config apply --target <target> [--config-path PATH] [--state-root PATH]
+  pact-client mcp plugin status|update|rollback --target <target> [--config-path PATH] [--discovery-file PATH] [--registry-file PATH] [--state-root PATH]
+  pact-client mcp config plan --target <target> [--config-path PATH] [--base-url URL|--discovery-file PATH|--registry-file PATH] [--state-root PATH]
+  pact-client mcp config apply --target <target> [--config-path PATH] [--base-url URL|--discovery-file PATH|--registry-file PATH] [--token TOKEN] [--state-root PATH]
   pact-client mcp config rollback --target <target> [--snapshot-id ID] [--state-root PATH]"
     );
 }
