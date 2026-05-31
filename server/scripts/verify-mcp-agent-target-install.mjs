@@ -1405,6 +1405,9 @@ try {
     assert.ok(payload.nextCommand?.includes(`--token-env '${missingInstallTokenEnv}'`));
     assert.ok(payload.repairCommands?.every((command) => command.includes(`--url '${serverUrl}'`)));
     assert.ok(payload.repairCommands?.every((command) => command.includes(missingInstallTokenEnv)));
+    assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "openclaw")?.priority, true);
     assert.equal(result.stdout.includes(token), false, "missing-token guidance must not expose grant tokens");
   });
 
@@ -1422,6 +1425,9 @@ try {
     assert.equal(payload.errorCode, "PACT_HUB_NOT_DISCOVERED");
     assert.equal(payload.nextCommand, `pact-mcp discover-local --url '${unavailableUrl}' --json`);
     assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${unavailableUrl}' --json`));
+    assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
+    assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
+    assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "claude-code")?.label, "Claude Code");
   });
 
   await testAsync("auto install with no detected clients returns machine-readable repair commands", async () => {

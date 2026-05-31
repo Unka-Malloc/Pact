@@ -562,6 +562,14 @@ function shellCommandForServerConfig({ baseUrl = "http://127.0.0.1:7228" } = {})
   return `pact-mcp server-config --set --url ${shellQuote(normalizeBaseUrl(baseUrl) || "http://127.0.0.1:7228")}`;
 }
 
+function installGuidanceMetadata() {
+  return {
+    priorityTargets: [...PRIORITY_INSTALL_TARGETS],
+    supportedTargets: [...SUPPORTED_TARGETS],
+    supportedTargetDetails: supportedTargetDetails()
+  };
+}
+
 function commandFailureGuidance({ command = "", message = "", options = {} } = {}) {
   const normalized = String(message || "");
   const lower = normalized.toLowerCase();
@@ -576,8 +584,7 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         scanCommand,
         shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
       ],
-      supportedTargets: [...SUPPORTED_TARGETS],
-      supportedTargetDetails: supportedTargetDetails()
+      ...installGuidanceMetadata()
     };
   }
   if (lower.includes("no signed pact mcp hub was discovered")) {
@@ -590,7 +597,8 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
         discoverCommand,
         shellCommandForServerConfig({ baseUrl: fallbackBaseUrl }),
         shellCommandForInstall({ target: "auto", includeUrl: true, baseUrl: fallbackBaseUrl, tokenEnv })
-      ]
+      ],
+      ...installGuidanceMetadata()
     };
   }
   if (lower.includes("missing token")) {
@@ -603,7 +611,8 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
       repairCommands: [
         shellCommandForInstall({ target, includeToken: true, includeUrl: Boolean(baseUrl), baseUrl, tokenEnv }),
         `${tokenEnv}=your-token pact-mcp ${command || "install"} --target ${target}${urlArgs}${tokenEnvArgs} --json`
-      ]
+      ],
+      ...installGuidanceMetadata()
     };
   }
   if (lower.includes("interactive mode requires a tty")) {
@@ -614,7 +623,8 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
       repairCommands: [
         shellCommandForScan({ includeUrl, baseUrl, tokenEnv }),
         uninstallCommand
-      ]
+      ],
+      ...installGuidanceMetadata()
     };
   }
   return {
@@ -625,7 +635,8 @@ function commandFailureGuidance({ command = "", message = "", options = {} } = {
     repairCommands: [
       shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
       shellCommandForScan({ includeUrl, baseUrl, tokenEnv })
-    ]
+    ],
+    ...installGuidanceMetadata()
   };
 }
 
@@ -5898,9 +5909,7 @@ function noDetectedClientGuidance(candidates = [], options = {}) {
       shellCommandForInstall({ target: suggestedTarget, binOption, includeUrl, baseUrl, tokenEnv }),
       shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv })
     ],
-    priorityTargets: [...PRIORITY_INSTALL_TARGETS],
-    supportedTargets: [...SUPPORTED_TARGETS],
-    supportedTargetDetails: supportedTargetDetails()
+    ...installGuidanceMetadata()
   };
 }
 
