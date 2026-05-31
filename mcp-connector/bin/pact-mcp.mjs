@@ -514,6 +514,49 @@ function withInstallCandidateGuidance(candidate, settings) {
   };
 }
 
+function doctorGuidance(checks = {}) {
+  const installedTargets = checks.deviceManifest?.installedTargets || [];
+  if (!checks.signedDiscovery?.ok || !checks.discovery?.ok || !checks.initialize?.ok) {
+    return {
+      nextCommand: "pact-mcp discover-local --json",
+      repairCommands: [
+        "pact-mcp discover-local --json",
+        "pact-mcp server-config --set --url http://127.0.0.1:7228"
+      ]
+    };
+  }
+  if (installedTargets.length === 0) {
+    return {
+      nextCommand: "pact-mcp scan --json",
+      repairCommands: [
+        "pact-mcp scan --json",
+        "pact-mcp install --target auto --json"
+      ]
+    };
+  }
+  if (checks.toolsList?.skipped || checks.systemHealth?.skipped) {
+    return {
+      nextCommand: "pact-mcp doctor --token-stdin --json",
+      repairCommands: [
+        "pact-mcp doctor --token-stdin --json"
+      ]
+    };
+  }
+  if (!checks.toolsList?.ok || !checks.systemHealth?.ok) {
+    return {
+      nextCommand: "pact-mcp install --target auto --json",
+      repairCommands: [
+        "pact-mcp install --target auto --json",
+        "pact-mcp doctor --token-stdin --json"
+      ]
+    };
+  }
+  return {
+    nextCommand: "",
+    repairCommands: []
+  };
+}
+
 function redactToken(value) {
   const text = String(value || "");
   if (text.length <= 12) {
@@ -1046,7 +1089,8 @@ async function ensureService(baseUrl) {
 function authHeaders(token) {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`
+    Authorization: `Bearer ${token}`,
+    "X-Pact-Api-Key": token
   };
 }
 
@@ -5780,20 +5824,39 @@ async function doctorCommand(options) {
   };
 
   if (token) {
-    const verification = await verifyMcpTools({ baseUrl: settings.baseUrl, token });
-    checks.toolsList = {
-      ok: verification.toolCount === 5 && verification.stableToolName === "pact.discovery",
-      skipped: false,
-      toolCount: verification.toolCount,
-      stableToolOnly: false,
-      categorizedOutletsOnly: verification.toolCount === 5
-    };
-    checks.systemHealth = {
-      ok: verification.systemHealthOk,
-      skipped: false,
-      healthy: verification.systemHealthOk,
-      operation: "system.health"
-    };
+    try {
+      const verification = await verifyMcpTools({ baseUrl: settings.baseUrl, token });
+      checks.toolsList = {
+        ok: verification.toolCount === 5 && verification.stableToolName === "pact.discovery",
+        skipped: false,
+        toolCount: verification.toolCount,
+        stableToolOnly: false,
+        categorizedOutletsOnly: verification.toolCount === 5
+      };
+      checks.systemHealth = {
+        ok: verification.systemHealthOk,
+        skipped: false,
+        healthy: verification.systemHealthOk,
+        operation: "system.health"
+      };
+    } catch (error) {
+      const reason = error?.message || String(error);
+      checks.toolsList = {
+        ok: false,
+        skipped: false,
+        toolCount: 0,
+        stableToolOnly: false,
+        categorizedOutletsOnly: false,
+        reason
+      };
+      checks.systemHealth = {
+        ok: false,
+        skipped: false,
+        healthy: false,
+        operation: "system.health",
+        reason
+      };
+    }
   }
 
   const manifestPath = checks.deviceManifest.path;
@@ -5812,6 +5875,7 @@ async function doctorCommand(options) {
     };
   }
 
+  const guidance = doctorGuidance(checks);
   return {
     ok: checks.signedDiscovery.ok
       && checks.discovery.ok
@@ -5819,6 +5883,7 @@ async function doctorCommand(options) {
       && (!token || (checks.toolsList.ok && checks.systemHealth.ok)),
     packageName: packageJson.name,
     packageVersion: packageJson.version,
+    ...guidance,
     checks
   };
 }
@@ -5992,6 +6057,15 @@ function formatDoctorResult(result) {
     lines.push(`  [${checks.systemHealth?.ok ? "OK" : "FAIL"}] Authenticated system.health`);
   }
   lines.push(`  [${checks.deviceManifest?.ok ? "OK" : "WARN"}] Local registry${checks.deviceManifest?.path ? `: ${checks.deviceManifest.path}` : ""}`);
+  if (result.nextCommand) {
+    lines.push("", "Next:", `  ${result.nextCommand}`);
+  }
+  if (Array.isArray(result.repairCommands) && result.repairCommands.length > 0) {
+    lines.push("", "Repair commands:");
+    for (const command of result.repairCommands) {
+      lines.push(`  ${command}`);
+    }
+  }
   return lines.join("\n");
 }
 

@@ -98,6 +98,7 @@ const autoAntigravityConfigPath = path.join(opencodeConfigDir, "antigravity", "m
 const noDetectHome = path.join(opencodeConfigDir, "no-detect-home");
 const noDetectRegistryPath = path.join(opencodeConfigDir, "pact-no-detect-servers.json");
 const autoTokenEnv = `PACT_VERIFY_AUTO_MCP_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
+const missingDoctorTokenEnv = `PACT_VERIFY_DOCTOR_TOKEN_${randomBytes(4).toString("hex").toUpperCase()}`;
 const fakeAgentCommandLog = path.join(opencodeConfigDir, "fake-agent-commands.log");
 const fakeBinDir = path.join(opencodeConfigDir, "bin");
 const fakeCodexPath = path.join(fakeBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
@@ -280,6 +281,18 @@ try {
       assert.equal(g.payload.targetMatch?.agentProfileId, profileId);
       assert.ok(g.payload.toolsets?.includes("pact.agent.workspace"), `${target} should include workspace toolset`);
     }
+  });
+  await testAsync("refresh opencode grant for connector install flow", async () => {
+    const g = await fetchJson(`${serverUrl}/api/mcp/local-grant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targets: ["opencode"], label: "opencode-install-test", connectorVersion: "verify" })
+    });
+    assert.equal(g.status, 201);
+    assert.ok(g.payload.token);
+    token = g.payload.token;
+    localGrantId = g.payload.grant?.id || "";
+    assert.ok(localGrantId);
   });
 
   // ── SECTION 3: OpenCode config manipulation ──
@@ -485,6 +498,66 @@ try {
     assert.equal(t.payload.result.capabilities.tools.listChanged, true);
   });
 
+  await testAsync("doctor without token returns executable auth repair command", async () => {
+    const result = await spawnConnector([
+      "doctor",
+      "--url", serverUrl,
+      "--discovery-file", tempRegistryPath,
+      "--token-env", missingDoctorTokenEnv,
+      "--json"
+    ]);
+    if (result.code !== 0) {
+      console.log(`\n      stdout: ${result.stdout.slice(0, 1200)}`);
+      console.log(`      stderr: ${result.stderr.slice(0, 400)}`);
+    }
+    assert.equal(result.code, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.checks?.toolsList?.skipped, true);
+    assert.equal(payload.nextCommand, "pact-mcp doctor --token-stdin --json");
+    assert.ok(payload.repairCommands?.includes("pact-mcp doctor --token-stdin --json"));
+  });
+
+  await testAsync("doctor with token verifies installed target without leaking token", async () => {
+    const config = JSON.parse(await fs.readFile(opencodeConfigPath, "utf8"));
+    const installedToken = config.mcp?.pact?.headers?.["X-Pact-Api-Key"];
+    const result = await spawnConnector([
+      "doctor",
+      "--url", serverUrl,
+      "--token", installedToken,
+      "--discovery-file", tempRegistryPath,
+      "--json"
+    ]);
+    if (result.code !== 0) {
+      console.log(`\n      stdout: ${result.stdout.slice(0, 1200)}`);
+      console.log(`      stderr: ${result.stderr.slice(0, 400)}`);
+    }
+    assert.equal(result.code, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.checks?.toolsList?.ok, true);
+    assert.equal(payload.checks?.systemHealth?.ok, true);
+    assert.deepEqual(payload.repairCommands, []);
+    assert.equal(result.stdout.includes(installedToken), false, "doctor output must not expose token values");
+  });
+
+  await testAsync("doctor with invalid token returns executable reinstall command", async () => {
+    const result = await spawnConnector([
+      "doctor",
+      "--url", serverUrl,
+      "--token", "invalid-token-for-doctor",
+      "--discovery-file", tempRegistryPath,
+      "--json"
+    ]);
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.checks?.toolsList?.ok, false);
+    assert.equal(payload.checks?.systemHealth?.ok, false);
+    assert.equal(payload.nextCommand, "pact-mcp install --target auto --json");
+    assert.ok(payload.repairCommands?.includes("pact-mcp doctor --token-stdin --json"));
+  });
+
   await testAsync("unauthenticated tools/list is rejected", async () => {
     const t = await fetchJson(`${serverUrl}/mcp`, {
       method: "POST",
@@ -642,6 +715,7 @@ try {
     await server.close();
   }
   await unsetLaunchctlEnv(autoTokenEnv);
+  await unsetLaunchctlEnv(missingDoctorTokenEnv);
   await fs.rm(userDataPath, { recursive: true, force: true }).catch(() => {});
   await fs.rm(opencodeConfigDir, { recursive: true, force: true }).catch(() => {});
 }
