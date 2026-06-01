@@ -25,6 +25,7 @@ const PRIORITY_AGENT_TARGETS = Object.freeze(["codex", "claude-code", "openclaw"
 const EXPECTED_AGENT_PROFILES = Object.freeze(Object.fromEntries(
   DECLARED_AGENT_TARGETS.map((target) => [target, `pact.mcp.${target}`])
 ));
+const RELEASE_BOOTSTRAP = `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"`;
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, { timeout: options.timeoutMs || 5000, ...options });
@@ -992,15 +993,14 @@ try {
     assert.ok(config.mcp?.pact?.headers?.["X-Pact-Api-Key"]);
     const manifest = JSON.parse(await fs.readFile(autoRegistryPath, "utf8"));
     const npxPrefix = `npx pact-mcp-connector@${payload.packageVersion}`;
-    const releaseBootstrap = `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"`;
     const connector = manifest.servers?.pact?.connector || {};
     assert.equal(connector.registerCommand, `${npxPrefix} register --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
     assert.equal(connector.interactiveInstallCommand, `${npxPrefix} install --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
-    assert.equal(connector.githubOneLineCommand, releaseBootstrap);
-    assert.equal(connector.githubOneLineInstallCommand, `${releaseBootstrap} -- --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
-    assert.equal(connector.githubOneLineClientInstallJsonCommand, `${releaseBootstrap} -- --target <client> --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
-    assert.equal(connector.githubOneLineAutoInstallCommand, `${releaseBootstrap} -- --target auto --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
-    assert.equal(connector.githubOneLinePriorityInstallCommand, `${releaseBootstrap} -- --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
+    assert.equal(connector.githubOneLineCommand, RELEASE_BOOTSTRAP);
+    assert.equal(connector.githubOneLineInstallCommand, `${RELEASE_BOOTSTRAP} -- --url '${serverUrl}' --token-env '${autoTokenEnv}'`);
+    assert.equal(connector.githubOneLineClientInstallJsonCommand, `${RELEASE_BOOTSTRAP} -- --target <client> --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
+    assert.equal(connector.githubOneLineAutoInstallCommand, `${RELEASE_BOOTSTRAP} -- --target auto --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
+    assert.equal(connector.githubOneLinePriorityInstallCommand, `${RELEASE_BOOTSTRAP} -- --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     assert.equal(connector.oneCommandInstall, connector.githubOneLineInstallCommand);
     assert.equal(connector.oneCommandClientInstallJson, connector.githubOneLineClientInstallJsonCommand);
     assert.equal(connector.oneCommandAutoInstall, connector.githubOneLineAutoInstallCommand);
@@ -1405,6 +1405,10 @@ try {
     assert.equal(payload.clientInstallJsonCommand, `pact-mcp install --target <client> --url '${serverUrl}' --json`);
     assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${serverUrl}' --json`);
     assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --json`);
+    assert.equal(payload.githubOneLineClientInstallJsonCommand, `${RELEASE_BOOTSTRAP} -- --target <client> --url '${serverUrl}' --json`);
+    assert.equal(payload.githubOneLineAutoInstallCommand, `${RELEASE_BOOTSTRAP} -- --target auto --url '${serverUrl}' --json`);
+    assert.equal(payload.githubOneLinePriorityInstallCommand, `${RELEASE_BOOTSTRAP} -- --target claude-code,codex,openclaw --url '${serverUrl}' --json`);
+    assert.equal(payload.oneCommandAutoInstall, payload.githubOneLineAutoInstallCommand);
     assert.ok(payload.repairCommands?.includes(`pact-mcp scan --url '${serverUrl}' --json`));
     assert.ok(payload.repairCommands?.includes(`pact-mcp install --target auto --url '${serverUrl}' --json`));
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
@@ -1462,6 +1466,10 @@ try {
     assert.equal(payload.clientInstallJsonCommand, `pact-mcp install --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    assert.equal(payload.githubOneLineClientInstallJsonCommand, `${RELEASE_BOOTSTRAP} -- --target <client> --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    assert.equal(payload.githubOneLineAutoInstallCommand, `${RELEASE_BOOTSTRAP} -- --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    assert.equal(payload.githubOneLinePriorityInstallCommand, `${RELEASE_BOOTSTRAP} -- --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
+    assert.equal(payload.oneCommandPriorityInstall, payload.githubOneLinePriorityInstallCommand);
     assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "openclaw")?.priority, true);
     assert.equal(result.stdout.includes(token), false, "missing-token guidance must not expose grant tokens");
   });
@@ -1486,6 +1494,8 @@ try {
     assert.equal(payload.clientInstallJsonCommand, `pact-mcp install --target <client> --url '${unavailableUrl}' --json`);
     assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${unavailableUrl}' --json`);
     assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${unavailableUrl}' --json`);
+    assert.equal(payload.githubOneLineAutoInstallCommand, `${RELEASE_BOOTSTRAP} -- --target auto --url '${unavailableUrl}' --json`);
+    assert.equal(payload.oneCommandAutoInstall, payload.githubOneLineAutoInstallCommand);
     assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "claude-code")?.label, "Claude Code");
   });
 

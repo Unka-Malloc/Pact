@@ -564,11 +564,36 @@ function shellCommandForServerConfig({ baseUrl = "http://127.0.0.1:7228" } = {})
   return `pact-mcp server-config --set --url ${shellQuote(normalizeBaseUrl(baseUrl) || "http://127.0.0.1:7228")}`;
 }
 
+function githubOneLineInstallGuidance({ includeUrl = false, baseUrl = "", tokenEnv = DEFAULT_TOKEN_ENV } = {}) {
+  const command = githubOneLineMcpInstallCommand();
+  const contextArgs = [
+    includeUrl && baseUrl ? ` --url ${shellQuote(baseUrl)}` : "",
+    tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : ""
+  ].join("");
+  const installCommand = contextArgs ? `${command} --${contextArgs}` : command;
+  const clientInstallJsonCommand = `${command} -- --target <client>${contextArgs} --json`;
+  const autoInstallCommand = `${command} -- --target auto${contextArgs} --json`;
+  const priorityInstallCommand = `${command} -- --target ${PRIORITY_INSTALL_TARGET}${contextArgs} --json`;
+  return {
+    githubOneLineCommand: command,
+    githubOneLineInstallCommand: installCommand,
+    githubOneLineClientInstallJsonCommand: clientInstallJsonCommand,
+    githubOneLineAutoInstallCommand: autoInstallCommand,
+    githubOneLinePriorityInstallCommand: priorityInstallCommand,
+    oneCommandInstall: installCommand,
+    oneCommandClientInstallJson: clientInstallJsonCommand,
+    oneCommandAutoInstall: autoInstallCommand,
+    oneCommandPriorityInstall: priorityInstallCommand
+  };
+}
+
 function installGuidanceMetadata({ includeUrl = false, baseUrl = "", tokenEnv = DEFAULT_TOKEN_ENV } = {}) {
+  const oneLineGuidance = githubOneLineInstallGuidance({ includeUrl, baseUrl, tokenEnv });
   return {
     priorityTargets: [...PRIORITY_INSTALL_TARGETS],
     supportedTargets: [...SUPPORTED_TARGETS],
     supportedTargetDetails: supportedTargetDetails(),
+    ...oneLineGuidance,
     discoverCommand: shellCommandForDiscoverLocal({ includeUrl, baseUrl }),
     scanCommand: shellCommandForScan({ includeUrl, baseUrl, tokenEnv }),
     doctorCommand: shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
