@@ -221,13 +221,24 @@ const publicPayload = await provider.publicMcpToolPayload({
     },
     metadata: {
       defaultAdminUserId: "grant_internal_admin",
-      adminUserIds: ["grant_internal_admin"]
+      adminUserIds: ["grant_internal_admin"],
+      token: "sat_private_token",
+      tokenPrefix: "sat_private",
+      secretRef: "secret://pact/drive/google-oauth",
+      endpointRef: "config://pact/drive/google-endpoint"
     },
     error: {
-      message: "Failed at /home/private-user/private.txt for workspace_a",
+      message: "Failed at /home/private-user/private.txt for workspace_a with Authorization: Bearer sat_private_token and token=sat_private_token",
       details: {
         sourcePath: "/home/private-user/private.txt",
-        workspaceId: "workspace_a"
+        workspaceId: "workspace_a",
+        headers: {
+          Authorization: "Bearer sat_private_token",
+          "X-Pact-Api-Key": "sat_private_token",
+          Accept: "application/json"
+        },
+        apiKey: "sat_private_token",
+        password: "sat_private_password"
       }
     }
   },
@@ -239,12 +250,26 @@ assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.selected, "absol
 assert.equal(publicPayload.cacheReceipt.cacheKey, "workspace:workspace-1:notes");
 assert.equal(publicPayload.cacheReceipt.indexRoots["workspace:workspace-1"], "cid:sha256:abc");
 assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.metadata, "defaultAdminUserId"), false);
-assert.equal(publicPayload.error.message, "Failed at [server-internal-path] for workspace-1");
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.metadata, "token"), false);
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.metadata, "tokenPrefix"), false);
+assert.equal(publicPayload.metadata.secretRef, "secret://pact/drive/google-oauth");
+assert.equal(publicPayload.metadata.endpointRef, "config://pact/drive/google-endpoint");
+assert.equal(
+  publicPayload.error.message,
+  "Failed at [server-internal-path] for workspace-1 with Authorization: Bearer <redacted-token> and token=<redacted-secret>"
+);
 assert.equal(publicPayload.error.details.workspaceRef, "workspace-1");
 assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details, "sourcePath"), false);
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details.headers, "Authorization"), false);
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details.headers, "X-Pact-Api-Key"), false);
+assert.equal(publicPayload.error.details.headers.Accept, "application/json");
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details, "apiKey"), false);
+assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details, "password"), false);
 assert.equal(JSON.stringify(publicPayload).includes("workspace_a"), false);
 assert.equal(JSON.stringify(publicPayload).includes("grant_internal_admin"), false);
 assert.equal(JSON.stringify(publicPayload).includes("/home/private-user"), false);
+assert.equal(JSON.stringify(publicPayload).includes("sat_private_token"), false);
+assert.equal(JSON.stringify(publicPayload).includes("sat_private_password"), false);
 
 const localGrant = await provider.createLocalMcpGrant({
   request,

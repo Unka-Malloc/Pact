@@ -668,12 +668,21 @@ function sanitizeInternalPaths(value) {
     .replace(/(^|[\s"'=:(])([A-Za-z]:[\\/][^\s"',)\]}]+)/g, "$1[server-internal-path]");
 }
 
+function sanitizeSensitiveMcpText(value) {
+  return String(value || "")
+    .replace(/\b(Authorization\s*:\s*Bearer\s+)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(X-Pact-Api-Key\s*:\s*)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(x-pact-tool-token\s*:\s*)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(--token(?:=|\s+))[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(token|access_token|refresh_token|api_key|apiKey|secret|password)=([^\s"',;)\]}]+)/gi, "$1=<redacted-secret>");
+}
+
 function sanitizeMcpString(value, directory = workspaceDirectoryFromWorkspaces([])) {
   const text = String(value || "");
   if (isInternalAbsolutePath(text)) {
     return "[server-internal-path]";
   }
-  return sanitizeInternalWorkspaceIds(sanitizeInternalPaths(text), directory);
+  return sanitizeSensitiveMcpText(sanitizeInternalWorkspaceIds(sanitizeInternalPaths(text), directory));
 }
 
 function valueContainsWorkspaceId(value) {
@@ -698,6 +707,9 @@ function sanitizeMcpOutputValue(value, directory = workspaceDirectoryFromWorkspa
   const result = {};
   for (const [key, child] of Object.entries(value)) {
     const publicKey = sanitizeInternalWorkspaceIds(key, directory);
+    if (isSensitiveMcpOutputKey(key)) {
+      continue;
+    }
     if (/^(fsPath|absolutePath|rootPath|databasePath|userDataPath)$/i.test(key)) {
       continue;
     }
@@ -746,6 +758,32 @@ function sanitizeMcpOutputValue(value, directory = workspaceDirectoryFromWorkspa
     result["workspace-name"] = String(value.title || "");
   }
   return result;
+}
+
+function isSensitiveMcpOutputKey(key = "") {
+  const normalized = String(key || "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  if (normalized === "secretref" || normalized === "endpointref") {
+    return false;
+  }
+  return [
+    "authorization",
+    "bearertoken",
+    "cookie",
+    "setcookie",
+    "token",
+    "tokenprefix",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "apikey",
+    "xpactapikey",
+    "xpacttooltoken",
+    "secret",
+    "clientsecret",
+    "password",
+    "privatekey",
+    "privatekeyjwk"
+  ].includes(normalized);
 }
 
 function compactText(value) {
