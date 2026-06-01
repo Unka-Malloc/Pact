@@ -529,6 +529,14 @@ try {
   assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(updateCommand, /--json/);
   assert.match(updateCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.equal(
+    updateProbe.payload.result.structuredContent.clientInstallJsonCommand,
+    `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
+  );
+  assert.equal(
+    updateProbe.payload.result.structuredContent.connector.clientInstallJsonCommand,
+    `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
+  );
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /--json/);
   assert.deepEqual(updateProbe.payload.result.structuredContent.priorityTargets, ["claude-code", "codex", "openclaw"]);
@@ -562,6 +570,11 @@ try {
   assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.outlet, "pact.sharedspace");
   assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
+  assert.equal(
+    localGrantCapabilities.payload.result.structuredContent.connector.clientInstallJsonCommand,
+    `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
+  );
+  assert.equal(localGrantCapabilities.payload.result.structuredContent.connector.scanCommand, `npx pact-mcp-connector@latest scan --url '${server.url}' --json`);
   assert.deepEqual(localGrantCapabilities.payload.result.structuredContent.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrantCapabilities.payload.result.structuredContent.supportedTargets.map((target) => target.target), expectedInstallTargets);
   const operationByName = new Map(localOperations.map((operation) => [operation.name, operation]));

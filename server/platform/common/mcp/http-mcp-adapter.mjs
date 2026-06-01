@@ -532,26 +532,30 @@ function mcpVersionInfo() {
   };
 }
 
+function mcpConnectorRuntimeMetadata(discovery, version = mcpVersionInfo()) {
+  return {
+    ...version.connector,
+    clientInstallCommand: discovery.installer.clientInstallCommand,
+    clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
+    autoInstallCommand: discovery.installer.autoInstallCommand,
+    priorityInstallCommand: discovery.installer.priorityInstallCommand,
+    oneCommandAutoInstall: discovery.installer.oneCommandAutoInstall,
+    oneCommandPriorityInstall: discovery.installer.oneCommandPriorityInstall,
+    discoverCommand: discovery.installer.discoverCommand,
+    scanCommand: discovery.installer.scanCommand,
+    doctorCommand: discovery.installer.doctorCommand,
+    portableAutoInstallCommand: discovery.installer.portable.autoInstallCommand,
+    portablePriorityInstallCommand: discovery.installer.portable.priorityInstallCommand,
+    portableClientInstallJsonCommand: discovery.installer.portable.clientInstallJsonCommand
+  };
+}
+
 function mcpRuntimeMetadata({ listenUrl = "", discoveryState = null } = {}) {
   const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   const version = mcpVersionInfo();
   return {
     ...version,
-    connector: {
-      ...version.connector,
-      clientInstallCommand: discovery.installer.clientInstallCommand,
-      clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
-      autoInstallCommand: discovery.installer.autoInstallCommand,
-      priorityInstallCommand: discovery.installer.priorityInstallCommand,
-      oneCommandAutoInstall: discovery.installer.oneCommandAutoInstall,
-      oneCommandPriorityInstall: discovery.installer.oneCommandPriorityInstall,
-      discoverCommand: discovery.installer.discoverCommand,
-      scanCommand: discovery.installer.scanCommand,
-      doctorCommand: discovery.installer.doctorCommand,
-      portableAutoInstallCommand: discovery.installer.portable.autoInstallCommand,
-      portablePriorityInstallCommand: discovery.installer.portable.priorityInstallCommand,
-      portableClientInstallJsonCommand: discovery.installer.portable.clientInstallJsonCommand
-    },
+    connector: mcpConnectorRuntimeMetadata(discovery, version),
     sharedHub: discovery.sharedHub,
     priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
     supportedTargets: mcpSupportedTargetDetails()
@@ -1138,15 +1142,12 @@ function pactMetaResult({
     const operations = toolSkillManagementProvider
       .listVisibleTools({ authorization })
       .map(publicMcpTool);
-    const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
+    const runtime = mcpRuntimeMetadata({ listenUrl, discoveryState });
     return mcpToolResult({
       result: {
-        ...mcpVersionInfo(),
+        ...runtime,
         grant: toolSkillManagementProvider.visibleGrantSummary({ authorization }),
         envelope: mcpEnvelopePublic(envelope),
-        sharedHub: discovery.sharedHub,
-        priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
-        supportedTargets: mcpSupportedTargetDetails(),
         outlets: mcpOutletSummary(operations),
         operations
       }
@@ -1163,6 +1164,7 @@ function pactMetaResult({
       priorityInstallCommand: githubOneLinePriorityInstallCommand
     } = githubOneLineMcpInstallCommands({ baseUrl });
     const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
+    const connector = mcpConnectorRuntimeMetadata(discovery);
     const updateResult = {
       clientVersion,
       serverVersion,
@@ -1171,6 +1173,9 @@ function pactMetaResult({
       installCommand: githubOneLineAutoInstallCommand,
       autoInstallCommand: githubOneLineAutoInstallCommand,
       priorityInstallCommand: githubOneLinePriorityInstallCommand,
+      clientInstallCommand: discovery.installer.clientInstallCommand,
+      clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
+      connector,
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       supportedTargets: mcpSupportedTargetDetails(),
       sharedHub: discovery.sharedHub
