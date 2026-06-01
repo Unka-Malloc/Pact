@@ -125,6 +125,20 @@ supported client that the connector can verify:
 /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --json
 ```
 
+For a known single client, replace `<client>` with any supported target, for
+example `claude-code`, `codex`, `openclaw`, `opencode`, `gemini-cli`, or
+`hermes`:
+
+```bash
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target <client> --json
+```
+
+To prioritize Claude Code, Codex, and OpenClaw in one unattended pass:
+
+```bash
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target claude-code,codex,openclaw --json
+```
+
 Manage local server address profiles:
 
 ```bash

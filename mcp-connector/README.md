@@ -53,6 +53,12 @@ npx pact-mcp-connector@latest install --target auto --json
 machine or in a detected runtime context. A non-interactive `pact-mcp install`
 with no `--target` uses the same auto-detected path.
 
+For a known single client:
+
+```bash
+npx pact-mcp-connector@latest install --target <client> --json
+```
+
 Limit scope only when a script intentionally targets a known client set:
 
 ```bash
@@ -63,6 +69,18 @@ For a single copyable GitHub Release command in an unattended agent shell:
 
 ```bash
 /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --json
+```
+
+For a known client, replace `<client>` with any supported target:
+
+```bash
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target <client> --json
+```
+
+Priority clients can be installed in one unattended pass:
+
+```bash
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target claude-code,codex,openclaw --json
 ```
 
 Use `--token-stdin` only when installing with a pre-issued custom grant token.

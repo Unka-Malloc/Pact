@@ -65,6 +65,7 @@ async function assertPublishedInstallDocsUseResilientCurl() {
   }
   const connectorReadme = await fs.readFile(connectorReadmePath, "utf8");
   assert.match(connectorReadme, /install --target auto --json/);
+  assert.match(connectorReadme, /install --target <client> --json/);
   assert.match(connectorReadme, /--target claude-code,codex,openclaw --json/);
   assert.doesNotMatch(connectorReadme, /install --target codex(?:\s|$)/);
 }
@@ -150,6 +151,7 @@ async function checkPortableArchiveContents(archivePath, type, portableName, ext
   assert.equal(await fs.access(path.join(rootDir, "uninstall.command")).then(() => true), true);
   const readmeText = await fs.readFile(path.join(rootDir, "README.txt"), "utf8");
   assert.match(readmeText, /install --target auto --json/);
+  assert.match(readmeText, /install --target <client> --json/);
   assert.match(readmeText, /install --target claude-code,codex,openclaw --json/);
   assert.doesNotMatch(readmeText, /install --target codex(?:\s|$)/);
   const portableReset = await run(portableExecutable, ["server-config", "--reset", "--json"], {

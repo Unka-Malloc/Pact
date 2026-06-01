@@ -92,6 +92,19 @@ auto target 形态。它会覆盖 Codex、Claude Code、OpenClaw 以及 connecto
 /bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target auto --json
 ```
 
+如果已知要安装的单一客户端，把 `<client>` 替换成任意受支持 target，例如
+`claude-code`、`codex`、`openclaw`、`opencode`、`gemini-cli` 或 `hermes`：
+
+```bash
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target <client> --json
+```
+
+如果要优先一次覆盖 Claude Code、Codex 和 OpenClaw：
+
+```bash
+/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)" -- --target claude-code,codex,openclaw --json
+```
+
 管理本机服务端地址 profile：
 
 ```bash
