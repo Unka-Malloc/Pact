@@ -190,7 +190,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "pdf",
     preferredParser: "pdf.text.tika-safe",
     fallbackParsers: ["pdf.visual.layout", "ocr.page"],
-    parserChain: ["pdf.route", "pdf.text.tika-safe", "pdf.hyperlinks", "pdf.visual.layout", "ocr.page"],
+    parserChain: ["pdf.route", "pdf.text.tika-safe", "pdf.hyperlinks", "pdf.outlines", "pdf.visual.layout", "ocr.page"],
     streamingUnit: "page",
     referenceFrameworks: ["docling", "mineru", "marker", "unstructured"]
   },
@@ -517,9 +517,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "PDF",
     professionalFamily: "pdf",
     parserProfile: "pdf.text-layout-ocr-route",
-    structureUnits: ["page", "pdf-text-block", "layout-run", "link", "ocr-page"],
-    parserStages: ["pdf.text.basic", "pdf.text.pdftotext", "pdf.hyperlinks", "pdf.visual.layout", "ocr.page"],
-    preserves: ["page", "bbox", "layout.order", "layout.fontSize", "links"],
+    structureUnits: ["page", "pdf-text-block", "layout-run", "link", "pdf-outline", "ocr-page"],
+    parserStages: ["pdf.text.basic", "pdf.text.pdftotext", "pdf.hyperlinks", "pdf.outlines", "pdf.visual.layout", "ocr.page"],
+    preserves: ["page", "bbox", "layout.order", "layout.fontSize", "links", "outline"],
     conversionTargets: ["markdown-with-page-blocks", "docx-review-copy", "agent-json-with-layout-and-link-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -541,7 +541,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "pdf-layout-to-agent-elements.v1",
         mode: "agent",
-        stages: ["page-bbox-element-refs", "link-refs", "window-ids", "content-hashes"]
+        stages: ["page-bbox-element-refs", "link-refs", "outline-refs", "window-ids", "content-hashes"]
       },
       {
         target: "evidence-pack-json",
@@ -551,7 +551,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "entities", "claims"]
       }
     ],
-    qualityGates: ["page-order-preserved", "bbox-metadata-present-when-available", "pdf-link-refs-preserved", "empty-corpus-blocked"],
+    qualityGates: ["page-order-preserved", "bbox-metadata-present-when-available", "pdf-link-refs-preserved", "pdf-outline-refs-preserved", "empty-corpus-blocked"],
     riskControls: ["font-mapping-risk", "image-only-pdf-ocr-fallback", "layout-geometry-approximation"],
     knownLosses: ["approximate-text-bbox", "complex-vector-layout-not-fully-reconstructed"]
   },
@@ -1036,12 +1036,12 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["ranking/evaluation loop over external vector stores", "full document-layout enrichment for every parser"]
   },
   mineru: {
-    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs", "SpreadsheetML workbook sheet, comment, and formula metadata"],
+    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "PDF URI annotation and outline refs", "LLM-ready Markdown/JSON outputs", "SpreadsheetML workbook sheet, comment, and formula metadata"],
     baseline: ["file-ref parsers for large binary payloads"],
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, revisions, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, comment, and geometry metadata for slide elements"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "PDF outline/bookmark references", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, revisions, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, comment, and geometry metadata for slide elements"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1066,7 +1066,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations/revisions and hyperlinks, PowerPoint comments and hyperlinks, OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, PDF outlines, Word/PowerPoint/OpenDocument table cells, Word annotations/revisions and hyperlinks, PowerPoint comments and hyperlinks, OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -7738,19 +7738,38 @@ function parsePdfRect(value = "") {
   };
 }
 
-function extractPdfUriLinks(latin = "") {
+function pdfIndirectObjectBodies(latin = "") {
   const objectBodies = new Map();
   for (const match of String(latin || "").matchAll(/(\d+)\s+\d+\s+obj\b([\s\S]*?)\bendobj\b/g)) {
     objectBodies.set(match[1], match[2] || "");
   }
+  return objectBodies;
+}
 
-  const pageByAnnotationObject = new Map();
+function pdfFirstObjectRef(value = "") {
+  return String(value || "").match(/(\d+)\s+\d+\s+R/)?.[1] || "";
+}
+
+function pdfPageNumberByObject(objectBodies = new Map()) {
+  const pageByObject = new Map();
   let page = 0;
-  for (const body of objectBodies.values()) {
+  for (const [objectNumber, body] of objectBodies.entries()) {
     if (!/\/Type\s*\/Page(?!s)\b/.test(body)) {
       continue;
     }
     page += 1;
+    pageByObject.set(objectNumber, page);
+  }
+  return pageByObject;
+}
+
+function extractPdfUriLinks(latin = "", objectBodies = pdfIndirectObjectBodies(latin), pageByObject = pdfPageNumberByObject(objectBodies)) {
+  const pageByAnnotationObject = new Map();
+  for (const [pageObjectNumber, body] of objectBodies.entries()) {
+    if (!/\/Type\s*\/Page(?!s)\b/.test(body)) {
+      continue;
+    }
+    const page = pageByObject.get(pageObjectNumber) || 1;
     const annots = body.match(/\/Annots\s*\[([\s\S]*?)\]/)?.[1] || "";
     for (const ref of annots.matchAll(/(\d+)\s+\d+\s+R/g)) {
       pageByAnnotationObject.set(ref[1], page);
@@ -7785,6 +7804,71 @@ function extractPdfUriLinks(latin = "") {
     });
   }
   return links;
+}
+
+function pdfOutlinePage(body = "", pageByObject = new Map()) {
+  const destination = String(body || "").match(/\/(?:Dest|D)\s*\[([^\]]+)\]/)?.[1] || "";
+  const pageObject = pdfFirstObjectRef(destination);
+  if (pageObject && pageByObject.has(pageObject)) {
+    return pageByObject.get(pageObject);
+  }
+  const actionDestination = String(body || "").match(/\/A\s*<<[\s\S]*?\/D\s*\[([^\]]+)\][\s\S]*?>>/)?.[1] || "";
+  const actionPageObject = pdfFirstObjectRef(actionDestination);
+  if (actionPageObject && pageByObject.has(actionPageObject)) {
+    return pageByObject.get(actionPageObject);
+  }
+  return null;
+}
+
+function extractPdfOutlineItems(latin = "", objectBodies = pdfIndirectObjectBodies(latin), pageByObject = pdfPageNumberByObject(objectBodies)) {
+  const catalogBody = Array.from(objectBodies.values()).find((body) => /\/Type\s*\/Catalog\b/.test(body)) || "";
+  const outlinesObject = pdfFirstObjectRef(catalogBody.match(/\/Outlines\s+(\d+\s+\d+\s+R)/)?.[1] || "");
+  const outlineRoot = outlinesObject ? objectBodies.get(outlinesObject) || "" : "";
+  const firstOutline = pdfFirstObjectRef(outlineRoot.match(/\/First\s+(\d+\s+\d+\s+R)/)?.[1] || "");
+  const items = [];
+  const visited = new Set();
+  const walk = (objectNumber = "", level = 1) => {
+    let current = objectNumber;
+    while (current && objectBodies.has(current) && !visited.has(current)) {
+      visited.add(current);
+      const body = objectBodies.get(current) || "";
+      const title = decodePdfStringTokenValue(body.match(/\/Title\s*(\((?:\\.|[^\\)])*\)|<[0-9a-fA-F\s]+>)/)?.[1] || "");
+      if (title) {
+        items.push({
+          text: title,
+          level: Math.max(1, Number(level || 1)),
+          page: pdfOutlinePage(body, pageByObject) || 1,
+          objectNumber: current
+        });
+      }
+      const child = pdfFirstObjectRef(body.match(/\/First\s+(\d+\s+\d+\s+R)/)?.[1] || "");
+      if (child) {
+        walk(child, level + 1);
+      }
+      current = pdfFirstObjectRef(body.match(/\/Next\s+(\d+\s+\d+\s+R)/)?.[1] || "");
+    }
+  };
+  if (firstOutline) {
+    walk(firstOutline, 1);
+  }
+  if (!items.length) {
+    for (const [objectNumber, body] of objectBodies.entries()) {
+      if (!/\/Title\s*(\((?:\\.|[^\\)])*\)|<[0-9a-fA-F\s]+>)/.test(body) || !/(\/Dest\s*\[|\/A\s*<<[\s\S]*?\/S\s*\/GoTo\b)/.test(body)) {
+        continue;
+      }
+      const title = decodePdfStringTokenValue(body.match(/\/Title\s*(\((?:\\.|[^\\)])*\)|<[0-9a-fA-F\s]+>)/)?.[1] || "");
+      if (!title) {
+        continue;
+      }
+      items.push({
+        text: title,
+        level: 1,
+        page: pdfOutlinePage(body, pageByObject) || 1,
+        objectNumber
+      });
+    }
+  }
+  return items;
 }
 
 function tokenizePdfTextBlock(block = "") {
@@ -7918,7 +8002,10 @@ function parsePdfBasicText(buffer) {
   const warnings = [];
   const textChunks = [];
   const layoutRuns = [];
-  const uriLinks = extractPdfUriLinks(latin);
+  const objectBodies = pdfIndirectObjectBodies(latin);
+  const pageByObject = pdfPageNumberByObject(objectBodies);
+  const uriLinks = extractPdfUriLinks(latin, objectBodies, pageByObject);
+  const outlineItems = extractPdfOutlineItems(latin, objectBodies, pageByObject);
   let layoutOrder = 0;
   let streamCount = 0;
   let decodedStreamCount = 0;
@@ -7962,6 +8049,21 @@ function parsePdfBasicText(buffer) {
     if (chunk && index === 0 && /^Title:\s*/i.test(chunk)) {
       pushStructureElement(elements, "title", chunk.replace(/^Title:\s*/i, ""), { level: 1, line: index + 1, name: "pdf-info" });
     }
+  });
+  outlineItems.forEach((item, index) => {
+    pushStructureElement(elements, "pdf-outline", item.text, {
+      level: item.level,
+      line: index + 1,
+      name: `pdf-outline-${item.objectNumber || index + 1}`,
+      page: item.page,
+      layout: {
+        strategy: "pdf-outline-destination.v1",
+        page: item.page,
+        outlineObject: item.objectNumber,
+        order: index + 1
+      },
+      limit: 800
+    });
   });
   for (const run of layoutRuns
     .slice()
@@ -8013,6 +8115,12 @@ function parsePdfBasicText(buffer) {
     status: uriLinks.length ? "completed" : "empty",
     links: uriLinks.length,
     strategy: "pdf-uri-annotation.v1"
+  });
+  parserTrace.push({
+    stage: "pdf.outlines",
+    status: outlineItems.length ? "completed" : "empty",
+    outlines: outlineItems.length,
+    strategy: "pdf-outline-destination.v1"
   });
   if (!text) {
     warnings.push("pdf-basic-text-empty");
@@ -9842,6 +9950,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "PDF URI annotations are preserved as link element references." : "No PDF URI annotations were required or observed."
       });
     }
+    if (gate === "pdf-outline-refs-preserved") {
+      const outlineSignals = maxTraceMetric(document, ["outlines", "outlineCount"]);
+      const status = routeId !== "pdf"
+        ? "not_applicable"
+        : outlineSignals > 0
+          ? evidence.pdfOutlineRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { outlineSignals, pdfOutlineRefCount: evidence.pdfOutlineRefCount },
+        required: { outlineRefsWhenBookmarksExist: true },
+        message: status === "passed" ? "PDF outline/bookmark entries are preserved as element references." : "No PDF outline/bookmark entries were required or observed."
+      });
+    }
     if (gate === "word-table-cell-refs-preserved") {
       const tableCells = maxTraceMetric(document, ["tableCells", "cells"]);
       const status = routeId !== "word"
@@ -10304,6 +10425,10 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       Number(elementTypes.revision || 0),
       sampleElements.filter((element) => element.type === "revision" && element.annotation?.kind === "word-revision").length
     );
+    const pdfOutlineRefCount = Math.max(
+      Number(elementTypes["pdf-outline"] || 0),
+      sampleElements.filter((element) => element.type === "pdf-outline").length
+    );
     const linkElementCount = sampleElements.filter((element) => element.type === "link" && element.href).length;
     const imageRefCount = sampleElements.filter((element) => element.type === "image" && element.href).length;
     const styleRefCount = sampleElements.filter((element) => element.style?.styleId).length;
@@ -10327,6 +10452,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       geometryElementCount,
       annotationElementCount,
       revisionRefCount,
+      pdfOutlineRefCount,
       linkElementCount,
       imageRefCount,
       styleRefCount,
@@ -10402,6 +10528,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithNumberingRefsCount: plannedDocuments.filter((document) => document.evidence.numberingRefCount > 0).length,
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
       documentWithRevisionRefsCount: plannedDocuments.filter((document) => document.evidence.revisionRefCount > 0).length,
+      documentWithPdfOutlineRefsCount: plannedDocuments.filter((document) => document.evidence.pdfOutlineRefCount > 0).length,
       documentWithPresentationCommentRefsCount: plannedDocuments.filter((document) => document.evidence.presentationCommentRefCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
@@ -10685,11 +10812,23 @@ function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeS
   const workDir = tempWorkDir("external-kd-pdf-text-");
   const outputPath = path.join(workDir, "pdf-text.txt");
   try {
+    const inputStat = fsSync.statSync(filePath);
     execFileSync(runtime.command || "pdftotext", ["-layout", "-enc", "UTF-8", filePath, outputPath], {
       encoding: "utf8",
       timeout: TIKA_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024
     });
+    let basicParse = null;
+    const basicWarnings = [];
+    if (inputStat.size <= FILE_REF_DIRECT_READ_MAX_BYTES) {
+      try {
+        basicParse = parsePdfBasicText(fsSync.readFileSync(filePath));
+      } catch (error) {
+        basicWarnings.push(`pdf-basic-structure-failed:${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else {
+      basicWarnings.push("pdf-basic-structure-skipped-large-file-ref");
+    }
     const stat = fsSync.existsSync(outputPath) ? fsSync.statSync(outputPath) : { size: 0 };
     const stream = stat.size > 0
       ? streamTextFileAnalysis({
@@ -10709,29 +10848,33 @@ function parsePdfFileRef({ document = {}, metadata = {}, filePath = "", runtimeS
         };
     const pdfProfile = buildPdfSubtypeProfile({
       source: "file-ref-pdftotext",
-      byteSize: document.byteSize || 0,
+      byteSize: document.byteSize || inputStat.size || 0,
       textCharacters: stream.totalCharacters || 0,
-      parserWarnings: stream.warnings || []
+      layoutBlocks: basicParse?.elements?.filter((element) => element.type === "pdf-text-block").length || 0,
+      parserWarnings: [...(stream.warnings || []), ...(basicParse?.warnings || []), ...basicWarnings]
     });
     return {
       text: stream.textSample || "",
       totalCharacters: stream.totalCharacters || 0,
       contentHash: stream.contentHash || "",
       windowPlan: stream.windowPlan || null,
+      structureElements: basicParse?.elements || [],
+      structureFormat: basicParse?.format || (basicParse?.elements?.length ? "pdf" : ""),
       parserTrace: [
         {
           stage: "pdf.text.pdftotext",
           status: stream.totalCharacters ? "completed" : "empty",
           runtime: "pdf.pdftotext",
           command: runtime.command || "pdftotext",
-          bytes: document.byteSize || 0,
+          bytes: document.byteSize || inputStat.size || 0,
           characters: stream.totalCharacters || 0,
           windows: stream.windowPlan?.windowCount || 0
         },
+        ...(basicParse?.parserTrace || []),
         pdfSubtypeTrace(pdfProfile),
         ...stream.parserTrace
       ],
-      warnings: stream.warnings || [],
+      warnings: [...(stream.warnings || []), ...(basicParse?.warnings || []), ...basicWarnings],
       pdfProfile
     };
   } catch (error) {
@@ -11516,8 +11659,8 @@ function normalizeDocumentRecord(document = {}, index = 0, runtimeStatus = null,
           text: pdfFileAnalysis.text,
           parserTrace: pdfFileAnalysis.parserTrace,
           warnings: pdfFileAnalysis.warnings,
-          structureElements: [],
-          structureFormat: "",
+          structureElements: pdfFileAnalysis.structureElements || [],
+          structureFormat: pdfFileAnalysis.structureFormat || "",
           pdfProfile: pdfFileAnalysis.pdfProfile || null
         }
     : structuredZipAnalysis
@@ -16002,6 +16145,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "pdf.text.pdftotext",
         "pdf.subtype-route",
         "pdf.hyperlinks",
+        "pdf.outlines",
         "structured-zip.file-ref",
         "structured-zip.structural-entry-plan",
         "structured-zip.large-entry-stream",
@@ -16057,7 +16201,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "pdf-outline", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref", "cells.comment.ref"],
       graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
