@@ -6425,6 +6425,7 @@ async function registerCommand(options) {
   const env = deviceDiscoveryEnv({ baseUrl: settings.baseUrl, primaryPath: discoveryManifest });
   const tokenEnv = profile.tokenEnv || settings.tokenEnv;
   const includeUrl = Boolean(settings.baseUrl);
+  const guidance = installGuidanceMetadata({ includeUrl, baseUrl: settings.baseUrl, tokenEnv });
   return {
     ok: true,
     packageName: packageJson.name,
@@ -6440,27 +6441,10 @@ async function registerCommand(options) {
     },
     localFiles,
     env,
-    clientInstall: shellCommandForInstall({
-      target: "<client>",
-      includeUrl,
-      baseUrl: settings.baseUrl,
-      tokenEnv
-    }),
-    autoInstall: shellCommandForInstall({
-      target: "auto",
-      includeUrl,
-      baseUrl: settings.baseUrl,
-      tokenEnv
-    }),
-    priorityInstall: shellCommandForInstall({
-      target: PRIORITY_INSTALL_TARGET,
-      includeUrl,
-      baseUrl: settings.baseUrl,
-      tokenEnv
-    }),
-    priorityTargets: [...PRIORITY_INSTALL_TARGETS],
-    supportedTargets: [...SUPPORTED_TARGETS],
-    supportedTargetDetails: supportedTargetDetails(),
+    ...guidance,
+    clientInstall: guidance.clientInstallJsonCommand,
+    autoInstall: guidance.autoInstallCommand,
+    priorityInstall: guidance.priorityInstallCommand,
     verifiedHandshake: resolvedOptions.__pactDiscovery?.handshake?.payload?.identity?.keyId || "",
     serverConfig: profile.profile,
     note: "Discovered and registered the signed Pact MCP endpoint without installing it into any client."
