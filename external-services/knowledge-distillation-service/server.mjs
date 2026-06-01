@@ -559,9 +559,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Word",
     professionalFamily: "office-word",
     parserProfile: "wordprocessingml-paragraph-style-route",
-    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "image", "comment", "footnote", "endnote", "revision"],
-    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.revisions", "office.word.hyperlinks", "office.word.images", "tika.text"],
-    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "images", "comments", "footnotes", "endnotes", "revisions"],
+    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "image", "chart", "comment", "footnote", "endnote", "revision"],
+    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.revisions", "office.word.hyperlinks", "office.word.images", "office.word.charts", "tika.text"],
+    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "images", "charts", "chartSeries", "comments", "footnotes", "endnotes", "revisions"],
     conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-style-list-table-link-and-annotation-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -583,7 +583,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "word-elements-to-agent-refs.v1",
         mode: "agent",
-        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "image-refs", "annotation-refs", "revision-refs"]
+        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "image-refs", "chart-refs", "annotation-refs", "revision-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -593,7 +593,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "relationships", "claims"]
       }
     ],
-    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-image-refs-preserved", "word-annotation-refs-preserved", "word-revision-refs-preserved"],
+    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-image-refs-preserved", "word-chart-refs-preserved", "word-annotation-refs-preserved", "word-revision-refs-preserved"],
     riskControls: ["legacy-doc-tika-fallback", "advanced-style-loss-reporting", "tracked-changes-preserved-when-present"],
     knownLosses: ["advanced-openxml-styling-not-rendered"]
   },
@@ -601,9 +601,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "PowerPoint",
     professionalFamily: "office-presentation",
     parserProfile: "presentationml-slide-route",
-    structureUnits: ["slide", "heading", "placeholder", "slide-shape", "table-row", "link", "image", "speaker-note", "comment"],
-    parserStages: ["office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "office.presentation.comments", "tika.text", "ocr.slide-images"],
-    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-id", "shape-name", "shape-placeholder", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "images", "speaker-notes", "comments"],
+    structureUnits: ["slide", "heading", "placeholder", "slide-shape", "table-row", "link", "image", "chart", "speaker-note", "comment"],
+    parserStages: ["office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.charts", "office.presentation.speaker-notes", "office.presentation.comments", "tika.text", "ocr.slide-images"],
+    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-id", "shape-name", "shape-placeholder", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "images", "charts", "chartSeries", "speaker-notes", "comments"],
     conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-placeholder-table-link-and-note-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -625,7 +625,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "slides-to-agent-layout-refs.v1",
         mode: "agent",
-        stages: ["slide-refs", "shape-placeholder-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "image-refs", "speaker-note-refs", "comment-refs"]
+        stages: ["slide-refs", "shape-placeholder-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "image-refs", "chart-refs", "speaker-note-refs", "comment-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -635,7 +635,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "slide-relationships", "claims"]
       }
     ],
-    qualityGates: ["slide-order-preserved", "presentation-placeholder-refs-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-image-refs-preserved", "presentation-speaker-notes-preserved", "presentation-comment-refs-preserved"],
+    qualityGates: ["slide-order-preserved", "presentation-placeholder-refs-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-image-refs-preserved", "presentation-chart-refs-preserved", "presentation-speaker-notes-preserved", "presentation-comment-refs-preserved"],
     riskControls: ["speaker-notes-preserved-when-notesSlides-present", "comments-preserved-when-comment-parts-present", "raster-only-slide-ocr-fallback"],
     knownLosses: ["visual-layer-geometry-partial"]
   },
@@ -643,9 +643,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Excel",
     professionalFamily: "office-spreadsheet",
     parserProfile: "spreadsheetml-sheet-row-cell-route",
-    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "merged-cell", "cell-comment", "cell", "formula", "hyperlink", "time-signal"],
-    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.comments", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
-    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "mergedCells", "cellComments", "dateStyles", "dateSerials", "formulas", "hyperlinks", "timeSignals"],
+    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "merged-cell", "cell-comment", "cell", "formula", "hyperlink", "chart", "time-signal"],
+    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.comments", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.sheet.charts", "table.time-index"],
+    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "mergedCells", "cellComments", "dateStyles", "dateSerials", "formulas", "hyperlinks", "charts", "chartSeries", "timeSignals"],
     conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-workbook-sheet-cell-coordinates-and-formulas", "evidence-pack"],
     conversionAdapters: [
       {
@@ -667,7 +667,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "sheets-to-agent-cell-refs.v1",
         mode: "agent",
-        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "merged-cell-refs", "cell-comment-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "time-signals"]
+        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "merged-cell-refs", "cell-comment-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "chart-refs", "time-signals"]
       },
       {
         target: "evidence-pack-json",
@@ -677,7 +677,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["row-text-units", "entity-columns", "claim-values"]
       }
     ],
-    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-merged-cell-refs-preserved", "spreadsheet-comment-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
+    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-merged-cell-refs-preserved", "spreadsheet-comment-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "spreadsheet-chart-refs-preserved", "table-time-index-when-date-columns-exist"],
     riskControls: ["formula-results-not-recomputed"],
     knownLosses: ["formula-results-not-recomputed"]
   },
@@ -2377,6 +2377,7 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.style ? { style: metadata.style } : {}),
     ...(metadata.shape ? { shape: metadata.shape } : {}),
     ...(metadata.image ? { image: metadata.image } : {}),
+    ...(metadata.chart ? { chart: metadata.chart } : {}),
     ...(metadata.merge ? { merge: metadata.merge } : {}),
     ...(metadata.frontmatter ? { frontmatter: metadata.frontmatter } : {}),
     ...(metadata.cells ? { cells: metadata.cells } : {})
@@ -4979,6 +4980,161 @@ function officeImageRefsFromXml(fragmentXml = "", relationships = new Map(), {
   return refs;
 }
 
+function officeChartValueNodes(xml = "", limit = 40) {
+  const values = [];
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?v(?:\s[^>]*)?>([\s\S]*?)<\/[^:>]*:?v>/g)) {
+    const value = compactMarkupText(decodeXmlEntities(match[1] || ""), 300);
+    if (value) {
+      values.push(value);
+    }
+    if (values.length >= limit) {
+      break;
+    }
+  }
+  return uniqueOrdered(values);
+}
+
+function officeChartTypeFromXml(xml = "") {
+  const match = String(xml || "").match(/<(?:[\w.-]+:)?([A-Za-z]+Chart)\b/i);
+  return match ? match[1] : "";
+}
+
+function officeChartTitleFromXml(xml = "", fallback = "") {
+  const titleXml = String(xml || "").match(/<[^:>]*:?title\b[\s\S]*?<\/[^:>]*:?title>/i)?.[0] || "";
+  return compactMarkupText(textFromXmlTextNodes(titleXml) || officeChartValueNodes(titleXml, 1)[0] || fallback, 300);
+}
+
+function officeChartSeriesFromXml(xml = "") {
+  const series = [];
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?ser\b[\s\S]*?<\/[^:>]*:?ser>/g)) {
+    const seriesXml = match[0];
+    const txXml = seriesXml.match(/<[^:>]*:?tx\b[\s\S]*?<\/[^:>]*:?tx>/i)?.[0] || "";
+    const catXml = seriesXml.match(/<[^:>]*:?cat\b[\s\S]*?<\/[^:>]*:?cat>/i)?.[0] || "";
+    const valXml = seriesXml.match(/<[^:>]*:?val\b[\s\S]*?<\/[^:>]*:?val>/i)?.[0] || "";
+    series.push({
+      name: compactMarkupText(textFromXmlTextNodes(txXml) || officeChartValueNodes(txXml, 1)[0] || `Series ${series.length + 1}`, 300),
+      categories: officeChartValueNodes(catXml, 20),
+      values: officeChartValueNodes(valXml, 20)
+    });
+    if (series.length >= 20) {
+      break;
+    }
+  }
+  return series;
+}
+
+function officeChartRefsFromXml(fragmentXml = "", relationships = new Map(), entries = [], {
+  sourcePart = "",
+  fallbackName = "",
+  format = "",
+  page = 0,
+  order = 0,
+  sheetName = "",
+  sheetId = "",
+  worksheetPath = ""
+} = {}) {
+  const refs = [];
+  const seen = new Set();
+  for (const match of String(fragmentXml || "").matchAll(/<[^:>]*:?chart\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    const relationshipId = xmlLocalAttribute(tag, "id");
+    if (!relationshipId) {
+      continue;
+    }
+    const relationship = relationships.get(relationshipId) || null;
+    const target = officeRelationshipResolvedTarget(sourcePart, relationship);
+    if (!target && !/\/chart$/i.test(relationship?.type || "")) {
+      continue;
+    }
+    const chartPart = target || relationshipId;
+    const key = `${relationshipId}:${chartPart}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const chartXml = target ? zipEntryText(entries, target) : "";
+    const chartType = officeChartTypeFromXml(chartXml);
+    const title = officeChartTitleFromXml(chartXml, fallbackName || `Chart ${refs.length + 1}`);
+    const series = officeChartSeriesFromXml(chartXml);
+    refs.push({
+      format,
+      relationshipId,
+      target,
+      targetMode: relationship?.targetMode || "",
+      type: relationship?.type || "",
+      sourcePart,
+      chartPart,
+      title,
+      chartType,
+      seriesCount: series.length,
+      series,
+      page: Number(page || 0),
+      order: Number(order || refs.length + 1),
+      sheetName,
+      sheetId,
+      worksheetPath,
+      text: compactMarkupText([
+        title,
+        chartType,
+        series.length ? `${series.length} series` : ""
+      ].filter(Boolean).join(" - "), 600) || fallbackName || chartPart
+    });
+  }
+  return refs;
+}
+
+function appendOfficeChartElements(elements = [], entries = [], fragmentXml = "", relationships = new Map(), {
+  sourcePart = "",
+  fallbackName = "",
+  format = "",
+  page = 0,
+  lineStart = 0,
+  chartStart = 0,
+  order = 0,
+  bbox = null,
+  layout = null,
+  shape = null,
+  table = null,
+  sheetName = "",
+  sheetId = "",
+  worksheetPath = ""
+} = {}) {
+  const chartRefs = officeChartRefsFromXml(fragmentXml, relationships, entries, {
+    sourcePart,
+    fallbackName,
+    format,
+    page,
+    order,
+    sheetName,
+    sheetId,
+    worksheetPath
+  });
+  let count = 0;
+  let chartPartCount = 0;
+  let chartSeriesCount = 0;
+  const seenChartParts = new Set();
+  for (const chart of chartRefs) {
+    count += 1;
+    if (chart.chartPart && !seenChartParts.has(chart.chartPart)) {
+      chartPartCount += 1;
+      seenChartParts.add(chart.chartPart);
+    }
+    chartSeriesCount += Number(chart.seriesCount || 0);
+    pushStructureElement(elements, "chart", chart.text, {
+      line: lineStart + count,
+      name: `${sourcePart}#chart-${chartStart + count}`,
+      page,
+      href: chart.target || chart.chartPart,
+      bbox,
+      layout,
+      shape,
+      table,
+      chart
+    });
+  }
+  return { count, chartPartCount, chartSeriesCount };
+}
+
 function docxParagraphHyperlinks(paragraphXml = "", relationships = new Map()) {
   const links = [];
   for (const match of String(paragraphXml || "").matchAll(/<[^:>]*:?hyperlink\b[\s\S]*?<\/[^:>]*:?hyperlink>/g)) {
@@ -5054,6 +5210,9 @@ function parseDocx(entries = []) {
   let revisionCount = 0;
   let insertionRevisionCount = 0;
   let deletionRevisionCount = 0;
+  let chartCount = 0;
+  let chartPartCount = 0;
+  let chartSeriesCount = 0;
   for (const name of xmlNames) {
     const xml = zipEntryText(entries, name);
     const relationships = docxPartRelationships(entries, name);
@@ -5106,9 +5265,19 @@ function parseDocx(entries = []) {
       lineStart: paragraphCount + tableRowCount + annotationCount,
       imageStart: imageCount
     });
+    const charts = appendOfficeChartElements(elements, entries, xml, relationships, {
+      sourcePart: name,
+      format: "docx",
+      fallbackName: `Word Chart ${chartCount + 1}`,
+      lineStart: paragraphCount + tableRowCount + annotationCount + imageCount + chartCount,
+      chartStart: chartCount
+    });
+    chartCount += charts.count;
+    chartPartCount += charts.chartPartCount;
+    chartSeriesCount += charts.chartSeriesCount;
     const revisions = appendDocxRevisionElements(elements, xml, {
       sourcePart: name,
-      lineStart: paragraphCount + tableRowCount + annotationCount + imageCount + revisionCount
+      lineStart: paragraphCount + tableRowCount + annotationCount + imageCount + chartCount + revisionCount
     });
     revisionCount += revisions.revisionCount;
     insertionRevisionCount += revisions.insertionRevisionCount;
@@ -5148,6 +5317,9 @@ function parseDocx(entries = []) {
     revisionCount,
     insertionRevisionCount,
     deletionRevisionCount,
+    chartCount,
+    chartPartCount,
+    chartSeriesCount,
     headingCount: (counts.title || 0) + (counts.heading || 0),
     listItemCount: counts["list-item"] || 0
   };
@@ -5553,6 +5725,10 @@ function parsePptx(entries = []) {
   let hyperlinkCount = 0;
   let imageCount = 0;
   let imageGeometryCount = 0;
+  let chartCount = 0;
+  let chartPartCount = 0;
+  let chartSeriesCount = 0;
+  let chartGeometryCount = 0;
   let commentCount = 0;
   let placeholderCount = 0;
   let shapeMetadataCount = 0;
@@ -5566,6 +5742,9 @@ function parsePptx(entries = []) {
     const tableFrames = Array.from(xml.matchAll(/<[^:>]*:?graphicFrame\b[\s\S]*?<\/[^:>]*:?graphicFrame>/g))
       .map((match) => match[0])
       .filter((frameXml) => /<[^:>]*:?tbl\b/i.test(frameXml));
+    const chartFrames = Array.from(xml.matchAll(/<[^:>]*:?graphicFrame\b[\s\S]*?<\/[^:>]*:?graphicFrame>/g))
+      .map((match) => match[0])
+      .filter((frameXml) => /<[^:>]*:?chart\b/i.test(frameXml));
     const pictureBlocks = Array.from(xml.matchAll(/<[^:>]*:?pic\b[\s\S]*?<\/[^:>]*:?pic>/g))
       .map((match) => match[0]);
     if (shapeBlocks.length) {
@@ -5646,6 +5825,37 @@ function parsePptx(entries = []) {
         });
       }
     }
+    if (chartFrames.length) {
+      for (const frameXml of chartFrames) {
+        const chartOrder = shapeCount + tableCount + imageCount + chartCount + 1;
+        const chartGeometry = pptxShapeGeometry(frameXml, slideNumber, chartOrder);
+        const chartShapeName = pptxShapeName(frameXml, `Slide ${slideNumber} Chart ${chartCount + 1}`);
+        const chartShape = pptxShapeMetadata(frameXml, {
+          fallbackName: chartShapeName,
+          slideNumber,
+          order: chartOrder
+        });
+        const chartLayout = chartGeometry.layout
+          ? { ...chartGeometry.layout, strategy: "presentationml-chart-ref.v1" }
+          : { strategy: "presentationml-chart-ref.v1", page: slideNumber, order: chartOrder };
+        const charts = appendOfficeChartElements(elements, entries, frameXml, relationships, {
+          sourcePart: name,
+          format: "pptx",
+          fallbackName: chartShapeName,
+          page: slideNumber,
+          lineStart: chartOrder,
+          chartStart: chartCount,
+          order: chartOrder,
+          bbox: chartGeometry.bbox,
+          layout: chartLayout,
+          shape: chartShape
+        });
+        chartCount += charts.count;
+        chartPartCount += charts.chartPartCount;
+        chartSeriesCount += charts.chartSeriesCount;
+        chartGeometryCount += charts.count && chartGeometry.bbox ? 1 : 0;
+      }
+    }
     if (pictureBlocks.length) {
       for (const pictureXml of pictureBlocks) {
         const image = appendPptxImageElements(elements, pictureXml, relationships, {
@@ -5681,7 +5891,7 @@ function parsePptx(entries = []) {
         limit: 1800
       });
     }
-    if (shapeBlocks.length || tableFrames.length || pictureBlocks.length) {
+    if (shapeBlocks.length || tableFrames.length || chartFrames.length || pictureBlocks.length) {
       continue;
     }
     const paragraphs = Array.from(xml.matchAll(/<(?:[\w.-]+:)?p\b[\s\S]*?<\/(?:[\w.-]+:)?p>/g))
@@ -5761,12 +5971,16 @@ function parsePptx(entries = []) {
     commentAuthorCount: commentAuthors.size,
     hyperlinkCount,
     imageCount,
+    chartCount,
+    chartPartCount,
+    chartSeriesCount,
     placeholderCount,
     shapeMetadataCount,
     shapeCount,
-    geometryCount: shapeGeometryCount + tableGeometryCount + imageGeometryCount,
+    geometryCount: shapeGeometryCount + tableGeometryCount + imageGeometryCount + chartGeometryCount,
     shapeGeometryCount,
     imageGeometryCount,
+    chartGeometryCount,
     tableCount,
     tableRowCount,
     tableCellCount,
@@ -6215,6 +6429,59 @@ function xlsxTableMetadata(sheet = {}, sheetLabel = "", rowNumber = 0, columnCou
   };
 }
 
+function xlsxWorksheetDrawingRelationshipIds(sheetXml = "") {
+  return uniqueOrdered(Array.from(String(sheetXml || "").matchAll(/<[^:>]*:?drawing\b[^>]*(?:\/>|>)/g))
+    .map((match) => xmlLocalAttribute(match[0], "id"))
+    .filter(Boolean));
+}
+
+function appendXlsxChartElements(elements = [], entries = [], sheetXml = "", relationshipXml = "", {
+  worksheetName = "",
+  sheet = {},
+  sheetLabel = "",
+  chartStart = 0
+} = {}) {
+  const worksheetRelationships = parseXlsxRelationshipTargets(relationshipXml);
+  let count = 0;
+  let chartPartCount = 0;
+  let chartSeriesCount = 0;
+  const seenChartParts = new Set();
+  for (const relationshipId of xlsxWorksheetDrawingRelationshipIds(sheetXml)) {
+    const drawingRelationship = worksheetRelationships.get(relationshipId) || null;
+    const drawingPart = officeRelationshipResolvedTarget(worksheetName, drawingRelationship);
+    const drawingXml = drawingPart ? zipEntryText(entries, drawingPart) : "";
+    if (!drawingXml) {
+      continue;
+    }
+    const drawingRelationships = docxPartRelationships(entries, drawingPart);
+    const charts = officeChartRefsFromXml(drawingXml, drawingRelationships, entries, {
+      sourcePart: drawingPart,
+      format: "xlsx",
+      fallbackName: `${sheetLabel} Chart ${chartStart + count + 1}`,
+      order: chartStart + count + 1,
+      sheetName: String(sheet.name || ""),
+      sheetId: String(sheet.sheetId || ""),
+      worksheetPath: worksheetName
+    });
+    for (const chart of charts) {
+      count += 1;
+      if (chart.chartPart && !seenChartParts.has(chart.chartPart)) {
+        chartPartCount += 1;
+        seenChartParts.add(chart.chartPart);
+      }
+      chartSeriesCount += Number(chart.seriesCount || 0);
+      pushStructureElement(elements, "chart", `${sheetLabel} ${chart.text}`, {
+        line: chartStart + count,
+        name: `${sheetLabel}#chart-${chartStart + count}`,
+        href: chart.target || chart.chartPart,
+        table: xlsxTableMetadata(sheet, sheetLabel, 0, 0),
+        chart
+      });
+    }
+  }
+  return { count, chartPartCount, chartSeriesCount };
+}
+
 const XLSX_BUILTIN_DATE_NUMFMT_IDS = new Set([
   14, 15, 16, 17, 18, 19, 20, 21, 22,
   27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
@@ -6515,11 +6782,15 @@ function parseXlsxDetailed(entries = []) {
   let mergedCellCount = 0;
   let commentCount = 0;
   let headerRows = 0;
+  let chartCount = 0;
+  let chartPartCount = 0;
+  let chartSeriesCount = 0;
   const elements = [];
   for (const [index, record] of sheetRecords.entries()) {
     const { name, sheet } = record;
     const sheetXml = zipEntryText(entries, name);
     const relationshipXml = zipEntryText(entries, worksheetRelationshipEntryName(name));
+    const sheetLabel = xlsxSheetLabel(sheet, index);
     const hyperlinks = parseXlsxHyperlinkTags(
       sheetXml,
       relationshipXml
@@ -6542,7 +6813,6 @@ function parseXlsxDetailed(entries = []) {
         dateCellCount += row.cells.filter((cell) => cell.dateIso).length;
       }
     }
-    const sheetLabel = xlsxSheetLabel(sheet, index);
     const text = xlsxRowsToStructuredText(rows, sheetLabel);
     if (text) {
       headerRows += 1;
@@ -6614,6 +6884,15 @@ function parseXlsxDetailed(entries = []) {
         limit: 2000
       });
     }
+    const charts = appendXlsxChartElements(elements, entries, sheetXml, relationshipXml, {
+      worksheetName: name,
+      sheet,
+      sheetLabel,
+      chartStart: chartCount
+    });
+    chartCount += charts.count;
+    chartPartCount += charts.chartPartCount;
+    chartSeriesCount += charts.chartSeriesCount;
   }
   return {
     text: structureElementsToText("xlsx", elements, lines.join("\n")),
@@ -6634,6 +6913,9 @@ function parseXlsxDetailed(entries = []) {
     cellCount,
     formulaCount,
     hyperlinkCount,
+    chartCount,
+    chartPartCount,
+    chartSeriesCount,
     headerRows
   };
 }
@@ -7439,6 +7721,9 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           deletedRevisions: parsed.deletionRevisionCount,
           links: parsed.hyperlinkCount,
           images: parsed.imageCount,
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount,
           styles: parsed.styleRefCount,
@@ -8927,6 +9212,9 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           deletedRevisions: parsed.deletionRevisionCount,
           links: parsed.hyperlinkCount,
           images: parsed.imageCount,
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount,
           headings: parsed.headingCount,
           listItems: parsed.listItemCount,
           styles: parsed.styleRefCount,
@@ -8977,6 +9265,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           status: parsed.imageCount ? "completed" : "empty",
           images: parsed.imageCount
         });
+        parserTrace.push({
+          stage: "office.word.charts",
+          status: parsed.chartCount ? "completed" : "empty",
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount
+        });
         if (parsed.text) {
           return {
             text: parsed.text,
@@ -9014,6 +9309,10 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           commentAuthors: parsed.commentAuthorCount,
           hyperlinks: parsed.hyperlinkCount,
           images: parsed.imageCount,
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount,
+          chartGeometries: parsed.chartGeometryCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -9043,6 +9342,14 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           status: parsed.imageCount ? "completed" : "empty",
           images: parsed.imageCount,
           geometries: parsed.imageGeometryCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.charts",
+          status: parsed.chartCount ? "completed" : "empty",
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount,
+          geometries: parsed.chartGeometryCount
         });
         parserTrace.push({
           stage: "office.presentation.speaker-notes",
@@ -9088,7 +9395,10 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           mergedCells: parsed.mergedCellCount,
           comments: parsed.commentCount,
           formulas: parsed.formulaCount,
-          hyperlinks: parsed.hyperlinkCount
+          hyperlinks: parsed.hyperlinkCount,
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount
         });
         parserTrace.push({
           stage: "table.workbook.sheets",
@@ -9133,6 +9443,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           stage: "table.sheet.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           hyperlinks: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.charts",
+          status: parsed.chartCount ? "completed" : "empty",
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount
         });
         if (parsed.text) {
           return {
@@ -9454,6 +9771,9 @@ function structureElementLine(element = {}) {
   const image = element.image?.relationshipId || element.image?.target
     ? ` image ${[element.image.relationshipId, element.image.target].filter(Boolean).join(":")}`
     : "";
+  const chart = element.chart?.relationshipId || element.chart?.chartPart || element.chart?.title
+    ? ` chart ${[element.chart.relationshipId, element.chart.title || element.chart.chartPart].filter(Boolean).join(":")}`
+    : "";
   const merge = element.merge?.ref
     ? ` merge ${element.merge.ref}${element.merge.masterRef ? ` master ${element.merge.masterRef}` : ""}`
     : "";
@@ -9462,7 +9782,7 @@ function structureElementLine(element = {}) {
     : element.shape?.isPlaceholder
       ? " placeholder"
       : "";
-  return `Element ${element.type}${level}${name}${line}${style}${numbering}${shape}${placeholder}${image}${merge}: ${element.text}${href}`;
+  return `Element ${element.type}${level}${name}${line}${style}${numbering}${shape}${placeholder}${image}${chart}${merge}: ${element.text}${href}`;
 }
 
 function structureElementTypeCounts(elements = []) {
@@ -9553,6 +9873,36 @@ function normalizedStructureElements(document = {}) {
             name: String(element.image.name || ""),
             title: String(element.image.title || ""),
             description: String(element.image.description || "")
+          }
+        : null;
+      const chart = element.chart && typeof element.chart === "object"
+        ? {
+            format: String(element.chart.format || ""),
+            relationshipId: String(element.chart.relationshipId || ""),
+            target: String(element.chart.target || ""),
+            targetMode: String(element.chart.targetMode || ""),
+            type: String(element.chart.type || ""),
+            sourcePart: String(element.chart.sourcePart || ""),
+            chartPart: String(element.chart.chartPart || ""),
+            title: String(element.chart.title || ""),
+            chartType: String(element.chart.chartType || ""),
+            seriesCount: Number(element.chart.seriesCount || 0),
+            page: Number(element.chart.page || 0),
+            order: Number(element.chart.order || 0),
+            sheetName: String(element.chart.sheetName || ""),
+            sheetId: String(element.chart.sheetId || ""),
+            worksheetPath: String(element.chart.worksheetPath || ""),
+            series: Array.isArray(element.chart.series)
+              ? element.chart.series.slice(0, 20).map((series) => ({
+                  name: String(series.name || ""),
+                  categories: Array.isArray(series.categories)
+                    ? series.categories.slice(0, 20).map((item) => String(item || "")).filter(Boolean)
+                    : [],
+                  values: Array.isArray(series.values)
+                    ? series.values.slice(0, 20).map((item) => String(item || "")).filter(Boolean)
+                    : []
+                }))
+              : []
           }
         : null;
       const merge = element.merge && typeof element.merge === "object"
@@ -9658,6 +10008,7 @@ function normalizedStructureElements(document = {}) {
         style,
         shape,
         image,
+        chart,
         merge,
         frontmatter,
         cells
@@ -9671,7 +10022,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "frontmatter", "comment", "footnote", "endnote", "revision", "speaker-note"].includes(element.type);
+  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "chart", "frontmatter", "comment", "footnote", "endnote", "revision", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -9706,6 +10057,7 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       style: element.style || null,
       shape: element.shape || null,
       image: element.image || null,
+      chart: element.chart || null,
       merge: element.merge || null,
       frontmatter: element.frontmatter || null,
       cells: element.cells || [],
@@ -9824,6 +10176,7 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       style: element.style || null,
       shape: element.shape || null,
       image: element.image || null,
+      chart: element.chart || null,
       merge: element.merge || null,
       frontmatter: element.frontmatter || null,
       cells: element.cells || []
@@ -10133,6 +10486,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Word image relationship targets are preserved as element references." : "No Word images were required or observed."
       });
     }
+    if (gate === "word-chart-refs-preserved") {
+      const chartSignals = maxTraceMetric(document, ["charts", "chartCount"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : chartSignals > 0
+          ? evidence.chartRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { chartSignals, chartRefCount: evidence.chartRefCount, chartSeriesRefCount: evidence.chartSeriesRefCount },
+        required: { chartRefsWhenPresent: true },
+        message: status === "passed" ? "Word chart relationship targets and series metadata are preserved as element references." : "No Word chart references were required or observed."
+      });
+    }
     if (gate === "slide-order-preserved") {
       const slideCount = maxTraceMetric(document, ["slides", "slideCount"]);
       const status = routeId !== "presentation"
@@ -10209,6 +10575,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         observed: { imageSignals, imageRefCount: evidence.imageRefCount },
         required: { imageRefsWhenPresent: true },
         message: status === "passed" ? "PowerPoint image relationship targets are preserved as element references." : "No PowerPoint images were required or observed."
+      });
+    }
+    if (gate === "presentation-chart-refs-preserved") {
+      const chartSignals = maxTraceMetric(document, ["charts", "chartCount"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : chartSignals > 0
+          ? evidence.chartRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { chartSignals, chartRefCount: evidence.chartRefCount, chartSeriesRefCount: evidence.chartSeriesRefCount },
+        required: { chartRefsWhenPresent: true },
+        message: status === "passed" ? "PowerPoint chart relationship targets and series metadata are preserved as element references." : "No PowerPoint chart references were required or observed."
       });
     }
     if (gate === "presentation-speaker-notes-preserved") {
@@ -10331,6 +10710,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         observed: { hyperlinkSignals, hyperlinkRefCount: evidence.hyperlinkRefCount },
         required: { hyperlinksWhenPresent: true },
         message: status === "passed" ? "Spreadsheet hyperlinks are preserved as cell references." : "No spreadsheet hyperlinks were required or observed."
+      });
+    }
+    if (gate === "spreadsheet-chart-refs-preserved") {
+      const chartSignals = maxTraceMetric(document, ["charts", "chartCount"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : chartSignals > 0
+          ? evidence.chartRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { chartSignals, chartRefCount: evidence.chartRefCount, chartSeriesRefCount: evidence.chartSeriesRefCount },
+        required: { chartRefsWhenPresent: true },
+        message: status === "passed" ? "Spreadsheet chart drawing relationships and series metadata are preserved as element references." : "No spreadsheet chart references were required or observed."
       });
     }
     if (gate === "table-time-index-when-date-columns-exist") {
@@ -10531,6 +10923,13 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const numberingRefCount = sampleElements.filter((element) => element.style?.numberingId).length;
     const shapeRefCount = sampleElements.filter((element) => element.shape?.id || element.shape?.name).length;
     const placeholderRefCount = sampleElements.filter((element) => element.shape?.isPlaceholder || element.shape?.placeholderType).length;
+    const chartRefCount = Math.max(
+      Number(elementTypes.chart || 0),
+      sampleElements.filter((element) => element.type === "chart" && (element.chart?.chartPart || element.chart?.relationshipId)).length
+    );
+    const chartSeriesRefCount = sampleElements.reduce((sum, element) => (
+      sum + (element.chart?.seriesCount || (Array.isArray(element.chart?.series) ? element.chart.series.length : 0))
+    ), 0);
     const speakerNoteElementCount = sampleElements.filter((element) => element.type === "speaker-note").length;
     const presentationCommentRefCount = sampleElements.filter((element) => element.annotation?.kind === "presentation-comment").length;
     const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
@@ -10556,6 +10955,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       numberingRefCount,
       shapeRefCount,
       placeholderRefCount,
+      chartRefCount,
+      chartSeriesRefCount,
       speakerNoteElementCount,
       presentationCommentRefCount
     };
@@ -10621,6 +11022,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
       documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
+      documentWithChartRefsCount: plannedDocuments.filter((document) => document.evidence.chartRefCount > 0).length,
+      documentWithChartSeriesRefsCount: plannedDocuments.filter((document) => document.evidence.chartSeriesRefCount > 0).length,
       documentWithStyleRefsCount: plannedDocuments.filter((document) => document.evidence.styleRefCount > 0).length,
       documentWithNumberingRefsCount: plannedDocuments.filter((document) => document.evidence.numberingRefCount > 0).length,
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
@@ -11200,6 +11603,13 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           status: parsed.imageCount ? "completed" : "empty",
           images: parsed.imageCount
         });
+        parserTrace.push({
+          stage: "office.word.charts",
+          status: parsed.chartCount ? "completed" : "empty",
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount
+        });
       }
     } else if (route?.id === "spreadsheet") {
       const parsed = canUseBoundedEntries
@@ -11229,7 +11639,10 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           mergedCells: parsed.mergedCellCount,
           comments: parsed.commentCount,
           formulas: parsed.formulaCount,
-          hyperlinks: parsed.hyperlinkCount
+          hyperlinks: parsed.hyperlinkCount,
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount
         });
         parserTrace.push({
           stage: "table.workbook.sheets",
@@ -11275,6 +11688,13 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "table.sheet.hyperlinks",
           status: parsed.hyperlinkCount ? "completed" : "empty",
           hyperlinks: parsed.hyperlinkCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.charts",
+          status: parsed.chartCount ? "completed" : "empty",
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount
         });
       } else {
         const spreadsheet = appendXlsxDirectoryAsText(extracted.outputDir, outputPath);
@@ -11330,6 +11750,10 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           commentAuthors: parsed.commentAuthorCount,
           hyperlinks: parsed.hyperlinkCount,
           images: parsed.imageCount,
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount,
+          chartGeometries: parsed.chartGeometryCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
           headings: parsed.headingCount,
           paragraphs: parsed.paragraphCount
@@ -11359,6 +11783,14 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           status: parsed.imageCount ? "completed" : "empty",
           images: parsed.imageCount,
           geometries: parsed.imageGeometryCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.charts",
+          status: parsed.chartCount ? "completed" : "empty",
+          charts: parsed.chartCount,
+          chartParts: parsed.chartPartCount,
+          chartSeries: parsed.chartSeriesCount,
+          geometries: parsed.chartGeometryCount
         });
         parserTrace.push({
           stage: "office.presentation.speaker-notes",
@@ -16264,12 +16696,14 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.word.numbering",
         "office.word.hyperlinks",
         "office.word.images",
+        "office.word.charts",
         "office.word.revisions",
         "office.presentation.slides",
         "office.presentation.placeholders",
         "office.presentation.tables",
         "office.presentation.hyperlinks",
         "office.presentation.images",
+        "office.presentation.charts",
         "office.presentation.speaker-notes",
         "office.presentation.comments",
         "office.word.tables",
@@ -16283,6 +16717,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.sheet.date-styles",
         "table.sheet.formulas",
         "table.sheet.hyperlinks",
+        "table.sheet.charts",
         "table.time-index",
         "open-document.structured",
         "open-document.tables",
@@ -16300,10 +16735,10 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "pdf-outline", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "frontmatter", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "pdf-outline", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "chart", "frontmatter", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref", "cells.comment.ref"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.frontmatter", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "chart.chartPart", "chart.relationshipId", "chart.chartType", "chart.series", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref", "cells.comment.ref"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.frontmatter", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.chart", "elementRefs.chart.chartPart", "elementRefs.chart.series", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -16324,7 +16759,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "frontmatter", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "revisions", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "frontmatter", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "charts", "chartSeries", "formulas", "paragraphStyles", "listLevels", "annotations", "revisions", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

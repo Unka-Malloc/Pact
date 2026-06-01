@@ -456,6 +456,8 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.comment.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.target"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.relationshipId"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("chart.chartPart"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("chart.series"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("shape.placeholderType"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("pdf-outline"), true);
@@ -467,6 +469,7 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("revision"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("chart"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("frontmatter"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("cell-comment"), true);
@@ -479,6 +482,8 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.target"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.relationshipId"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.chart.chartPart"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.chart.series"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.merge.ref"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.merge"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.comment"), true);
@@ -506,6 +511,8 @@ try {
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   assert.equal(capabilities.payload.formatConversion.preserves.includes("frontmatter"), true);
+  assert.equal(capabilities.payload.formatConversion.preserves.includes("charts"), true);
+  assert.equal(capabilities.payload.formatConversion.preserves.includes("chartSeries"), true);
   for (const [routeId, parserProfile, qualityGate] of [
     ["pdf", "pdf.text-layout-ocr-route", "page-order-preserved"],
     ["word", "wordprocessingml-paragraph-style-route", "word-annotation-refs-preserved"],
@@ -526,6 +533,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-chart-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
@@ -533,6 +541,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-chart-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-comment-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
@@ -540,6 +549,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-comment-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-date-serials-normalized"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-chart-refs-preserved"), true);
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.strategy, "reference-framework-local-checkout-audit.v1");
   assert.equal(capabilities.payload.referenceFrameworks.localAudit.auditCommand, "npm run server:external-kd:references");
@@ -582,6 +592,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.revisions"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.images"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.charts"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.numbering"), true);
   assert.equal(capabilities.payload.parserExecution.payloadModes.includes("filePath"), true);
@@ -606,6 +617,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.images"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.charts"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.comments"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
@@ -629,6 +641,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.date-styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.hyperlinks"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.charts"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("ocr.image.tesseract"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("pdf.ocr.poppler-tesseract"), true);

@@ -149,6 +149,21 @@ function zipBuffer(entries) {
   )));
 }
 
+function sampleOfficeChartXml(title = "Evidence Trend", series = "Evidence Count") {
+  return [
+    "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
+    "<c:chart>",
+    `<c:title><c:tx><c:rich><a:p><a:r><a:t>${title}</a:t></a:r></a:p></c:rich></c:tx></c:title>`,
+    "<c:plotArea><c:barChart><c:ser>",
+    `<c:tx><c:v>${series}</c:v></c:tx>`,
+    "<c:cat><c:strLit><c:pt idx=\"0\"><c:v>Q1</c:v></c:pt><c:pt idx=\"1\"><c:v>Q2</c:v></c:pt></c:strLit></c:cat>",
+    "<c:val><c:numLit><c:pt idx=\"0\"><c:v>42</c:v></c:pt><c:pt idx=\"1\"><c:v>84</c:v></c:pt></c:numLit></c:val>",
+    "</c:ser></c:barChart></c:plotArea>",
+    "</c:chart>",
+    "</c:chartSpace>"
+  ].join("");
+}
+
 function tarOctal(value, length) {
   return String(Math.max(0, Number(value) || 0).toString(8)).padStart(length - 1, "0").slice(-(length - 1));
 }
@@ -255,7 +270,7 @@ function msgTextBase64(text = "Outlook MSG Tika fallback extracts project schedu
 
 const sampleDocxBase64 = base64Zip({
   "word/document.xml": [
-    "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">",
+    "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\" xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\">",
     "<w:body>",
     "<w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>DOCX Contract Decision Register</w:t></w:r></w:p>",
     "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>Routing Decisions</w:t></w:r></w:p>",
@@ -263,6 +278,7 @@ const sampleDocxBase64 = base64Zip({
     "<w:p><w:r><w:t>Standalone DOCX payload parser extracts contract decisions.</w:t></w:r></w:p>",
     "<w:p><w:r><w:t>Evidence portal: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>DOCX evidence portal</w:t></w:r></w:hyperlink></w:p>",
     "<w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"10\" name=\"Architecture Diagram\" descr=\"DOCX architecture diagram evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
+    "<w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"11\" name=\"Decision Trend Chart\"/><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart r:id=\"rIdChart1\"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
     "<w:p><w:r><w:t>Annotation reference paragraph.</w:t></w:r><w:r><w:footnoteReference w:id=\"2\"/></w:r></w:p>",
     "<w:p><w:ins w:id=\"10\" w:author=\"Revision Author\" w:date=\"2026-07-02T00:00:00Z\"><w:r><w:t>Inserted tracked-change evidence stays visible.</w:t></w:r></w:ins></w:p>",
     "<w:p><w:del w:id=\"11\" w:author=\"Revision Author\" w:date=\"2026-07-03T00:00:00Z\"><w:r><w:delText>Deleted tracked-change evidence stays visible.</w:delText></w:r></w:del></w:p>",
@@ -277,6 +293,7 @@ const sampleDocxBase64 = base64Zip({
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/docx-evidence\" TargetMode=\"External\"/>",
     "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/architecture.png\"/>",
+    "<Relationship Id=\"rIdChart1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart1.xml\"/>",
     "</Relationships>"
   ].join(""),
   "word/comments.xml": [
@@ -294,6 +311,7 @@ const sampleDocxBase64 = base64Zip({
     "<w:endnote w:id=\"3\"><w:p><w:r><w:t>Endnote keeps the audit trail available to agents.</w:t></w:r></w:p></w:endnote>",
     "</w:endnotes>"
   ].join(""),
+  "word/charts/chart1.xml": sampleOfficeChartXml("DOCX Decision Trend", "DOCX Evidence Count"),
   "word/media/architecture.png": "docx-image-bytes"
 });
 
@@ -301,7 +319,8 @@ const samplePptxBase64 = base64Zip({
   "ppt/slides/slide1.xml": [
     "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" ",
     "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" ",
-    "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
+    "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" ",
+    "xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\">",
     "<p:cSld><p:spTree>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Roadmap Title\"/></p:nvSpPr><p:nvPr><p:ph type=\"title\" idx=\"0\"/></p:nvPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"5486400\" cy=\"685800\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Standalone PPTX slide parser extracts roadmap decisions.</a:t></a:r></a:p></p:txBody></p:sp>",
     "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Roadmap Body\"/></p:nvSpPr><p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1371600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Presentation geometry keeps slide shape evidence queryable. </a:t></a:r><a:r><a:rPr><a:hlinkClick r:id=\"rId1\" tooltip=\"Presentation evidence link\"/></a:rPr><a:t>Presentation evidence portal</a:t></a:r></a:p></p:txBody></p:sp>",
@@ -310,6 +329,7 @@ const samplePptxBase64 = base64Zip({
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Owner</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Decision</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
     "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Slides</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Keep PowerPoint table cells queryable</a:t></a:r></a:p></a:txBody></a:tc></a:tr>",
     "</a:tbl></a:graphicData></a:graphic></p:graphicFrame>",
+    "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"6\" name=\"Roadmap Trend Chart\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"3657600\"/><a:ext cx=\"6400800\" cy=\"914400\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart r:id=\"rIdChart1\"/></a:graphicData></a:graphic></p:graphicFrame>",
     "</p:spTree></p:cSld>",
     "</p:sld>"
   ].join(""),
@@ -317,6 +337,7 @@ const samplePptxBase64 = base64Zip({
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/pptx-evidence\" TargetMode=\"External\"/>",
     "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/roadmap.png\"/>",
+    "<Relationship Id=\"rIdChart1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"../charts/chart1.xml\"/>",
     "<Relationship Id=\"rIdComment1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"../comments/comment1.xml\"/>",
     "</Relationships>"
   ].join(""),
@@ -336,6 +357,7 @@ const samplePptxBase64 = base64Zip({
     "<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Speaker note keeps release risk and operator follow-up evidence queryable.</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>",
     "</p:notes>"
   ].join(""),
+  "ppt/charts/chart1.xml": sampleOfficeChartXml("PPTX Roadmap Trend", "Slide Evidence Count"),
   "ppt/media/roadmap.png": "pptx-image-bytes"
 });
 
@@ -366,14 +388,27 @@ const sampleXlsxBase64 = base64Zip({
     "<sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c r=\"C2\" s=\"1\"><v>46173</v></c><c r=\"D2\"><f>B2*2</f><v>84</v></c></row></sheetData>",
     "<mergeCells count=\"1\"><mergeCell ref=\"A1:B1\"/></mergeCells>",
     "<hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\" display=\"Acme portal\" tooltip=\"Vendor evidence link\"/></hyperlinks>",
+    "<drawing r:id=\"rIdDrawing1\"/>",
     "</worksheet>"
   ].join(""),
   "xl/worksheets/_rels/sheet1.xml.rels": [
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/acme\" TargetMode=\"External\"/>",
     "<Relationship Id=\"rIdComment1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"../comments1.xml\"/>",
+    "<Relationship Id=\"rIdDrawing1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing1.xml\"/>",
     "</Relationships>"
   ].join(""),
+  "xl/drawings/drawing1.xml": [
+    "<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
+    "<xdr:twoCellAnchor><xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id=\"7\" name=\"Finance Trend Chart\"/></xdr:nvGraphicFramePr><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart r:id=\"rIdChart1\"/></a:graphicData></a:graphic></xdr:graphicFrame></xdr:twoCellAnchor>",
+    "</xdr:wsDr>"
+  ].join(""),
+  "xl/drawings/_rels/drawing1.xml.rels": [
+    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+    "<Relationship Id=\"rIdChart1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"../charts/chart1.xml\"/>",
+    "</Relationships>"
+  ].join(""),
+  "xl/charts/chart1.xml": sampleOfficeChartXml("XLSX Finance Trend", "Finance Evidence Count"),
   "xl/comments1.xml": [
     "<comments xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
     "<authors><author>Finance Reviewer</author></authors>",
@@ -926,12 +961,14 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.revisions"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.images"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.charts"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.numbering"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.placeholders"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.images"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.charts"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.comments"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
@@ -956,6 +993,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.date-styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.hyperlinks"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.charts"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.file-ref"), true);
   assert.equal(capabilities.payload.parserExecution.emptyCorpusErrorCode, "EMPTY_RAW_CORPUS");
   assert.ok(capabilities.payload.runtimeDoctor.summary, "capabilities must expose runtime doctor summary");
@@ -1009,6 +1047,8 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.comment.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.target"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.relationshipId"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("chart.chartPart"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("chart.series"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetId"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("shape.placeholderType"), true);
@@ -1019,6 +1059,7 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("revision"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("chart"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("frontmatter"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("cell-comment"), true);
@@ -1031,6 +1072,8 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.table.sheetName"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.target"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.relationshipId"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.chart.chartPart"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.chart.series"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.merge.ref"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.merge"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.comment"), true);
@@ -1062,6 +1105,8 @@ try {
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   assert.equal(capabilities.payload.formatConversion.agentReadableTargets.includes("evidence-pack-json"), true);
   assert.equal(capabilities.payload.formatConversion.preserves.includes("frontmatter"), true);
+  assert.equal(capabilities.payload.formatConversion.preserves.includes("charts"), true);
+  assert.equal(capabilities.payload.formatConversion.preserves.includes("chartSeries"), true);
   for (const [routeId, parserProfile, qualityGate] of [
     ["pdf", "pdf.text-layout-ocr-route", "page-order-preserved"],
     ["word", "wordprocessingml-paragraph-style-route", "word-annotation-refs-preserved"],
@@ -1082,6 +1127,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-chart-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
@@ -1089,6 +1135,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-chart-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-comment-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
@@ -1096,6 +1143,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-comment-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-date-serials-normalized"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-chart-refs-preserved"), true);
   for (const extension of [".pdf", ".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot", ".rtf", ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm", ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm", ".ppt", ".pps", ".pot", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".mbox", ".png", ".gif", ".pgm", ".zip", ".tar", ".tgz", ".tar.gz", ".7z", ".md", ".json", ".jsonc", ".ipynb", ".yaml", ".toml", ".ini", ".properties", ".env", ".svg", ".drawio", ".mmd", ".mermaid", ".puml", ".plantuml", ".js", ".ts", ".py", ".go", ".rs", ".diff", ".patch", ".ics", ".vcs", ".html", ".htm", ".xhtml", ".xml", ".rst", ".adoc", ".asciidoc", ".org", ".tex", ".latex", ".wiki", ".mediawiki"]) {
     assert.equal(
       capabilities.payload.fileCompatibility.supportedExtensions.includes(extension),
@@ -1961,6 +2009,12 @@ try {
     trace.status === "completed" &&
     trace.images === 1
   )), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.word.charts" &&
+    trace.status === "completed" &&
+    trace.charts === 1 &&
+    trace.chartSeries === 1
+  )), true);
   assert.equal(docxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(docxPayloadCorpus.elementPlan.sourceFormat, "docx");
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.title >= 1, true);
@@ -1971,6 +2025,7 @@ try {
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.chart >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.revision >= 2, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.footnote >= 1, true);
@@ -2024,6 +2079,15 @@ try {
     element.image?.target === "word/media/architecture.png" &&
     element.image?.description === "DOCX architecture diagram evidence"
   )), true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "chart" &&
+    element.href === "word/charts/chart1.xml" &&
+    element.chart?.relationshipId === "rIdChart1" &&
+    element.chart?.chartPart === "word/charts/chart1.xml" &&
+    element.chart?.title === "DOCX Decision Trend" &&
+    element.chart?.chartType === "barChart" &&
+    element.chart?.series?.some((series) => series.name === "DOCX Evidence Count" && series.values.includes("84"))
+  )), true);
   assert.equal(docxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(docxPayloadCorpus.windowPlan.source.structureFormat, "docx");
   assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2062,12 +2126,20 @@ try {
     ref.href === "word/media/architecture.png" &&
     ref.image?.relationshipId === "rIdImage1"
   ))), true);
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "chart" &&
+    ref.href === "word/charts/chart1.xml" &&
+    ref.chart?.relationshipId === "rIdChart1" &&
+    ref.chart?.series?.some((series) => series.name === "DOCX Evidence Count")
+  ))), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.parserProfile, "wordprocessingml-paragraph-style-route");
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("paragraphStyles"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("listLevels"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("images"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("charts"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("chartSeries"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("footnotes"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("revisions"), true);
@@ -2117,6 +2189,14 @@ try {
       ref.type === "image" &&
       ref.image?.target === "word/media/architecture.png" &&
       ref.image?.relationshipId === "rIdImage1"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-8" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "chart" &&
+      ref.chart?.chartPart === "word/charts/chart1.xml" &&
+      ref.chart?.series?.some((series) => series.name === "DOCX Evidence Count")
     ))
   )), true);
   const zipPayloadCorpus = createRun.payload.result.corpusPlan.documents.find((document) => document.sourceId === "source-9");
@@ -2609,6 +2689,13 @@ try {
     trace.images === 1 &&
     trace.geometries === 1
   )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.charts" &&
+    trace.status === "completed" &&
+    trace.charts === 1 &&
+    trace.chartSeries === 1 &&
+    trace.geometries === 1
+  )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(pptxPayloadCorpus.elementPlan.sourceFormat, "pptx");
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
@@ -2617,6 +2704,7 @@ try {
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.chart >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["speaker-note"] >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
@@ -2677,8 +2765,22 @@ try {
     element.bbox?.y === 144 &&
     element.layout?.strategy === "presentationml-image-ref.v1"
   )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "chart" &&
+    element.page === 1 &&
+    element.href === "ppt/charts/chart1.xml" &&
+    element.chart?.relationshipId === "rIdChart1" &&
+    element.chart?.chartPart === "ppt/charts/chart1.xml" &&
+    element.chart?.title === "PPTX Roadmap Trend" &&
+    element.chart?.series?.some((series) => series.name === "Slide Evidence Count" && series.categories.includes("Q2")) &&
+    element.shape?.id === "6" &&
+    element.shape?.name === "Roadmap Trend Chart" &&
+    element.layout?.strategy === "presentationml-chart-ref.v1"
+  )), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("links"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("images"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("charts"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("chartSeries"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-placeholder"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("speaker-notes"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
@@ -2704,6 +2806,12 @@ try {
     ref.image?.relationshipId === "rIdImage1" &&
     ref.layout?.strategy === "presentationml-image-ref.v1"
   ))), true);
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "chart" &&
+    ref.page === 1 &&
+    ref.chart?.relationshipId === "rIdChart1" &&
+    ref.layout?.strategy === "presentationml-chart-ref.v1"
+  ))), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
     unit.metadata?.elementRefs?.some((ref) => ref.type === "speaker-note")
@@ -2728,6 +2836,14 @@ try {
     unit.metadata?.elementRefs?.some((ref) => (
       ref.type === "image" &&
       ref.image?.target === "ppt/media/roadmap.png"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "chart" &&
+      ref.chart?.chartPart === "ppt/charts/chart1.xml" &&
+      ref.chart?.series?.some((series) => series.name === "Slide Evidence Count")
     ))
   )), true);
   assert.equal(pptxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -2784,12 +2900,14 @@ try {
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.date-styles" && trace.status === "completed" && trace.dateStyles === 1 && trace.dateCells === 1), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.hyperlinks" && trace.status === "completed" && trace.hyperlinks === 1), true);
+  assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.sheet.charts" && trace.status === "completed" && trace.charts === 1 && trace.chartSeries === 1), true);
   assert.equal(xlsxPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(xlsxPayloadCorpus.elementPlan.sourceFormat, "xlsx");
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-header"] >= 1, true);
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["merged-cell"] >= 1, true);
   assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes["cell-comment"] >= 1, true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.elementTypes.chart >= 1, true);
   assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "merged-cell" &&
     element.table?.format === "xlsx" &&
@@ -2843,6 +2961,17 @@ try {
     element.table?.format === "xlsx" &&
     element.cells?.some((cell) => cell.ref === "A2" && cell.hyperlink?.target === "https://example.com/acme")
   )), true);
+  assert.equal(xlsxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "chart" &&
+    element.table?.format === "xlsx" &&
+    element.table?.sheetName === "Finance Evidence" &&
+    element.chart?.relationshipId === "rIdChart1" &&
+    element.chart?.chartPart === "xl/charts/chart1.xml" &&
+    element.chart?.title === "XLSX Finance Trend" &&
+    element.chart?.sheetName === "Finance Evidence" &&
+    element.chart?.worksheetPath === "xl/worksheets/sheet1.xml" &&
+    element.chart?.series?.some((series) => series.name === "Finance Evidence Count" && series.values.includes("84"))
+  )), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.parserProfile, "spreadsheetml-sheet-row-cell-route");
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("cellRefs"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("sheetName"), true);
@@ -2852,6 +2981,8 @@ try {
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("dateSerials"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("formulas"), true);
   assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("hyperlinks"), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("charts"), true);
+  assert.equal(xlsxPayloadCorpus.formatConversionProfile.preserves.includes("chartSeries"), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => ref.type === "table-row")), true);
   assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
@@ -2885,6 +3016,12 @@ try {
     ref.table?.format === "xlsx" &&
     ref.cells?.some((cell) => cell.ref === "A2" && cell.hyperlink?.target === "https://example.com/acme")
   ))), true);
+  assert.equal(xlsxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "chart" &&
+    ref.table?.sheetName === "Finance Evidence" &&
+    ref.chart?.relationshipId === "rIdChart1" &&
+    ref.chart?.series?.some((series) => series.name === "Finance Evidence Count")
+  ))), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-14" &&
     unit.metadata?.elementRefs?.some((ref) => (
@@ -2915,6 +3052,14 @@ try {
       ref.type === "table-row" &&
       ref.table?.format === "xlsx" &&
       ref.cells?.some((cell) => cell.ref === "A2" && cell.hyperlink?.target === "https://example.com/acme")
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-14" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "chart" &&
+      ref.chart?.chartPart === "xl/charts/chart1.xml" &&
+      ref.chart?.series?.some((series) => series.name === "Finance Evidence Count")
     ))
   )), true);
   assert.equal(xlsxPayloadCorpus.parserTrace.some((trace) => trace.stage === "table.time-index" && trace.status === "completed" && trace.from === "2026-05-31"), true);
@@ -3436,6 +3581,7 @@ try {
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithSpreadsheetCommentRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithFrontmatterRefsCount >= 1, true);
+  assert.equal(agentMessage.formatConversionPlan.summary.documentWithChartRefsCount >= 1, true);
   assert.equal(agentMessage.graphEvidence.summary.entityCount > 0, true);
   assert.equal(agentMessage.classification.communityCount >= agentMessage.classification.coreGroupCount, true);
   assert.equal(agentMessage.classification.groups.some((group) => group.distillationUnit?.mode === "topic-isolated"), true);
@@ -3471,6 +3617,8 @@ try {
   assert.equal(conversionPlan.summary.documentWithPresentationCommentRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithSpreadsheetCommentRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithChartRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithChartSeriesRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithStyleRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithNumberingRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
@@ -3526,16 +3674,24 @@ try {
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-hyperlink-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "spreadsheet" &&
+    document.evidence.chartRefCount >= 1 &&
+    document.evidence.chartSeriesRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-chart-refs-preserved" && gate.status === "passed")
+  )), true);
+  assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "word" &&
     document.evidence.annotationElementCount >= 1 &&
     document.evidence.styleRefCount >= 1 &&
     document.evidence.numberingRefCount >= 1 &&
     document.evidence.linkElementCount >= 1 &&
+    document.evidence.chartRefCount >= 1 &&
     document.evidence.revisionRefCount >= 2 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-image-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-chart-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-revision-refs-preserved" && gate.status === "passed") &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
   )), true);
@@ -3545,11 +3701,13 @@ try {
     document.evidence.shapeRefCount >= 2 &&
     document.evidence.linkElementCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
+    document.evidence.chartRefCount >= 1 &&
     document.evidence.speakerNoteElementCount >= 1 &&
     document.evidence.presentationCommentRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-chart-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-comment-refs-preserved" && gate.status === "passed")
   )), true);
@@ -3590,20 +3748,24 @@ try {
     document.parserStages.includes("office.word.revisions") &&
     document.parserStages.includes("office.word.hyperlinks") &&
     document.parserStages.includes("office.word.images") &&
+    document.parserStages.includes("office.word.charts") &&
     document.preserves.includes("paragraphStyles") &&
     document.preserves.includes("listLevels") &&
     document.preserves.includes("links") &&
     document.preserves.includes("images") &&
+    document.preserves.includes("charts") &&
     document.preserves.includes("comments") &&
     document.preserves.includes("revisions") &&
     document.evidence.styleRefCount >= 1 &&
     document.evidence.numberingRefCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
+    document.evidence.chartRefCount >= 1 &&
     document.evidence.revisionRefCount >= 2 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-image-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-chart-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-annotation-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-revision-refs-preserved" && gate.status === "passed")
   )), true);
@@ -3613,20 +3775,24 @@ try {
     document.parserStages.includes("office.presentation.placeholders") &&
     document.parserStages.includes("office.presentation.hyperlinks") &&
     document.parserStages.includes("office.presentation.images") &&
+    document.parserStages.includes("office.presentation.charts") &&
     document.parserStages.includes("office.presentation.speaker-notes") &&
     document.parserStages.includes("office.presentation.comments") &&
     document.preserves.includes("shape-placeholder") &&
     document.preserves.includes("shape-bbox") &&
     document.preserves.includes("links") &&
     document.preserves.includes("images") &&
+    document.preserves.includes("charts") &&
     document.preserves.includes("speaker-notes") &&
     document.preserves.includes("comments") &&
     document.evidence.placeholderRefCount >= 2 &&
     document.evidence.imageRefCount >= 1 &&
+    document.evidence.chartRefCount >= 1 &&
     document.evidence.presentationCommentRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-chart-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-comment-refs-preserved" && gate.status === "passed")
   )), true);
@@ -3638,21 +3804,25 @@ try {
     document.parserStages.includes("table.sheet.date-styles") &&
     document.parserStages.includes("table.sheet.formulas") &&
     document.parserStages.includes("table.sheet.hyperlinks") &&
+    document.parserStages.includes("table.sheet.charts") &&
     document.preserves.includes("sheetName") &&
     document.preserves.includes("sheetId") &&
     document.preserves.includes("mergedCells") &&
     document.preserves.includes("cellComments") &&
     document.preserves.includes("dateSerials") &&
     document.preserves.includes("hyperlinks") &&
+    document.preserves.includes("charts") &&
     document.evidence.sheetRefCount >= 1 &&
     document.evidence.mergeRefCount >= 1 &&
     document.evidence.spreadsheetCommentRefCount >= 1 &&
     document.evidence.dateCellRefCount >= 1 &&
     document.evidence.formulaRefCount >= 1 &&
+    document.evidence.chartRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-merged-cell-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-comment-refs-preserved" && gate.status === "passed") &&
-    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-date-serials-normalized" && gate.status === "passed")
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-date-serials-normalized" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-chart-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "markdown" &&

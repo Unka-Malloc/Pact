@@ -118,7 +118,7 @@ flowchart LR
 | 层级 | 当前可用基线 | 后续调整落点 |
 | --- | --- | --- |
 | 文件路由 | 外部服务已按 extension/media/source kind 生成 `routePlan`，PDF 额外输出 `pdf-subtype-routing.v1` 和 `pdfProfile`，可区分文本 PDF、扫描 PDF、字体映射风险 PDF、图片密集 PDF、加密 PDF 和空/未知 PDF | 内建 file processor 与 Tika 调用前也必须统一 route-first，并回填 PDF 子类型字段 |
-| 解析链 | 外部服务已覆盖文本、配置、Markdown frontmatter/block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown frontmatter key/value refs、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry、PDF URI annotation links、PDF outline/bookmark refs、Word paragraph styles/numbering refs/hyperlinks/images/comments/footnotes/endnotes/revisions、Word/PowerPoint/OpenDocument table cells、OpenDocument hyperlinks、PowerPoint shape id/name/placeholders/geometry/hyperlinks/images/speaker notes/comments、Excel workbook sheet name/id/state/path、cell coordinates、merged-cell ranges、cell comments、SpreadsheetML date styles/date serials/formulas 和 spreadsheet hyperlinks 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
+| 解析链 | 外部服务已覆盖文本、配置、Markdown frontmatter/block、标记语言、图表、Notebook、源码、diff/patch、日历事件、PDF、OOXML、OpenDocument、EPUB、EML/MSG/MBOX 邮件、压缩包、OCR/Tika fallback，并把 Markdown frontmatter key/value refs、markup、OOXML、OpenDocument、EPUB、基础 PDF 文本、PDF text-operator geometry、PDF URI annotation links、PDF outline/bookmark refs、Word paragraph styles/numbering refs/hyperlinks/images/charts/comments/footnotes/endnotes/revisions、Word/PowerPoint/OpenDocument table cells、OpenDocument hyperlinks、PowerPoint shape id/name/placeholders/geometry/hyperlinks/images/charts/speaker notes/comments、Excel workbook sheet name/id/state/path、cell coordinates、merged-cell ranges、cell comments、SpreadsheetML date styles/date serials/formulas/hyperlinks/charts 纳入 `document-element-model.v1` | 内建解析器补齐 parser trace、runtime doctor、配置/标记语言/图表/Notebook/源码/变更集/日历文档路由和 PDF 子类型判定 |
 | Raw Corpus | 外部服务已用 `EMPTY_RAW_CORPUS` 拦截空语料 | 内建 workbench 同步禁止假成功，并暴露用户/智能体双响应 |
 | 大文件 | 外部服务已支持 mounted file refs、streaming JSONL document manifests、archive refs、chunked windowing、大 JSON/JSONC file-ref streaming，并对 mounted Office/OpenDocument/EPUB 结构包执行结构 entry 选择、bounded native parse 和 large-entry streaming fallback | 上传、manifest、解析、蒸馏三层统一流式窗口协议 |
 | 分类蒸馏 | 外部服务 baseline 为 `hashing_embedding_window_community_classification_v3`，已输出语义概念主题层级、分组理由、低耦合高内聚指标和垃圾排除原因 | 内建运行时升级 embedding cosine、低耦合高内聚分组和垃圾池 |
@@ -144,6 +144,22 @@ flowchart LR
 | 时间线层 | `eventTime`、`documentTime`、`ingestedAt`、`distilledAt` 和时间段过滤 | 智能体只能拿全量结果自行扫 JSON |
 | 响应导出层 | `console`、`agent`、`api` response profile，Markdown/DOCX/JSON/ZIP/Agent JSON，以及 PDF/Word/PowerPoint/Excel/Markdown 的 format conversion profile | 用户看到机器 trace，智能体拿不到可重试错误码 |
 | 部署验证层 | 单机包、OrbStack 容器、离线依赖、轻重 verifier | 只在开发机偶然可用，不能复现 |
+
+---
+
+### 2.5 办公文档专业适配基线
+
+办公文档不能按“抽文本再总结”处理，必须按格式族生成结构元素、转换 profile 和质量门禁。
+
+| 格式 | 专业适配要求 | 当前基线 |
+| --- | --- | --- |
+| PDF | 先做 subtype routing，再保留页序、URI link、outline/bookmark、可用 geometry 和 OCR/Tika 降级状态 | `pdf.subtype-route`、`pdf.hyperlinks`、`pdf.outlines`、`pdf.text.pdftotext` |
+| Word | 保留标题、段落样式、编号、表格单元格、超链接、图片、图表、批注、脚注、尾注和修订 | `office.word.styles`、`office.word.numbering`、`office.word.tables`、`office.word.hyperlinks`、`office.word.images`、`office.word.charts`、`office.word.annotations`、`office.word.revisions` |
+| PowerPoint | 保留 slide 顺序、shape id/name、placeholder、bbox、表格、超链接、图片、图表、speaker notes 和评论 | `office.presentation.slides`、`office.presentation.placeholders`、`office.presentation.tables`、`office.presentation.hyperlinks`、`office.presentation.images`、`office.presentation.charts`、`office.presentation.speaker-notes`、`office.presentation.comments` |
+| Excel | 保留 workbook sheet refs、行列坐标、merged cells、cell comments、date serial、formula、hyperlink、chart drawing relationship 和时间索引 | `table.workbook.sheets`、`table.sheet.cells`、`table.sheet.merged-cells`、`table.sheet.comments`、`table.sheet.date-styles`、`table.sheet.formulas`、`table.sheet.hyperlinks`、`table.sheet.charts`、`table.time-index` |
+| Markdown | 保留 frontmatter、heading tree、table、code、link、image，而不是当成普通纯文本 | `markdown.frontmatter`、`markdown.structure` |
+
+验收标准：每个格式都必须在 `format-conversion-plan-json` 和 `professional-format-manifest-json` 中给出 parser profile、structure units、preserves、quality gate results、known losses，并在 agent payload 中保留 element refs。
 
 ---
 
