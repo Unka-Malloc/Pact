@@ -417,6 +417,19 @@ try {
   assert.equal(localGrant.payload.targetMatch.matched, true);
   assert.deepEqual(localGrant.payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrant.payload.supportedTargets, expectedInstallTargets);
+  assert.match(localGrant.payload.connector.githubOneLineCommand, /pact-mcp-install\.sh/);
+  assert.match(localGrant.payload.connector.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
+  assert.equal(
+    localGrant.payload.connector.githubOneLineAutoInstallCommand,
+    `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --url '${server.url}' --json`
+  );
+  assert.equal(
+    localGrant.payload.connector.githubOneLinePriorityInstallCommand,
+    `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target claude-code,codex,openclaw --url '${server.url}' --json`
+  );
+  assert.equal(localGrant.payload.connector.oneCommandAutoInstall, localGrant.payload.connector.githubOneLineAutoInstallCommand);
+  assert.equal(localGrant.payload.connector.oneCommandPriorityInstall, localGrant.payload.connector.githubOneLinePriorityInstallCommand);
+  assert.equal(localGrant.payload.connector.oneCommandClientInstallJson, localGrant.payload.connector.githubOneLineClientInstallJsonCommand);
   assert.equal(
     localGrant.payload.connector.autoInstallCommand,
     `npx pact-mcp-connector@latest install --target auto --url '${server.url}' --json`

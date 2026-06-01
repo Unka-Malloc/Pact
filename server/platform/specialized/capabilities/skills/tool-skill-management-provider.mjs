@@ -2,6 +2,9 @@ export const TOOL_SKILL_MANAGEMENT_PROTOCOL_VERSION = "pact.tool-skill-managemen
 
 const LOCAL_GRANT_MCP_SHAREDSPACE_TOOL_NAME = "pact.sharedspace";
 const LOCAL_GRANT_MCP_CONNECTOR_PACKAGE = "pact-mcp-connector";
+const LOCAL_GRANT_MCP_CONNECTOR_REPO = "Unka-Malloc/Pact";
+const LOCAL_GRANT_BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
+const LOCAL_GRANT_BOOTSTRAP_SCRIPT = "pact-mcp-install.sh";
 const LOCAL_GRANT_PRIORITY_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
 
 const LOCAL_GRANT_WRITE_TOOLSETS = Object.freeze([
@@ -236,12 +239,35 @@ function localGrantShellQuote(value) {
   return `'${String(value || "").replace(/'/g, "'\\''")}'`;
 }
 
+function localGrantGithubOneLineCommand() {
+  return `/bin/sh -c "$(curl ${LOCAL_GRANT_BOOTSTRAP_CURL_FLAGS} https://github.com/${LOCAL_GRANT_MCP_CONNECTOR_REPO}/releases/latest/download/${LOCAL_GRANT_BOOTSTRAP_SCRIPT})"`;
+}
+
+function localGrantGithubOneLineInstallCommands({ baseUrl = "" } = {}) {
+  const urlArgs = baseUrl ? ` --url ${localGrantShellQuote(baseUrl)}` : "";
+  const command = localGrantGithubOneLineCommand();
+  const priorityTargets = LOCAL_GRANT_PRIORITY_TARGETS.join(",");
+  return {
+    githubOneLineCommand: command,
+    githubOneLineInstallCommand: urlArgs ? `${command} --${urlArgs}` : command,
+    githubOneLineClientInstallJsonCommand: `${command} -- --target <client>${urlArgs} --json`,
+    githubOneLineAutoInstallCommand: `${command} -- --target auto${urlArgs} --json`,
+    githubOneLinePriorityInstallCommand: `${command} -- --target ${priorityTargets}${urlArgs} --json`
+  };
+}
+
 function localGrantConnectorMetadata({ request = null, discoveryState = null } = {}) {
   const baseUrl = localGrantRequestBaseUrl({ request, discoveryState });
   const urlArgs = baseUrl ? ` --url ${localGrantShellQuote(baseUrl)}` : "";
+  const oneLineCommands = localGrantGithubOneLineInstallCommands({ baseUrl });
   return {
     packageName: LOCAL_GRANT_MCP_CONNECTOR_PACKAGE,
     priorityTargets: [...LOCAL_GRANT_PRIORITY_TARGETS],
+    ...oneLineCommands,
+    oneCommandInstall: oneLineCommands.githubOneLineInstallCommand,
+    oneCommandClientInstallJson: oneLineCommands.githubOneLineClientInstallJsonCommand,
+    oneCommandAutoInstall: oneLineCommands.githubOneLineAutoInstallCommand,
+    oneCommandPriorityInstall: oneLineCommands.githubOneLinePriorityInstallCommand,
     discoverCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest discover-local${urlArgs} --json`,
     scanCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest scan${urlArgs} --json`,
     doctorCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest doctor${urlArgs} --json`,
