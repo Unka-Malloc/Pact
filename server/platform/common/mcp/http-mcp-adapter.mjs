@@ -566,6 +566,7 @@ function mcpRuntimeMetadata({ listenUrl = "", discoveryState = null } = {}) {
 function mcpAuthorizationErrorData({ authorization = {}, listenUrl = "", discoveryState = null } = {}) {
   const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
   const connector = mcpConnectorRuntimeMetadata(discovery);
+  const nextCommand = connector.oneCommandAutoInstall || connector.autoInstallCommand;
   return {
     code: authorization.reasonCode || "authorization_denied",
     stableToolName: MCP_STABLE_TOOL_NAME,
@@ -573,12 +574,14 @@ function mcpAuthorizationErrorData({ authorization = {}, listenUrl = "", discove
     localGrantEndpoint: discovery.installer.localGrantEndpoint,
     priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
     supportedTargets: mcpSupportedTargetDetails(),
-    nextCommand: connector.autoInstallCommand,
+    nextCommand,
     repairCommands: [
+      nextCommand,
+      connector.oneCommandPriorityInstall,
       connector.autoInstallCommand,
       connector.priorityInstallCommand,
       connector.doctorCommand
-    ].filter(Boolean)
+    ].filter(Boolean).filter((command, index, commands) => commands.indexOf(command) === index)
   };
 }
 
