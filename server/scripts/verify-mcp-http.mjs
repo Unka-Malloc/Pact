@@ -936,14 +936,35 @@ try {
         input: {},
         workspaceId: "workspace_private_envelope_probe",
         operatorId: "/home/private-user/agent",
-        intent: "inspect /home/private-user/report.txt"
+        intent: "inspect /home/private-user/report.txt with Authorization: Bearer envelope_private_token and apiKey=envelope_private_token",
+        subject: {
+          token: "envelope_private_token",
+          tokenPrefix: "envelope_private",
+          secretRef: "secret://pact/mcp/envelope",
+          headers: {
+            Authorization: "Bearer envelope_private_token",
+            "X-Pact-Api-Key": "envelope_private_token",
+            Accept: "application/json"
+          }
+        }
       }
     }, 39))
   });
   assert.equal(internalEnvelopeProbe.status, 200);
   assert.equal(internalEnvelopeProbe.payload.result.structuredContent.envelope.workspaceId, "workspace-hidden");
   assert.equal(internalEnvelopeProbe.payload.result.structuredContent.envelope.operatorId, "[server-internal-path]");
+  assert.equal(
+    internalEnvelopeProbe.payload.result.structuredContent.envelope.intent,
+    "inspect [server-internal-path] with Authorization: Bearer <redacted-token> and apiKey=<redacted-secret>"
+  );
+  assert.equal(Object.prototype.hasOwnProperty.call(internalEnvelopeProbe.payload.result.structuredContent.envelope.subject, "token"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(internalEnvelopeProbe.payload.result.structuredContent.envelope.subject, "tokenPrefix"), false);
+  assert.equal(internalEnvelopeProbe.payload.result.structuredContent.envelope.subject.secretRef, "secret://pact/mcp/envelope");
+  assert.equal(Object.prototype.hasOwnProperty.call(internalEnvelopeProbe.payload.result.structuredContent.envelope.subject.headers, "Authorization"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(internalEnvelopeProbe.payload.result.structuredContent.envelope.subject.headers, "X-Pact-Api-Key"), false);
+  assert.equal(internalEnvelopeProbe.payload.result.structuredContent.envelope.subject.headers.Accept, "application/json");
   assertNoMcpInternalLeak(internalEnvelopeProbe.payload, "MCP operation envelope");
+  assert.equal(JSON.stringify(internalEnvelopeProbe.payload).includes("envelope_private_token"), false);
 
   const capabilities = await fetchJson(`${server.url}/mcp`, {
     method: "POST",

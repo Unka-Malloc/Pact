@@ -1223,7 +1223,12 @@ function publicMcpEnvelopeString(value, workspaceDirectory = null) {
   return text
     .replace(/\bworkspace_[A-Za-z0-9_]+\b/g, (workspaceId) => publicMcpWorkspaceToken(workspaceDirectory, workspaceId))
     .replace(/(^|[\s"'=:(])((?:\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/)[^\s"',)\]}]+)/g, "$1[server-internal-path]")
-    .replace(/(^|[\s"'=:(])([A-Za-z]:[\\/][^\s"',)\]}]+)/g, "$1[server-internal-path]");
+    .replace(/(^|[\s"'=:(])([A-Za-z]:[\\/][^\s"',)\]}]+)/g, "$1[server-internal-path]")
+    .replace(/\b(Authorization\s*:\s*Bearer\s+)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(X-Pact-Api-Key\s*:\s*)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(x-pact-tool-token\s*:\s*)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(--token(?:=|\s+))[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(token|access_token|refresh_token|api_key|apiKey|secret|password)=([^\s"',;)\]}]+)/gi, "$1=<redacted-secret>");
 }
 
 function publicMcpEnvelopeValue(value, workspaceDirectory = null, depth = 0) {
@@ -1236,10 +1241,38 @@ function publicMcpEnvelopeValue(value, workspaceDirectory = null, depth = 0) {
   if (depth > 5) {
     return { type: "object", keys: Object.keys(value).slice(0, 40).map((key) => publicMcpEnvelopeString(key, workspaceDirectory)) };
   }
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-    publicMcpEnvelopeString(key, workspaceDirectory),
-    publicMcpEnvelopeValue(child, workspaceDirectory, depth + 1)
-  ]));
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !isSensitiveMcpEnvelopeKey(key))
+    .map(([key, child]) => [
+      publicMcpEnvelopeString(key, workspaceDirectory),
+      publicMcpEnvelopeValue(child, workspaceDirectory, depth + 1)
+    ]));
+}
+
+function isSensitiveMcpEnvelopeKey(key = "") {
+  const normalized = String(key || "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  if (normalized === "secretref" || normalized === "endpointref") {
+    return false;
+  }
+  return [
+    "authorization",
+    "bearertoken",
+    "cookie",
+    "setcookie",
+    "token",
+    "tokenprefix",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "apikey",
+    "xpactapikey",
+    "xpacttooltoken",
+    "secret",
+    "clientsecret",
+    "password",
+    "privatekey",
+    "privatekeyjwk"
+  ].includes(normalized);
 }
 
 function mcpEnvelopePublic(envelope = {}, workspaceDirectory = null) {
