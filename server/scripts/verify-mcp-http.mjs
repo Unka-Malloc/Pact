@@ -791,6 +791,11 @@ try {
   });
   assert.equal(failedSharedspaceRead.status, 200);
   assert.ok(failedSharedspaceRead.payload.error);
+  assert.equal(failedSharedspaceRead.payload.error.data.exchange.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
+  assert.equal(failedSharedspaceRead.payload.error.data.exchange.action, "file-read");
+  assert.equal(failedSharedspaceRead.payload.error.data.exchange.path, "[server-internal-path]");
+  assert.equal(failedSharedspaceRead.payload.error.data.target.targetKind, "sharedspace");
+  assert.equal(failedSharedspaceRead.payload.error.data.target.workspaceId, "workspace-hidden");
   assert.match(failedSharedspaceReadSse.text, /"exchange":\{"schemaVersion":"pact\.mcp\.sharedspace-exchange\.v1"/);
   assert.match(failedSharedspaceReadSse.text, /"action":"file-read"/);
   assert.match(failedSharedspaceReadSse.text, /"path":"\[server-internal-path\]"/);

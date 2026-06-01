@@ -1684,6 +1684,10 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
         payload: publicFailurePayload,
         target
       });
+      const publicTarget = publicMcpEnvelopeValue(target, resolvedWorkspaceInput.workspaceDirectory);
+      const publicExchange = exchange
+        ? publicMcpEnvelopeValue(exchange, resolvedWorkspaceInput.workspaceDirectory)
+        : null;
       broadcastMcpOperationReply({
         envelope: parsedCall.envelope,
         operation: parsedCall.operation,
@@ -1704,8 +1708,10 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
         body: jsonRpcError(id, -32000, error.message || "MCP tool call failed.", {
           code: error.code || "tool_call_failed",
           status,
-          details: error.details || {},
-          traceId: result.payload?.traceId || ""
+          details: publicMcpEnvelopeValue(error.details || {}, resolvedWorkspaceInput.workspaceDirectory),
+          traceId: publicMcpEnvelopeString(result.payload?.traceId || "", resolvedWorkspaceInput.workspaceDirectory),
+          target: publicTarget,
+          ...(publicExchange ? { exchange: publicExchange } : {})
         })
       };
     }
@@ -1727,6 +1733,10 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
       payload: publicPayload,
       target
     });
+    const publicTarget = publicMcpEnvelopeValue(target, resolvedWorkspaceInput.workspaceDirectory);
+    const publicExchange = exchange
+      ? publicMcpEnvelopeValue(exchange, resolvedWorkspaceInput.workspaceDirectory)
+      : null;
     broadcastMcpOperationReply({
       envelope: parsedCall.envelope,
       operation: parsedCall.operation,
@@ -1742,8 +1752,8 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
         operation: parsedCall.operation,
         ...mcpVersionInfo(),
         envelope: mcpEnvelopePublic(parsedCall.envelope, resolvedWorkspaceInput.workspaceDirectory),
-        target: publicMcpEnvelopeValue(target, resolvedWorkspaceInput.workspaceDirectory),
-        ...(exchange ? { exchange } : {}),
+        target: publicTarget,
+        ...(publicExchange ? { exchange: publicExchange } : {}),
         payload: publicPayload
       }
     }));
