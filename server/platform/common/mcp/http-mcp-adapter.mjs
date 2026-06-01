@@ -539,6 +539,7 @@ function mcpConnectorRuntimeMetadata(discovery, version = mcpVersionInfo()) {
     clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
     autoInstallCommand: discovery.installer.autoInstallCommand,
     priorityInstallCommand: discovery.installer.priorityInstallCommand,
+    oneCommandClientInstallJson: discovery.installer.oneCommandClientInstallJson,
     oneCommandAutoInstall: discovery.installer.oneCommandAutoInstall,
     oneCommandPriorityInstall: discovery.installer.oneCommandPriorityInstall,
     discoverCommand: discovery.installer.discoverCommand,
@@ -612,6 +613,7 @@ function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {
   return {
     command,
     installCommand: urlArgs ? `${command} --${urlArgs}` : command,
+    clientInstallJsonCommand: `${command} -- --target <client>${urlArgs} --json`,
     autoInstallCommand: `${command} -- --target auto${urlArgs} --json`,
     priorityInstallCommand: `${command} -- --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`
   };
@@ -729,6 +731,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const {
     command: githubOneLineCommand,
     installCommand: githubOneLineInstallCommand,
+    clientInstallJsonCommand: githubOneLineClientInstallJsonCommand,
     autoInstallCommand: githubOneLineAutoInstallCommand,
     priorityInstallCommand: githubOneLinePriorityInstallCommand
   } = githubOneLineMcpInstallCommands({ baseUrl });
@@ -799,9 +802,11 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       githubOneLineCommand,
       githubOneLineInstallCommand,
+      githubOneLineClientInstallJsonCommand,
       githubOneLineAutoInstallCommand,
       githubOneLinePriorityInstallCommand,
       oneCommandInstall: githubOneLineInstallCommand,
+      oneCommandClientInstallJson: githubOneLineClientInstallJsonCommand,
       oneCommandAutoInstall: githubOneLineAutoInstallCommand,
       oneCommandPriorityInstall: githubOneLinePriorityInstallCommand,
       installCommand,

@@ -152,11 +152,14 @@ try {
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
   assert.match(discovery.payload.installer.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
   assert.match(discovery.payload.installer.githubOneLineInstallCommand, /pact-mcp-install\.sh.+--url/);
+  assert.match(discovery.payload.installer.githubOneLineClientInstallJsonCommand, /pact-mcp-install\.sh.+--target <client>/);
+  assert.match(discovery.payload.installer.githubOneLineClientInstallJsonCommand, /--json/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /--json/);
   assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommand, /--json/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
+  assert.equal(discovery.payload.installer.oneCommandClientInstallJson, discovery.payload.installer.githubOneLineClientInstallJsonCommand);
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.equal(discovery.payload.installer.oneCommandPriorityInstall, discovery.payload.installer.githubOneLinePriorityInstallCommand);
   assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
@@ -331,6 +334,8 @@ try {
     initialize.payload.result._meta.connector.clientInstallJsonCommand,
     `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
   );
+  assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
+  assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJson, /--json/);
   assert.equal(initialize.payload.result._meta.connector.scanCommand, `npx pact-mcp-connector@latest scan --url '${server.url}' --json`);
   assert.match(initialize.payload.result._meta.connector.oneCommandPriorityInstall, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.deepEqual(initialize.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
@@ -351,6 +356,7 @@ try {
     unauthenticatedList.payload.error.data.connector.clientInstallJsonCommand,
     `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
   );
+  assert.match(unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
   assert.equal(unauthenticatedList.payload.error.data.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.deepEqual(unauthenticatedList.payload.error.data.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.ok(unauthenticatedList.payload.error.data.repairCommands.includes(unauthenticatedList.payload.error.data.connector.autoInstallCommand));
