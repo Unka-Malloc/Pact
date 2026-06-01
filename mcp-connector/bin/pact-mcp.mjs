@@ -567,6 +567,10 @@ function installGuidanceMetadata({ includeUrl = false, baseUrl = "", tokenEnv = 
     priorityTargets: [...PRIORITY_INSTALL_TARGETS],
     supportedTargets: [...SUPPORTED_TARGETS],
     supportedTargetDetails: supportedTargetDetails(),
+    discoverCommand: shellCommandForDiscoverLocal({ includeUrl, baseUrl }),
+    scanCommand: shellCommandForScan({ includeUrl, baseUrl, tokenEnv }),
+    doctorCommand: shellCommandForDoctor({ includeUrl, baseUrl, tokenEnv }),
+    clientInstallJsonCommand: shellCommandForInstall({ target: "<client>", includeUrl, baseUrl, tokenEnv }),
     autoInstallCommand: shellCommandForInstall({ target: "auto", includeUrl, baseUrl, tokenEnv }),
     priorityInstallCommand: shellCommandForInstall({
       target: PRIORITY_INSTALL_TARGET,
