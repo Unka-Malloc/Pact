@@ -798,6 +798,19 @@ function releaseManifest({ channel, packageJson, tarballName, tarballPath, check
       supportedTargets: MCP_CLIENT_TARGETS.map((target) => target.target),
       supportedTargetDetails: supportedTargetDetails()
     },
+    upgrade: {
+      listChanged: true,
+      notification: "notifications/tools/list_changed",
+      reinstallCommand: bootstrap.oneLineCommand,
+      reinstallCommandZhCN: bootstrap.localized.zhCN.oneLineCommand,
+      clientReinstallJsonCommand: bootstrap.oneLineClientInstallJsonCommand,
+      clientReinstallJsonCommandZhCN: bootstrap.localized.zhCN.oneLineClientInstallJsonCommand,
+      agentReinstallCommand: bootstrap.oneLineAutoInstallCommand,
+      agentReinstallCommandZhCN: bootstrap.localized.zhCN.oneLineAutoInstallCommand,
+      priorityAgentReinstallCommand: bootstrap.oneLinePriorityInstallCommand,
+      priorityAgentReinstallCommandZhCN: bootstrap.localized.zhCN.oneLinePriorityInstallCommand,
+      priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS]
+    },
     bootstrap: {
       scriptName: bootstrap.scriptName,
       sha256: bootstrap.sha256,
