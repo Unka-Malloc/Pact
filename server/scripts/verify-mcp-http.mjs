@@ -108,6 +108,9 @@ function bearerHeaders(token) {
   };
 }
 
+const RELEASE_BOOTSTRAP = `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)"`;
+const RELEASE_BOOTSTRAP_ZH_CN = `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.zh-CN.sh)"`;
+
 function assertNoMcpInternalLeak(value, label) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const filesystemLeak = /(^|[\s"'=:(])\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/[^\s"',)\]}]*/.exec(text) ||
@@ -151,21 +154,39 @@ try {
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
   assert.match(discovery.payload.installer.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
+  assert.equal(discovery.payload.installer.githubOneLineCommandZhCN, RELEASE_BOOTSTRAP_ZH_CN);
   assert.match(discovery.payload.installer.githubOneLineInstallCommand, /pact-mcp-install\.sh.+--url/);
+  assert.match(discovery.payload.installer.githubOneLineInstallCommandZhCN, /pact-mcp-install\.zh-CN\.sh.+--url/);
   assert.match(discovery.payload.installer.githubOneLineClientInstallJsonCommand, /pact-mcp-install\.sh.+--target <client>/);
   assert.match(discovery.payload.installer.githubOneLineClientInstallJsonCommand, /--json/);
+  assert.match(discovery.payload.installer.githubOneLineClientInstallJsonCommandZhCN, /pact-mcp-install\.zh-CN\.sh.+--target <client>/);
+  assert.match(discovery.payload.installer.githubOneLineClientInstallJsonCommandZhCN, /--json/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(discovery.payload.installer.githubOneLineAutoInstallCommand, /--json/);
+  assert.match(discovery.payload.installer.githubOneLineAutoInstallCommandZhCN, /pact-mcp-install\.zh-CN\.sh.+--target auto/);
+  assert.match(discovery.payload.installer.githubOneLineAutoInstallCommandZhCN, /--json/);
   assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommand, /--json/);
+  assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommandZhCN, /pact-mcp-install\.zh-CN\.sh.+--target claude-code,codex,openclaw/);
+  assert.match(discovery.payload.installer.githubOneLinePriorityInstallCommandZhCN, /--json/);
   assert.equal(discovery.payload.installer.oneCommandInstall, discovery.payload.installer.githubOneLineInstallCommand);
+  assert.equal(discovery.payload.installer.oneCommandInstallZhCN, discovery.payload.installer.githubOneLineInstallCommandZhCN);
   assert.equal(discovery.payload.installer.oneCommandClientInstallJson, discovery.payload.installer.githubOneLineClientInstallJsonCommand);
+  assert.equal(discovery.payload.installer.oneCommandClientInstallJsonZhCN, discovery.payload.installer.githubOneLineClientInstallJsonCommandZhCN);
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
+  assert.equal(discovery.payload.installer.oneCommandAutoInstallZhCN, discovery.payload.installer.githubOneLineAutoInstallCommandZhCN);
   assert.equal(discovery.payload.installer.oneCommandPriorityInstall, discovery.payload.installer.githubOneLinePriorityInstallCommand);
+  assert.equal(discovery.payload.installer.oneCommandPriorityInstallZhCN, discovery.payload.installer.githubOneLinePriorityInstallCommandZhCN);
   assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
+  assert.equal(discovery.payload.upgrade.reinstallCommandZhCN, discovery.payload.installer.githubOneLineInstallCommandZhCN);
   assert.equal(discovery.payload.upgrade.clientReinstallJsonCommand, discovery.payload.installer.githubOneLineClientInstallJsonCommand);
+  assert.equal(discovery.payload.upgrade.clientReinstallJsonCommandZhCN, discovery.payload.installer.githubOneLineClientInstallJsonCommandZhCN);
   assert.equal(discovery.payload.upgrade.agentReinstallCommand, discovery.payload.installer.githubOneLineAutoInstallCommand);
+  assert.equal(discovery.payload.upgrade.agentReinstallCommandZhCN, discovery.payload.installer.githubOneLineAutoInstallCommandZhCN);
   assert.equal(discovery.payload.upgrade.priorityAgentReinstallCommand, discovery.payload.installer.githubOneLinePriorityInstallCommand);
+  assert.equal(discovery.payload.upgrade.priorityAgentReinstallCommandZhCN, discovery.payload.installer.githubOneLinePriorityInstallCommandZhCN);
+  assert.equal(discovery.payload.upgrade.oneCommandAgentReinstall, discovery.payload.upgrade.agentReinstallCommand);
+  assert.equal(discovery.payload.upgrade.oneCommandAgentReinstallZhCN, discovery.payload.upgrade.agentReinstallCommandZhCN);
   assert.deepEqual(discovery.payload.upgrade.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.match(discovery.payload.upgrade.reinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.upgrade.clientReinstallJsonCommand, /--target <client>/);
@@ -221,6 +242,9 @@ try {
     assert.match(target.install.oneCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
     assert.match(target.install.oneCommandJson, new RegExp(`--target ${targetId}`));
     assert.match(target.install.oneCommandJson, /--json/);
+    assert.match(target.install.oneCommandJsonZhCN, /pact-mcp-install\.zh-CN\.sh/);
+    assert.match(target.install.oneCommandJsonZhCN, new RegExp(`--target ${targetId}`));
+    assert.match(target.install.oneCommandJsonZhCN, /--json/);
     assert.equal(target.install.npx.includes("token-stdin"), false);
     assert.equal(target.tokenInput, "auto-local-grant-or-stdin-or-env");
   }
@@ -242,6 +266,8 @@ try {
   assert.equal(discovery.payload.installer.portable.requiresInstalledNode, false);
   assert.equal(discovery.payload.installer.portable.preferredArchive, "zip");
   assert.equal(discovery.payload.installer.portable.bootstrapScript, "pact-mcp-install.sh");
+  assert.equal(discovery.payload.installer.portable.bootstrapScriptZhCN, "pact-mcp-install.zh-CN.sh");
+  assert.equal(discovery.payload.installer.portable.githubOneLineCommandZhCN, RELEASE_BOOTSTRAP_ZH_CN);
   assert.equal(discovery.payload.installer.portable.supportsMultiSelect, true);
   assert.match(discovery.payload.installer.portable.autoInstallCommand, /\.\/pact-mcp install --target auto/);
   assert.match(discovery.payload.installer.portable.releaseAssetPattern, /\.zip$/);
@@ -340,9 +366,13 @@ try {
   assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
   assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJson, /--json/);
   assert.equal(initialize.payload.result._meta.connector.githubOneLineClientInstallJsonCommand, initialize.payload.result._meta.connector.oneCommandClientInstallJson);
+  assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJsonZhCN, /pact-mcp-install\.zh-CN\.sh.+--target <client>/);
+  assert.equal(initialize.payload.result._meta.connector.githubOneLineClientInstallJsonCommandZhCN, initialize.payload.result._meta.connector.oneCommandClientInstallJsonZhCN);
   assert.equal(initialize.payload.result._meta.connector.scanCommand, `npx pact-mcp-connector@latest scan --url '${server.url}' --json`);
   assert.match(initialize.payload.result._meta.connector.oneCommandPriorityInstall, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.equal(initialize.payload.result._meta.connector.githubOneLinePriorityInstallCommand, initialize.payload.result._meta.connector.oneCommandPriorityInstall);
+  assert.match(initialize.payload.result._meta.connector.oneCommandPriorityInstallZhCN, /pact-mcp-install\.zh-CN\.sh.+--target claude-code,codex,openclaw/);
+  assert.equal(initialize.payload.result._meta.connector.githubOneLinePriorityInstallCommandZhCN, initialize.payload.result._meta.connector.oneCommandPriorityInstallZhCN);
   assert.deepEqual(initialize.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(initialize.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
@@ -363,8 +393,12 @@ try {
   );
   assert.match(unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
   assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineClientInstallJsonCommand, unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJson);
+  assert.match(unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJsonZhCN, /pact-mcp-install\.zh-CN\.sh.+--target <client>/);
+  assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineClientInstallJsonCommandZhCN, unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJsonZhCN);
   assert.match(unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall, /pact-mcp-install\.sh.+--target auto/);
   assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineAutoInstallCommand, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall);
+  assert.match(unauthenticatedList.payload.error.data.connector.oneCommandAutoInstallZhCN, /pact-mcp-install\.zh-CN\.sh.+--target auto/);
+  assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineAutoInstallCommandZhCN, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstallZhCN);
   assert.equal(unauthenticatedList.payload.error.data.nextCommand, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall);
   assert.equal(unauthenticatedList.payload.error.data.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.deepEqual(unauthenticatedList.payload.error.data.priorityTargets, ["claude-code", "codex", "openclaw"]);
@@ -419,17 +453,29 @@ try {
   assert.deepEqual(localGrant.payload.supportedTargets, expectedInstallTargets);
   assert.match(localGrant.payload.connector.githubOneLineCommand, /pact-mcp-install\.sh/);
   assert.match(localGrant.payload.connector.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
+  assert.equal(localGrant.payload.connector.githubOneLineCommandZhCN, RELEASE_BOOTSTRAP_ZH_CN);
   assert.equal(
     localGrant.payload.connector.githubOneLineAutoInstallCommand,
-    `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target auto --url '${server.url}' --json`
+    `${RELEASE_BOOTSTRAP} -- --target auto --url '${server.url}' --json`
+  );
+  assert.equal(
+    localGrant.payload.connector.githubOneLineAutoInstallCommandZhCN,
+    `${RELEASE_BOOTSTRAP_ZH_CN} -- --target auto --url '${server.url}' --json`
   );
   assert.equal(
     localGrant.payload.connector.githubOneLinePriorityInstallCommand,
-    `/bin/sh -c "$(curl -fL --retry 3 --connect-timeout 20 -sS https://github.com/Unka-Malloc/Pact/releases/latest/download/pact-mcp-install.sh)" -- --target claude-code,codex,openclaw --url '${server.url}' --json`
+    `${RELEASE_BOOTSTRAP} -- --target claude-code,codex,openclaw --url '${server.url}' --json`
+  );
+  assert.equal(
+    localGrant.payload.connector.githubOneLinePriorityInstallCommandZhCN,
+    `${RELEASE_BOOTSTRAP_ZH_CN} -- --target claude-code,codex,openclaw --url '${server.url}' --json`
   );
   assert.equal(localGrant.payload.connector.oneCommandAutoInstall, localGrant.payload.connector.githubOneLineAutoInstallCommand);
+  assert.equal(localGrant.payload.connector.oneCommandAutoInstallZhCN, localGrant.payload.connector.githubOneLineAutoInstallCommandZhCN);
   assert.equal(localGrant.payload.connector.oneCommandPriorityInstall, localGrant.payload.connector.githubOneLinePriorityInstallCommand);
+  assert.equal(localGrant.payload.connector.oneCommandPriorityInstallZhCN, localGrant.payload.connector.githubOneLinePriorityInstallCommandZhCN);
   assert.equal(localGrant.payload.connector.oneCommandClientInstallJson, localGrant.payload.connector.githubOneLineClientInstallJsonCommand);
+  assert.equal(localGrant.payload.connector.oneCommandClientInstallJsonZhCN, localGrant.payload.connector.githubOneLineClientInstallJsonCommandZhCN);
   assert.equal(
     localGrant.payload.connector.autoInstallCommand,
     `npx pact-mcp-connector@latest install --target auto --url '${server.url}' --json`
@@ -554,6 +600,8 @@ try {
   );
   assert.match(localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstall, /pact-mcp-install\.sh.+--target auto/);
   assert.equal(localGrantBearerList.payload.result._meta.connector.githubOneLineAutoInstallCommand, localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstall);
+  assert.match(localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstallZhCN, /pact-mcp-install\.zh-CN\.sh.+--target auto/);
+  assert.equal(localGrantBearerList.payload.result._meta.connector.githubOneLineAutoInstallCommandZhCN, localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstallZhCN);
   assert.deepEqual(localGrantBearerList.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrantBearerList.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
@@ -589,8 +637,12 @@ try {
   assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(updateCommand, /--json/);
   assert.match(updateCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(updateProbe.payload.result.structuredContent.installCommandZhCN, /pact-mcp-install\.zh-CN\.sh.+--target auto/);
+  assert.equal(updateProbe.payload.result.structuredContent.autoInstallCommandZhCN, updateProbe.payload.result.structuredContent.installCommandZhCN);
   assert.match(updateProbe.payload.result.structuredContent.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
   assert.match(updateProbe.payload.result.structuredContent.oneCommandClientInstallJson, /--json/);
+  assert.match(updateProbe.payload.result.structuredContent.oneCommandClientInstallJsonZhCN, /pact-mcp-install\.zh-CN\.sh.+--target <client>/);
+  assert.match(updateProbe.payload.result.structuredContent.oneCommandClientInstallJsonZhCN, /--json/);
   assert.equal(
     updateProbe.payload.result.structuredContent.clientInstallJsonCommand,
     `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
@@ -601,6 +653,8 @@ try {
   );
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommand, /--json/);
+  assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommandZhCN, /pact-mcp-install\.zh-CN\.sh.+--target claude-code,codex,openclaw/);
+  assert.match(updateProbe.payload.result.structuredContent.priorityInstallCommandZhCN, /--json/);
   assert.deepEqual(updateProbe.payload.result.structuredContent.priorityTargets, ["claude-code", "codex", "openclaw"]);
   const updateTargetDetails = new Map(updateProbe.payload.result.structuredContent.supportedTargets.map((target) => [target.target, target]));
   assert.deepEqual([...updateTargetDetails.keys()], expectedInstallTargets);

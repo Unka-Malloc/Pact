@@ -5,6 +5,7 @@ const LOCAL_GRANT_MCP_CONNECTOR_PACKAGE = "pact-mcp-connector";
 const LOCAL_GRANT_MCP_CONNECTOR_REPO = "Unka-Malloc/Pact";
 const LOCAL_GRANT_BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
 const LOCAL_GRANT_BOOTSTRAP_SCRIPT = "pact-mcp-install.sh";
+const LOCAL_GRANT_BOOTSTRAP_SCRIPT_ZH_CN = "pact-mcp-install.zh-CN.sh";
 const LOCAL_GRANT_PRIORITY_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
 
 const LOCAL_GRANT_WRITE_TOOLSETS = Object.freeze([
@@ -239,20 +240,34 @@ function localGrantShellQuote(value) {
   return `'${String(value || "").replace(/'/g, "'\\''")}'`;
 }
 
-function localGrantGithubOneLineCommand() {
-  return `/bin/sh -c "$(curl ${LOCAL_GRANT_BOOTSTRAP_CURL_FLAGS} https://github.com/${LOCAL_GRANT_MCP_CONNECTOR_REPO}/releases/latest/download/${LOCAL_GRANT_BOOTSTRAP_SCRIPT})"`;
+function localGrantGithubOneLineCommand(scriptName = LOCAL_GRANT_BOOTSTRAP_SCRIPT) {
+  return `/bin/sh -c "$(curl ${LOCAL_GRANT_BOOTSTRAP_CURL_FLAGS} https://github.com/${LOCAL_GRANT_MCP_CONNECTOR_REPO}/releases/latest/download/${scriptName})"`;
 }
 
 function localGrantGithubOneLineInstallCommands({ baseUrl = "" } = {}) {
   const urlArgs = baseUrl ? ` --url ${localGrantShellQuote(baseUrl)}` : "";
   const command = localGrantGithubOneLineCommand();
+  const commandZhCN = localGrantGithubOneLineCommand(LOCAL_GRANT_BOOTSTRAP_SCRIPT_ZH_CN);
   const priorityTargets = LOCAL_GRANT_PRIORITY_TARGETS.join(",");
+  const build = (oneLineCommand) => ({
+    installCommand: urlArgs ? `${oneLineCommand} --${urlArgs}` : oneLineCommand,
+    clientInstallJsonCommand: `${oneLineCommand} -- --target <client>${urlArgs} --json`,
+    autoInstallCommand: `${oneLineCommand} -- --target auto${urlArgs} --json`,
+    priorityInstallCommand: `${oneLineCommand} -- --target ${priorityTargets}${urlArgs} --json`
+  });
+  const english = build(command);
+  const zhCN = build(commandZhCN);
   return {
     githubOneLineCommand: command,
-    githubOneLineInstallCommand: urlArgs ? `${command} --${urlArgs}` : command,
-    githubOneLineClientInstallJsonCommand: `${command} -- --target <client>${urlArgs} --json`,
-    githubOneLineAutoInstallCommand: `${command} -- --target auto${urlArgs} --json`,
-    githubOneLinePriorityInstallCommand: `${command} -- --target ${priorityTargets}${urlArgs} --json`
+    githubOneLineInstallCommand: english.installCommand,
+    githubOneLineClientInstallJsonCommand: english.clientInstallJsonCommand,
+    githubOneLineAutoInstallCommand: english.autoInstallCommand,
+    githubOneLinePriorityInstallCommand: english.priorityInstallCommand,
+    githubOneLineCommandZhCN: commandZhCN,
+    githubOneLineInstallCommandZhCN: zhCN.installCommand,
+    githubOneLineClientInstallJsonCommandZhCN: zhCN.clientInstallJsonCommand,
+    githubOneLineAutoInstallCommandZhCN: zhCN.autoInstallCommand,
+    githubOneLinePriorityInstallCommandZhCN: zhCN.priorityInstallCommand
   };
 }
 
@@ -265,9 +280,13 @@ function localGrantConnectorMetadata({ request = null, discoveryState = null } =
     priorityTargets: [...LOCAL_GRANT_PRIORITY_TARGETS],
     ...oneLineCommands,
     oneCommandInstall: oneLineCommands.githubOneLineInstallCommand,
+    oneCommandInstallZhCN: oneLineCommands.githubOneLineInstallCommandZhCN,
     oneCommandClientInstallJson: oneLineCommands.githubOneLineClientInstallJsonCommand,
+    oneCommandClientInstallJsonZhCN: oneLineCommands.githubOneLineClientInstallJsonCommandZhCN,
     oneCommandAutoInstall: oneLineCommands.githubOneLineAutoInstallCommand,
+    oneCommandAutoInstallZhCN: oneLineCommands.githubOneLineAutoInstallCommandZhCN,
     oneCommandPriorityInstall: oneLineCommands.githubOneLinePriorityInstallCommand,
+    oneCommandPriorityInstallZhCN: oneLineCommands.githubOneLinePriorityInstallCommandZhCN,
     discoverCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest discover-local${urlArgs} --json`,
     scanCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest scan${urlArgs} --json`,
     doctorCommand: `npx ${LOCAL_GRANT_MCP_CONNECTOR_PACKAGE}@latest doctor${urlArgs} --json`,

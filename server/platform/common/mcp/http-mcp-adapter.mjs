@@ -41,6 +41,8 @@ export const PACT_MCP_DISCOVERY_URL_ENV = "PACT_MCP_DISCOVERY_URL";
 export const PACT_MCP_DISCOVERY_FILE_ENV = "PACT_MCP_DISCOVERY_FILE";
 export const PACT_MCP_DISCOVERY_FILE = "~/.pact/mcp/servers.json";
 const MCP_BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
+const MCP_BOOTSTRAP_INSTALL_SCRIPT = "pact-mcp-install.sh";
+const MCP_BOOTSTRAP_INSTALL_SCRIPT_ZH_CN = "pact-mcp-install.zh-CN.sh";
 export const MCP_CLIENT_TARGETS = Object.freeze([
   { target: "codex", label: "Codex", priority: true, installMode: "codex-release-plugin-and-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
   { target: "claude-code", label: "Claude Code", priority: true, installMode: "claude-code-release-mcp-cli", locations: ["local", "orbstack", "remote-linux"] },
@@ -535,17 +537,28 @@ function mcpVersionInfo() {
 function mcpConnectorRuntimeMetadata(discovery, version = mcpVersionInfo()) {
   return {
     ...version.connector,
+    githubOneLineCommand: discovery.installer.githubOneLineCommand,
+    githubOneLineCommandZhCN: discovery.installer.githubOneLineCommandZhCN,
     clientInstallCommand: discovery.installer.clientInstallCommand,
     clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
     autoInstallCommand: discovery.installer.autoInstallCommand,
     priorityInstallCommand: discovery.installer.priorityInstallCommand,
     githubOneLineInstallCommand: discovery.installer.githubOneLineInstallCommand,
+    githubOneLineInstallCommandZhCN: discovery.installer.githubOneLineInstallCommandZhCN,
     githubOneLineClientInstallJsonCommand: discovery.installer.githubOneLineClientInstallJsonCommand,
+    githubOneLineClientInstallJsonCommandZhCN: discovery.installer.githubOneLineClientInstallJsonCommandZhCN,
     githubOneLineAutoInstallCommand: discovery.installer.githubOneLineAutoInstallCommand,
+    githubOneLineAutoInstallCommandZhCN: discovery.installer.githubOneLineAutoInstallCommandZhCN,
     githubOneLinePriorityInstallCommand: discovery.installer.githubOneLinePriorityInstallCommand,
+    githubOneLinePriorityInstallCommandZhCN: discovery.installer.githubOneLinePriorityInstallCommandZhCN,
+    oneCommandInstall: discovery.installer.oneCommandInstall,
+    oneCommandInstallZhCN: discovery.installer.oneCommandInstallZhCN,
     oneCommandClientInstallJson: discovery.installer.oneCommandClientInstallJson,
+    oneCommandClientInstallJsonZhCN: discovery.installer.oneCommandClientInstallJsonZhCN,
     oneCommandAutoInstall: discovery.installer.oneCommandAutoInstall,
+    oneCommandAutoInstallZhCN: discovery.installer.oneCommandAutoInstallZhCN,
     oneCommandPriorityInstall: discovery.installer.oneCommandPriorityInstall,
+    oneCommandPriorityInstallZhCN: discovery.installer.oneCommandPriorityInstallZhCN,
     discoverCommand: discovery.installer.discoverCommand,
     scanCommand: discovery.installer.scanCommand,
     doctorCommand: discovery.installer.doctorCommand,
@@ -610,19 +623,30 @@ function commandUrlArgs(baseUrl) {
   return text ? ` --url ${shellQuote(text)}` : "";
 }
 
-function githubOneLineMcpInstallCommand() {
-  return `/bin/sh -c "$(curl ${MCP_BOOTSTRAP_CURL_FLAGS} https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh)"`;
+function githubOneLineMcpInstallCommand(scriptName = MCP_BOOTSTRAP_INSTALL_SCRIPT) {
+  return `/bin/sh -c "$(curl ${MCP_BOOTSTRAP_CURL_FLAGS} https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/${scriptName})"`;
 }
 
 function githubOneLineMcpInstallCommands({ baseUrl = "" } = {}) {
   const urlArgs = commandUrlArgs(baseUrl);
   const command = githubOneLineMcpInstallCommand();
+  const commandZhCN = githubOneLineMcpInstallCommand(MCP_BOOTSTRAP_INSTALL_SCRIPT_ZH_CN);
+  const build = (oneLineCommand) => ({
+    installCommand: urlArgs ? `${oneLineCommand} --${urlArgs}` : oneLineCommand,
+    clientInstallJsonCommand: `${oneLineCommand} -- --target <client>${urlArgs} --json`,
+    autoInstallCommand: `${oneLineCommand} -- --target auto${urlArgs} --json`,
+    priorityInstallCommand: `${oneLineCommand} -- --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`
+  });
+  const english = build(command);
+  const zhCN = build(commandZhCN);
   return {
     command,
-    installCommand: urlArgs ? `${command} --${urlArgs}` : command,
-    clientInstallJsonCommand: `${command} -- --target <client>${urlArgs} --json`,
-    autoInstallCommand: `${command} -- --target auto${urlArgs} --json`,
-    priorityInstallCommand: `${command} -- --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`
+    ...english,
+    commandZhCN,
+    installCommandZhCN: zhCN.installCommand,
+    clientInstallJsonCommandZhCN: zhCN.clientInstallJsonCommand,
+    autoInstallCommandZhCN: zhCN.autoInstallCommand,
+    priorityInstallCommandZhCN: zhCN.priorityInstallCommand
   };
 }
 
@@ -693,7 +717,7 @@ function mcpTargetConfigTemplate(target, { baseUrl = "", vmBaseUrl = "" } = {}) 
   };
 }
 
-function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineCommand = "" } = {}) {
+function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineCommand = "", githubOneLineCommandZhCN = "" } = {}) {
   const urlArgs = commandUrlArgs(baseUrl);
   return MCP_CLIENT_TARGETS.map((client) => ({
     ...client,
@@ -704,6 +728,8 @@ function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineComm
     install: {
       oneCommand: `${githubOneLineCommand} -- --target ${client.target}${urlArgs}`,
       oneCommandJson: `${githubOneLineCommand} -- --target ${client.target}${urlArgs} --json`,
+      oneCommandZhCN: `${githubOneLineCommandZhCN} -- --target ${client.target}${urlArgs}`,
+      oneCommandJsonZhCN: `${githubOneLineCommandZhCN} -- --target ${client.target}${urlArgs} --json`,
       npx: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}${urlArgs}`,
       npxJson: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}${urlArgs} --json`,
       portable: `./pact-mcp install --target ${client.target}${urlArgs}`,
@@ -737,16 +763,21 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
   const {
     command: githubOneLineCommand,
+    commandZhCN: githubOneLineCommandZhCN,
     installCommand: githubOneLineInstallCommand,
+    installCommandZhCN: githubOneLineInstallCommandZhCN,
     clientInstallJsonCommand: githubOneLineClientInstallJsonCommand,
+    clientInstallJsonCommandZhCN: githubOneLineClientInstallJsonCommandZhCN,
     autoInstallCommand: githubOneLineAutoInstallCommand,
-    priorityInstallCommand: githubOneLinePriorityInstallCommand
+    autoInstallCommandZhCN: githubOneLineAutoInstallCommandZhCN,
+    priorityInstallCommand: githubOneLinePriorityInstallCommand,
+    priorityInstallCommandZhCN: githubOneLinePriorityInstallCommandZhCN
   } = githubOneLineMcpInstallCommands({ baseUrl });
   const uninstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target <client>${urlArgs}`;
   const doctorCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs}`;
   const discoverCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest discover-local${urlArgs} --json`;
   const scanCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest scan${urlArgs} --json`;
-  const clientTargets = mcpClientTargetGuides({ baseUrl, vmBaseUrl, githubOneLineCommand });
+  const clientTargets = mcpClientTargetGuides({ baseUrl, vmBaseUrl, githubOneLineCommand, githubOneLineCommandZhCN });
   const supportedTargets = mcpSupportedTargetDetails();
   return {
     schemaVersion: 1,
@@ -808,14 +839,23 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       supportedTargets,
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       githubOneLineCommand,
+      githubOneLineCommandZhCN,
       githubOneLineInstallCommand,
+      githubOneLineInstallCommandZhCN,
       githubOneLineClientInstallJsonCommand,
+      githubOneLineClientInstallJsonCommandZhCN,
       githubOneLineAutoInstallCommand,
+      githubOneLineAutoInstallCommandZhCN,
       githubOneLinePriorityInstallCommand,
+      githubOneLinePriorityInstallCommandZhCN,
       oneCommandInstall: githubOneLineInstallCommand,
+      oneCommandInstallZhCN: githubOneLineInstallCommandZhCN,
       oneCommandClientInstallJson: githubOneLineClientInstallJsonCommand,
+      oneCommandClientInstallJsonZhCN: githubOneLineClientInstallJsonCommandZhCN,
       oneCommandAutoInstall: githubOneLineAutoInstallCommand,
+      oneCommandAutoInstallZhCN: githubOneLineAutoInstallCommandZhCN,
       oneCommandPriorityInstall: githubOneLinePriorityInstallCommand,
+      oneCommandPriorityInstallZhCN: githubOneLinePriorityInstallCommandZhCN,
       installCommand,
       interactiveInstallCommand,
       autoInstallCommand,
@@ -833,11 +873,16 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         requiresInstalledNode: false,
         strategy: "embedded-node-runtime",
         preferredArchive: "zip",
-        bootstrapScript: "pact-mcp-install.sh",
-        githubLatestBootstrapUrl: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/pact-mcp-install.sh`,
+        bootstrapScript: MCP_BOOTSTRAP_INSTALL_SCRIPT,
+        bootstrapScriptZhCN: MCP_BOOTSTRAP_INSTALL_SCRIPT_ZH_CN,
+        githubLatestBootstrapUrl: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/${MCP_BOOTSTRAP_INSTALL_SCRIPT}`,
+        githubLatestBootstrapUrlZhCN: `https://github.com/${MCP_CONNECTOR_GITHUB_REPO}/releases/latest/download/${MCP_BOOTSTRAP_INSTALL_SCRIPT_ZH_CN}`,
         githubOneLineCommand,
+        githubOneLineCommandZhCN,
         githubOneLineAutoInstallCommand,
+        githubOneLineAutoInstallCommandZhCN,
         githubOneLinePriorityInstallCommand,
+        githubOneLinePriorityInstallCommandZhCN,
         supportsMultiSelect: true,
         releaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.zip`,
         tarballReleaseAssetPattern: `${MCP_CONNECTOR_PACKAGE_NAME}-${MCP_CONNECTOR_VERSION}-<platform>.tar.gz`,
@@ -857,9 +902,21 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       listChanged: true,
       notification: "notifications/tools/list_changed",
       reinstallCommand: githubOneLineInstallCommand,
+      reinstallCommandZhCN: githubOneLineInstallCommandZhCN,
       clientReinstallJsonCommand: githubOneLineClientInstallJsonCommand,
+      clientReinstallJsonCommandZhCN: githubOneLineClientInstallJsonCommandZhCN,
       agentReinstallCommand: githubOneLineAutoInstallCommand,
+      agentReinstallCommandZhCN: githubOneLineAutoInstallCommandZhCN,
       priorityAgentReinstallCommand: githubOneLinePriorityInstallCommand,
+      priorityAgentReinstallCommandZhCN: githubOneLinePriorityInstallCommandZhCN,
+      oneCommandReinstall: githubOneLineInstallCommand,
+      oneCommandReinstallZhCN: githubOneLineInstallCommandZhCN,
+      oneCommandClientReinstallJson: githubOneLineClientInstallJsonCommand,
+      oneCommandClientReinstallJsonZhCN: githubOneLineClientInstallJsonCommandZhCN,
+      oneCommandAgentReinstall: githubOneLineAutoInstallCommand,
+      oneCommandAgentReinstallZhCN: githubOneLineAutoInstallCommandZhCN,
+      oneCommandPriorityAgentReinstall: githubOneLinePriorityInstallCommand,
+      oneCommandPriorityAgentReinstallZhCN: githubOneLinePriorityInstallCommandZhCN,
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
       doctorCommand
     },
@@ -1193,8 +1250,11 @@ function pactMetaResult({
     const { baseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
     const {
       clientInstallJsonCommand: githubOneLineClientInstallJsonCommand,
+      clientInstallJsonCommandZhCN: githubOneLineClientInstallJsonCommandZhCN,
       autoInstallCommand: githubOneLineAutoInstallCommand,
-      priorityInstallCommand: githubOneLinePriorityInstallCommand
+      autoInstallCommandZhCN: githubOneLineAutoInstallCommandZhCN,
+      priorityInstallCommand: githubOneLinePriorityInstallCommand,
+      priorityInstallCommandZhCN: githubOneLinePriorityInstallCommandZhCN
     } = githubOneLineMcpInstallCommands({ baseUrl });
     const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
     const connector = mcpConnectorRuntimeMetadata(discovery);
@@ -1204,9 +1264,13 @@ function pactMetaResult({
       updateAvailable,
       autoUpdate,
       installCommand: githubOneLineAutoInstallCommand,
+      installCommandZhCN: githubOneLineAutoInstallCommandZhCN,
       autoInstallCommand: githubOneLineAutoInstallCommand,
+      autoInstallCommandZhCN: githubOneLineAutoInstallCommandZhCN,
       priorityInstallCommand: githubOneLinePriorityInstallCommand,
+      priorityInstallCommandZhCN: githubOneLinePriorityInstallCommandZhCN,
       oneCommandClientInstallJson: githubOneLineClientInstallJsonCommand,
+      oneCommandClientInstallJsonZhCN: githubOneLineClientInstallJsonCommandZhCN,
       clientInstallCommand: discovery.installer.clientInstallCommand,
       clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
       connector,
