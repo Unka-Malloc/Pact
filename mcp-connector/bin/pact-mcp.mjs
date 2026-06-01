@@ -130,6 +130,8 @@ const GEMINI_EXTENSION_NAME = "Pact";
 const MCP_SERVER_NAME = "pact";
 const MCP_STABLE_TOOL_NAME = "pact.call";
 const MCP_INTERFACE_VERSION = "pact.mcp.v1";
+const BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
+const BOOTSTRAP_INSTALL_SCRIPT = "pact-mcp-install.sh";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
@@ -804,6 +806,16 @@ function uniqueValues(values) {
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function githubOwnerRepo(pkg = packageJson) {
+  const repositoryUrl = String(pkg.repository?.url || pkg.homepage || "");
+  const match = repositoryUrl.match(/github\.com[:/](.+?)(?:\.git)?(?:#.*)?$/);
+  return match?.[1] || "Unka-Malloc/Pact";
+}
+
+function githubOneLineMcpInstallCommand() {
+  return `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${githubOwnerRepo()}/releases/latest/download/${BOOTSTRAP_INSTALL_SCRIPT})"`;
 }
 
 function assertSafeEnvName(name) {
@@ -2379,6 +2391,12 @@ function buildDeviceHubManifest({
   const packageExec = `npx ${packageJson.name}@${packageJson.version}`;
   const urlArgs = ` --url ${shellQuote(baseUrl)}`;
   const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
+  const contextArgs = `${urlArgs}${tokenEnvArgs}`;
+  const githubOneLineCommand = githubOneLineMcpInstallCommand();
+  const githubOneLineInstallCommand = `${githubOneLineCommand} --${contextArgs}`;
+  const githubOneLineClientInstallJsonCommand = `${githubOneLineCommand} -- --target <client>${contextArgs} --json`;
+  const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto${contextArgs} --json`;
+  const githubOneLinePriorityInstallCommand = `${githubOneLineCommand} -- --target ${PRIORITY_INSTALL_TARGET}${contextArgs} --json`;
   const discoverCommand = `${packageExec} discover-local${urlArgs} --json`;
   const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
   const clientInstallJsonCommand = `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs} --json`;
@@ -2441,6 +2459,15 @@ function buildDeviceHubManifest({
           packageVersion: packageJson.version,
           registerCommand: `${packageExec} register${urlArgs}${tokenEnvArgs}`,
           interactiveInstallCommand,
+          githubOneLineCommand,
+          githubOneLineInstallCommand,
+          githubOneLineClientInstallJsonCommand,
+          githubOneLineAutoInstallCommand,
+          githubOneLinePriorityInstallCommand,
+          oneCommandInstall: githubOneLineInstallCommand,
+          oneCommandClientInstallJson: githubOneLineClientInstallJsonCommand,
+          oneCommandAutoInstall: githubOneLineAutoInstallCommand,
+          oneCommandPriorityInstall: githubOneLinePriorityInstallCommand,
           autoInstallCommand,
           priorityInstallCommand,
           priorityTargets: [...PRIORITY_INSTALL_TARGETS],
