@@ -339,8 +339,10 @@ try {
   );
   assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
   assert.match(initialize.payload.result._meta.connector.oneCommandClientInstallJson, /--json/);
+  assert.equal(initialize.payload.result._meta.connector.githubOneLineClientInstallJsonCommand, initialize.payload.result._meta.connector.oneCommandClientInstallJson);
   assert.equal(initialize.payload.result._meta.connector.scanCommand, `npx pact-mcp-connector@latest scan --url '${server.url}' --json`);
   assert.match(initialize.payload.result._meta.connector.oneCommandPriorityInstall, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
+  assert.equal(initialize.payload.result._meta.connector.githubOneLinePriorityInstallCommand, initialize.payload.result._meta.connector.oneCommandPriorityInstall);
   assert.deepEqual(initialize.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(initialize.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
@@ -360,7 +362,9 @@ try {
     `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
   );
   assert.match(unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
+  assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineClientInstallJsonCommand, unauthenticatedList.payload.error.data.connector.oneCommandClientInstallJson);
   assert.match(unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall, /pact-mcp-install\.sh.+--target auto/);
+  assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineAutoInstallCommand, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall);
   assert.equal(unauthenticatedList.payload.error.data.nextCommand, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall);
   assert.equal(unauthenticatedList.payload.error.data.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.deepEqual(unauthenticatedList.payload.error.data.priorityTargets, ["claude-code", "codex", "openclaw"]);
@@ -536,6 +540,7 @@ try {
     `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
   );
   assert.match(localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstall, /pact-mcp-install\.sh.+--target auto/);
+  assert.equal(localGrantBearerList.payload.result._meta.connector.githubOneLineAutoInstallCommand, localGrantBearerList.payload.result._meta.connector.oneCommandAutoInstall);
   assert.deepEqual(localGrantBearerList.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(localGrantBearerList.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
 
