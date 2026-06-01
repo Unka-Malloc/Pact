@@ -251,7 +251,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "spreadsheet",
     preferredParser: "table.sheet.structured",
     fallbackParsers: ["tika.text", "text.direct"],
-    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
+    parserChain: ["table.route", "table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.comments", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.rows.windowed"],
     streamingUnit: "sheet",
     referenceFrameworks: ["docling", "mineru", "unstructured", "haystack"]
   },
@@ -643,9 +643,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Excel",
     professionalFamily: "office-spreadsheet",
     parserProfile: "spreadsheetml-sheet-row-cell-route",
-    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "merged-cell", "cell", "formula", "hyperlink", "time-signal"],
-    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
-    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "mergedCells", "dateStyles", "dateSerials", "formulas", "hyperlinks", "timeSignals"],
+    structureUnits: ["workbook-sheet", "sheet", "table-header", "table-row", "merged-cell", "cell-comment", "cell", "formula", "hyperlink", "time-signal"],
+    parserStages: ["table.sheet.structured", "table.workbook.sheets", "table.sheet.headers", "table.sheet.cells", "table.sheet.merged-cells", "table.sheet.comments", "table.sheet.date-styles", "table.sheet.formulas", "table.sheet.hyperlinks", "table.time-index"],
+    preserves: ["sheet", "sheetName", "sheetId", "sheetState", "worksheetPath", "row", "column", "cellRefs", "headers", "mergedCells", "cellComments", "dateStyles", "dateSerials", "formulas", "hyperlinks", "timeSignals"],
     conversionTargets: ["markdown-tables", "docx-review-copy", "agent-json-with-workbook-sheet-cell-coordinates-and-formulas", "evidence-pack"],
     conversionAdapters: [
       {
@@ -667,7 +667,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "sheets-to-agent-cell-refs.v1",
         mode: "agent",
-        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "merged-cell-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "time-signals"]
+        stages: ["workbook-sheet-refs", "cell-coordinate-refs", "merged-cell-refs", "cell-comment-refs", "date-serial-refs", "formula-refs", "hyperlink-refs", "time-signals"]
       },
       {
         target: "evidence-pack-json",
@@ -677,7 +677,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["row-text-units", "entity-columns", "claim-values"]
       }
     ],
-    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-merged-cell-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
+    qualityGates: ["spreadsheet-workbook-sheet-refs-preserved", "sheet-row-cell-refs-preserved", "spreadsheet-merged-cell-refs-preserved", "spreadsheet-comment-refs-preserved", "spreadsheet-date-serials-normalized", "formula-text-preserved", "spreadsheet-hyperlink-refs-preserved", "table-time-index-when-date-columns-exist"],
     riskControls: ["formula-results-not-recomputed"],
     knownLosses: ["formula-results-not-recomputed"]
   },
@@ -1036,12 +1036,12 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["ranking/evaluation loop over external vector stores", "full document-layout enrichment for every parser"]
   },
   mineru: {
-    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs", "SpreadsheetML workbook sheet and formula metadata"],
+    absorbed: ["PDF, Office, OpenDocument, EPUB, image, email, and archive routing", "LLM-ready Markdown/JSON outputs", "SpreadsheetML workbook sheet, comment, and formula metadata"],
     baseline: ["file-ref parsers for large binary payloads"],
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, and geometry metadata for slide elements"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, and geometry metadata for slide elements"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1066,7 +1066,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint and OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint and OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -5690,6 +5690,85 @@ function parseXlsxHyperlinkTags(sheetXml = "", relationshipXml = "") {
   return links;
 }
 
+function xlsxCommentRelationships(relationshipXml = "", worksheetName = "") {
+  const relationships = parseXlsxRelationshipTargets(relationshipXml);
+  return [...relationships.values()]
+    .filter((relationship) => (
+      /\/comments$/i.test(relationship.type || "") ||
+      /comments\d*\.xml$/i.test(relationship.target || "")
+    ))
+    .map((relationship) => ({
+      ...relationship,
+      target: normalizeXlsxPartTarget(worksheetName || "xl/worksheets/sheet1.xml", relationship.target)
+    }));
+}
+
+function parseXlsxCommentsXml(xml = "", relationship = {}, sourcePart = "") {
+  const authors = [];
+  const authorsXml = String(xml || "").match(/<authors\b[\s\S]*?<\/authors>/i)?.[0] || "";
+  for (const match of authorsXml.matchAll(/<author\b[^>]*>([\s\S]*?)<\/author>/g)) {
+    authors.push(stripMarkup(match[1]));
+  }
+  const comments = [];
+  for (const match of String(xml || "").matchAll(/<comment\b[\s\S]*?<\/comment>/g)) {
+    const commentXml = match[0];
+    const openTag = commentXml.match(/^<comment\b[^>]*>/)?.[0] || "";
+    const ref = xmlAttribute(openTag, "ref").toUpperCase();
+    if (!ref) {
+      continue;
+    }
+    const authorIdRaw = xmlAttribute(openTag, "authorId");
+    const authorId = Number(authorIdRaw);
+    const text = textFromXmlTextNodes(commentXml);
+    if (!text) {
+      continue;
+    }
+    comments.push({
+      ref,
+      authorId: Number.isInteger(authorId) ? authorId : -1,
+      author: Number.isInteger(authorId) ? authors[authorId] || "" : "",
+      text,
+      relationshipId: String(relationship.id || ""),
+      target: String(sourcePart || relationship.target || ""),
+      sourcePart: String(sourcePart || relationship.target || ""),
+      type: String(relationship.type || "")
+    });
+  }
+  return comments;
+}
+
+function xlsxCommentsByRef(comments = []) {
+  const byRef = new Map();
+  for (const comment of comments) {
+    if (comment.ref) {
+      byRef.set(String(comment.ref || "").toUpperCase(), comment);
+    }
+  }
+  return byRef;
+}
+
+function xlsxCommentsForWorksheetEntries(entries = [], worksheetName = "", relationshipXml = "", fallbackIndex = 0) {
+  const relationships = xlsxCommentRelationships(relationshipXml, worksheetName);
+  const commentParts = relationships.length
+    ? relationships
+    : [{
+        id: "",
+        target: normalizeXlsxPartTarget("xl/workbook.xml", `comments${fallbackIndex + 1}.xml`),
+        targetMode: "",
+        type: "fallback-comments-part"
+      }];
+  const comments = [];
+  for (const relationship of commentParts) {
+    const sourcePart = relationship.target || "";
+    const xml = zipEntryText(entries, sourcePart);
+    if (!xml) {
+      continue;
+    }
+    comments.push(...parseXlsxCommentsXml(xml, relationship, sourcePart));
+  }
+  return comments;
+}
+
 function scanXmlTagsFromFile(filePath = "", tagName = "", onTag = () => {}) {
   if (!filePath || !fsSync.existsSync(filePath)) {
     return;
@@ -5979,7 +6058,7 @@ function xlsxCellFormula(cellXml = "") {
   };
 }
 
-function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map(), styles = null, mergedCellsByRef = new Map()) {
+function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0, hyperlinks = new Map(), styles = null, mergedCellsByRef = new Map(), commentsByRef = new Map()) {
   const rowOpenTag = String(rowXml || "").match(/^<row\b[^>]*>/)?.[0] || "";
   const rowNumber = Number(xmlAttribute(rowOpenTag, "r") || fallbackRowNumber || 0);
   const cells = [];
@@ -5991,11 +6070,12 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
     const column = xlsxColumnLabel(ref, fallbackCellIndex);
     const hyperlink = hyperlinks.get(String(ref || "").toUpperCase()) || null;
     const merge = mergedCellsByRef.get(String(ref || "").toUpperCase()) || null;
+    const comment = commentsByRef.get(String(ref || "").toUpperCase()) || null;
     const valueRecord = xlsxCellValue(cellXml, sharedStrings, styles);
     const value = valueRecord.value || hyperlink?.display || "";
     const formula = xlsxCellFormula(cellXml);
     fallbackCellIndex += 1;
-    if (value || formula || hyperlink || merge) {
+    if (value || formula || hyperlink || merge || comment) {
       cells.push({
         ref,
         column,
@@ -6006,7 +6086,8 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
         ...(valueRecord.style ? { style: valueRecord.style } : {}),
         ...(formula ? formula : {}),
         ...(hyperlink ? { hyperlink } : {}),
-        ...(merge ? { merge } : {})
+        ...(merge ? { merge } : {}),
+        ...(comment ? { comment } : {})
       });
     }
   }
@@ -6015,6 +6096,14 @@ function parseXlsxRowXml(rowXml = "", sharedStrings = [], fallbackRowNumber = 0,
 
 function formatXlsxMerge(cell = {}) {
   return cell.merge?.ref ? ` (merge=${cell.merge.ref}${cell.merge.masterRef ? ` master=${cell.merge.masterRef}` : ""})` : "";
+}
+
+function formatXlsxComment(cell = {}) {
+  if (!cell.comment?.text) {
+    return "";
+  }
+  const author = cell.comment.author ? `${cell.comment.author}: ` : "";
+  return ` (comment=${compactMarkupText(`${author}${cell.comment.text}`, 200)})`;
 }
 
 function formatXlsxHyperlink(cell = {}) {
@@ -6026,11 +6115,11 @@ function formatXlsxCellValue(cell = {}, header = "") {
   const label = header ? `${cell.ref} ${header}` : cell.ref || cell.column;
   const value = cell.value ? `=${cell.value}` : "=<formula-only>";
   const formula = cell.formula ? ` (formula=${cell.formula})` : "";
-  return `${label}${value}${formula}${formatXlsxHyperlink(cell)}${formatXlsxMerge(cell)}`;
+  return `${label}${value}${formula}${formatXlsxHyperlink(cell)}${formatXlsxMerge(cell)}${formatXlsxComment(cell)}`;
 }
 
 function formatXlsxHeaderRow(sheetLabel = "", row = { cells: [] }) {
-  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}${formatXlsxHyperlink(cell)}${formatXlsxMerge(cell)}`);
+  const cells = row.cells.map((cell) => `${cell.column}=${cell.value || cell.formula || ""}${formatXlsxHyperlink(cell)}${formatXlsxMerge(cell)}${formatXlsxComment(cell)}`);
   return `${sheetLabel} Header row ${row.rowNumber || "?"}: ${cells.join("; ")}`;
 }
 
@@ -6095,6 +6184,18 @@ function xlsxElementCell(cell = {}, rowNumber = 0, header = "") {
         columnSpan: Number(cell.merge.columnSpan || 0)
       }
     } : {}),
+    ...(cell.comment ? {
+      comment: {
+        ref: String(cell.comment.ref || cell.ref || ""),
+        author: String(cell.comment.author || ""),
+        authorId: Number(cell.comment.authorId || 0),
+        text: String(cell.comment.text || ""),
+        relationshipId: String(cell.comment.relationshipId || ""),
+        target: String(cell.comment.target || ""),
+        sourcePart: String(cell.comment.sourcePart || ""),
+        type: String(cell.comment.type || "")
+      }
+    } : {}),
     ...(cell.hyperlink ? {
       hyperlink: {
         target: String(cell.hyperlink.target || ""),
@@ -6144,21 +6245,26 @@ function parseXlsxDetailed(entries = []) {
   let hyperlinkCount = 0;
   let dateCellCount = 0;
   let mergedCellCount = 0;
+  let commentCount = 0;
   let headerRows = 0;
   const elements = [];
   for (const [index, record] of sheetRecords.entries()) {
     const { name, sheet } = record;
     const sheetXml = zipEntryText(entries, name);
+    const relationshipXml = zipEntryText(entries, worksheetRelationshipEntryName(name));
     const hyperlinks = parseXlsxHyperlinkTags(
       sheetXml,
-      zipEntryText(entries, worksheetRelationshipEntryName(name))
+      relationshipXml
     );
     const mergedCells = parseXlsxMergedCellsXml(sheetXml);
     const mergedCellsByRef = xlsxMergedCellLookup(mergedCells);
+    const comments = xlsxCommentsForWorksheetEntries(entries, name, relationshipXml, index);
+    const commentsByRef = xlsxCommentsByRef(comments);
     mergedCellCount += mergedCells.length;
+    commentCount += comments.length;
     const rows = [];
     for (const match of sheetXml.matchAll(/<row\b[\s\S]*?<\/row>/g)) {
-      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks, styles, mergedCellsByRef);
+      const row = parseXlsxRowXml(match[0], sharedStrings, rows.length + 1, hyperlinks, styles, mergedCellsByRef, commentsByRef);
       if (row.cells.length) {
         rows.push(row);
         rowCount += 1;
@@ -6188,6 +6294,30 @@ function parseXlsxDetailed(entries = []) {
         table: xlsxTableMetadata(sheet, sheetLabel, range.startRow, range.columnSpan),
         merge: xlsxElementMerge(range, anchorValue),
         limit: 1200
+      });
+    }
+    for (const comment of comments) {
+      const coordinate = xlsxCellCoordinate(comment.ref);
+      const anchorCell = cellsByRef.get(String(comment.ref || "").toUpperCase()) || {
+        ref: comment.ref,
+        column: coordinate?.column || xlsxColumnLabel(comment.ref),
+        value: "",
+        comment
+      };
+      const cell = { ...anchorCell, comment };
+      pushStructureElement(elements, "cell-comment", `${sheetLabel} Comment ${comment.ref}${comment.author ? ` by ${comment.author}` : ""}: ${comment.text}`, {
+        line: coordinate?.row || 0,
+        name: sheetLabel,
+        table: xlsxTableMetadata(sheet, sheetLabel, coordinate?.row || 0, 1),
+        annotation: {
+          kind: "spreadsheet-comment",
+          id: comment.ref,
+          author: comment.author || "",
+          type: "comment",
+          sourcePart: comment.sourcePart || ""
+        },
+        cells: [xlsxElementCell(cell, coordinate?.row || 0)],
+        limit: 1600
       });
     }
     for (const row of rows) {
@@ -6225,6 +6355,7 @@ function parseXlsxDetailed(entries = []) {
     dateStyleCount: styles.dateStyleCount,
     dateCellCount,
     mergedCellCount,
+    commentCount,
     sheetCount: sheetNames.length,
     workbookSheetCount: workbookSheets.length,
     sheetRefCount: sheetRecords.filter((record) => (
@@ -6634,10 +6765,59 @@ function parseXlsxMergedCellsFile(filePath = "") {
   return ranges;
 }
 
-function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], styles = null, outputPath = "" } = {}) {
+function xlsxPackageRootFromPartFile(filePath = "") {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  const marker = "/xl/";
+  const index = normalized.lastIndexOf(marker);
+  return index >= 0 ? normalized.slice(0, index + 1) : path.dirname(path.dirname(filePath));
+}
+
+function xlsxRelationshipTargetFilePath(baseFilePath = "", target = "") {
+  const raw = String(target || "").replace(/\\/g, "/").trim();
+  if (!raw) {
+    return "";
+  }
+  if (raw.startsWith("/")) {
+    return path.join(xlsxPackageRootFromPartFile(baseFilePath), raw.slice(1));
+  }
+  if (raw.startsWith("xl/")) {
+    return path.join(xlsxPackageRootFromPartFile(baseFilePath), raw);
+  }
+  return path.resolve(path.dirname(baseFilePath), raw);
+}
+
+function parseXlsxCommentsFile(commentsPath = "", relationship = {}) {
+  if (!commentsPath || !fsSync.existsSync(commentsPath)) {
+    return [];
+  }
+  return parseXlsxCommentsXml(fsSync.readFileSync(commentsPath, "utf8"), relationship, normalizeXlsxPartTarget("xl/workbook.xml", relationship.target || ""));
+}
+
+function parseXlsxCommentsForSheetFile(sheetPath = "", relationshipPath = "", fallbackIndex = 0) {
+  const relationshipXml = relationshipPath && fsSync.existsSync(relationshipPath)
+    ? fsSync.readFileSync(relationshipPath, "utf8")
+    : "";
+  const relationships = xlsxCommentRelationships(relationshipXml, "xl/worksheets/sheet1.xml");
+  const commentParts = relationships.length
+    ? relationships
+    : [{
+        id: "",
+        target: `xl/comments${fallbackIndex + 1}.xml`,
+        targetMode: "",
+        type: "fallback-comments-part"
+      }];
+  return commentParts.flatMap((relationship) => parseXlsxCommentsFile(
+    xlsxRelationshipTargetFilePath(sheetPath, relationship.target),
+    relationship
+  ));
+}
+
+function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedStrings = [], styles = null, outputPath = "", fallbackIndex = 0 } = {}) {
   const hyperlinks = parseXlsxHyperlinksFile(sheetPath, worksheetRelationshipFilePath(sheetPath));
   const mergedCells = parseXlsxMergedCellsFile(sheetPath);
   const mergedCellsByRef = xlsxMergedCellLookup(mergedCells);
+  const comments = parseXlsxCommentsForSheetFile(sheetPath, worksheetRelationshipFilePath(sheetPath), fallbackIndex);
+  const commentsByRef = xlsxCommentsByRef(comments);
   const headersByColumn = new Map();
   let headerCaptured = false;
   let rowCount = 0;
@@ -6646,6 +6826,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
   let hyperlinkCount = 0;
   let dateCellCount = 0;
   let mergedCellCount = 0;
+  let commentCount = 0;
   let headerRows = 0;
   let totalCharacters = 0;
   const appendLine = (line = "") => {
@@ -6654,7 +6835,7 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
     totalCharacters += text.length;
   };
   scanXmlElementsFromFile(sheetPath, "row", (xml) => {
-    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks, styles, mergedCellsByRef);
+    const row = parseXlsxRowXml(xml, sharedStrings, rowCount + 1, hyperlinks, styles, mergedCellsByRef, commentsByRef);
     if (!row.cells.length) {
       return;
     }
@@ -6677,7 +6858,11 @@ function appendXlsxWorksheetText({ sheetPath = "", sheetLabel = "", sharedString
   for (const range of mergedCells) {
     appendLine(`${sheetLabel} Merged range ${range.ref}: ${range.masterRef} spans ${range.rowSpan}x${range.columnSpan}`);
   }
-  return { rowCount, cellCount, formulaCount, hyperlinkCount, dateCellCount, mergedCellCount: mergedCells.length, headerRows, totalCharacters };
+  for (const comment of comments) {
+    appendLine(`${sheetLabel} Comment ${comment.ref}${comment.author ? ` by ${comment.author}` : ""}: ${comment.text}`);
+    commentCount += 1;
+  }
+  return { rowCount, cellCount, formulaCount, hyperlinkCount, dateCellCount, mergedCellCount: mergedCells.length, commentCount, headerRows, totalCharacters };
 }
 
 function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
@@ -6703,6 +6888,8 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
   let formulaCount = 0;
   let hyperlinkCount = 0;
   let dateCellCount = 0;
+  let mergedCellCount = 0;
+  let commentCount = 0;
   let headerRows = 0;
   for (const [index, record] of sheetRecords.entries()) {
     const sheetLabel = xlsxSheetLabel(record.sheet, index);
@@ -6711,7 +6898,8 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
       sheetLabel,
       sharedStrings,
       styles,
-      outputPath
+      outputPath,
+      fallbackIndex: index
     });
     totalCharacters += stats.totalCharacters;
     rowCount += stats.rowCount;
@@ -6720,6 +6908,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     hyperlinkCount += stats.hyperlinkCount;
     dateCellCount += stats.dateCellCount;
     mergedCellCount += stats.mergedCellCount;
+    commentCount += stats.commentCount;
     headerRows += stats.headerRows;
   }
   return {
@@ -6728,6 +6917,7 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
     dateStyleCount: styles.dateStyleCount,
     dateCellCount,
     mergedCellCount,
+    commentCount,
     sheetCount: sheetFiles.length,
     workbookSheetCount: workbookSheets.length,
     sheetRefCount: sheetRecords.length,
@@ -6769,6 +6959,11 @@ function appendXlsxDirectoryAsText(rootDir = "", outputPath = "") {
         mergedCells: mergedCellCount
       },
       {
+        stage: "table.sheet.comments",
+        status: commentCount ? "completed" : "empty",
+        comments: commentCount
+      },
+      {
         stage: "table.sheet.formulas",
         status: formulaCount ? "completed" : "empty",
         formulas: formulaCount
@@ -6808,7 +7003,9 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
       ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
         .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
       ...collectFiles(rootDir, (name) => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name), 1000)
-        .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
+        .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
+      ...collectFiles(rootDir, (name) => /^xl\/comments\d+\.xml$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/comments(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/comments(\d+)/)?.[1] || 0))
     ];
   }
   if (route?.id === "open-document") {
@@ -6842,7 +7039,9 @@ function structuredZipEntryFiles(route = null, rootDir = "") {
         ...collectFiles(rootDir, (name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name), 1000)
           .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
         ...collectFiles(rootDir, (name) => /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(name), 1000)
-          .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0))
+          .sort((left, right) => Number(left.relativePath.match(/sheet(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/sheet(\d+)/)?.[1] || 0)),
+        ...collectFiles(rootDir, (name) => /^xl\/comments\d+\.xml$/.test(name), 1000)
+          .sort((left, right) => Number(left.relativePath.match(/comments(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/comments(\d+)/)?.[1] || 0))
       ]
     : structuredZipXmlFiles(route, rootDir);
 }
@@ -7094,6 +7293,7 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount,
           mergedCells: parsed.mergedCellCount,
+          comments: parsed.commentCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         },
@@ -7126,6 +7326,11 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           stage: "table.sheet.merged-cells",
           status: parsed.mergedCellCount ? "completed" : "empty",
           mergedCells: parsed.mergedCellCount
+        },
+        {
+          stage: "table.sheet.comments",
+          status: parsed.commentCount ? "completed" : "empty",
+          comments: parsed.commentCount
         },
         {
           stage: "table.sheet.formulas",
@@ -8455,6 +8660,7 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount,
           mergedCells: parsed.mergedCellCount,
+          comments: parsed.commentCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         });
@@ -8480,6 +8686,11 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           stage: "table.sheet.merged-cells",
           status: parsed.mergedCellCount ? "completed" : "empty",
           mergedCells: parsed.mergedCellCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.comments",
+          status: parsed.commentCount ? "completed" : "empty",
+          comments: parsed.commentCount
         });
         parserTrace.push({
           stage: "table.sheet.date-styles",
@@ -8977,6 +9188,18 @@ function normalizedStructureElements(document = {}) {
                   rowSpan: Number(cell.merge.rowSpan || 0),
                   columnSpan: Number(cell.merge.columnSpan || 0)
                 }
+              : null,
+            comment: cell.comment
+              ? {
+                  ref: String(cell.comment.ref || cell.ref || ""),
+                  author: String(cell.comment.author || ""),
+                  authorId: Number(cell.comment.authorId || 0),
+                  text: String(cell.comment.text || ""),
+                  relationshipId: String(cell.comment.relationshipId || ""),
+                  target: String(cell.comment.target || ""),
+                  sourcePart: String(cell.comment.sourcePart || ""),
+                  type: String(cell.comment.type || "")
+                }
               : null
           }))
         : [];
@@ -9009,7 +9232,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "merged-cell", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
+  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -9575,6 +9798,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Spreadsheet merged-cell ranges are preserved as element references." : "No spreadsheet merged-cell ranges were required or observed."
       });
     }
+    if (gate === "spreadsheet-comment-refs-preserved") {
+      const commentSignals = maxTraceMetric(document, ["comments", "commentCount"]);
+      const status = routeId !== "spreadsheet"
+        ? "not_applicable"
+        : commentSignals > 0
+          ? evidence.spreadsheetCommentRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { commentSignals, spreadsheetCommentRefCount: evidence.spreadsheetCommentRefCount },
+        required: { commentRefsWhenCellCommentsExist: true },
+        message: status === "passed" ? "Spreadsheet cell comments are preserved as element references." : "No spreadsheet cell comments were required or observed."
+      });
+    }
     if (gate === "formula-text-preserved") {
       const formulaSignals = maxTraceMetric(document, ["formulas", "formulaCount"]);
       const status = routeId !== "spreadsheet"
@@ -9767,6 +10003,11 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       (element.merge?.ref ? 1 : 0) +
       (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.merge?.ref).length : 0)
     ), 0);
+    const spreadsheetCommentRefCount = sampleElements.reduce((sum, element) => (
+      sum +
+      (element.annotation?.kind === "spreadsheet-comment" ? 1 : 0) +
+      (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.comment?.text).length : 0)
+    ), 0);
     const dateCellRefCount = sampleElements.reduce((sum, element) => (
       sum + (Array.isArray(element.cells) ? element.cells.filter((cell) => cell.dateIso).length : 0)
     ), 0);
@@ -9794,6 +10035,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       formulaRefCount,
       hyperlinkRefCount,
       mergeRefCount,
+      spreadsheetCommentRefCount,
       dateCellRefCount,
       sheetRefCount,
       geometryElementCount,
@@ -9864,6 +10106,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithSheetRefsCount: plannedDocuments.filter((document) => document.evidence.sheetRefCount > 0).length,
       documentWithDateCellRefsCount: plannedDocuments.filter((document) => document.evidence.dateCellRefCount > 0).length,
       documentWithMergedCellRefsCount: plannedDocuments.filter((document) => document.evidence.mergeRefCount > 0).length,
+      documentWithSpreadsheetCommentRefsCount: plannedDocuments.filter((document) => document.evidence.spreadsheetCommentRefCount > 0).length,
       documentWithFormulaRefsCount: plannedDocuments.filter((document) => document.evidence.formulaRefCount > 0).length,
       documentWithLinkRefsCount: plannedDocuments.filter((document) => document.evidence.linkElementCount > 0 || document.evidence.hyperlinkRefCount > 0).length,
       documentWithImageRefsCount: plannedDocuments.filter((document) => document.evidence.imageRefCount > 0).length,
@@ -10443,6 +10686,7 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           dateStyles: parsed.dateStyleCount,
           dateCells: parsed.dateCellCount,
           mergedCells: parsed.mergedCellCount,
+          comments: parsed.commentCount,
           formulas: parsed.formulaCount,
           hyperlinks: parsed.hyperlinkCount
         });
@@ -10469,6 +10713,11 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "table.sheet.merged-cells",
           status: parsed.mergedCellCount ? "completed" : "empty",
           mergedCells: parsed.mergedCellCount
+        });
+        parserTrace.push({
+          stage: "table.sheet.comments",
+          status: parsed.commentCount ? "completed" : "empty",
+          comments: parsed.commentCount
         });
         parserTrace.push({
           stage: "table.sheet.date-styles",
@@ -10502,7 +10751,8 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           hiddenSheets: spreadsheet.hiddenSheetCount,
           dateStyles: spreadsheet.dateStyleCount,
           dateCells: spreadsheet.dateCellCount,
-          mergedCells: spreadsheet.mergedCellCount
+          mergedCells: spreadsheet.mergedCellCount,
+          comments: spreadsheet.commentCount
         });
         parserTrace.push(...spreadsheet.parserTrace);
       }
@@ -15474,6 +15724,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "table.sheet.headers",
         "table.sheet.cells",
         "table.sheet.merged-cells",
+        "table.sheet.comments",
         "table.sheet.date-styles",
         "table.sheet.formulas",
         "table.sheet.hyperlinks",
@@ -15494,10 +15745,10 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
-      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge"],
+      geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref", "cells.comment.ref"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -15518,7 +15769,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

@@ -450,6 +450,7 @@ try {
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.hyperlink.target"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("merge.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.merge.ref"), true);
+  assert.equal(capabilities.payload.elementModel.geometryFields.includes("cells.comment.ref"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.target"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("image.relationshipId"), true);
   assert.equal(capabilities.payload.elementModel.geometryFields.includes("table.sheetName"), true);
@@ -462,6 +463,7 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("cell-comment"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.href"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
@@ -472,6 +474,7 @@ try {
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.image.relationshipId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.merge.ref"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.merge"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.comment"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateIso"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.cells.dateSerial"), true);
   assert.equal(capabilities.payload.largeDocumentPolicy.manifestStrategy, "inline-or-streaming-manifest-document-input.v1");
@@ -521,6 +524,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-merged-cell-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-comment-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-date-serials-normalized"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-hyperlink-refs-preserved"), true);
   assert.equal(capabilities.payload.referenceGapReport.localAuditStrategy, "reference-framework-local-checkout-audit.v1");
@@ -605,6 +609,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.headers"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.cells"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.merged-cells"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.comments"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.date-styles"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.formulas"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("table.sheet.hyperlinks"), true);
@@ -1239,11 +1244,13 @@ try {
     document.professionalFamily === "office-spreadsheet" &&
     document.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved") &&
     document.qualityGates.includes("spreadsheet-merged-cell-refs-preserved") &&
+    document.qualityGates.includes("spreadsheet-comment-refs-preserved") &&
     document.qualityGates.includes("spreadsheet-date-serials-normalized") &&
     document.qualityGates.includes("formula-text-preserved") &&
     document.qualityGates.includes("spreadsheet-hyperlink-refs-preserved") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-workbook-sheet-refs-preserved" && ["passed", "not_applicable"].includes(gate.status)) &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-merged-cell-refs-preserved" && ["passed", "not_applicable"].includes(gate.status)) &&
+    document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-comment-refs-preserved" && ["passed", "not_applicable"].includes(gate.status)) &&
     document.qualityGateResults.some((gate) => (
       gate.gate === "spreadsheet-date-serials-normalized" &&
       ["passed", "warning", "not_applicable"].includes(gate.status)
@@ -1554,7 +1561,8 @@ try {
       "printf '%s' '<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"Container Evidence\" sheetId=\"11\" r:id=\"rIdSheet1\"/></sheets></workbook>' > /tmp/pact-mounted-structured/xlsx/xl/workbook.xml",
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdSheet1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>' > /tmp/pact-mounted-structured/xlsx/xl/_rels/workbook.xml.rels",
       "printf '%s' '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheetData><row><c t=\"s\"><v>0</v></c><c t=\"s\"><v>1</v></c><c t=\"s\"><v>2</v></c><c t=\"s\"><v>3</v></c></row><row><c t=\"s\"><v>4</v></c><c t=\"s\"><v>5</v></c><c r=\"C2\" s=\"1\"><v>46188</v></c><c r=\"D2\"><f>LEN(B2)</f><v>9</v></c></row></sheetData><mergeCells count=\"1\"><mergeCell ref=\"A1:B1\"/></mergeCells><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\" display=\"completed docs\"/></hyperlinks></worksheet>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/sheet1.xml",
-      "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-xlsx\" TargetMode=\"External\"/></Relationships>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/_rels/sheet1.xml.rels",
+      "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-xlsx\" TargetMode=\"External\"/><Relationship Id=\"rIdComment1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"../comments1.xml\"/></Relationships>' > /tmp/pact-mounted-structured/xlsx/xl/worksheets/_rels/sheet1.xml.rels",
+      "printf '%s' '<comments xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><authors><author>Container Analyst</author></authors><commentList><comment ref=\"B2\" authorId=\"0\"><text><r><t>Container XLSX status comment remains queryable.</t></r></text></comment></commentList></comments>' > /tmp/pact-mounted-structured/xlsx/xl/comments1.xml",
       "printf '%s' 'application/vnd.oasis.opendocument.text' > /tmp/pact-mounted-structured/odt/mimetype",
       "printf '%s' '<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><office:body><office:text><text:p>Mounted ODT filePath extraction keeps OpenDocument evidence distillable. <text:a xlink:href=\"https://example.com/container-mounted-odf\">container mounted ODF link</text:a></text:p></office:text></office:body></office:document-content>' > /tmp/pact-mounted-structured/odt/content.xml",
       "printf '%s' 'application/epub+zip' > /tmp/pact-mounted-structured/epub/mimetype",
@@ -1562,7 +1570,7 @@ try {
       "printf '%s' '<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Mounted EPUB Evidence</h1><p>Mounted EPUB filePath chapter routing verifies ebook compatibility.</p></body></html>' > /tmp/pact-mounted-structured/epub/OEBPS/chapter1.xhtml",
       "cd /tmp/pact-mounted-structured/docx && (7zz a -tzip /data/mounted-project-plan.docx word/document.xml word/_rels/document.xml.rels word/comments.xml word/footnotes.xml word/media/container-architecture.png >/dev/null || 7z a -tzip /data/mounted-project-plan.docx word/document.xml word/_rels/document.xml.rels word/comments.xml word/footnotes.xml word/media/container-architecture.png >/dev/null)",
       "cd /tmp/pact-mounted-structured/pptx && (7zz a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml ppt/slides/_rels/slide1.xml.rels ppt/notesSlides/notesSlide1.xml ppt/media/container-roadmap.png >/dev/null || 7z a -tzip /data/mounted-roadmap.pptx ppt/slides/slide1.xml ppt/slides/_rels/slide1.xml.rels ppt/notesSlides/notesSlide1.xml ppt/media/container-roadmap.png >/dev/null)",
-      "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/styles.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/styles.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels >/dev/null)",
+      "cd /tmp/pact-mounted-structured/xlsx && (7zz a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/styles.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels xl/comments1.xml >/dev/null || 7z a -tzip /data/mounted-evidence.xlsx xl/sharedStrings.xml xl/styles.xml xl/workbook.xml xl/_rels/workbook.xml.rels xl/worksheets/sheet1.xml xl/worksheets/_rels/sheet1.xml.rels xl/comments1.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/odt && (7zz a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null || 7z a -tzip /data/mounted-notes.odt mimetype content.xml >/dev/null)",
       "cd /tmp/pact-mounted-structured/epub && (7zz a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null || 7z a -tzip /data/mounted-handbook.epub mimetype META-INF/container.xml OEBPS/chapter1.xhtml >/dev/null)",
 `node <<'NODE'
@@ -1914,6 +1922,7 @@ NODE`
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.headers" && trace.status === "completed"), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.cells" && trace.status === "completed" && trace.cells >= 4), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.merged-cells" && trace.status === "completed" && trace.mergedCells === 1), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.comments" && trace.status === "completed" && trace.comments === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.date-styles" && trace.status === "completed" && trace.dateStyles === 1 && trace.dateCells === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.formulas" && trace.status === "completed" && trace.formulas === 1), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "table.sheet.hyperlinks" && trace.status === "completed" && trace.hyperlinks === 1), true);
@@ -1926,6 +1935,12 @@ NODE`
         ref.type === "merged-cell" &&
         ref.merge?.ref === "A1:B1" &&
         ref.table?.sheetName === "Container Evidence"
+      ))), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "cell-comment" &&
+        ref.annotation?.kind === "spreadsheet-comment" &&
+        ref.annotation?.author === "Container Analyst" &&
+        ref.cells?.some((cell) => cell.ref === "B2" && cell.comment?.text.includes("status comment"))
       ))), true);
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
         ref.type === "table-row" &&
