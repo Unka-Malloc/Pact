@@ -163,10 +163,13 @@ try {
   assert.equal(discovery.payload.installer.oneCommandAutoInstall, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.equal(discovery.payload.installer.oneCommandPriorityInstall, discovery.payload.installer.githubOneLinePriorityInstallCommand);
   assert.equal(discovery.payload.upgrade.reinstallCommand, discovery.payload.installer.githubOneLineInstallCommand);
+  assert.equal(discovery.payload.upgrade.clientReinstallJsonCommand, discovery.payload.installer.githubOneLineClientInstallJsonCommand);
   assert.equal(discovery.payload.upgrade.agentReinstallCommand, discovery.payload.installer.githubOneLineAutoInstallCommand);
   assert.equal(discovery.payload.upgrade.priorityAgentReinstallCommand, discovery.payload.installer.githubOneLinePriorityInstallCommand);
   assert.deepEqual(discovery.payload.upgrade.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.match(discovery.payload.upgrade.reinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(discovery.payload.upgrade.clientReinstallJsonCommand, /--target <client>/);
+  assert.match(discovery.payload.upgrade.clientReinstallJsonCommand, /--json/);
   assert.match(discovery.payload.upgrade.agentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.upgrade.priorityAgentReinstallCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   assert.match(discovery.payload.installer.installCommand, /npx pact-mcp-connector@latest register/);
@@ -568,6 +571,8 @@ try {
   assert.match(updateCommand, /pact-mcp-install\.sh.+--target auto/);
   assert.match(updateCommand, /--json/);
   assert.match(updateCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+  assert.match(updateProbe.payload.result.structuredContent.oneCommandClientInstallJson, /pact-mcp-install\.sh.+--target <client>/);
+  assert.match(updateProbe.payload.result.structuredContent.oneCommandClientInstallJson, /--json/);
   assert.equal(
     updateProbe.payload.result.structuredContent.clientInstallJsonCommand,
     `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`

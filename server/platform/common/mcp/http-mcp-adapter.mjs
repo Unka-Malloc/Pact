@@ -853,6 +853,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       listChanged: true,
       notification: "notifications/tools/list_changed",
       reinstallCommand: githubOneLineInstallCommand,
+      clientReinstallJsonCommand: githubOneLineClientInstallJsonCommand,
       agentReinstallCommand: githubOneLineAutoInstallCommand,
       priorityAgentReinstallCommand: githubOneLinePriorityInstallCommand,
       priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
@@ -1187,6 +1188,7 @@ function pactMetaResult({
     const autoUpdate = Boolean(authorization?.grant?.metadata?.autoUpdate);
     const { baseUrl } = mcpDiscoveryBase({ listenUrl, discoveryState });
     const {
+      clientInstallJsonCommand: githubOneLineClientInstallJsonCommand,
       autoInstallCommand: githubOneLineAutoInstallCommand,
       priorityInstallCommand: githubOneLinePriorityInstallCommand
     } = githubOneLineMcpInstallCommands({ baseUrl });
@@ -1200,6 +1202,7 @@ function pactMetaResult({
       installCommand: githubOneLineAutoInstallCommand,
       autoInstallCommand: githubOneLineAutoInstallCommand,
       priorityInstallCommand: githubOneLinePriorityInstallCommand,
+      oneCommandClientInstallJson: githubOneLineClientInstallJsonCommand,
       clientInstallCommand: discovery.installer.clientInstallCommand,
       clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
       connector,
