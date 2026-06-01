@@ -2505,6 +2505,15 @@ function buildDeviceHubManifest({
           scanCommand,
           doctorCommand
         },
+        upgrade: {
+          listChanged: true,
+          notification: "notifications/tools/list_changed",
+          reinstallCommand: githubOneLineInstallCommand,
+          clientReinstallJsonCommand: githubOneLineClientInstallJsonCommand,
+          agentReinstallCommand: githubOneLineAutoInstallCommand,
+          priorityAgentReinstallCommand: githubOneLinePriorityInstallCommand,
+          priorityTargets: [...PRIORITY_INSTALL_TARGETS]
+        },
         auth: {
           type: "auto-local-grant-or-provided-token",
           acceptedHeaders: ["Authorization: Bearer <token>", "X-Pact-Api-Key"],

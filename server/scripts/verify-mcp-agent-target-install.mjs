@@ -1020,6 +1020,13 @@ try {
     assert.equal(connector.discoverCommand, `${npxPrefix} discover-local --url '${serverUrl}' --json`);
     assert.equal(connector.scanCommand, `${npxPrefix} scan --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
     assert.equal(connector.doctorCommand, `${npxPrefix} doctor --url '${serverUrl}' --token-env '${autoTokenEnv}' --json`);
+    assert.equal(manifest.servers?.pact?.upgrade?.listChanged, true);
+    assert.equal(manifest.servers?.pact?.upgrade?.notification, "notifications/tools/list_changed");
+    assert.equal(manifest.servers?.pact?.upgrade?.reinstallCommand, connector.githubOneLineInstallCommand);
+    assert.equal(manifest.servers?.pact?.upgrade?.clientReinstallJsonCommand, connector.githubOneLineClientInstallJsonCommand);
+    assert.equal(manifest.servers?.pact?.upgrade?.agentReinstallCommand, connector.githubOneLineAutoInstallCommand);
+    assert.equal(manifest.servers?.pact?.upgrade?.priorityAgentReinstallCommand, connector.githubOneLinePriorityInstallCommand);
+    assert.deepEqual(manifest.servers?.pact?.upgrade?.priorityTargets, ["claude-code", "codex", "openclaw"]);
     assert.equal(manifest.servers?.pact?.auth?.tokenEnv, autoTokenEnv);
     assert.equal(manifest.servers?.pact?.sharedHub?.sharedspace?.outlet, "pact.sharedspace");
     assert.equal(manifest.servers?.pact?.sharedHub?.sharedspace?.referencePolicy, "use-public-workspace-ref");
