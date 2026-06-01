@@ -850,7 +850,14 @@ function redactSensitiveText(value, secrets = []) {
   for (const secret of uniqueValues(secrets.map((item) => String(item || "")).filter((item) => item.length > 0))) {
     text = text.split(secret).join("<redacted-token>");
   }
-  return text;
+  return text
+    .replace(/(^|[\s"'=:(])((?:\/(?:Users|home|root|private|var|tmp|opt|usr|Volumes)\/)[^\s"',)\]}]+)/g, "$1<local-path>")
+    .replace(/(^|[\s"'=:(])([A-Za-z]:[\\/][^\s"',)\]}]+)/g, "$1<local-path>")
+    .replace(/\b(Authorization\s*:\s*Bearer\s+)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(X-Pact-Api-Key\s*:\s*)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/\b(x-pact-tool-token\s*:\s*)[^\s"',;)\]}]+/gi, "$1<redacted-token>")
+    .replace(/(^|[\s"'=:(])(--token(?:=|\s+))[^\s"',;)\]}]+/gi, "$1$2<redacted-token>")
+    .replace(/\b(token|access_token|refresh_token|api_key|apiKey|secret|password)=([^\s"',;)\]}]+)/gi, "$1=<redacted-secret>");
 }
 
 function sensitiveOptionValues(options = {}) {
@@ -6302,7 +6309,7 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
         ok: false,
         status: "failed",
         uninstallMode: targetInstallMode(target),
-        error: error?.message || String(error)
+        error: redactSensitiveText(error?.message || String(error), sensitiveOptionValues(mergedOptions))
       };
     }
   }
@@ -6328,7 +6335,7 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
     } catch (error) {
       serverUninstall = {
         ok: false,
-        error: error?.message || String(error)
+        error: redactSensitiveText(error?.message || String(error), sensitiveOptionValues(mergedOptions))
       };
       for (const target of successfulTargets) {
         uninstalled[target] = {
@@ -6336,7 +6343,7 @@ async function uninstallTargets({ options, targets, optionOverrides = {} }) {
           ok: false,
           status: "failed",
           serverDeviceRemoved: false,
-          error: error?.message || String(error)
+          error: redactSensitiveText(error?.message || String(error), sensitiveOptionValues(mergedOptions))
         };
       }
     }

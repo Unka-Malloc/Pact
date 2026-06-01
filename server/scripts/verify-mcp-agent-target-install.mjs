@@ -807,6 +807,9 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.installed?.["claude-code"]?.status, "failed");
     assert.match(payload.installed?.["claude-code"]?.error, /timed out/);
+    assert.match(payload.installed?.["claude-code"]?.error, /<local-path>/);
+    assert.equal(result.stdout.includes(fakeClaudeHangPath), false, "local Claude timeout output must not expose the agent binary path");
+    assert.equal(result.stdout.includes(path.dirname(fakeClaudeHangPath)), false, "local Claude timeout output must not expose the agent binary directory");
   });
 
   await testAsync("cli local openclaw install times out stalled mcp command", async () => {
@@ -830,6 +833,9 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.installed?.openclaw?.status, "failed");
     assert.match(payload.installed?.openclaw?.error, /timed out/);
+    assert.match(payload.installed?.openclaw?.error, /<local-path>/);
+    assert.equal(result.stdout.includes(fakeOpenClawHangPath), false, "local OpenClaw timeout output must not expose the agent binary path");
+    assert.equal(result.stdout.includes(path.dirname(fakeOpenClawHangPath)), false, "local OpenClaw timeout output must not expose the agent binary directory");
   });
 
   await testAsync("cli local gemini install times out stalled mcp command", async () => {
@@ -923,6 +929,9 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.installed?.["gemini-cli"]?.status, "failed");
     assert.match(payload.installed?.["gemini-cli"]?.error, /<redacted-token>/);
+    assert.match(payload.installed?.["gemini-cli"]?.error, /<local-path>/);
+    assert.equal(result.stdout.includes(fakeGeminiFailPath), false, "local Gemini failure output must not expose the agent binary path");
+    assert.equal(result.stdout.includes(path.dirname(fakeGeminiFailPath)), false, "local Gemini failure output must not expose the agent binary directory");
   });
 
   // ── SECTION 5: Non-interactive auto install ──
