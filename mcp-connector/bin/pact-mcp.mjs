@@ -2381,9 +2381,11 @@ function buildDeviceHubManifest({
   const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
   const discoverCommand = `${packageExec} discover-local${urlArgs} --json`;
   const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
+  const clientInstallJsonCommand = `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs} --json`;
   const autoInstallCommand = `${packageExec} install --target auto${urlArgs}${tokenEnvArgs} --json`;
   const priorityInstallCommand = `${packageExec} install --target ${PRIORITY_INSTALL_TARGET}${urlArgs}${tokenEnvArgs} --json`;
   const scanCommand = `${packageExec} scan${urlArgs}${tokenEnvArgs} --json`;
+  const doctorCommand = `${packageExec} doctor${urlArgs}${tokenEnvArgs} --json`;
   const codexInstallCommand = `${packageExec} install --target codex${urlArgs}${tokenEnvArgs}`;
   const codexManifest = codex
     ? {
@@ -2445,9 +2447,11 @@ function buildDeviceHubManifest({
           supportedTargets: [...SUPPORTED_TARGETS],
           supportedTargetDetails: supportedTargetDetails(),
           installCommand: `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs}`,
+          clientInstallJsonCommand,
           uninstallCommand: `${packageExec} uninstall --target <client>${urlArgs}`,
           discoverCommand,
-          scanCommand
+          scanCommand,
+          doctorCommand
         },
         auth: {
           type: "auto-local-grant-or-provided-token",
