@@ -1019,9 +1019,11 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("revision"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("frontmatter"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("cell-comment"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.href"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.frontmatter"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
@@ -1044,6 +1046,7 @@ try {
   assert.equal(capabilities.payload.algorithms.includes("human-agent-response-profile-separation.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("professional-format-manifest.v1"), true);
   assert.equal(capabilities.payload.algorithms.includes("bounded-binary-file-profile.v1"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.frontmatter"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.formatConversion.strategy, "office-document-professional-adaptation.v1");
   assert.equal(capabilities.payload.formatConversion.qualityGateEvaluationStrategy, "professional-format-quality-gates.v1");
@@ -1058,6 +1061,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
   assert.equal(capabilities.payload.formatConversion.agentReadableTargets.includes("evidence-pack-json"), true);
+  assert.equal(capabilities.payload.formatConversion.preserves.includes("frontmatter"), true);
   for (const [routeId, parserProfile, qualityGate] of [
     ["pdf", "pdf.text-layout-ocr-route", "page-order-preserved"],
     ["word", "wordprocessingml-paragraph-style-route", "word-annotation-refs-preserved"],
@@ -1081,6 +1085,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-frontmatter-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
@@ -1172,6 +1177,8 @@ try {
           contentBase64: base64Text([
             "---",
             "owner: platform",
+            "tags: [agent, routing]",
+            "review_date: 2026-07-12",
             "---",
             "# Payload Routing",
             "Markdown contentBase64 must be parsed without Tika and converted with block structure.",
@@ -1685,13 +1692,31 @@ try {
   assert.equal(markdownPayloadCorpus.parseStatus, "completed");
   assert.equal(markdownPayloadCorpus.quality.evidenceStrength, "parsed-payload");
   assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "text.markdown"), true);
-  assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.status === "completed" && trace.headings >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1 && trace.links >= 1 && trace.images >= 1 && trace.metadata >= 1), true);
+  assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "markdown.frontmatter" && trace.status === "completed" && trace.fields >= 3 && trace.frontmatter >= 3), true);
+  assert.equal(markdownPayloadCorpus.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.status === "completed" && trace.headings >= 1 && trace.tables >= 2 && trace.codeBlocks >= 1 && trace.links >= 1 && trace.images >= 1 && trace.metadata >= 3), true);
   assert.equal(markdownPayloadCorpus.elementPlan.strategy, "document-element-model.v1");
   assert.equal(markdownPayloadCorpus.elementPlan.sourceFormat, "markdown");
   assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.heading >= 1, true);
+  assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.frontmatter >= 3, true);
   assert.equal(markdownPayloadCorpus.elementPlan.elementTypes["table-row"] >= 1, true);
   assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(markdownPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
+  assert.equal(markdownPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "frontmatter" &&
+    element.frontmatter?.key === "owner" &&
+    element.frontmatter?.value === "platform"
+  )), true);
+  assert.equal(markdownPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "frontmatter" &&
+    element.frontmatter?.key === "tags" &&
+    Array.isArray(element.frontmatter?.value) &&
+    element.frontmatter.value.includes("agent")
+  )), true);
+  assert.equal(markdownPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "frontmatter" &&
+    ref.frontmatter?.key === "owner" &&
+    ref.frontmatter?.value === "platform"
+  ))), true);
   assert.equal(markdownPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "link" &&
     ref.href === "https://example.test/agent"
@@ -1701,8 +1726,17 @@ try {
     ref.href === "https://example.test/architecture.png"
   ))), true);
   assert.equal(markdownPayloadCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-5" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "frontmatter" &&
+      ref.frontmatter?.key === "owner" &&
+      ref.frontmatter?.value === "platform"
+    ))
+  )), true);
   assert.equal(markdownPayloadCorpus.formatConversionProfile.parserProfile, "markdown-block-element-route");
   assert.equal(markdownPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
+  assert.equal(markdownPayloadCorpus.formatConversionProfile.preserves.includes("frontmatter"), true);
   const professionalConversionPlan = createRun.payload.result.formatConversionPlan;
   assert.equal(professionalConversionPlan.strategy, "office-document-professional-adaptation.v1");
   assert.equal(professionalConversionPlan.summary.targetFormats.includes("docx"), true);
@@ -1712,7 +1746,9 @@ try {
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("pdf-outline-refs-preserved"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-frontmatter-refs-preserved"), true);
   assert.equal(professionalConversionPlan.summary.documentWithPdfOutlineRefsCount >= 1, true);
+  assert.equal(professionalConversionPlan.summary.documentWithFrontmatterRefsCount >= 1, true);
   assert.equal(professionalConversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
   assert.equal(professionalConversionPlan.summary.qualityGateStatusCounts.passed > 0, true);
   assert.equal(professionalConversionPlan.summary.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
@@ -1744,8 +1780,12 @@ try {
     document.sourceId === "source-5" &&
     document.parserProfile === "markdown-block-element-route" &&
     document.conversionTargets.includes("valid-openxml-docx") &&
+    document.parserStages.includes("markdown.frontmatter") &&
+    document.preserves.includes("frontmatter") &&
+    document.evidence.frontmatterRefCount >= 3 &&
     document.evidence.linkElementCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-frontmatter-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "markdown-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "markdown-image-refs-preserved" && gate.status === "passed")
   )), true);
@@ -3395,6 +3435,7 @@ try {
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithPresentationCommentRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithSpreadsheetCommentRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
+  assert.equal(agentMessage.formatConversionPlan.summary.documentWithFrontmatterRefsCount >= 1, true);
   assert.equal(agentMessage.graphEvidence.summary.entityCount > 0, true);
   assert.equal(agentMessage.classification.communityCount >= agentMessage.classification.coreGroupCount, true);
   assert.equal(agentMessage.classification.groups.some((group) => group.distillationUnit?.mode === "topic-isolated"), true);
@@ -3434,6 +3475,7 @@ try {
   assert.equal(conversionPlan.summary.documentWithNumberingRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithFrontmatterRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.every((artifact) => artifact.status === "passed"), true);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
@@ -3510,6 +3552,13 @@ try {
     document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-comment-refs-preserved" && gate.status === "passed")
+  )), true);
+  assert.equal(conversionPlan.documents.some((document) => (
+    document.routeId === "markdown" &&
+    document.parserStages.includes("markdown.frontmatter") &&
+    document.preserves.includes("frontmatter") &&
+    document.evidence.frontmatterRefCount >= 3 &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-frontmatter-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "open-document" &&
@@ -3604,6 +3653,14 @@ try {
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-merged-cell-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-comment-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "spreadsheet-date-serials-normalized" && gate.status === "passed")
+  )), true);
+  assert.equal(professionalManifest.documents.some((document) => (
+    document.routeId === "markdown" &&
+    document.parserProfile === "markdown-block-element-route" &&
+    document.parserStages.includes("markdown.frontmatter") &&
+    document.preserves.includes("frontmatter") &&
+    document.evidence.frontmatterRefCount >= 3 &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-frontmatter-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "open-document" &&

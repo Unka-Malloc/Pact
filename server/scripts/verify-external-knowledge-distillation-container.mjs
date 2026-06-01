@@ -467,9 +467,11 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("revision"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("frontmatter"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("cell-comment"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.href"), true);
+  assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.frontmatter"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.annotation"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.styleId"), true);
   assert.equal(capabilities.payload.elementModel.graphMetadata.includes("elementRefs.style.numberingId"), true);
@@ -490,6 +492,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.jsonl"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("input.manifest.json"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("content.signature"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.frontmatter"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("markdown.structure"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured.json.file-ref-stream"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("structured-zip.structural-entry-plan"), true);
@@ -502,6 +505,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.modeSeparationStrategy, "human-agent-response-profile-separation.v1");
   assert.equal(capabilities.payload.formatConversion.professionalFormats.includes("spreadsheet"), true);
   assert.equal(capabilities.payload.formatConversion.humanReadableTargets.includes("portable-docx"), true);
+  assert.equal(capabilities.payload.formatConversion.preserves.includes("frontmatter"), true);
   for (const [routeId, parserProfile, qualityGate] of [
     ["pdf", "pdf.text-layout-ocr-route", "page-order-preserved"],
     ["word", "wordprocessingml-paragraph-style-route", "word-annotation-refs-preserved"],
@@ -525,6 +529,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-frontmatter-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
@@ -998,6 +1003,10 @@ try {
           mediaType: "application/zip",
           contentBase64: zipBase64({
             "docs/architecture.md": [
+              "---",
+              "owner: container-platform",
+              "tags: [container, agent]",
+              "---",
               "# Architecture",
               "External API namespace registration, route fallback, parser runtime health, deployment topology, and service capability contracts.",
               "[Container agent contract](https://example.test/container-agent)",
@@ -1115,9 +1124,21 @@ try {
   assert.equal(markdownChild.parentSourceId, "container-project-package");
   assert.equal(markdownChild.route.formatId, "markdown");
   assert.equal(markdownChild.parserTrace.some((trace) => trace.stage === "text.markdown" && trace.status === "completed"), true);
+  assert.equal(markdownChild.parserTrace.some((trace) => trace.stage === "markdown.frontmatter" && trace.status === "completed" && trace.fields >= 2 && trace.frontmatter >= 2), true);
   assert.equal(markdownChild.parserTrace.some((trace) => trace.stage === "markdown.structure" && trace.links >= 1 && trace.images >= 1), true);
+  assert.equal(markdownChild.elementPlan.elementTypes.frontmatter >= 2, true);
   assert.equal(markdownChild.elementPlan.elementTypes.link >= 1, true);
   assert.equal(markdownChild.elementPlan.elementTypes.image >= 1, true);
+  assert.equal(markdownChild.elementPlan.sampleElements.some((element) => (
+    element.type === "frontmatter" &&
+    element.frontmatter?.key === "owner" &&
+    element.frontmatter?.value === "container-platform"
+  )), true);
+  assert.equal(markdownChild.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "frontmatter" &&
+    ref.frontmatter?.key === "owner" &&
+    ref.frontmatter?.value === "container-platform"
+  ))), true);
   assert.equal(markdownChild.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "link" &&
     ref.href === "https://example.test/container-agent"
@@ -1126,6 +1147,14 @@ try {
     ref.type === "image" &&
     ref.href === "https://example.test/container-topology.png"
   ))), true);
+  assert.equal(projectPackageRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "container-project-package!docs/architecture.md" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "frontmatter" &&
+      ref.frontmatter?.key === "owner" &&
+      ref.frontmatter?.value === "container-platform"
+    ))
+  )), true);
   const csvChild = projectPackageRun.payload.result.corpusPlan.documents.find((item) => item.sourceId === "container-project-package!finance/invoice.csv");
   assert.ok(csvChild, "project package CSV child must be expanded");
   assert.equal(csvChild.parentSourceId, "container-project-package");
@@ -1246,7 +1275,9 @@ try {
   assert.equal(conversionPlan.summary.qualityGates.includes("heading-tree-preserved"), true);
   assert.equal(conversionPlan.summary.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(conversionPlan.summary.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(conversionPlan.summary.qualityGates.includes("markdown-frontmatter-refs-preserved"), true);
   assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithFrontmatterRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
     artifact.artifactId === "portable-docx" &&
@@ -1284,11 +1315,24 @@ try {
     document.routeId === "markdown" &&
     document.professionalFamily === "markdown" &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "markdown-blocks-to-valid-openxml.v1") &&
+    document.parserStages.includes("markdown.frontmatter") &&
+    document.preserves.includes("frontmatter") &&
+    document.evidence.frontmatterRefCount >= 2 &&
     document.evidence.linkElementCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
+    document.qualityGateResults.some((gate) => gate.gate === "markdown-frontmatter-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "markdown-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "markdown-image-refs-preserved" && gate.status === "passed")
   )), true);
+  const architectureSourceEvidence = await fetchJson(
+    `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?sourceId=container-project-package!docs%2Farchitecture.md&limit=20`
+  );
+  assert.equal(architectureSourceEvidence.status, 200);
+  assert.equal(architectureSourceEvidence.payload.text_units.some((unit) => unit.metadata?.elementRefs?.some((ref) => (
+    ref.type === "frontmatter" &&
+    ref.frontmatter?.key === "owner" &&
+    ref.frontmatter?.value === "container-platform"
+  ))), true);
   const architectureEvidence = await fetchJson(
     `${serviceUrl}/v1/distillation/runs/${encodeURIComponent(projectPackageRun.payload.runId)}/evidence?entity=namespace&sourceId=container-project-package!docs%2Farchitecture.md&limit=20`
   );

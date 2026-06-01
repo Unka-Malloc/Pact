@@ -685,8 +685,8 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Markdown",
     professionalFamily: "markdown",
     parserProfile: "markdown-block-element-route",
-    structureUnits: ["frontmatter", "heading", "paragraph", "list-item", "table-row", "code", "link", "image"],
-    parserStages: ["text.markdown", "markdown.structure"],
+    structureUnits: ["frontmatter", "frontmatter-field", "heading", "paragraph", "list-item", "table-row", "code", "link", "image"],
+    parserStages: ["text.markdown", "markdown.frontmatter", "markdown.structure"],
     preserves: ["heading-levels", "tables", "code-blocks", "links", "images", "frontmatter"],
     conversionTargets: ["clean-markdown", "valid-openxml-docx", "agent-json-with-block-refs", "evidence-pack"],
     conversionAdapters: [
@@ -709,7 +709,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "markdown-blocks-to-agent-refs.v1",
         mode: "agent",
-        stages: ["block-refs", "heading-paths", "link-refs"]
+        stages: ["block-refs", "frontmatter-refs", "heading-paths", "link-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -719,7 +719,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "entities", "claims"]
       }
     ],
-    qualityGates: ["heading-tree-preserved", "markdown-table-blocks-preserved", "markdown-link-refs-preserved", "markdown-image-refs-preserved", "docx-openxml-package-valid"],
+    qualityGates: ["heading-tree-preserved", "markdown-frontmatter-refs-preserved", "markdown-table-blocks-preserved", "markdown-link-refs-preserved", "markdown-image-refs-preserved", "docx-openxml-package-valid"],
     riskControls: ["custom-extension-loss-reporting", "image-reference-preservation"],
     knownLosses: ["custom-markdown-extension-rendering-not-normalized"]
   },
@@ -2378,6 +2378,7 @@ function pushStructureElement(elements, type, text, metadata = {}) {
     ...(metadata.shape ? { shape: metadata.shape } : {}),
     ...(metadata.image ? { image: metadata.image } : {}),
     ...(metadata.merge ? { merge: metadata.merge } : {}),
+    ...(metadata.frontmatter ? { frontmatter: metadata.frontmatter } : {}),
     ...(metadata.cells ? { cells: metadata.cells } : {})
   });
 }
@@ -2514,6 +2515,50 @@ function isMarkdownTableDelimiter(line = "") {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function parseMarkdownFrontmatterValue(value = "") {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return { value: "", valueText: "", valueType: "empty" };
+  }
+  const unquote = (item = "") => String(item || "").trim().replace(/^['"]|['"]$/g, "");
+  if (/^\[[\s\S]*\]$/.test(trimmed)) {
+    const items = trimmed
+      .slice(1, -1)
+      .split(",")
+      .map(unquote)
+      .filter(Boolean);
+    return { value: items, valueText: items.join(", "), valueType: "array" };
+  }
+  if (/^(?:true|false)$/i.test(trimmed)) {
+    return { value: /^true$/i.test(trimmed), valueText: trimmed.toLowerCase(), valueType: "boolean" };
+  }
+  if (/^-?(?:\d+\.\d+|\d+)$/.test(trimmed)) {
+    return { value: Number(trimmed), valueText: trimmed, valueType: "number" };
+  }
+  return { value: unquote(trimmed), valueText: unquote(trimmed), valueType: "string" };
+}
+
+function parseMarkdownFrontmatterEntry(line = "", format = "yaml") {
+  const raw = String(line || "");
+  const pattern = format === "toml"
+    ? /^\s*([A-Za-z0-9_.-]+)\s*=\s*([\s\S]*?)\s*$/
+    : /^\s*([A-Za-z0-9_.-]+)\s*:\s*([\s\S]*?)\s*$/;
+  const match = raw.match(pattern);
+  if (!match) {
+    const { value, valueText, valueType } = parseMarkdownFrontmatterValue(raw.trim());
+    return { format, key: "", value, valueText, valueType, raw: raw.trim() };
+  }
+  const { value, valueText, valueType } = parseMarkdownFrontmatterValue(match[2]);
+  return {
+    format,
+    key: match[1],
+    value,
+    valueText,
+    valueType,
+    raw: raw.trim()
+  };
+}
+
 function parseMarkdownText(text = "", metadata = {}) {
   const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
   const elements = [];
@@ -2526,6 +2571,8 @@ function parseMarkdownText(text = "", metadata = {}) {
   let tableHeader = [];
   let tableRows = 0;
   let frontmatter = false;
+  let frontmatterFence = "";
+  let frontmatterCount = 0;
 
   const flushParagraph = () => {
     if (!paragraph.length) {
@@ -2554,15 +2601,24 @@ function parseMarkdownText(text = "", metadata = {}) {
     const lineNumber = index + 1;
     const trimmed = raw.trim();
 
-    if (lineNumber === 1 && trimmed === "---") {
+    if (lineNumber === 1 && ["---", "+++"].includes(trimmed)) {
       frontmatter = true;
+      frontmatterFence = trimmed;
       continue;
     }
     if (frontmatter) {
-      if (trimmed === "---") {
+      if (trimmed === frontmatterFence) {
         frontmatter = false;
+        frontmatterFence = "";
       } else if (trimmed) {
-        pushStructureElement(elements, "metadata", trimmed, { line: lineNumber });
+        const entry = parseMarkdownFrontmatterEntry(trimmed, frontmatterFence === "+++" ? "toml" : "yaml");
+        frontmatterCount += 1;
+        pushStructureElement(elements, "frontmatter", entry.key ? `${entry.key}: ${entry.valueText}` : entry.valueText, {
+          line: lineNumber,
+          name: "markdown-frontmatter",
+          frontmatter: entry,
+          limit: 1200
+        });
       }
       continue;
     }
@@ -2715,7 +2771,8 @@ function parseMarkdownText(text = "", metadata = {}) {
     codeBlockCount: counts.code || 0,
     linkCount: counts.link || 0,
     imageCount: counts.image || 0,
-    metadataCount: counts.metadata || 0
+    frontmatterCount: counts.frontmatter || frontmatterCount,
+    metadataCount: counts.frontmatter || frontmatterCount
   };
 }
 
@@ -8815,6 +8872,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
       const parsed = parseMarkdownText(plain, metadata);
       parserTrace.push({ stage: "text.markdown", status: "completed", characters: plain.trim().length });
       parserTrace.push({
+        stage: "markdown.frontmatter",
+        status: parsed.frontmatterCount ? "completed" : "empty",
+        fields: parsed.frontmatterCount,
+        frontmatter: parsed.frontmatterCount,
+        strategy: "markdown-frontmatter-key-value.v1"
+      });
+      parserTrace.push({
         stage: "markdown.structure",
         status: parsed.text ? "completed" : "empty",
         characters: parsed.text.length,
@@ -9509,6 +9573,18 @@ function normalizedStructureElements(document = {}) {
             anchorValue: String(element.merge.anchorValue || "")
           }
         : null;
+      const frontmatter = element.frontmatter && typeof element.frontmatter === "object"
+        ? {
+            format: String(element.frontmatter.format || ""),
+            key: String(element.frontmatter.key || ""),
+            value: Array.isArray(element.frontmatter.value)
+              ? element.frontmatter.value.map((item) => String(item || "")).filter(Boolean)
+              : element.frontmatter.value,
+            valueText: String(element.frontmatter.valueText || ""),
+            valueType: String(element.frontmatter.valueType || ""),
+            raw: String(element.frontmatter.raw || "")
+          }
+        : null;
       const cells = Array.isArray(element.cells)
         ? element.cells.slice(0, 200).map((cell) => ({
             ref: String(cell.ref || ""),
@@ -9583,6 +9659,7 @@ function normalizedStructureElements(document = {}) {
         shape,
         image,
         merge,
+        frontmatter,
         cells
       };
     })
@@ -9594,7 +9671,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "revision", "speaker-note"].includes(element.type);
+  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "frontmatter", "comment", "footnote", "endnote", "revision", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -9630,6 +9707,7 @@ function buildStructureWindowRecord(document = {}, index = 0, elements = [], hea
       shape: element.shape || null,
       image: element.image || null,
       merge: element.merge || null,
+      frontmatter: element.frontmatter || null,
       cells: element.cells || [],
       headingPath
     })),
@@ -9747,6 +9825,7 @@ function buildDocumentElementPlan(document = {}, windowPlan = null) {
       shape: element.shape || null,
       image: element.image || null,
       merge: element.merge || null,
+      frontmatter: element.frontmatter || null,
       cells: element.cells || []
     }))
   };
@@ -10283,6 +10362,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Markdown heading tree is preserved." : "No Markdown headings were required or observed."
       });
     }
+    if (gate === "markdown-frontmatter-refs-preserved") {
+      const frontmatterSignals = maxTraceMetric(document, ["frontmatter", "metadata", "fields"]);
+      const status = routeId !== "markdown"
+        ? "not_applicable"
+        : frontmatterSignals > 0
+          ? evidence.frontmatterRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { frontmatterSignals, frontmatterRefCount: evidence.frontmatterRefCount },
+        required: { frontmatterRefsWhenPresent: true },
+        message: status === "passed" ? "Markdown frontmatter fields are preserved as structured element references." : "No Markdown frontmatter fields were required or observed."
+      });
+    }
     if (gate === "markdown-table-blocks-preserved") {
       const tables = maxTraceMetric(document, ["tables", "tableCount"]);
       const status = routeId !== "markdown"
@@ -10429,6 +10521,10 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       Number(elementTypes["pdf-outline"] || 0),
       sampleElements.filter((element) => element.type === "pdf-outline").length
     );
+    const frontmatterRefCount = Math.max(
+      Number(elementTypes.frontmatter || 0),
+      sampleElements.filter((element) => element.type === "frontmatter" && element.frontmatter).length
+    );
     const linkElementCount = sampleElements.filter((element) => element.type === "link" && element.href).length;
     const imageRefCount = sampleElements.filter((element) => element.type === "image" && element.href).length;
     const styleRefCount = sampleElements.filter((element) => element.style?.styleId).length;
@@ -10453,6 +10549,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       annotationElementCount,
       revisionRefCount,
       pdfOutlineRefCount,
+      frontmatterRefCount,
       linkElementCount,
       imageRefCount,
       styleRefCount,
@@ -10529,6 +10626,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
       documentWithRevisionRefsCount: plannedDocuments.filter((document) => document.evidence.revisionRefCount > 0).length,
       documentWithPdfOutlineRefsCount: plannedDocuments.filter((document) => document.evidence.pdfOutlineRefCount > 0).length,
+      documentWithFrontmatterRefsCount: plannedDocuments.filter((document) => document.evidence.frontmatterRefCount > 0).length,
       documentWithPresentationCommentRefsCount: plannedDocuments.filter((document) => document.evidence.presentationCommentRefCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
@@ -16123,6 +16221,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "payload.stream-text",
         "text.direct",
         "text.markdown",
+        "markdown.frontmatter",
         "markdown.structure",
         "markup.structure",
         "structured.json",
@@ -16201,10 +16300,10 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "pdf-outline", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "pdf-outline", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "frontmatter", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref", "cells.comment.ref"],
-      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
+      graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.frontmatter", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
       referencePatterns: [
         "unstructured.elements",
         "unstructured.chunk_by_title",
@@ -16225,7 +16324,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "revisions", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "frontmatter", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "revisions", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

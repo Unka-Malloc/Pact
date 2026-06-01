@@ -56,7 +56,7 @@ Professional office-document adaptation contract:
 | Word | `wordprocessingml-paragraph-style-route` | Heading/list style refs, table cells, hyperlinks, images, comments, footnotes, endnotes, tracked-change revisions. |
 | PowerPoint | `presentationml-slide-route` | Slide order, shape id/name, placeholder, bbox, tables, hyperlinks, images, speaker notes, comments. |
 | Excel | `spreadsheetml-sheet-row-cell-route` | Workbook sheet id/name/state/path, row/cell refs, merged cells, comments, date serials, formulas, hyperlinks, time index. |
-| Markdown | `markdown-block-element-route` | Heading tree, tables, code fences, links, images, block refs without Tika XHTML noise. |
+| Markdown | `markdown-block-element-route` | YAML/TOML frontmatter key-value refs, heading tree, tables, code fences, links, images, block refs without Tika XHTML noise. |
 
 Core response fields:
 
@@ -91,7 +91,7 @@ Routed format families:
 - PDF: subtype routing before distillation, text extraction, URI annotation links, outline/bookmark destinations, visual layout fallback, OCR fallback, and text-operator geometry (`page`, `x/y`, approximate `bbox`) for evidence windows and conversion profiles.
 - Office and OpenDocument: DOC/DOT/DOCX/DOCM/DOTX/DOTM, RTF, PPT/PPS/POT/PPTX/PPTM/PPSX/PPSM/POTX/POTM, XLS/XLSB/XLSX/XLSM/XLTX/XLTM, ODT/ODS/ODP with paragraph, heading, Word paragraph style and numbering refs, Word hyperlinks/images/comments/footnotes/endnotes/tracked-change revisions, Word/PowerPoint/OpenDocument table row/cell metadata, OpenDocument hyperlinks, slide, PresentationML shape id/name, placeholder, comment, and geometry refs, PowerPoint hyperlinks/images and speaker notes, workbook sheet name/id/state/path, sheet-row, cell-coordinate, SpreadsheetML merged-cell/comment/date style/date serial/formula/hyperlink metadata, and table elements for OOXML/OpenDocument payloads.
 - Ebooks: EPUB.
-- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONC, JSONL, CSV, TSV, and logs. Markdown is parsed as block elements with heading, table, code, link, and image refs rather than treated as plain text.
+- Text, configuration, and structured data: Markdown, TXT, YAML, TOML, INI, properties, dotenv, JSON, JSONC, JSONL, CSV, TSV, and logs. Markdown is parsed as frontmatter key-value refs plus block elements with heading, table, code, link, and image refs rather than treated as plain text.
 - Markup documents: HTML, XHTML, XML, reStructuredText, AsciiDoc, Org, LaTeX, and MediaWiki with element-type extraction.
 - Diagrams: SVG, draw.io, Mermaid, and PlantUML with node, edge, and label extraction.
 - Notebooks: Jupyter `.ipynb` with markdown, code, and output cell extraction.
@@ -104,7 +104,7 @@ Routed format families:
 
 Built-in payload parsers:
 
-- Direct text, Markdown block structure, markup structure, and source code text.
+- Direct text, Markdown frontmatter/block structure, markup structure, and source code text.
 - Markup normalization for HTML/XHTML/XML/RST/AsciiDoc/Org/LaTeX/MediaWiki headings, lists, links, table rows, code blocks, citations, and formulas.
 - JSON, JSONC, and JSONL normalization, with mounted JSON/JSONC file references using `structured-json-file-ref-streaming-window.v1` instead of binary fallback when they exceed the direct-read threshold.
 - Configuration key-value normalization for YAML, TOML, INI, properties, and dotenv files.
@@ -168,9 +168,9 @@ Built-in algorithm baseline:
 - `graph-lite-evidence-query.v1`: returns filtered graph evidence slices for agent reads without requiring full evidence-pack artifact scans.
 - `hierarchical-domain-topic-project-convergence.v3`: adds a project-domain layer, domain reports, cross-domain links, and `agent-project-convergence-query-index.v1` for global/local project reads.
 - `project-graph-evidence-convergence-query.v1`: merges graph evidence across project runs and supports `mode=all|latest`, `runLimit`, domain, route, source, entity, claim, group, and time filters for engineering-project convergence queries.
-- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/image/annotation isolation, element refs, Markdown links/images, basic PDF geometry, URI annotation links, and outline/bookmark refs, Word paragraph style/list numbering refs, Word hyperlinks/images/annotations/revisions, Word/PowerPoint/OpenDocument table cells, OpenDocument hyperlinks, PowerPoint shape id/name/placeholders, PowerPoint hyperlinks/images/comments and speaker notes, spreadsheet workbook sheet refs/cell coordinates/merged-cell ranges/comments/date serials/formulas/hyperlinks, and PresentationML shape geometry on agent windows and graph text units.
+- `document-element-model.v1` and `element-aware-by-title-windowing.v1`: keep structured elements, heading paths, table/code/image/annotation isolation, element refs, Markdown frontmatter/links/images, basic PDF geometry, URI annotation links, and outline/bookmark refs, Word paragraph style/list numbering refs, Word hyperlinks/images/annotations/revisions, Word/PowerPoint/OpenDocument table cells, OpenDocument hyperlinks, PowerPoint shape id/name/placeholders, PowerPoint hyperlinks/images/comments and speaker notes, spreadsheet workbook sheet refs/cell coordinates/merged-cell ranges/comments/date serials/formulas/hyperlinks, and PresentationML shape geometry on agent windows and graph text units.
 - `pdf-subtype-routing.v1`: turns PDF parser signals into machine-readable subtype, risk flags, image/font/ToUnicode counts, text/OCR/Tika character counts, and route-level `pdfSubtype`.
-- `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates, including PDF outline preservation, Office image references, Word revision preservation, Excel merged-cell/comment preservation, Excel date serial normalization, and known loss boundaries.
+- `office-document-professional-adaptation.v1`: exposes a professional adapter matrix and per-document parsing/conversion profiles for PDF, Word, PowerPoint, Excel, Markdown, and OpenDocument, separating human-readable exports from agent-readable JSON/evidence packs while recording quality gates, including PDF outline preservation, Markdown frontmatter preservation, Office image references, Word revision preservation, Excel merged-cell/comment preservation, Excel date serial normalization, and known loss boundaries.
 - `human-agent-response-profile-separation.v1` and `professional-format-manifest.v1`: split control-plane summaries from agent payloads and make professional parsing/conversion evidence queryable without scanning the full result JSON.
 - `bounded-binary-file-profile.v1`: handles oversized or unknown file references with streaming hash plus bounded byte sampling, preventing memory-heavy direct reads while keeping unsupported assets visible to agents.
 - `reference-framework-gap-report.v1`: maps local reference framework learnings to absorbed service capabilities, baseline-only patterns, and open gaps that still need parser, graph, pipeline, or evaluation work.
@@ -187,7 +187,7 @@ Reference patterns currently absorbed into the local baseline:
 - Haystack-style pipeline snapshots for replayable agent/debug context.
 - Docling/Haystack-style converter boundaries for HTML, Markdown, AsciiDoc, XML, LaTeX-like markup, OOXML, OpenDocument, EPUB, and PDF text documents.
 - Docling-style basic PDF text-block geometry derived from text positioning operators, plus PresentationML shape id/name, placeholder, and bbox metadata for slide evidence.
-- Unstructured-style element families for Markdown, markup, and structured-document headings, paragraphs, lists, links, images, table headers, table rows, merged-cell ranges, cell comments, code, citations, formulas, PDF outlines, Word revisions, Word/PowerPoint/OpenDocument hyperlinks, PowerPoint comments/placeholders, and spreadsheet hyperlinks.
+- Unstructured-style element families for Markdown frontmatter, markup, and structured-document headings, paragraphs, lists, links, images, table headers, table rows, merged-cell ranges, cell comments, code, citations, formulas, PDF outlines, Word revisions, Word/PowerPoint/OpenDocument hyperlinks, PowerPoint comments/placeholders, and spreadsheet hyperlinks.
 - Unstructured `chunk_by_title`-style element-aware windows with table/code isolation, plus LlamaIndex-style node refs in graph text-unit metadata.
 
 Reference framework checkout root:
