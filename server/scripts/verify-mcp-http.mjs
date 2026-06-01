@@ -400,9 +400,12 @@ try {
   assert.match(unauthenticatedList.payload.error.data.connector.oneCommandAutoInstallZhCN, /pact-mcp-install\.zh-CN\.sh.+--target auto/);
   assert.equal(unauthenticatedList.payload.error.data.connector.githubOneLineAutoInstallCommandZhCN, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstallZhCN);
   assert.equal(unauthenticatedList.payload.error.data.nextCommand, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall);
+  assert.equal(unauthenticatedList.payload.error.data.nextCommandZhCN, unauthenticatedList.payload.error.data.connector.oneCommandAutoInstallZhCN);
   assert.equal(unauthenticatedList.payload.error.data.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
   assert.deepEqual(unauthenticatedList.payload.error.data.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.ok(unauthenticatedList.payload.error.data.repairCommands.includes(unauthenticatedList.payload.error.data.connector.oneCommandAutoInstall));
+  assert.ok(unauthenticatedList.payload.error.data.repairCommands.includes(unauthenticatedList.payload.error.data.connector.oneCommandAutoInstallZhCN));
+  assert.ok(unauthenticatedList.payload.error.data.repairCommands.includes(unauthenticatedList.payload.error.data.connector.oneCommandPriorityInstallZhCN));
   assert.ok(unauthenticatedList.payload.error.data.repairCommands.includes(unauthenticatedList.payload.error.data.connector.autoInstallCommand));
 
   const unauthenticatedCall = await fetchJson(`${server.url}/mcp`, {
@@ -422,7 +425,9 @@ try {
     unauthenticatedCall.payload.error.data.connector.priorityInstallCommand,
     `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
   );
+  assert.equal(unauthenticatedCall.payload.error.data.nextCommandZhCN, unauthenticatedCall.payload.error.data.connector.oneCommandAutoInstallZhCN);
   assert.ok(unauthenticatedCall.payload.error.data.repairCommands.includes(unauthenticatedCall.payload.error.data.connector.oneCommandPriorityInstall));
+  assert.ok(unauthenticatedCall.payload.error.data.repairCommands.includes(unauthenticatedCall.payload.error.data.connector.oneCommandPriorityInstallZhCN));
 
   const mcpDeniedRequests = await fetchJson(`${server.url}/api/authorization/denied-requests?limit=20`);
   assert.equal(mcpDeniedRequests.status, 200);
