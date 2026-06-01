@@ -539,12 +539,18 @@ function mcpRuntimeMetadata({ listenUrl = "", discoveryState = null } = {}) {
     ...version,
     connector: {
       ...version.connector,
+      clientInstallCommand: discovery.installer.clientInstallCommand,
+      clientInstallJsonCommand: discovery.installer.clientInstallJsonCommand,
       autoInstallCommand: discovery.installer.autoInstallCommand,
       priorityInstallCommand: discovery.installer.priorityInstallCommand,
       oneCommandAutoInstall: discovery.installer.oneCommandAutoInstall,
       oneCommandPriorityInstall: discovery.installer.oneCommandPriorityInstall,
+      discoverCommand: discovery.installer.discoverCommand,
+      scanCommand: discovery.installer.scanCommand,
+      doctorCommand: discovery.installer.doctorCommand,
       portableAutoInstallCommand: discovery.installer.portable.autoInstallCommand,
-      portablePriorityInstallCommand: discovery.installer.portable.priorityInstallCommand
+      portablePriorityInstallCommand: discovery.installer.portable.priorityInstallCommand,
+      portableClientInstallJsonCommand: discovery.installer.portable.clientInstallJsonCommand
     },
     sharedHub: discovery.sharedHub,
     priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
@@ -665,8 +671,11 @@ function mcpClientTargetGuides({ baseUrl = "", vmBaseUrl = "", githubOneLineComm
     },
     install: {
       oneCommand: `${githubOneLineCommand} -- --target ${client.target}${urlArgs}`,
+      oneCommandJson: `${githubOneLineCommand} -- --target ${client.target}${urlArgs} --json`,
       npx: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}${urlArgs}`,
+      npxJson: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${client.target}${urlArgs} --json`,
       portable: `./pact-mcp install --target ${client.target}${urlArgs}`,
+      portableJson: `./pact-mcp install --target ${client.target}${urlArgs} --json`,
       uninstall: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest uninstall --target ${client.target}${urlArgs}`,
       doctor: `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest doctor${urlArgs} --json`
     },
@@ -690,6 +699,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
   const urlArgs = commandUrlArgs(baseUrl);
   const installCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest register${urlArgs}`;
   const clientInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs}`;
+  const clientInstallJsonCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target <client>${urlArgs} --json`;
   const autoInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target auto${urlArgs} --json`;
   const priorityInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`;
   const interactiveInstallCommand = `npx ${MCP_CONNECTOR_PACKAGE_NAME}@latest install${urlArgs}`;
@@ -776,6 +786,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
       autoInstallCommand,
       priorityInstallCommand,
       clientInstallCommand,
+      clientInstallJsonCommand,
       uninstallCommand,
       doctorCommand,
       discoverCommand,
@@ -802,6 +813,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         priorityInstallCommand: `./pact-mcp install --target ${MCP_PRIORITY_INSTALL_TARGET}${urlArgs} --json`,
         priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
         clientInstallCommand: `./pact-mcp install --target <client>${urlArgs}`,
+        clientInstallJsonCommand: `./pact-mcp install --target <client>${urlArgs} --json`,
         doubleClickEntry: "install.command"
       }
     },

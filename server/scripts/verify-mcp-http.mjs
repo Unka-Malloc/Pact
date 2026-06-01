@@ -174,6 +174,7 @@ try {
   assert.match(discovery.payload.installer.priorityInstallCommand, /--json/);
   assert.deepEqual(discovery.payload.installer.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.match(discovery.payload.installer.clientInstallCommand, /--target <client>/);
+  assert.equal(discovery.payload.installer.clientInstallJsonCommand, `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`);
   assert.doesNotMatch(discovery.payload.installer.clientInstallCommand, /token-stdin/);
   assert.equal(discovery.payload.installer.tokenInput, "auto-local-grant-or-stdin-or-env");
   assert.equal(discovery.payload.installer.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
@@ -189,6 +190,7 @@ try {
   assert.equal(discovery.payload.installer.portable.priorityInstallCommand, `./pact-mcp install --target claude-code,codex,openclaw --url '${server.url}' --json`);
   assert.deepEqual(discovery.payload.installer.portable.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.equal(discovery.payload.installer.portable.clientInstallCommand, `./pact-mcp install --target <client> --url '${server.url}'`);
+  assert.equal(discovery.payload.installer.portable.clientInstallJsonCommand, `./pact-mcp install --target <client> --url '${server.url}' --json`);
   const targetIds = discovery.payload.installer.supportedTargets.map((target) => target.target);
   const expectedInstallTargets = [
     "codex",
@@ -207,8 +209,12 @@ try {
     const target = clientTargetsById.get(targetId);
     assert.ok(target, `${targetId} should be present in discovery clientTargets`);
     assert.equal(target.install.npx, `npx pact-mcp-connector@latest install --target ${targetId} --url '${server.url}'`);
+    assert.equal(target.install.npxJson, `npx pact-mcp-connector@latest install --target ${targetId} --url '${server.url}' --json`);
+    assert.equal(target.install.portableJson, `./pact-mcp install --target ${targetId} --url '${server.url}' --json`);
     assert.match(target.install.oneCommand, new RegExp(`--target ${targetId}`));
     assert.match(target.install.oneCommand, new RegExp(`--url '${server.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
+    assert.match(target.install.oneCommandJson, new RegExp(`--target ${targetId}`));
+    assert.match(target.install.oneCommandJson, /--json/);
     assert.equal(target.install.npx.includes("token-stdin"), false);
     assert.equal(target.tokenInput, "auto-local-grant-or-stdin-or-env");
   }
@@ -321,6 +327,11 @@ try {
     initialize.payload.result._meta.connector.priorityInstallCommand,
     `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
   );
+  assert.equal(
+    initialize.payload.result._meta.connector.clientInstallJsonCommand,
+    `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
+  );
+  assert.equal(initialize.payload.result._meta.connector.scanCommand, `npx pact-mcp-connector@latest scan --url '${server.url}' --json`);
   assert.match(initialize.payload.result._meta.connector.oneCommandPriorityInstall, /pact-mcp-install\.sh.+--target claude-code,codex,openclaw/);
   assert.deepEqual(initialize.payload.result._meta.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.deepEqual(initialize.payload.result._meta.supportedTargets.map((target) => target.target), expectedInstallTargets);
@@ -372,6 +383,12 @@ try {
     localGrant.payload.connector.discoverCommand,
     `npx pact-mcp-connector@latest discover-local --url '${server.url}' --json`
   );
+  assert.equal(
+    localGrant.payload.connector.clientInstallJsonCommand,
+    `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
+  );
+  assert.equal(localGrant.payload.connector.scanCommand, `npx pact-mcp-connector@latest scan --url '${server.url}' --json`);
+  assert.equal(localGrant.payload.connector.doctorCommand, `npx pact-mcp-connector@latest doctor --url '${server.url}' --json`);
   const localGrantTargetDetails = new Map(localGrant.payload.supportedTargetDetails.map((target) => [target.target, target]));
   assert.deepEqual([...localGrantTargetDetails.keys()], expectedInstallTargets);
   assert.equal(localGrantTargetDetails.get("codex").agentProfileId, "pact.mcp.codex");
