@@ -562,6 +562,25 @@ function mcpRuntimeMetadata({ listenUrl = "", discoveryState = null } = {}) {
   };
 }
 
+function mcpAuthorizationErrorData({ authorization = {}, listenUrl = "", discoveryState = null } = {}) {
+  const discovery = buildPactMcpDiscovery({ listenUrl, discoveryState });
+  const connector = mcpConnectorRuntimeMetadata(discovery);
+  return {
+    code: authorization.reasonCode || "authorization_denied",
+    stableToolName: MCP_STABLE_TOOL_NAME,
+    connector,
+    localGrantEndpoint: discovery.installer.localGrantEndpoint,
+    priorityTargets: [...MCP_PRIORITY_INSTALL_TARGETS],
+    supportedTargets: mcpSupportedTargetDetails(),
+    nextCommand: connector.autoInstallCommand,
+    repairCommands: [
+      connector.autoInstallCommand,
+      connector.priorityInstallCommand,
+      connector.doctorCommand
+    ].filter(Boolean)
+  };
+}
+
 function mcpDiscoveryBase({ listenUrl = "", discoveryState = null } = {}) {
   const baseUrl = String(discoveryState?.activeServiceUrl || listenUrl || "").replace(/\/+$/, "");
   let vmBaseUrl = "";
@@ -1512,9 +1531,11 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
     if (!authorization.ok) {
       return {
         httpStatus: authorization.status || 401,
-        body: jsonRpcError(id, -32001, authorization.error || "MCP authorization failed.", {
-          code: authorization.reasonCode || "authorization_denied"
-        })
+        body: jsonRpcError(id, -32001, authorization.error || "MCP authorization failed.", mcpAuthorizationErrorData({
+          authorization,
+          listenUrl,
+          discoveryState
+        }))
       };
     }
     return jsonRpcResult(id, {
@@ -1542,9 +1563,11 @@ async function handleMcpMessage({ message, request, toolSkillManagementProvider,
     if (!authorization.ok) {
       return {
         httpStatus: authorization.status || 401,
-        body: jsonRpcError(id, -32001, authorization.error || "MCP authorization failed.", {
-          code: authorization.reasonCode || "authorization_denied"
-        })
+        body: jsonRpcError(id, -32001, authorization.error || "MCP authorization failed.", mcpAuthorizationErrorData({
+          authorization,
+          listenUrl,
+          discoveryState
+        }))
       };
     }
     parsedCall = normalizeMcpOperationEnvelope(params.arguments, authorization);

@@ -343,6 +343,35 @@ try {
   });
   assert.equal(unauthenticatedList.status, 401);
   assert.equal(unauthenticatedList.payload.error.data.code, "missing_token");
+  assert.equal(
+    unauthenticatedList.payload.error.data.connector.autoInstallCommand,
+    `npx pact-mcp-connector@latest install --target auto --url '${server.url}' --json`
+  );
+  assert.equal(
+    unauthenticatedList.payload.error.data.connector.clientInstallJsonCommand,
+    `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
+  );
+  assert.equal(unauthenticatedList.payload.error.data.localGrantEndpoint, `${server.url}/api/mcp/local-grant`);
+  assert.deepEqual(unauthenticatedList.payload.error.data.priorityTargets, ["claude-code", "codex", "openclaw"]);
+  assert.ok(unauthenticatedList.payload.error.data.repairCommands.includes(unauthenticatedList.payload.error.data.connector.autoInstallCommand));
+
+  const unauthenticatedCall = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(mcpRequest("tools/call", {
+      name: "pact.discovery",
+      arguments: {
+        apiVersion: "pact.mcp.v1",
+        operation: "pact.mcp.version"
+      }
+    }, 20))
+  });
+  assert.equal(unauthenticatedCall.status, 401);
+  assert.equal(unauthenticatedCall.payload.error.data.code, "missing_token");
+  assert.equal(
+    unauthenticatedCall.payload.error.data.connector.priorityInstallCommand,
+    `npx pact-mcp-connector@latest install --target claude-code,codex,openclaw --url '${server.url}' --json`
+  );
 
   const mcpDeniedRequests = await fetchJson(`${server.url}/api/authorization/denied-requests?limit=20`);
   assert.equal(mcpDeniedRequests.status, 200);
