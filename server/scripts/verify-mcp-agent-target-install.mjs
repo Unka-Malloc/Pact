@@ -1451,6 +1451,14 @@ try {
     assert.equal(result.code, 1);
     assert.match(result.stdout, /Install shortcuts:/);
     assert.equal(
+      result.stdout.includes(`One-command priority install: ${RELEASE_BOOTSTRAP} -- --target claude-code,codex,openclaw --url '${serverUrl}' --json`),
+      true
+    );
+    assert.equal(
+      result.stdout.includes(`One-command auto install: ${RELEASE_BOOTSTRAP} -- --target auto --url '${serverUrl}' --json`),
+      true
+    );
+    assert.equal(
       result.stdout.includes(`Priority install: pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --json`),
       true
     );
@@ -1574,6 +1582,14 @@ try {
     });
     assert.equal(result.code, 1);
     assert.match(result.stdout, /Install shortcuts:/);
+    assert.equal(
+      result.stdout.includes(`One-command priority install: ${RELEASE_BOOTSTRAP} -- --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`),
+      true
+    );
+    assert.equal(
+      result.stdout.includes(`One-command auto install: ${RELEASE_BOOTSTRAP} -- --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`),
+      true
+    );
     assert.equal(
       result.stdout.includes(`Priority install: pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`),
       true

@@ -6710,12 +6710,16 @@ function resultHasInstallRepair(result) {
 
 function appendInstallShortcutLines(lines, result) {
   const shortcuts = [];
-  if (result?.priorityInstallCommand) {
-    shortcuts.push(["Priority install", result.priorityInstallCommand]);
-  }
-  if (result?.autoInstallCommand) {
-    shortcuts.push(["Auto install", result.autoInstallCommand]);
-  }
+  const pushShortcut = (label, command) => {
+    if (!command || shortcuts.some(([, existing]) => existing === command)) {
+      return;
+    }
+    shortcuts.push([label, command]);
+  };
+  pushShortcut("One-command priority install", result?.oneCommandPriorityInstall || result?.githubOneLinePriorityInstallCommand);
+  pushShortcut("One-command auto install", result?.oneCommandAutoInstall || result?.githubOneLineAutoInstallCommand);
+  pushShortcut("Priority install", result?.priorityInstallCommand);
+  pushShortcut("Auto install", result?.autoInstallCommand);
   if (shortcuts.length === 0 || (result?.ok !== false && !resultHasInstallRepair(result))) {
     return;
   }
