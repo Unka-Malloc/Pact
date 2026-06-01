@@ -228,7 +228,7 @@ const publicPayload = await provider.publicMcpToolPayload({
       endpointRef: "config://pact/drive/google-endpoint"
     },
     error: {
-      message: "Failed at /home/private-user/private.txt for workspace_a with Authorization: Bearer sat_private_token and token=sat_private_token",
+      message: "Failed at /home/private-user/private.txt for workspace_a with Authorization: Bearer sat_private_token, token=sat_private_token, and --token sat_private_token",
       details: {
         sourcePath: "/home/private-user/private.txt",
         workspaceId: "workspace_a",
@@ -256,7 +256,7 @@ assert.equal(publicPayload.metadata.secretRef, "secret://pact/drive/google-oauth
 assert.equal(publicPayload.metadata.endpointRef, "config://pact/drive/google-endpoint");
 assert.equal(
   publicPayload.error.message,
-  "Failed at [server-internal-path] for workspace-1 with Authorization: Bearer <redacted-token> and token=<redacted-secret>"
+  "Failed at [server-internal-path] for workspace-1 with Authorization: Bearer <redacted-token>, token=<redacted-secret>, and --token <redacted-token>"
 );
 assert.equal(publicPayload.error.details.workspaceRef, "workspace-1");
 assert.equal(Object.prototype.hasOwnProperty.call(publicPayload.error.details, "sourcePath"), false);

@@ -435,6 +435,17 @@ try {
   assert.ok(unauthenticatedCall.payload.error.data.repairCommands.includes(unauthenticatedCall.payload.error.data.connector.oneCommandPriorityInstall));
   assert.ok(unauthenticatedCall.payload.error.data.repairCommands.includes(unauthenticatedCall.payload.error.data.connector.oneCommandPriorityInstallZhCN));
 
+  const unknownMethodProbe = await fetchJson(`${server.url}/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(mcpRequest("unknown /home/private-user/report.txt --token rpc_private_token", {}, 21))
+  });
+  assert.equal(unknownMethodProbe.status, 200);
+  assert.match(unknownMethodProbe.payload.error.message, /\[server-internal-path\]/);
+  assert.match(unknownMethodProbe.payload.error.message, /--token <redacted-token>/);
+  assert.equal(JSON.stringify(unknownMethodProbe.payload).includes("rpc_private_token"), false);
+  assertNoMcpInternalLeak(unknownMethodProbe.payload, "MCP unknown method error");
+
   const mcpDeniedRequests = await fetchJson(`${server.url}/api/authorization/denied-requests?limit=20`);
   assert.equal(mcpDeniedRequests.status, 200);
   assert.ok(
