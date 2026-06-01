@@ -132,6 +132,7 @@ const MCP_STABLE_TOOL_NAME = "pact.call";
 const MCP_INTERFACE_VERSION = "pact.mcp.v1";
 const BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS";
 const BOOTSTRAP_INSTALL_SCRIPT = "pact-mcp-install.sh";
+const BOOTSTRAP_INSTALL_SCRIPT_ZH_CN = "pact-mcp-install.zh-CN.sh";
 const HTTP_TIMEOUT_MS = 300000;
 const SUPPORTED_TARGETS = [
   "codex",
@@ -566,24 +567,38 @@ function shellCommandForServerConfig({ baseUrl = "http://127.0.0.1:7228" } = {})
 
 function githubOneLineInstallGuidance({ includeUrl = false, baseUrl = "", tokenEnv = DEFAULT_TOKEN_ENV } = {}) {
   const command = githubOneLineMcpInstallCommand();
+  const commandZhCN = githubOneLineMcpInstallCommand(BOOTSTRAP_INSTALL_SCRIPT_ZH_CN);
   const contextArgs = [
     includeUrl && baseUrl ? ` --url ${shellQuote(baseUrl)}` : "",
     tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : ""
   ].join("");
-  const installCommand = contextArgs ? `${command} --${contextArgs}` : command;
-  const clientInstallJsonCommand = `${command} -- --target <client>${contextArgs} --json`;
-  const autoInstallCommand = `${command} -- --target auto${contextArgs} --json`;
-  const priorityInstallCommand = `${command} -- --target ${PRIORITY_INSTALL_TARGET}${contextArgs} --json`;
+  const build = (oneLineCommand) => ({
+    installCommand: contextArgs ? `${oneLineCommand} --${contextArgs}` : oneLineCommand,
+    clientInstallJsonCommand: `${oneLineCommand} -- --target <client>${contextArgs} --json`,
+    autoInstallCommand: `${oneLineCommand} -- --target auto${contextArgs} --json`,
+    priorityInstallCommand: `${oneLineCommand} -- --target ${PRIORITY_INSTALL_TARGET}${contextArgs} --json`
+  });
+  const english = build(command);
+  const zhCN = build(commandZhCN);
   return {
     githubOneLineCommand: command,
-    githubOneLineInstallCommand: installCommand,
-    githubOneLineClientInstallJsonCommand: clientInstallJsonCommand,
-    githubOneLineAutoInstallCommand: autoInstallCommand,
-    githubOneLinePriorityInstallCommand: priorityInstallCommand,
-    oneCommandInstall: installCommand,
-    oneCommandClientInstallJson: clientInstallJsonCommand,
-    oneCommandAutoInstall: autoInstallCommand,
-    oneCommandPriorityInstall: priorityInstallCommand
+    githubOneLineInstallCommand: english.installCommand,
+    githubOneLineClientInstallJsonCommand: english.clientInstallJsonCommand,
+    githubOneLineAutoInstallCommand: english.autoInstallCommand,
+    githubOneLinePriorityInstallCommand: english.priorityInstallCommand,
+    githubOneLineCommandZhCN: commandZhCN,
+    githubOneLineInstallCommandZhCN: zhCN.installCommand,
+    githubOneLineClientInstallJsonCommandZhCN: zhCN.clientInstallJsonCommand,
+    githubOneLineAutoInstallCommandZhCN: zhCN.autoInstallCommand,
+    githubOneLinePriorityInstallCommandZhCN: zhCN.priorityInstallCommand,
+    oneCommandInstall: english.installCommand,
+    oneCommandInstallZhCN: zhCN.installCommand,
+    oneCommandClientInstallJson: english.clientInstallJsonCommand,
+    oneCommandClientInstallJsonZhCN: zhCN.clientInstallJsonCommand,
+    oneCommandAutoInstall: english.autoInstallCommand,
+    oneCommandAutoInstallZhCN: zhCN.autoInstallCommand,
+    oneCommandPriorityInstall: english.priorityInstallCommand,
+    oneCommandPriorityInstallZhCN: zhCN.priorityInstallCommand
   };
 }
 
@@ -839,8 +854,8 @@ function githubOwnerRepo(pkg = packageJson) {
   return match?.[1] || "Unka-Malloc/Pact";
 }
 
-function githubOneLineMcpInstallCommand() {
-  return `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${githubOwnerRepo()}/releases/latest/download/${BOOTSTRAP_INSTALL_SCRIPT})"`;
+function githubOneLineMcpInstallCommand(scriptName = BOOTSTRAP_INSTALL_SCRIPT) {
+  return `/bin/sh -c "$(curl ${BOOTSTRAP_CURL_FLAGS} https://github.com/${githubOwnerRepo()}/releases/latest/download/${scriptName})"`;
 }
 
 function assertSafeEnvName(name) {
@@ -2418,10 +2433,15 @@ function buildDeviceHubManifest({
   const tokenEnvArgs = tokenEnv && tokenEnv !== DEFAULT_TOKEN_ENV ? ` --token-env ${shellQuote(tokenEnv)}` : "";
   const contextArgs = `${urlArgs}${tokenEnvArgs}`;
   const githubOneLineCommand = githubOneLineMcpInstallCommand();
+  const githubOneLineCommandZhCN = githubOneLineMcpInstallCommand(BOOTSTRAP_INSTALL_SCRIPT_ZH_CN);
   const githubOneLineInstallCommand = `${githubOneLineCommand} --${contextArgs}`;
+  const githubOneLineInstallCommandZhCN = `${githubOneLineCommandZhCN} --${contextArgs}`;
   const githubOneLineClientInstallJsonCommand = `${githubOneLineCommand} -- --target <client>${contextArgs} --json`;
+  const githubOneLineClientInstallJsonCommandZhCN = `${githubOneLineCommandZhCN} -- --target <client>${contextArgs} --json`;
   const githubOneLineAutoInstallCommand = `${githubOneLineCommand} -- --target auto${contextArgs} --json`;
+  const githubOneLineAutoInstallCommandZhCN = `${githubOneLineCommandZhCN} -- --target auto${contextArgs} --json`;
   const githubOneLinePriorityInstallCommand = `${githubOneLineCommand} -- --target ${PRIORITY_INSTALL_TARGET}${contextArgs} --json`;
+  const githubOneLinePriorityInstallCommandZhCN = `${githubOneLineCommandZhCN} -- --target ${PRIORITY_INSTALL_TARGET}${contextArgs} --json`;
   const discoverCommand = `${packageExec} discover-local${urlArgs} --json`;
   const interactiveInstallCommand = `${packageExec} install${urlArgs}${tokenEnvArgs}`;
   const clientInstallJsonCommand = `${packageExec} install --target <client>${urlArgs}${tokenEnvArgs} --json`;
@@ -2485,14 +2505,23 @@ function buildDeviceHubManifest({
           registerCommand: `${packageExec} register${urlArgs}${tokenEnvArgs}`,
           interactiveInstallCommand,
           githubOneLineCommand,
+          githubOneLineCommandZhCN,
           githubOneLineInstallCommand,
+          githubOneLineInstallCommandZhCN,
           githubOneLineClientInstallJsonCommand,
+          githubOneLineClientInstallJsonCommandZhCN,
           githubOneLineAutoInstallCommand,
+          githubOneLineAutoInstallCommandZhCN,
           githubOneLinePriorityInstallCommand,
+          githubOneLinePriorityInstallCommandZhCN,
           oneCommandInstall: githubOneLineInstallCommand,
+          oneCommandInstallZhCN: githubOneLineInstallCommandZhCN,
           oneCommandClientInstallJson: githubOneLineClientInstallJsonCommand,
+          oneCommandClientInstallJsonZhCN: githubOneLineClientInstallJsonCommandZhCN,
           oneCommandAutoInstall: githubOneLineAutoInstallCommand,
+          oneCommandAutoInstallZhCN: githubOneLineAutoInstallCommandZhCN,
           oneCommandPriorityInstall: githubOneLinePriorityInstallCommand,
+          oneCommandPriorityInstallZhCN: githubOneLinePriorityInstallCommandZhCN,
           autoInstallCommand,
           priorityInstallCommand,
           priorityTargets: [...PRIORITY_INSTALL_TARGETS],
@@ -2509,9 +2538,21 @@ function buildDeviceHubManifest({
           listChanged: true,
           notification: "notifications/tools/list_changed",
           reinstallCommand: githubOneLineInstallCommand,
+          reinstallCommandZhCN: githubOneLineInstallCommandZhCN,
           clientReinstallJsonCommand: githubOneLineClientInstallJsonCommand,
+          clientReinstallJsonCommandZhCN: githubOneLineClientInstallJsonCommandZhCN,
           agentReinstallCommand: githubOneLineAutoInstallCommand,
+          agentReinstallCommandZhCN: githubOneLineAutoInstallCommandZhCN,
           priorityAgentReinstallCommand: githubOneLinePriorityInstallCommand,
+          priorityAgentReinstallCommandZhCN: githubOneLinePriorityInstallCommandZhCN,
+          oneCommandReinstall: githubOneLineInstallCommand,
+          oneCommandReinstallZhCN: githubOneLineInstallCommandZhCN,
+          oneCommandClientReinstallJson: githubOneLineClientInstallJsonCommand,
+          oneCommandClientReinstallJsonZhCN: githubOneLineClientInstallJsonCommandZhCN,
+          oneCommandAgentReinstall: githubOneLineAutoInstallCommand,
+          oneCommandAgentReinstallZhCN: githubOneLineAutoInstallCommandZhCN,
+          oneCommandPriorityAgentReinstall: githubOneLinePriorityInstallCommand,
+          oneCommandPriorityAgentReinstallZhCN: githubOneLinePriorityInstallCommandZhCN,
           priorityTargets: [...PRIORITY_INSTALL_TARGETS]
         },
         auth: {
