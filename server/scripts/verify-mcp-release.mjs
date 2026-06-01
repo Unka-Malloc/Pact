@@ -248,6 +248,16 @@ try {
   assert.ok(manifest.install.githubOneLinePriorityInstallCommandZhCN.includes("--json"));
   assert.ok(manifest.install.githubOneLineUninstallCommand.includes("pact-mcp-uninstall.sh"));
   assert.ok(manifest.install.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
+  assert.equal(manifest.install.oneCommandInstall, manifest.install.githubOneLineCommand);
+  assert.equal(manifest.install.oneCommandInstallZhCN, manifest.install.githubOneLineCommandZhCN);
+  assert.equal(manifest.install.oneCommandClientInstallJson, manifest.install.githubOneLineClientInstallJsonCommand);
+  assert.equal(manifest.install.oneCommandClientInstallJsonZhCN, manifest.install.githubOneLineClientInstallJsonCommandZhCN);
+  assert.equal(manifest.install.oneCommandAutoInstall, manifest.install.githubOneLineAutoInstallCommand);
+  assert.equal(manifest.install.oneCommandAutoInstallZhCN, manifest.install.githubOneLineAutoInstallCommandZhCN);
+  assert.equal(manifest.install.oneCommandPriorityInstall, manifest.install.githubOneLinePriorityInstallCommand);
+  assert.equal(manifest.install.oneCommandPriorityInstallZhCN, manifest.install.githubOneLinePriorityInstallCommandZhCN);
+  assert.equal(manifest.install.oneCommandUninstall, manifest.install.githubOneLineUninstallCommand);
+  assert.equal(manifest.install.oneCommandUninstallZhCN, manifest.install.githubOneLineUninstallCommandZhCN);
   for (const command of [
     manifest.install.githubOneLineCommand,
     manifest.install.githubOneLineCommandZhCN,
@@ -304,6 +314,14 @@ try {
   assert.equal(manifest.upgrade.agentReinstallCommandZhCN, manifest.install.githubOneLineAutoInstallCommandZhCN);
   assert.equal(manifest.upgrade.priorityAgentReinstallCommand, manifest.install.githubOneLinePriorityInstallCommand);
   assert.equal(manifest.upgrade.priorityAgentReinstallCommandZhCN, manifest.install.githubOneLinePriorityInstallCommandZhCN);
+  assert.equal(manifest.upgrade.oneCommandReinstall, manifest.upgrade.reinstallCommand);
+  assert.equal(manifest.upgrade.oneCommandReinstallZhCN, manifest.upgrade.reinstallCommandZhCN);
+  assert.equal(manifest.upgrade.oneCommandClientReinstallJson, manifest.upgrade.clientReinstallJsonCommand);
+  assert.equal(manifest.upgrade.oneCommandClientReinstallJsonZhCN, manifest.upgrade.clientReinstallJsonCommandZhCN);
+  assert.equal(manifest.upgrade.oneCommandAgentReinstall, manifest.upgrade.agentReinstallCommand);
+  assert.equal(manifest.upgrade.oneCommandAgentReinstallZhCN, manifest.upgrade.agentReinstallCommandZhCN);
+  assert.equal(manifest.upgrade.oneCommandPriorityAgentReinstall, manifest.upgrade.priorityAgentReinstallCommand);
+  assert.equal(manifest.upgrade.oneCommandPriorityAgentReinstallZhCN, manifest.upgrade.priorityAgentReinstallCommandZhCN);
   assert.deepEqual(manifest.upgrade.priorityTargets, ["claude-code", "codex", "openclaw"]);
   assert.ok(manifest.upgrade.clientReinstallJsonCommand.includes("--target <client>"));
   assert.ok(manifest.upgrade.clientReinstallJsonCommand.includes("--json"));
@@ -350,6 +368,16 @@ try {
   assert.ok(result.githubOneLinePriorityInstallCommandZhCN.includes("--target claude-code,codex,openclaw"));
   assert.ok(result.githubOneLinePriorityInstallCommandZhCN.includes("--json"));
   assert.ok(result.githubOneLineUninstallCommandZhCN.includes("pact-mcp-uninstall.zh-CN.sh"));
+  assert.equal(result.oneCommandInstall, result.githubOneLineCommand);
+  assert.equal(result.oneCommandInstallZhCN, result.githubOneLineCommandZhCN);
+  assert.equal(result.oneCommandClientInstallJson, result.githubOneLineClientInstallJsonCommand);
+  assert.equal(result.oneCommandClientInstallJsonZhCN, result.githubOneLineClientInstallJsonCommandZhCN);
+  assert.equal(result.oneCommandAutoInstall, result.githubOneLineAutoInstallCommand);
+  assert.equal(result.oneCommandAutoInstallZhCN, result.githubOneLineAutoInstallCommandZhCN);
+  assert.equal(result.oneCommandPriorityInstall, result.githubOneLinePriorityInstallCommand);
+  assert.equal(result.oneCommandPriorityInstallZhCN, result.githubOneLinePriorityInstallCommandZhCN);
+  assert.equal(result.oneCommandUninstall, result.githubOneLineUninstallCommand);
+  assert.equal(result.oneCommandUninstallZhCN, result.githubOneLineUninstallCommandZhCN);
   for (const command of [
     result.githubOneLineCommand,
     result.githubOneLineCommandZhCN,
