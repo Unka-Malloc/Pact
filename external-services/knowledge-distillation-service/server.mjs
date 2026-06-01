@@ -230,7 +230,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "presentation",
     preferredParser: "office.presentation.slides",
     fallbackParsers: ["tika.text", "ocr.slide-images"],
-    parserChain: ["office.route", "office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
+    parserChain: ["office.route", "office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "office.presentation.comments", "tika.text", "ocr.slide-images"],
     streamingUnit: "slide",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -601,9 +601,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "PowerPoint",
     professionalFamily: "office-presentation",
     parserProfile: "presentationml-slide-route",
-    structureUnits: ["slide", "heading", "placeholder", "slide-shape", "table-row", "link", "image", "speaker-note"],
-    parserStages: ["office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "tika.text", "ocr.slide-images"],
-    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-id", "shape-name", "shape-placeholder", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "images", "speaker-notes"],
+    structureUnits: ["slide", "heading", "placeholder", "slide-shape", "table-row", "link", "image", "speaker-note", "comment"],
+    parserStages: ["office.presentation.slides", "office.presentation.placeholders", "office.presentation.tables", "office.presentation.hyperlinks", "office.presentation.images", "office.presentation.speaker-notes", "office.presentation.comments", "tika.text", "ocr.slide-images"],
+    preserves: ["slide-order", "slide-heading", "body-paragraphs", "shape-id", "shape-name", "shape-placeholder", "shape-bbox", "shape-order", "tables", "cellRefs", "links", "images", "speaker-notes", "comments"],
     conversionTargets: ["markdown-slide-outline", "docx-review-copy", "agent-json-with-slide-layout-placeholder-table-link-and-note-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -625,7 +625,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "slides-to-agent-layout-refs.v1",
         mode: "agent",
-        stages: ["slide-refs", "shape-placeholder-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "image-refs", "speaker-note-refs"]
+        stages: ["slide-refs", "shape-placeholder-refs", "shape-bbox-refs", "table-cell-refs", "link-refs", "image-refs", "speaker-note-refs", "comment-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -635,8 +635,8 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "slide-relationships", "claims"]
       }
     ],
-    qualityGates: ["slide-order-preserved", "presentation-placeholder-refs-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-image-refs-preserved", "presentation-speaker-notes-preserved"],
-    riskControls: ["speaker-notes-preserved-when-notesSlides-present", "raster-only-slide-ocr-fallback"],
+    qualityGates: ["slide-order-preserved", "presentation-placeholder-refs-preserved", "shape-layout-refs-present", "presentation-table-cell-refs-preserved", "presentation-link-refs-preserved", "presentation-image-refs-preserved", "presentation-speaker-notes-preserved", "presentation-comment-refs-preserved"],
+    riskControls: ["speaker-notes-preserved-when-notesSlides-present", "comments-preserved-when-comment-parts-present", "raster-only-slide-ocr-fallback"],
     knownLosses: ["visual-layer-geometry-partial"]
   },
   spreadsheet: {
@@ -1041,7 +1041,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, and geometry metadata for slide elements"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, comment, and geometry metadata for slide elements"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1066,7 +1066,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint and OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint comments and hyperlinks, OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -5291,6 +5291,119 @@ function appendPptxImageElements(elements = [], pictureXml = "", relationships =
   return { count, geometryCount: count && geometry.bbox ? 1 : 0 };
 }
 
+function pptxCommentAuthors(entries = []) {
+  const authors = new Map();
+  const xml = zipEntryText(entries, "ppt/commentAuthors.xml");
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?cmAuthor\b[^>]*(?:\/>|>)/g)) {
+    const tag = match[0];
+    const id = xmlLocalAttribute(tag, "id");
+    if (!id) {
+      continue;
+    }
+    authors.set(id, {
+      id,
+      name: xmlLocalAttribute(tag, "name"),
+      initials: xmlLocalAttribute(tag, "initials"),
+      lastIndex: xmlLocalAttribute(tag, "lastIdx")
+    });
+  }
+  return authors;
+}
+
+function pptxCommentRelationships(entries = [], slideName = "", slideNumber = 0) {
+  const relationships = [...docxPartRelationships(entries, slideName).values()]
+    .filter((relationship) => (
+      /\/comments$/i.test(relationship.type || "") ||
+      /(^|\/)comments\/comment\d+\.xml$/i.test(relationship.target || "")
+    ))
+    .map((relationship) => ({
+      ...relationship,
+      target: officeRelationshipResolvedTarget(slideName, relationship)
+    }));
+  if (relationships.length) {
+    return relationships;
+  }
+  const fallbackTarget = `ppt/comments/comment${slideNumber || 1}.xml`;
+  return zipEntryText(entries, fallbackTarget)
+    ? [{
+        id: "",
+        target: fallbackTarget,
+        targetMode: "",
+        type: "fallback-comments-part"
+      }]
+    : [];
+}
+
+function parsePptxCommentsXml(xml = "", {
+  authors = new Map(),
+  relationship = {},
+  sourcePart = "",
+  slideNumber = 0
+} = {}) {
+  const comments = [];
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?cm\b[\s\S]*?<\/[^:>]*:?cm>/g)) {
+    const commentXml = match[0];
+    const openTag = commentXml.match(/^<[^>]+>/)?.[0] || "";
+    const authorId = xmlLocalAttribute(openTag, "authorId");
+    const author = authors.get(authorId) || {};
+    const textXml = commentXml.match(/<[^:>]*:?text\b[\s\S]*?<\/[^:>]*:?text>/i)?.[0] || commentXml;
+    const text = compactMarkupText(textFromXmlTextNodes(textXml), 1800);
+    if (!text) {
+      continue;
+    }
+    const positionTag = commentXml.match(/<[^:>]*:?pos\b[^>]*(?:\/>|>)/i)?.[0] || "";
+    const hasPosition = Boolean(positionTag);
+    const x = hasPosition ? pptxEmuToPoints(xmlLocalAttribute(positionTag, "x")) : 0;
+    const y = hasPosition ? pptxEmuToPoints(xmlLocalAttribute(positionTag, "y")) : 0;
+    const id = xmlLocalAttribute(openTag, "idx") || String(comments.length + 1);
+    comments.push({
+      id,
+      authorId,
+      author: author.name || "",
+      initials: author.initials || "",
+      date: xmlLocalAttribute(openTag, "dt"),
+      text,
+      relationshipId: String(relationship.id || ""),
+      target: String(sourcePart || relationship.target || ""),
+      sourcePart: String(sourcePart || relationship.target || ""),
+      type: String(relationship.type || ""),
+      layout: hasPosition
+        ? {
+            strategy: "presentationml-comment-position.v1",
+            page: slideNumber,
+            order: comments.length + 1,
+            x,
+            y
+          }
+        : {
+            strategy: "presentationml-comment-ref.v1",
+            page: slideNumber,
+            order: comments.length + 1
+          }
+    });
+  }
+  return comments;
+}
+
+function pptxCommentsForSlideEntries(entries = [], slideName = "", slideNumber = 0, authors = new Map()) {
+  const relationships = pptxCommentRelationships(entries, slideName, slideNumber);
+  const comments = [];
+  for (const relationship of relationships) {
+    const sourcePart = relationship.target || "";
+    const xml = zipEntryText(entries, sourcePart);
+    if (!xml) {
+      continue;
+    }
+    comments.push(...parsePptxCommentsXml(xml, {
+      authors,
+      relationship,
+      sourcePart,
+      slideNumber
+    }));
+  }
+  return comments;
+}
+
 function parsePptx(entries = []) {
   const slideNames = entries
     .map((entry) => entry.name)
@@ -5300,6 +5413,11 @@ function parsePptx(entries = []) {
     .map((entry) => entry.name)
     .filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name))
     .sort((left, right) => Number(left.match(/notesSlide(\d+)/)?.[1] || 0) - Number(right.match(/notesSlide(\d+)/)?.[1] || 0));
+  const commentPartNames = entries
+    .map((entry) => entry.name)
+    .filter((name) => /^ppt\/comments\/comment\d+\.xml$/.test(name))
+    .sort((left, right) => Number(left.match(/comment(\d+)/)?.[1] || 0) - Number(right.match(/comment(\d+)/)?.[1] || 0));
+  const commentAuthors = pptxCommentAuthors(entries);
   const elements = [];
   let paragraphCount = 0;
   let shapeCount = 0;
@@ -5312,6 +5430,7 @@ function parsePptx(entries = []) {
   let hyperlinkCount = 0;
   let imageCount = 0;
   let imageGeometryCount = 0;
+  let commentCount = 0;
   let placeholderCount = 0;
   let shapeMetadataCount = 0;
   for (const [index, name] of slideNames.entries()) {
@@ -5416,6 +5535,29 @@ function parsePptx(entries = []) {
         imageGeometryCount += image.geometryCount;
       }
     }
+    const comments = pptxCommentsForSlideEntries(entries, name, slideNumber, commentAuthors);
+    for (const comment of comments) {
+      commentCount += 1;
+      pushStructureElement(elements, "comment", `Slide ${slideNumber} comment ${comment.id}${comment.author ? ` by ${comment.author}` : ""}: ${comment.text}`, {
+        line: commentCount,
+        name: `${comment.sourcePart}#comment-${comment.id || commentCount}`,
+        page: slideNumber,
+        layout: comment.layout,
+        annotation: {
+          kind: "presentation-comment",
+          id: comment.id,
+          ...(comment.author ? { author: comment.author } : {}),
+          ...(comment.initials ? { initials: comment.initials } : {}),
+          ...(comment.authorId ? { authorId: comment.authorId } : {}),
+          ...(comment.date ? { date: comment.date } : {}),
+          sourcePart: comment.sourcePart,
+          relationshipId: comment.relationshipId,
+          target: comment.target,
+          type: comment.type
+        },
+        limit: 1800
+      });
+    }
     if (shapeBlocks.length || tableFrames.length || pictureBlocks.length) {
       continue;
     }
@@ -5489,8 +5631,11 @@ function parsePptx(entries = []) {
     elements,
     format: "pptx",
     slideCount: slideNames.length,
-    presentationPartCount: slideNames.length + noteNames.length,
+    presentationPartCount: slideNames.length + noteNames.length + commentPartNames.length + (commentAuthors.size ? 1 : 0),
     speakerNoteCount,
+    commentCount,
+    commentPartCount: commentPartNames.length,
+    commentAuthorCount: commentAuthors.size,
     hyperlinkCount,
     imageCount,
     placeholderCount,
@@ -6991,7 +7136,10 @@ function structuredZipXmlFiles(route = null, rootDir = "") {
       ...collectFiles(rootDir, (name) => /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(name), 1000)
         .sort((left, right) => Number(left.relativePath.match(/slide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/slide(\d+)/)?.[1] || 0)),
       ...collectFiles(rootDir, (name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name), 1000)
-        .sort((left, right) => Number(left.relativePath.match(/notesSlide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/notesSlide(\d+)/)?.[1] || 0))
+        .sort((left, right) => Number(left.relativePath.match(/notesSlide(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/notesSlide(\d+)/)?.[1] || 0)),
+      ...collectFiles(rootDir, (name) => name === "ppt/commentAuthors.xml", 1),
+      ...collectFiles(rootDir, (name) => /^ppt\/comments\/comment\d+\.xml$/.test(name), 1000)
+        .sort((left, right) => Number(left.relativePath.match(/comment(\d+)/)?.[1] || 0) - Number(right.relativePath.match(/comment(\d+)/)?.[1] || 0))
     ];
   }
   if (route?.id === "spreadsheet") {
@@ -7233,6 +7381,9 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
+          comments: parsed.commentCount,
+          commentParts: parsed.commentPartCount,
+          commentAuthors: parsed.commentAuthorCount,
           hyperlinks: parsed.hyperlinkCount,
           images: parsed.imageCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
@@ -7269,6 +7420,13 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           stage: "office.presentation.speaker-notes",
           status: parsed.speakerNoteCount ? "completed" : "empty",
           notes: parsed.speakerNoteCount
+        },
+        {
+          stage: "office.presentation.comments",
+          status: parsed.commentCount ? "completed" : "empty",
+          comments: parsed.commentCount,
+          commentParts: parsed.commentPartCount,
+          authors: parsed.commentAuthorCount
         }
       ]
     };
@@ -8593,6 +8751,9 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
+          comments: parsed.commentCount,
+          commentParts: parsed.commentPartCount,
+          commentAuthors: parsed.commentAuthorCount,
           hyperlinks: parsed.hyperlinkCount,
           images: parsed.imageCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
@@ -8629,6 +8790,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           stage: "office.presentation.speaker-notes",
           status: parsed.speakerNoteCount ? "completed" : "empty",
           notes: parsed.speakerNoteCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.comments",
+          status: parsed.commentCount ? "completed" : "empty",
+          comments: parsed.commentCount,
+          commentParts: parsed.commentPartCount,
+          authors: parsed.commentAuthorCount
         });
         if (parsed.text) {
           return {
@@ -9757,6 +9925,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "PowerPoint speaker notes are preserved as element references." : "No PowerPoint speaker notes were required or observed."
       });
     }
+    if (gate === "presentation-comment-refs-preserved") {
+      const commentSignals = maxTraceMetric(document, ["comments", "commentCount"]);
+      const status = routeId !== "presentation"
+        ? "not_applicable"
+        : commentSignals > 0
+          ? evidence.presentationCommentRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { commentSignals, presentationCommentRefCount: evidence.presentationCommentRefCount },
+        required: { commentRefsWhenPresent: true },
+        message: status === "passed" ? "PowerPoint comments are preserved as element references." : "No PowerPoint comments were required or observed."
+      });
+    }
     if (gate === "sheet-row-cell-refs-preserved") {
       const cellSignals = maxTraceMetric(document, ["cells", "cellCount"]);
       const status = routeId !== "spreadsheet"
@@ -10026,6 +10207,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
     const shapeRefCount = sampleElements.filter((element) => element.shape?.id || element.shape?.name).length;
     const placeholderRefCount = sampleElements.filter((element) => element.shape?.isPlaceholder || element.shape?.placeholderType).length;
     const speakerNoteElementCount = sampleElements.filter((element) => element.type === "speaker-note").length;
+    const presentationCommentRefCount = sampleElements.filter((element) => element.annotation?.kind === "presentation-comment").length;
     const conversionAdapters = Array.isArray(profile.conversionAdapters) ? profile.conversionAdapters : [];
     const evidence = {
       elementCount: Number(document.elementPlan?.elementCount || 0),
@@ -10046,7 +10228,8 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       numberingRefCount,
       shapeRefCount,
       placeholderRefCount,
-      speakerNoteElementCount
+      speakerNoteElementCount,
+      presentationCommentRefCount
     };
     const qualityGateResults = buildProfessionalQualityGateResults({
       document,
@@ -10113,6 +10296,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithStyleRefsCount: plannedDocuments.filter((document) => document.evidence.styleRefCount > 0).length,
       documentWithNumberingRefsCount: plannedDocuments.filter((document) => document.evidence.numberingRefCount > 0).length,
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
+      documentWithPresentationCommentRefsCount: plannedDocuments.filter((document) => document.evidence.presentationCommentRefCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
       qualityGateStatusCounts: qualityGateStatusCounts(plannedDocuments.flatMap((document) => document.qualityGateResults)),
@@ -10784,6 +10968,9 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           tableCells: parsed.tableCellCount,
           tableGeometries: parsed.tableGeometryCount,
           speakerNotes: parsed.speakerNoteCount,
+          comments: parsed.commentCount,
+          commentParts: parsed.commentPartCount,
+          commentAuthors: parsed.commentAuthorCount,
           hyperlinks: parsed.hyperlinkCount,
           images: parsed.imageCount,
           layoutStrategy: parsed.shapeGeometryCount ? "presentationml-shape-geometry.v1" : "",
@@ -10820,6 +11007,13 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           stage: "office.presentation.speaker-notes",
           status: parsed.speakerNoteCount ? "completed" : "empty",
           notes: parsed.speakerNoteCount
+        });
+        parserTrace.push({
+          stage: "office.presentation.comments",
+          status: parsed.commentCount ? "completed" : "empty",
+          comments: parsed.commentCount,
+          commentParts: parsed.commentPartCount,
+          authors: parsed.commentAuthorCount
         });
       }
     } else if (route?.id === "open-document") {
@@ -15717,6 +15911,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.presentation.hyperlinks",
         "office.presentation.images",
         "office.presentation.speaker-notes",
+        "office.presentation.comments",
         "office.word.tables",
         "office.word.annotations",
         "table.sheet.structured",

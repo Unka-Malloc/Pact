@@ -315,7 +315,18 @@ const samplePptxBase64 = base64Zip({
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/pptx-evidence\" TargetMode=\"External\"/>",
     "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/roadmap.png\"/>",
+    "<Relationship Id=\"rIdComment1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"../comments/comment1.xml\"/>",
     "</Relationships>"
+  ].join(""),
+  "ppt/commentAuthors.xml": [
+    "<p:cmAuthorLst xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\">",
+    "<p:cmAuthor id=\"0\" name=\"Slide Reviewer\" initials=\"SR\" lastIdx=\"1\"/>",
+    "</p:cmAuthorLst>"
+  ].join(""),
+  "ppt/comments/comment1.xml": [
+    "<p:cmLst xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\">",
+    "<p:cm authorId=\"0\" dt=\"2026-06-01T10:00:00Z\" idx=\"1\"><p:pos x=\"914400\" y=\"914400\"/><p:text>Slide reviewer confirmed the roadmap decision.</p:text></p:cm>",
+    "</p:cmLst>"
   ].join(""),
   "ppt/notesSlides/notesSlide1.xml": [
     "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" ",
@@ -613,7 +624,18 @@ try {
             "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
             "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/mounted-pptx\" TargetMode=\"External\"/>",
             "<Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/mounted-roadmap.png\"/>",
+            "<Relationship Id=\"rIdComment1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"../comments/comment1.xml\"/>",
             "</Relationships>"
+          ].join(""),
+          "ppt/commentAuthors.xml": [
+            "<p:cmAuthorLst xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\">",
+            "<p:cmAuthor id=\"0\" name=\"Mounted Slide Reviewer\" initials=\"MSR\" lastIdx=\"1\"/>",
+            "</p:cmAuthorLst>"
+          ].join(""),
+          "ppt/comments/comment1.xml": [
+            "<p:cmLst xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\">",
+            "<p:cm authorId=\"0\" dt=\"2026-06-01T11:00:00Z\" idx=\"1\"><p:pos x=\"914400\" y=\"914400\"/><p:text>Mounted PPTX comment remains agent-readable.</p:text></p:cm>",
+            "</p:cmLst>"
           ].join(""),
           "ppt/notesSlides/notesSlide1.xml": [
             "<p:notes xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
@@ -902,6 +924,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.images"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.speaker-notes"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.presentation.comments"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.expand-route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.child-file.route"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("archive.file-ref.expand"), true);
@@ -1048,6 +1071,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-comment-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("opendocument-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-workbook-sheet-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("spreadsheet-merged-cell-refs-preserved"), true);
@@ -2210,6 +2234,11 @@ try {
           trace.notes === 1
         )), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.presentation.comments" &&
+          trace.status === "completed" &&
+          trace.comments === 1
+        )), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
           trace.stage === "office.presentation.hyperlinks" &&
           trace.status === "completed" &&
           trace.links === 1
@@ -2236,6 +2265,12 @@ try {
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "speaker-note" &&
           ref.layout?.strategy === "presentationml-speaker-notes.v1"
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "comment" &&
+          ref.annotation?.kind === "presentation-comment" &&
+          ref.annotation?.author === "Mounted Slide Reviewer" &&
+          ref.annotation?.sourcePart === "ppt/comments/comment1.xml"
         ))), true);
       } else if (formatId === "spreadsheet") {
         assert.equal(mountedStructuredCorpus.windowPlan.strategy, "element-aware-by-title-windowing.v1");
@@ -2412,6 +2447,12 @@ try {
     trace.notes === 1
   )), true);
   assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.presentation.comments" &&
+    trace.status === "completed" &&
+    trace.comments === 1 &&
+    trace.authors === 1
+  )), true);
+  assert.equal(pptxPayloadCorpus.parserTrace.some((trace) => (
     trace.stage === "office.presentation.hyperlinks" &&
     trace.status === "completed" &&
     trace.links === 1
@@ -2431,6 +2472,7 @@ try {
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.elementTypes["speaker-note"] >= 1, true);
+  assert.equal(pptxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "heading" &&
     element.page === 1 &&
@@ -2464,6 +2506,13 @@ try {
     element.text.includes("Speaker note keeps release risk")
   )), true);
   assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "comment" &&
+    element.page === 1 &&
+    element.annotation?.kind === "presentation-comment" &&
+    element.annotation?.author === "Slide Reviewer" &&
+    element.text.includes("confirmed the roadmap decision")
+  )), true);
+  assert.equal(pptxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "link" &&
     element.page === 1 &&
     element.href === "https://example.com/pptx-evidence" &&
@@ -2486,10 +2535,17 @@ try {
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("images"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("shape-placeholder"), true);
   assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("speaker-notes"), true);
+  assert.equal(pptxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "speaker-note" &&
     ref.page === 1 &&
     ref.layout?.strategy === "presentationml-speaker-notes.v1"
+  ))), true);
+  assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "comment" &&
+    ref.page === 1 &&
+    ref.annotation?.kind === "presentation-comment" &&
+    ref.annotation?.author === "Slide Reviewer"
   ))), true);
   assert.equal(pptxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "link" &&
@@ -2505,6 +2561,14 @@ try {
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
     unit.metadata?.elementRefs?.some((ref) => ref.type === "speaker-note")
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-13" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "comment" &&
+      ref.annotation?.kind === "presentation-comment" &&
+      ref.annotation?.author === "Slide Reviewer"
+    ))
   )), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-13" &&
@@ -3221,6 +3285,7 @@ try {
   assert.equal(agentMessage.graphEvidence.strategy, "graph-lite-entity-relationship-evidence-pack.v1");
   assert.equal(agentMessage.formatConversionPlan.strategy, "office-document-professional-adaptation.v1");
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithCellRefsCount >= 1, true);
+  assert.equal(agentMessage.formatConversionPlan.summary.documentWithPresentationCommentRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithSpreadsheetCommentRefsCount >= 1, true);
   assert.equal(agentMessage.graphEvidence.summary.entityCount > 0, true);
   assert.equal(agentMessage.classification.communityCount >= agentMessage.classification.coreGroupCount, true);
@@ -3253,6 +3318,7 @@ try {
   assert.equal(conversionPlan.summary.documentWithSheetRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithDateCellRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithMergedCellRefsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithPresentationCommentRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithSpreadsheetCommentRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithImageRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithStyleRefsCount >= 1, true);
@@ -3323,10 +3389,12 @@ try {
     document.evidence.linkElementCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
     document.evidence.speakerNoteElementCount >= 1 &&
+    document.evidence.presentationCommentRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
-    document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-comment-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
     document.routeId === "open-document" &&
@@ -3370,17 +3438,21 @@ try {
     document.parserStages.includes("office.presentation.hyperlinks") &&
     document.parserStages.includes("office.presentation.images") &&
     document.parserStages.includes("office.presentation.speaker-notes") &&
+    document.parserStages.includes("office.presentation.comments") &&
     document.preserves.includes("shape-placeholder") &&
     document.preserves.includes("shape-bbox") &&
     document.preserves.includes("links") &&
     document.preserves.includes("images") &&
     document.preserves.includes("speaker-notes") &&
+    document.preserves.includes("comments") &&
     document.evidence.placeholderRefCount >= 2 &&
     document.evidence.imageRefCount >= 1 &&
+    document.evidence.presentationCommentRefCount >= 1 &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-placeholder-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "presentation-image-refs-preserved" && gate.status === "passed") &&
-    document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed")
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-speaker-notes-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "presentation-comment-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "spreadsheet" &&
