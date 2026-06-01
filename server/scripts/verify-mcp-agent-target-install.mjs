@@ -1488,14 +1488,14 @@ try {
     assert.equal(payload.ok, false);
     assert.equal(payload.errorCode, "NO_SUPPORTED_MCP_CLIENTS_DETECTED");
     assert.equal(payload.nextCommand, `pact-mcp scan --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
-    assert.ok(payload.repairCommands?.some((command) => command.includes("pact-mcp install --target codex")));
+    assert.ok(payload.repairCommands?.some((command) => command.includes("pact-mcp install --target claude-code --claude-bin claude")));
     assert.ok(payload.repairCommands?.every((command) => command.includes(`--url '${serverUrl}'`)));
     assert.ok(payload.repairCommands?.every((command) => command.includes(`--token-env '${missingInstallTokenEnv}'`)));
     assert.deepEqual(payload.priorityTargets, ["claude-code", "codex", "openclaw"]);
     assert.deepEqual(payload.supportedTargets, DECLARED_AGENT_TARGETS);
     assert.equal(payload.autoInstallCommand, `pact-mcp install --target auto --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
     assert.equal(payload.priorityInstallCommand, `pact-mcp install --target claude-code,codex,openclaw --url '${serverUrl}' --token-env '${missingInstallTokenEnv}' --json`);
-    assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "codex")?.installMode, "codex-release-plugin-and-mcp-cli");
+    assert.equal(payload.supportedTargetDetails?.find((target) => target.target === "claude-code")?.installMode, "claude-code-release-mcp-cli");
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "codex"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "claude-code"), true);
     assert.equal(payload.candidates?.some((candidate) => candidate.target === "openclaw"), true);
@@ -1530,7 +1530,7 @@ try {
       true
     );
     assert.match(result.stdout, /Repair commands:/);
-    assert.equal(result.stdout.includes("pact-mcp install --target codex --codex-bin codex"), true);
+    assert.equal(result.stdout.includes("pact-mcp install --target claude-code --claude-bin claude"), true);
   });
 
 } catch (error) {

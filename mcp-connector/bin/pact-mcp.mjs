@@ -5909,7 +5909,7 @@ function noDetectedClientGuidance(candidates = [], options = {}) {
   const explicitTargets = candidates
     .map((candidate) => candidate.target)
     .filter((target, index, values) => target && values.indexOf(target) === index);
-  const priorityTargets = ["codex", "claude-code", "openclaw"].filter((target) => explicitTargets.includes(target));
+  const priorityTargets = PRIORITY_INSTALL_TARGETS.filter((target) => explicitTargets.includes(target));
   const suggestedTarget = priorityTargets[0] || explicitTargets[0] || "codex";
   const binOption = targetBinOption(suggestedTarget);
   const { baseUrl, tokenEnv } = commandGuidanceContext(options);
