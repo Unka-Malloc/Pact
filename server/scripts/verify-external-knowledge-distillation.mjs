@@ -264,6 +264,8 @@ const sampleDocxBase64 = base64Zip({
     "<w:p><w:r><w:t>Evidence portal: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>DOCX evidence portal</w:t></w:r></w:hyperlink></w:p>",
     "<w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"10\" name=\"Architecture Diagram\" descr=\"DOCX architecture diagram evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
     "<w:p><w:r><w:t>Annotation reference paragraph.</w:t></w:r><w:r><w:footnoteReference w:id=\"2\"/></w:r></w:p>",
+    "<w:p><w:ins w:id=\"10\" w:author=\"Revision Author\" w:date=\"2026-07-02T00:00:00Z\"><w:r><w:t>Inserted tracked-change evidence stays visible.</w:t></w:r></w:ins></w:p>",
+    "<w:p><w:del w:id=\"11\" w:author=\"Revision Author\" w:date=\"2026-07-03T00:00:00Z\"><w:r><w:delText>Deleted tracked-change evidence stays visible.</w:delText></w:r></w:del></w:p>",
     "<w:tbl>",
     "<w:tr><w:tc><w:p><w:r><w:t>Owner</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Decision</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Due Date</w:t></w:r></w:p></w:tc></w:tr>",
     "<w:tr><w:tc><w:p><w:r><w:t>Platform</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Adopt external.knowledge.distillation routing</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2026-07-10</w:t></w:r></w:p></w:tc></w:tr>",
@@ -577,6 +579,8 @@ try {
             "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body>",
             "<w:p><w:r><w:t>Mounted link: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>mounted DOCX link</w:t></w:r></w:hyperlink></w:p>",
             "<w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"12\" name=\"Mounted Architecture Image\" descr=\"Mounted DOCX architecture image evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>",
+            "<w:p><w:ins w:id=\"12\" w:author=\"Mounted Revision Author\" w:date=\"2026-07-02T00:00:00Z\"><w:r><w:t>Mounted inserted tracked change remains agent-readable.</w:t></w:r></w:ins></w:p>",
+            "<w:p><w:del w:id=\"13\" w:author=\"Mounted Revision Author\" w:date=\"2026-07-03T00:00:00Z\"><w:r><w:delText>Mounted deleted tracked change remains agent-readable.</w:delText></w:r></w:del></w:p>",
             Array.from({ length: 120 }, (_, index) => (
               `<w:p><w:r><w:t>Mounted DOCX section ${index + 1} confirms structured filePath extraction, project convergence, and evidence windowing.</w:t></w:r></w:p>`
             )).join(""),
@@ -915,6 +919,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.revisions"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.images"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
@@ -1006,6 +1011,7 @@ try {
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("slide-shape"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("speaker-note"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("revision"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
@@ -1066,6 +1072,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
@@ -1695,8 +1702,10 @@ try {
   assert.equal(professionalConversionPlan.summary.targetFormats.includes("docx"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("docx-openxml-package-valid"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("word-link-refs-preserved"), true);
+  assert.equal(professionalConversionPlan.summary.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(professionalConversionPlan.summary.qualityGates.includes("markdown-image-refs-preserved"), true);
+  assert.equal(professionalConversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
   assert.equal(professionalConversionPlan.summary.qualityGateStatusCounts.passed > 0, true);
   assert.equal(professionalConversionPlan.summary.outputArtifactValidationStrategy, "format-conversion-output-artifact-self-check.v1");
   assert.equal(professionalConversionPlan.summary.outputArtifactFailedCount, 0);
@@ -1739,9 +1748,11 @@ try {
     document.evidence.numberingRefCount >= 1 &&
     document.evidence.linkElementCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
+    document.evidence.revisionRefCount >= 2 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
-    document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed")
+    document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-revision-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalConversionPlan.documents.some((document) => (
     document.sourceId === "source-12" &&
@@ -1883,6 +1894,13 @@ try {
     trace.endnotes === 1
   )), true);
   assert.equal(docxPayloadCorpus.parserTrace.some((trace) => (
+    trace.stage === "office.word.revisions" &&
+    trace.status === "completed" &&
+    trace.revisions === 2 &&
+    trace.inserted === 1 &&
+    trace.deleted === 1
+  )), true);
+  assert.equal(docxPayloadCorpus.parserTrace.some((trace) => (
     trace.stage === "office.word.hyperlinks" &&
     trace.status === "completed" &&
     trace.links === 1
@@ -1903,6 +1921,7 @@ try {
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.link >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.image >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.comment >= 1, true);
+  assert.equal(docxPayloadCorpus.elementPlan.elementTypes.revision >= 2, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.footnote >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.elementTypes.endnote >= 1, true);
   assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
@@ -1927,6 +1946,20 @@ try {
     element.annotation?.id === "7" &&
     element.annotation?.author === "Reviewer" &&
     element.text.includes("routing decision evidence")
+  )), true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "revision" &&
+    element.annotation?.kind === "word-revision" &&
+    element.annotation?.type === "insertion" &&
+    element.annotation?.author === "Revision Author" &&
+    element.text.includes("Inserted tracked-change evidence")
+  )), true);
+  assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
+    element.type === "revision" &&
+    element.annotation?.kind === "word-revision" &&
+    element.annotation?.type === "deletion" &&
+    element.annotation?.author === "Revision Author" &&
+    element.text.includes("Deleted tracked-change evidence")
   )), true);
   assert.equal(docxPayloadCorpus.elementPlan.sampleElements.some((element) => (
     element.type === "link" &&
@@ -1958,6 +1991,18 @@ try {
     ref.annotation?.id === "7"
   ))), true);
   assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "revision" &&
+    ref.annotation?.kind === "word-revision" &&
+    ref.annotation?.type === "insertion" &&
+    ref.annotation?.author === "Revision Author"
+  ))), true);
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+    ref.type === "revision" &&
+    ref.annotation?.kind === "word-revision" &&
+    ref.annotation?.type === "deletion" &&
+    ref.annotation?.author === "Revision Author"
+  ))), true);
+  assert.equal(docxPayloadCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
     ref.type === "link" &&
     ref.href === "https://example.com/docx-evidence"
   ))), true);
@@ -1974,6 +2019,7 @@ try {
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("images"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("comments"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("footnotes"), true);
+  assert.equal(docxPayloadCorpus.formatConversionProfile.preserves.includes("revisions"), true);
   assert.equal(docxPayloadCorpus.formatConversionProfile.conversionTargets.includes("valid-openxml-docx"), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
     unit.sourceId === "source-8" &&
@@ -1997,6 +2043,14 @@ try {
       ref.type === "comment" &&
       ref.annotation?.kind === "comment" &&
       ref.annotation?.id === "7"
+    ))
+  )), true);
+  assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
+    unit.sourceId === "source-8" &&
+    unit.metadata?.elementRefs?.some((ref) => (
+      ref.type === "revision" &&
+      ref.annotation?.kind === "word-revision" &&
+      ref.annotation?.author === "Revision Author"
     ))
   )), true);
   assert.equal(createRun.payload.result.graphEvidence.text_units.some((unit) => (
@@ -2197,6 +2251,13 @@ try {
           trace.footnotes === 1
         )), true);
         assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
+          trace.stage === "office.word.revisions" &&
+          trace.status === "completed" &&
+          trace.revisions === 2 &&
+          trace.inserted === 1 &&
+          trace.deleted === 1
+        )), true);
+        assert.equal(mountedStructuredCorpus.parserTrace.some((trace) => (
           trace.stage === "office.word.hyperlinks" &&
           trace.status === "completed" &&
           trace.links === 1
@@ -2210,6 +2271,18 @@ try {
           ref.type === "comment" &&
           ref.annotation?.kind === "comment" &&
           ref.annotation?.author === "Mounted Reviewer"
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "revision" &&
+          ref.annotation?.kind === "word-revision" &&
+          ref.annotation?.type === "insertion" &&
+          ref.annotation?.author === "Mounted Revision Author"
+        ))), true);
+        assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+          ref.type === "revision" &&
+          ref.annotation?.kind === "word-revision" &&
+          ref.annotation?.type === "deletion" &&
+          ref.annotation?.author === "Mounted Revision Author"
         ))), true);
         assert.equal(mountedStructuredCorpus.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
           ref.type === "link" &&
@@ -3287,6 +3360,7 @@ try {
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithCellRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithPresentationCommentRefsCount >= 1, true);
   assert.equal(agentMessage.formatConversionPlan.summary.documentWithSpreadsheetCommentRefsCount >= 1, true);
+  assert.equal(agentMessage.formatConversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
   assert.equal(agentMessage.graphEvidence.summary.entityCount > 0, true);
   assert.equal(agentMessage.classification.communityCount >= agentMessage.classification.coreGroupCount, true);
   assert.equal(agentMessage.classification.groups.some((group) => group.distillationUnit?.mode === "topic-isolated"), true);
@@ -3324,6 +3398,7 @@ try {
   assert.equal(conversionPlan.summary.documentWithStyleRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithNumberingRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.documentWithAnnotationsCount >= 1, true);
+  assert.equal(conversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
   assert.equal(conversionPlan.summary.outputArtifactFailedCount, 0);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.every((artifact) => artifact.status === "passed"), true);
   assert.equal(conversionPlan.outputArtifactValidation.artifacts.some((artifact) => (
@@ -3376,10 +3451,12 @@ try {
     document.evidence.styleRefCount >= 1 &&
     document.evidence.numberingRefCount >= 1 &&
     document.evidence.linkElementCount >= 1 &&
+    document.evidence.revisionRefCount >= 2 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-image-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-revision-refs-preserved" && gate.status === "passed") &&
     document.conversionAdapters.some((adapter) => adapter.adapter === "word-elements-to-valid-openxml.v1")
   )), true);
   assert.equal(conversionPlan.documents.some((document) => (
@@ -3415,6 +3492,7 @@ try {
     document.parserProfile === "wordprocessingml-paragraph-style-route" &&
     document.parserStages.includes("office.word.styles") &&
     document.parserStages.includes("office.word.numbering") &&
+    document.parserStages.includes("office.word.revisions") &&
     document.parserStages.includes("office.word.hyperlinks") &&
     document.parserStages.includes("office.word.images") &&
     document.preserves.includes("paragraphStyles") &&
@@ -3422,14 +3500,17 @@ try {
     document.preserves.includes("links") &&
     document.preserves.includes("images") &&
     document.preserves.includes("comments") &&
+    document.preserves.includes("revisions") &&
     document.evidence.styleRefCount >= 1 &&
     document.evidence.numberingRefCount >= 1 &&
     document.evidence.imageRefCount >= 1 &&
+    document.evidence.revisionRefCount >= 2 &&
     document.qualityGateResults.some((gate) => gate.gate === "word-paragraph-style-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-list-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-link-refs-preserved" && gate.status === "passed") &&
     document.qualityGateResults.some((gate) => gate.gate === "word-image-refs-preserved" && gate.status === "passed") &&
-    document.qualityGateResults.some((gate) => gate.gate === "word-annotation-refs-preserved" && gate.status === "passed")
+    document.qualityGateResults.some((gate) => gate.gate === "word-annotation-refs-preserved" && gate.status === "passed") &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-revision-refs-preserved" && gate.status === "passed")
   )), true);
   assert.equal(professionalManifest.documents.some((document) => (
     document.routeId === "presentation" &&

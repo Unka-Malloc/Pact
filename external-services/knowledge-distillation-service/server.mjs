@@ -210,7 +210,7 @@ const FORMAT_ROUTES = Object.freeze([
     contentShape: "office-document",
     preferredParser: "office.word.structured",
     fallbackParsers: ["tika.text", "ocr.embedded-images"],
-    parserChain: ["office.route", "office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "office.word.images", "tika.text"],
+    parserChain: ["office.route", "office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.revisions", "office.word.hyperlinks", "office.word.images", "tika.text"],
     streamingUnit: "section",
     referenceFrameworks: ["docling", "mineru", "unstructured"]
   },
@@ -559,9 +559,9 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
     label: "Word",
     professionalFamily: "office-word",
     parserProfile: "wordprocessingml-paragraph-style-route",
-    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "image", "comment", "footnote", "endnote"],
-    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.hyperlinks", "office.word.images", "tika.text"],
-    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "images", "comments", "footnotes", "endnotes"],
+    structureUnits: ["heading", "paragraph", "list-item", "paragraph-style", "numbering-ref", "table-row", "link", "image", "comment", "footnote", "endnote", "revision"],
+    parserStages: ["office.word.structured", "office.word.styles", "office.word.numbering", "office.word.tables", "office.word.annotations", "office.word.revisions", "office.word.hyperlinks", "office.word.images", "tika.text"],
+    preserves: ["headings", "paragraphs", "paragraphStyles", "listLevels", "lists", "tables", "cellRefs", "links", "images", "comments", "footnotes", "endnotes", "revisions"],
     conversionTargets: ["markdown-outline", "valid-openxml-docx", "agent-json-with-word-style-list-table-link-and-annotation-refs", "evidence-pack"],
     conversionAdapters: [
       {
@@ -583,7 +583,7 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         targetFormat: "agent-json",
         adapter: "word-elements-to-agent-refs.v1",
         mode: "agent",
-        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "image-refs", "annotation-refs"]
+        stages: ["element-refs", "paragraph-style-refs", "numbering-refs", "table-cell-refs", "link-refs", "image-refs", "annotation-refs", "revision-refs"]
       },
       {
         target: "evidence-pack-json",
@@ -593,8 +593,8 @@ const PROFESSIONAL_FORMAT_ADAPTERS = Object.freeze({
         stages: ["text-units", "relationships", "claims"]
       }
     ],
-    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-image-refs-preserved", "word-annotation-refs-preserved"],
-    riskControls: ["legacy-doc-tika-fallback", "advanced-style-loss-reporting"],
+    qualityGates: ["docx-openxml-package-valid", "word-paragraph-style-refs-preserved", "word-list-refs-preserved", "word-table-cell-refs-preserved", "word-link-refs-preserved", "word-image-refs-preserved", "word-annotation-refs-preserved", "word-revision-refs-preserved"],
+    riskControls: ["legacy-doc-tika-fallback", "advanced-style-loss-reporting", "tracked-changes-preserved-when-present"],
     knownLosses: ["advanced-openxml-styling-not-rendered"]
   },
   presentation: {
@@ -1041,7 +1041,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["high-fidelity layout reconstruction for complex PDFs"]
   },
   docling: {
-    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, comment, and geometry metadata for slide elements"],
+    absorbed: ["unified routePlan/corpusPlan/parserTrace document model", "table time index for structured sheets", "HTML, XML, AsciiDoc, LaTeX, Markdown, OOXML, OpenDocument, EPUB, and PDF element models", "basic PDF text-operator geometry for page/x/y/bbox metadata", "WordprocessingML, PresentationML, and OpenDocument table row/cell metadata", "WordprocessingML, PresentationML, and OpenDocument hyperlink targets", "WordprocessingML comments, revisions, footnotes, and endnotes", "spreadsheet workbook sheet id/name/path plus row/cell coordinate/comment/formula/hyperlink metadata", "PresentationML shape id/name, placeholder, comment, and geometry metadata for slide elements"],
     baseline: ["structured ZIP extraction for OOXML and OpenDocument"],
     gaps: ["full PDF and Word layout block geometry", "formula recognition beyond SpreadsheetML and text-level elements"]
   },
@@ -1066,7 +1066,7 @@ const REFERENCE_ABSORPTION_MAP = Object.freeze({
     gaps: ["external component registry", "configurable parser/ranker pipeline graph"]
   },
   unstructured: {
-    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations and hyperlinks, PowerPoint comments and hyperlinks, OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
+    absorbed: ["partition-style format routing", "chunked windowing", "email and archive child routing", "element-type enrichment for Markdown, markup, PDF, OOXML, OpenDocument, EPUB, headings, lists, links, tables, Word/PowerPoint/OpenDocument table cells, Word annotations/revisions and hyperlinks, PowerPoint comments and hyperlinks, OpenDocument hyperlinks, code, formulas, spreadsheet workbook sheet refs/comments/hyperlinks, slide shapes, and PowerPoint placeholders", "by-title element-aware windowing with table/code isolation"],
     baseline: ["strategy-based parser fallback"],
     gaps: ["remaining high-fidelity PDF, Word, and spreadsheet layout coordinates", "domain-specific chunk enrichment plugins"]
   }
@@ -4764,6 +4764,59 @@ function appendDocxAnnotations(elements = [], entries = [], lineStart = 0) {
   };
 }
 
+function textFromDocxRevisionXml(xml = "") {
+  const values = [];
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?(?:t|delText)(?:\s[^>]*)?>([\s\S]*?)<\/[^:>]*:?(?:t|delText)>/g)) {
+    values.push(decodeXmlEntities(match[1]));
+  }
+  if (values.length) {
+    return values.join(" ").replace(/\s+/g, " ").trim();
+  }
+  return textFromXmlTextNodes(xml);
+}
+
+function appendDocxRevisionElements(elements = [], xml = "", { sourcePart = "", lineStart = 0 } = {}) {
+  let insertionCount = 0;
+  let deletionCount = 0;
+  let count = 0;
+  for (const match of String(xml || "").matchAll(/<[^:>]*:?(ins|del)\b[\s\S]*?<\/[^:>]*:?\1>/g)) {
+    const revisionXml = match[0];
+    const revisionKind = String(match[1] || "").toLowerCase() === "del" ? "deletion" : "insertion";
+    const openTag = revisionXml.match(/^<[^>]+>/)?.[0] || "";
+    const text = textFromDocxRevisionXml(revisionXml);
+    if (!text) {
+      continue;
+    }
+    count += 1;
+    if (revisionKind === "deletion") {
+      deletionCount += 1;
+    } else {
+      insertionCount += 1;
+    }
+    const id = xmlLocalAttribute(openTag, "id") || String(count);
+    const author = xmlLocalAttribute(openTag, "author");
+    const date = xmlLocalAttribute(openTag, "date");
+    pushStructureElement(elements, "revision", `Revision ${id} ${revisionKind}${author ? ` by ${author}` : ""}: ${text}`, {
+      line: lineStart + count,
+      name: `${sourcePart}#revision-${id}`,
+      annotation: {
+        kind: "word-revision",
+        id,
+        type: revisionKind,
+        ...(author ? { author } : {}),
+        ...(date ? { date } : {}),
+        sourcePart
+      },
+      limit: 1800
+    });
+  }
+  return {
+    revisionCount: count,
+    insertionRevisionCount: insertionCount,
+    deletionRevisionCount: deletionCount
+  };
+}
+
 function docxRelationshipEntryName(partName = "") {
   const normalized = String(partName || "").replace(/\\/g, "/");
   const directory = normalized.slice(0, normalized.lastIndexOf("/") + 1);
@@ -4941,6 +4994,9 @@ function parseDocx(entries = []) {
   let imageCount = 0;
   let styleRefCount = 0;
   let numberingRefCount = 0;
+  let revisionCount = 0;
+  let insertionRevisionCount = 0;
+  let deletionRevisionCount = 0;
   for (const name of xmlNames) {
     const xml = zipEntryText(entries, name);
     const relationships = docxPartRelationships(entries, name);
@@ -4993,6 +5049,13 @@ function parseDocx(entries = []) {
       lineStart: paragraphCount + tableRowCount + annotationCount,
       imageStart: imageCount
     });
+    const revisions = appendDocxRevisionElements(elements, xml, {
+      sourcePart: name,
+      lineStart: paragraphCount + tableRowCount + annotationCount + imageCount + revisionCount
+    });
+    revisionCount += revisions.revisionCount;
+    insertionRevisionCount += revisions.insertionRevisionCount;
+    deletionRevisionCount += revisions.deletionRevisionCount;
     if (!foundParagraph) {
       const text = textFromXmlTextNodes(xml);
       if (text) {
@@ -5025,6 +5088,9 @@ function parseDocx(entries = []) {
     imageCount,
     styleRefCount,
     numberingRefCount,
+    revisionCount,
+    insertionRevisionCount,
+    deletionRevisionCount,
     headingCount: (counts.title || 0) + (counts.heading || 0),
     listItemCount: counts["list-item"] || 0
   };
@@ -7311,6 +7377,9 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           comments: parsed.commentCount,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount,
+          revisions: parsed.revisionCount,
+          insertedRevisions: parsed.insertionRevisionCount,
+          deletedRevisions: parsed.deletionRevisionCount,
           links: parsed.hyperlinkCount,
           images: parsed.imageCount,
           headings: parsed.headingCount,
@@ -7345,6 +7414,13 @@ function parseStructuredZipDirectory(route = null, rootDir = "") {
           comments: parsed.commentCount,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount
+        },
+        {
+          stage: "office.word.revisions",
+          status: parsed.revisionCount ? "completed" : "empty",
+          revisions: parsed.revisionCount,
+          inserted: parsed.insertionRevisionCount,
+          deleted: parsed.deletionRevisionCount
         },
         {
           stage: "office.word.hyperlinks",
@@ -8674,6 +8750,9 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           comments: parsed.commentCount,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount,
+          revisions: parsed.revisionCount,
+          insertedRevisions: parsed.insertionRevisionCount,
+          deletedRevisions: parsed.deletionRevisionCount,
           links: parsed.hyperlinkCount,
           images: parsed.imageCount,
           headings: parsed.headingCount,
@@ -8708,6 +8787,13 @@ function parseSuppliedContent({ route, metadata, text = "", buffer = null, runti
           comments: parsed.commentCount,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount
+        });
+        parserTrace.push({
+          stage: "office.word.revisions",
+          status: parsed.revisionCount ? "completed" : "empty",
+          revisions: parsed.revisionCount,
+          inserted: parsed.insertionRevisionCount,
+          deleted: parsed.deletionRevisionCount
         });
         parserTrace.push({
           stage: "office.word.hyperlinks",
@@ -9400,7 +9486,7 @@ function isHeadingStructureElement(element = {}) {
 }
 
 function isIsolatedStructureElement(element = {}) {
-  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "speaker-note"].includes(element.type);
+  return ["table-header", "table-row", "merged-cell", "cell-comment", "code", "code-boundary", "formula", "image", "comment", "footnote", "endnote", "revision", "speaker-note"].includes(element.type);
 }
 
 function headingLevelForElement(element = {}) {
@@ -9808,6 +9894,19 @@ function buildProfessionalQualityGateResults({ document = {}, profile = {}, evid
         message: status === "passed" ? "Word comments/footnotes/endnotes are preserved as element references." : "No Word annotations were required or observed."
       });
     }
+    if (gate === "word-revision-refs-preserved") {
+      const revisions = maxTraceMetric(document, ["revisions", "revisionCount", "insertedRevisions", "deletedRevisions"]);
+      const status = routeId !== "word"
+        ? "not_applicable"
+        : revisions > 0
+          ? evidence.revisionRefCount > 0 ? "passed" : "failed"
+          : "not_applicable";
+      return professionalGateRecord(gate, status, {
+        observed: { revisions, revisionRefCount: evidence.revisionRefCount },
+        required: { revisionRefsWhenTrackedChangesExist: true },
+        message: status === "passed" ? "Word tracked changes are preserved as revision element references." : "No Word tracked changes were required or observed."
+      });
+    }
     if (gate === "word-link-refs-preserved") {
       const linkSignals = maxTraceMetric(document, ["links", "hyperlinks", "hyperlinkCount"]);
       const status = routeId !== "word"
@@ -10198,8 +10297,13 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       element.table?.relationshipId ||
       element.table?.worksheetPath
     )).length;
+    const elementTypes = document.elementPlan?.elementTypes || {};
     const geometryElementCount = sampleElements.filter((element) => element.bbox || element.page || element.layout).length;
     const annotationElementCount = sampleElements.filter((element) => element.annotation || ["comment", "footnote", "endnote"].includes(element.type)).length;
+    const revisionRefCount = Math.max(
+      Number(elementTypes.revision || 0),
+      sampleElements.filter((element) => element.type === "revision" && element.annotation?.kind === "word-revision").length
+    );
     const linkElementCount = sampleElements.filter((element) => element.type === "link" && element.href).length;
     const imageRefCount = sampleElements.filter((element) => element.type === "image" && element.href).length;
     const styleRefCount = sampleElements.filter((element) => element.style?.styleId).length;
@@ -10222,6 +10326,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       sheetRefCount,
       geometryElementCount,
       annotationElementCount,
+      revisionRefCount,
       linkElementCount,
       imageRefCount,
       styleRefCount,
@@ -10296,6 +10401,7 @@ function buildFormatConversionPlan({ runId = "", corpusPlan = null } = {}) {
       documentWithStyleRefsCount: plannedDocuments.filter((document) => document.evidence.styleRefCount > 0).length,
       documentWithNumberingRefsCount: plannedDocuments.filter((document) => document.evidence.numberingRefCount > 0).length,
       documentWithAnnotationsCount: plannedDocuments.filter((document) => document.evidence.annotationElementCount > 0).length,
+      documentWithRevisionRefsCount: plannedDocuments.filter((document) => document.evidence.revisionRefCount > 0).length,
       documentWithPresentationCommentRefsCount: plannedDocuments.filter((document) => document.evidence.presentationCommentRefCount > 0).length,
       targetFormats: uniqueOrdered(plannedDocuments.flatMap((document) => document.targetFormats)),
       qualityGates: uniqueOrdered(plannedDocuments.flatMap((document) => document.qualityGates)).slice(0, 80),
@@ -10798,6 +10904,9 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           comments: parsed.commentCount,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount,
+          revisions: parsed.revisionCount,
+          insertedRevisions: parsed.insertionRevisionCount,
+          deletedRevisions: parsed.deletionRevisionCount,
           links: parsed.hyperlinkCount,
           images: parsed.imageCount,
           headings: parsed.headingCount,
@@ -10832,6 +10941,13 @@ function parseStructuredZipFileRef({ document = {}, metadata = {}, route = null,
           comments: parsed.commentCount,
           footnotes: parsed.footnoteCount,
           endnotes: parsed.endnoteCount
+        });
+        parserTrace.push({
+          stage: "office.word.revisions",
+          status: parsed.revisionCount ? "completed" : "empty",
+          revisions: parsed.revisionCount,
+          inserted: parsed.insertionRevisionCount,
+          deleted: parsed.deletionRevisionCount
         });
         parserTrace.push({
           stage: "office.word.hyperlinks",
@@ -15905,6 +16021,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
         "office.word.numbering",
         "office.word.hyperlinks",
         "office.word.images",
+        "office.word.revisions",
         "office.presentation.slides",
         "office.presentation.placeholders",
         "office.presentation.tables",
@@ -15940,7 +16057,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       supported: true,
       strategy: "document-element-model.v1",
       windowingStrategy: "element-aware-by-title-windowing.v1",
-      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
+      elementTypes: ["title", "heading", "task-heading", "paragraph", "pdf-text-block", "slide-shape", "speaker-note", "list-item", "blockquote", "link", "image", "table-header", "table-row", "merged-cell", "cell-comment", "comment", "footnote", "endnote", "revision", "code", "formula", "citation", "reference", "xml-field", "attribute", "metadata", "environment"],
       structuredFormats: ["markdown", "html", "xml", "asciidoc", "latex", "docx", "pptx", "xlsx", "open-document", "epub", "pdf"],
       geometryFields: ["page", "bbox", "layout.strategy", "layout.order", "layout.width", "layout.height", "shape.id", "shape.name", "shape.placeholderType", "image.target", "image.relationshipId", "table.sheet", "table.sheetName", "table.sheetId", "table.worksheetPath", "table.row", "merge.ref", "merge.masterRef", "cells.ref", "cells.dateIso", "cells.dateSerial", "cells.formula", "cells.hyperlink.target", "cells.merge.ref", "cells.comment.ref"],
       graphMetadata: ["elementRefs", "elementTypes", "headingPath", "semanticChunkStrategy", "boundaryReason", "elementRefs.page", "elementRefs.bbox", "elementRefs.layout", "elementRefs.table", "elementRefs.table.sheetName", "elementRefs.table.sheetId", "elementRefs.table.worksheetPath", "elementRefs.href", "elementRefs.annotation", "elementRefs.style", "elementRefs.style.styleId", "elementRefs.style.numberingId", "elementRefs.shape", "elementRefs.shape.id", "elementRefs.shape.name", "elementRefs.shape.placeholderType", "elementRefs.image", "elementRefs.image.target", "elementRefs.image.relationshipId", "elementRefs.merge", "elementRefs.merge.ref", "elementRefs.cells", "elementRefs.cells.dateIso", "elementRefs.cells.dateSerial", "elementRefs.cells.formula", "elementRefs.cells.hyperlink", "elementRefs.cells.merge", "elementRefs.cells.comment"],
@@ -15964,7 +16081,7 @@ function capabilities(referenceFrameworks = null, runtimeStatus = null) {
       formatMatrix: professionalFormatMatrix(PROFESSIONAL_FORMAT_ORDER),
       humanReadableTargets: ["portable-markdown", "portable-docx", "console-summary-json", "workspace-package-zip"],
       agentReadableTargets: ["agent-message-json", "professional-format-manifest-json", "result-json", "evidence-pack-json"],
-      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "shapeIds", "shapePlaceholders"],
+      preserves: ["routePlan", "parserTrace", "elementRefs", "windowIds", "contentHash", "page", "bbox", "sheet", "sheetName", "sheetId", "worksheetPath", "row", "column", "cellRefs", "mergedCells", "cellComments", "dateSerials", "links", "images", "formulas", "paragraphStyles", "listLevels", "annotations", "revisions", "shapeIds", "shapePlaceholders"],
       qualityGates: uniqueOrdered(PROFESSIONAL_FORMAT_ORDER.flatMap((formatId) => (
         professionalFormatAdapter(formatId)?.qualityGates || []
       ))),

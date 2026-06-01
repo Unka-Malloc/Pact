@@ -460,6 +460,7 @@ try {
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("pdf"), true);
   assert.equal(capabilities.payload.elementModel.structuredFormats.includes("markdown"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("comment"), true);
+  assert.equal(capabilities.payload.elementModel.elementTypes.includes("revision"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("footnote"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("link"), true);
   assert.equal(capabilities.payload.elementModel.elementTypes.includes("merged-cell"), true);
@@ -516,6 +517,7 @@ try {
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-list-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-image-refs-preserved"), true);
+  assert.equal(capabilities.payload.formatConversion.qualityGates.includes("word-revision-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-link-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("markdown-image-refs-preserved"), true);
   assert.equal(capabilities.payload.formatConversion.qualityGates.includes("presentation-placeholder-refs-preserved"), true);
@@ -567,6 +569,7 @@ try {
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("tika.text.app"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.tables"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.annotations"), true);
+  assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.revisions"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.hyperlinks"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.images"), true);
   assert.equal(capabilities.payload.parserExecution.builtInParsers.includes("office.word.styles"), true);
@@ -1549,7 +1552,7 @@ try {
       "tar -cf /data/mounted-project-package.tar -C /tmp/pact-mounted-archive large-project.md invoice.csv",
       "rm -rf /tmp/pact-mounted-structured",
       "mkdir -p /tmp/pact-mounted-structured/docx/word/_rels /tmp/pact-mounted-structured/docx/word/media /tmp/pact-mounted-structured/pptx/ppt/slides/_rels /tmp/pact-mounted-structured/pptx/ppt/notesSlides /tmp/pact-mounted-structured/pptx/ppt/comments /tmp/pact-mounted-structured/pptx/ppt/media /tmp/pact-mounted-structured/xlsx/xl/_rels /tmp/pact-mounted-structured/xlsx/xl/worksheets/_rels /tmp/pact-mounted-structured/odt /tmp/pact-mounted-structured/epub/META-INF /tmp/pact-mounted-structured/epub/OEBPS",
-      "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body><w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>Mounted DOCX Decision Register</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>Mounted Routing Decisions</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"6\"/></w:numPr></w:pPr><w:r><w:t>Container mounted DOCX list hierarchy remains agent-readable.</w:t></w:r></w:p><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p><w:p><w:r><w:t>Container link: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>container DOCX link</w:t></w:r></w:hyperlink></w:p><w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"12\" name=\"Container Architecture Image\" descr=\"Container DOCX architecture image evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
+      "printf '%s' '<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body><w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>Mounted DOCX Decision Register</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>Mounted Routing Decisions</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"ListParagraph\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"6\"/></w:numPr></w:pPr><w:r><w:t>Container mounted DOCX list hierarchy remains agent-readable.</w:t></w:r></w:p><w:p><w:r><w:t>Mounted DOCX filePath extraction validates structured service routing and project convergence evidence.</w:t></w:r></w:p><w:p><w:r><w:t>Container link: </w:t></w:r><w:hyperlink r:id=\"rId1\"><w:r><w:t>container DOCX link</w:t></w:r></w:hyperlink></w:p><w:p><w:r><w:drawing><wp:inline><wp:docPr id=\"12\" name=\"Container Architecture Image\" descr=\"Container DOCX architecture image evidence\"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed=\"rIdImage1\"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p><w:p><w:ins w:id=\"14\" w:author=\"Container Revision Author\" w:date=\"2026-07-04T00:00:00Z\"><w:r><w:t>Container inserted tracked change remains agent-readable.</w:t></w:r></w:ins></w:p><w:p><w:del w:id=\"15\" w:author=\"Container Revision Author\" w:date=\"2026-07-05T00:00:00Z\"><w:r><w:delText>Container deleted tracked change remains agent-readable.</w:delText></w:r></w:del></w:p></w:body></w:document>' > /tmp/pact-mounted-structured/docx/word/document.xml",
       "printf '%s' '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/container-docx\" TargetMode=\"External\"/><Relationship Id=\"rIdImage1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/container-architecture.png\"/></Relationships>' > /tmp/pact-mounted-structured/docx/word/_rels/document.xml.rels",
       "printf '%s' '<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:comment w:id=\"8\" w:author=\"Container Reviewer\"><w:p><w:r><w:t>Container mounted DOCX comments remain agent-readable.</w:t></w:r></w:p></w:comment></w:comments>' > /tmp/pact-mounted-structured/docx/word/comments.xml",
       "printf '%s' '<w:footnotes xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:footnote w:id=\"9\"><w:p><w:r><w:t>Container mounted DOCX footnotes stay linked as annotation evidence.</w:t></w:r></w:p></w:footnote></w:footnotes>' > /tmp/pact-mounted-structured/docx/word/footnotes.xml",
@@ -1891,6 +1894,13 @@ NODE`
         trace.footnotes === 1
       )), true);
       assert.equal(mountedStructured.parserTrace.some((trace) => (
+        trace.stage === "office.word.revisions" &&
+        trace.status === "completed" &&
+        trace.revisions === 2 &&
+        trace.inserted === 1 &&
+        trace.deleted === 1
+      )), true);
+      assert.equal(mountedStructured.parserTrace.some((trace) => (
         trace.stage === "office.word.hyperlinks" &&
         trace.status === "completed" &&
         trace.links === 1
@@ -1909,6 +1919,18 @@ NODE`
         ref.type === "comment" &&
         ref.annotation?.kind === "comment" &&
         ref.annotation?.author === "Container Reviewer"
+      ))), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "revision" &&
+        ref.annotation?.kind === "word-revision" &&
+        ref.annotation?.type === "insertion" &&
+        ref.annotation?.author === "Container Revision Author"
+      ))), true);
+      assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
+        ref.type === "revision" &&
+        ref.annotation?.kind === "word-revision" &&
+        ref.annotation?.type === "deletion" &&
+        ref.annotation?.author === "Container Revision Author"
       ))), true);
       assert.equal(mountedStructured.windowPlan.windows.some((window) => window.elementRefs?.some((ref) => (
         ref.type === "link" &&
@@ -2028,6 +2050,12 @@ NODE`
     assert.equal(mountedStructured.parserTrace.some((trace) => trace.stage === "payload.file-ref-deferred"), false);
     assert.ok(mountedStructured.quality.textCharacters > 0, `${sourceId} must produce distillable text`);
   }
+  assert.equal(mountedStructuredRun.payload.result.formatConversionPlan.summary.documentWithRevisionRefsCount >= 1, true);
+  assert.equal(mountedStructuredRun.payload.result.formatConversionPlan.documents.some((document) => (
+    document.routeId === "word" &&
+    document.evidence.revisionRefCount >= 2 &&
+    document.qualityGateResults.some((gate) => gate.gate === "word-revision-refs-preserved" && gate.status === "passed")
+  )), true);
   assert.equal(mountedStructuredRun.payload.result.formatConversionPlan.summary.documentWithPresentationCommentRefsCount >= 1, true);
   assert.equal(mountedStructuredRun.payload.result.formatConversionPlan.documents.some((document) => (
     document.routeId === "presentation" &&
