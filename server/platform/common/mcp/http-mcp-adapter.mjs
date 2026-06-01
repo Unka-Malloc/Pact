@@ -178,6 +178,26 @@ const MCP_OUTLET_METADATA = Object.freeze({
   [MCP_SKILL_HUB_TOOL_NAME]: { toolName: MCP_SKILL_HUB_TOOL_NAME, architectureCategory: "Skill Hub" }
 });
 
+const MCP_SHAREDSPACE_CORE_OPERATIONS = Object.freeze([
+  "pact.agentWorkspace.create",
+  "pact.sharedspace.localDir.connect",
+  "pact.sharedspace.localDir.list",
+  "pact.sharedspace.item.list",
+  "pact.sharedspace.file.read",
+  "pact.sharedspace.file.write",
+  "pact.sharedspace.item.delete",
+  "pact.sharedspace.sync.plan",
+  "pact.sharedspace.sync.apply",
+  "pact.sharedspace.drive.connect",
+  "pact.sharedspace.drive.status",
+  "pact.sharedspace.drive.item.list",
+  "pact.sharedspace.drive.file.download",
+  "pact.sharedspace.drive.file.upload",
+  "pact.sharedspace.drive.sync.plan",
+  "pact.sharedspace.drive.sync.apply",
+  "pact.sharedspace.drive.permission.list"
+]);
+
 function sharedspaceExchangeReceiptContract() {
   return {
     schemaVersion: "pact.mcp.sharedspace-exchange.v1",
@@ -191,9 +211,38 @@ function sharedspaceExchangeReceiptContract() {
       "file-read",
       "items-listed",
       "item-deleted",
+      "local-dir-connected",
+      "local-dirs-listed",
+      "sync-planned",
+      "sync-applied",
+      "drive-connected",
+      "drive-status",
+      "drive-items-listed",
+      "drive-file-downloaded",
+      "drive-file-uploaded",
+      "drive-sync-planned",
+      "drive-sync-applied",
+      "drive-permissions-listed",
       "operation"
     ],
-    fields: ["action", "outlet", "referencePolicy", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+    fields: [
+      "action",
+      "outlet",
+      "referencePolicy",
+      "workspaceRef",
+      "driveRef",
+      "provider",
+      "path",
+      "paths",
+      "itemCount",
+      "transferReceiptId",
+      "accessReceiptId",
+      "checkpointId",
+      "syncReceiptId",
+      "contractVerified",
+      "localAdapterVerified",
+      "nextOperations"
+    ]
   };
 }
 
@@ -802,12 +851,7 @@ export function buildPactMcpDiscovery({ listenUrl = "", discoveryState = null } 
         outlet: MCP_SHAREDSPACE_TOOL_NAME,
         referencePolicy: "use-public-workspace-ref",
         exchangeReceipt: sharedspaceExchangeReceiptContract(),
-        coreOperations: [
-          "pact.agentWorkspace.create",
-          "pact.sharedspace.item.list",
-          "pact.sharedspace.file.read",
-          "pact.sharedspace.file.write"
-        ]
+        coreOperations: [...MCP_SHAREDSPACE_CORE_OPERATIONS]
       }
     },
     localDiscovery: {
@@ -1447,15 +1491,25 @@ function inferSharedspaceExchangeReceipt({ operation = "", input = {}, payload =
   if (!/(?:^|\.)(sharedspace|agentWorkspace)\b/i.test(operationId)) {
     return null;
   }
-  const paths = Array.isArray(payload.paths)
-    ? payload.paths.map((item) => String(item || "")).filter(Boolean).slice(0, 100)
+  const itemPaths = Array.isArray(payload.items)
+    ? payload.items.map((item) => String(item?.path || item?.relativePath || "")).filter(Boolean)
     : [];
+  const paths = [
+    ...(Array.isArray(payload.paths) ? payload.paths : []),
+    ...itemPaths
+  ].map((item) => String(item || "")).filter(Boolean).slice(0, 100);
   const pathValue = firstString([
     payload.file?.relativePath,
     payload.file?.path,
     payload.relativePath,
     payload.path,
+    payload.requestedPath,
+    payload.basePath,
     input.path,
+    input.filePath,
+    input.itemPath,
+    input.targetPath,
+    input.workspaceTargetPath,
     paths[0]
   ]);
   const workspaceRef = firstString([
@@ -1465,9 +1519,49 @@ function inferSharedspaceExchangeReceipt({ operation = "", input = {}, payload =
     input.workspaceRef,
     input.workspaceName
   ]);
+  const driveRef = firstString([
+    payload.drive?.driveRef,
+    payload.driveRef,
+    payload.transferReceipt?.driveRef,
+    payload.accessReceipt?.driveRef,
+    payload.checkpoint?.driveRef,
+    payload.syncReceipt?.driveRef,
+    input.driveRef,
+    input.driveId
+  ]);
+  const provider = firstString([
+    payload.drive?.provider,
+    payload.provider,
+    input.provider,
+    input.driveProvider
+  ]);
   let action = "operation";
   if (/agentWorkspace\.create$/i.test(operationId)) {
     action = "workspace-created";
+  } else if (/localDir\.connect$/i.test(operationId)) {
+    action = "local-dir-connected";
+  } else if (/localDir\.list$/i.test(operationId)) {
+    action = "local-dirs-listed";
+  } else if (/drive\.connect$/i.test(operationId)) {
+    action = "drive-connected";
+  } else if (/drive\.status$/i.test(operationId)) {
+    action = "drive-status";
+  } else if (/drive\.item\.list$/i.test(operationId)) {
+    action = "drive-items-listed";
+  } else if (/drive\.file\.download$/i.test(operationId)) {
+    action = "drive-file-downloaded";
+  } else if (/drive\.file\.upload$/i.test(operationId)) {
+    action = "drive-file-uploaded";
+  } else if (/drive\.sync\.plan$/i.test(operationId)) {
+    action = "drive-sync-planned";
+  } else if (/drive\.sync\.apply$/i.test(operationId)) {
+    action = "drive-sync-applied";
+  } else if (/drive\.permission\.list$/i.test(operationId)) {
+    action = "drive-permissions-listed";
+  } else if (/sync\.plan$/i.test(operationId)) {
+    action = "sync-planned";
+  } else if (/sync\.apply$/i.test(operationId)) {
+    action = "sync-applied";
   } else if (/file\.write$/i.test(operationId)) {
     action = "file-written";
   } else if (/file\.(read|download)$/i.test(operationId)) {
@@ -1483,14 +1577,30 @@ function inferSharedspaceExchangeReceipt({ operation = "", input = {}, payload =
     outlet: MCP_SHAREDSPACE_TOOL_NAME,
     referencePolicy: "use-public-workspace-ref",
     workspaceRef,
+    driveRef,
+    provider,
     path: pathValue,
     paths,
     itemCount: paths.length,
-    nextOperations: [
-      "pact.sharedspace.item.list",
-      "pact.sharedspace.file.read",
-      "pact.sharedspace.file.write"
-    ]
+    transferReceiptId: firstString([
+      payload.transferReceipt?.transferReceiptId,
+      payload.transferReceiptId
+    ]),
+    accessReceiptId: firstString([
+      payload.accessReceipt?.receiptId,
+      payload.accessReceiptId
+    ]),
+    checkpointId: firstString([
+      payload.checkpoint?.checkpointId,
+      payload.checkpointId
+    ]),
+    syncReceiptId: firstString([
+      payload.syncReceipt?.syncReceiptId,
+      payload.syncReceiptId
+    ]),
+    contractVerified: payload.contractVerified === true,
+    localAdapterVerified: payload.localAdapterVerified === true,
+    nextOperations: [...MCP_SHAREDSPACE_CORE_OPERATIONS]
   };
 }
 

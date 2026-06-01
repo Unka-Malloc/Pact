@@ -53,7 +53,7 @@ function mcpRequest(method, params = {}, id = 1) {
 
 let mcpRequestId = 0;
 
-async function callMcp({ serverUrl, token, operation, input = {}, toolName = "pact.sharedspace" }) {
+async function callMcpStructured({ serverUrl, token, operation, input = {}, toolName = "pact.sharedspace" }) {
   mcpRequestId += 1;
   const response = await fetchJson(`${serverUrl}/mcp`, {
     method: "POST",
@@ -70,7 +70,12 @@ async function callMcp({ serverUrl, token, operation, input = {}, toolName = "pa
   });
   assert.equal(response.status, 200, JSON.stringify(response.payload, null, 2));
   assert.equal(response.payload.error, undefined, JSON.stringify(response.payload.error || {}, null, 2));
-  return response.payload.result.structuredContent.payload || response.payload.result.structuredContent;
+  return response.payload.result.structuredContent;
+}
+
+async function callMcp({ serverUrl, token, operation, input = {}, toolName = "pact.sharedspace" }) {
+  const structuredContent = await callMcpStructured({ serverUrl, token, operation, input, toolName });
+  return structuredContent.payload || structuredContent;
 }
 
 function assertPublicPayloadDoesNotLeak(payload, forbiddenText, label) {
@@ -452,7 +457,7 @@ try {
     assert.equal(operationNames.has(operationName), true, `${operationName} must be visible in MCP capabilities`);
   }
 
-  const mcpList = await callMcp({
+  const mcpListStructured = await callMcpStructured({
     serverUrl: server.url,
     token: grant.payload.token,
     operation: "pact.sharedspace.drive.item.list",
@@ -463,13 +468,41 @@ try {
       recursive: true
     }
   });
+  const mcpList = mcpListStructured.payload;
   assert.equal(mcpList.ok, true);
   assert.equal(mcpList.contractVerified, true);
   assert.equal(mcpList.items.every((item) => item.metadataOnly === true), true);
   assert.equal(mcpList.paths.some((itemPath) => itemPath.startsWith(".pact-data/codex/")), true);
   assert.equal(mcpList.paths.some((itemPath) => itemPath.startsWith(".pact-data/public/")), true);
+  assert.equal(mcpListStructured.exchange.action, "drive-items-listed");
+  assert.equal(mcpListStructured.exchange.driveRef, providerRefs["google-drive"]);
+  assert.equal(mcpListStructured.exchange.provider, "google-drive");
+  assert.equal(mcpListStructured.exchange.contractVerified, true);
+  assert.ok(mcpListStructured.exchange.paths.some((itemPath) => itemPath.startsWith(".pact-data/codex/")));
 
-  const mcpSync = await callMcp({
+  const mcpUploadStructured = await callMcpStructured({
+    serverUrl: server.url,
+    token: grant.payload.token,
+    operation: "pact.sharedspace.drive.file.upload",
+    input: {
+      workspaceId,
+      driveRef: providerRefs["google-drive"],
+      clientId: "codex",
+      path: ".pact-data/codex/mcp-upload.txt",
+      content: "mcp cloud drive upload"
+    }
+  });
+  const mcpUpload = mcpUploadStructured.payload;
+  assert.equal(mcpUpload.ok, true);
+  assert.equal(mcpUpload.contractVerified, true);
+  assert.equal(mcpUpload.remoteWriteInvoked, false);
+  assert.equal(mcpUploadStructured.exchange.action, "drive-file-uploaded");
+  assert.equal(mcpUploadStructured.exchange.driveRef, providerRefs["google-drive"]);
+  assert.equal(mcpUploadStructured.exchange.path, ".pact-data/codex/mcp-upload.txt");
+  assert.equal(mcpUploadStructured.exchange.transferReceiptId, mcpUpload.transferReceipt.transferReceiptId);
+  assert.equal(mcpUploadStructured.exchange.checkpointId, mcpUpload.checkpoint.checkpointId);
+
+  const mcpSyncStructured = await callMcpStructured({
     serverUrl: server.url,
     token: grant.payload.token,
     operation: "pact.sharedspace.drive.sync.apply",
@@ -481,10 +514,15 @@ try {
       confirm: true
     }
   });
+  const mcpSync = mcpSyncStructured.payload;
   assert.equal(mcpSync.ok, true);
   assert.equal(mcpSync.contractVerified, true);
   assert.equal(mcpSync.syncReceipt.state, "contractVerified");
   assert.equal(mcpSync.remoteSyncInvoked, false);
+  assert.equal(mcpSyncStructured.exchange.action, "drive-sync-applied");
+  assert.equal(mcpSyncStructured.exchange.driveRef, providerRefs.onedrive);
+  assert.equal(mcpSyncStructured.exchange.syncReceiptId, mcpSync.syncReceipt.syncReceiptId);
+  assert.equal(mcpSyncStructured.exchange.checkpointId, mcpSync.checkpoint.checkpointId);
 
   const audit = await callMcp({
     serverUrl: server.url,

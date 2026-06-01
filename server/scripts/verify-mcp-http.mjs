@@ -150,7 +150,12 @@ try {
   assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.locations.includes("notifications/pact/operation_reply.params.exchange"));
   assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("outlet"));
   assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("referencePolicy"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("transferReceiptId"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.exchangeReceipt.actions.includes("drive-file-uploaded"));
   assert.ok(discovery.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.localDir.connect"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.drive.file.upload"));
+  assert.ok(discovery.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.drive.sync.apply"));
   assert.equal(discovery.payload.installer.packageName, "pact-mcp-connector");
   assert.match(discovery.payload.installer.githubOneLineCommand, /pact-mcp-install\.sh/);
   assert.match(discovery.payload.installer.githubOneLineCommand, /curl -fL --retry 3 --connect-timeout 20 -sS/);
@@ -296,6 +301,7 @@ try {
   assert.equal(handshake.payload.payload.sharedHub.sharedspace.referencePolicy, "use-public-workspace-ref");
   assert.equal(handshake.payload.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(handshake.payload.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
+  assert.ok(handshake.payload.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.drive.file.upload"));
   assert.equal(handshake.payload.signature.algorithm, "Ed25519");
   assert.equal(
     verifyMcpHandshakeSignature({
@@ -510,7 +516,9 @@ try {
   assert.equal(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.locations.includes("structuredContent.exchange"));
   assert.ok(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("referencePolicy"));
+  assert.ok(localGrant.payload.sharedHub.sharedspace.exchangeReceipt.fields.includes("syncReceiptId"));
   assert.ok(localGrant.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
+  assert.ok(localGrant.payload.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.drive.sync.apply"));
   assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].agentProfileId, "pact.mcp.codex");
   assert.equal(localGrant.payload.targetMatch.matchedTargetDetails[0].toolsets.includes("pact.agent.workspace"), true);
   assert.equal(localGrant.payload.toolsets.includes("pact.storage.write"), true);
@@ -691,6 +699,7 @@ try {
   assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.outlet, "pact.sharedspace");
   assert.equal(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.file.write"));
+  assert.ok(localGrantCapabilities.payload.result.structuredContent.sharedHub.sharedspace.coreOperations.includes("pact.sharedspace.drive.file.upload"));
   assert.equal(
     localGrantCapabilities.payload.result.structuredContent.connector.clientInstallJsonCommand,
     `npx pact-mcp-connector@latest install --target <client> --url '${server.url}' --json`
@@ -702,12 +711,14 @@ try {
   assert.equal(operationByName.get("pact.sharedspace.file.write")._meta.mcpOutlet, "pact.sharedspace");
   assert.equal(operationByName.get("pact.sharedspace.file.write")._meta.exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(operationByName.get("pact.sharedspace.file.write")._meta.exchangeReceipt.locations.includes("structuredContent.exchange"));
+  assert.ok(operationByName.get("pact.sharedspace.file.write")._meta.exchangeReceipt.fields.includes("checkpointId"));
   assert.equal(operationByName.get("pact.repo.status")._meta.mcpOutlet, "pact.codespace");
   assert.equal(operationByName.get("pact.knowledge.skills.list")._meta.mcpOutlet, "pact.skillHub");
   assert.equal(operationByName.get("pact.knowledge.search")._meta.mcpOutlet, "pact.knowledge");
   assert.ok(localOutlets["pact.sharedspace"].operations.includes("pact.sharedspace.file.write"));
   assert.equal(localOutlets["pact.sharedspace"].exchangeReceipt.schemaVersion, "pact.mcp.sharedspace-exchange.v1");
   assert.ok(localOutlets["pact.sharedspace"].exchangeReceipt.actions.includes("file-written"));
+  assert.ok(localOutlets["pact.sharedspace"].exchangeReceipt.actions.includes("drive-sync-applied"));
   assert.ok(localOutlets["pact.codespace"].operations.includes("pact.repo.status"));
   assert.ok(localOutlets["pact.skillHub"].operations.includes("pact.knowledge.skills.list"));
   assert.ok(localOutlets["pact.knowledge"].operations.includes("pact.knowledge.search"));

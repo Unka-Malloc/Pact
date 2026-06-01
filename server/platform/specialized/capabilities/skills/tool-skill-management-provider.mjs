@@ -7,6 +7,25 @@ const LOCAL_GRANT_BOOTSTRAP_CURL_FLAGS = "-fL --retry 3 --connect-timeout 20 -sS
 const LOCAL_GRANT_BOOTSTRAP_SCRIPT = "pact-mcp-install.sh";
 const LOCAL_GRANT_BOOTSTRAP_SCRIPT_ZH_CN = "pact-mcp-install.zh-CN.sh";
 const LOCAL_GRANT_PRIORITY_TARGETS = Object.freeze(["claude-code", "codex", "openclaw"]);
+const LOCAL_GRANT_SHAREDSPACE_CORE_OPERATIONS = Object.freeze([
+  "pact.agentWorkspace.create",
+  "pact.sharedspace.localDir.connect",
+  "pact.sharedspace.localDir.list",
+  "pact.sharedspace.item.list",
+  "pact.sharedspace.file.read",
+  "pact.sharedspace.file.write",
+  "pact.sharedspace.item.delete",
+  "pact.sharedspace.sync.plan",
+  "pact.sharedspace.sync.apply",
+  "pact.sharedspace.drive.connect",
+  "pact.sharedspace.drive.status",
+  "pact.sharedspace.drive.item.list",
+  "pact.sharedspace.drive.file.download",
+  "pact.sharedspace.drive.file.upload",
+  "pact.sharedspace.drive.sync.plan",
+  "pact.sharedspace.drive.sync.apply",
+  "pact.sharedspace.drive.permission.list"
+]);
 
 const LOCAL_GRANT_WRITE_TOOLSETS = Object.freeze([
   "pact.runtime.read",
@@ -207,9 +226,38 @@ function localGrantSharedspaceExchangeReceiptContract() {
       "file-read",
       "items-listed",
       "item-deleted",
+      "local-dir-connected",
+      "local-dirs-listed",
+      "sync-planned",
+      "sync-applied",
+      "drive-connected",
+      "drive-status",
+      "drive-items-listed",
+      "drive-file-downloaded",
+      "drive-file-uploaded",
+      "drive-sync-planned",
+      "drive-sync-applied",
+      "drive-permissions-listed",
       "operation"
     ],
-    fields: ["action", "outlet", "referencePolicy", "workspaceRef", "path", "paths", "itemCount", "nextOperations"]
+    fields: [
+      "action",
+      "outlet",
+      "referencePolicy",
+      "workspaceRef",
+      "driveRef",
+      "provider",
+      "path",
+      "paths",
+      "itemCount",
+      "transferReceiptId",
+      "accessReceiptId",
+      "checkpointId",
+      "syncReceiptId",
+      "contractVerified",
+      "localAdapterVerified",
+      "nextOperations"
+    ]
   };
 }
 
@@ -310,12 +358,7 @@ function localGrantSharedHubContract({ request = null, discoveryState = null } =
       outlet: LOCAL_GRANT_MCP_SHAREDSPACE_TOOL_NAME,
       referencePolicy: "use-public-workspace-ref",
       exchangeReceipt: localGrantSharedspaceExchangeReceiptContract(),
-      coreOperations: [
-        "pact.agentWorkspace.create",
-        "pact.sharedspace.item.list",
-        "pact.sharedspace.file.read",
-        "pact.sharedspace.file.write"
-      ]
+      coreOperations: [...LOCAL_GRANT_SHAREDSPACE_CORE_OPERATIONS]
     }
   };
 }
